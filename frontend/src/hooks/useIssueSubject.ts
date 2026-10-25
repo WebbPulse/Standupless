@@ -4,9 +4,15 @@
  * focused or selected issues and an issue page publishes its issue; the most
  * recent publisher that is still mounted wins, the same rule the shortcut
  * registry follows.
+ *
+ * A publisher that can write to its issues also hands over the values its
+ * properties can take, so typing "urgent" or a teammate's name in the palette
+ * offers "Set priority to Urgent" or "Assign to Alex" on the subject. They are
+ * read only when the palette asks, so a list does not rebuild them on every
+ * render.
  */
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
 
 /** What the palette's chip names: one issue by key and title, or a count. */
 export interface IssueSubject {
@@ -14,6 +20,23 @@ export interface IssueSubject {
   key: string | null;
   /** The issue title, or a phrase such as "3 issues". */
   title: string;
+  /** The property values the subject can be set to, built on demand. */
+  values?: () => SubjectValue[];
+}
+
+/** One property value offered as a palette command on the subject. */
+export interface SubjectValue {
+  /** Stable among the subject's values, such as "priority-urgent". */
+  id: string;
+  /** The command as it reads, such as "Set priority to Urgent". */
+  label: string;
+  /** The value's own name, such as "Urgent", which ranks a match on it first. */
+  name: string;
+  /** Extra words the row matches on, such as the property's name. */
+  keywords: string;
+  icon: ReactNode;
+  /** Writes the value to every issue of the subject. */
+  run: () => void;
 }
 
 interface Entry {
@@ -52,13 +75,29 @@ export const subjectOf = (
   return { key: null, title: `${String(issues.length)} issues` };
 };
 
-/** Publishes a subject while the caller is mounted and the subject is not null. */
-export const usePublishIssueSubject = (subject: IssueSubject | null): void => {
+/**
+ * Publishes a subject while the caller is mounted and the subject is not null,
+ * with the values its properties can take when the caller can write them.
+ */
+export const usePublishIssueSubject = (
+  subject: IssueSubject | null,
+  values?: (() => SubjectValue[]) | null
+): void => {
   const key = subject?.key ?? null;
   const title = subject?.title ?? null;
+  const latest = useRef(values ?? null);
+  useEffect(() => {
+    latest.current = values ?? null;
+  });
+  const offers = values !== undefined && values !== null;
   useEffect(() => {
     if (title === null) return;
-    const entry: Entry = { id: nextId, subject: { key, title } };
+    const entry: Entry = {
+      id: nextId,
+      subject: offers
+        ? { key, title, values: () => latest.current?.() ?? [] }
+        : { key, title },
+    };
     nextId += 1;
     entries = [...entries, entry];
     emit();
@@ -66,7 +105,7 @@ export const usePublishIssueSubject = (subject: IssueSubject | null): void => {
       entries = entries.filter((held) => held.id !== entry.id);
       emit();
     };
-  }, [key, title]);
+  }, [key, title, offers]);
 };
 
 /** The subject the palette should name, or null when nothing is in focus. */

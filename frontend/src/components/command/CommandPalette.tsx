@@ -12,7 +12,7 @@
  * registry the keys use, so an action a page adds is reachable by name without
  * the palette knowing about it. Actions on a page that is not an issue, such
  * as a project, come the same way from the `'page'` scope, listed under the
- * group each registered with.
+ * group each registered with, once each even when two keys run them.
  *
  * Every settings page and the current team's settings sections are listed
  * once a term is typed, matched on the words in {@link settingsDestinations}
@@ -34,6 +34,13 @@
  * ago, and a typed term narrows them along with everything else. With an issue
  * in view its own actions come first and the recent issues follow them, so
  * Enter runs the first action rather than leaving the issue.
+ *
+ * With issues in focus a typed term also matches the values their properties
+ * can take, as Linear does, so "urgent" offers "Set priority to Urgent" and a
+ * teammate's name offers "Assign to" them. The values come from the page that
+ * published the subject and write through its pickers, so the undo is the
+ * pickers' own. They follow the commands that matched, values whose name
+ * starts with the term first, and only the first few are listed.
  */
 
 import React, {
@@ -96,6 +103,7 @@ import ViewIcon from '../views/ViewIcon';
 import { StatusIcon } from '../ui/StatusIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
+import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
@@ -142,6 +150,7 @@ import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { favoriteHref } from '../../lib/favorites';
 import { isFormTemplate } from '../../lib/issueTemplates';
 import ProjectIcon from '../planning/ProjectIcon';
+import DocumentIcon from '../planning/DocumentIcon';
 import {
   matchesTerm,
   settingsDestinations,
@@ -182,6 +191,9 @@ const RESULT_LIMIT = 20;
 
 /** How many documents a term lists, since the rest are a narrower term away. */
 const DOCUMENT_LIMIT = 8;
+
+/** How many property values a term lists, since the rest are a narrower term away. */
+const VALUE_LIMIT = 8;
 
 /** How often an open search re-reads while its term is unchanged. */
 const POLL_MS = 60000;
@@ -382,6 +394,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const createIssue = useCreateIssue();
   const createTeam = useCreateTeam();
   const createPlanning = useCreatePlanning();
+  const customizeSidebar = useCustomizeSidebar();
   const { theme, setTheme } = useTheme();
   const registered = useRegisteredShortcuts();
   const { canUndo, undo } = useUndo(workspace.id);
@@ -498,6 +511,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     for (const shortcut of registered) {
       if (shortcut.scope !== 'page') continue;
       const rows = byGroup.get(shortcut.group) ?? [];
+      if (rows.some((row) => row.label === shortcut.label)) continue;
       rows.push({
         id: `page-action-${shortcut.id}`,
         label: shortcut.label,
@@ -639,6 +653,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         },
       });
     }
+    built.push({
+      id: 'action-customize-sidebar',
+      label: 'Customize sidebar',
+      keywords: 'hide show more menu badge navigation personalize',
+      icon: <LuSlidersHorizontal className={ICON} />,
+      run: customizeSidebar.open,
+    });
     if (onShowShortcuts !== undefined) {
       built.push({
         id: 'action-shortcuts',
@@ -697,6 +718,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     createIssue,
     createTeam,
     createPlanning,
+    customizeSidebar,
     slug,
     team,
     teams,
@@ -1166,6 +1188,34 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         built.push({ heading: group.heading, commands: here });
     }
 
+    const offered = subject?.values;
+    if (!isKey && deferred !== '' && offered !== undefined) {
+      const lowered = deferred.toLowerCase();
+      const values = offered()
+        .filter((value) => matchesTerm([value.label, value.keywords], deferred))
+        .map((value, at) => ({
+          value,
+          at,
+          lead: value.name.toLowerCase().startsWith(lowered) ? 0 : 1,
+        }))
+        .sort((left, right) => left.lead - right.lead || left.at - right.at)
+        .slice(0, VALUE_LIMIT)
+        .map(({ value }) => ({
+          id: `value-${value.id}`,
+          label: value.label,
+          keywords: value.keywords,
+          icon: (
+            <span className="inline-flex h-4 w-4 items-center justify-center">
+              {value.icon}
+            </span>
+          ),
+          run: value.run,
+        }));
+      if (values.length > 0) {
+        built.push({ heading: 'Change property', commands: values });
+      }
+    }
+
     const results = (data ?? []).filter(
       (result) => !shownRecent.has(`recent-${result.issue_id}`)
     );
@@ -1188,7 +1238,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           id: `document-${row.document_id}`,
           label: row.title,
           hint: row.parent_name,
-          icon: <LuFileText className={ICON} />,
+          icon: <DocumentIcon icon={row.icon ?? null} className={ICON} />,
           to: documentPath(slug, row.document_id),
         }))
         .filter((command) => matches(command, deferred))
@@ -1280,6 +1330,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     issueActions,
     pageActions,
     issueKey,
+    subject,
     data,
     documents,
     members,
@@ -1389,7 +1440,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const empty =
     page === 'root' && deferred !== '' && !isKey && !indexable
-      ? `Search needs a word of at least ${String(MIN_TERM)} letters.`
+      ? `Type at least ${String(MIN_TERM)} characters to search.`
       : isLoading && enabled
         ? 'Searching'
         : page === 'template' && (templateList?.templates.length ?? 0) === 0

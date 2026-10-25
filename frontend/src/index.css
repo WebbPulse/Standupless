@@ -422,6 +422,38 @@
   }
 }
 
+:root:not([data-pointer-cursors])
+  :where(
+    button,
+    summary,
+    select,
+    label,
+    input[type='checkbox'],
+    input[type='radio'],
+    [role='button'],
+    [role='option'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio'],
+    [role='tab'],
+    [role='switch'],
+    [role='radio'],
+    [role='checkbox'],
+    .cursor-pointer,
+    .interactive-row,
+    .interactive-chip,
+    .interactive-card,
+    .interactive-quiet,
+    .interactive-host
+  ):not(
+    :disabled,
+    [aria-disabled='true'],
+    [readonly],
+    [class*='cursor-']:not(.cursor-pointer)
+  ) {
+  cursor: default;
+}
+
 @property --interactive-tint {
   syntax: '<color>';
   inherits: false;

@@ -14,7 +14,9 @@ project or initiative is gone is skipped.
 A person follows a project they lead or are a member of, an initiative they own,
 and every project inside an initiative they follow, unless they unfollowed it.
 An explicit follow or unfollow is stored and wins over all of that. The "for me"
-feed is what they follow, and "recent" is everything they may read.
+feed is what they follow, "recent" is everything they may read, and "popular" is
+the project and initiative updates they may read from the last two weeks, ranked
+by replies plus reactions with the newest first among equals.
 
 Unread state is one marker per person: an entry newer than the moment they last
 read their Pulse, and not their own, is unread.
@@ -28,14 +30,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Iterator, Literal, Mapping
 
 from webbpulse.dynamodb import encode_start_key
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import resume_key
+from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import (
     PULSE_KEY_PREFIX,
@@ -51,9 +53,15 @@ from app.common.db.dynamo.planning import (
 from app.common.planning_rules import visible_team_ids
 from app.common.team_privacy import person_can_see_team
 
-PulseScope = Literal["for_me", "recent"]
+PulseScope = Literal["for_me", "popular", "recent"]
 
-PULSE_SCOPES: tuple[str, ...] = ("for_me", "recent")
+PULSE_SCOPES: tuple[str, ...] = ("for_me", "popular", "recent")
+
+POPULAR_WINDOW = timedelta(days=14)
+"""How far back the popular feed reaches."""
+
+POPULAR_EVENT_TYPES: frozenset[str] = frozenset({"project_update", "initiative_update"})
+"""The entries the popular feed ranks: posted updates, not health changes or milestones."""
 
 PAGE_SIZE = 100
 """How many events one read of the partition takes."""
@@ -262,6 +270,50 @@ def list_feed(
         return entries, None
     key = {"workspace_id": viewer.workspace_id, "planning_key": last.planning_key}
     return entries, encode_start_key(key, scope=cursor_scope(viewer, scope))
+
+
+def engagement(repositories: Repositories, event: PulseEvent) -> int:
+    """Replies plus reactions on the update an entry posted; initiative updates carry no thread, so they score 0."""
+    if event.event_type != "project_update" or not event.project_id or not event.update_id:
+        return 0
+    thread = repositories.planning.update_threads.read(event.workspace_id, event.project_id, event.update_id)
+    return len(thread.comments) + len(thread.reactions_on(event.update_id))
+
+
+def list_popular(
+    repositories: Repositories,
+    viewer: PulseViewer,
+    *,
+    cursor: str | None = None,
+    limit: int | None = None,
+    now: datetime | None = None,
+) -> tuple[list[PulseEntry], str | None]:
+    """One page of the updates a reader may see from the last `POPULAR_WINDOW`, most engaged first.
+
+    Ties fall to the newer update, then the larger event id, so the order is
+    stable between reads and the offset cursor resumes where the last page ended.
+    """
+    size = max(1, min(limit or DEFAULT_LIMIT, MAX_LIMIT))
+    since = (now or utc_now()) - POPULAR_WINDOW
+    subjects = load_subjects(repositories, viewer)
+    read_at = repositories.planning.get_pulse_read(viewer.workspace_id, viewer.user_id)
+    ranked: list[tuple[int, PulseEntry]] = []
+    for event in _scan(repositories, viewer.workspace_id, None, SCAN_LIMIT):
+        if event.created_at < since:
+            break
+        if event.event_type not in POPULAR_EVENT_TYPES:
+            continue
+        resolved = _resolve(event, viewer, subjects, "recent")
+        if resolved is None:
+            continue
+        entry = PulseEntry(event, resolved[0], resolved[1], is_unread(event, viewer, read_at))
+        ranked.append((engagement(repositories, event), entry))
+    ranked.sort(key=lambda pair: (pair[0], pair[1].event.created_at, pair[1].event.event_id), reverse=True)
+    scope = cursor_scope(viewer, "popular")
+    offset = decode_offset_cursor(cursor, scope)
+    page = [entry for _, entry in ranked[offset : offset + size]]
+    end = offset + size
+    return page, encode_offset_cursor(end, scope) if end < len(ranked) else None
 
 
 def entries_between(

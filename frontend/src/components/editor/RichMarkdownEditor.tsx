@@ -53,6 +53,7 @@ import {
 import { isTeamKey } from '../../lib/issueDisplay';
 import { isSafeUrl } from '../../lib/markdown';
 import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
+import type { CommentAnchor } from '../../types/Api';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
@@ -66,9 +67,11 @@ import {
 } from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
+import { DocumentLinkMenu } from './DocumentLinkMenu';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
+import { useDelegatedIssueHoverCard } from '../ui/IssueHoverCard';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
   hasUploadsInFlight,
@@ -76,6 +79,11 @@ import {
   type UploadFile,
 } from './mediaNodes';
 import { ReferenceMenu } from './ReferenceMenu';
+import {
+  passageOfRange,
+  useCommentAnchors,
+  type CommentAnchorsBinding,
+} from './commentAnchors';
 import {
   filterSlashCommands,
   slashQuery,
@@ -100,6 +108,8 @@ export interface RichMarkdownHandle {
    * empty paragraph with the caret in it, as an edit still to be committed.
    */
   appendMarkdown: (markdown: string) => void;
+  /** The passage a selected DOM range covers, for pinning a comment to it. */
+  passageAt: (range: Range) => CommentAnchor | null;
 }
 
 /** Props for RichMarkdownEditor. */
@@ -143,6 +153,8 @@ export interface RichMarkdownEditorProps {
   mentionPeople?: Assignable[];
   /** Told when focus enters or leaves the surface. */
   onFocusChange?: (focused: boolean) => void;
+  /** The comment threads pinned to passages of this document, highlighted. */
+  commentAnchors?: CommentAnchorsBinding;
   /** Receives the imperative handle. */
   ref?: React.Ref<RichMarkdownHandle>;
 }
@@ -211,9 +223,11 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   onCancel,
   mentionPeople,
   onFocusChange,
+  commentAnchors,
   ref,
 }) => {
   const surface = useRef<HTMLDivElement>(null);
+  const issueHoverCard = useDelegatedIssueHoverCard(surface, '.rich-issue-ref');
   const baseline = useRef<string | null>(null);
   const latest = useRef<string | null>(null);
   const committed = useRef(value);
@@ -746,6 +760,8 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     };
   }, [isDirty]);
 
+  useCommentAnchors(editor, commentAnchors);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -784,6 +800,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           .run();
         latest.current = readMarkdown(editor);
       },
+      passageAt: (range: Range) => passageOfRange(editor.view, range),
     }),
     [editor, adopt]
   );
@@ -872,6 +889,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       onClick={followLink}
     >
       <EditorContent editor={editor} />
+      {issueHoverCard}
       {editable && (
         <FormattingToolbar editor={editor} context={formatContext} />
       )}
@@ -957,6 +975,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           onHighlight={setReferenceHighlight}
         />
       )}
+      {editable && <DocumentLinkMenu editor={editor} />}
       {linkDraft !== null && (
         <div
           className="absolute z-20 w-72 rounded-md border border-line bg-overlay p-1 shadow-overlay"

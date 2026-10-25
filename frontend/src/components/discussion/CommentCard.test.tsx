@@ -7,6 +7,8 @@
  * and unsyncing it, and resolving a thread: the collapsed one-line summary,
  * expanding it, and unresolving it. And quoting: a whole comment from its
  * menu, or a selected passage of it, into the thread's reply as a blockquote.
+ * And a thread pinned to a passage of the description: the quote at its top,
+ * which scrolls to the passage, and the note once the passage is edited away.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -20,6 +22,10 @@ import type {
   GithubThreadTargetRead,
   ReactionGroup,
 } from '../../types/Api';
+import {
+  PassageThreadsContext,
+  type PassageThreads,
+} from '../../contexts/PassageThreadsContextDefinition';
 import { readMarkdown } from '../editor/markdownCodec';
 import CommentCard from './CommentCard';
 
@@ -576,5 +582,72 @@ describe('quoting in a thread', () => {
       screen.queryByRole('button', { name: 'Quote selection' })
     ).toBeNull();
     outside.remove();
+  });
+});
+
+describe('a thread pinned to a passage', () => {
+  const anchor = { quote: 'cache the board query', prefix: '', suffix: '' };
+
+  /** Shared anchored thread state, with the passages the description found. */
+  const passages = (located: string[] | null): PassageThreads => ({
+    threads: [{ commentId: 'c-1', anchor }],
+    setThreads: vi.fn(),
+    located: located === null ? null : new Set(located),
+    setLocated: vi.fn(),
+    activeId: null,
+    showThread: vi.fn(),
+    showPassage: vi.fn(),
+  });
+
+  /** Renders the anchored thread under the shared state given. */
+  const renderPinned = (value: PassageThreads): void => {
+    render(
+      <MemoryRouter>
+        <PassageThreadsContext.Provider value={value}>
+          <CommentCard
+            comment={{ ...comment(), anchor }}
+            replies={[]}
+            people={[]}
+            workspaceId="ws-1"
+            issueId="iss-1"
+            currentUserId="user-1"
+            canComment
+            isAdmin={false}
+          />
+        </PassageThreadsContext.Provider>
+      </MemoryRouter>
+    );
+  };
+
+  it('opens with its passage, which scrolls to the description', async () => {
+    const user = userEvent.setup();
+    const value = passages(['c-1']);
+    renderPinned(value);
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Show the passage in the description',
+      })
+    );
+
+    expect(screen.getByText('cache the board query')).toBeTruthy();
+    expect(value.showPassage).toHaveBeenCalledWith('c-1');
+    expect(
+      screen.queryByText('The description no longer has this text.')
+    ).toBeNull();
+  });
+
+  it('keeps the quote and says so once the passage is edited away', () => {
+    renderPinned(passages([]));
+
+    expect(screen.getByText('cache the board query')).toBeTruthy();
+    expect(
+      screen.getByText('The description no longer has this text.')
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('button', {
+        name: 'Show the passage in the description',
+      })
+    ).toBeNull();
   });
 });

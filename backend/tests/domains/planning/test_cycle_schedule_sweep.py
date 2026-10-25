@@ -179,3 +179,77 @@ def test_auto_add_leaves_other_issues_alone(issues_client: TestClient, repositor
     _enable(repositories)
     assert auto_add_to_cycle(repositories, started) is True
     assert auto_add_to_cycle(repositories, started) is False
+
+
+def test_a_completed_issue_joins_the_active_cycle_when_the_setting_is_on(
+    issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Completing an issue with no cycle adds it to the current cycle with a system activity row."""
+    sign_in(issues_client, MEMBER)
+    settings = _enable(repositories, auto_add_completed=True)
+    ensure_cycles(repositories.planning, settings)
+    statuses = _statuses(repositories)
+    issue = seed_issue(issues_client, workspace, status_id=statuses["backlog"])
+    base = {"workspace_id": WORKSPACE, "team_id": TEAM, "issue_id": issue["id"]}
+
+    issues_handle_record(
+        repositories,
+        _record({**base, "status_id": statuses["completed"]}, {**base, "status_id": statuses["backlog"]}),
+    )
+
+    row = repositories.issues.get(WORKSPACE, issue["id"])
+    assert row is not None
+    active = [c for c in repositories.planning.list_for_roadmap(WORKSPACE, TEAM) if c.status() == "active"]
+    assert row.cycle_id == active[0].cycle_id
+    rows = repositories.activity.list_for_issue(WORKSPACE, issue["id"]).items
+    added = [row for row in rows if row.get("field") == "cycle_id"]
+    assert len(added) == 1
+    assert added[0]["actor_kind"] == "system"
+    assert added[0]["to_value"] == active[0].cycle_id
+
+
+def test_completed_auto_add_leaves_other_issues_alone(
+    issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The setting off, already in a cycle, cancelled, or no active cycle: nothing moves."""
+    sign_in(issues_client, MEMBER)
+    settings = _enable(repositories, auto_add_started=False)
+    statuses = _statuses(repositories)
+    issue = seed_issue(issues_client, workspace, status_id=statuses["backlog"])
+    base = {"workspace_id": WORKSPACE, "team_id": TEAM, "issue_id": issue["id"]}
+    completed = _record({**base, "status_id": statuses["completed"]}, {**base, "status_id": statuses["backlog"]})
+
+    _enable(repositories, auto_add_completed=True)
+    assert auto_add_to_cycle(repositories, completed) is False
+
+    ensure_cycles(repositories.planning, settings)
+    _enable(repositories)
+    assert auto_add_to_cycle(repositories, completed) is False
+
+    _enable(repositories, auto_add_completed=True)
+    in_cycle = _record(
+        {**base, "status_id": statuses["completed"], "cycle_id": "somewhere"},
+        {**base, "status_id": statuses["backlog"]},
+    )
+    assert auto_add_to_cycle(repositories, in_cycle) is False
+
+    cancelled = _record({**base, "status_id": statuses["cancelled"]}, {**base, "status_id": statuses["backlog"]})
+    assert auto_add_to_cycle(repositories, cancelled) is False
+
+    assert auto_add_to_cycle(repositories, completed) is True
+    assert auto_add_to_cycle(repositories, completed) is False
+
+
+def test_completed_auto_add_does_not_need_started_auto_add(
+    issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """With only completed auto-add on, a started issue stays out of the cycle."""
+    sign_in(issues_client, MEMBER)
+    settings = _enable(repositories, auto_add_started=False, auto_add_completed=True)
+    ensure_cycles(repositories.planning, settings)
+    statuses = _statuses(repositories)
+    issue = seed_issue(issues_client, workspace, status_id=statuses["backlog"])
+    base = {"workspace_id": WORKSPACE, "team_id": TEAM, "issue_id": issue["id"]}
+
+    started = _record({**base, "status_id": statuses["started"]}, {**base, "status_id": statuses["backlog"]})
+    assert auto_add_to_cycle(repositories, started) is False

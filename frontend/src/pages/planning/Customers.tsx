@@ -1,8 +1,9 @@
 /**
- * Every customer of the workspace as a dense list: name and domains, tier,
- * owner, size, revenue and how many requests each has made. A column header
- * sorts the list, the search box narrows it by name or domain, and a row opens
- * the customer's page with its requests.
+ * Every customer of the workspace as a dense list: name and domains, status,
+ * tier, owner, size, revenue and how many requests each has made, with how
+ * many of those are important. A column header sorts the list, the search box
+ * narrows it by name or domain, the status menu filters it, grouping splits it
+ * by status, and a row opens the customer's page with its requests.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -11,22 +12,33 @@ import {
   LuArrowDown,
   LuArrowUp,
   LuBuilding2,
+  LuCheck,
+  LuCircleAlert,
+  LuLayers,
   LuPlus,
   LuSearch,
 } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import CustomerDialog from '../../components/customers/CustomerDialog';
+import { CustomerStatusDot } from '../../components/customers/CustomerStatusPicker';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
+import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
-import { revenueLabel, sizeLabel } from '../../lib/customerDisplay';
+import {
+  CUSTOMER_STATUSES,
+  CUSTOMER_STATUS_LABELS,
+  customerStatusLabel,
+  revenueLabel,
+  sizeLabel,
+} from '../../lib/customerDisplay';
 import { errorMessage } from '../../lib/errors';
 import {
   personAvatar,
@@ -34,11 +46,30 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import { customerPath } from '../../lib/paths';
-import type { CustomerRead } from '../../types/Api';
+import type { CustomerRead, CustomerStatus } from '../../types/Api';
 
 /** The grid every header and row lines up on. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_7rem_4rem_4.5rem_5.5rem_5rem]';
+  'grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_5.5rem_7rem_4rem_4.5rem_5.5rem_6rem]';
+
+/** The status filter: one status, customers with none, or every customer. */
+type StatusFilter = CustomerStatus | 'none' | 'all';
+
+/** Whether a customer passes the status filter. */
+const statusMatches = (row: CustomerRead, filter: StatusFilter): boolean =>
+  filter === 'all' ||
+  (filter === 'none' ? row.status === null : row.status === filter);
+
+/** How the status filter reads on its button. */
+const statusFilterLabel = (filter: StatusFilter): string =>
+  filter === 'all'
+    ? 'All statuses'
+    : filter === 'none'
+      ? 'No status'
+      : CUSTOMER_STATUS_LABELS[filter];
+
+/** The groups a status grouping draws, in lifecycle order with no status last. */
+const STATUS_GROUPS: (CustomerStatus | null)[] = [...CUSTOMER_STATUSES, null];
 
 /** The columns the list sorts by. */
 type SortKey = 'name' | 'size' | 'revenue' | 'requests';
@@ -121,6 +152,7 @@ const CustomerRow: React.FC<{
   const revenue = revenueLabel(customer.revenue);
   const size = sizeLabel(customer.size);
   const requests = customer.request_count;
+  const important = customer.important_count;
   return (
     <li
       className={cn(
@@ -146,6 +178,15 @@ const CustomerRow: React.FC<{
           </span>
         )}
       </div>
+      <span
+        className={cn(
+          'pointer-events-none hidden min-w-0 items-center gap-1.5 text-xs md:flex',
+          customer.status === null ? 'text-text-faint' : 'text-text-muted'
+        )}
+      >
+        <CustomerStatusDot status={customer.status} />
+        <span className="truncate">{customerStatusLabel(customer.status)}</span>
+      </span>
       <span
         className={cn(
           'pointer-events-none hidden truncate text-xs md:block',
@@ -184,8 +225,20 @@ const CustomerRow: React.FC<{
       >
         {revenue ?? 'None'}
       </span>
-      <span className="pointer-events-none text-right text-xs whitespace-nowrap text-text-muted tabular-nums">
-        {`${String(requests)} ${requests === 1 ? 'request' : 'requests'}`}
+      <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs whitespace-nowrap text-text-muted tabular-nums">
+        {important > 0 && (
+          <span
+            title={`${String(important)} important`}
+            className="flex items-center gap-0.5 text-warning"
+          >
+            <LuCircleAlert aria-hidden="true" className="h-3 w-3" />
+            <span aria-hidden="true">{String(important)}</span>
+            <span className="sr-only">{`${String(important)} important`}</span>
+          </span>
+        )}
+        <span>
+          {`${String(requests)} ${requests === 1 ? 'request' : 'requests'}`}
+        </span>
       </span>
     </li>
   );
@@ -206,6 +259,8 @@ export const Customers: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>({ key: 'name', descending: false });
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [grouped, setGrouped] = useState(false);
 
   const onSort = (column: SortKey): void => {
     setSort((current) =>
@@ -218,10 +273,31 @@ export const Customers: React.FC = () => {
   const rows = useMemo(
     () =>
       customers
-        .filter((row) => matches(row, query))
+        .filter(
+          (row) => matches(row, query) && statusMatches(row, statusFilter)
+        )
         .sort((left, right) => compare(left, right, sort)),
-    [customers, query, sort]
+    [customers, query, sort, statusFilter]
   );
+
+  const groups = useMemo(
+    () =>
+      STATUS_GROUPS.map((status) => ({
+        status,
+        rows: rows.filter((row) => row.status === status),
+      })).filter((group) => group.rows.length > 0),
+    [rows]
+  );
+
+  const renderRows = (list: CustomerRead[]): React.ReactNode =>
+    list.map((customer) => (
+      <CustomerRow
+        key={customer.customer_id}
+        customer={customer}
+        slug={slug}
+        people={members}
+      />
+    ));
 
   return (
     <WorkspaceShell
@@ -268,6 +344,66 @@ export const Customers: React.FC = () => {
             }}
             className="h-full min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-text-faint focus:outline-none"
           />
+          <Menu
+            label="Filter by status"
+            align="end"
+            trigger={(trigger) => (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Status filter: ${statusFilterLabel(statusFilter)}`}
+                {...trigger}
+              >
+                {statusFilter !== 'all' && (
+                  <CustomerStatusDot
+                    status={statusFilter === 'none' ? null : statusFilter}
+                  />
+                )}
+                {statusFilterLabel(statusFilter)}
+              </Button>
+            )}
+          >
+            {(['all', ...CUSTOMER_STATUSES, 'none'] as StatusFilter[]).map(
+              (option) => (
+                <MenuItem
+                  key={option}
+                  onSelect={() => {
+                    setStatusFilter(option);
+                  }}
+                >
+                  {option === 'all' ? (
+                    <span aria-hidden="true" className="w-2" />
+                  ) : (
+                    <CustomerStatusDot
+                      status={option === 'none' ? null : option}
+                    />
+                  )}
+                  <span className="flex-1">{statusFilterLabel(option)}</span>
+                  {statusFilter === option && (
+                    <LuCheck
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 text-text-muted"
+                    />
+                  )}
+                </MenuItem>
+              )
+            )}
+            <MenuSeparator />
+            <MenuItem
+              onSelect={() => {
+                setGrouped((current) => !current);
+              }}
+            >
+              <LuLayers aria-hidden="true" className="h-3.5 w-3.5" />
+              <span className="flex-1">Group by status</span>
+              {grouped && (
+                <LuCheck
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 text-text-muted"
+                />
+              )}
+            </MenuItem>
+          </Menu>
           <span className="shrink-0 text-xs text-text-faint tabular-nums">
             {String(rows.length)}
           </span>
@@ -282,6 +418,7 @@ export const Customers: React.FC = () => {
           )}
         >
           <SortHeader label="Name" column="name" sort={sort} onSort={onSort} />
+          <span className="hidden truncate md:block">Status</span>
           <span className="hidden truncate md:block">Tier</span>
           <span className="hidden truncate text-center md:block">Owner</span>
           <SortHeader
@@ -323,17 +460,28 @@ export const Customers: React.FC = () => {
             icon={<LuSearch />}
             message="No customer matches that search."
           />
+        ) : grouped ? (
+          <div aria-label="Customers by status" role="group">
+            {groups.map((group) => {
+              const label = customerStatusLabel(group.status);
+              return (
+                <section key={group.status ?? 'none'} aria-label={label}>
+                  <h2 className="sticky top-8 z-10 flex h-8 items-center gap-2 border-b border-line bg-surface px-4 text-xs font-medium text-text lg:px-6">
+                    <CustomerStatusDot status={group.status} />
+                    {label}
+                    <span className="font-normal text-text-faint tabular-nums">
+                      {String(group.rows.length)}
+                    </span>
+                  </h2>
+                  <ul aria-label={`${label} customers`}>
+                    {renderRows(group.rows)}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
         ) : (
-          <ul aria-label="Customers">
-            {rows.map((customer) => (
-              <CustomerRow
-                key={customer.customer_id}
-                customer={customer}
-                slug={slug}
-                people={members}
-              />
-            ))}
-          </ul>
+          <ul aria-label="Customers">{renderRows(rows)}</ul>
         )}
       </div>
 

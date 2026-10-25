@@ -2,8 +2,9 @@
  * The cycle breakdown and title. Covers that each row counts its issues and
  * those done, that cancelled issues are left out, that like named labels of
  * two teams share one row, that the unset row sorts last, that priorities
- * keep their fixed order from urgent down to no priority, and that a cycle
- * left with its generated name never reads as the raw slug.
+ * keep their fixed order from urgent down to no priority, that a weigher sums
+ * the rows in points, and that a cycle left with its generated name never
+ * reads as the raw slug.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -138,6 +139,28 @@ describe('cycleBreakdown', () => {
       ).map((row) => row.id)
     ).toEqual(['low', 'none']);
     expect(PRIORITY_ORDER).toEqual(['urgent', 'high', 'medium', 'low', 'none']);
+  });
+
+  it('sums each row by a weigher, so it reads in points', () => {
+    const points = (row: IssueRead): number =>
+      row.estimate === null ? 0 : Number(row.estimate);
+    expect(
+      cycleBreakdown(
+        [
+          issue('1', 'done', { assignee_id: 'ada', estimate: '3' }),
+          issue('2', 'doing', { assignee_id: 'ada', estimate: '5' }),
+          issue('3', 'todo', { assignee_id: 'bo', estimate: '2' }),
+          issue('4', 'dropped', { assignee_id: 'bo', estimate: '8' }),
+        ],
+        statuses,
+        'assignee',
+        context,
+        points
+      )
+    ).toEqual([
+      { id: 'ada', name: 'Ada', total: 8, completed: 3, started: 8 },
+      { id: 'bo', name: 'bo@example.com', total: 2, completed: 0, started: 0 },
+    ]);
   });
 
   it('reads a row as a whole percent done', () => {

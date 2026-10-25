@@ -102,7 +102,7 @@ const M3_CODE_MESSAGES: Record<string, string> = {
   INVALID_FILTER:
     'That view uses a filter this product does not recognise. Remove it and save again.',
   QUERY_TOO_SHORT:
-    'Search needs a word of at least four letters. Shorter words are not indexed.',
+    'That search only has very common words. Add a more specific one.',
   CONFLICT: 'That change conflicts with what is already there.',
   FORBIDDEN: 'You are not allowed to change this.',
 };

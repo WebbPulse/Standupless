@@ -49,9 +49,8 @@ import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
 import {
-  fieldsFor,
+  groupFieldsFor,
   filterFieldsFor,
-  GROUP_FIELDS,
   parseViewState,
   sameViewState,
   sharedChange,
@@ -73,6 +72,7 @@ import { estimateOptionsOf } from '../../../lib/validation';
 import type { StatusCategory, TeamRead } from '../../../types/Api';
 import Button, { IconButton } from '../../ui/button';
 import FavoriteButton from '../../ui/FavoriteButton';
+import ViewSubscribeButton from './ViewSubscribeButton';
 import Dialog from '../../ui/dialog';
 import { Input, Textarea } from '../../ui/input';
 import { Menu, MenuItem, MenuLabel } from '../../ui/menu';
@@ -787,7 +787,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           state={state}
           onChange={setState}
           archive={archive}
-          groupFields={fieldsFor(GROUP_FIELDS, filterContext)}
+          groupFields={groupFieldsFor(filterContext)}
+          context={filterContext}
           teamDefault={teamDefaultActions}
           customerSorts={isMember}
           onReset={
@@ -875,6 +876,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const viewActions =
     view === undefined ? null : (
       <>
+        <ViewSubscribeButton workspaceId={workspaceId} view={view} />
         <IconButton
           label="Edit view details"
           size="sm"

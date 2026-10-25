@@ -100,4 +100,23 @@ describe('preferences', () => {
 
     expect(document.documentElement.hasAttribute('data-font-size')).toBe(false);
   });
+
+  it('paints pointer cursors only when turned on', () => {
+    expect(readPreferences().pointerCursors).toBe(false);
+    expect(document.documentElement.hasAttribute('data-pointer-cursors')).toBe(
+      false
+    );
+
+    setPreferences({ ...DEFAULT_PREFERENCES, pointerCursors: true });
+
+    expect(document.documentElement.hasAttribute('data-pointer-cursors')).toBe(
+      true
+    );
+
+    setPreferences(DEFAULT_PREFERENCES);
+
+    expect(document.documentElement.hasAttribute('data-pointer-cursors')).toBe(
+      false
+    );
+  });
 });

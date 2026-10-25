@@ -56,8 +56,9 @@ ProjectHealthField = Literal["on_track", "at_risk", "off_track"]
 
 ProjectPriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
-ProjectSortField = Literal["target_asc", "customer_requests_desc", "customer_revenue_desc"]
-"""The orders the projects list takes: target date, undated last, or the most customer requests or revenue first."""
+ProjectSortField = Literal["target_asc", "customer_requests_desc", "customer_important_desc", "customer_revenue_desc"]
+"""The orders the projects list takes: target date, undated last, or the most customer requests, important
+requests or revenue first."""
 
 ProgressMeasureField = ProgressMeasure
 """The unit `progress` reads in: estimate points when a team on the work estimates, otherwise issues."""
@@ -959,6 +960,9 @@ class ProjectRead(BaseModel):
     completed_at: Optional[datetime] = Field(
         default=None, description="When the project last became completed or canceled, null while it is open"
     )
+    archived_at: Optional[datetime] = Field(
+        default=None, description="When the project was archived, null while it is live"
+    )
     skipped_template_issues: Optional[list[SkippedTemplateIssueRead]] = Field(
         default=None,
         description="Template issues left out, answered by a create from a project template, empty when none were",
@@ -976,6 +980,10 @@ class ProjectRead(BaseModel):
     customer_request_count: Optional[int] = Field(
         default=None,
         description="Customer requests naming the project, answered by a list filtered or sorted by customer",
+    )
+    customer_important_count: Optional[int] = Field(
+        default=None,
+        description="Customer requests naming the project marked important, answered with customer_request_count",
     )
     customer_revenue: Optional[int] = Field(
         default=None,
@@ -1037,6 +1045,7 @@ class ProjectRead(BaseModel):
             initiative_id=project.initiative_id,
             sort_order=project.sort_order,
             completed_at=project.completed_at,
+            archived_at=project.archived_at,
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -1181,6 +1190,8 @@ ProjectActivityKindField = Literal[
     "link_added",
     "link_removed",
     "link_changed",
+    "archived",
+    "unarchived",
 ]
 
 PROJECT_ACTIVITY_DEFAULT_LIMIT = 50
@@ -1738,7 +1749,7 @@ PulseEventTypeField = Literal[
     "project_update", "initiative_update", "project_health", "initiative_health", "milestone_completed"
 ]
 
-PulseScopeField = Literal["for_me", "recent"]
+PulseScopeField = Literal["for_me", "popular", "recent"]
 
 
 class PulseItemRead(BaseModel):

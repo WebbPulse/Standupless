@@ -15,6 +15,10 @@ A change to a team rather than an issue, such as GitHub sync dropping to one way
 when a repository turns public, is written to one per-workspace partition the way
 deletion tombstones are, with an empty `issue_id` and the team feed attribute
 set, so the team feed carries it and the purges clear it with one key read.
+
+Earlier versions of an issue's description live in a partition of their own,
+`<workspace>#<issue>#description`, so the history page never reads them and
+deleting the issue's history clears them with it.
 """
 
 from __future__ import annotations
@@ -121,6 +125,16 @@ older tombstone could never be read.
 
 TOMBSTONE_PRUNE_BATCH = 25
 
+DESCRIPTION_VERSION_KIND = "description_version"
+
+DESCRIPTION_VERSIONS_KEPT = 50
+"""How many versions one issue's description keeps; the oldest goes when another is taken."""
+
+
+def description_partition(workspace_id: str, issue_id: str) -> str:
+    """The partition one issue's description versions share, apart from its history."""
+    return f"{workspace_id}#{issue_id}#description"
+
 
 def team_events_partition(workspace_id: str) -> str:
     """The one partition a workspace's team level activity shares."""
@@ -168,6 +182,49 @@ class Activity(BaseModel):
     source: str | None = None
     release_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class DescriptionVersion(BaseModel):
+    """One saved state of an issue's description: the text, who wrote it and when."""
+
+    ws_issue: str
+    activity_id: str = Field(default_factory=new_activity_id)
+    workspace_id: str
+    issue_id: str
+    kind: str = DESCRIPTION_VERSION_KIND
+    body: str = ""
+    edited_by: str
+    edited_at: datetime = Field(default_factory=utc_now)
+    source: str | None = None
+    sealed: bool = False
+
+    @property
+    def version_id(self) -> str:
+        """The version's id, which is its sort key."""
+        return self.activity_id
+
+
+def build_description_version(
+    workspace_id: str,
+    issue_id: str,
+    body: str,
+    edited_by: str,
+    *,
+    edited_at: datetime,
+    source: str | None = None,
+    sealed: bool = False,
+) -> DescriptionVersion:
+    """One description version with its partition key composed."""
+    return DescriptionVersion(
+        ws_issue=description_partition(workspace_id, issue_id),
+        workspace_id=workspace_id,
+        issue_id=issue_id,
+        body=body,
+        edited_by=edited_by,
+        edited_at=edited_at,
+        source=source,
+        sealed=sealed,
+    )
 
 
 def build_activity(
@@ -317,13 +374,73 @@ class ActivityRepository:
         Called when the issue is deleted, because the partition would otherwise be
         unreachable: nothing but the issue's own id names it.
         """
-        partition = ws_issue(workspace_id, issue_id)
-        items = list(self._repository.iter_query(Key("ws_issue").eq(partition), max_items=1000))
-        if not items:
-            return 0
-        return self._repository.delete_many(
-            [{"ws_issue": partition, "activity_id": item["activity_id"]} for item in items]
+        removed = 0
+        for partition in (ws_issue(workspace_id, issue_id), description_partition(workspace_id, issue_id)):
+            items = list(self._repository.iter_query(Key("ws_issue").eq(partition), max_items=1000))
+            if items:
+                removed += self._repository.delete_many(
+                    [{"ws_issue": partition, "activity_id": item["activity_id"]} for item in items]
+                )
+        return removed
+
+    def list_description_versions(
+        self, workspace_id: str, issue_id: str, *, limit: int = DESCRIPTION_VERSIONS_KEPT
+    ) -> list[DescriptionVersion]:
+        """One issue's description versions, newest first."""
+        if not workspace_id or not issue_id:
+            return []
+        page = self._repository.query(
+            Key("ws_issue").eq(description_partition(workspace_id, issue_id)),
+            limit=limit,
+            ascending=False,
         )
+        return [
+            DescriptionVersion.model_validate(dict(item))
+            for item in page.items
+            if item.get("kind") == DESCRIPTION_VERSION_KIND
+        ]
+
+    def latest_description_version(self, workspace_id: str, issue_id: str) -> DescriptionVersion | None:
+        """The newest description version of one issue, read consistently, or `None`."""
+        if not workspace_id or not issue_id:
+            return None
+        page = self._repository.query(
+            Key("ws_issue").eq(description_partition(workspace_id, issue_id)),
+            limit=1,
+            ascending=False,
+            consistent=True,
+        )
+        rows = [item for item in page.items if item.get("kind") == DESCRIPTION_VERSION_KIND]
+        return DescriptionVersion.model_validate(dict(rows[0])) if rows else None
+
+    def get_description_version(self, workspace_id: str, issue_id: str, version_id: str) -> DescriptionVersion | None:
+        """One description version of one issue, or `None`."""
+        if not workspace_id or not issue_id or not version_id:
+            return None
+        item = self._repository.get(
+            {"ws_issue": description_partition(workspace_id, issue_id), "activity_id": version_id}
+        )
+        if item is None or item.get("kind") != DESCRIPTION_VERSION_KIND:
+            return None
+        return DescriptionVersion.model_validate(dict(item))
+
+    def save_description_version(self, version: DescriptionVersion) -> DescriptionVersion:
+        """Store one description version, new or rewritten in place, dropping versions past the cap."""
+        self._repository.put(as_item(version))
+        keys = list(
+            self._repository.iter_query(
+                Key("ws_issue").eq(version.ws_issue),
+                projection="activity_id",
+                ascending=False,
+                max_items=DESCRIPTION_VERSIONS_KEPT * 2,
+            )
+        )
+        dropped = keys[DESCRIPTION_VERSIONS_KEPT:]
+        if dropped:
+            self._repository.delete_many(
+                [{"ws_issue": version.ws_issue, "activity_id": item["activity_id"]} for item in dropped]
+            )
+        return version
 
     def record_tombstone(self, workspace_id: str, team_id: str, issue_id: str, actor_id: str) -> Activity:
         """Record that one issue was deleted, for list delta polling, and prune expired tombstones.

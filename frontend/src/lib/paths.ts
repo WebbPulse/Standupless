@@ -92,6 +92,12 @@ export const teamCurrentCyclePath = (slug: string, keyPrefix: string): string =>
 export const teamStandupPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/standup`;
 
+/** A team's documents: the pages filed under the team rather than a project. */
+export const teamDocumentsPagePath = (
+  slug: string,
+  keyPrefix: string
+): string => `${teamPath(slug, keyPrefix)}/documents`;
+
 /** A team's settings: statuses, labels, members, transitions and repositories. */
 export const teamSettingsPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/settings`;

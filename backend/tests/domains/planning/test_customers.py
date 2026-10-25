@@ -6,7 +6,9 @@ admin deletes one, that domains are normalised and claimed by one customer at a
 time, that a request is filed through an issue or project the caller may write
 on and listed on both the target and the customer, that request counts follow
 what the caller can see, that a merge moves requests and domains without
-overwriting the survivor, and that deleting a customer takes its requests.
+overwriting the survivor, that deleting a customer takes its requests, that a
+customer carries a status from a fixed set, and that a request is edited,
+marked important and moved only by a writer on both the old and new target.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
-from tests.domains.planning.conftest import OTHER_TEAM, seed_issue, seed_project
+from tests.domains.planning.conftest import OTHER_TEAM, TEAM, seed_issue, seed_project
 
 
 def _base(workspace: str) -> str:
@@ -293,3 +295,118 @@ def test_counts_follow_what_the_caller_can_see(
     assert client.get(f"{_base(workspace)}/customers/{customer_id}").json()["request_count"] == 1
     rows = client.get(f"{_base(workspace)}/customers/{customer_id}/requests").json()["requests"]
     assert [row["target_id"] for row in rows] == [kept["id"]]
+
+
+def _edit(client: TestClient, workspace: str, request: "dict[str, Any]", **payload: Any) -> Any:
+    """Patch one request through the customer's route."""
+    return client.patch(
+        f"{_base(workspace)}/customers/{request['customer_id']}/requests/{request['request_id']}", json=payload
+    )
+
+
+def test_a_customer_carries_a_status(client: TestClient, workspace: str) -> None:
+    """Status is set on create, edited and cleared, and refused outside the fixed set."""
+    sign_in(client, MEMBER)
+    created = _customer(client, workspace, status="trial")
+    url = f"{_base(workspace)}/customers/{created['customer_id']}"
+
+    assert created["status"] == "trial"
+    assert client.patch(url, json={"status": "active"}).json()["status"] == "active"
+    assert client.patch(url, json={"status": None}).json()["status"] is None
+    assert client.patch(url, json={"status": "dormant"}).status_code == 422
+    assert client.post(f"{_base(workspace)}/customers", json={"name": "B", "status": "dormant"}).status_code == 422
+
+
+def test_a_request_is_edited_and_marked_important(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """Another member edits the quote, flags it important and the customer counts it."""
+    sign_in(client, ADMIN)
+    sign_in(issues_client, ADMIN)
+    customer_id = _customer(client, workspace)["customer_id"]
+    issue = seed_issue(issues_client, workspace)
+    filed = _request(client, workspace, "issue", issue["id"], customer_id, "Soon please")
+    assert (filed["important"], filed["can_edit"]) == (False, True)
+
+    sign_in(client, MEMBER)
+    edited = _edit(client, workspace, filed, body="By Q4", important=True)
+
+    assert edited.status_code == 200, edited.text
+    body = edited.json()
+    assert (body["body"], body["important"], body["can_edit"]) == ("By Q4", True, True)
+    assert body["updated_at"] is not None
+    rows = client.get(f"{_base(workspace)}/issues/{issue['id']}/customer-requests").json()["requests"]
+    assert [(row["body"], row["important"]) for row in rows] == [("By Q4", True)]
+    read = client.get(f"{_base(workspace)}/customers/{customer_id}").json()
+    assert (read["request_count"], read["important_count"]) == (1, 1)
+    listed = client.get(f"{_base(workspace)}/customers").json()["customers"]
+    assert listed[0]["important_count"] == 1
+
+
+def test_a_request_moves_to_another_target_and_customer(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """A move lists the request on the new target and customer and nowhere else."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    acme = _customer(client, workspace)["customer_id"]
+    beta = _customer(client, workspace, name="Beta")["customer_id"]
+    issue = seed_issue(issues_client, workspace)
+    project_id = seed_project(client, workspace)["project_id"]
+    filed = _request(client, workspace, "issue", issue["id"], acme, "Keep me")
+
+    moved = _edit(client, workspace, filed, target_kind="project", target_id=project_id, customer_id=beta)
+
+    assert moved.status_code == 200, moved.text
+    body = moved.json()
+    assert (body["request_id"], body["target_kind"], body["target_id"]) == (filed["request_id"], "project", project_id)
+    assert (body["customer_id"], body["customer_name"], body["body"]) == (beta, "Beta", "Keep me")
+    assert client.get(f"{_base(workspace)}/issues/{issue['id']}/customer-requests").json()["requests"] == []
+    project_rows = client.get(f"{_base(workspace)}/projects/{project_id}/customer-requests").json()["requests"]
+    assert [row["request_id"] for row in project_rows] == [filed["request_id"]]
+    assert client.get(f"{_base(workspace)}/customers/{acme}/requests").json()["requests"] == []
+    beta_rows = client.get(f"{_base(workspace)}/customers/{beta}/requests").json()["requests"]
+    assert [row["request_id"] for row in beta_rows] == [filed["request_id"]]
+    assert _edit(client, workspace, filed, important=True).status_code == 404
+
+
+def test_a_request_edit_is_checked(client: TestClient, issues_client: TestClient, workspace: str) -> None:
+    """A half move, an unknown customer, an unknown target and an unknown request are refused."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    customer_id = _customer(client, workspace)["customer_id"]
+    issue = seed_issue(issues_client, workspace)
+    filed = _request(client, workspace, "issue", issue["id"], customer_id)
+
+    assert _edit(client, workspace, filed, target_kind="project").status_code == 422
+    assert _edit(client, workspace, filed, target_id=issue["id"]).status_code == 422
+    assert _edit(client, workspace, filed, customer_id="01JB00000000000000000NOCUST").status_code == 422
+    missing = _edit(client, workspace, filed, target_kind="issue", target_id="01JB0000000000000000NOISSUE")
+    assert missing.status_code == 404
+    gone = {"customer_id": customer_id, "request_id": "01JB0000000000000000NOREQS"}
+    assert _edit(client, workspace, gone, important=True).status_code == 404
+
+
+def test_a_request_moves_only_between_targets_the_caller_writes(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A guest is refused, and a private team outside the caller hides the old or new target."""
+    sign_in(client, OWNER)
+    sign_in(issues_client, OWNER)
+    customer_id = _customer(client, workspace)["customer_id"]
+    open_issue = seed_issue(issues_client, workspace, team_id=OTHER_TEAM)
+    private_issue = seed_issue(issues_client, workspace)
+    on_open = _request(client, workspace, "issue", open_issue["id"], customer_id)
+    on_private = _request(client, workspace, "issue", private_issue["id"], customer_id)
+    repositories.memberships.set_team_private(workspace, TEAM, True)
+
+    sign_in(client, GUEST)
+    assert _edit(client, workspace, on_private, important=True).status_code == 403
+
+    sign_in(client, MEMBER)
+    into_hidden = _edit(client, workspace, on_open, target_kind="issue", target_id=private_issue["id"])
+    assert into_hidden.status_code == 404, into_hidden.text
+    assert _edit(client, workspace, on_private, important=True).status_code == 404
+    assert _edit(client, workspace, on_private, target_kind="issue", target_id=open_issue["id"]).status_code == 404
+    rows = client.get(f"{_base(workspace)}/issues/{open_issue['id']}/customer-requests").json()["requests"]
+    assert [row["request_id"] for row in rows] == [on_open["request_id"]]

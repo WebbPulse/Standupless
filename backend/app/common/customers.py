@@ -7,9 +7,10 @@ Customers are workspace data that carry revenue, so every member who is not a
 guest reads them and guests reach none of it. Any such member creates, edits and
 merges customers; deleting one is its creator's or a workspace admin's.
 
-A request ties a customer to one issue or one project, with an optional quote.
-It is filed by whoever may write on the issue's team or on one of the project's
-teams, and removed by its author or a workspace admin. A request is shown only
+A request ties a customer to one issue or one project, with an optional quote
+and an important flag. It is filed and edited by whoever may write on the issue's
+team or on one of the project's teams, moved only by someone who writes on both
+the old target and the new, and removed by its author or a workspace admin. A request is shown only
 while its issue or project is still there and visible to the caller, so a request
 never reveals work in a team the reader is outside, and a request left behind by
 a deleted issue simply stops appearing.
@@ -18,7 +19,7 @@ a deleted issue simply stops appearing.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, cast
+from typing import Callable, Iterable, cast
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
@@ -31,6 +32,7 @@ from app.common.api.schemas.customers import (
     CustomerPatch,
     CustomerRead,
     CustomerRequestCreate,
+    CustomerRequestPatch,
     CustomerRequestRead,
 )
 from app.common.change_source import ChangeSource
@@ -116,13 +118,16 @@ def _can_delete_customer(context: AuthzContext, customer: Customer) -> bool:
     return context.is_workspace_admin or customer.created_by == context.user_id
 
 
-def _customer_read(context: AuthzContext, customer: Customer, request_count: int) -> CustomerRead:
+def _customer_read(
+    context: AuthzContext, customer: Customer, request_count: int, important_count: int = 0
+) -> CustomerRead:
     """One customer's response shape, with this caller's rights on it."""
     return CustomerRead(
         customer_id=customer.customer_id,
         workspace_id=customer.workspace_id,
         name=customer.name,
         domains=customer.domains,
+        status=customer.status,
         tier=customer.tier,
         owner_id=customer.owner_id,
         revenue=customer.revenue,
@@ -131,13 +136,37 @@ def _customer_read(context: AuthzContext, customer: Customer, request_count: int
         created_at=customer.created_at,
         updated_at=customer.updated_at,
         request_count=request_count,
+        important_count=important_count,
         can_edit=not context.is_guest,
         can_delete=_can_delete_customer(context, customer),
     )
 
 
+WriterCheck = Callable[[Target], bool]
+"""Whether the caller may write on one request's target."""
+
+
+def _writer_check(repositories: Repositories, context: AuthzContext) -> WriterCheck:
+    """A check of write rights on targets that reads each team's membership at most once."""
+    roles: dict[str, bool] = {}
+
+    def writes(team_id: str) -> bool:
+        if team_id not in roles:
+            roles[team_id] = team_role(repositories, context, team_id) is not None
+        return roles[team_id]
+
+    def check(target: Target) -> bool:
+        return not context.is_guest and any(writes(team_id) for team_id in target.teams)
+
+    return check
+
+
 def _request_read(
-    context: AuthzContext, request: CustomerRequest, target: Target, customer_name: str
+    context: AuthzContext,
+    request: CustomerRequest,
+    target: Target,
+    customer_name: str,
+    can_edit: bool = False,
 ) -> CustomerRequestRead:
     """One request's response shape, with the names a list draws beside it."""
     return CustomerRequestRead(
@@ -150,22 +179,30 @@ def _request_read(
         target_key=target.key,
         target_title=target.title,
         body=request.body,
+        important=request.important,
         author_id=request.author_id,
         source=cast("ChangeSource | None", request.source),
         created_at=request.created_at,
+        updated_at=request.updated_at,
+        can_edit=can_edit,
         can_delete=context.is_workspace_admin or request.author_id == context.user_id,
     )
 
 
-def _visible_counts(repositories: Repositories, context: AuthzContext) -> dict[str, int]:
-    """How many visible requests each customer has, from one query of the workspace's requests."""
-    requests = repositories.customers.list_requests(context.workspace_id)
-    targets = resolve_targets(repositories, context, requests)
+def _visible_counts(
+    repositories: Repositories, context: AuthzContext, requests: list[CustomerRequest] | None = None
+) -> tuple[dict[str, int], dict[str, int]]:
+    """How many visible requests, and visible important ones, each customer has, from one query."""
+    rows = repositories.customers.list_requests(context.workspace_id) if requests is None else requests
+    targets = resolve_targets(repositories, context, rows)
     counts: dict[str, int] = {}
-    for request in requests:
+    important: dict[str, int] = {}
+    for request in rows:
         if targets.get(request) is not None:
             counts[request.customer_id] = counts.get(request.customer_id, 0) + 1
-    return counts
+            if request.important:
+                important[request.customer_id] = important.get(request.customer_id, 0) + 1
+    return counts, important
 
 
 def _load_customer(repositories: Repositories, context: AuthzContext, customer_id: str) -> Customer:
@@ -202,19 +239,23 @@ def _check_domains_free(
 def list_customers(repositories: Repositories, context: AuthzContext) -> list[CustomerRead]:
     """Every customer of the workspace, by name, each with its visible request count."""
     require_customer_reader(context)
-    counts = _visible_counts(repositories, context)
+    counts, important = _visible_counts(repositories, context)
     customers = repositories.customers.list_customers(context.workspace_id)
     customers.sort(key=lambda row: (row.name.casefold(), row.customer_id))
-    return [_customer_read(context, row, counts.get(row.customer_id, 0)) for row in customers]
+    return [
+        _customer_read(context, row, counts.get(row.customer_id, 0), important.get(row.customer_id, 0))
+        for row in customers
+    ]
 
 
 def get_customer(repositories: Repositories, context: AuthzContext, customer_id: str) -> CustomerRead:
     """One customer with its visible request count."""
     customer = _load_customer(repositories, context, customer_id)
     requests = repositories.customers.list_for_customer(context.workspace_id, customer.customer_id)
-    targets = resolve_targets(repositories, context, requests)
-    count = sum(1 for request in requests if targets.get(request) is not None)
-    return _customer_read(context, customer, count)
+    counts, important = _visible_counts(repositories, context, requests)
+    return _customer_read(
+        context, customer, counts.get(customer.customer_id, 0), important.get(customer.customer_id, 0)
+    )
 
 
 def find_customer(repositories: Repositories, context: AuthzContext, reference: str) -> Customer:
@@ -249,6 +290,7 @@ def create_customer(repositories: Repositories, context: AuthzContext, payload: 
         customer_id=new_customer_id(),
         name=payload.name,
         domains=payload.domains,
+        status=payload.status,
         tier=payload.tier,
         owner_id=payload.owner_id,
         revenue=payload.revenue,
@@ -299,7 +341,7 @@ def merge_customers(
     """Fold one customer into another and delete it.
 
     The surviving customer gains the other's requests and domains, and takes its
-    tier, owner, revenue and size only where it has none of its own, so a merge
+    status, tier, owner, revenue and size only where it has none of its own, so a merge
     never overwrites what the survivor already says about itself. Deleting the
     merged customer is a delete, so it takes the same right.
     """
@@ -315,6 +357,7 @@ def merge_customers(
     merged = target.model_copy(
         update={
             "domains": domains[:20],
+            "status": target.status if target.status is not None else source.status,
             "tier": target.tier if target.tier is not None else source.tier,
             "owner_id": target.owner_id if target.owner_id is not None else source.owner_id,
             "revenue": target.revenue if target.revenue is not None else source.revenue,
@@ -371,9 +414,10 @@ def list_target_requests(
     if not requests:
         return []
     names = _names(repositories, context)
+    can_edit = _writer_check(repositories, context)(target)
     return _newest_first(
         [
-            _request_read(context, request, target, names[request.customer_id])
+            _request_read(context, request, target, names[request.customer_id], can_edit)
             for request in requests
             if request.customer_id in names
         ]
@@ -387,11 +431,12 @@ def list_customer_requests(
     customer = _load_customer(repositories, context, customer_id)
     requests = repositories.customers.list_for_customer(context.workspace_id, customer.customer_id)
     targets = resolve_targets(repositories, context, requests)
+    writes = _writer_check(repositories, context)
     rows: list[CustomerRequestRead] = []
     for request in requests:
         target = targets.get(request)
         if target is not None:
-            rows.append(_request_read(context, request, target, customer.name))
+            rows.append(_request_read(context, request, target, customer.name, writes(target)))
     return _newest_first(rows)
 
 
@@ -401,11 +446,12 @@ def list_workspace_requests(repositories: Repositories, context: AuthzContext) -
     requests = repositories.customers.list_requests(context.workspace_id)
     targets = resolve_targets(repositories, context, requests)
     names = _names(repositories, context)
+    writes = _writer_check(repositories, context)
     rows: list[CustomerRequestRead] = []
     for request in requests:
         target = targets.get(request)
         if target is not None and request.customer_id in names:
-            rows.append(_request_read(context, request, target, names[request.customer_id]))
+            rows.append(_request_read(context, request, target, names[request.customer_id], writes(target)))
     return _newest_first(rows)
 
 
@@ -431,6 +477,7 @@ def create_request(
         target_id=target.target_id,
         team_ids=target.teams,
         body=payload.body,
+        important=payload.important,
         author_id=context.user_id,
         source=context.source,
         created_at=utc_now(),
@@ -439,7 +486,61 @@ def create_request(
         stored = repositories.customers.add_request(request)
     except ConditionFailed as exc:
         raise conflict("That request already exists") from exc
-    return _request_read(context, stored, target, customer.name)
+    return _request_read(context, stored, target, customer.name, True)
+
+
+def update_request(
+    repositories: Repositories,
+    context: AuthzContext,
+    customer_id: str,
+    request_id: str,
+    payload: CustomerRequestPatch,
+) -> CustomerRequestRead:
+    """Edit a request's quote, customer or important flag, or move it to another issue or project.
+
+    The caller must write on the request's current target, and a move also on
+    the new one, so a request is never carried into or out of a team the caller
+    cannot write in. A target the caller cannot see is the same 404 a read gives.
+    """
+    customer = _load_customer(repositories, context, customer_id)
+    request = repositories.customers.get_request(context.workspace_id, customer.customer_id, request_id)
+    if request is None:
+        raise not_found()
+    current = resolve_targets(repositories, context, [request]).get(request)
+    if current is None:
+        raise not_found()
+    _require_target_writer(repositories, context, current)
+    fields = payload.model_dump(exclude_unset=True)
+    target = current
+    moving = fields.get("target_kind") is not None or fields.get("target_id") is not None
+    if moving:
+        kind = fields.get("target_kind")
+        target_id = fields.get("target_id")
+        if kind is None or not target_id:
+            raise unprocessable("target_kind and target_id move a request together")
+        target = _load_target(repositories, context, kind, target_id)
+        if (target.kind, target.target_id) != (current.kind, current.target_id):
+            _require_target_writer(repositories, context, target)
+    owner = customer
+    if fields.get("customer_id") is not None and fields["customer_id"] != customer.customer_id:
+        found = repositories.customers.get(context.workspace_id, fields["customer_id"])
+        if found is None:
+            raise unprocessable(f"No such customer: {fields['customer_id']}")
+        owner = found
+    changes: dict[str, object] = {}
+    if "body" in fields and fields["body"] != request.body:
+        changes["body"] = fields["body"]
+    if fields.get("important") is not None and fields["important"] != request.important:
+        changes["important"] = fields["important"]
+    if owner.customer_id != request.customer_id:
+        changes["customer_id"] = owner.customer_id
+    if (target.kind, target.target_id) != (request.target_kind, request.target_id):
+        changes.update({"target_kind": target.kind, "target_id": target.target_id, "team_ids": target.teams})
+    if not changes:
+        return _request_read(context, request, target, owner.name, True)
+    edited = request.model_copy(update={**changes, "updated_at": utc_now()})
+    stored = repositories.customers.replace_request(request, edited)
+    return _request_read(context, stored, target, owner.name, True)
 
 
 def delete_request(repositories: Repositories, context: AuthzContext, customer_id: str, request_id: str) -> None:

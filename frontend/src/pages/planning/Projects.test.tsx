@@ -17,7 +17,9 @@
  * the column and the lane field. The page opens with the team's or the
  * workspace's default for everyone, which only an admin of that scope sets or
  * clears from the Display menu. Columns join the list in priority order as it
- * widens, and a row whose name is cut off reveals it in a tooltip.
+ * widens, and a row whose name is cut off reveals it in a tooltip. Rows
+ * select by checkbox, and the bar that rises sets a property on every
+ * selected project or deletes them after asking.
  */
 
 import {
@@ -61,6 +63,8 @@ const listProjects =
 const updateProject =
   vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
+const deleteProject = vi.fn<(id: string) => Promise<void>>();
+const archiveProject = vi.fn<(id: string) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const createView =
   vi.fn<(body: Record<string, unknown>) => Promise<SavedViewDisplayRead>>();
@@ -73,6 +77,17 @@ vi.mock('../../api/projectLabels', () => ({
   updateProjectLabel: vi.fn(),
   deleteProjectLabel: vi.fn(),
 }));
+
+vi.mock('../../api/initiatives', async () => {
+  const actual = await vi.importActual<typeof import('../../api/initiatives')>(
+    '../../api/initiatives'
+  );
+  return {
+    ...actual,
+    listInitiatives: () =>
+      Promise.resolve({ initiatives: [], next_cursor: null }),
+  };
+});
 
 vi.mock('../../api/views', async () => {
   const actual =
@@ -103,6 +118,8 @@ vi.mock('../../api/planning', () => ({
   createProject: (_w: string, body: ProjectCreate) => createProject(body),
   updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
     updateProject(id, patch),
+  deleteProject: (_w: string, id: string) => deleteProject(id),
+  archiveProject: (_w: string, id: string) => archiveProject(id),
 }));
 
 const getDisplayDefaults = vi.fn<() => Promise<TeamDisplayDefaultsRead>>();
@@ -409,6 +426,38 @@ describe('Projects', () => {
       within(designGroup).getByRole('link', { name: 'Rebrand' })
     ).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'In progress' })).toBeNull();
+  });
+
+  it('repeats a project on two teams under each team without a team filter', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, team_ids: ['team-1', 'team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const designGroup = screen.getByRole('region', { name: 'Design' });
+    expect(
+      within(designGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows a project on two teams once under the filtered team', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, team_ids: ['team-2', 'team-1'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?team=ENG&group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Design' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Launch' })).toHaveLength(1);
   });
 
   it('orders the rows by the Display menu choice', async () => {
@@ -841,6 +890,94 @@ describe('Projects', () => {
       await screen.findByRole('button', { name: 'Complete project' })
     ).toBeInTheDocument();
     expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('sets a property on every selected project from the bulk bar', async () => {
+    const user = userEvent.setup();
+    updateProject.mockImplementation((id, patch) =>
+      Promise.resolve({
+        ...(id === launch.project_id ? launch : rebrand),
+        ...patch,
+      } as ProjectRead)
+    );
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Launch' })
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Select Rebrand' }));
+    const bar = screen.getByRole('toolbar', { name: 'Selected projects' });
+    expect(within(bar).getByText('2 selected')).toBeInTheDocument();
+    await user.click(within(bar).getByRole('button', { name: /Priority/ }));
+    await user.click(await screen.findByRole('option', { name: /^High/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        priority: 'high',
+      });
+    });
+    expect(updateProject).toHaveBeenCalledWith('prj-2', { priority: 'high' });
+  });
+
+  it('deletes the selected projects after asking', async () => {
+    const user = userEvent.setup();
+    deleteProject.mockResolvedValue(undefined);
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Launch' })
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Select Rebrand' }));
+    const bar = screen.getByRole('toolbar', { name: 'Selected projects' });
+    await user.click(within(bar).getByRole('button', { name: /Delete/ }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete 2 projects?',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(deleteProject).toHaveBeenCalledWith('prj-1');
+    });
+    expect(deleteProject).toHaveBeenCalledWith('prj-2');
+  });
+
+  it('archives the selected projects from the bar', async () => {
+    const user = userEvent.setup();
+    archiveProject.mockImplementation((id) =>
+      Promise.resolve({
+        ...(id === launch.project_id ? launch : rebrand),
+        archived_at: '2026-10-24T00:00:00Z',
+      })
+    );
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Launch' })
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Select Rebrand' }));
+    const bar = screen.getByRole('toolbar', { name: 'Selected projects' });
+    await user.click(within(bar).getByRole('button', { name: /Archive/ }));
+
+    await waitFor(() => {
+      expect(archiveProject).toHaveBeenCalledWith('prj-1');
+    });
+    expect(archiveProject).toHaveBeenCalledWith('prj-2');
+  });
+
+  it('clears the selection from the bar', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Launch' })
+    );
+    expect(
+      screen.getByRole('toolbar', { name: 'Selected projects' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(
+      screen.queryByRole('toolbar', { name: 'Selected projects' })
+    ).toBeNull();
   });
 
   it('edits a card property in place from its picker', async () => {

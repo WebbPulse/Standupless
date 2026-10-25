@@ -26,6 +26,8 @@ from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
     MAX_SLA_PAUSED_STATUSES,
+    MAX_TRIAGE_RESPONSIBLE,
+    MAX_TRIAGE_RULES,
     MAX_UPCOMING_CYCLES,
     ArchiveSettings,
     AutoCloseSettings,
@@ -35,6 +37,7 @@ from app.common.db.dynamo.team_config import (
     SlaSettings,
     Status,
     TeamDisplayDefaults,
+    TriageRule,
     TriageSettings,
     WorkspaceDisplayDefaults,
 )
@@ -488,6 +491,7 @@ class CycleSettingsUpdate(BaseModel):
     start_weekday: Optional[int] = Field(default=None, ge=0, le=6)
     upcoming_count: Optional[int] = Field(default=None, ge=1, le=MAX_UPCOMING_CYCLES)
     auto_add_started: Optional[bool] = None
+    auto_add_completed: Optional[bool] = None
     move_unfinished: Optional[bool] = None
 
 
@@ -501,6 +505,7 @@ class CycleSettingsRead(BaseModel):
     start_weekday: int
     upcoming_count: int
     auto_add_started: bool
+    auto_add_completed: bool
     move_unfinished: bool
     updated_at: Optional[datetime] = None
 
@@ -515,6 +520,7 @@ class CycleSettingsRead(BaseModel):
             start_weekday=settings.start_weekday,
             upcoming_count=settings.upcoming_count,
             auto_add_started=settings.auto_add_started,
+            auto_add_completed=settings.auto_add_completed,
             move_unfinished=settings.move_unfinished,
             updated_at=settings.updated_at,
         )
@@ -629,23 +635,184 @@ class SlaSettingsRead(BaseModel):
         )
 
 
+TriageActionField = Literal["notify", "assign"]
+
+TriageRuleSourceField = Literal["web", "form", "mcp", "cli", "api", "github", "system"]
+"""Where an issue came from, as a triage rule filters on it."""
+
+TriagePriorityField = Literal["none", "urgent", "high", "medium", "low"]
+"""A priority a triage rule filters on."""
+
+TriageSetPriorityField = Literal["urgent", "high", "medium", "low"]
+"""A priority a triage rule sets."""
+
+MAX_TRIAGE_RULE_VALUES = 50
+"""The most values one triage rule filter or action list may hold."""
+
+
+def _distinct(value: list[str]) -> list[str]:
+    """Drop blank and repeated ids, keeping the first place each one held."""
+    return list(dict.fromkeys(item.strip() for item in value if item.strip()))
+
+
+class TriageRuleFilterBody(BaseModel):
+    """What an issue entering triage must match; every field given must hold, an empty filter matches all."""
+
+    label_ids: list[str] = Field(default_factory=list, max_length=MAX_TRIAGE_RULE_VALUES)
+    priorities: list[TriagePriorityField] = Field(default_factory=list)
+    creator_ids: list[str] = Field(default_factory=list, max_length=MAX_TRIAGE_RULE_VALUES)
+    sources: list[TriageRuleSourceField] = Field(default_factory=list)
+    text: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("label_ids", "creator_ids")
+    @classmethod
+    def dedupe_ids(cls, value: list[str]) -> list[str]:
+        """Drop blank and repeated ids."""
+        return _distinct(value)
+
+    @field_validator("priorities", "sources")
+    @classmethod
+    def dedupe_values(cls, value: list[str]) -> list[str]:
+        """Drop repeated values."""
+        return list(dict.fromkeys(value))
+
+    @field_validator("text")
+    @classmethod
+    def blank_text(cls, value: Optional[str]) -> Optional[str]:
+        """Read blank text as no text filter."""
+        return value.strip() or None if value is not None else None
+
+
+class TriageRuleActionsRead(BaseModel):
+    """What a matching rule does; `team_id` moves the issue to that team."""
+
+    add_label_ids: list[str] = Field(default_factory=list)
+    priority: Optional[TriageSetPriorityField] = None
+    assignee_id: Optional[str] = None
+    project_id: Optional[str] = None
+    team_id: Optional[str] = None
+
+
+class TriageRuleActionsBody(BaseModel):
+    """What a matching rule does; at least one action must be set, and `team_id` moves the issue."""
+
+    add_label_ids: list[str] = Field(default_factory=list, max_length=MAX_TRIAGE_RULE_VALUES)
+    priority: Optional[TriageSetPriorityField] = None
+    assignee_id: Optional[str] = None
+    project_id: Optional[str] = None
+    team_id: Optional[str] = None
+
+    @field_validator("add_label_ids")
+    @classmethod
+    def dedupe_labels(cls, value: list[str]) -> list[str]:
+        """Drop blank and repeated ids."""
+        return _distinct(value)
+
+    @field_validator("assignee_id", "project_id", "team_id")
+    @classmethod
+    def blank_id(cls, value: Optional[str]) -> Optional[str]:
+        """Read a blank id as unset."""
+        return value.strip() or None if value is not None else None
+
+    @model_validator(mode="after")
+    def one_action(self) -> "TriageRuleActionsBody":
+        """A rule must do something."""
+        if not (self.add_label_ids or self.priority or self.assignee_id or self.project_id or self.team_id):
+            raise ValueError("a triage rule needs at least one action")
+        return self
+
+
+class TriageRuleBody(BaseModel):
+    """One triage rule as a settings patch sends it; a rule without `rule_id` is new."""
+
+    rule_id: Optional[str] = None
+    name: str = Field(min_length=1, max_length=80)
+    enabled: StrictBool = True
+    continue_after: StrictBool = False
+    filter: TriageRuleFilterBody = Field(default_factory=TriageRuleFilterBody)
+    actions: TriageRuleActionsBody
+
+    @field_validator("name")
+    @classmethod
+    def trim_name(cls, value: str) -> str:
+        """Trim the name and refuse one that is only whitespace."""
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("a triage rule needs a name")
+        return trimmed
+
+
+class TriageRuleRead(BaseModel):
+    """One triage rule as the API returns it; `warning` says why a broken rule is off."""
+
+    rule_id: str
+    name: str
+    enabled: bool
+    continue_after: bool
+    filter: TriageRuleFilterBody
+    actions: TriageRuleActionsRead
+    warning: Optional[str] = None
+
+    @classmethod
+    def from_rule(cls, rule: TriageRule, warning: Optional[str] = None) -> "TriageRuleRead":
+        """Build the response from a stored rule and the warning its targets raise, if any."""
+        return cls(
+            rule_id=rule.rule_id,
+            name=rule.name,
+            enabled=rule.enabled and warning is None,
+            continue_after=rule.continue_after,
+            filter=TriageRuleFilterBody.model_validate(rule.filter.model_dump()),
+            actions=TriageRuleActionsRead.model_validate(rule.actions.model_dump()),
+            warning=warning,
+        )
+
+
 class TriageSettingsUpdate(BaseModel):
-    """The body a team's triage settings patch takes."""
+    """The body a team's triage settings patch takes; only the fields sent change.
+
+    `responsible_user_ids` names the team members on triage duty, deduplicated in
+    the order given, and an empty list takes everyone off it.
+    """
 
     enabled: Optional[StrictBool] = None
+    responsible_user_ids: Optional[list[str]] = Field(default=None, max_length=MAX_TRIAGE_RESPONSIBLE)
+    responsibility_action: Optional[TriageActionField] = None
+    require_priority: Optional[StrictBool] = None
+    rules: Optional[list[TriageRuleBody]] = Field(default=None, max_length=MAX_TRIAGE_RULES)
+
+    @field_validator("responsible_user_ids")
+    @classmethod
+    def dedupe_responsible(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop blank and repeated ids, keeping the first place each one held."""
+        if value is None:
+            return None
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
 
 
 class TriageSettingsRead(BaseModel):
-    """A team's triage setting as the API returns it."""
+    """A team's triage settings as the API returns them."""
 
     team_id: str
     enabled: bool
+    responsible_user_ids: list[str] = Field(default_factory=list)
+    responsibility_action: TriageActionField = "notify"
+    require_priority: bool = False
+    rules: list[TriageRuleRead] = Field(default_factory=list)
     updated_at: Optional[datetime] = None
 
     @classmethod
-    def from_row(cls, settings: TriageSettings) -> "TriageSettingsRead":
-        """Build the response from a stored or default settings row."""
-        return cls(team_id=settings.team_id, enabled=settings.enabled, updated_at=settings.updated_at)
+    def from_row(cls, settings: TriageSettings, warnings: Optional[dict[str, str]] = None) -> "TriageSettingsRead":
+        """Build the response from a stored or default settings row and its rules' warnings."""
+        found = warnings or {}
+        return cls(
+            team_id=settings.team_id,
+            enabled=settings.enabled,
+            responsible_user_ids=list(settings.responsible_user_ids),
+            responsibility_action=settings.responsibility_action,
+            require_priority=settings.require_priority,
+            rules=[TriageRuleRead.from_rule(rule, found.get(rule.rule_id)) for rule in settings.rules],
+            updated_at=settings.updated_at,
+        )
 
 
 DisplayGroupField = Union[GroupByField, Literal["none"]]

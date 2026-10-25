@@ -4,7 +4,10 @@
  * remove them, and the written updates its owner posts on a cadence. An
  * initiative may sit under a parent and hold sub-initiatives of its own: the
  * breadcrumbs walk up the chain, and the projects, rollup and progress graph
- * take in every sub-initiative below it.
+ * take in every sub-initiative below it. The Projects tab lays the projects
+ * out through the projects page itself, as a list, board or timeline with its
+ * filters and display options kept in the URL, and can leave out the
+ * projects of sub-initiatives.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -50,6 +53,7 @@ import {
 } from '../../components/planning/ProjectPickers';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
+import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
@@ -89,6 +93,7 @@ import {
 import { showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FollowButton from '../../components/planning/FollowButton';
+import { Projects, type ProjectsScope } from './Projects';
 import type {
   HealthBreakdownRead,
   InitiativeRead,
@@ -100,11 +105,21 @@ import type {
 const POLL_MS = 30000;
 
 /** The tabs an initiative page has. */
-type InitiativeTab = 'overview' | 'updates';
+type InitiativeTab = 'overview' | 'projects' | 'updates';
+
+/** The tabs in the order the page shows them, with their labels. */
+const TABS: { value: InitiativeTab; label: string }[] = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'projects', label: 'Projects' },
+  { value: 'updates', label: 'Updates' },
+];
 
 /** Reads the tab from the URL, defaulting to the overview. */
 const tabFrom = (value: string | null): InitiativeTab =>
-  value === 'updates' ? 'updates' : 'overview';
+  value === 'updates' || value === 'projects' ? value : 'overview';
+
+/** The URL parameter that leaves sub-initiative projects out of the Projects tab when `0`. */
+const SUB_INITIATIVES_PARAM = 'sub_initiatives';
 
 /** How each slice of the health mix reads and is coloured. */
 const HEALTH_MIX: {
@@ -404,6 +419,12 @@ export const InitiativeDetail: React.FC = () => {
     [projects, initiativeId, workspace?.role, teams]
   );
 
+  const withSubInitiatives = params.get(SUB_INITIATIVES_PARAM) !== '0';
+  const scopedInitiatives = useMemo(
+    () => new Set([initiativeId, ...(withSubInitiatives ? [...below] : [])]),
+    [initiativeId, withSubInitiatives, below]
+  );
+
   const setTab = useCallback(
     (next: InitiativeTab): void => {
       setParams(
@@ -552,6 +573,83 @@ export const InitiativeDetail: React.FC = () => {
     );
   };
 
+  const addProjectButton = candidates.length > 0 && (
+    <Popover
+      label="Add project"
+      align="end"
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <Button variant="ghost" size="sm" {...trigger}>
+          <LuPlus aria-hidden="true" />
+          Add project
+        </Button>
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Add project"
+          placeholder="Add project..."
+          options={candidates}
+          selected={[]}
+          onSelect={(projectId) => {
+            close();
+            addProject(projectId);
+          }}
+        />
+      )}
+    </Popover>
+  );
+
+  const membershipAlert = membershipError !== null && (
+    <ErrorAlert
+      message={errorMessage(
+        membershipError,
+        'Could not change the initiative projects.'
+      )}
+    />
+  );
+
+  const projectsScope: ProjectsScope = {
+    includes: (project) =>
+      project.initiative_id !== null &&
+      project.initiative_id !== undefined &&
+      scopedInitiatives.has(project.initiative_id),
+    initiativeIds: scopedInitiatives,
+    preset: { initiative_id: initiativeId },
+    emptyMessage: withSubInitiatives
+      ? 'No projects are in this initiative yet.'
+      : 'No projects are in this initiative itself yet.',
+    onCreated: refreshMembership,
+    actions: (
+      <>
+        {below.size > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-pressed={withSubInitiatives}
+            data-testid="sub-initiative-roll-up"
+            onClick={() => {
+              setParams(
+                (current) => {
+                  const held = new URLSearchParams(current);
+                  if (withSubInitiatives) held.set(SUB_INITIATIVES_PARAM, '0');
+                  else held.delete(SUB_INITIATIVES_PARAM);
+                  return held;
+                },
+                { replace: true }
+              );
+            }}
+          >
+            {withSubInitiatives
+              ? 'Including sub-initiatives'
+              : 'This initiative only'}
+          </Button>
+        )}
+        {addProjectButton}
+      </>
+    ),
+  };
+
   const properties = (
     <div
       role="group"
@@ -635,7 +733,7 @@ export const InitiativeDetail: React.FC = () => {
       flush
       toolbar={
         <div role="tablist" aria-label="Initiative" className="flex gap-1">
-          {(['overview', 'updates'] as const).map((value) => (
+          {TABS.map(({ value, label }) => (
             <button
               key={value}
               type="button"
@@ -651,7 +749,7 @@ export const InitiativeDetail: React.FC = () => {
                   : 'text-text-muted hover:text-text'
               )}
             >
-              {value === 'overview' ? 'Overview' : 'Updates'}
+              {label}
             </button>
           ))}
         </div>
@@ -694,21 +792,32 @@ export const InitiativeDetail: React.FC = () => {
           />
         </div>
       )}
-      {tab === 'updates' ? (
+      {tab === 'projects' ? (
+        <>
+          {membershipError !== null && (
+            <div className="px-4 pt-3 lg:px-6">{membershipAlert}</div>
+          )}
+          <Projects scope={projectsScope} />
+        </>
+      ) : tab === 'updates' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <ProjectUpdatesFeed
-            feed={updates}
-            people={people}
-            subject="initiative"
-            canPost={canEdit}
-            defaultHealth={initiative.health ?? 'on_track'}
-            dueState={initiative.update_due_state}
-            dueAt={initiative.next_update_due_at}
-            composing={composing}
-            onComposingChange={setComposing}
-            templates={updateTemplates.templates}
-            defaultTemplate={updateTemplates.defaultUpdate}
-          />
+          <DocumentLinkContext.Provider
+            value={{ kind: 'initiative', id: initiative.initiative_id }}
+          >
+            <ProjectUpdatesFeed
+              feed={updates}
+              people={people}
+              subject="initiative"
+              canPost={canEdit}
+              defaultHealth={initiative.health ?? 'on_track'}
+              dueState={initiative.update_due_state}
+              dueAt={initiative.next_update_due_at}
+              composing={composing}
+              onComposingChange={setComposing}
+              templates={updateTemplates.templates}
+              defaultTemplate={updateTemplates.defaultUpdate}
+            />
+          </DocumentLinkContext.Provider>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -863,41 +972,9 @@ export const InitiativeDetail: React.FC = () => {
                   >
                     Projects
                   </h2>
-                  {candidates.length > 0 && (
-                    <Popover
-                      label="Add project"
-                      align="end"
-                      contentClassName="w-64"
-                      trigger={(trigger) => (
-                        <Button variant="ghost" size="sm" {...trigger}>
-                          <LuPlus aria-hidden="true" />
-                          Add project
-                        </Button>
-                      )}
-                    >
-                      {(close) => (
-                        <Combobox
-                          label="Add project"
-                          placeholder="Add project..."
-                          options={candidates}
-                          selected={[]}
-                          onSelect={(projectId) => {
-                            close();
-                            addProject(projectId);
-                          }}
-                        />
-                      )}
-                    </Popover>
-                  )}
+                  {addProjectButton}
                 </div>
-                {membershipError !== null && (
-                  <ErrorAlert
-                    message={errorMessage(
-                      membershipError,
-                      'Could not change the initiative projects.'
-                    )}
-                  />
-                )}
+                {membershipAlert}
                 {members.length === 0 && rolledUp.length === 0 ? (
                   <p className="text-xs text-text-muted">
                     {isLoadingProjects

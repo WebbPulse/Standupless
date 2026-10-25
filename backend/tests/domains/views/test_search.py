@@ -10,10 +10,19 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 import pytest
+from boto3.dynamodb.conditions import Key
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.issues import IssueRepository
-from app.common.db.dynamo.search_index import issue_terms, legacy_terms, ref_term, tokenize
+from app.common.db.dynamo.search_index import (
+    PREFIX_CAP,
+    PREFIX_MARK,
+    TERM_CAP,
+    issue_terms,
+    legacy_terms,
+    parse_query,
+    ref_term,
+)
 from app.domains.views.endpoints.search import intersect_descending, source_ref_term
 from tests.domains.helpers import GUEST, OWNER, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
@@ -25,7 +34,7 @@ def index_issue(repositories: Any, workspace: str, team_id: str, issue: "dict[st
     The route tests are about reading the projection, so they seed it directly and
     leave the consumer's own diffing to the consumer tests.
     """
-    terms = tokenize(issue["title"], issue.get("body"), issue["key"])
+    terms = issue_terms(issue)
     repositories.search_index.apply(workspace, team_id, issue["id"], appeared=terms, departed=set())
 
 
@@ -442,7 +451,135 @@ def test_a_stopword_query_is_too_short(client: TestClient, workspace: str, statu
     """A query of stopwords alone has no term to search for."""
     sign_in(client, OWNER)
 
-    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "that with"})
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "that the of"})
 
     assert response.status_code == 422
     assert response.json()["error_code"] == "QUERY_TOO_SHORT"
+
+
+def _search(client: TestClient, workspace: str, q: str) -> list[str]:
+    """The issue ids one query returns, newest first."""
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": q})
+    assert response.status_code == 200, response.text
+    return [row["issue_id"] for row in response.json()["results"]]
+
+
+def test_two_and_three_letter_words_find_their_issues(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Short words such as UI and CSV are searchable, and still match only whole words."""
+    sign_in(issues_client, OWNER)
+    ui = seed_issue(issues_client, workspace, title="Polish the UI of the board")
+    csv = seed_issue(issues_client, workspace, title="Export issues to CSV")
+    neither = seed_issue(issues_client, workspace, title="Quick build fixes")
+    for issue in (ui, csv, neither):
+        index_issue(repositories, workspace, TEAM, issue)
+
+    sign_in(client, OWNER)
+
+    assert _search(client, workspace, "UI") == [ui["id"]]
+    assert _search(client, workspace, "csv") == [csv["id"]]
+    assert _search(client, workspace, "export csv") == [csv["id"]]
+
+
+def test_the_last_word_matches_as_a_prefix(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Typing part of the last word finds the issues whose words it starts."""
+    sign_in(issues_client, OWNER)
+    notifications = seed_issue(issues_client, workspace, title="Notifications arrive twice")
+    notify = seed_issue(issues_client, workspace, title="Notify the assignee on mention")
+    other = seed_issue(issues_client, workspace, title="Nothing to see here")
+    for issue in (notifications, notify, other):
+        index_issue(repositories, workspace, TEAM, issue)
+
+    sign_in(client, OWNER)
+
+    assert set(_search(client, workspace, "notif")) == {notifications["id"], notify["id"]}
+    assert _search(client, workspace, "notifi") == [notifications["id"]]
+    assert _search(client, workspace, "assignee noti") == [notify["id"]]
+
+
+def test_only_the_last_word_is_a_prefix(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Earlier words must match whole, so a partial first word finds nothing."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Notifications arrive twice")
+    index_issue(repositories, workspace, TEAM, issue)
+
+    sign_in(client, OWNER)
+
+    assert _search(client, workspace, "notif twice") == []
+    assert _search(client, workspace, "notifications twi") == [issue["id"]]
+
+
+def test_a_prefix_longer_than_the_posted_prefixes_is_checked_against_the_text(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Prefixes are posted to six characters, so a longer one is confirmed on the issue itself."""
+    sign_in(issues_client, OWNER)
+    wanted = seed_issue(issues_client, workspace, title="Notifications arrive twice")
+    sibling = seed_issue(issues_client, workspace, title="Notifier crashes on start")
+    for issue in (wanted, sibling):
+        index_issue(repositories, workspace, TEAM, issue)
+
+    sign_in(client, OWNER)
+
+    assert set(_search(client, workspace, "notifi")) == {wanted["id"], sibling["id"]}
+    assert _search(client, workspace, "notifica") == [wanted["id"]]
+    assert _search(client, workspace, "notifier") == [sibling["id"]]
+
+
+def test_parsing_keeps_the_last_word_as_a_prefix() -> None:
+    """The last word of three or more characters is the prefix, and stopwords leave the whole words."""
+    query = parse_query("Export the CSV notif")
+
+    assert query.words == frozenset({"export", "csv"})
+    assert query.prefix == "notif"
+    assert query.clauses() == [["csv"], ["export"], ["notif", "p:notif"]]
+    assert parse_query("export ui").words == frozenset({"export", "ui"})
+    assert parse_query("export ui").prefix is None
+    assert parse_query("the").clauses() == [["p:the"]]
+    assert not parse_query("a of")
+
+
+def test_a_fixture_workspace_stays_under_the_index_caps(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Prefixes grow the index by a bounded amount: every issue stays under its word and prefix caps.
+
+    The recorded growth is the ratio of all postings to whole-word postings over
+    a workspace of ordinary issues, which keeps an eye on write amplification.
+    """
+    sign_in(issues_client, OWNER)
+    titles = [
+        "Notifications arrive twice for the same mention",
+        "Export issues to CSV from the board",
+        "Polish the UI of the command palette",
+        "Search short words and word prefixes",
+        "Keyboard shortcuts follow the documented layout",
+        "Cycle burndown chart misses weekend days",
+    ]
+    long_body = " ".join(f"term{index:04d}" for index in range(TERM_CAP * 2))
+    word_rows = 0
+    prefix_rows = 0
+    for index, title in enumerate(titles):
+        extra = {"body": long_body} if index == 0 else {}
+        issue = seed_issue(issues_client, workspace, title=title, **extra)
+        terms = issue_terms(issue)
+        prefixes = {term for term in terms if term.startswith(PREFIX_MARK)}
+        assert len(terms - prefixes) <= TERM_CAP + 1
+        assert len(prefixes) <= PREFIX_CAP
+        word_rows += len(terms - prefixes)
+        prefix_rows += len(prefixes)
+        index_issue(repositories, workspace, TEAM, issue)
+
+    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{workspace}#{TEAM}"), limit=5000)
+    growth = (word_rows + prefix_rows) / word_rows
+    print(f"search index rows: words={word_rows} prefixes={prefix_rows} growth={growth:.2f}")
+    assert len(held.items) == word_rows + prefix_rows
+    assert len(held.items) <= len(titles) * (TERM_CAP + PREFIX_CAP + 1)
+    assert prefix_rows <= len(titles) * PREFIX_CAP
+    sign_in(client, OWNER)
+    assert len(_search(client, workspace, "term0007")) == 1

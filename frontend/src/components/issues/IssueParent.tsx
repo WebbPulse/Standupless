@@ -9,6 +9,7 @@ import React from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Link } from 'react-router-dom';
+import { IssueHoverTrigger } from '../ui/IssueHoverCard';
 import { getIssue } from '../../api/issues';
 import { issuePath } from '../../lib/paths';
 import { TRIAGE_STATUS } from '../../lib/triageStatus';
@@ -94,22 +95,26 @@ export const IssueParent: React.FC<IssueParentProps> = ({
       ) : parent === undefined ? (
         <p className="py-1 text-xs text-text-faint">Loading parent</p>
       ) : (
-        <Link
-          to={issuePath(slug, parent.key)}
-          title={parent.title}
-          aria-label={`Sub-issue of ${parent.key} ${parent.title}`}
-          className="-mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs transition-colors duration-100 hover:bg-raised"
-        >
-          <StatusIcon
-            status={status}
-            statuses={statuses}
-            {...(status === undefined ? {} : { name: status.name })}
-          />
-          <span className="shrink-0 font-mono text-text-faint">
-            {parent.key}
-          </span>
-          <span className="min-w-0 truncate text-text">{parent.title}</span>
-        </Link>
+        <IssueHoverTrigger issueKey={parent.key}>
+          {(hover) => (
+            <Link
+              to={issuePath(slug, parent.key)}
+              {...hover}
+              aria-label={`Sub-issue of ${parent.key} ${parent.title}`}
+              className="-mx-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-xs transition-colors duration-100 hover:bg-raised"
+            >
+              <StatusIcon
+                status={status}
+                statuses={statuses}
+                {...(status === undefined ? {} : { name: status.name })}
+              />
+              <span className="shrink-0 font-mono text-text-faint">
+                {parent.key}
+              </span>
+              <span className="min-w-0 truncate text-text">{parent.title}</span>
+            </Link>
+          )}
+        </IssueHoverTrigger>
       )}
     </RailSection>
   );

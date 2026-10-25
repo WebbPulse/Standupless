@@ -21,6 +21,8 @@ import './codeBlock.css';
 export interface HighlightedCodeProps {
   language: string;
   value: string;
+  /** Controls drawn beside the copy button, such as a diagram's view toggle. */
+  actions?: React.ReactNode;
 }
 
 /** Renders highlighted runs as spans carrying their token classes. */
@@ -44,6 +46,7 @@ const renderRuns = (
 export const HighlightedCode: React.FC<HighlightedCodeProps> = ({
   language,
   value,
+  actions,
 }) => {
   const highlighter = useHighlighter();
   const { copied, copy } = useCopy();
@@ -67,7 +70,8 @@ export const HighlightedCode: React.FC<HighlightedCodeProps> = ({
           {runs === null ? value : renderRuns(runs, 'h')}
         </code>
       </pre>
-      <div className="absolute top-1 right-1 flex items-center">
+      <div className="absolute top-1 right-1 flex items-center gap-1">
+        {actions}
         <button
           type="button"
           className="code-block-copy hover:bg-raised hover:text-text"

@@ -203,6 +203,14 @@ def detach_milestone(repositories: Any, workspace_id: str, project_id: str, mile
 
 
 STARTED_CATEGORY = "started"
+COMPLETED_CATEGORY = "completed"
+
+
+def _auto_adds(settings: Any, category: str) -> bool:
+    """Whether the team's cycle settings auto-add an issue that moved into this status category."""
+    if category == STARTED_CATEGORY:
+        return bool(settings.auto_add_started)
+    return category == COMPLETED_CATEGORY and bool(settings.auto_add_completed)
 
 
 def started_without_cycle(record: Mapping[str, Any]) -> tuple[str, str, str, str] | None:
@@ -228,21 +236,24 @@ def started_without_cycle(record: Mapping[str, Any]) -> tuple[str, str, str, str
 
 
 def auto_add_to_cycle(repositories: Any, record: Mapping[str, Any]) -> bool:
-    """Add a newly started issue to its team's active cycle, returning whether it moved.
+    """Add a newly started or completed issue to its team's active cycle, returning whether it moved.
 
-    Only for a team whose automatic cycles and auto-add setting are both on, and
-    only when the new status is in the started category and a live cycle covers
-    today. The add records a system activity row with the cycle as the to value.
+    Only for a team whose automatic cycles are on, when the new status is in the
+    started category with auto-add started on, or in the completed category with
+    auto-add completed on, and a live cycle covers today. The add records a system
+    activity row with the cycle as the to value.
     """
     found = started_without_cycle(record)
     if found is None:
         return False
     workspace_id, team_id, issue_id, status_id = found
     settings = repositories.team_config.get_cycle_settings(workspace_id, team_id)
-    if settings is None or not settings.enabled or not settings.auto_add_started:
+    if settings is None or not settings.enabled:
+        return False
+    if not settings.auto_add_started and not settings.auto_add_completed:
         return False
     status = repositories.team_config.get_status(workspace_id, team_id, status_id)
-    if status is None or status.category != STARTED_CATEGORY:
+    if status is None or not _auto_adds(settings, status.category):
         return False
     cycle = active_cycle(repositories.planning.list_for_roadmap(workspace_id, team_id))
     if cycle is None:
@@ -263,8 +274,13 @@ def auto_add_to_cycle(repositories: Any, record: Mapping[str, Any]) -> bool:
         )
     )
     _log.info(
-        "Added a started issue to the active cycle.",
-        extra={"event": "issues.cycle_auto_add", "workspace_id": workspace_id, "cycle_id": cycle.cycle_id},
+        "Added an issue to the active cycle.",
+        extra={
+            "event": "issues.cycle_auto_add",
+            "workspace_id": workspace_id,
+            "cycle_id": cycle.cycle_id,
+            "category": status.category,
+        },
     )
     return True
 

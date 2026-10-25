@@ -3,6 +3,9 @@
  * which also send an email, and which also arrive as a chat direct message in
  * Slack or Discord.
  *
+ * Email arrives in the format the person picks: a short digest by default, or
+ * one email per notification.
+ *
  * Preferences belong to the person, not to the workspace, so a change here
  * applies in every workspace they are a member of. Each switch saves as soon
  * as it flips, the way the rest of the settings pages do, and the page keeps
@@ -45,6 +48,7 @@ import {
 import { browserTimezone } from '../../lib/viewerTimezone';
 import type {
   DiscordLinkRead,
+  EmailFormat,
   NotificationChannels,
   NotificationKind,
   PulseDigest,
@@ -124,6 +128,16 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'Someone asks you to review a pull request. These stay in your inbox and are not emailed.',
   },
+  triage_new: {
+    title: 'New in triage',
+    detail:
+      'An issue enters the triage inbox of a team where you are on triage duty.',
+  },
+  view_issue_added: {
+    title: 'Issues added to views you follow',
+    detail:
+      'An issue newly matches a saved view you subscribed to. Issues already in the view stay quiet.',
+  },
 };
 
 /** The kinds that only ever reach the inbox, so their email switch is off and locked. */
@@ -158,6 +172,25 @@ const DIGEST_CHOICES: { value: PulseDigest; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
+];
+
+/** The email formats, in the order the choice lists them, each with its one line explanation. */
+const EMAIL_FORMAT_CHOICES: {
+  value: EmailFormat;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    value: 'digest',
+    label: 'Digest',
+    detail:
+      'Holds emails for a few minutes and sends them together. Urgent issues are sent sooner.',
+  },
+  {
+    value: 'immediate',
+    label: 'Immediate',
+    detail: 'Sends one email for every notification as it happens.',
+  },
 ];
 
 /** The column layout the header and every row share. */
@@ -211,6 +244,8 @@ const NotificationsSettings: React.FC = () => {
   const emailOn = user?.email_notifications ?? true;
   const zoneId = useId();
   const digestId = useId();
+  const formatName = useId();
+  const emailFormat: EmailFormat = user?.email_format ?? 'digest';
   const digest: PulseDigest = user?.pulse_digest ?? 'off';
   const zone = user?.timezone ?? browserTimezone();
   const zones = useMemo(() => zoneChoices(zone), [zone]);
@@ -366,6 +401,47 @@ const NotificationsSettings: React.FC = () => {
                 nothing is new.
               </p>
             </div>
+
+            <fieldset
+              className="space-y-2 rounded-md border border-line p-3"
+              disabled={saving || !emailOn}
+            >
+              <legend className="sr-only">Notification format</legend>
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-text">
+                  Notification format
+                </p>
+                <p className="text-xs text-text-faint">
+                  How the emails below arrive. Anything you read in your inbox
+                  before its email goes out is left out of it.
+                </p>
+              </div>
+              {EMAIL_FORMAT_CHOICES.map((choice) => (
+                <label
+                  key={choice.value}
+                  className="flex cursor-pointer items-start gap-2"
+                >
+                  <input
+                    type="radio"
+                    name={formatName}
+                    value={choice.value}
+                    className="mt-0.5 h-3.5 w-3.5 border-line-strong"
+                    checked={emailFormat === choice.value}
+                    onChange={() => {
+                      save({ email_format: choice.value });
+                    }}
+                  />
+                  <span className="space-y-0.5">
+                    <span className="block text-sm text-text">
+                      {choice.label}
+                    </span>
+                    <span className="block text-xs text-text-faint">
+                      {choice.detail}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
 
             {slackLink !== null && slackLink.configured && (
               <SlackDirectMessages

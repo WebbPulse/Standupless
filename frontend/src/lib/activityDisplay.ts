@@ -491,6 +491,17 @@ const describeField = (
           : (TRIAGE_PHRASES[outcome] ?? 'triaged the issue'),
       ]);
     }
+    case 'triage_rule': {
+      const name =
+        to !== null && typeof to === 'object'
+          ? text((to as { name?: unknown }).name)
+          : null;
+      return describe('other', [
+        name === null
+          ? 'applied a triage rule'
+          : `applied the triage rule "${name}"`,
+      ]);
+    }
     case 'triage_reason': {
       const why = text(to);
       return describe('other', [

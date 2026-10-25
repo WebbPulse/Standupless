@@ -3,7 +3,9 @@
  * count and progress, that a member creates an initiative owned by them and
  * lands on it, that an empty workspace explains what an initiative is, and that
  * a guest is told initiatives are for members and offered no way to start one,
- * and that sub-initiatives sit indented under their parent and fold away.
+ * that sub-initiatives sit indented under their parent and fold away, and
+ * that the toolbar filters, orders and arranges the list from the URL and
+ * saves the arrangement to the account.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -16,6 +18,8 @@ import type {
   InitiativeListRead,
   InitiativeRead,
   MemberRead,
+  UserPreferencesUpdate,
+  UserRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -25,6 +29,12 @@ const listInitiatives = vi.fn<() => Promise<InitiativeListRead>>();
 const createInitiative =
   vi.fn<(body: InitiativeCreate) => Promise<InitiativeRead>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const updatePreferences =
+  vi.fn<(body: UserPreferencesUpdate) => Promise<UserRead>>();
+
+vi.mock('../../api/notifications', () => ({
+  updatePreferences: (body: UserPreferencesUpdate) => updatePreferences(body),
+}));
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -128,9 +138,9 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+const renderPage = (search = '') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/initiatives']}>
+    <MemoryRouter initialEntries={[`/w/mine/initiatives${search}`]}>
       <Routes>
         <Route path="/w/:slug/initiatives" element={<Initiatives />} />
         <Route
@@ -147,6 +157,11 @@ describe('Initiatives', () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
     listMembers.mockResolvedValue([ada]);
     listInitiatives.mockResolvedValue({ initiatives: [], next_cursor: null });
+    updatePreferences.mockResolvedValue({
+      id: 'user-1',
+      email: 'ada@example.com',
+      display_name: 'Ada Lovelace',
+    } as UserRead);
   });
 
   it('groups initiatives by status with their projects and progress', async () => {
@@ -268,5 +283,103 @@ describe('Initiatives', () => {
       screen.queryByRole('button', { name: 'New initiative' })
     ).not.toBeInTheDocument();
     expect(listInitiatives).not.toHaveBeenCalled();
+  });
+
+  it('filters by status, owner and health from the URL', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Grow', {
+          status: 'active',
+          owner_id: 'user-1',
+          health: 'at_risk',
+        }),
+        initiative('ini-2', 'Expand', { status: 'active' }),
+        initiative('ini-3', 'Hire', { owner_id: 'user-1', health: 'at_risk' }),
+      ],
+      next_cursor: null,
+    });
+    renderPage('?status=active&owner=user-1&health=at_risk');
+
+    expect(
+      await screen.findByRole('link', { name: 'Grow' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Expand' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Hire' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Status filter: Active' })
+    ).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(
+      await screen.findByRole('link', { name: 'Expand' })
+    ).toBeInTheDocument();
+  });
+
+  it('orders by name with sub-initiatives kept under their parent', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Zeta', {
+          status: 'active',
+          target_date: '2026-11-01',
+        }),
+        initiative('ini-2', 'Yak', {
+          status: 'active',
+          target_date: '2026-11-01',
+          parent_initiative_id: 'ini-1',
+        }),
+        initiative('ini-3', 'Xylo', {
+          status: 'active',
+          parent_initiative_id: 'ini-1',
+        }),
+        initiative('ini-4', 'Alpha', { status: 'active' }),
+      ],
+      next_cursor: null,
+    });
+    renderPage('?order=name');
+
+    const active = await screen.findByRole('region', { name: 'Active' });
+    expect(
+      within(active)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('aria-label'))
+    ).toEqual(['Alpha', 'Zeta', 'Xylo', 'Yak']);
+  });
+
+  it('hides completed initiatives and properties, saving the arrangement', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Grow', { status: 'active', project_count: 2 }),
+        initiative('ini-2', 'Done', { status: 'completed' }),
+      ],
+      next_cursor: null,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(
+      await screen.findByRole('region', { name: 'Completed' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByLabelText('Show completed initiatives'));
+    expect(
+      screen.queryByRole('region', { name: 'Completed' })
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(updatePreferences).toHaveBeenCalledWith({
+        initiatives_display: {
+          order: 'target',
+          completed: 'hide',
+          columns: 'health,owner,projects,target,progress',
+        },
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    expect(screen.queryByText('2 projects')).not.toBeInTheDocument();
   });
 });

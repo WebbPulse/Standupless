@@ -1,30 +1,56 @@
 /**
  * Every initiative in the workspace, grouped by status. An initiative groups
- * projects across teams, so each row shows its health, owner, how many
+ * projects across teams, so each row can show its health, owner, how many
  * projects it holds, its target date and how far those projects have come.
  * Sub-initiatives sit indented under their parent, and a parent folds away.
+ * Filters for status, owner and health sit in the toolbar, and the Display
+ * menu picks the ordering, whether completed initiatives show and which
+ * properties show; all of it is kept in the URL so an arranged page can be
+ * shared, and the arrangement follows the person's account.
  */
 
 import React, { useMemo, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
-import { LuChevronDown, LuChevronRight, LuGoal, LuPlus } from 'react-icons/lu';
-import { Link, useNavigate } from 'react-router-dom';
+import {
+  LuChevronDown,
+  LuChevronRight,
+  LuGoal,
+  LuListFilter,
+  LuPlus,
+  LuX,
+} from 'react-icons/lu';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import CreateInitiativeDialog from '../../components/planning/CreateInitiativeDialog';
+import InitiativesDisplayMenu from '../../components/planning/InitiativesDisplayMenu';
 import ProgressRing from '../../components/planning/ProgressRing';
 import ProjectHealthGlyph from '../../components/planning/ProjectHealthGlyph';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button from '../../components/ui/button';
+import type { ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
+import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import { useInitiatives } from '../../hooks/useInitiatives';
+import { useInitiativesDisplay } from '../../hooks/useInitiativesDisplay';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import {
+  INITIATIVE_COLUMN_LABELS,
+  NO_HEALTH,
+  NO_OWNER,
+  initiativeColumnList,
+  initiativeColumnValue,
+  isHealthFilterValue,
+  matchesInitiativeFilters,
+  orderInitiatives,
+  type InitiativeColumn,
+} from '../../lib/initiativeList';
 import {
   initiativeTreeRows,
   type InitiativeTreeRow,
@@ -41,11 +67,34 @@ import {
   INITIATIVE_STATUS_LABELS,
   progressPercent,
 } from '../../lib/planningDisplay';
+import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { shortDateLabel } from '../../lib/propertyOptions';
+import type { InitiativeStatus } from '../../types/Api';
 
-/** The grid every header and row lines up on. */
+/** The grid every header and row lines up on, its tracks set by the shown properties. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_4rem_3.5rem_5.5rem_6rem_4.5rem]';
+  'grid grid-cols-[var(--initiative-cols-sm)] items-center gap-3 md:grid-cols-[var(--initiative-cols)]';
+
+/** The track each property takes on a wide screen. */
+const COLUMN_TRACKS: Record<InitiativeColumn, string> = {
+  health: '4rem',
+  owner: '3.5rem',
+  projects: '5.5rem',
+  target: '6rem',
+  progress: '4.5rem',
+};
+
+/** The grid tracks for the shown properties, as CSS variables the grid reads. */
+const gridStyle = (shown: readonly InitiativeColumn[]): React.CSSProperties =>
+  ({
+    '--initiative-cols': [
+      'minmax(0,1fr)',
+      ...shown.map((column) => COLUMN_TRACKS[column]),
+    ].join(' '),
+    '--initiative-cols-sm': shown.includes('progress')
+      ? 'minmax(0,1fr) 3.5rem'
+      : 'minmax(0,1fr)',
+  }) as React.CSSProperties;
 
 /** How far each level of sub-initiative is indented, in rem. */
 const INDENT_REM = 1.25;
@@ -55,6 +104,8 @@ interface InitiativeRowProps {
   row: InitiativeTreeRow;
   slug: string;
   people: Assignable[];
+  /** The properties shown beside the name, in drawing order. */
+  shown: readonly InitiativeColumn[];
   collapsed: boolean;
   onToggle: (initiativeId: string) => void;
 }
@@ -64,6 +115,7 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
   row,
   slug,
   people,
+  shown,
   collapsed,
   onToggle,
 }) => {
@@ -73,6 +125,7 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
   const projects = initiative.project_count;
   return (
     <li
+      style={gridStyle(shown)}
       className={cn(
         GRID,
         'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6'
@@ -132,50 +185,63 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
           </span>
         )}
       </div>
-      <span className="pointer-events-none hidden justify-center md:flex">
-        <ProjectHealthGlyph
-          health={initiative.health}
-          name={`Health ${initiative.health === null ? 'not set' : initiative.health.replace('_', ' ')}`}
-        />
-      </span>
-      <span className="pointer-events-none hidden justify-center md:flex">
-        {owner === undefined ? (
-          <span className="sr-only">No owner</span>
-        ) : (
-          <>
-            <Avatar
-              name={personLabel(owner)}
-              src={personAvatar(owner)}
-              size="xs"
-            />
-            <span className="sr-only">{`Owner ${personLabel(owner)}`}</span>
-          </>
-        )}
-      </span>
-      <span className="pointer-events-none hidden text-xs whitespace-nowrap text-text-muted tabular-nums md:block">
-        {`${String(projects)} ${projects === 1 ? 'project' : 'projects'}`}
-      </span>
-      <span
-        className={cn(
-          'pointer-events-none hidden text-xs whitespace-nowrap tabular-nums md:block',
-          initiative.target_date === null
-            ? 'text-text-faint'
-            : 'text-text-muted'
-        )}
-      >
-        {initiative.target_date === null
-          ? 'No date'
-          : shortDateLabel(initiative.target_date)}
-      </span>
-      <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
-        <ProgressRing percent={percent} />
-        <span>{`${String(percent)}%`}</span>
-      </span>
+      {shown.includes('health') && (
+        <span className="pointer-events-none hidden justify-center md:flex">
+          <ProjectHealthGlyph
+            health={initiative.health}
+            name={`Health ${initiative.health === null ? 'not set' : initiative.health.replace('_', ' ')}`}
+          />
+        </span>
+      )}
+      {shown.includes('owner') && (
+        <span className="pointer-events-none hidden justify-center md:flex">
+          {owner === undefined ? (
+            <span className="sr-only">No owner</span>
+          ) : (
+            <>
+              <Avatar
+                name={personLabel(owner)}
+                src={personAvatar(owner)}
+                size="xs"
+              />
+              <span className="sr-only">{`Owner ${personLabel(owner)}`}</span>
+            </>
+          )}
+        </span>
+      )}
+      {shown.includes('projects') && (
+        <span className="pointer-events-none hidden text-xs whitespace-nowrap text-text-muted tabular-nums md:block">
+          {`${String(projects)} ${projects === 1 ? 'project' : 'projects'}`}
+        </span>
+      )}
+      {shown.includes('target') && (
+        <span
+          className={cn(
+            'pointer-events-none hidden text-xs whitespace-nowrap tabular-nums md:block',
+            initiative.target_date === null
+              ? 'text-text-faint'
+              : 'text-text-muted'
+          )}
+        >
+          {initiative.target_date === null
+            ? 'No date'
+            : shortDateLabel(initiative.target_date)}
+        </span>
+      )}
+      {shown.includes('progress') && (
+        <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
+          <ProgressRing percent={percent} />
+          <span>{`${String(percent)}%`}</span>
+        </span>
+      )}
     </li>
   );
 };
 
-/** The workspace's initiatives, grouped by status, with a way to start one. */
+/** The filters the page keeps in the URL. */
+type FilterField = 'status' | 'owner' | 'health';
+
+/** The workspace's initiatives, grouped by status, filtered, arranged, with a way to start one. */
 export const Initiatives: React.FC = () => {
   const { workspace } = useWorkspace();
   const { user } = useAuth();
@@ -192,6 +258,47 @@ export const Initiatives: React.FC = () => {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [params, setParams] = useSearchParams();
+  const { display, change: changeDisplay, reset } = useInitiativesDisplay();
+  const shown = useMemo(
+    () => initiativeColumnList(display.columns),
+    [display.columns]
+  );
+
+  const statusText = params.get('status') ?? '';
+  const statusFilter = useMemo(
+    () =>
+      INITIATIVE_STATUSES.filter((status) =>
+        statusText.split(',').includes(status)
+      ),
+    [statusText]
+  );
+  const ownerFilter = params.get('owner') ?? '';
+  const healthText = params.get('health') ?? '';
+  const healthFilter = useMemo(
+    () => healthText.split(',').filter(isHealthFilterValue),
+    [healthText]
+  );
+  const hasFilters =
+    statusFilter.length > 0 || ownerFilter !== '' || healthFilter.length > 0;
+
+  const setParam = (field: FilterField, value: string): void => {
+    const next = new URLSearchParams(params);
+    if (value === '') next.delete(field);
+    else next.set(field, value);
+    setParams(next, { replace: true });
+  };
+
+  const toggleIn = <T extends string>(
+    held: readonly T[],
+    value: T,
+    order: readonly T[]
+  ): string => {
+    const next = held.includes(value)
+      ? held.filter((item) => item !== value)
+      : [...held, value];
+    return order.filter((item) => next.includes(item)).join(',');
+  };
 
   const toggle = (initiativeId: string): void => {
     setCollapsed((current) => {
@@ -202,24 +309,77 @@ export const Initiatives: React.FC = () => {
     });
   };
 
-  const groups = useMemo(
-    () =>
-      INITIATIVE_STATUSES.map((status) => {
-        const rows = initiatives
-          .filter((initiative) => initiative.status === status)
-          .sort((left, right) =>
-            (left.target_date ?? '9999').localeCompare(
-              right.target_date ?? '9999'
-            )
-          );
+  const groups = useMemo(() => {
+    const filters = {
+      status: statusFilter,
+      owner: ownerFilter,
+      health: healthFilter,
+    };
+    const showsCompleted =
+      display.completed === 'show' || statusFilter.includes('completed');
+    const ordered = orderInitiatives(
+      initiatives.filter((initiative) =>
+        matchesInitiativeFilters(initiative, filters)
+      ),
+      display.order
+    );
+    return INITIATIVE_STATUSES.filter(
+      (status) => status !== 'completed' || showsCompleted
+    )
+      .map((status) => {
+        const rows = ordered.filter(
+          (initiative) => initiative.status === status
+        );
         return {
           status,
           count: rows.length,
           rows: initiativeTreeRows(rows, initiatives, collapsed),
         };
-      }).filter((group) => group.count > 0),
-    [initiatives, collapsed]
-  );
+      })
+      .filter((group) => group.count > 0);
+  }, [
+    initiatives,
+    collapsed,
+    statusFilter,
+    ownerFilter,
+    healthFilter,
+    display.completed,
+    display.order,
+  ]);
+
+  const statusOptions: ComboboxOption[] = INITIATIVE_STATUSES.map((status) => ({
+    value: status,
+    label: INITIATIVE_STATUS_LABELS[status],
+    icon: <ProjectStatusGlyph status={INITIATIVE_STATUS_GLYPHS[status]} />,
+  }));
+  const ownerOptions: ComboboxOption[] = [
+    { value: NO_OWNER, label: 'No owner' },
+    ...members.map((person) => ({
+      value: person.user_id,
+      label: personLabel(person),
+      icon: (
+        <Avatar
+          name={personLabel(person)}
+          src={personAvatar(person)}
+          size="xs"
+        />
+      ),
+      keywords: [person.email],
+    })),
+  ];
+  const healthOptions: ComboboxOption[] = [
+    ...PROJECT_HEALTHS.map((health) => ({
+      value: health,
+      label: PROJECT_HEALTH_LABELS[health],
+      icon: <ProjectHealthGlyph health={health} />,
+    })),
+    {
+      value: NO_HEALTH,
+      label: 'No health',
+      icon: <ProjectHealthGlyph health={null} />,
+    },
+  ];
+  const healthOrder = [...PROJECT_HEALTHS, NO_HEALTH] as const;
 
   return (
     <WorkspaceShell
@@ -239,6 +399,87 @@ export const Initiatives: React.FC = () => {
           </Button>
         ) : undefined
       }
+      toolbar={
+        isMember ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <LuListFilter
+              aria-hidden="true"
+              className="mr-0.5 h-3.5 w-3.5 text-text-faint"
+            />
+            <FilterButton
+              field="Status"
+              multiple
+              options={statusOptions}
+              selected={statusFilter}
+              onSelect={(value) => {
+                const status = INITIATIVE_STATUSES.find(
+                  (item) => item === value
+                );
+                if (status === undefined) return;
+                setParam(
+                  'status',
+                  toggleIn<InitiativeStatus>(
+                    statusFilter,
+                    status,
+                    INITIATIVE_STATUSES
+                  )
+                );
+              }}
+            />
+            <FilterButton
+              field="Owner"
+              options={ownerOptions}
+              selected={ownerFilter === '' ? [] : [ownerFilter]}
+              onSelect={(value) => {
+                setParam('owner', value === ownerFilter ? '' : value);
+              }}
+            />
+            <FilterButton
+              field="Health"
+              multiple
+              options={healthOptions}
+              selected={healthFilter}
+              onSelect={(value) => {
+                if (!isHealthFilterValue(value)) return;
+                setParam('health', toggleIn(healthFilter, value, healthOrder));
+              }}
+            />
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.delete('status');
+                  next.delete('owner');
+                  next.delete('health');
+                  setParams(next, { replace: true });
+                }}
+              >
+                <LuX aria-hidden="true" />
+                Clear
+              </Button>
+            )}
+            <div className="ml-auto flex items-center gap-1">
+              <InitiativesDisplayMenu
+                ordering={display.order}
+                onOrderingChange={(value) => {
+                  changeDisplay({ order: value });
+                }}
+                completed={display.completed}
+                onCompletedChange={(value) => {
+                  changeDisplay({ completed: value });
+                }}
+                columns={shown}
+                onColumnsChange={(value) => {
+                  changeDisplay({ columns: initiativeColumnValue(value) });
+                }}
+                onReset={reset}
+              />
+            </div>
+          </div>
+        ) : undefined
+      }
     >
       {error != null && (
         <div className="px-4 pt-3 lg:px-6">
@@ -250,19 +491,34 @@ export const Initiatives: React.FC = () => {
       <div>
         <div
           role="presentation"
+          style={gridStyle(shown)}
           className={cn(
             GRID,
             'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
           )}
         >
           <span>Name</span>
-          <span className="hidden truncate text-center md:block">Health</span>
-          <span className="hidden truncate text-center md:block">Owner</span>
-          <span className="hidden md:block">Projects</span>
-          <span className="hidden md:block">Target</span>
-          <span className="text-right">
-            <span className="hidden md:inline">Progress</span>
-          </span>
+          {shown.includes('health') && (
+            <span className="hidden truncate text-center md:block">
+              {INITIATIVE_COLUMN_LABELS.health}
+            </span>
+          )}
+          {shown.includes('owner') && (
+            <span className="hidden truncate text-center md:block">
+              {INITIATIVE_COLUMN_LABELS.owner}
+            </span>
+          )}
+          {shown.includes('projects') && (
+            <span className="hidden md:block">Projects</span>
+          )}
+          {shown.includes('target') && (
+            <span className="hidden md:block">Target</span>
+          )}
+          {shown.includes('progress') && (
+            <span className="text-right">
+              <span className="hidden md:inline">Progress</span>
+            </span>
+          )}
         </div>
         {!isMember ? (
           <EmptyState
@@ -272,10 +528,21 @@ export const Initiatives: React.FC = () => {
         ) : isLoading && initiatives.length === 0 ? (
           <SkeletonRows label="Loading initiatives" />
         ) : groups.length === 0 && error == null ? (
-          <EmptyState
-            icon={<LuGoal />}
-            message="No initiatives yet. An initiative groups projects across teams toward one goal."
-          />
+          initiatives.length > 0 ? (
+            <EmptyState
+              icon={<LuGoal />}
+              message={
+                hasFilters
+                  ? 'No initiatives match these filters.'
+                  : 'Every initiative here is completed, and completed initiatives are hidden.'
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<LuGoal />}
+              message="No initiatives yet. An initiative groups projects across teams toward one goal."
+            />
+          )
         ) : (
           groups.map((group) => (
             <section
@@ -298,6 +565,7 @@ export const Initiatives: React.FC = () => {
                     row={row}
                     slug={slug}
                     people={members}
+                    shown={shown}
                     collapsed={collapsed.has(row.initiative.initiative_id)}
                     onToggle={toggle}
                   />

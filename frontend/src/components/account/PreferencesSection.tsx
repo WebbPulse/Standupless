@@ -1,16 +1,16 @@
 /**
  * The person's interface preferences: where a workspace opens, the first day
- * of the week, whether people read by full name or username, the text size
- * and the colour theme, and the workflow switches: assigning new issues to
+ * of the week, whether people read by full name or username, the text size,
+ * the colour theme, pointer cursors and emoticon conversion, and the workflow switches: assigning new issues to
  * themselves, and starting and assigning an issue when its git branch name is
  * copied.
  *
- * Everything but the theme is stored on the account, so it follows the person
- * to every device and workspace. Each choice saves as soon as it changes and
- * the section keeps the answer the server returns, so a refused change does
- * not leave a picker showing something that is not stored. The theme is kept
- * in this browser, the way the sidebar toggle and the command palette already
- * set it, so a shared computer can be light while a laptop stays dark.
+ * Everything is stored on the account, so it follows the person to every
+ * device and workspace. Each choice saves as soon as it changes and the
+ * section keeps the answer the server returns, so a refused change does not
+ * leave a picker showing something that is not stored. The theme goes through
+ * the same path as the sidebar toggle and the command palette, which paints it
+ * at once and saves it to the account behind.
  */
 
 import React, { useId, useState } from 'react';
@@ -308,10 +308,28 @@ export const PreferencesSection: React.FC = () => {
           />
           <PreferenceRow
             label="Theme"
-            detail="Saved in this browser, so each device can keep its own."
+            detail="The colour theme on every device you sign in on."
             value={theme}
             choices={THEME_CHOICES}
             onChange={setTheme}
+          />
+          <ToggleRow
+            label="Use pointer cursors"
+            detail="Show the pointer cursor on buttons, menu items, rows and other interactive elements."
+            checked={preferences.pointerCursors}
+            disabled={saving}
+            onChange={(on) => {
+              save({ pointer_cursors: on });
+            }}
+          />
+          <ToggleRow
+            label="Turn emoticons into emoji"
+            detail="Typing an emoticon such as :) or <3 followed by a space or punctuation turns it into the emoji while you write."
+            checked={preferences.convertEmoticons}
+            disabled={saving}
+            onChange={(on) => {
+              save({ convert_emoticons: on });
+            }}
           />
         </div>
       </div>

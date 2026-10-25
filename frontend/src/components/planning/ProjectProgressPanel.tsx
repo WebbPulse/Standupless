@@ -19,13 +19,23 @@
  * or the project's stored per-status counts, and falls back to one row per
  * category only when neither is to hand.
  *
+ * Below the numbers a breakdown by assignee, label and priority reads each
+ * row's share done in the same measure, and a row filters the project's
+ * issues to it, a second click on the active row clearing that filter.
+ * Choosing a milestone scopes the numbers, the graph, the stages and the
+ * breakdown to that milestone's issues, with a chip that names it and clears
+ * the scope; the project-wide recorded history gives way to a graph read off
+ * the milestone's issues while it is scoped.
+ *
  * The latest update heads the panel when there is one, because it is the
  * project's own account of how it is going, with a way through to the rest.
  */
 
 import React, { useMemo, useState } from 'react';
-import { LuDiamond } from 'react-icons/lu';
+import { LuDiamond, LuX } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
+import type { BreakdownField } from '../../lib/cycleBreakdown';
+import type { IssueContext } from '../../lib/issueView';
 import {
   completionPercent,
   measureUnit,
@@ -72,6 +82,7 @@ import RelativeTime from '../ui/relative-time';
 import BurnUpChart from './BurnUpChart';
 import MeasureToggle from './MeasureToggle';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
+import BreakdownTabs from './BreakdownTabs';
 import ProgressRing from './ProgressRing';
 
 /** Props for ProjectProgressPanel. */
@@ -84,6 +95,7 @@ export interface ProjectProgressPanelProps {
   /** Whether every issue of the project has been read, so sums are whole. */
   complete: boolean;
   milestones: MilestoneRead[];
+  /** Opens a milestone's issues, from the chip of the milestone in scope. */
   onOpenMilestone: (milestoneId: string) => void;
   /** The day the graph ends on, for tests; defaults to today. */
   today?: string;
@@ -95,7 +107,32 @@ export interface ProjectProgressPanelProps {
   onOpenUpdates?: () => void;
   /** The recorded progress history, drawn in place of the issue-based graph once it has days. */
   history?: ProjectHistoryRead | null;
+  /** The labels and people the breakdown names its rows by; no breakdown without it. */
+  context?: Pick<IssueContext, 'labels' | 'people' | 'projects'>;
+  /** Whether the issues are still loading, so the breakdown shows a placeholder. */
+  isLoadingIssues?: boolean;
+  /** The ids the project's issues are filtered to on each breakdown field. */
+  activeFilters?: Partial<Record<BreakdownField, readonly string[]>>;
+  /**
+   * Filters the project's issues to a breakdown row, within the scoped
+   * milestone when there is one, or clears that field's filter on null.
+   */
+  onFilter?: (
+    field: BreakdownField,
+    id: string | null,
+    milestoneId: string | null
+  ) => void;
 }
+
+/** The breakdown tabs a project offers, in the order they show. */
+const BREAKDOWN_FIELDS: readonly BreakdownField[] = [
+  'assignee',
+  'label',
+  'priority',
+];
+
+/** The default for a panel given no active filters, stable across renders. */
+const NO_FILTERS: Partial<Record<BreakdownField, readonly string[]>> = {};
 
 /** A small uppercase heading for one block of the panel. */
 const PanelHeading: React.FC<{ id: string; children: React.ReactNode }> = ({
@@ -190,7 +227,7 @@ const NO_TEAMS: readonly TeamRead[] = [];
 /** The progress, graph, stage bars and milestone progress of one project. */
 export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   project,
-  issues,
+  issues: allIssues,
   statuses,
   teams = NO_TEAMS,
   complete,
@@ -200,8 +237,26 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   latestUpdate = null,
   latestAuthor = 'Unknown',
   onOpenUpdates,
-  history = null,
+  history: projectHistory = null,
+  context,
+  isLoadingIssues = false,
+  activeFilters = NO_FILTERS,
+  onFilter,
 }) => {
+  const [scopeId, setScopeId] = useState<string | null>(null);
+  const scoped =
+    milestones.find((milestone) => milestone.milestone_id === scopeId) ?? null;
+  const issues = useMemo(
+    () =>
+      scoped === null
+        ? allIssues
+        : allIssues.filter(
+            (issue) =>
+              (issue.project_milestone_id ?? null) === scoped.milestone_id
+          ),
+    [allIssues, scoped]
+  );
+  const history = scoped === null ? projectHistory : null;
   const readable = complete && statuses.length > 0;
   const natural = progressMeasureOf(project);
   const pointsReadable = natural === 'points';
@@ -227,7 +282,8 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
     () => (measure === 'points' ? pointWeigher(teams) : countEach),
     [measure, teams]
   );
-  const stored = measure === 'points' ? progressOf(project) : project.counts;
+  const source = scoped ?? project;
+  const stored = measure === 'points' ? progressOf(source) : source.counts;
   const breakdown: Record<StatusCategory, number> = useMemo(
     () =>
       readable
@@ -306,7 +362,7 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
 
   const { stages, perStatus } = useMemo(() => {
     const rows = statusRows(
-      readable ? tallyByStatus(issues) : (project.status_counts ?? {}),
+      readable ? tallyByStatus(issues) : (source.status_counts ?? {}),
       statuses
     );
     if (rows.length > 0) return { stages: rows, perStatus: true };
@@ -320,7 +376,7 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
       })),
       perStatus: false,
     };
-  }, [readable, issues, project.status_counts, statuses, breakdown]);
+  }, [readable, issues, source.status_counts, statuses, breakdown]);
   const most = Math.max(1, ...stages.map((row) => row.count));
   const stageTotal = stages.reduce((sum, row) => sum + row.count, 0);
   const colorOf = (row: StageRow): string =>
@@ -383,6 +439,39 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
             {`${String(percent)}%`}
           </span>
         </div>
+        {scoped !== null && (
+          <div
+            data-testid="project-milestone-scope"
+            className="flex items-center gap-2 text-xs"
+          >
+            <span className="flex h-6 min-w-0 items-center gap-1.5 rounded-sm border border-line bg-surface pr-0.5 pl-2">
+              <LuDiamond
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+              <span className="truncate text-text">{scoped.name}</span>
+              <button
+                type="button"
+                aria-label={`Clear the ${scoped.name} scope`}
+                onClick={() => {
+                  setScopeId(null);
+                }}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-text-muted hover:bg-raised hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                <LuX aria-hidden="true" className="h-3 w-3" />
+              </button>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenMilestone(scoped.milestone_id);
+              }}
+              className="ml-auto shrink-0 rounded-xs text-text-muted hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              View issues
+            </button>
+          </div>
+        )}
         <dl className="grid grid-cols-3 gap-3">
           {stats.map((stat) => (
             <div key={stat.label} className="min-w-0">
@@ -408,7 +497,9 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
           <p className="rounded-md border border-dashed border-line px-3 py-4 text-center text-xs text-text-faint">
             {!complete
               ? 'The graph draws once every issue has loaded.'
-              : 'The graph draws once the project has issues and has started.'}
+              : scoped !== null
+                ? 'The graph draws once the milestone has issues and the project has started.'
+                : 'The graph draws once the project has issues and has started.'}
           </p>
         ) : (
           <div data-testid="project-progress-graph">
@@ -484,21 +575,44 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
         </ul>
       </section>
 
+      {context !== undefined && onFilter !== undefined && (
+        <BreakdownTabs
+          subject="project"
+          fields={BREAKDOWN_FIELDS}
+          issues={issues}
+          statuses={statuses}
+          context={context}
+          complete={complete}
+          isLoadingIssues={isLoadingIssues}
+          activeFilters={activeFilters}
+          onFilter={(field, id) => {
+            onFilter(field, id, scoped?.milestone_id ?? null);
+          }}
+          weigh={weigh}
+          unit={measure}
+        />
+      )}
+
       {milestones.length > 0 && (
         <section aria-labelledby="milestone-progress" className="space-y-2">
           <PanelHeading id="milestone-progress">Milestones</PanelHeading>
           <ul aria-label="Milestone progress" className="space-y-0.5">
             {milestones.map((milestone) => {
               const done = progressPercent(milestone);
+              const active = scoped?.milestone_id === milestone.milestone_id;
               return (
                 <li key={milestone.milestone_id}>
                   <button
                     type="button"
+                    aria-pressed={active}
                     aria-label={`${milestone.name}, ${String(done)}% complete`}
                     onClick={() => {
-                      onOpenMilestone(milestone.milestone_id);
+                      setScopeId(active ? null : milestone.milestone_id);
                     }}
-                    className="flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left text-xs transition-colors duration-100 hover:bg-surface focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                    className={cn(
+                      'flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left text-xs transition-colors duration-100 hover:bg-surface focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
+                      active && 'bg-raised hover:bg-raised'
+                    )}
                   >
                     <LuDiamond
                       aria-hidden="true"

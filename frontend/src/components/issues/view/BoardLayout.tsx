@@ -27,7 +27,8 @@ import {
   GROUP_LABELS,
   groupIssues,
   hiddenColumnKey,
-  MOVABLE_GROUP_FIELDS,
+  isLabelGroupField,
+  isMovableGroupField,
   moveChange,
   orderKeyAt,
   type GroupField,
@@ -98,7 +99,7 @@ const joinChanges = (left: IssueChange, right: IssueChange): IssueChange => {
  * value the issue's own team does not have.
  */
 const refusedMove = (key: string, field: GroupField): string =>
-  MOVABLE_GROUP_FIELDS.has(field)
+  isLabelGroupField(field) || isMovableGroupField(field)
     ? `${key} cannot move there, its team has no matching value.`
     : `${key} stays put, ${GROUP_LABELS[field].toLowerCase()} is not set by dragging.`;
 

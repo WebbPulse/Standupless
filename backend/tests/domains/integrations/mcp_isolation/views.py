@@ -65,6 +65,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "create_view": {"name": "Should not land", "team_id": foreign["team_id"]},
         "update_view": {"view_id": foreign["view_id"], "name": "Should not land"},
         "delete_view": {"view_id": foreign["personal_view_id"]},
+        "subscribe_to_view": {"view_id": foreign["personal_view_id"]},
+        "unsubscribe_from_view": {"view_id": foreign["personal_view_id"]},
         "list_notifications": {},
         "mark_notification_read": {"notification_ids": [notification]},
         "mark_notification_unread": {"notification_ids": [notification]},

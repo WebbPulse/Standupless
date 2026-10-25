@@ -1,7 +1,8 @@
 /**
  * Every saved view the caller can open, as a dense list: each row shows the
  * view's icon, name, owner, where it is filed and how many issues it selects,
- * with rename, duplicate, favorite and delete one menu away. New view opens
+ * with rename, duplicate, favorite, subscribe and delete one menu away. A
+ * bell marks the views the caller follows. New view opens
  * the composer, which is the issue list itself, so there is no form to fill
  * before seeing what a view would show. Views of issues and views of
  * projects sit under their own tabs; New view on the projects tab opens the
@@ -13,6 +14,8 @@ import React, { useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  LuBell,
+  LuBellOff,
   LuCopy,
   LuEllipsis,
   LuLayers,
@@ -29,12 +32,14 @@ import {
   listViews,
   listsProjects,
   setViewFavorite,
+  setViewSubscription,
   updateView,
   type SavedViewDisplayCreate,
   type SavedViewDisplayRead,
   type ViewEntity,
 } from '../../api/views';
 import { SaveViewDialog } from '../../components/issues/view/IssueViewPage';
+import { SubscriberCount } from '../../components/issues/view/ViewSubscribeButton';
 import type { ViewDetails } from '../../components/issues/view/IssueViewPage';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
@@ -269,6 +274,25 @@ export const Views: React.FC = () => {
     }
   };
 
+  const toggleSubscription = async (
+    view: SavedViewDisplayRead
+  ): Promise<void> => {
+    const subscribing = view.subscribed !== true;
+    try {
+      await setViewSubscription(workspaceId, view.view_id, subscribing);
+      refreshViewLists(workspaceId, view);
+      showToast(
+        subscribing
+          ? `Subscribed to ${view.name}.`
+          : `Unsubscribed from ${view.name}.`
+      );
+    } catch (failure) {
+      showErrorToast(
+        errorMessage(failure, 'Could not change the subscription.')
+      );
+    }
+  };
+
   const rename = async (
     view: SavedViewDisplayRead,
     details: ViewDetails
@@ -436,6 +460,12 @@ export const Views: React.FC = () => {
                         className="h-3 w-3 shrink-0 fill-current text-warning"
                       />
                     )}
+                    {view.subscribed === true && (
+                      <LuBell
+                        aria-label="Subscribed"
+                        className="h-3 w-3 shrink-0 text-text-muted"
+                      />
+                    )}
                     {view.description !== null &&
                       view.description !== undefined && (
                         <span className="hidden min-w-0 truncate text-xs text-text-faint md:inline">
@@ -501,6 +531,20 @@ export const Views: React.FC = () => {
                         ? 'Remove from favorites'
                         : 'Add to favorites'}
                     </MenuItem>
+                    {!listsProjects(view) && (
+                      <MenuItem onSelect={() => void toggleSubscription(view)}>
+                        {view.subscribed === true ? (
+                          <LuBellOff
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5"
+                          />
+                        ) : (
+                          <LuBell aria-hidden="true" className="h-3.5 w-3.5" />
+                        )}
+                        {view.subscribed === true ? 'Unsubscribe' : 'Subscribe'}
+                        <SubscriberCount count={view.subscriber_count} />
+                      </MenuItem>
+                    )}
                     <MenuSeparator />
                     <MenuItem
                       danger

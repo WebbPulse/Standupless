@@ -19,6 +19,8 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether notification emails are batched into a digest or sent one at a time. */
+  email_format?: EmailFormat;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
   /** The IANA zone due dates are judged in, or null when none is stored yet. */
@@ -33,10 +35,26 @@ export interface UserRead {
   name_display?: NameDisplay;
   /** The interface text size. */
   font_size?: FontSize;
+  /** The interface theme, null until the person first saves one. */
+  theme?: Theme | null;
+  /** Whether interactive elements show the pointer cursor. */
+  pointer_cursors?: boolean;
+  /** Whether the editor turns typed emoticons such as `:)` into emoji. */
+  convert_emoticons?: boolean;
+  /** Whether issue activity shows every change or only comments. */
+  activity_filter?: ActivityFilter;
+  /** Where every sidebar item sits: shown, in the More menu, or hidden. */
+  sidebar_items?: Record<SidebarItem, SidebarVisibility>;
+  /** Whether the sidebar's unread badges show a count or a dot. */
+  sidebar_badge_style?: SidebarBadgeStyle;
   /** How the projects page is laid out, grouped, ordered and windowed. */
   projects_display?: ProjectsDisplayPreference;
   /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
   projects_display_saved?: boolean;
+  /** How the initiatives page is ordered and which of its properties show. */
+  initiatives_display?: InitiativesDisplayPreference;
+  /** Whether the person arranged the initiatives page, so their own arrangement wins over the default. */
+  initiatives_display_saved?: boolean;
   /** Whether issues the person creates start assigned to them. */
   auto_assign_to_self?: boolean;
   /** Whether copying a git branch name moves a backlog or unstarted issue to the team's first started status. */
@@ -45,6 +63,14 @@ export interface UserRead {
   branch_copy_assigns?: boolean;
   /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
   auto_grant_new_scopes?: boolean;
+}
+
+/** The initiatives page arrangement an account saves, every field filled. */
+export interface InitiativesDisplayPreference {
+  order: 'target' | 'name' | 'progress' | 'created' | 'updated';
+  completed: 'show' | 'hide';
+  /** The shown properties, comma separated in the list's own order. */
+  columns: string;
 }
 
 /** The projects page arrangement an account saves, every field filled. */
@@ -61,6 +87,7 @@ export interface ProjectsDisplayPreference {
     | 'created'
     | 'updated'
     | 'customers'
+    | 'important'
     | 'manual';
   closed: 'all' | 'fortnight' | 'month' | 'none';
   /** Whether groups run in their own order or reversed. */
@@ -92,8 +119,37 @@ export type NameDisplay = 'username' | 'full_name';
 /** The interface text size a person picked. */
 export type FontSize = 'small' | 'default' | 'large';
 
+/** The interface themes a person may pick. */
+export type Theme = 'system' | 'light' | 'dark';
+
+/** Whether an issue's activity shows every change or only its comments. */
+export type ActivityFilter = 'all' | 'comments';
+
+/** A top-level workspace sidebar item a person may move or hide. */
+export type SidebarItem =
+  | 'home'
+  | 'inbox'
+  | 'my_issues'
+  | 'reviews'
+  | 'pulse'
+  | 'projects'
+  | 'initiatives'
+  | 'customers'
+  | 'views'
+  | 'roadmap'
+  | 'teams';
+
+/** Where a sidebar item sits: in the sidebar, in its More menu, or nowhere. */
+export type SidebarVisibility = 'show' | 'more' | 'hide';
+
+/** Whether the sidebar's unread badges show a number or a dot. */
+export type SidebarBadgeStyle = 'count' | 'dot';
+
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
+
+/** How notification emails arrive: batched into a short digest, or one per notification. */
+export type EmailFormat = 'digest' | 'immediate';
 
 /** One workspace as the account deletion plan names it. */
 export interface WorkspaceSummaryRead {
@@ -138,14 +194,24 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  email_format?: EmailFormat;
   timezone?: string;
   pulse_digest?: PulseDigest;
   home_view?: HomeView;
   week_start?: WeekStart;
   name_display?: NameDisplay;
   font_size?: FontSize;
+  theme?: Theme;
+  pointer_cursors?: boolean;
+  convert_emoticons?: boolean;
+  activity_filter?: ActivityFilter;
+  /** Moves the named sidebar items, leaving the others where they are. */
+  sidebar_items?: Partial<Record<SidebarItem, SidebarVisibility>>;
+  sidebar_badge_style?: SidebarBadgeStyle;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
+  /** Replaces the saved initiatives page arrangement whole, null forgets it. */
+  initiatives_display?: InitiativesDisplayPreference | null;
   auto_assign_to_self?: boolean;
   branch_copy_starts?: boolean;
   branch_copy_assigns?: boolean;
@@ -743,6 +809,7 @@ export type IssueSort =
   | 'start_asc'
   | 'estimate_desc'
   | 'customer_requests_desc'
+  | 'customer_important_desc'
   | 'customer_revenue_desc'
   | 'completed_desc';
 
@@ -953,10 +1020,12 @@ export interface IssueCreate {
   cycle_id?: string | null;
   project_id?: string | null;
   project_milestone_id?: string | null;
-  /** A template that fills the fields left out; the create dialog sends it only for a form. */
+  /** A template that fills the fields left out; the create dialog sends it for a form or a template with sub-issues. */
   template_id?: string | null;
   /** A form template's answers by field key: text, or true and false for a checkbox. */
   form_answers?: Record<string, string | boolean> | null;
+  /** The template sub-issues to create, by key; absent creates every one and an empty list none. */
+  template_sub_issue_keys?: string[] | null;
 }
 
 /** What a template fills: a new issue, a new project, or a new document or update. */
@@ -1024,6 +1093,18 @@ export interface ProjectBlueprint extends ProjectTemplateFields {
   issues: ProjectBlueprintIssue[];
 }
 
+/** One sub-issue an issue template adds under every issue made from it; a key is given when left out, `s1` onwards. */
+export type TemplateSubIssue = Omit<
+  ProjectTemplateIssue,
+  'milestone_key' | 'parent_key'
+>;
+
+/** A saved template sub-issue, which always has its key. */
+export interface TemplateSubIssueRead extends TemplateSubIssue {
+  key: string;
+  label_ids: string[];
+}
+
 /** The answer a form field takes. */
 export type FormFieldType = 'short_text' | 'long_text' | 'select' | 'checkbox';
 
@@ -1076,6 +1157,8 @@ export interface TemplateCreate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** The questions that make an issue template a form. */
   form_fields?: FormField[];
+  /** The sub-issues an issue template creates under each issue made from it. */
+  sub_issues?: TemplateSubIssue[];
 }
 
 /** A template patch: only the fields sent change, and null clears one. */
@@ -1086,6 +1169,8 @@ export interface TemplateUpdate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** Replaces a form's questions; null or an empty list turns the form off. */
   form_fields?: FormField[] | null;
+  /** Replaces an issue template's sub-issues; null or an empty list removes them. */
+  sub_issues?: TemplateSubIssue[] | null;
 }
 
 /**
@@ -1113,6 +1198,8 @@ export interface TemplateRead {
   project?: ProjectBlueprint | null;
   /** A form template's questions; empty, or absent on an older answer, on any other template. */
   form_fields?: FormFieldRead[];
+  /** An issue template's sub-issues, in order; empty, or absent on an older answer, on any other template. */
+  sub_issues?: TemplateSubIssueRead[];
   position: number;
   created_by: string | null;
   created_at: string;
@@ -1342,6 +1429,21 @@ export interface ActivityListRead {
   next_cursor: string | null;
 }
 
+/** One kept version of an issue's description: the text, who wrote it and when. */
+export interface IssueDescriptionVersionRead {
+  version_id: string;
+  issue_id: string;
+  body: string;
+  edited_by: string;
+  edited_at: string;
+  source?: ChangeSource | null;
+}
+
+/** An issue's description versions, newest first; the newest is the current text. */
+export interface IssueDescriptionVersionListRead {
+  versions: IssueDescriptionVersionRead[];
+}
+
 /**
  * A person as a comment, attachment or notification denormalises them, so a
  * thread renders a name without a second read of the membership list.
@@ -1370,6 +1472,17 @@ export interface ReactionGroup {
 }
 
 /**
+ * The passage of the issue description a root comment is pinned to: the
+ * quoted text and a little of the text either side, which finds it again
+ * among repeats. The description itself is never rewritten.
+ */
+export interface CommentAnchor {
+  quote: string;
+  prefix?: string;
+  suffix?: string;
+}
+
+/**
  * One comment. `parent_comment_id` is one level deep: the contract refuses a
  * reply to a reply with a 409, so the thread renders as roots and their
  * replies rather than an arbitrary tree.
@@ -1394,6 +1507,8 @@ export interface CommentRead {
   github_thread?: GithubThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
+  /** The description passage a root comment is pinned to, when it is. */
+  anchor?: CommentAnchor | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -1461,6 +1576,8 @@ export interface CommentCreate {
   parent_comment_id?: string | null;
   /** Attachments on the same issue to show inline, at most ten. */
   attachment_ids?: string[];
+  /** Pins a new thread to a passage of the description; never on a reply. */
+  anchor?: CommentAnchor | null;
 }
 
 /** The editable field on a comment. Only the author may send it. */
@@ -1624,7 +1741,7 @@ export type ViewKind = 'list' | 'board';
 /** Whether a saved view belongs to one person or to a team. */
 export type ViewScope = 'personal' | 'team' | 'workspace';
 
-/** How a saved view groups its rows. */
+/** How a saved view groups its rows: a property, or one label group as `label_group:<id>`. */
 export type ViewGroupBy =
   | 'status'
   | 'assignee'
@@ -1635,7 +1752,8 @@ export type ViewGroupBy =
   | 'cycle'
   | 'parent'
   | 'team'
-  | 'sla';
+  | 'sla'
+  | `label_group:${string}`;
 
 /** Which saved views a list read asks for. */
 export type ViewListScope = 'mine' | 'team' | 'workspace' | 'all';
@@ -1685,6 +1803,10 @@ export interface SavedViewRead {
   sort: IssueSort;
   group_by: ViewGroupBy | null;
   owner_id: string;
+  /** Whether the caller follows the view and hears when issues enter it. */
+  subscribed?: boolean;
+  /** How many members follow the view. */
+  subscriber_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -1826,7 +1948,9 @@ export type NotificationKind =
   | 'standup_digest'
   | 'sla_at_risk'
   | 'sla_breached'
-  | 'review_requested';
+  | 'review_requested'
+  | 'triage_new'
+  | 'view_issue_added';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -2160,6 +2284,7 @@ export interface CycleSettingsRead {
   start_weekday: number;
   upcoming_count: number;
   auto_add_started: boolean;
+  auto_add_completed?: boolean;
   move_unfinished: boolean;
   updated_at: string | null;
 }
@@ -2172,6 +2297,7 @@ export interface CycleSettingsUpdate {
   start_weekday?: number;
   upcoming_count?: number;
   auto_add_started?: boolean;
+  auto_add_completed?: boolean;
   move_unfinished?: boolean;
 }
 
@@ -2246,19 +2372,85 @@ export interface SlaSettingsUpdate {
   paused_status_ids?: string[] | null;
 }
 
+/** What triage duty does as an issue enters the inbox: tell everyone on duty, or assign one of them. */
+export type TriageResponsibilityAction = 'notify' | 'assign';
+
 /**
- * A team's triage switch. While on, issues filed by guests, integrations and
+ * A team's triage settings. While on, issues filed by guests, integrations and
  * people outside the team wait in its triage inbox until someone works them.
+ * The members on duty are notified of each issue that enters, or one of them,
+ * round robin, is assigned it; `require_priority` holds an accept until the
+ * issue has a priority.
  */
 export interface TriageSettingsRead {
   team_id: string;
   enabled: boolean;
+  responsible_user_ids: string[];
+  responsibility_action: TriageResponsibilityAction;
+  require_priority: boolean;
+  /** The team's triage rules, in the order they run. */
+  rules?: TriageRuleRead[];
   updated_at: string | null;
 }
 
-/** The editable field of a team's triage switch. */
+/** The editable fields of a team's triage settings; an omitted field keeps its value. */
 export interface TriageSettingsUpdate {
   enabled?: boolean;
+  responsible_user_ids?: string[];
+  responsibility_action?: TriageResponsibilityAction;
+  require_priority?: boolean;
+  /** The whole ordered rule list, replacing the saved one. */
+  rules?: TriageRuleBody[];
+}
+
+/** Where an issue came from, as a triage rule filters on it. */
+export type TriageRuleSource =
+  'web' | 'form' | 'mcp' | 'cli' | 'api' | 'github' | 'system';
+
+/**
+ * What an issue entering triage must match. Every field given must hold, a
+ * list matches any of its values, and an empty filter matches every issue.
+ */
+export interface TriageRuleFilter {
+  label_ids?: string[];
+  priorities?: IssuePriority[];
+  creator_ids?: string[];
+  sources?: TriageRuleSource[];
+  /** A case-insensitive substring of the title or description. */
+  text?: string | null;
+}
+
+/** What a matching rule does; `team_id` moves the issue to that team. */
+export interface TriageRuleActions {
+  add_label_ids?: string[];
+  priority?: Exclude<IssuePriority, 'none'> | null;
+  assignee_id?: string | null;
+  project_id?: string | null;
+  team_id?: string | null;
+}
+
+/** One triage rule as the API returns it. */
+export interface TriageRuleRead {
+  rule_id: string;
+  name: string;
+  /** False when switched off, or when a target was deleted. */
+  enabled: boolean;
+  /** Whether later rules still run after this one applies. */
+  continue_after: boolean;
+  filter: TriageRuleFilter;
+  actions: TriageRuleActions;
+  /** Why the rule is off because a label, project, user or team it names was deleted. */
+  warning?: string | null;
+}
+
+/** One triage rule as a settings patch sends it; a rule without `rule_id` is new. */
+export interface TriageRuleBody {
+  rule_id?: string | null;
+  name: string;
+  enabled?: boolean;
+  continue_after?: boolean;
+  filter?: TriageRuleFilter;
+  actions: TriageRuleActions;
 }
 
 /** One triage-enabled team and how many issues wait in it, snoozed ones aside. */
@@ -2274,11 +2466,13 @@ export interface TriageSummaryRead {
 
 /**
  * Accepts a triage issue, into the named status or the team's first unstarted
- * one. A non-blank `comment` is posted on the issue as the person accepting.
+ * one. A non-blank `comment` is posted on the issue as the person accepting,
+ * and `priority` is set in the same write.
  */
 export interface TriageAccept {
   status_id?: string | null;
   comment?: string | null;
+  priority?: IssuePriority | null;
 }
 
 /** Declines a triage issue, with an optional reason kept in its history. */
@@ -2386,12 +2580,16 @@ export interface ProjectRead {
   links?: ProjectLinkRead[] | null;
   /** How many customer requests name the project, set when the list was filtered or sorted by customer. */
   customer_request_count?: number | null;
+  /** How many of those requests are marked important, set alongside the request count. */
+  customer_important_count?: number | null;
   /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
   customer_revenue?: number | null;
   /** The project labels it carries, in the order they were set. */
   label_ids?: string[];
   /** The short project id: the lowercased tail of `project_id`. */
   slug_id?: string;
+  /** When the project was archived, null while it is live. */
+  archived_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2714,7 +2912,9 @@ export type ProjectActivityKind =
   | 'milestone_changed'
   | 'link_added'
   | 'link_removed'
-  | 'link_changed';
+  | 'link_changed'
+  | 'archived'
+  | 'unarchived';
 
 /**
  * One recorded change to a project: a property a patch moved, with its old and
@@ -2890,8 +3090,8 @@ export interface InitiativeUpdateListRead {
   next_cursor: string | null;
 }
 
-/** Which Pulse feed a page reads: what the caller follows, or everything they may read. */
-export type PulseScope = 'for_me' | 'recent';
+/** Which Pulse feed a page reads: what the caller follows, the last two weeks' updates by engagement, or everything they may read. */
+export type PulseScope = 'for_me' | 'popular' | 'recent';
 
 /** What one Pulse entry reports. */
 export type PulseEventType =
@@ -2964,13 +3164,18 @@ export interface ProjectListQuery {
   /** Leaves out the projects these customers asked for, `none` for projects no customer asked for. */
   customer_id_not?: string[];
   sort?: ProjectSortField;
+  /** Lists archived projects too, which the list leaves out by default. */
+  include_archived?: boolean;
   cursor?: string;
   limit?: number;
 }
 
 /** How the projects route orders its rows, target date first by default. */
 export type ProjectSortField =
-  'target_asc' | 'customer_requests_desc' | 'customer_revenue_desc';
+  | 'target_asc'
+  | 'customer_requests_desc'
+  | 'customer_important_desc'
+  | 'customer_revenue_desc';
 
 /**
  * One cycle or project as the roadmap draws it. A projection rather than the
@@ -4809,8 +5014,8 @@ export interface HomeRead {
   releases: ReleaseRead[];
 }
 
-/** The two kinds of record a document can sit under. */
-export type DocumentParentKind = 'project' | 'initiative';
+/** The three kinds of record a document can sit under. */
+export type DocumentParentKind = 'project' | 'initiative' | 'team';
 
 /**
  * One document without its body, as a listing answers it. `can_edit` and
@@ -4823,6 +5028,8 @@ export interface DocumentSummaryRead {
   parent_id: string;
   parent_name: string;
   title: string;
+  /** An emoji or a project glyph name, null when the document has none. */
+  icon?: string | null;
   author_id: string;
   updated_by: string;
   source?: string | null;
@@ -4850,17 +5057,22 @@ export interface DocumentCreate {
   /** Required unless `template_id` is sent, whose title fills it. */
   title?: string;
   body?: string;
+  icon?: string | null;
   /** A document template the parent offers, filling what was left out. */
   template_id?: string;
 }
 
 /**
  * The body a document edit takes. `base_updated_at` is the `updated_at` the
- * editor last read, so an edit over someone else's newer one is a 409.
+ * editor last read, so an edit over someone else's newer one is a 409. A null
+ * `icon` clears it, and `parent_kind` with `parent_id` moves the document.
  */
 export interface DocumentPatch {
   title?: string;
   body?: string;
+  icon?: string | null;
+  parent_kind?: DocumentParentKind;
+  parent_id?: string;
   base_updated_at?: string;
 }
 
@@ -4968,15 +5180,20 @@ export interface DraftWrite {
 /** The two kinds of record a customer request can name. */
 export type CustomerTargetKind = 'issue' | 'project';
 
+/** Where a customer stands with the workspace, from a fixed set. */
+export type CustomerStatus = 'lead' | 'trial' | 'active' | 'paused' | 'churned';
+
 /**
  * One customer of the workspace, with how many requests this caller can see
- * from it. `can_edit` and `can_delete` say what this caller may do with it.
+ * from it and how many of those are important. `can_edit` and `can_delete` say
+ * what this caller may do with it.
  */
 export interface CustomerRead {
   customer_id: string;
   workspace_id: string;
   name: string;
   domains: string[];
+  status: CustomerStatus | null;
   tier: string | null;
   owner_id: string | null;
   revenue: number | null;
@@ -4985,6 +5202,7 @@ export interface CustomerRead {
   created_at: string;
   updated_at: string;
   request_count: number;
+  important_count: number;
   can_edit: boolean;
   can_delete: boolean;
 }
@@ -4993,6 +5211,7 @@ export interface CustomerRead {
 export interface CustomerCreate {
   name: string;
   domains?: string[];
+  status?: CustomerStatus | null;
   tier?: string | null;
   owner_id?: string | null;
   revenue?: number | null;
@@ -5010,7 +5229,8 @@ export interface CustomerListRead {
 
 /**
  * One customer request: a customer asking for an issue or a project, with an
- * optional quote. `target_key` is the issue key and empty for a project.
+ * optional quote and an important flag. `target_key` is the issue key and empty
+ * for a project. `can_edit` says whether this caller may edit or move it.
  */
 export interface CustomerRequestRead {
   request_id: string;
@@ -5022,9 +5242,12 @@ export interface CustomerRequestRead {
   target_key: string;
   target_title: string;
   body: string;
+  important: boolean;
   author_id: string;
   source?: string | null;
   created_at: string;
+  updated_at?: string | null;
+  can_edit: boolean;
   can_delete: boolean;
 }
 
@@ -5032,6 +5255,19 @@ export interface CustomerRequestRead {
 export interface CustomerRequestCreate {
   customer_id: string;
   body?: string;
+  important?: boolean;
+}
+
+/**
+ * The body a request edit takes; a field left out is kept. `target_kind` and
+ * `target_id` move the request together.
+ */
+export interface CustomerRequestPatch {
+  customer_id?: string;
+  body?: string;
+  important?: boolean;
+  target_kind?: CustomerTargetKind;
+  target_id?: string;
 }
 
 /** A list of customer requests, newest first. */

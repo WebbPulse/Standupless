@@ -90,6 +90,7 @@ import IssuePane from '../../components/issues/IssuePane';
 import { ManageSubscribersKeyContext } from '../../components/issues/IssueSubscribers';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
+import { IssueHoverTrigger } from '../../components/ui/IssueHoverCard';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import {
@@ -778,6 +779,19 @@ const InboxRow: React.FC<InboxRowProps> = ({
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
             />
+          ) : isIssueRow(row) ? (
+            <IssueHoverTrigger issueKey={row.issue_key}>
+              {({ onPointerEnter, onPointerLeave, onPointerDown }) => (
+                <span
+                  onPointerEnter={onPointerEnter}
+                  onPointerLeave={onPointerLeave}
+                  onPointerDown={onPointerDown}
+                  className="relative shrink-0 font-mono text-2xs text-text-faint"
+                >
+                  {row.issue_key}
+                </span>
+              )}
+            </IssueHoverTrigger>
           ) : (
             <span className="shrink-0 font-mono text-2xs text-text-faint">
               {row.issue_key}

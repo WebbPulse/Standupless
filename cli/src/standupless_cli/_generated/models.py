@@ -391,7 +391,14 @@ class CheckoutCreate(TypedDict):
     plan: NotRequired[Literal["standard", "business"]]
 
 
+class CommentAnchor(TypedDict):
+    prefix: NotRequired[str]
+    quote: str
+    suffix: NotRequired[str]
+
+
 class CommentCreate(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     attachment_ids: NotRequired[list[str]]
     body: NotRequired[str]
     parent_comment_id: NotRequired[str | None]
@@ -449,6 +456,7 @@ class CustomerCreate(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
+    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
     tier: NotRequired[str | None]
 
 
@@ -462,6 +470,7 @@ class CustomerPatch(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
+    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
     tier: NotRequired[str | None]
 
 
@@ -472,11 +481,13 @@ class CustomerRead(TypedDict):
     created_by: str
     customer_id: str
     domains: NotRequired[list[str]]
+    important_count: NotRequired[int]
     name: str
     owner_id: NotRequired[str | None]
     request_count: NotRequired[int]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
+    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
     tier: NotRequired[str | None]
     updated_at: str
     workspace_id: str
@@ -485,21 +496,33 @@ class CustomerRead(TypedDict):
 class CustomerRequestCreate(TypedDict):
     body: NotRequired[str]
     customer_id: str
+    important: NotRequired[bool]
+
+
+class CustomerRequestPatch(TypedDict):
+    body: NotRequired[str | None]
+    customer_id: NotRequired[str | None]
+    important: NotRequired[bool | None]
+    target_id: NotRequired[str | None]
+    target_kind: NotRequired[Literal["issue", "project"] | None]
 
 
 class CustomerRequestRead(TypedDict):
     author_id: str
     body: NotRequired[str]
     can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
     created_at: str
     customer_id: str
     customer_name: NotRequired[str]
+    important: NotRequired[bool]
     request_id: str
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     target_id: str
     target_key: NotRequired[str]
     target_kind: Literal["issue", "project"]
     target_title: NotRequired[str]
+    updated_at: NotRequired[str | None]
     workspace_id: str
 
 
@@ -564,6 +587,7 @@ class CycleRead(TypedDict):
 
 
 class CycleSettingsRead(TypedDict):
+    auto_add_completed: bool
     auto_add_started: bool
     cooldown_weeks: int
     duration_weeks: int
@@ -576,6 +600,7 @@ class CycleSettingsRead(TypedDict):
 
 
 class CycleSettingsUpdate(TypedDict):
+    auto_add_completed: NotRequired[bool | None]
     auto_add_started: NotRequired[bool | None]
     cooldown_weeks: NotRequired[int | None]
     duration_weeks: NotRequired[int | None]
@@ -641,6 +666,7 @@ class DisplayOptionsBody(TypedDict):
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | Literal["none"]
         | None
     ]
@@ -658,6 +684,7 @@ class DisplayOptionsBody(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -669,6 +696,7 @@ class DisplayOptionsBody(TypedDict):
     show_sub_issues: NotRequired[bool | None]
     sub_group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | Literal["none"]
         | None
     ]
@@ -700,6 +728,7 @@ class DisplayOptionsBody(TypedDict):
 
 class DocumentCreate(TypedDict):
     body: NotRequired[str | None]
+    icon: NotRequired[str | None]
     template_id: NotRequired[str | None]
     title: NotRequired[str | None]
 
@@ -713,6 +742,9 @@ class DocumentMentionRead(TypedDict):
 class DocumentPatch(TypedDict):
     base_updated_at: NotRequired[str | None]
     body: NotRequired[str | None]
+    icon: NotRequired[str | None]
+    parent_id: NotRequired[str | None]
+    parent_kind: NotRequired[Literal["project", "initiative", "team"] | None]
     title: NotRequired[str | None]
 
 
@@ -723,9 +755,10 @@ class DocumentRead(TypedDict):
     can_edit: NotRequired[bool]
     created_at: str
     document_id: str
+    icon: NotRequired[str | None]
     mentions: NotRequired[list[DocumentMentionRead]]
     parent_id: str
-    parent_kind: Literal["project", "initiative"]
+    parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     title: str
@@ -740,8 +773,9 @@ class DocumentSummaryRead(TypedDict):
     can_edit: NotRequired[bool]
     created_at: str
     document_id: str
+    icon: NotRequired[str | None]
     parent_id: str
-    parent_kind: Literal["project", "initiative"]
+    parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     title: str
@@ -1000,6 +1034,12 @@ class InitiativeUpdateRead(TypedDict):
     workspace_id: str
 
 
+class InitiativesDisplay(TypedDict):
+    columns: NotRequired[str]
+    completed: NotRequired[Literal["show", "hide"]]
+    order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
+
+
 class InsightBucket(TypedDict):
     color: NotRequired[str | None]
     issue_count: NotRequired[int]
@@ -1129,8 +1169,18 @@ class IssueCreate(TypedDict):
     status_id: NotRequired[str | None]
     team_id: str
     template_id: NotRequired[str | None]
+    template_sub_issue_keys: NotRequired[list[str] | None]
     title: NotRequired[str]
     triage: NotRequired[bool]
+
+
+class IssueDescriptionVersionRead(TypedDict):
+    body: str
+    edited_at: str
+    edited_by: str
+    issue_id: str
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    version_id: str
 
 
 class IssueExportRead(TypedDict):
@@ -1501,6 +1551,8 @@ ProjectActivityRead = TypedDict(
             "link_added",
             "link_removed",
             "link_changed",
+            "archived",
+            "unarchived",
         ],
         "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
@@ -1755,7 +1807,9 @@ class ProjectsDisplay(TypedDict):
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
     order: NotRequired[
-        Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"]
+        Literal[
+            "target", "start", "name", "priority", "progress", "created", "updated", "customers", "important", "manual"
+        ]
     ]
     rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
@@ -2152,6 +2206,7 @@ class ShareLinkCreate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -2762,6 +2817,7 @@ class TransitionUpdate(TypedDict, closed=True):
 
 class TriageAccept(TypedDict):
     comment: NotRequired[str | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
     status_id: NotRequired[str | None]
 
 
@@ -2773,14 +2829,48 @@ class TriageDuplicate(TypedDict):
     duplicate_of_id: str
 
 
+class TriageRuleActionsBody(TypedDict):
+    add_label_ids: NotRequired[list[str]]
+    assignee_id: NotRequired[str | None]
+    priority: NotRequired[Literal["urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+
+
+class TriageRuleActionsRead(TypedDict):
+    add_label_ids: NotRequired[list[str]]
+    assignee_id: NotRequired[str | None]
+    priority: NotRequired[Literal["urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+
+
+class TriageRuleFilterBody(TypedDict):
+    creator_ids: NotRequired[list[str]]
+    label_ids: NotRequired[list[str]]
+    priorities: NotRequired[list[Literal["none", "urgent", "high", "medium", "low"]]]
+    sources: NotRequired[list[Literal["web", "form", "mcp", "cli", "api", "github", "system"]]]
+    text: NotRequired[str | None]
+
+
+class TriageRuleRead(TypedDict):
+    actions: TriageRuleActionsRead
+    continue_after: bool
+    enabled: bool
+    filter: TriageRuleFilterBody
+    name: str
+    rule_id: str
+    warning: NotRequired[str | None]
+
+
 class TriageSettingsRead(TypedDict):
     enabled: bool
+    require_priority: NotRequired[bool]
+    responsibility_action: NotRequired[Literal["notify", "assign"]]
+    responsible_user_ids: NotRequired[list[str]]
+    rules: NotRequired[list[TriageRuleRead]]
     team_id: str
     updated_at: NotRequired[str | None]
-
-
-class TriageSettingsUpdate(TypedDict):
-    enabled: NotRequired[bool | None]
 
 
 class TriageSnooze(TypedDict):
@@ -2823,13 +2913,17 @@ class UrlAttachmentCreate(TypedDict):
 
 
 class UserPreferencesUpdate(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"] | None]
     auto_assign_to_self: NotRequired[bool | None]
     auto_grant_new_scopes: NotRequired[bool | None]
     branch_copy_assigns: NotRequired[bool | None]
     branch_copy_starts: NotRequired[bool | None]
+    convert_emoticons: NotRequired[bool | None]
+    email_format: NotRequired[Literal["digest", "immediate"] | None]
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
+    initiatives_display: NotRequired[InitiativesDisplay | None]
     name_display: NotRequired[Literal["username", "full_name"] | None]
     notification_preferences: NotRequired[
         dict[
@@ -2850,13 +2944,37 @@ class UserPreferencesUpdate(TypedDict):
                 "sla_breached",
                 "review_requested",
                 "reminder",
+                "triage_new",
+                "view_issue_added",
             ],
             NotificationChannelsUpdate,
         ]
         | None
     ]
+    pointer_cursors: NotRequired[bool | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+        | None
+    ]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
 
@@ -2867,24 +2985,50 @@ class UserProfileUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"]]
     auto_assign_to_self: NotRequired[bool]
     auto_grant_new_scopes: NotRequired[bool]
     avatar_url: NotRequired[str | None]
     branch_copy_assigns: NotRequired[bool]
     branch_copy_starts: NotRequired[bool]
+    convert_emoticons: NotRequired[bool]
     display_name: str
     email: str
+    email_format: NotRequired[Literal["digest", "immediate"]]
     email_notifications: bool
     email_verified: bool
     font_size: NotRequired[Literal["small", "default", "large"]]
     full_name: NotRequired[str]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
     id: str
+    initiatives_display: NotRequired[InitiativesDisplay]
+    initiatives_display_saved: NotRequired[bool]
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
+    pointer_cursors: NotRequired[bool]
     projects_display: NotRequired[ProjectsDisplay]
     projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"]]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+    ]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
@@ -2928,6 +3072,7 @@ class ViewCreate(TypedDict):
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     icon: NotRequired[str | None]
@@ -2947,6 +3092,7 @@ class ViewCreate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -2971,12 +3117,14 @@ class ViewCreate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
     ]
     sub_group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     team_id: NotRequired[str | None]
@@ -3029,6 +3177,8 @@ class ViewRead(TypedDict):
     show_sub_issues: NotRequired[bool]
     sort: str
     sub_group_by: NotRequired[str | None]
+    subscribed: NotRequired[bool]
+    subscriber_count: NotRequired[int]
     team_id: NotRequired[str | None]
     updated_at: str
     view_id: str
@@ -3045,6 +3195,7 @@ class ViewUpdate(TypedDict):
     filter: NotRequired[dict[str, Any] | None]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     icon: NotRequired[str | None]
@@ -3063,6 +3214,7 @@ class ViewUpdate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -3087,6 +3239,7 @@ class ViewUpdate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -3094,6 +3247,7 @@ class ViewUpdate(TypedDict):
     ]
     sub_group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     visible_properties: NotRequired[
@@ -3455,6 +3609,7 @@ class BoardRead(TypedDict):
 
 
 class CommentRead(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     attachments: NotRequired[list[AttachmentRead]]
     author: AuthorRead
     author_id: str
@@ -3679,6 +3834,10 @@ class IssueBulkRead(TypedDict):
     skipped: NotRequired[list[str]]
 
 
+class IssueDescriptionVersionListRead(TypedDict):
+    versions: list[IssueDescriptionVersionRead]
+
+
 class IssueImportPreviewRead(TypedDict):
     headers: list[str]
     importable_rows: int
@@ -3886,6 +4045,7 @@ class ProjectLinkListRead(TypedDict):
 
 
 class ProjectRead(TypedDict):
+    archived_at: NotRequired[str | None]
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
     color: NotRequired[str | None]
@@ -3893,6 +4053,7 @@ class ProjectRead(TypedDict):
     counts: CountsRead
     created_at: str
     created_by: str
+    customer_important_count: NotRequired[int | None]
     customer_request_count: NotRequired[int | None]
     customer_revenue: NotRequired[int | None]
     description: NotRequired[str | None]
@@ -4157,6 +4318,7 @@ class TemplateCreate(TypedDict):
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[IssueTemplateItem]]
     title: NotRequired[str | None]
 
 
@@ -4179,6 +4341,7 @@ class TemplateRead(TypedDict):
     project_milestone_id: NotRequired[str | None]
     scope: NotRequired[Literal["team", "parent", "workspace"]]
     status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[IssueBlueprint]]
     team_id: NotRequired[str | None]
     title: NotRequired[str | None]
     updated_at: str
@@ -4198,7 +4361,25 @@ class TemplateUpdate(TypedDict):
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[IssueTemplateItem] | None]
     title: NotRequired[str | None]
+
+
+class TriageRuleBody(TypedDict):
+    actions: TriageRuleActionsBody
+    continue_after: NotRequired[bool]
+    enabled: NotRequired[bool]
+    filter: NotRequired[TriageRuleFilterBody]
+    name: str
+    rule_id: NotRequired[str | None]
+
+
+class TriageSettingsUpdate(TypedDict):
+    enabled: NotRequired[bool | None]
+    require_priority: NotRequired[bool | None]
+    responsibility_action: NotRequired[Literal["notify", "assign"] | None]
+    responsible_user_ids: NotRequired[list[str] | None]
+    rules: NotRequired[list[TriageRuleBody] | None]
 
 
 class TriageSummaryRead(TypedDict):

@@ -53,6 +53,8 @@ _HEADLINES: Mapping[str, str] = {
     "sla_at_risk": "This issue assigned to you is close to breaching its SLA.",
     "sla_breached": "This issue assigned to you has breached its SLA.",
     "reminder": "You asked to be reminded about this issue.",
+    "triage_new": "A new issue is waiting in triage for your team.",
+    "view_issue_added": "An issue was added to a view you follow.",
 }
 
 DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
@@ -70,6 +72,14 @@ _REMINDER_REASON = (
     "You are receiving this because you set a reminder on this issue. "
     "Turn these off in your {product} notification settings."
 )
+_TRIAGE_REASON = (
+    "You are receiving this because you are on triage duty for this team. "
+    "Turn these off in your {product} notification settings."
+)
+_VIEW_REASON = (
+    "You are receiving this because you subscribed to a view this issue now matches. "
+    "Turn these off in your {product} notification settings."
+)
 _PROJECT_REASON = (
     "You are receiving this because you lead or are a member of this project. "
     "Turn these off in your {product} notification settings."
@@ -83,6 +93,10 @@ def _issue_reason(kind: str) -> str:
     """The footer line saying why one issue notification reached its reader."""
     if kind == "reminder":
         return _REMINDER_REASON
+    if kind == "triage_new":
+        return _TRIAGE_REASON
+    if kind == "view_issue_added":
+        return _VIEW_REASON
     return _ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON
 
 
@@ -110,14 +124,43 @@ def _media_label(match: "re.Match[str]") -> str:
     return f"[{kind}: {alt}]" if alt else f"[{kind}]"
 
 
+CALLOUT_BLOCK = re.compile(
+    r"^ {0,3}>[ \t]?\[!(?P<kind>note|tip|important|warning|caution)\][ \t]*(?P<rest>.*)(?P<body>(?:\n {0,3}>.*)*)",
+    re.IGNORECASE | re.MULTILINE,
+)
+"""A GitHub alert callout, such as `> [!NOTE]`, with the quoted lines under it."""
+
+CALLOUT_LABELS = {
+    "note": "Note",
+    "tip": "Tip",
+    "important": "Important",
+    "warning": "Warning",
+    "caution": "Danger",
+}
+"""The name each alert kind reads as, matching the editor's kind switcher."""
+
+QUOTE_PREFIX = re.compile(r"^ {0,3}>[ \t]?", re.MULTILINE)
+"""The marker that opens each line of a quote."""
+
+
+def _callout_text(match: "re.Match[str]") -> str:
+    """The plain text a callout reads as in an email, its kind leading its body."""
+    label = CALLOUT_LABELS[match.group("kind").lower()]
+    body = QUOTE_PREFIX.sub("", match.group("body"))
+    text = " ".join(f"{match.group('rest')} {body}".split())
+    return f"{label}: {text}" if text else label
+
+
 def excerpt(body: str) -> str:
     """One comment cut to `EXCERPT_LIMIT`, with an ellipsis when it was cut.
 
     Embedded images and videos read as a short label rather than a URL, because
     the content URL needs a token the email cannot carry; the issue link beside
-    the excerpt is where the reader sees them.
+    the excerpt is where the reader sees them. A callout reads as its kind and
+    its text rather than the alert marker GitHub stores it with.
     """
-    collapsed = " ".join(MARKDOWN_IMAGE.sub(_media_label, body).split())
+    readable = CALLOUT_BLOCK.sub(_callout_text, MARKDOWN_IMAGE.sub(_media_label, body))
+    collapsed = " ".join(readable.split())
     if len(collapsed) <= EXCERPT_LIMIT:
         return collapsed
     return collapsed[:EXCERPT_LIMIT].rstrip() + "..."

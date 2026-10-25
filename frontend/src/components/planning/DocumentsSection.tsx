@@ -1,5 +1,5 @@
 /**
- * The documents under a project or an initiative, on its overview: specs,
+ * The documents under a project, an initiative or a team: specs,
  * plans and notes written in Markdown, each opening on its own page. A new
  * document is created untitled and opened straight away, the way a blank page
  * is started, and a row renames or deletes in place. When the parent offers
@@ -32,6 +32,7 @@ import { Button, IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
 import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
+import DocumentIcon from './DocumentIcon';
 
 /** The longest title a document may carry, as the server holds it. */
 const TITLE_MAX = 200;
@@ -210,10 +211,7 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               key={row.document_id}
               className="group/document grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-surface"
             >
-              <LuFileText
-                aria-hidden="true"
-                className="h-3.5 w-3.5 text-text-faint"
-              />
+              <DocumentIcon icon={row.icon ?? null} />
               {renaming === row.document_id ? (
                 <RenameField
                   row={row}

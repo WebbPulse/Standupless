@@ -1,4 +1,4 @@
-"""Saved view routes: list, create, read, patch and delete.
+"""Saved view routes: list, create, read, patch and delete, plus the caller's star and subscription.
 
 A saved view stores a filter and never results. Running one is the M2 issue list
 with the stored filter expanded into its query, which is why there is deliberately
@@ -26,7 +26,10 @@ from app.common.saved_views import (
     load_visible_view,
     readable_views,
     set_view_favorite,
+    set_view_subscription,
     update_saved_view,
+    view_read,
+    view_reads,
 )
 from app.domains.views.schemas.view import ScopeField, ViewCreate, ViewEntityField, ViewListRead, ViewRead, ViewUpdate
 
@@ -51,8 +54,7 @@ def list_views(
     answer carries a weak `ETag`, so an unchanged poll gets a 304.
     """
     ordered = readable_views(repositories, context, scope, team_id, entity)
-    starred = favorite_ids(repositories, context)
-    listing = ViewListRead(views=[ViewRead.from_row(row, favorite=row.view_id in starred) for row in ordered])
+    listing = ViewListRead(views=view_reads(repositories, context, ordered))
     return conditional_response(request, listing)
 
 
@@ -80,7 +82,7 @@ def read_view(
 ) -> ViewRead:
     """One saved view the caller may read, or a 404."""
     view = load_visible_view(repositories, context, view_id)
-    return ViewRead.from_row(view, favorite=view.view_id in favorite_ids(repositories, context))
+    return view_read(repositories, context, view, favorite=view.view_id in favorite_ids(repositories, context))
 
 
 @router.patch("/{workspace_id}/views/{view_id}", response_model=ViewRead)
@@ -97,7 +99,7 @@ def update_view(
     that could be neither would leave the client guessing what the view shows.
     """
     view = update_saved_view(repositories, context, view_id, payload)
-    return ViewRead.from_row(view, favorite=view.view_id in favorite_ids(repositories, context))
+    return view_read(repositories, context, view, favorite=view.view_id in favorite_ids(repositories, context))
 
 
 @router.delete("/{workspace_id}/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -120,7 +122,7 @@ def favorite_view(
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
     """Star a view the caller may read, so it lists under their favorites."""
-    return ViewRead.from_row(set_view_favorite(repositories, context, view_id, True), favorite=True)
+    return view_read(repositories, context, set_view_favorite(repositories, context, view_id, True), favorite=True)
 
 
 @router.delete("/{workspace_id}/views/{view_id}/favorite", response_model=ViewRead)
@@ -131,4 +133,31 @@ def unfavorite_view(
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
     """Unstar a view, a no-op when it was not starred."""
-    return ViewRead.from_row(set_view_favorite(repositories, context, view_id, False), favorite=False)
+    return view_read(repositories, context, set_view_favorite(repositories, context, view_id, False), favorite=False)
+
+
+@router.put("/{workspace_id}/views/{view_id}/subscription", response_model=ViewRead)
+def subscribe_view(
+    workspace_id: str = Path(..., min_length=1),
+    view_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> ViewRead:
+    """Follow an issue view the caller may read, to hear about each issue that newly matches it.
+
+    Issues already in the view stay quiet. A project view answers 422.
+    """
+    view = set_view_subscription(repositories, context, view_id, True)
+    return view_read(repositories, context, view, favorite=view.view_id in favorite_ids(repositories, context))
+
+
+@router.delete("/{workspace_id}/views/{view_id}/subscription", response_model=ViewRead)
+def unsubscribe_view(
+    workspace_id: str = Path(..., min_length=1),
+    view_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> ViewRead:
+    """Stop following a view, a no-op when the caller did not follow it."""
+    view = set_view_subscription(repositories, context, view_id, False)
+    return view_read(repositories, context, view, favorite=view.view_id in favorite_ids(repositories, context))

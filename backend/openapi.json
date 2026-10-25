@@ -2497,9 +2497,43 @@
         "title": "CheckoutCreate",
         "type": "object"
       },
-      "CommentCreate": {
-        "description": "The body a comment create takes.\n\n`attachment_ids` names attachments already on the same issue, uploaded or\nlinked first through the attachment routes, which the comment then shows\ninline. The route holds that each one exists under this issue. The body may\nbe empty only when the comment carries an attachment, so a screenshot can be\nposted without a caption while a comment is never blank.",
+      "CommentAnchor": {
+        "description": "The passage of the issue description a root comment is pinned to.\n\nThe quoted text plus a little of the text either side, which is what finds the\npassage again among repeats of it. Never written into the description, so an\nedit that removes the passage leaves the quote here and the reader shows it as\nchanged.",
         "properties": {
+          "prefix": {
+            "default": "",
+            "title": "Prefix",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "suffix": {
+            "default": "",
+            "title": "Suffix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quote"
+        ],
+        "title": "CommentAnchor",
+        "type": "object"
+      },
+      "CommentCreate": {
+        "description": "The body a comment create takes.\n\n`attachment_ids` names attachments already on the same issue, uploaded or\nlinked first through the attachment routes, which the comment then shows\ninline. The route holds that each one exists under this issue. The body may\nbe empty only when the comment carries an attachment, so a screenshot can be\nposted without a caption while a comment is never blank. `anchor` pins a new\nthread to a passage of the description, so a reply cannot carry one.",
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachment_ids": {
             "items": {
               "type": "string"
@@ -2556,8 +2590,18 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line. `anchor` is set on a root pinned to a\npassage of the issue description.",
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/AttachmentRead"
@@ -3077,6 +3121,24 @@
             ],
             "title": "Size"
           },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lead",
+                  "trial",
+                  "active",
+                  "paused",
+                  "churned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
           "tier": {
             "anyOf": [
               {
@@ -3201,6 +3263,24 @@
             ],
             "title": "Size"
           },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lead",
+                  "trial",
+                  "active",
+                  "paused",
+                  "churned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
           "tier": {
             "anyOf": [
               {
@@ -3249,6 +3329,11 @@
             "title": "Domains",
             "type": "array"
           },
+          "important_count": {
+            "default": 0,
+            "title": "Important Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3290,6 +3375,24 @@
               }
             ],
             "title": "Size"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lead",
+                  "trial",
+                  "active",
+                  "paused",
+                  "churned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           },
           "tier": {
             "anyOf": [
@@ -3334,6 +3437,11 @@
           "customer_id": {
             "title": "Customer Id",
             "type": "string"
+          },
+          "important": {
+            "default": false,
+            "title": "Important",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3369,6 +3477,72 @@
         "title": "CustomerRequestListRead",
         "type": "object"
       },
+      "CustomerRequestPatch": {
+        "description": "The body a request patch takes; a field left out is kept.\n\n`customer_id` hands the request to another customer, and `target_kind` with\n`target_id` moves it to another issue or project; the two go together.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "important": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Important"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "issue",
+                  "project"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Kind"
+          }
+        },
+        "title": "CustomerRequestPatch",
+        "type": "object"
+      },
       "CustomerRequestRead": {
         "description": "One request, with the names a list draws beside it.\n\n`target_key` is the issue key for an issue and empty for a project.",
         "properties": {
@@ -3386,6 +3560,11 @@
             "title": "Can Delete",
             "type": "boolean"
           },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3399,6 +3578,11 @@
             "default": "",
             "title": "Customer Name",
             "type": "string"
+          },
+          "important": {
+            "default": false,
+            "title": "Important",
+            "type": "boolean"
           },
           "request_id": {
             "title": "Request Id",
@@ -3444,6 +3628,18 @@
             "default": "",
             "title": "Target Title",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           },
           "workspace_id": {
             "title": "Workspace Id",
@@ -3800,6 +3996,10 @@
       "CycleSettingsRead": {
         "description": "A team's automatic cycle settings as the API returns them.",
         "properties": {
+          "auto_add_completed": {
+            "title": "Auto Add Completed",
+            "type": "boolean"
+          },
           "auto_add_started": {
             "title": "Auto Add Started",
             "type": "boolean"
@@ -3853,6 +4053,7 @@
           "start_weekday",
           "upcoming_count",
           "auto_add_started",
+          "auto_add_completed",
           "move_unfinished"
         ],
         "title": "CycleSettingsRead",
@@ -3861,6 +4062,17 @@
       "CycleSettingsUpdate": {
         "description": "The body a team's cycle settings patch takes, every field optional.\n\n`start_weekday` counts from Monday as 0 to Sunday as 6.",
         "properties": {
+          "auto_add_completed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Add Completed"
+          },
           "auto_add_started": {
             "anyOf": [
               {
@@ -4299,6 +4511,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "const": "none",
                 "type": "string"
               },
@@ -4338,6 +4554,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -4411,6 +4628,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "const": "none",
                 "type": "string"
               },
@@ -4471,6 +4692,17 @@
               }
             ],
             "title": "Body"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "template_id": {
             "anyOf": [
@@ -4550,7 +4782,7 @@
         "type": "object"
       },
       "DocumentPatch": {
-        "description": "The body a document patch takes; either field may be left out, neither cleared.\n\n`base_updated_at` is the `updated_at` the editor last read. When it is sent\nand the document has changed since, the patch is a 409 rather than writing\nover someone else's edit.",
+        "description": "The body a document patch takes; any field may be left out, and only `icon` cleared.\n\n`parent_kind` and `parent_id` together move the document under another\nproject, initiative or team the caller may write under. `base_updated_at`\nis the `updated_at` the editor last read. When it is sent and the document\nhas changed since, the patch is a 409 rather than writing over someone\nelse's edit.",
         "properties": {
           "base_updated_at": {
             "anyOf": [
@@ -4574,6 +4806,44 @@
               }
             ],
             "title": "Body"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parent_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "project",
+                  "initiative",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Kind"
           },
           "title": {
             "anyOf": [
@@ -4620,6 +4890,17 @@
             "title": "Document Id",
             "type": "string"
           },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
           "mentions": {
             "items": {
               "$ref": "#/components/schemas/DocumentMentionRead"
@@ -4634,7 +4915,8 @@
           "parent_kind": {
             "enum": [
               "project",
-              "initiative"
+              "initiative",
+              "team"
             ],
             "title": "Parent Kind",
             "type": "string"
@@ -4722,6 +5004,17 @@
             "title": "Document Id",
             "type": "string"
           },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
           "parent_id": {
             "title": "Parent Id",
             "type": "string"
@@ -4729,7 +5022,8 @@
           "parent_kind": {
             "enum": [
               "project",
-              "initiative"
+              "initiative",
+              "team"
             ],
             "title": "Parent Kind",
             "type": "string"
@@ -7298,6 +7592,39 @@
         "title": "InitiativeUpdateRead",
         "type": "object"
       },
+      "InitiativesDisplay": {
+        "description": "How the person arranges the workspace initiatives list.\n\n`order` sorts the initiatives inside each status group, sub-initiatives\nstaying under their parent. `completed` shows or hides the completed group.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
+        "properties": {
+          "columns": {
+            "default": "health,owner,projects,target,progress",
+            "title": "Columns",
+            "type": "string"
+          },
+          "completed": {
+            "default": "show",
+            "enum": [
+              "show",
+              "hide"
+            ],
+            "title": "Completed",
+            "type": "string"
+          },
+          "order": {
+            "default": "target",
+            "enum": [
+              "target",
+              "name",
+              "progress",
+              "created",
+              "updated"
+            ],
+            "title": "Order",
+            "type": "string"
+          }
+        },
+        "title": "InitiativesDisplay",
+        "type": "object"
+      },
       "InsightBucket": {
         "description": "One bar or bar segment: a value of the dimension and what it measures.\n\n`key` is the raw value, an id or an enum, and null for the unset bucket such\nas unassigned. `label` is its display name, resolved on the server so a reader\nwithout the workspace's lookups can still show it.",
         "properties": {
@@ -7735,7 +8062,7 @@
         "type": "object"
       },
       "IssueBlueprint": {
-        "description": "One issue a project template adds.\n\n`key` names it inside the template, so `parent_key` can make it a sub-issue\nof an issue listed before it and `milestone_key` can tie it to a milestone.",
+        "description": "One issue a project template adds, or one sub-issue an issue template adds under the new issue.\n\n`key` names it inside the template, so `parent_key` can make it a sub-issue\nof an issue listed before it and `milestone_key` can tie it to a milestone.\nAn issue template's sub-issues sit directly under the issue, so they carry\nneither.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -8046,7 +8373,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox. `template_sub_issue_keys` keeps\nonly the template sub-issues it names; left out, every one is created.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -8226,6 +8553,21 @@
             ],
             "title": "Template Id"
           },
+          "template_sub_issue_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Sub Issue Keys"
+          },
           "title": {
             "default": "",
             "maxLength": 200,
@@ -8242,6 +8584,77 @@
           "team_id"
         ],
         "title": "IssueCreate",
+        "type": "object"
+      },
+      "IssueDescriptionVersionListRead": {
+        "description": "An issue's description versions, newest first, the newest being the current text.",
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/IssueDescriptionVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "title": "IssueDescriptionVersionListRead",
+        "type": "object"
+      },
+      "IssueDescriptionVersionRead": {
+        "description": "One saved version of an issue's description: the text, who wrote it and when.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "edited_at": {
+            "format": "date-time",
+            "title": "Edited At",
+            "type": "string"
+          },
+          "edited_by": {
+            "title": "Edited By",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "issue_id",
+          "body",
+          "edited_by",
+          "edited_at"
+        ],
+        "title": "IssueDescriptionVersionRead",
         "type": "object"
       },
       "IssueExportRead": {
@@ -11613,7 +12026,9 @@
               "milestone_changed",
               "link_added",
               "link_removed",
-              "link_changed"
+              "link_changed",
+              "archived",
+              "unarchived"
             ],
             "title": "Kind",
             "type": "string"
@@ -12551,6 +12966,19 @@
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the project was archived, null while it is live",
+            "title": "Archived At"
+          },
           "blocked_by_project_ids": {
             "description": "The visible projects that block this one, oldest link first",
             "items": {
@@ -12602,6 +13030,18 @@
           "created_by": {
             "title": "Created By",
             "type": "string"
+          },
+          "customer_important_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Customer requests naming the project marked important, answered with customer_request_count",
+            "title": "Customer Important Count"
           },
           "customer_request_count": {
             "anyOf": [
@@ -13916,6 +14356,7 @@
               "created",
               "updated",
               "customers",
+              "important",
               "manual"
             ],
             "title": "Order",
@@ -17061,6 +17502,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -20514,6 +20956,14 @@
             ],
             "title": "Status Id"
           },
+          "sub_issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueTemplateItem"
+            },
+            "maxItems": 25,
+            "title": "Sub Issues",
+            "type": "array"
+          },
           "title": {
             "anyOf": [
               {
@@ -20562,7 +21012,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.\n`sub_issues` are the issues an issue template creates under each issue made\nfrom it.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -20731,6 +21181,13 @@
               }
             ],
             "title": "Status Id"
+          },
+          "sub_issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueBlueprint"
+            },
+            "title": "Sub Issues",
+            "type": "array"
           },
           "team_id": {
             "anyOf": [
@@ -21086,6 +21543,21 @@
             ],
             "title": "Status Id"
           },
+          "sub_issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IssueTemplateItem"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Issues"
+          },
           "title": {
             "anyOf": [
               {
@@ -21257,7 +21729,7 @@
         "type": "object"
       },
       "TriageAccept": {
-        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.\n\n`comment` is posted on the issue by the person accepting, in the same request,\nso a note such as why it was taken in lands beside the accept in the thread.",
+        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.\n\n`comment` is posted on the issue by the person accepting, in the same request,\nso a note such as why it was taken in lands beside the accept in the thread.\n`priority` is set in the same write, which is how an accept meets a team's\nrule that an issue leaves triage only with a priority.",
         "properties": {
           "comment": {
             "anyOf": [
@@ -21269,6 +21741,24 @@
               }
             ],
             "title": "Comment"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "status_id": {
             "anyOf": [
@@ -21319,12 +21809,326 @@
         "title": "TriageDuplicate",
         "type": "object"
       },
+      "TriageRuleActionsBody": {
+        "description": "What a matching rule does; at least one action must be set, and `team_id` moves the issue.",
+        "properties": {
+          "add_label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Add Label Ids",
+            "type": "array"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "title": "TriageRuleActionsBody",
+        "type": "object"
+      },
+      "TriageRuleActionsRead": {
+        "description": "What a matching rule does; `team_id` moves the issue to that team.",
+        "properties": {
+          "add_label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Add Label Ids",
+            "type": "array"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "title": "TriageRuleActionsRead",
+        "type": "object"
+      },
+      "TriageRuleBody": {
+        "description": "One triage rule as a settings patch sends it; a rule without `rule_id` is new.",
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/TriageRuleActionsBody"
+          },
+          "continue_after": {
+            "default": false,
+            "title": "Continue After",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/TriageRuleFilterBody"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "name",
+          "actions"
+        ],
+        "title": "TriageRuleBody",
+        "type": "object"
+      },
+      "TriageRuleFilterBody": {
+        "description": "What an issue entering triage must match; every field given must hold, an empty filter matches all.",
+        "properties": {
+          "creator_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Creator Ids",
+            "type": "array"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "priorities": {
+            "items": {
+              "enum": [
+                "none",
+                "urgent",
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            "title": "Priorities",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "web",
+                "form",
+                "mcp",
+                "cli",
+                "api",
+                "github",
+                "system"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "TriageRuleFilterBody",
+        "type": "object"
+      },
+      "TriageRuleRead": {
+        "description": "One triage rule as the API returns it; `warning` says why a broken rule is off.",
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/TriageRuleActionsRead"
+          },
+          "continue_after": {
+            "title": "Continue After",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/TriageRuleFilterBody"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "rule_id",
+          "name",
+          "enabled",
+          "continue_after",
+          "filter",
+          "actions"
+        ],
+        "title": "TriageRuleRead",
+        "type": "object"
+      },
       "TriageSettingsRead": {
-        "description": "A team's triage setting as the API returns it.",
+        "description": "A team's triage settings as the API returns them.",
         "properties": {
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "require_priority": {
+            "default": false,
+            "title": "Require Priority",
+            "type": "boolean"
+          },
+          "responsibility_action": {
+            "default": "notify",
+            "enum": [
+              "notify",
+              "assign"
+            ],
+            "title": "Responsibility Action",
+            "type": "string"
+          },
+          "responsible_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Responsible User Ids",
+            "type": "array"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/TriageRuleRead"
+            },
+            "title": "Rules",
+            "type": "array"
           },
           "team_id": {
             "title": "Team Id",
@@ -21351,7 +22155,7 @@
         "type": "object"
       },
       "TriageSettingsUpdate": {
-        "description": "The body a team's triage settings patch takes.",
+        "description": "The body a team's triage settings patch takes; only the fields sent change.\n\n`responsible_user_ids` names the team members on triage duty, deduplicated in\nthe order given, and an empty list takes everyone off it.",
         "properties": {
           "enabled": {
             "anyOf": [
@@ -21363,6 +22167,62 @@
               }
             ],
             "title": "Enabled"
+          },
+          "require_priority": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Require Priority"
+          },
+          "responsibility_action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "notify",
+                  "assign"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Action"
+          },
+          "responsible_user_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible User Ids"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TriageRuleBody"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
           }
         },
         "title": "TriageSettingsUpdate",
@@ -21575,8 +22435,23 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `email_format`\npicks a digest or one email per notification. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `theme` is the interface theme and `pointer_cursors` whether\ninteractive elements show the pointer cursor. `convert_emoticons` is\nwhether the editor turns typed emoticons into emoji. `activity_filter` is\nwhether issue activity shows every change or only comments.\n`sidebar_items` moves the named sidebar items, leaving the others where\nthey are, and `sidebar_badge_style` picks a count or a dot for the unread\nbadges. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
+          "activity_filter": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "comments"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Filter"
+          },
           "auto_assign_to_self": {
             "anyOf": [
               {
@@ -21620,6 +22495,32 @@
               }
             ],
             "title": "Branch Copy Starts"
+          },
+          "convert_emoticons": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convert Emoticons"
+          },
+          "email_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "digest",
+                  "immediate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Format"
           },
           "email_notifications": {
             "anyOf": [
@@ -21667,6 +22568,16 @@
             ],
             "title": "Home View"
           },
+          "initiatives_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitiativesDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name_display": {
             "anyOf": [
               {
@@ -21705,7 +22616,9 @@
                     "sla_at_risk",
                     "sla_breached",
                     "review_requested",
-                    "reminder"
+                    "reminder",
+                    "triage_new",
+                    "view_issue_added"
                   ]
                 },
                 "type": "object"
@@ -21715,6 +22628,17 @@
               }
             ],
             "title": "Notification Preferences"
+          },
+          "pointer_cursors": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pointer Cursors"
           },
           "projects_display": {
             "anyOf": [
@@ -21741,6 +22665,71 @@
               }
             ],
             "title": "Pulse Digest"
+          },
+          "sidebar_badge_style": {
+            "anyOf": [
+              {
+                "enum": [
+                  "count",
+                  "dot"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sidebar Badge Style"
+          },
+          "sidebar_items": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "show",
+                    "more",
+                    "hide"
+                  ],
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "home",
+                    "inbox",
+                    "my_issues",
+                    "reviews",
+                    "pulse",
+                    "projects",
+                    "initiatives",
+                    "customers",
+                    "views",
+                    "roadmap",
+                    "teams"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sidebar Items"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system",
+                  "light",
+                  "dark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
           },
           "timezone": {
             "anyOf": [
@@ -21808,8 +22797,17 @@
         "type": "object"
       },
       "UserRead": {
-        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead.",
+        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead. `initiatives_display` and\n`initiatives_display_saved` are the same for the initiatives list. `theme`\nis null until the person first saves one. `sidebar_items` names every\nsidebar item with where it sits, `show` unless the person moved it.",
         "properties": {
+          "activity_filter": {
+            "default": "all",
+            "enum": [
+              "all",
+              "comments"
+            ],
+            "title": "Activity Filter",
+            "type": "string"
+          },
           "auto_assign_to_self": {
             "default": false,
             "title": "Auto Assign To Self",
@@ -21841,12 +22839,26 @@
             "title": "Branch Copy Starts",
             "type": "boolean"
           },
+          "convert_emoticons": {
+            "default": true,
+            "title": "Convert Emoticons",
+            "type": "boolean"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
           },
           "email": {
             "title": "Email",
+            "type": "string"
+          },
+          "email_format": {
+            "default": "digest",
+            "enum": [
+              "digest",
+              "immediate"
+            ],
+            "title": "Email Format",
             "type": "string"
           },
           "email_notifications": {
@@ -21889,6 +22901,14 @@
             "title": "Id",
             "type": "string"
           },
+          "initiatives_display": {
+            "$ref": "#/components/schemas/InitiativesDisplay"
+          },
+          "initiatives_display_saved": {
+            "default": false,
+            "title": "Initiatives Display Saved",
+            "type": "boolean"
+          },
           "name_display": {
             "default": "username",
             "enum": [
@@ -21904,6 +22924,11 @@
             },
             "title": "Notification Preferences",
             "type": "object"
+          },
+          "pointer_cursors": {
+            "default": false,
+            "title": "Pointer Cursors",
+            "type": "boolean"
           },
           "projects_display": {
             "$ref": "#/components/schemas/ProjectsDisplay"
@@ -21922,6 +22947,58 @@
             ],
             "title": "Pulse Digest",
             "type": "string"
+          },
+          "sidebar_badge_style": {
+            "default": "count",
+            "enum": [
+              "count",
+              "dot"
+            ],
+            "title": "Sidebar Badge Style",
+            "type": "string"
+          },
+          "sidebar_items": {
+            "additionalProperties": {
+              "enum": [
+                "show",
+                "more",
+                "hide"
+              ],
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams"
+              ]
+            },
+            "title": "Sidebar Items",
+            "type": "object"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system",
+                  "light",
+                  "dark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
           },
           "timezone": {
             "anyOf": [
@@ -22181,6 +23258,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -22244,6 +23325,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -22304,6 +23386,7 @@
               "start_asc",
               "estimate_desc",
               "customer_requests_desc",
+              "customer_important_desc",
               "customer_revenue_desc",
               "completed_desc"
             ],
@@ -22325,6 +23408,10 @@
                   "team",
                   "sla"
                 ],
+                "type": "string"
+              },
+              {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
                 "type": "string"
               },
               {
@@ -22400,7 +23487,7 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members. `projects_display` is the arrangement of\na project view and null on an issue view.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view.",
         "properties": {
           "color": {
             "anyOf": [
@@ -22557,6 +23644,16 @@
             ],
             "title": "Sub Group By"
           },
+          "subscribed": {
+            "default": false,
+            "title": "Subscribed",
+            "type": "boolean"
+          },
+          "subscriber_count": {
+            "default": 0,
+            "title": "Subscriber Count",
+            "type": "integer"
+          },
           "team_id": {
             "anyOf": [
               {
@@ -22696,6 +23793,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -22757,6 +23858,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -22848,6 +23950,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -22874,6 +23977,10 @@
                   "team",
                   "sla"
                 ],
+                "type": "string"
+              },
+              {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
                 "type": "string"
               },
               {
@@ -29876,6 +30983,81 @@
         "tags": [
           "planning"
         ]
+      },
+      "patch": {
+        "description": "Edit a request's quote, customer or important flag, or move it to another issue or project.",
+        "operationId": "edit_request_api_workspaces__workspace_id__customers__customer_id__requests__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerRequestPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Request",
+        "tags": [
+          "planning"
+        ]
       }
     },
     "/api/workspaces/{workspace_id}/cycles": {
@@ -31089,7 +32271,7 @@
         ]
       },
       "patch": {
-        "description": "Rename or rewrite a document; a stale `base_updated_at` is a 409.",
+        "description": "Rename, rewrite, restyle or move a document; a stale `base_updated_at` is a 409.",
         "operationId": "edit_document_api_workspaces__workspace_id__documents__document_id__patch",
         "parameters": [
           {
@@ -33678,7 +34860,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 21,
+              "maxItems": 23,
               "title": "Kind",
               "type": "array"
             }
@@ -35579,7 +36761,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request, and\nthe `customer_requests_desc` and `customer_revenue_desc` sorts put the most\nrequested or highest revenue issues first. Guests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one, and the `customer_requests_desc`,\n`customer_important_desc` and `customer_revenue_desc` sorts put the most\nrequested, most importantly requested or highest revenue issues first.\nGuests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -36524,6 +37706,7 @@
                 "start_asc",
                 "estimate_desc",
                 "customer_requests_desc",
+                "customer_important_desc",
                 "customer_revenue_desc",
                 "completed_desc"
               ],
@@ -38816,6 +39999,134 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions": {
+      "get": {
+        "description": "An issue's saved description versions, newest first, capped per issue.",
+        "operationId": "list_issue_description_versions_api_workspaces__workspace_id__issues__issue_id__description_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDescriptionVersionListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Description Versions",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions/{version_id}/restore": {
+      "post": {
+        "description": "Make one earlier description version the issue's current text, as an edit by the caller.",
+        "operationId": "restore_issue_description_version_api_workspaces__workspace_id__issues__issue_id__description_versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Restore Issue Description Version",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/documents": {
       "get": {
         "description": "The documents that mention one issue, for its page.",
@@ -40888,7 +42199,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request.\n`sort=customer_requests_desc` puts the most requested projects first and\n`customer_revenue_desc` the highest summed customer revenue, target date\nbreaking ties; both fill `customer_request_count`. Guests may use neither.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none. Archived projects are left out unless\n`include_archived` is set.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -41067,6 +42378,7 @@
                   "enum": [
                     "target_asc",
                     "customer_requests_desc",
+                    "customer_important_desc",
                     "customer_revenue_desc"
                   ],
                   "type": "string"
@@ -41095,6 +42407,16 @@
                 }
               ],
               "title": "Label Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
             }
           }
         ],
@@ -41474,6 +42796,64 @@
           }
         ],
         "summary": "List Activity",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/archive": {
+      "post": {
+        "description": "Archive a project, hiding it from the projects list while keeping it readable and restorable.\n\nIdempotent: archiving an archived project answers with it unchanged.",
+        "operationId": "archive_project_api_workspaces__workspace_id__projects__project_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Archive Project",
         "tags": [
           "planning"
         ]
@@ -42731,6 +44111,64 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/unarchive": {
+      "post": {
+        "description": "Restore an archived project to the projects list.\n\nIdempotent: restoring a live project answers with it unchanged.",
+        "operationId": "unarchive_project_api_workspaces__workspace_id__projects__project_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unarchive Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/projects/{project_id}/updates": {
       "get": {
         "description": "One page of a project's updates, newest first.",
@@ -43477,7 +44915,7 @@
     },
     "/api/workspaces/{workspace_id}/pulse": {
       "get": {
-        "description": "One page of the caller's Pulse, newest first: what they follow, or everything they may read.",
+        "description": "One page of the caller's Pulse: what they follow, everything they may read, or recent updates by engagement.",
         "operationId": "list_pulse_api_workspaces__workspace_id__pulse_get",
         "parameters": [
           {
@@ -43498,6 +44936,7 @@
               "default": "for_me",
               "enum": [
                 "for_me",
+                "popular",
                 "recent"
               ],
               "title": "Scope",
@@ -46431,6 +47870,188 @@
         "summary": "Update Display Defaults",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/document-templates": {
+      "get": {
+        "description": "The document templates a team's new documents may start from, and its defaults.",
+        "operationId": "list_team_document_templates_api_workspaces__workspace_id__teams__team_id__document_templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Team Document Templates",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/documents": {
+      "get": {
+        "description": "A team's documents, most recently edited first.",
+        "operationId": "list_team_documents_api_workspaces__workspace_id__teams__team_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Team Documents",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Write a new document under a team, as a member of it.",
+        "operationId": "create_team_document_api_workspaces__workspace_id__teams__team_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Team Document",
+        "tags": [
+          "planning"
         ]
       }
     },
@@ -50063,7 +51684,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings": {
       "get": {
-        "description": "Whether the team routes issues filed from outside it into its triage inbox, off by default.",
+        "description": "The team's triage switch, who is on duty, whether accepting needs a priority and its ordered rules.",
         "operationId": "read_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_get",
         "parameters": [
           {
@@ -50110,7 +51731,7 @@
         ]
       },
       "patch": {
-        "description": "Turn the team's triage inbox on or off; issues already waiting stay until someone works them.",
+        "description": "Change the team's triage settings; issues already waiting stay until someone works them.",
         "operationId": "update_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_patch",
         "parameters": [
           {
@@ -53094,6 +54715,122 @@
           }
         ],
         "summary": "Favorite View",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/{view_id}/subscription": {
+      "delete": {
+        "description": "Stop following a view, a no-op when the caller did not follow it.",
+        "operationId": "unsubscribe_view_api_workspaces__workspace_id__views__view_id__subscription_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unsubscribe View",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Follow an issue view the caller may read, to hear about each issue that newly matches it.\n\nIssues already in the view stay quiet. A project view answers 422.",
+        "operationId": "subscribe_view_api_workspaces__workspace_id__views__view_id__subscription_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Subscribe View",
         "tags": [
           "views"
         ]

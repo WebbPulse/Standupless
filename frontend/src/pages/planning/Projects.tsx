@@ -21,7 +21,13 @@
  * toggle to show the team alone. The arrangement and filters save as a view
  * of projects, and opened as that view the page starts from what it stores,
  * keeps changes in the URL until they are saved over it or as a new view,
- * and leaves the account's own arrangement alone.
+ * and leaves the account's own arrangement alone. Projects on the list and
+ * the board select the way issues do, with x, Shift and an arrow, a Shift
+ * click or Cmd and A, and the bar that rises sets status, lead, priority,
+ * target date, labels or initiative on all of them, or deletes them. Handed
+ * a scope, such as an initiative's projects, the page renders as a tab
+ * inside another page: it keeps only the scope's projects, files new ones
+ * into it, keeps its arrangement in the URL alone, and offers no saved view.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -29,16 +35,30 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   LuBookmarkPlus,
   LuBuilding2,
+  LuCalendar,
   LuChevronRight,
+  LuCircleAlert,
+  LuCircleDashed,
   LuDiamond,
+  LuGoal,
   LuListFilter,
   LuPencil,
   LuPlus,
+  LuSignal,
+  LuTag,
   LuTarget,
+  LuUserRound,
   LuX,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { updateProject } from '../../api/planning';
+import {
+  archiveProject,
+  deleteProject,
+  unarchiveProject,
+  updateProject,
+} from '../../api/planning';
+import { IMPORTANT_CUSTOMER } from '../../api/issues';
+import { ARCHIVE_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
 import {
   createView,
   updateView,
@@ -50,7 +70,16 @@ import {
   refreshViewLists,
   type ViewDetails,
 } from '../../components/issues/view/IssueViewPage';
+import BulkBar, {
+  type BulkBarMenuItem,
+} from '../../components/issues/view/BulkBar';
 import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
+import {
+  ConfirmDeleteProjectsDialog,
+  ProjectBulkCommand,
+  type ProjectBulkProperty,
+  type ProjectBulkWrite,
+} from '../../components/planning/ProjectBulkCommand';
 import ProgressRing from '../../components/planning/ProgressRing';
 import {
   DatePicker,
@@ -81,14 +110,16 @@ import { ErrorAlert } from '../../components/ui/alert';
 import LoadError from '../../components/ui/load-error';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
-import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
+import type { ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
-import { Popover } from '../../components/ui/popover';
+import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
-import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import WorkspaceShell, {
+  type WorkspaceShellProps,
+} from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useProjectLabels } from '../../hooks/useProjectLabels';
@@ -98,6 +129,7 @@ import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useProjectMoves } from '../../hooks/useProjectMoves';
+import { useProjectSelection } from '../../hooks/useProjectSelection';
 import { useProjectsDisplay } from '../../hooks/useProjectsDisplay';
 import { useProjectsDisplayDefault } from '../../hooks/useProjectsDisplayDefault';
 import { useTeam } from '../../hooks/useTeam';
@@ -105,7 +137,7 @@ import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
-import { canWriteIssues } from '../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
 import { errorMessage } from '../../lib/errors';
@@ -123,6 +155,8 @@ import {
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
+  CUSTOMER_PROJECT_ORDERINGS,
+  DEFAULT_PROJECTS_DISPLAY,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
   columnList,
@@ -209,6 +243,7 @@ const HEADER_CLASSES: Record<GridColumn, string> = {
   target: cn(TIER_BLOCK[COLUMN_TIERS.target], 'px-2'),
   teams: TIER_BLOCK[COLUMN_TIERS.teams],
   issues: cn(TIER_BLOCK[COLUMN_TIERS.issues], 'text-right'),
+  important: cn(TIER_BLOCK[COLUMN_TIERS.important], 'text-right'),
   created: TIER_BLOCK[COLUMN_TIERS.created],
   updated: TIER_BLOCK[COLUMN_TIERS.updated],
   completed: TIER_BLOCK[COLUMN_TIERS.completed],
@@ -221,6 +256,7 @@ const HEADER_LABELS: Record<GridColumn, string> = {
   ...PROJECT_COLUMN_LABELS,
   start: 'Start',
   target: 'Target',
+  important: 'Important',
 };
 
 /** How a stored timestamp reads in a date column, or a dash when there is none. */
@@ -294,70 +330,8 @@ const flagParam = (value: string): FlagFilter =>
   value === 'true' || value === 'false' ? value : '';
 /** The customer filter value for projects no customer asked for. */
 const NO_CUSTOMER = 'none';
-
-/** Props for FilterButton: one filter's options and what is chosen. */
-interface FilterButtonProps {
-  field: string;
-  options: ComboboxOption[];
-  selected: string[];
-  multiple?: boolean;
-  onSelect: (value: string) => void;
-}
-
-/** A toolbar chip that opens one filter's options. */
-const FilterButton: React.FC<FilterButtonProps> = ({
-  field,
-  options,
-  selected,
-  multiple = false,
-  onSelect,
-}) => {
-  const chosen = options.filter((option) => selected.includes(option.value));
-  const summary =
-    chosen.length === 0
-      ? null
-      : chosen.length === 1
-        ? (chosen[0]?.label ?? '')
-        : `${String(chosen.length)} selected`;
-  return (
-    <Popover
-      label={field}
-      contentClassName="w-60"
-      trigger={(trigger) => (
-        <button
-          type="button"
-          {...trigger}
-          aria-label={`${field} filter${summary === null ? '' : `: ${summary}`}`}
-          className={cn(
-            'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors duration-100',
-            summary === null
-              ? 'border-dashed border-line text-text-muted hover:border-line-strong hover:text-text'
-              : 'border-line bg-raised text-text hover:border-line-strong'
-          )}
-        >
-          <span className={summary === null ? '' : 'text-text-muted'}>
-            {field}
-          </span>
-          {summary !== null && <span className="font-medium">{summary}</span>}
-        </button>
-      )}
-    >
-      {(close) => (
-        <Combobox
-          label={field}
-          placeholder={`Filter by ${field.toLowerCase()}`}
-          options={options}
-          selected={selected}
-          multiple={multiple}
-          onSelect={(value) => {
-            onSelect(value);
-            if (!multiple) close();
-          }}
-        />
-      )}
-    </Popover>
-  );
-};
+/** The URL parameter that lists archived projects too. */
+const ARCHIVED_PARAM = 'archived';
 
 /** Props for ProjectRow: one project and what the row needs to edit it. */
 interface ProjectRowProps {
@@ -382,6 +356,12 @@ interface ProjectRowProps {
   /** Starts dragging the row to reorder it, or undefined where it cannot move. */
   onDragStart?: ((event: React.DragEvent) => void) | undefined;
   onDragEnd?: (() => void) | undefined;
+  /** Whether the row is selected. */
+  selected?: boolean;
+  /** Whether anything is selected, which keeps every checkbox showing. */
+  selecting?: boolean;
+  /** Picks or drops the row, or the run from the last pick with `range`. */
+  onSelect?: ((range: boolean) => void) | undefined;
 }
 
 /**
@@ -406,6 +386,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   dragging = false,
   onDragStart,
   onDragEnd,
+  selected = false,
+  selecting = false,
+  onSelect,
 }) => {
   const { value, update } = useOptimisticRecord<ProjectRead, ProjectUpdate>(
     server,
@@ -436,6 +419,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
     <li
       ref={rowRef}
       data-project-id={project.project_id}
+      aria-selected={selected}
       draggable={editable && onDragStart !== undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -443,8 +427,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       style={projectGridTracks(shown)}
       className={cn(
         PROJECT_GRID,
-        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
+        'group/row relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive && 'bg-surface',
+        selected && 'bg-accent-soft hover:bg-accent-soft',
         dragging && 'opacity-40'
       )}
     >
@@ -454,16 +439,58 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         aria-label={project.name}
         data-hover="parent"
         {...nameTip.handlers}
+        onClick={(event) => {
+          if (event.shiftKey && onSelect !== undefined) {
+            event.preventDefault();
+            onSelect(true);
+          }
+        }}
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
-        <ProjectIcon icon={project.icon} color={project.color} />
+        {onSelect === undefined ? (
+          <ProjectIcon icon={project.icon} color={project.color} />
+        ) : (
+          <span className="relative flex shrink-0 items-center justify-center">
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className={cn(
+                selecting || selected
+                  ? 'invisible'
+                  : 'group-hover/row:invisible pointer-coarse:visible!'
+              )}
+            />
+            <input
+              type="checkbox"
+              aria-label={`Select ${project.name}`}
+              checked={selected}
+              onChange={(event) => {
+                onSelect((event.nativeEvent as MouseEvent).shiftKey);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === ' ') event.stopPropagation();
+              }}
+              className={cn(
+                'pointer-events-auto absolute inset-0 z-10 m-auto h-3.5 w-3.5 cursor-pointer accent-accent',
+                !selecting &&
+                  !selected &&
+                  'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden'
+              )}
+            />
+          </span>
+        )}
         <span
           ref={nameTip.ref}
           className="min-w-0 shrink truncate font-medium text-text"
         >
           {project.name}
         </span>
+        {project.archived_at != null && (
+          <span className="shrink-0 rounded border border-line px-1 text-[11px] text-text-muted">
+            Archived
+          </span>
+        )}
         {has('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
@@ -630,6 +657,20 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
         </span>
       )}
+      {has('important') && (
+        <span
+          className={cn(
+            'pointer-events-none justify-end text-xs text-text-muted tabular-nums',
+            TIER_FLEX[COLUMN_TIERS.important]
+          )}
+        >
+          <span className="sr-only">Important customer requests </span>
+          {project.customer_important_count === null ||
+          project.customer_important_count === undefined
+            ? '-'
+            : String(project.customer_important_count)}
+        </span>
+      )}
       {(['created', 'updated', 'completed'] as const).map(
         (column) =>
           has(column) && (
@@ -696,16 +737,66 @@ type Saving = 'new' | 'details' | null;
 type FilterField =
   'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer' | 'label';
 
+/** A narrower set of projects the page shows as a tab of another page. */
+export interface ProjectsScope {
+  /** Whether a project belongs in the scope. */
+  includes: (project: ProjectRead) => boolean;
+  /** The initiatives the scope covers, the only ones an initiative grouping draws. */
+  initiativeIds?: ReadonlySet<string>;
+  /** What a project created here starts with, such as its initiative. */
+  preset: ProjectMove;
+  /** Controls the scope adds beside the New project button. */
+  actions?: React.ReactNode;
+  /** What the page says when the scope holds no project. */
+  emptyMessage: string;
+  /** Called after a project is created here. */
+  onCreated?: () => void;
+}
+
 /** Props for Projects. */
 export interface ProjectsProps {
   /** A view of projects the page opens as, its stored filters and arrangement the base. */
   view?: SavedViewDisplayRead;
   /** What sits before the title, the way back to the views list for a view. */
   leading?: React.ReactNode;
+  /** Shows only these projects, as a tab inside another page. */
+  scope?: ProjectsScope;
 }
 
+/** The frame of a scoped page: its toolbar and actions in one bar above the body. */
+const ScopedFrame: React.FC<WorkspaceShellProps> = ({
+  toolbar,
+  actions,
+  children,
+}) => (
+  <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-10 items-center gap-2 border-b border-line px-4 py-1.5 lg:px-6">
+      <div className="min-w-0 flex-1">{toolbar}</div>
+      {actions}
+    </div>
+    {children}
+  </div>
+);
+
+/** A scoped page's preset under a board column's, keeping the scope's initiative. */
+const scopedPreset = (
+  preset: ProjectMove,
+  scope: ProjectsScope | undefined
+): ProjectMove =>
+  scope === undefined
+    ? preset
+    : {
+        ...scope.preset,
+        ...preset,
+        ...((preset.initiative_id ?? null) === null &&
+        scope.preset.initiative_id !== undefined
+          ? { initiative_id: scope.preset.initiative_id }
+          : {}),
+      };
+
 /** The projects of the whole workspace, grouped, filtered and editable. */
-export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
+export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
+  const Shell = scope === undefined ? WorkspaceShell : ScopedFrame;
   const { workspace } = useWorkspace();
   const { user } = useAuth();
   const slug = workspace?.slug ?? '';
@@ -765,13 +856,17 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       workspaceRole: workspace?.role,
       team: filteredTeam,
       workspacePage: teamFilter === '',
-      enabled: base === undefined,
+      enabled: base === undefined && scope === undefined,
     });
   const {
     display,
     change: changeDisplay,
     reset,
-  } = useProjectsDisplay(base?.display, displayDefault);
+  } = useProjectsDisplay(
+    base?.display ??
+      (scope === undefined ? undefined : DEFAULT_PROJECTS_DISPLAY),
+    displayDefault
+  );
   const {
     layout,
     group: grouping,
@@ -819,13 +914,25 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         (field) => display[field] !== base.display[field]
       ));
 
-  const customerOrdering = isMember && ordering === 'customers';
+  const customerOrdering =
+    isMember &&
+    (CUSTOMER_PROJECT_ORDERINGS.has(ordering) ||
+      shownColumns.includes('important'));
+  const showArchived = params.get(ARCHIVED_PARAM) === '1';
   const narrowing = useMemo(
     () => ({
       ...(customerFilter === '' ? {} : { customer_id: [customerFilter] }),
-      ...(customerOrdering ? { sort: 'customer_requests_desc' as const } : {}),
+      ...(customerOrdering
+        ? {
+            sort:
+              ordering === 'important'
+                ? ('customer_important_desc' as const)
+                : ('customer_requests_desc' as const),
+          }
+        : {}),
+      ...(showArchived ? { include_archived: true } : {}),
     }),
-    [customerFilter, customerOrdering]
+    [customerFilter, customerOrdering, ordering, showArchived]
   );
   const { projects, error, isLoading, queryKey, refetch } =
     useWorkspaceProjects(
@@ -847,10 +954,21 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     labels: false,
   });
 
-  const { initiatives } = useInitiatives(
+  const { initiatives: allInitiatives } = useInitiatives(
     workspaceId,
     grouping === 'initiative' || subGrouping === 'initiative'
   );
+  const scopedInitiatives = scope?.initiativeIds;
+  const initiatives = useMemo(
+    () =>
+      scopedInitiatives === undefined
+        ? allInitiatives
+        : allInitiatives.filter((initiative) =>
+            scopedInitiatives.has(initiative.initiative_id)
+          ),
+    [allInitiatives, scopedInitiatives]
+  );
+  const scopeIncludes = scope?.includes;
   const { apply: applyMoves, move: moveProject } = useProjectMoves(
     workspaceId,
     queryKey
@@ -879,6 +997,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const rows = useMemo(
     () =>
       applyMoves(projects)
+        .filter((project) => scopeIncludes?.(project) ?? true)
         .filter(
           (project) =>
             statusFilter.length === 0 || statusFilter.includes(project.status)
@@ -911,6 +1030,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     [
       applyMoves,
       projects,
+      scopeIncludes,
       projectsById,
       statusFilter,
       leadFilter,
@@ -949,10 +1069,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const groups = useMemo(
     () =>
       directedGroups(
-        groupProjects(sorted, grouping, people, teams, { initiatives }),
+        groupProjects(sorted, grouping, people, teams, {
+          initiatives,
+          teamIds: leadTeamIds,
+        }),
         direction
       ),
-    [sorted, grouping, people, teams, initiatives, direction]
+    [sorted, grouping, people, teams, initiatives, leadTeamIds, direction]
   );
   const columns = useMemo(
     () =>
@@ -962,10 +1085,18 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
             groupProjects(sorted, grouping, people, teams, {
               initiatives,
               keepEmpty: true,
+              teamIds: leadTeamIds,
             }),
             direction
           ).filter((column) => {
             if (display.empty === 'hide' && column.rows.length === 0)
+              return false;
+            if (
+              scopedInitiatives !== undefined &&
+              column.kind === 'initiative' &&
+              groupValue(column) === 'none' &&
+              column.rows.length === 0
+            )
               return false;
             if (column.kind !== 'status') return true;
             const status = groupValue(column) as ProjectStatus;
@@ -979,8 +1110,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       people,
       teams,
       initiatives,
+      leadTeamIds,
       direction,
       display.empty,
+      scopedInitiatives,
       statusFilter,
       closed,
     ]
@@ -989,8 +1122,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     () =>
       layout !== 'board' || subGrouping === 'none'
         ? undefined
-        : groupProjects(sorted, subGrouping, people, teams, { initiatives }),
-    [layout, subGrouping, sorted, people, teams, initiatives]
+        : groupProjects(sorted, subGrouping, people, teams, {
+            initiatives,
+            teamIds: leadTeamIds,
+          }),
+    [layout, subGrouping, sorted, people, teams, initiatives, leadTeamIds]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
@@ -1006,9 +1142,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
             ? null
             : groupProjects(group.rows, subGrouping, people, teams, {
                 initiatives,
+                teamIds: leadTeamIds,
               }).map((sub) => ({ sub, fold: `${group.key}/${sub.key}` })),
       })),
-    [groups, subGrouping, people, teams, initiatives]
+    [groups, subGrouping, people, teams, initiatives, leadTeamIds]
   );
   const { visible, starts } = useMemo(() => {
     const shown: ProjectRead[] = [];
@@ -1044,6 +1181,157 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     resetKey: `${params.toString()}:${folded.join(',')}:${String(rows.length)}`,
     enabled: creating === null && layout === 'list',
   });
+
+  const [bulk, setBulk] = useState<ProjectBulkProperty | null>(null);
+  const [deleting, setDeleting] = useState<ProjectRead[] | null>(null);
+  const [boardFocus, setBoardFocus] = useState<string | null>(null);
+  const selectionOrder = useMemo(() => {
+    if (layout === 'list') return visible.map((project) => project.project_id);
+    if (layout !== 'board') return [];
+    const seen = new Set<string>();
+    for (const column of columns)
+      for (const project of column.rows) seen.add(project.project_id);
+    return [...seen];
+  }, [layout, visible, columns]);
+  const focusedProjectId =
+    layout === 'list'
+      ? (visible[activeIndex]?.project_id ?? null)
+      : layout === 'board'
+        ? boardFocus
+        : null;
+  const {
+    selected: selectedIds,
+    toggle: toggleSelected,
+    clear: clearSelection,
+  } = useProjectSelection({
+    order: selectionOrder,
+    focusedId: focusedProjectId,
+    onFocus: (projectId) => {
+      if (layout === 'list')
+        setActiveIndex(
+          visible.findIndex((project) => project.project_id === projectId)
+        );
+      else setBoardFocus(projectId);
+    },
+    enabled:
+      creating === null &&
+      saving === null &&
+      bulk === null &&
+      deleting === null &&
+      layout !== 'timeline',
+  });
+  const selectedProjects = useMemo(
+    () => rows.filter((project) => selectedIds.has(project.project_id)),
+    [rows, selectedIds]
+  );
+  const { initiatives: bulkInitiatives } = useInitiatives(
+    workspaceId,
+    selectedIds.size > 0
+  );
+  const canDelete = (project: ProjectRead): boolean =>
+    isTeamAdmin(workspace?.role, undefined) ||
+    teams.some(
+      (team) =>
+        project.team_ids.includes(team.id) &&
+        isTeamAdmin(workspace?.role, team.role)
+    );
+  const plural = (count: number): string =>
+    count === 1 ? '1 project' : `${String(count)} projects`;
+  const writeBulk: ProjectBulkWrite = (changes) => {
+    const allowed = changes.filter(({ project }) =>
+      canEditProject(workspace?.role, project, teams)
+    );
+    if (allowed.length === 0) {
+      showErrorToast(
+        changes.length === 0
+          ? 'Nothing to change.'
+          : 'You cannot edit the selected projects.'
+      );
+      return;
+    }
+    for (const { project, change } of allowed) moveProject(project, change);
+    showToast(`Updated ${plural(allowed.length)}.`);
+  };
+  const removeProjects = async (targets: ProjectRead[]): Promise<void> => {
+    const results = await Promise.allSettled(
+      targets.map((project) => deleteProject(workspaceId, project.project_id))
+    );
+    const done = results.filter(
+      (result) => result.status === 'fulfilled'
+    ).length;
+    invalidateQueries(queryKey);
+    clearSelection();
+    if (done > 0) showToast(`Deleted ${plural(done)}.`);
+    if (done < targets.length)
+      showErrorToast(`Could not delete ${plural(targets.length - done)}.`);
+  };
+  const deletable = selectedProjects.filter(canDelete);
+  const archivable = selectedProjects.filter((project) =>
+    canEditProject(workspace?.role, project, teams)
+  );
+  const allArchived =
+    archivable.length > 0 &&
+    archivable.every((project) => project.archived_at != null);
+  const toggleArchived = async (targets: ProjectRead[]): Promise<void> => {
+    const restore = targets.every((project) => project.archived_at != null);
+    const write = restore ? unarchiveProject : archiveProject;
+    const results = await Promise.allSettled(
+      targets.map((project) => write(workspaceId, project.project_id))
+    );
+    const done = results.filter(
+      (result) => result.status === 'fulfilled'
+    ).length;
+    invalidateQueries(queryKey);
+    clearSelection();
+    if (done > 0)
+      showToast(`${restore ? 'Restored' : 'Archived'} ${plural(done)}.`);
+    if (done < targets.length)
+      showErrorToast(
+        `Could not ${restore ? 'restore' : 'archive'} ${plural(targets.length - done)}.`
+      );
+  };
+  useShortcut({
+    keys: ARCHIVE_ISSUE_KEYS,
+    label: allArchived
+      ? 'Restore selected projects'
+      : 'Archive selected projects',
+    group: 'List',
+    enabled: archivable.length > 0 && deleting === null && bulk === null,
+    handler: (event) => {
+      event?.preventDefault();
+      void toggleArchived(archivable);
+    },
+  });
+  useShortcut({
+    keys: 'mod+backspace',
+    label: 'Delete selected projects',
+    group: 'List',
+    enabled: deletable.length > 0 && deleting === null && bulk === null,
+    handler: (event) => {
+      event?.preventDefault();
+      setDeleting(deletable);
+    },
+  });
+  const bulkAction = (
+    id: ProjectBulkProperty,
+    label: string,
+    icon: React.ReactNode
+  ): BulkBarMenuItem => ({
+    id,
+    label,
+    icon,
+    onSelect: () => {
+      setBulk(id);
+    },
+  });
+  const bulkActions: BulkBarMenuItem[] = [
+    bulkAction('status', 'Status', <LuCircleDashed />),
+    bulkAction('lead', 'Lead', <LuUserRound />),
+    bulkAction('priority', 'Priority', <LuSignal />),
+    bulkAction('target', 'Target date', <LuCalendar />),
+    bulkAction('labels', 'Labels', <LuTag />),
+    bulkAction('initiative', 'Initiative', <LuGoal />),
+  ];
 
   const writeParam = (
     next: URLSearchParams,
@@ -1158,7 +1446,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     label: 'Save as view',
     scope: 'page',
     group: 'Projects',
-    enabled: saving === null && creating === null,
+    enabled: scope === undefined && saving === null && creating === null,
     handler: () => {
       setSaving('new');
     },
@@ -1248,6 +1536,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   ];
   const customerOptions: ComboboxOption[] = [
     { value: NO_CUSTOMER, label: 'No customer' },
+    {
+      value: IMPORTANT_CUSTOMER,
+      label: 'Important request',
+      icon: <LuCircleAlert className="h-3.5 w-3.5 text-warning" />,
+    },
     ...customers.map((customer) => ({
       value: customer.customer_id,
       label: customer.name,
@@ -1310,7 +1603,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   );
 
   return (
-    <WorkspaceShell
+    <Shell
       title={view?.name ?? 'Projects'}
       {...(leading === undefined ? {} : { leading })}
       {...(view === undefined
@@ -1328,7 +1621,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       flush
       actions={
         <div className="flex items-center gap-1.5">
-          {view === undefined ? (
+          {scope?.actions}
+          {scope !== undefined ? null : view === undefined ? (
             <Button
               size="sm"
               variant="ghost"
@@ -1485,6 +1779,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               onClosedChange={(value) => {
                 changeDisplay({ closed: value });
               }}
+              archived={showArchived}
+              onArchivedChange={(value) => {
+                const next = new URLSearchParams(params);
+                if (value) next.set(ARCHIVED_PARAM, '1');
+                else next.delete(ARCHIVED_PARAM);
+                setParams(next, { replace: true });
+              }}
               {...(filteredTeam === undefined
                 ? {}
                 : {
@@ -1518,7 +1819,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   }
                 : {})}
               onReset={reset}
-              defaultActions={defaultActionsFor(display)}
+              defaultActions={
+                scope === undefined ? defaultActionsFor(display) : undefined
+              }
               customerOrdering={isMember}
             />
             {layout === 'timeline' && (
@@ -1590,7 +1893,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               message={
                 hasFilters
                   ? 'No projects match these filters.'
-                  : 'No projects yet. A project is a dated body of work that one or more teams share.'
+                  : (scope?.emptyMessage ??
+                    'No projects yet. A project is a dated body of work that one or more teams share.')
               }
             />
           ) : (
@@ -1691,6 +1995,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                               });
                             }}
                             onDragEnd={endListDrag}
+                            selected={selectedIds.has(project.project_id)}
+                            selecting={selectedIds.size > 0}
+                            onSelect={(range) => {
+                              toggleSelected(project.project_id, range);
+                            }}
                           />
                         </React.Fragment>
                       );
@@ -1800,6 +2109,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           onOrderingChange={(value) => {
             changeDisplay({ order: value });
           }}
+          selected={selectedIds}
+          focusedId={boardFocus}
+          onToggleSelect={toggleSelected}
+          onFocusProject={setBoardFocus}
           createIn={(column) => {
             if (!canCreate) return undefined;
             if (column.kind === 'team') {
@@ -1823,7 +2136,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           message={
             hasFilters
               ? 'No projects match these filters.'
-              : 'No projects yet. A project is a dated body of work that one or more teams share.'
+              : (scope?.emptyMessage ??
+                'No projects yet. A project is a dated body of work that one or more teams share.')
           }
         />
       ) : (
@@ -1852,13 +2166,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           teams={writableTeams}
           initialTeamIds={creating.teamIds ?? initialTeamIds}
           initialStatus={creating.preset.status ?? 'planned'}
-          preset={creating.preset}
+          preset={scopedPreset(creating.preset, scope)}
           onClose={() => {
             setCreating(null);
           }}
           onCreated={(project) => {
             setCreating(null);
             invalidateQueries(queryKey);
+            scope?.onCreated?.();
             void navigate(projectPath(slug, project.project_id));
           }}
         />
@@ -1906,7 +2221,52 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           onSave={saveDetails}
         />
       )}
-    </WorkspaceShell>
+      {bulk !== null && selectedProjects.length > 0 && (
+        <ProjectBulkCommand
+          property={bulk}
+          projects={selectedProjects}
+          people={people}
+          projectLabels={projectLabels}
+          initiatives={bulkInitiatives}
+          onWrite={writeBulk}
+          onClose={() => {
+            setBulk(null);
+          }}
+        />
+      )}
+      {deleting !== null && (
+        <ConfirmDeleteProjectsDialog
+          projects={deleting}
+          onClose={() => {
+            setDeleting(null);
+          }}
+          onConfirm={() => removeProjects(deleting)}
+        />
+      )}
+      {layout !== 'timeline' && (
+        <BulkBar
+          count={selectedProjects.length}
+          label="Selected projects"
+          actions={bulkActions}
+          archived={allArchived}
+          onArchive={
+            archivable.length > 0
+              ? () => {
+                  void toggleArchived(archivable);
+                }
+              : undefined
+          }
+          onDelete={
+            deletable.length > 0
+              ? () => {
+                  setDeleting(deletable);
+                }
+              : undefined
+          }
+          onClear={clearSelection}
+        />
+      )}
+    </Shell>
   );
 };
 

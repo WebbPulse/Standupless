@@ -42,11 +42,15 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
+import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
 import { EditorShortcuts } from './editorShortcuts';
+import { DocumentLinkSuggestion } from './DocumentLinkSuggestion';
 import { EmojiSuggestion } from './EmojiSuggestion';
+import { EmoticonConversion } from './emoticons';
 import { MediaImage, MediaUpload } from './mediaNodes';
+import { SpreadsheetPaste } from './tablePaste';
 
 /** What {@link markdownExtensions} can be asked to vary per surface. */
 export interface MarkdownExtensionOptions {
@@ -243,6 +247,7 @@ const referenceDecorations = (
       found.push(
         Decoration.inline(start, start + match[0].length, {
           class: 'rich-reference rich-issue-ref',
+          'data-issue-key': match[0],
         })
       );
     }
@@ -318,12 +323,16 @@ export const markdownExtensions = (
     TaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
+    SpreadsheetPaste,
     MediaImage.configure({ inline: false, allowBase64: false }),
     MediaUpload,
     CollapsibleSectionKit,
+    Callout,
     EditorShortcuts,
     MentionChips,
     EmojiSuggestion,
+    EmoticonConversion,
+    DocumentLinkSuggestion,
     ReferenceChips.configure({
       ...(options.isIssueKey === undefined
         ? {}

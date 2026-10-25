@@ -21,6 +21,10 @@
  * the column to a narrow strip that still takes drops, hides it, or hides
  * every other column. Hidden columns wait in a rail with their counts, and
  * the board remembers what was folded or hidden for each grouping.
+ *
+ * Cards take part in the page's selection: the card under the pointer is the
+ * one x picks, a Shift click picks the run from the last one, and a selected
+ * card is drawn in the accent.
  */
 
 import React, {
@@ -32,6 +36,7 @@ import React, {
 } from 'react';
 import {
   LuChevronRight,
+  LuCircleAlert,
   LuEllipsis,
   LuEye,
   LuEyeOff,
@@ -160,6 +165,14 @@ interface BoardCardProps {
   onForcedDone: () => void;
   onDragStart: (event: React.DragEvent) => void;
   onDragEnd: () => void;
+  /** Whether the page has the card selected. */
+  selected: boolean;
+  /** Whether the card is the one in focus. */
+  focused: boolean;
+  /** Picks or drops the card, or the run from the last pick with `range`. */
+  onSelect?: ((range: boolean) => void) | undefined;
+  /** Puts the card in focus, as the pointer does. */
+  onFocus?: (() => void) | undefined;
 }
 
 /** One project as a board card that opens the project and edits in place. */
@@ -179,6 +192,10 @@ const BoardCard: React.FC<BoardCardProps> = ({
   onForcedDone,
   onDragStart,
   onDragEnd,
+  selected,
+  focused,
+  onSelect,
+  onFocus,
 }) => {
   const card = useRef<HTMLLIElement>(null);
   const nameTip = useTruncationTooltip<HTMLAnchorElement>();
@@ -224,7 +241,11 @@ const BoardCard: React.FC<BoardCardProps> = ({
     <li
       ref={card}
       data-project-id={project.project_id}
+      aria-selected={selected}
       draggable={editable}
+      onMouseMove={() => {
+        if (!focused) onFocus?.();
+      }}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onContextMenu={(event) => {
@@ -240,7 +261,9 @@ const BoardCard: React.FC<BoardCardProps> = ({
       className={cn(
         'group/card relative flex flex-col gap-2 rounded-md border border-line bg-raised px-3 py-2 shadow-xs transition-colors duration-100 hover:border-line-strong hover:shadow-sm',
         dimmed && 'opacity-40',
-        editable && 'cursor-grab active:cursor-grabbing'
+        editable && 'cursor-grab active:cursor-grabbing',
+        selected && 'border-accent bg-accent-soft hover:border-accent',
+        focused && !selected && 'border-line-strong'
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -251,11 +274,22 @@ const BoardCard: React.FC<BoardCardProps> = ({
           draggable={false}
           data-hover="parent"
           {...nameTip.handlers}
+          onClick={(event) => {
+            if (event.shiftKey && onSelect !== undefined) {
+              event.preventDefault();
+              onSelect(true);
+            }
+          }}
           className="min-w-0 flex-1 truncate text-sm font-medium text-text after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
         >
           {project.name}
         </Link>
         {nameTip.tip}
+        {project.archived_at != null && (
+          <span className="shrink-0 rounded border border-line px-1 text-[11px] text-text-muted">
+            Archived
+          </span>
+        )}
         {shown.includes('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
@@ -384,6 +418,19 @@ const BoardCard: React.FC<BoardCardProps> = ({
             <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
           </span>
         )}
+        {has('important') && (project.customer_important_count ?? 0) > 0 && (
+          <span
+            title="Important customer requests"
+            className="flex items-center gap-0.5 px-0.5 whitespace-nowrap tabular-nums"
+          >
+            <LuCircleAlert
+              aria-hidden="true"
+              className="h-3 w-3 text-warning"
+            />
+            <span className="sr-only">Important customer requests </span>
+            {String(project.customer_important_count)}
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-1 tabular-nums">
           {has('members') && (
             <span className={ON_CARD}>
@@ -454,6 +501,14 @@ export interface ProjectsBoardProps {
   ordering?: ProjectOrdering | undefined;
   /** Switches the page's ordering, called with manual after a reorder. */
   onOrderingChange?: ((ordering: ProjectOrdering) => void) | undefined;
+  /** The projects the page has selected. */
+  selected?: ReadonlySet<string> | undefined;
+  /** The project in focus, the one x picks. */
+  focusedId?: string | null | undefined;
+  /** Picks or drops a project, or the run from the last pick with `range`. */
+  onToggleSelect?: ((projectId: string, range: boolean) => void) | undefined;
+  /** Puts a project in focus. */
+  onFocusProject?: ((projectId: string) => void) | undefined;
 }
 
 /** A card being dragged. */
@@ -498,6 +553,10 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   createIn,
   ordering,
   onOrderingChange,
+  selected,
+  focusedId = null,
+  onToggleSelect,
+  onFocusProject,
 }) => {
   const [drag, setDrag] = useState<BoardDrag | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -780,6 +839,22 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
                 setOver(null);
                 setSlot(null);
               }}
+              selected={selected?.has(project.project_id) === true}
+              focused={focusedId === project.project_id}
+              onSelect={
+                onToggleSelect === undefined
+                  ? undefined
+                  : (range) => {
+                      onToggleSelect(project.project_id, range);
+                    }
+              }
+              onFocus={
+                onFocusProject === undefined
+                  ? undefined
+                  : () => {
+                      onFocusProject(project.project_id);
+                    }
+              }
             />
           </React.Fragment>
         ))}

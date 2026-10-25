@@ -1,7 +1,9 @@
-"""The team triage switch routes, against real tables in moto.
+"""The team triage settings routes, against real tables in moto.
 
 These pin that triage is off until a team admin turns it on, who may read and
-change it, and that deleting the team removes the row with the rest of its config.
+change it, that triage duty takes only members who can see the team, that every
+change lands in the audit log, and that deleting the team removes the row with
+the rest of its config.
 """
 
 from __future__ import annotations
@@ -10,11 +12,22 @@ from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.audit import AuditQuery
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.db.dynamo.team_config import triage_settings_key
-from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_member, make_team, make_workspace, sign_in
+from app.common.db.dynamo.team_config import Label, label_key, new_config_id, triage_settings_key
+from tests.domains.helpers import (
+    ADMIN,
+    GUEST,
+    MEMBER,
+    OWNER,
+    add_member,
+    add_team_member,
+    make_team,
+    make_workspace,
+    sign_in,
+)
 
 WORKSPACE = "01JB00000000000000000000WS"
 
@@ -52,7 +65,15 @@ def test_unsaved_settings_read_as_off(client: TestClient, team: str) -> None:
     response = client.get(URL)
 
     assert response.status_code == 200
-    assert response.json() == {"team_id": team, "enabled": False, "updated_at": None}
+    assert response.json() == {
+        "team_id": team,
+        "enabled": False,
+        "responsible_user_ids": [],
+        "responsibility_action": "notify",
+        "require_priority": False,
+        "rules": [],
+        "updated_at": None,
+    }
 
 
 def test_an_admin_turns_it_on_and_it_reads_back(client: TestClient, team: str, repositories: Any) -> None:
@@ -120,3 +141,168 @@ def test_turning_it_off_after_a_downgrade_is_allowed(client: TestClient, team: s
 
     assert response.status_code == 200, response.text
     assert response.json()["enabled"] is False
+
+
+def test_duty_and_the_priority_rule_are_saved_and_read_back(client: TestClient, team: str) -> None:
+    """Responsible members are kept once each in the order given, with the action and the rule."""
+    sign_in(client, ADMIN)
+
+    response = client.patch(
+        URL,
+        json={
+            "enabled": True,
+            "responsible_user_ids": [MEMBER, " ", ADMIN, MEMBER],
+            "responsibility_action": "assign",
+            "require_priority": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = client.get(URL).json()
+    assert body["responsible_user_ids"] == [MEMBER, ADMIN]
+    assert body["responsibility_action"] == "assign"
+    assert body["require_priority"] is True
+
+
+def test_a_partial_patch_keeps_the_other_settings(client: TestClient, team: str) -> None:
+    """Changing the action alone leaves the switch, the members and the rule as they were."""
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"enabled": True, "responsible_user_ids": [MEMBER], "require_priority": True})
+
+    response = client.patch(URL, json={"responsibility_action": "assign"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["enabled"], body["responsible_user_ids"], body["require_priority"]) == (True, [MEMBER], True)
+    assert body["responsibility_action"] == "assign"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"responsibility_action": "page"},
+        {"require_priority": "yes"},
+        {"responsible_user_ids": "someone"},
+        {"responsible_user_ids": [f"01JB0000000000000000000{index:03d}" for index in range(26)]},
+    ],
+)
+def test_bad_settings_are_refused(client: TestClient, team: str, payload: dict[str, Any]) -> None:
+    """An unknown action, a non boolean rule, a non list and too many members are each a 422."""
+    sign_in(client, ADMIN)
+    assert client.patch(URL, json=payload).status_code == 422
+
+
+@pytest.mark.parametrize("person", [GUEST, "01JB00000000000000000STRAY"])
+def test_duty_takes_only_members_who_can_see_the_team(client: TestClient, team: str, person: str) -> None:
+    """A guest or someone outside the workspace cannot be put on duty."""
+    sign_in(client, ADMIN)
+
+    response = client.patch(URL, json={"responsible_user_ids": [person]})
+
+    assert response.status_code == 422
+    assert "triage duty" in response.text
+
+
+def test_a_guest_on_the_team_still_cannot_hold_duty(client: TestClient, team: str, repositories: Any) -> None:
+    """A guest who sees the team through a team membership is still refused."""
+    add_team_member(repositories, WORKSPACE, TEAM, GUEST, "member")
+    sign_in(client, ADMIN)
+
+    assert client.patch(URL, json={"responsible_user_ids": [GUEST]}).status_code == 422
+
+
+def test_changes_land_in_the_audit_log(client: TestClient, team: str, repositories: Any) -> None:
+    """Each change records the fields that moved, and restating the settings records nothing."""
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"enabled": True})
+    client.patch(URL, json={"responsible_user_ids": [MEMBER], "responsibility_action": "assign"})
+    client.patch(URL, json={"responsible_user_ids": [MEMBER], "responsibility_action": "assign"})
+
+    rows = repositories.audit.list_events(WORKSPACE, AuditQuery(action="team.triage_changed")).events
+
+    assert len(rows) == 2
+    changes = [(row.before, row.after) for row in rows]
+    assert ({"enabled": False}, {"enabled": True}) in changes
+    assert (
+        {"responsible_user_ids": [], "responsibility_action": "notify"},
+        {"responsible_user_ids": [MEMBER], "responsibility_action": "assign"},
+    ) in changes
+    assert all(row.target.id == TEAM and row.actor.id == ADMIN for row in rows)
+
+
+def _label(repositories: Any, name: str) -> str:
+    """Seed one label on `TEAM`, answering its id."""
+    label_id = new_config_id()
+    repositories.team_config.create_label(
+        Label(
+            workspace_id=WORKSPACE,
+            config_key=label_key(TEAM, label_id),
+            team_id=TEAM,
+            label_id=label_id,
+            name=name,
+            color="#ff0000",
+        )
+    )
+    return label_id
+
+
+def test_rules_save_in_order_and_keep_their_ids(client: TestClient, team: str, repositories: Any) -> None:
+    """New rules get ids, a rule sent back with its id keeps it, and the order sent is the order saved."""
+    bug = _label(repositories, "Bug")
+    sign_in(client, ADMIN)
+    first = {"name": "Bugs", "filter": {"text": "crash"}, "actions": {"add_label_ids": [bug]}}
+    second = {"name": "Urgent", "continue_after": True, "actions": {"priority": "urgent"}}
+
+    saved = client.patch(URL, json={"enabled": True, "rules": [first, second]})
+    assert saved.status_code == 200, saved.text
+    rules = saved.json()["rules"]
+    assert [rule["name"] for rule in rules] == ["Bugs", "Urgent"]
+    assert all(rule["rule_id"] and rule["enabled"] and rule["warning"] is None for rule in rules)
+    assert rules[1]["continue_after"] is True
+
+    swapped = client.patch(URL, json={"rules": [rules[1], {**rules[0], "enabled": False}]})
+
+    assert swapped.status_code == 200, swapped.text
+    after = swapped.json()["rules"]
+    assert [rule["rule_id"] for rule in after] == [rules[1]["rule_id"], rules[0]["rule_id"]]
+    assert after[1]["enabled"] is False
+    assert client.get(URL).json()["rules"] == after
+
+
+def test_a_rule_needs_an_action_and_real_targets(client: TestClient, team: str) -> None:
+    """A rule that does nothing, or names a label or team that does not exist, is refused."""
+    sign_in(client, ADMIN)
+
+    empty = client.patch(URL, json={"rules": [{"name": "Nothing", "actions": {}}]})
+    label = client.patch(URL, json={"rules": [{"name": "Gone", "actions": {"add_label_ids": ["missing"]}}]})
+    own = client.patch(URL, json={"rules": [{"name": "Self", "actions": {"team_id": TEAM}}]})
+
+    assert empty.status_code == 422
+    assert label.status_code == 422
+    assert own.status_code == 422
+
+
+def test_a_rule_whose_label_was_deleted_reads_off_with_a_warning(
+    client: TestClient, team: str, repositories: Any
+) -> None:
+    """Deleting a rule's label switches it off with a reason, and the team can still save around it."""
+    bug = _label(repositories, "Bug")
+    sign_in(client, ADMIN)
+    rule = {"name": "Bugs", "actions": {"add_label_ids": [bug]}}
+    [saved] = client.patch(URL, json={"enabled": True, "rules": [rule]}).json()["rules"]
+
+    repositories.team_config.delete_label(WORKSPACE, TEAM, bug)
+    [broken] = client.get(URL).json()["rules"]
+    kept = client.patch(URL, json={"rules": [broken, {"name": "Urgent", "actions": {"priority": "urgent"}}]})
+
+    assert broken["rule_id"] == saved["rule_id"]
+    assert broken["enabled"] is False
+    assert broken["warning"]
+    assert kept.status_code == 200, kept.text
+    assert [row["name"] for row in kept.json()["rules"]] == ["Bugs", "Urgent"]
+
+
+def test_a_member_cannot_change_the_rules(client: TestClient, team: str) -> None:
+    """Rules are a team admin's call, as the rest of the settings are."""
+    sign_in(client, MEMBER)
+    assert client.patch(URL, json={"rules": []}).status_code == 403

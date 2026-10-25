@@ -30,6 +30,10 @@ describe('TRIAGE_ACTIONS', () => {
     ]);
   });
 
+  it('also marks as a duplicate on M then M, as Linear does', () => {
+    expect(TRIAGE_ACTION.duplicate.altKeys).toBe('m m');
+  });
+
   it('keeps each action under its own id', () => {
     for (const action of TRIAGE_ACTIONS) {
       expect(TRIAGE_ACTION[action.id]).toBe(action);

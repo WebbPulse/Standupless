@@ -21,7 +21,10 @@
  * opens and fills only what the caller did not preset, and picking one in the
  * header starts the draft over from that template. The fields stay editable
  * and the dialog sends what they hold, never the template id, so a field the
- * person clears stays cleared.
+ * person clears stays cleared. A template with sub-issues lists them in the
+ * sub-issue rows, where each can be dropped, and the dialog then sends the
+ * template id with every field set explicitly and the keys of the rows kept,
+ * so the server files the issue and its sub-issues together or not at all.
  *
  * A form template is the exception. Its questions sit under the description
  * and the issue waits until every required one is answered, then the dialog
@@ -38,9 +41,16 @@
  * under the new one, carrying its project, milestone and cycle. A file
  * pasted, dropped or picked is held with a placeholder in the description
  * and uploaded once the issue exists, the placeholder becoming its embed.
+ *
+ * The description is the same rich Markdown surface as the issue page, with
+ * its slash menu, mentions, references, emoji and selection toolbar, loaded
+ * lazily so opening the dialog never waits on it. A held image or video shows
+ * inline at once from its local bytes.
  */
 
 import React, {
+  Suspense,
+  lazy,
   useCallback,
   useContext,
   useEffect,
@@ -60,8 +70,12 @@ import {
 import { uploadAttachment } from '../../api/discussion';
 import { createIssue, createLink, updateIssue } from '../../api/issues';
 import { listTeamTemplates } from '../../api/templates';
+import { getTriageSettings } from '../../api/triage';
+import {
+  DocumentLinkContext,
+  issueDocumentParent,
+} from '../../contexts/DocumentLinkContext';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
-import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useTriageOn } from '../../hooks/useTriageTeams';
 import { canWriteIssues } from '../../lib/capabilities';
@@ -77,22 +91,26 @@ import {
 import { usePreferences } from '../../lib/preferences';
 import {
   namesPending,
+  pendingAttachmentId,
+  pendingPath,
   pendingReference,
   resolvePending,
   stripPending,
 } from '../../lib/draftUploads';
 import { errorMessage } from '../../lib/errors';
 import { contentPath, mediaKindOf } from '../../lib/media';
+import { rememberPreview } from '../../lib/mediaContext';
 import type { Assignable } from '../../lib/issuePeople';
 import {
   templatePrefill,
   type TemplatePrefill,
 } from '../../lib/issueTemplates';
-import { templatesKey } from '../../lib/queryKeys';
+import { templatesKey, triageSettingsKey } from '../../lib/queryKeys';
 import { sortStatuses } from '../../lib/propertyOptions';
 import { issuePath } from '../../lib/paths';
 import { submitKeysLabel } from '../../lib/platform';
 import { showErrorToast, showToast } from '../../lib/toast';
+import { triageDutyLine } from '../../lib/triageDuty';
 import { TRIAGE_STATUS_ID } from '../../lib/triageStatus';
 import {
   UPLOAD_CONTENT_TYPES,
@@ -117,6 +135,8 @@ import type {
   TemplateListRead,
   TemplateRead,
 } from '../../types/Api';
+import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
+import type { UploadFile } from '../editor/mediaNodes';
 import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
@@ -151,6 +171,11 @@ import {
   previewLabels,
   previewPriority,
 } from '../../lib/formMapping';
+
+const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
+
+/** The words an empty description shows. */
+const BODY_PLACEHOLDER = 'Add description...';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -348,18 +373,16 @@ const toPayload = (
   ...(draft.parent === null ? {} : { parent_id: draft.parent.id }),
 });
 
-/** The create body for a form: the template and its answers, with every field the template could fill set explicitly. */
-const formPayload = (
+/** The create body naming a template, with every field the template could fill set explicitly. */
+const templatePayload = (
   teamId: string,
   title: string,
   body: string,
   draft: Draft,
-  template: TemplateRead,
-  answers: FormAnswers
+  template: TemplateRead
 ): IssueCreate => ({
   ...toPayload(teamId, title, body, draft),
   template_id: template.id,
-  form_answers: sentAnswers(template.form_fields ?? [], answers),
   body: body.trim() === '' ? null : body,
   status_id: draft.statusId === '' ? null : draft.statusId,
   priority: draft.priority,
@@ -369,6 +392,19 @@ const formPayload = (
   project_id: draft.projectId,
   project_milestone_id: draft.projectMilestoneId,
   cycle_id: draft.cycleId,
+});
+
+/** The create body for a form: the template and its answers. */
+const formPayload = (
+  teamId: string,
+  title: string,
+  body: string,
+  draft: Draft,
+  template: TemplateRead,
+  answers: FormAnswers
+): IssueCreate => ({
+  ...templatePayload(teamId, title, body, draft, template),
+  form_answers: sentAnswers(template.form_fields ?? [], answers),
 });
 
 /** The rendered body of a form issue with its description swapped for the one carrying uploaded files. */
@@ -385,11 +421,25 @@ const withResolvedDescription = (
   return rendered.slice(0, at) + next + rendered.slice(at + tail.length);
 };
 
-/** One sub-issue row, filed under the new issue when it is created. */
+/** One sub-issue row, filed under the new issue when it is created; a template's row carries its key and is filed by the server. */
 interface SubIssueRow {
   id: string;
   title: string;
+  templateKey?: string;
 }
+
+/** The rows a template's sub-issues preview as, ahead of the rows typed by hand. */
+const withTemplateRows = (
+  rows: readonly SubIssueRow[],
+  template: TemplateRead | null
+): SubIssueRow[] => [
+  ...(template?.sub_issues ?? []).map((item) => ({
+    id: `template-${template?.id ?? ''}-${item.key}`,
+    title: item.title,
+    templateKey: item.key,
+  })),
+  ...rows.filter((row) => row.templateKey === undefined),
+];
 
 /** One file held until the issue it belongs to exists. */
 interface HeldFile {
@@ -553,8 +603,27 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const focusRow = useRef<string | null>(null);
   const filePicker = useRef<HTMLInputElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
-  const bodyInput = useRef<HTMLTextAreaElement>(null);
-  useAutoGrow(bodyInput, expanded ? 640 : 320);
+  const bodyEditor = useRef<RichMarkdownHandle>(null);
+  const bodyFocused = useRef(false);
+  const replacingBody = useRef(false);
+  const [focusBodyOnLoad, setFocusBodyOnLoad] = useState(false);
+  const latestBody = useRef(body);
+  latestBody.current = body;
+
+  const replaceBody = (text: string): void => {
+    replacingBody.current = true;
+    try {
+      bodyEditor.current?.setMarkdown(text);
+    } finally {
+      replacingBody.current = false;
+    }
+    setBody(text);
+  };
+
+  const focusBody = (): void => {
+    if (bodyEditor.current === null) setFocusBodyOnLoad(true);
+    else bodyEditor.current.focus();
+  };
 
   const { data: teams } = useTeams();
   const writable = (teams ?? []).filter((team) =>
@@ -620,6 +689,22 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       : previewLabels(teamLabels, mapping.labelIds, draft.labelIds);
   const shownPriority = previewPriority(mapping, draft.priority);
   const triageShown = landsInTriage || (triageOn && formTemplate !== null);
+  const { data: triageSettings } = usePolledQuery(
+    ({ signal }) => getTriageSettings(workspaceId, activeTeamId, signal),
+    {
+      intervalMs: TEMPLATES_POLL_MS,
+      enabled: triageOn,
+      queryKey: triageSettingsKey(workspaceId, activeTeamId),
+      auth,
+    }
+  );
+  const intoTriage =
+    draft.statusId === TRIAGE_STATUS_ID ||
+    (draft.statusId === '' && triageShown);
+  const dutyLine =
+    intoTriage && triageSettings?.team_id === activeTeamId
+      ? triageDutyLine(triageSettings, teamPeople, draft.assigneeId)
+      : null;
 
   const canSubmit =
     title.trim() !== '' &&
@@ -636,7 +721,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       (answer) =>
         answer === true || (typeof answer === 'string' && answer.trim() !== '')
     ) ||
-    subIssues.some((row) => row.title.trim() !== '');
+    subIssues.some(
+      (row) => row.templateKey === undefined && row.title.trim() !== ''
+    );
   const canNest = draft.parent === null;
 
   const prefillOf = (template: TemplateRead): TemplatePrefill =>
@@ -656,11 +743,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setTemplateId(template?.id ?? null);
     setAnswers({});
     setDraft(withTemplate(base, fill));
+    if (base.parent === null) {
+      setSubIssues((rows) => withTemplateRows(rows, template));
+    }
     if (title.trim() === '' || title === templateText.title) {
       setTitle(text.title);
     }
     if (body.trim() === '' || body === templateText.body) {
-      setBody(text.body);
+      replaceBody(text.body);
     }
     setTemplateText(text);
     setConfirming(false);
@@ -684,8 +774,17 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setAnswers({});
     setTemplateText(text);
     setDraft((held) => withTemplate(held, fill));
+    setSubIssues((rows) => withTemplateRows(rows, template));
     setTitle((held) => (held.trim() === '' ? text.title : held));
-    setBody((held) => (held.trim() === '' ? text.body : held));
+    if (latestBody.current.trim() === '') {
+      replacingBody.current = true;
+      try {
+        bodyEditor.current?.setMarkdown(text.body);
+      } finally {
+        replacingBody.current = false;
+      }
+      setBody(text.body);
+    }
   }, [activeTeamId, templateList, teamStatuses, teamLabels, teamPeople]);
 
   const stored: IssueDraft = {
@@ -793,7 +892,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setTemplateText({ title: held.templateTitle, body: held.templateBody });
     setAnswers(held.answers);
     setTitle(held.title);
-    setBody(held.body);
+    replaceBody(held.body);
     setDraft(draftOfStored(held));
     setSubIssues(rowsOfStored(held, `${localId('sub-saved-')}-`));
     setAttached([]);
@@ -848,11 +947,34 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     const index = subIssues.findIndex((row) => row.id === id);
     const before = subIssues[index - 1];
     setSubIssues((rows) => rows.filter((row) => row.id !== id));
-    if (before === undefined) bodyInput.current?.focus();
+    if (before === undefined) focusBody();
     else focusRow.current = before.id;
   };
 
+  const holdFile = useCallback<UploadFile>(
+    (file, onProgress) => {
+      nextId.current += 1;
+      const id = `file-${String(nextId.current)}`;
+      const kind = mediaKindOf(file.type);
+      rememberPreview(pendingAttachmentId(id), file);
+      setAttached((current) => [...current, { id, file }]);
+      setConfirming(false);
+      onProgress(1);
+      return Promise.resolve({
+        src: pendingPath(workspaceId, id, kind),
+        kind,
+      });
+    },
+    [workspaceId]
+  );
+
   const holdFiles = (files: File[]): void => {
+    const surface = bodyEditor.current;
+    if (surface !== null) {
+      if (!bodyFocused.current) surface.focus();
+      surface.insertFiles(files);
+      return;
+    }
     const accepted: HeldFile[] = [];
     for (const file of files) {
       const refusal = describeUploadRefusal(file);
@@ -863,31 +985,36 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       accepted.push({ id: localId('file-'), file });
     }
     if (accepted.length === 0) return;
-    const field = bodyInput.current;
-    const atCaret = field !== null && document.activeElement === field;
-    const start = atCaret ? field.selectionStart : body.length;
-    const end = atCaret ? field.selectionEnd : body.length;
-    const before = body.slice(0, start);
-    const after = body.slice(end);
-    const lead = before === '' || before.endsWith('\n') ? '' : '\n';
-    const trail = after.startsWith('\n') ? '' : '\n';
+    for (const item of accepted) {
+      rememberPreview(pendingAttachmentId(item.id), item.file);
+    }
     const references = accepted
-      .map((item) => pendingReference(item.id, item.file))
-      .join('\n');
-    setBody(`${before}${lead}${references}${trail}${after}`);
+      .map((item) => pendingReference(workspaceId, item.id, item.file))
+      .join('\n\n');
+    setBody((current) =>
+      current.trim() === '' ? references : `${current}\n\n${references}`
+    );
     setAttached((current) => [...current, ...accepted]);
     setConfirming(false);
   };
 
   const dropFile = (id: string): void => {
     setAttached((current) => current.filter((item) => item.id !== id));
-    setBody((current) =>
-      namesPending(current, id)
-        ? resolvePending(current, (other) =>
-            other === id ? null : `pending-upload:${other}`
-          )
-        : current
-    );
+    if (namesPending(body, id)) {
+      replaceBody(
+        resolvePending(body, (other) =>
+          other === id
+            ? null
+            : pendingPath(
+                workspaceId,
+                other,
+                mediaKindOf(
+                  attached.find((item) => item.id === other)?.file.type ?? ''
+                )
+              )
+        )
+      );
+    }
   };
 
   const uploadHeld = async (
@@ -905,6 +1032,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             issue.id,
             item.file
           );
+          rememberPreview(attachment.attachment_id, item.file);
           paths.set(
             item.id,
             contentPath(
@@ -943,6 +1071,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
 
   const createSubIssues = async (parent: IssueRead): Promise<void> => {
     const titles = subIssues
+      .filter((row) => row.templateKey === undefined)
       .map((row) => row.title.trim())
       .filter((text) => text !== '');
     let failed = 0;
@@ -967,10 +1096,26 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     const original = duplicateOf;
     const sentBody = attached.length === 0 ? body : stripPending(body);
     const form = formTemplate;
-    const payload =
-      form === null
-        ? toPayload(activeTeamId, title, sentBody, draft)
-        : formPayload(activeTeamId, title, sentBody, draft, form, answers);
+    const chosen =
+      templates.find((template) => template.id === templateId) ?? null;
+    const withSubIssues =
+      chosen !== null && (chosen.sub_issues ?? []).length > 0 ? chosen : null;
+    const kept = subIssues.flatMap((row) =>
+      row.templateKey === undefined ? [] : [row.templateKey]
+    );
+    const base =
+      form !== null
+        ? formPayload(activeTeamId, title, sentBody, draft, form, answers)
+        : withSubIssues !== null
+          ? templatePayload(activeTeamId, title, sentBody, draft, withSubIssues)
+          : toPayload(activeTeamId, title, sentBody, draft);
+    const payload: IssueCreate =
+      withSubIssues === null
+        ? base
+        : {
+            ...base,
+            template_sub_issue_keys: draft.parent === null ? kept : [],
+          };
     createIssue(workspaceId, payload)
       .then(async (made) => {
         const issue = await uploadHeld(made, sentBody, form !== null);
@@ -997,10 +1142,12 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         }
         setLastCreated(issue);
         setTitle(templateText.title);
-        setBody(templateText.body);
+        replaceBody(templateText.body);
         setAnswers({});
         setAttached([]);
-        setSubIssues([]);
+        setSubIssues(
+          draft.parent === null ? withTemplateRows([], withSubIssues) : []
+        );
         setConfirming(false);
         showToast(
           `Created ${issue.key}`,
@@ -1026,6 +1173,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLFormElement>): void => {
+    if (event.defaultPrevented) return;
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
@@ -1042,6 +1190,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
         return;
       }
+      setDragging(false);
+    },
+    onDropCapture: () => {
       setDragging(false);
     },
     onDrop: (event: React.DragEvent) => {
@@ -1085,8 +1236,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               setDraft((held) => withSelf(clearTeamScoped(held), selfAssignee));
               setTemplateId(null);
               setAnswers({});
+              setSubIssues((rows) => withTemplateRows(rows, null));
               if (title === templateText.title) setTitle('');
-              if (body === templateText.body) setBody('');
+              if (body === templateText.body) replaceBody('');
               setTemplateText(NO_TEXT);
             }}
           />
@@ -1175,7 +1327,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
                 event.preventDefault();
-                bodyInput.current?.focus();
+                focusBody();
               }
             }}
             className="w-full bg-transparent text-lg font-semibold text-text outline-none placeholder:text-text-faint"
@@ -1189,27 +1341,51 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             duplicateOfId={duplicateOf?.issue_id ?? null}
             onMarkDuplicate={setDuplicateOf}
           />
-          <textarea
-            ref={bodyInput}
-            aria-label="Description"
-            placeholder="Add description..."
-            rows={3}
-            value={body}
-            onChange={(event) => {
-              setBody(event.target.value);
-              setConfirming(false);
-            }}
-            onPaste={(event) => {
-              const files = filesFrom(event.clipboardData);
-              if (files.length === 0) return;
-              event.preventDefault();
-              holdFiles(files);
-            }}
-            className={cn(
-              'block w-full resize-none bg-transparent text-sm text-text outline-none placeholder:text-text-faint',
-              expanded ? 'min-h-64' : 'min-h-16'
-            )}
-          />
+          <Suspense
+            fallback={
+              <p
+                className={cn(
+                  'cursor-text text-sm leading-6 text-text-faint',
+                  expanded ? 'min-h-64' : 'min-h-16'
+                )}
+                onClick={() => {
+                  setFocusBodyOnLoad(true);
+                }}
+              >
+                {body.trim() === '' ? BODY_PLACEHOLDER : body}
+              </p>
+            }
+          >
+            <DocumentLinkContext.Provider
+              value={issueDocumentParent(draft.projectId)}
+            >
+              <RichMarkdownEditor
+                ref={bodyEditor}
+                value={body}
+                editable
+                ariaLabel="Description"
+                placeholder={BODY_PLACEHOLDER}
+                autoFocus={focusBodyOnLoad}
+                className={cn(
+                  'text-sm leading-6 text-text',
+                  expanded ? 'min-h-64' : 'min-h-16'
+                )}
+                mentionPeople={teamPeople}
+                uploadFile={holdFile}
+                onCommit={() => true}
+                onChange={(markdown) => {
+                  if (replacingBody.current) return;
+                  setBody(markdown);
+                  setConfirming(false);
+                }}
+                onSubmit={submit}
+                onCancel={requestClose}
+                onFocusChange={(focused) => {
+                  bodyFocused.current = focused;
+                }}
+              />
+            </DocumentLinkContext.Provider>
+          </Suspense>
           {formTemplate !== null && (
             <FormQuestions
               fields={formFields}
@@ -1377,6 +1553,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             }}
           />
         </div>
+        {dutyLine !== null && (
+          <p className="text-xs text-text-muted">{dutyLine}</p>
+        )}
         <ErrorAlert message={dateError} />
 
         {canNest && subIssues.length > 0 && (
@@ -1398,6 +1577,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                   aria-label={`Sub-issue ${String(index + 1)} title`}
                   placeholder="Sub-issue title"
                   autoComplete="off"
+                  readOnly={row.templateKey !== undefined}
+                  {...(row.templateKey === undefined
+                    ? {}
+                    : { title: 'From the template' })}
                   value={row.title}
                   onChange={(event) => {
                     const next = event.target.value;

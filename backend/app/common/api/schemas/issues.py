@@ -19,7 +19,7 @@ from webbpulse.http import cursor_page
 from app.common.api.schemas.planning import ProjectRead
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
-from app.common.db.dynamo.activity import Activity
+from app.common.db.dynamo.activity import Activity, DescriptionVersion
 from app.common.db.dynamo.issues import Issue, PullRequestSummary
 from app.common.db.dynamo.relations import Relation
 from app.common.sla import sla_status
@@ -60,6 +60,7 @@ SortField = Literal[
     "start_asc",
     "estimate_desc",
     "customer_requests_desc",
+    "customer_important_desc",
     "customer_revenue_desc",
     "completed_desc",
 ]
@@ -145,6 +146,9 @@ def _check_order(start_date: Optional[str], due_date: Optional[str]) -> None:
 FORM_ANSWERS_MAX = 50
 """How many answers one create may carry, comfortably above the most questions a form asks."""
 
+TEMPLATE_SUB_ISSUE_KEYS_MAX = 50
+"""How many template sub-issue keys one create may name, above the most sub-issues a template holds."""
+
 
 class IssueCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/issues` takes.
@@ -154,7 +158,8 @@ class IssueCreate(BaseModel):
     `template_id` fills every field the body leaves out from a template the team
     offers, so `title` may be left out only when a template is named.
     `form_answers` answers a form template's fields by key: text for a text or
-    select field and a boolean for a checkbox.
+    select field and a boolean for a checkbox. `template_sub_issue_keys` keeps
+    only the template sub-issues it names; left out, every one is created.
     """
 
     team_id: str = Field(min_length=1)
@@ -175,6 +180,7 @@ class IssueCreate(BaseModel):
     sort_order: Optional[str] = None
     triage: StrictBool = False
     form_answers: Optional[dict[str, StrictStr | StrictBool]] = Field(default=None, max_length=FORM_ANSWERS_MAX)
+    template_sub_issue_keys: Optional[list[str]] = Field(default=None, max_length=TEMPLATE_SUB_ISSUE_KEYS_MAX)
 
     @field_validator("title")
     @classmethod
@@ -214,6 +220,8 @@ class IssueCreate(BaseModel):
             raise ValueError("title must not be blank")
         if self.form_answers is not None and not self.template_id:
             raise ValueError("form_answers needs a form template_id")
+        if self.template_sub_issue_keys is not None and not self.template_id:
+            raise ValueError("template_sub_issue_keys needs a template_id")
         return self
 
 
@@ -450,10 +458,13 @@ class TriageAccept(BaseModel):
 
     `comment` is posted on the issue by the person accepting, in the same request,
     so a note such as why it was taken in lands beside the accept in the thread.
+    `priority` is set in the same write, which is how an accept meets a team's
+    rule that an issue leaves triage only with a priority.
     """
 
     status_id: Optional[str] = None
     comment: Optional[str] = None
+    priority: Optional[PriorityField] = None
 
     @field_validator("comment")
     @classmethod
@@ -703,6 +714,35 @@ class ActivityRead(BaseModel):
 
 ActivityListRead = cursor_page(ActivityRead, "activity", model_name="ActivityListRead")
 """The body the activity list route answers with, newest first, items under `activity`."""
+
+
+class IssueDescriptionVersionRead(BaseModel):
+    """One saved version of an issue's description: the text, who wrote it and when."""
+
+    version_id: str
+    issue_id: str
+    body: str
+    edited_by: str
+    edited_at: datetime
+    source: Optional[ChangeSource] = None
+
+    @classmethod
+    def from_row(cls, version: DescriptionVersion) -> "IssueDescriptionVersionRead":
+        """Build the response shape from a stored version."""
+        return cls(
+            version_id=version.version_id,
+            issue_id=version.issue_id,
+            body=version.body,
+            edited_by=version.edited_by,
+            edited_at=version.edited_at,
+            source=version.source,  # pyright: ignore[reportArgumentType]
+        )
+
+
+class IssueDescriptionVersionListRead(BaseModel):
+    """An issue's description versions, newest first, the newest being the current text."""
+
+    versions: list[IssueDescriptionVersionRead]
 
 
 class SubscriberRead(BaseModel):

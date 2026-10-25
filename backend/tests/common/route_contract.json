@@ -932,6 +932,18 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions/{version_id}/restore"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/duplicate"
   },
@@ -1065,6 +1077,12 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/customers/{customer_id}/requests/{request_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/customers/{customer_id}/requests/{request_id}"
   },
   {
@@ -1328,6 +1346,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/archive"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/customer-requests"
   },
@@ -1448,6 +1472,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/unarchive"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates"
   },
@@ -1528,6 +1558,24 @@
     "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/roadmap"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/document-templates"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/documents"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/documents"
   },
   {
     "auth": "internal",
@@ -2236,6 +2284,18 @@
     "domain": "views",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/views/{view_id}/favorite"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/{view_id}/subscription"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/{view_id}/subscription"
   },
   {
     "auth": "internal",

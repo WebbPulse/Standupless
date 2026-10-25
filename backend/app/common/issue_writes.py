@@ -34,9 +34,11 @@ from app.common.db.dynamo.issues import (
 )
 from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, Label
+from app.common.db.dynamo.team_templates import IssueTemplate
 from app.common.estimates import estimate_points, is_unestimated
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_archive import archive_issue, unarchive_issue
+from app.common.issue_descriptions import get_description_version, record_description_version, seal_latest_version
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
@@ -62,12 +64,13 @@ from app.common.issue_rules import (
     subscribe_touched,
     unprocessable,
 )
-from app.common.issue_templates import apply_template
+from app.common.issue_templates import apply_template, blueprint_values, chosen_sub_issues
 from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
 from app.common.sla import apply_sla, sla_breach_key
 from app.common.sub_teams import listed_teams
+from app.common.triage_duty import duty_assignee, require_priority
 
 PATCHABLE_FIELDS: tuple[str, ...] = (
     "title",
@@ -146,6 +149,9 @@ def sort_key(sort: str, ranks: Optional[StatusRanks] = None, customers: Optional
     if sort == "customer_requests_desc":
         held = customers or CustomerIndex()
         return lambda issue: (held.request_count("issue", issue.issue_id), issue.updated_at, issue.issue_id)
+    if sort == "customer_important_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: (held.important_count("issue", issue.issue_id), issue.updated_at, issue.issue_id)
     if sort == "customer_revenue_desc":
         held = customers or CustomerIndex()
         return lambda issue: (held.revenue_of("issue", issue.issue_id), issue.updated_at, issue.issue_id)
@@ -197,6 +203,9 @@ def unset_value(sort: str, customers: Optional[CustomerIndex] = None) -> Optiona
     if sort == "customer_requests_desc":
         held = customers or CustomerIndex()
         return lambda issue: held.request_count("issue", issue.issue_id) == 0
+    if sort == "customer_important_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: held.important_count("issue", issue.issue_id) == 0
     if sort == "customer_revenue_desc":
         held = customers or CustomerIndex()
         return lambda issue: held.revenue_of("issue", issue.issue_id) == 0
@@ -425,21 +434,98 @@ class FreshRows:
 def create_issue(
     repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
 ) -> Issue:
-    """Create an issue, allocating its key from the team's counter.
+    """Create an issue and the sub-issues its template adds, answering the issue."""
+    return create_issue_tree(repositories, context, payload, fresh=fresh)[0]
+
+
+def create_issue_tree(
+    repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
+) -> tuple[Issue, list[Issue]]:
+    """Create an issue and the sub-issues its template adds, all of them or none.
+
+    The sub-issues the create keeps are made under the new issue in the
+    template's order, in its project, milestone and cycle. Sub-issues are one
+    level deep, so a create that names a parent and keeps any is refused before
+    anything is written. When one of them fails, every row this create wrote is
+    removed and the 422 names the sub-issue, so a parent is never left half
+    built. An issue landing in triage then runs its team's triage rules.
+    """
+    fresh = fresh or FreshRows()
+    issue, template, filled = _create_one(repositories, context, payload, fresh)
+    created: list[Issue] = []
+    try:
+        team = repositories.teams.get(context.workspace_id, issue.team_id)
+        if team is None:
+            raise not_found()
+        for item in chosen_sub_issues(template, filled):
+            child = IssueCreate.model_validate(
+                {
+                    **blueprint_values(repositories, context.workspace_id, team, item),
+                    "team_id": issue.team_id,
+                    "parent_id": issue.issue_id,
+                    "project_id": issue.project_id,
+                    "project_milestone_id": issue.project_milestone_id,
+                    "cycle_id": issue.cycle_id,
+                }
+            )
+            known = FreshRows(
+                project=fresh.project, milestones=fresh.milestones, issues={**fresh.issues, issue.issue_id: issue}
+            )
+            try:
+                created.append(_create_one(repositories, context, child, known)[0])
+            except HTTPException as exc:
+                raise unprocessable(
+                    f"Could not create the sub-issue {item.title}: {_reason(exc)}. Nothing was created."
+                ) from exc
+    except BaseException:
+        for row in [*reversed(created), issue]:
+            _remove_new_issue(repositories, context, row)
+        raise
+    if issue.in_triage:
+        from app.common.triage_rules import issue_origin, run_triage_rules
+
+        origin = issue_origin(context, from_form=bool(template is not None and template.form_fields))
+        return run_triage_rules(repositories, context, issue, origin=origin, children=created)
+    return issue, created
+
+
+def _reason(exc: HTTPException) -> str:
+    """The message an `HTTPException` carried, without its trailing full stop."""
+    detail: Any = exc.detail
+    message = detail.get("message") if isinstance(detail, dict) else None
+    return (message if isinstance(message, str) else str(detail)).rstrip(".")
+
+
+def _remove_new_issue(repositories: Repositories, context: AuthzContext, issue: Issue) -> None:
+    """Remove an issue this request just wrote, with its history and subscriptions, leaving a tombstone."""
+    workspace_id = context.workspace_id
+    repositories.activity.delete_for_issue(workspace_id, issue.issue_id)
+    repositories.subscriptions.delete_for_issue(workspace_id, issue.issue_id)
+    repositories.issues.delete(workspace_id, issue.issue_id)
+    repositories.activity.record_tombstone(workspace_id, issue.team_id, issue.issue_id, context.user_id)
+
+
+def _create_one(
+    repositories: Repositories, context: AuthzContext, payload: IssueCreate, fresh: FreshRows
+) -> tuple[Issue, Optional[IssueTemplate], IssueCreate]:
+    """Create one issue, allocating its key from the team's counter, and answer the template and the filled create.
 
     A named template fills the fields the payload leaves out before anything is
     validated, so a template's rows are held to the same checks as typed ones.
     The counter is allocated after every validation has passed, because a number
     is consumed whether or not the write lands and the contract accepts gaps but not
     wasted ones. `fresh` names rows this request has just written, so a project,
-    milestone or parent created a moment ago is not refused for read lag.
+    milestone or parent created a moment ago is not refused for read lag. An
+    unassigned issue landing in a triage inbox whose team assigns its duty goes
+    to the member on duty.
     """
-    fresh = fresh or FreshRows()
     require_team_member(repositories, context, payload.team_id)
     team = repositories.teams.get(context.workspace_id, payload.team_id)
     if team is None:
         raise not_found()
-    payload = apply_template(repositories, context, payload)
+    payload, template = apply_template(repositories, context, payload)
+    if chosen_sub_issues(template, payload) and payload.parent_id:
+        raise unprocessable("Sub-issues are one level deep, so a sub-issue cannot add its template's sub-issues")
 
     requested_triage = payload.triage
     status_ref = payload.status_id
@@ -479,6 +565,8 @@ def create_issue(
         status_named=bool(status_ref),
         has_parent=parent_id is not None,
     )
+    if in_triage and assignee_id is None:
+        assignee_id = duty_assignee(repositories, context.workspace_id, payload.team_id)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -551,8 +639,9 @@ def create_issue(
             ]
         )
     subscribe_touched(repositories, created, None)
+    record_description_version(repositories, context, None, created)
     record_issue_mentions(repositories, context, created, None, created.body, place="description")
-    return created
+    return created, template, payload
 
 
 def update_issue(repositories: Repositories, context: AuthzContext, issue: Issue, attributes: dict[str, Any]) -> Issue:
@@ -567,7 +656,26 @@ def update_issue(repositories: Repositories, context: AuthzContext, issue: Issue
     return store_patch(repositories, context, issue, apply_patch(repositories, context, issue, attributes))
 
 
-def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue, attributes: dict[str, Any]) -> Issue:
+def restore_description(repositories: Repositories, context: AuthzContext, issue: Issue, version_id: str) -> Issue:
+    """Put one earlier version of a visible issue's description back as its current text.
+
+    Runs the ordinary patch, so the caller needs write rights in the team and the
+    restore records a body change in the history and a version of its own.
+    """
+    version = get_description_version(repositories, issue, version_id)
+    require_team_member(repositories, context, issue.team_id)
+    seal_latest_version(repositories, issue)
+    return update_issue(repositories, context, issue, {"body": version.body})
+
+
+def apply_patch(
+    repositories: Repositories,
+    context: AuthzContext,
+    issue: Issue,
+    attributes: dict[str, Any],
+    *,
+    accepting: bool = True,
+) -> Issue:
     """The issue as a patch would leave it, validated against its own team, unsaved.
 
     Shared by the single and the bulk patch so both refuse the same values for the
@@ -576,8 +684,15 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
     team's triage inbox, keeping its hidden status. A real status named by anyone
     but a guest takes an issue out of triage, as accepting it would, even when it
     names the hidden status the issue already holds.
+
+    An unassigned issue sent back to triage is assigned to the member on duty
+    when its team assigns triage duty. An issue taken out of triage into
+    anything but a cancelled status counts as accepted unless `accepting` says
+    otherwise, as a decline or a duplicate does, and so must have a priority
+    when its team requires one.
     """
     updated = issue.model_copy(deep=True)
+    leaving_into: Optional[str] = None
     if attributes.get("status_id") == TRIAGE_STATUS_ID:
         if not issue.in_triage:
             require_triage_on(repositories, context.workspace_id, issue.team_id)
@@ -589,6 +704,7 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         if issue.in_triage and not context.is_guest:
             updated.in_triage = False
             updated.snoozed_until = None
+            leaving_into = chosen.category
     if "title" in attributes and attributes["title"] is not None:
         updated.title = attributes["title"]
     if "body" in attributes:
@@ -629,6 +745,10 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         updated.project_milestone_id = None
     if "sort_order" in attributes:
         updated.sort_order = attributes["sort_order"]
+    if updated.in_triage and not issue.in_triage and updated.assignee_id is None:
+        updated.assignee_id = duty_assignee(repositories, context.workspace_id, issue.team_id)
+    if accepting and leaving_into is not None and leaving_into != "cancelled":
+        require_priority(repositories, context.workspace_id, issue.team_id, updated.priority)
     return updated
 
 
@@ -649,6 +769,7 @@ def store_patch(
     `triage_outcome`, and one sent back records `pending`. `condition` makes the
     write depend on the stored row as well. Raises the 404 when the issue was
     deleted after it was read, or when the stored row no longer meets `condition`.
+    An issue sent back to triage runs its team's triage rules.
     """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
     if issue.in_triage and not updated.in_triage:
@@ -701,7 +822,12 @@ def store_patch(
             )
         )
     if issue.body != stored.body:
+        record_description_version(repositories, context, issue, stored)
         record_issue_mentions(repositories, context, stored, issue.body, stored.body, place="description")
+    if stored.in_triage and not issue.in_triage:
+        from app.common.triage_rules import run_triage_rules
+
+        return run_triage_rules(repositories, context, stored)[0]
     return stored
 
 

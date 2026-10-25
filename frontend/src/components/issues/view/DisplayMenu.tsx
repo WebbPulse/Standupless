@@ -22,13 +22,14 @@ import {
   COMPLETED_WINDOW_LABELS,
   DISPLAY_PROPERTIES,
   GROUP_FIELDS,
-  GROUP_LABELS,
   fieldsFor,
+  groupFieldLabel,
   ORDERINGS,
   ORDERING_LABELS,
   PROPERTY_LABELS,
   type CompletedWindow,
   type GroupField,
+  type IssueContext,
   type ViewState,
   withLayout,
 } from '../../../lib/issueView';
@@ -47,6 +48,8 @@ export interface DisplayMenuProps {
    * milestones, so the default leaves the milestone grouping out.
    */
   groupFields?: GroupField[];
+  /** The labels the list knows, so a label group grouping reads by its group's name. */
+  context?: Pick<IssueContext, 'labels'>;
   /** True in an archive, whose rows are all archived, so the archived toggle is left out. */
   archive?: boolean;
   /**
@@ -64,6 +67,7 @@ export interface DisplayMenuProps {
 /** The orderings that read the customers who asked for each issue. */
 const CUSTOMER_ORDERINGS: ReadonlySet<IssueListSort> = new Set([
   'customer_requests_desc',
+  'customer_important_desc',
   'customer_revenue_desc',
 ]);
 
@@ -118,12 +122,34 @@ const Toggle: React.FC<{
   </Row>
 );
 
+const NO_LABELS: Pick<IssueContext, 'labels'> = { labels: [] };
+
+/**
+ * The groupings offered with the current ones kept, so a saved label group
+ * grouping still shows while the labels load or after its group is gone.
+ */
+const withCurrent = (
+  fields: GroupField[],
+  current: GroupField[]
+): GroupField[] => {
+  const missing = current.filter(
+    (field, index) =>
+      !fields.includes(field) && current.indexOf(field) === index
+  );
+  if (missing.length === 0) return fields;
+  const at = fields.indexOf('none');
+  return at === -1
+    ? [...fields, ...missing]
+    : [...fields.slice(0, at), ...missing, ...fields.slice(at)];
+};
+
 /** The Display button and its panel. */
 export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   state,
   onChange,
   onReset,
-  groupFields = fieldsFor(GROUP_FIELDS, {}),
+  groupFields: offered = fieldsFor(GROUP_FIELDS, {}),
+  context = NO_LABELS,
   archive = false,
   teamDefault,
   customerSorts = false,
@@ -134,6 +160,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   const set = (patch: Partial<ViewState>): void => {
     onChange({ ...state, ...patch });
   };
+  const groupFields = withCurrent(offered, [state.groupBy, state.subGroupBy]);
   const layouts = [
     { value: 'list', label: 'List', icon: <LuList className="h-4 w-4" /> },
     { value: 'board', label: 'Board', icon: <LuKanban className="h-4 w-4" /> },
@@ -202,7 +229,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
               .filter((field) => state.layout === 'list' || field !== 'none')
               .map((field) => (
                 <option key={field} value={field}>
-                  {GROUP_LABELS[field]}
+                  {groupFieldLabel(field, context)}
                 </option>
               ))}
           </Select>
@@ -224,7 +251,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
               .filter((field) => field === 'none' || field !== state.groupBy)
               .map((field) => (
                 <option key={field} value={field}>
-                  {GROUP_LABELS[field]}
+                  {groupFieldLabel(field, context)}
                 </option>
               ))}
           </Select>

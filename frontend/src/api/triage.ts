@@ -1,6 +1,6 @@
 /**
  * The triage routes: a team's waiting issues, the per-team counts behind the
- * sidebar badges, the four ways an issue leaves triage, and the team's switch.
+ * sidebar badges, the four ways an issue leaves triage, and the team's triage settings.
  */
 
 import apiClient from './client';
@@ -24,7 +24,7 @@ export const triagePath = (workspaceId: string): string =>
 const issueTriagePath = (workspaceId: string, issueId: string): string =>
   `/workspaces/${workspaceId}/issues/${issueId}/triage`;
 
-/** The route a team's triage switch is read and changed at. */
+/** The route a team's triage settings are read and changed at. */
 export const triageSettingsPath = (
   workspaceId: string,
   teamId: string
@@ -122,7 +122,7 @@ export const snoozeTriage = async (
   return response.data;
 };
 
-/** Reads a team's triage switch, off when never set. */
+/** Reads a team's triage settings, off with nobody on duty when never set. */
 export const getTriageSettings = async (
   workspaceId: string,
   teamId: string,
@@ -135,7 +135,7 @@ export const getTriageSettings = async (
   return response.data;
 };
 
-/** Turns a team's triage inbox on or off. Team admin only. */
+/** Changes a team's triage settings; omitted fields keep their value. Team admin only. */
 export const updateTriageSettings = async (
   workspaceId: string,
   teamId: string,

@@ -32,6 +32,11 @@ PulseDigestField = Literal["off", "daily", "weekly"]
 PULSE_DIGESTS: tuple[str, ...] = ("off", "daily", "weekly")
 """How often a person's Pulse digest email comes, if at all."""
 
+EmailFormatField = Literal["digest", "immediate"]
+
+EMAIL_FORMATS: tuple[str, ...] = ("digest", "immediate")
+"""How notification emails reach a person: batched into a short digest, or one email per notification."""
+
 HomeViewField = Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]
 
 HOME_VIEWS: tuple[str, ...] = ("home", "inbox", "my_issues", "projects", "pulse", "views")
@@ -51,6 +56,55 @@ FontSizeField = Literal["small", "default", "large"]
 
 FONT_SIZES: tuple[str, ...] = ("small", "default", "large")
 """The interface text sizes a person may pick."""
+
+ThemeField = Literal["system", "light", "dark"]
+
+THEMES: tuple[str, ...] = ("system", "light", "dark")
+"""The interface themes a person may pick."""
+
+ActivityFilterField = Literal["all", "comments"]
+
+ACTIVITY_FILTERS: tuple[str, ...] = ("all", "comments")
+"""Whether an issue's activity shows every change or only its comments."""
+
+SidebarItemField = Literal[
+    "home",
+    "inbox",
+    "my_issues",
+    "reviews",
+    "pulse",
+    "projects",
+    "initiatives",
+    "customers",
+    "views",
+    "roadmap",
+    "teams",
+]
+
+SIDEBAR_ITEMS: tuple[str, ...] = (
+    "home",
+    "inbox",
+    "my_issues",
+    "reviews",
+    "pulse",
+    "projects",
+    "initiatives",
+    "customers",
+    "views",
+    "roadmap",
+    "teams",
+)
+"""The workspace sidebar's top-level items a person may show, hide or move to the More menu."""
+
+SidebarVisibilityField = Literal["show", "more", "hide"]
+
+SIDEBAR_VISIBILITIES: tuple[str, ...] = ("show", "more", "hide")
+"""Where a sidebar item sits: in the sidebar, in its More menu, or nowhere."""
+
+SidebarBadgeStyleField = Literal["count", "dot"]
+
+SIDEBAR_BADGE_STYLES: tuple[str, ...] = ("count", "dot")
+"""Whether the sidebar's unread badges show a number or a dot."""
 
 STALE_ACCOUNT_PURGE = timedelta(hours=12)
 """How long a started account purge may go quiet before the sweep starts it again."""
@@ -86,9 +140,20 @@ class User(BaseModel):
     `home_view`, `week_start`, `name_display` and `font_size` are the interface
     preferences that follow the person to every device. They default to the values
     the interface used before they existed, so an older row reads unchanged.
+    `theme` is the interface theme, None until the person first saves one, so a
+    browser's earlier local choice can be uploaded once. `pointer_cursors` shows
+    the pointer cursor on interactive elements, off by default. `convert_emoticons`
+    turns typed emoticons such as `:)` into emoji in the editor, on by default.
+    `activity_filter` is whether every issue's activity shows all of it or only
+    its comments, all by default.
+    `sidebar_items` holds only the sidebar items the person moved off the
+    sidebar, each as `more` or `hide`, so an item added later shows for everyone.
+    `sidebar_badge_style` is whether the unread badges show a count or a dot.
     `projects_display` is how the person last arranged the projects list, its
     layout, grouping, ordering, closed window and timeline zoom, kept as plain
     strings that the read falls back from when a choice is retired.
+    `initiatives_display` is the same for the initiatives list: its ordering,
+    whether completed initiatives show, and which properties show.
 
     `auto_assign_to_self`, `branch_copy_starts` and `branch_copy_assigns` are the
     workflow preferences: whether an issue the person creates defaults to them as
@@ -99,6 +164,9 @@ class User(BaseModel):
     `auto_grant_new_scopes` is the person's opt-in, off by default, to have a scope
     the product adds later join every connected app grant that took every scope on
     offer when it was given, at that app's next token refresh.
+
+    `email_format` is how notification emails arrive, one of `EMAIL_FORMATS`:
+    `digest` by default, or `immediate` for one email per notification.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -110,13 +178,21 @@ class User(BaseModel):
     email_verified: bool = False
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    email_format: str = "digest"
     timezone: Optional[str] = None
     pulse_digest: str = "off"
     home_view: str = "home"
     week_start: str = "monday"
     name_display: str = "username"
     font_size: str = "default"
+    theme: Optional[str] = None
+    pointer_cursors: bool = False
+    convert_emoticons: bool = True
+    activity_filter: str = "all"
+    sidebar_items: dict[str, str] = Field(default_factory=dict)
+    sidebar_badge_style: str = "count"
     projects_display: dict[str, str] = Field(default_factory=dict)
+    initiatives_display: dict[str, str] = Field(default_factory=dict)
     auto_assign_to_self: bool = False
     branch_copy_starts: bool = True
     branch_copy_assigns: bool = True
@@ -167,6 +243,11 @@ class User(BaseModel):
         if channel == "email" and not self.email_notifications:
             return False
         return bool(self.notification_preferences.get(kind, {}).get(channel, True))
+
+    @property
+    def immediate_email(self) -> bool:
+        """Whether this person asked for one email per notification rather than a digest."""
+        return self.email_format == "immediate"
 
     @property
     def email_lower(self) -> str:

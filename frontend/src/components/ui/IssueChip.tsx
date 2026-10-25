@@ -3,7 +3,8 @@
  * draws one: a link to the issue with its status glyph, key and title. Only a
  * key whose prefix is one of the workspace's teams is read, so text such as
  * `UTF-8` never costs a request, and a key that does not resolve, or that the
- * reader cannot see, stays the plain text it was written as.
+ * reader cannot see, stays the plain text it was written as. Resting the
+ * pointer or keyboard focus on the chip opens its preview card.
  */
 
 import React, { useContext } from 'react';
@@ -19,6 +20,7 @@ import { issuePath } from '../../lib/paths';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 import { issueKey, statusesKey } from '../../lib/queryKeys';
 import { TRIAGE_STATUS } from '../../lib/triageStatus';
+import { useIssueHoverCard } from './IssueHoverCard';
 import { StatusIcon } from './StatusIcon';
 
 /** How often a mentioned issue is re-read, so its status stays current. */
@@ -38,6 +40,7 @@ const ResolvedIssueChip: React.FC<ResolvedIssueChipProps> = ({
   issueKeyText,
 }) => {
   const auth = useQueryAuth();
+  const { triggerProps, card } = useIssueHoverCard(issueKeyText);
   const { data: issue } = usePolledQuery(
     (context) => getIssueByKey(workspaceId, issueKeyText, context),
     {
@@ -66,21 +69,24 @@ const ResolvedIssueChip: React.FC<ResolvedIssueChipProps> = ({
       : known.find((item) => item.id === issue.status_id);
 
   return (
-    <Link
-      to={issuePath(slug, issue.key)}
-      title={`${issue.key} ${issue.title}`}
-      data-md={issueKeyText}
-      className="inline-flex max-w-full items-baseline gap-1 rounded-xs bg-raised px-1 align-baseline text-[0.95em] text-text no-underline transition-colors duration-100 hover:bg-line"
-    >
-      <StatusIcon
-        status={status}
-        statuses={known}
-        className="h-3 w-3 shrink-0 self-center"
-        {...(status === undefined ? {} : { name: status.name })}
-      />
-      <span className="shrink-0 font-mono text-text-muted">{issue.key}</span>
-      <span className="min-w-0 truncate">{issue.title}</span>
-    </Link>
+    <>
+      <Link
+        to={issuePath(slug, issue.key)}
+        {...triggerProps}
+        data-md={issueKeyText}
+        className="inline-flex max-w-full items-baseline gap-1 rounded-xs bg-raised px-1 align-baseline text-[0.95em] text-text no-underline transition-colors duration-100 hover:bg-line"
+      >
+        <StatusIcon
+          status={status}
+          statuses={known}
+          className="h-3 w-3 shrink-0 self-center"
+          {...(status === undefined ? {} : { name: status.name })}
+        />
+        <span className="shrink-0 font-mono text-text-muted">{issue.key}</span>
+        <span className="min-w-0 truncate">{issue.title}</span>
+      </Link>
+      {card}
+    </>
   );
 };
 

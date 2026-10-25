@@ -42,6 +42,7 @@ import { IconButton } from '../ui/button';
 import Spinner from '../ui/spinner';
 import { Toaster } from '../ui/toast';
 import { RelationMarkers } from './BlockedMarker';
+import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import IssueTimeline from './IssueTimeline';
@@ -252,116 +253,119 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
             </div>
           ) : null
         ) : (
-          <div className="space-y-5 px-4 py-4">
-            <IssueBody
-              key={issue.id}
-              workspaceId={workspaceId}
-              issue={issue}
-              canEdit={canEdit}
-              onSaved={receive}
-              people={options.people}
-              {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
-            />
+          <PassageThreadsProvider key={issue.id}>
+            <div className="space-y-5 px-4 py-4">
+              <IssueBody
+                key={issue.id}
+                workspaceId={workspaceId}
+                issue={issue}
+                canEdit={canEdit}
+                onSaved={receive}
+                people={options.people}
+                canComment={canEdit}
+                {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
+              />
 
-            <div className="space-y-3">
-              {team !== undefined && (
-                <IssueFields
-                  issue={issue}
-                  estimateScale={team.estimate_scale}
-                  estimateOptions={estimateOptionsOf(team)}
-                  statuses={options.statuses}
-                  labels={options.labels}
-                  people={options.people}
-                  parents={parents}
-                  canEdit={canEdit}
-                  {...(user?.id === undefined
-                    ? {}
-                    : { currentUserId: user.id })}
-                  {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
-                  onUpdate={onUpdate}
-                />
-              )}
+              <div className="space-y-3">
+                {team !== undefined && (
+                  <IssueFields
+                    issue={issue}
+                    estimateScale={team.estimate_scale}
+                    estimateOptions={estimateOptionsOf(team)}
+                    statuses={options.statuses}
+                    labels={options.labels}
+                    people={options.people}
+                    parents={parents}
+                    canEdit={canEdit}
+                    {...(user?.id === undefined
+                      ? {}
+                      : { currentUserId: user.id })}
+                    {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
+                    onUpdate={onUpdate}
+                  />
+                )}
 
-              {team !== undefined && (
-                <PropertySection title="Planning">
-                  <PropertyRow label="Project">
-                    <PlanningRowLink
-                      to={
-                        issue.project_id === null || workspace === null
-                          ? null
-                          : projectPath(workspace.slug, issue.project_id)
-                      }
-                      label="Open project"
-                    >
-                      <ProjectPicker
-                        disabled={!canEdit}
-                        projects={options.projects}
-                        value={issue.project_id}
-                        onChange={(projectId) => {
-                          onUpdate(projectPatch(issue, projectId));
-                        }}
-                      />
-                    </PlanningRowLink>
-                  </PropertyRow>
-                  {issue.project_id !== null && (
-                    <PropertyRow label="Milestone">
+                {team !== undefined && (
+                  <PropertySection title="Planning">
+                    <PropertyRow label="Project">
                       <PlanningRowLink
                         to={
-                          issue.project_milestone_id == null ||
-                          workspace === null
+                          issue.project_id === null || workspace === null
                             ? null
-                            : projectMilestonePath(
-                                workspace.slug,
-                                issue.project_id,
-                                issue.project_milestone_id
-                              )
+                            : projectPath(workspace.slug, issue.project_id)
                         }
-                        label="Open milestone"
+                        label="Open project"
                       >
-                        <IssueMilestonePicker
-                          workspaceId={workspaceId}
-                          projectId={issue.project_id}
-                          value={issue.project_milestone_id ?? null}
+                        <ProjectPicker
                           disabled={!canEdit}
-                          onChange={(milestoneId) => {
-                            onUpdate({ project_milestone_id: milestoneId });
+                          projects={options.projects}
+                          value={issue.project_id}
+                          onChange={(projectId) => {
+                            onUpdate(projectPatch(issue, projectId));
                           }}
                         />
                       </PlanningRowLink>
                     </PropertyRow>
-                  )}
-                  <PropertyRow label="Cycle">
-                    <CyclePicker
-                      disabled={!canEdit}
-                      cycles={options.cycles}
-                      value={issue.cycle_id}
-                      onChange={(cycleId) => {
-                        onUpdate({ cycle_id: cycleId });
-                      }}
-                    />
-                  </PropertyRow>
-                </PropertySection>
-              )}
+                    {issue.project_id !== null && (
+                      <PropertyRow label="Milestone">
+                        <PlanningRowLink
+                          to={
+                            issue.project_milestone_id == null ||
+                            workspace === null
+                              ? null
+                              : projectMilestonePath(
+                                  workspace.slug,
+                                  issue.project_id,
+                                  issue.project_milestone_id
+                                )
+                          }
+                          label="Open milestone"
+                        >
+                          <IssueMilestonePicker
+                            workspaceId={workspaceId}
+                            projectId={issue.project_id}
+                            value={issue.project_milestone_id ?? null}
+                            disabled={!canEdit}
+                            onChange={(milestoneId) => {
+                              onUpdate({ project_milestone_id: milestoneId });
+                            }}
+                          />
+                        </PlanningRowLink>
+                      </PropertyRow>
+                    )}
+                    <PropertyRow label="Cycle">
+                      <CyclePicker
+                        disabled={!canEdit}
+                        cycles={options.cycles}
+                        value={issue.cycle_id}
+                        onChange={(cycleId) => {
+                          onUpdate({ cycle_id: cycleId });
+                        }}
+                      />
+                    </PropertyRow>
+                  </PropertySection>
+                )}
 
-              <p className="text-xs text-text-faint">
-                Last updated {timestampLabel(issue.updated_at)}
-              </p>
-            </div>
+                <p className="text-xs text-text-faint">
+                  Last updated {timestampLabel(issue.updated_at)}
+                </p>
+              </div>
 
-            <div className="border-t border-line pt-5">
-              <IssueTimeline
-                workspaceId={workspaceId}
-                issueId={issue.id}
-                currentUserId={user?.id ?? ''}
-                canComment={canEdit}
-                isAdmin={isAdmin}
-                context={context}
-                slug={workspace?.slug ?? ''}
-                teamKeyPrefix={team?.key_prefix ?? ''}
-                quote={descriptionQuotes.request}
-              />
+              <div className="border-t border-line pt-5">
+                <IssueTimeline
+                  workspaceId={workspaceId}
+                  issueId={issue.id}
+                  currentUserId={user?.id ?? ''}
+                  canComment={canEdit}
+                  isAdmin={isAdmin}
+                  context={context}
+                  slug={workspace?.slug ?? ''}
+                  teamKeyPrefix={team?.key_prefix ?? ''}
+                  quote={descriptionQuotes.request}
+                />
+              </div>
             </div>
-          </div>
+          </PassageThreadsProvider>
         )}
       </div>
     </aside>

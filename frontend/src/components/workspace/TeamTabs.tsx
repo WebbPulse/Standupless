@@ -15,6 +15,7 @@ import { cn } from '../../lib/cn';
 import {
   teamBoardPath,
   teamCyclesPath,
+  teamDocumentsPagePath,
   teamPath,
   teamReleasesPath,
   teamSettingsPath,
@@ -29,6 +30,7 @@ export type TeamTab =
   | 'board'
   | 'cycles'
   | 'releases'
+  | 'documents'
   | 'standup'
   | 'settings';
 
@@ -49,7 +51,7 @@ const tabClass = (active: boolean): string =>
   );
 
 /**
- * The Issues, Board, Cycles, Releases, Standup and Settings switch for one
+ * The Issues, Board, Cycles, Releases, Documents, Standup and Settings switch for one
  * team, led by Triage whenever the team has triage on or the triage page is
  * showing, so the inbox is one click from any of the team's surfaces.
  */
@@ -84,6 +86,11 @@ export const TeamTabs: React.FC<TeamTabsProps> = ({
       tab: 'releases',
       label: 'Releases',
       to: teamReleasesPath(slug, keyPrefix),
+    },
+    {
+      tab: 'documents',
+      label: 'Documents',
+      to: teamDocumentsPagePath(slug, keyPrefix),
     },
     {
       tab: 'standup',

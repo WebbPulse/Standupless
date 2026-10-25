@@ -2,7 +2,7 @@
 
 A customer is reached by its own id under the workspace. A request is filed and
 listed through the issue or project it names, listed again under its customer,
-and removed through its customer. The rules live in `app.common.customers`, which
+and edited, moved and removed through its customer. The rules live in `app.common.customers`, which
 the MCP tools share.
 """
 
@@ -22,6 +22,7 @@ from app.common.api.schemas.customers import (
     CustomerRead,
     CustomerRequestCreate,
     CustomerRequestListRead,
+    CustomerRequestPatch,
     CustomerRequestRead,
 )
 from app.common.customers import (
@@ -35,6 +36,7 @@ from app.common.customers import (
     list_target_requests,
     merge_customers,
     update_customer,
+    update_request,
 )
 
 router = APIRouter()
@@ -117,6 +119,22 @@ def list_requests_of_customer(
 ) -> Any:
     """A customer's requests whose issue or project the caller can see, newest first."""
     return CustomerRequestListRead(items=list_customer_requests(repositories, context, customer_id), next_cursor=None)
+
+
+@router.patch(
+    "/{workspace_id}/customers/{customer_id}/requests/{request_id}",
+    response_model=CustomerRequestRead,
+)
+def edit_request(
+    payload: CustomerRequestPatch,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    customer_id: Annotated[str, Path()],
+    request_id: Annotated[str, Path()],
+) -> CustomerRequestRead:
+    """Edit a request's quote, customer or important flag, or move it to another issue or project."""
+    return update_request(repositories, context, customer_id, request_id, payload)
 
 
 @router.delete(

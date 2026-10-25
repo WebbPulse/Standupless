@@ -66,7 +66,13 @@ from app.common.project_updates import (
     list_project_updates,
     update_project_update,
 )
-from app.common.project_writes import create_project, delete_project, list_projects, update_project
+from app.common.project_writes import (
+    create_project,
+    delete_project,
+    list_projects,
+    set_project_archived,
+    update_project,
+)
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.toolkit import (
@@ -270,12 +276,18 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         **(
             {} if project.customer_request_count is None else {"customer_request_count": project.customer_request_count}
         ),
+        **(
+            {}
+            if project.customer_important_count is None
+            else {"customer_important_count": project.customer_important_count}
+        ),
         **({} if project.customer_revenue is None else {"customer_revenue": project.customer_revenue}),
         **(
             {}
             if project.skipped_template_issues is None
             else {"skipped_template_issues": [row.model_dump() for row in project.skipped_template_issues]}
         ),
+        "archived_at": project.archived_at.isoformat() if project.archived_at else None,
         "updated_at": project.updated_at.isoformat(),
     }
 
@@ -469,6 +481,7 @@ def _list_projects(call: ToolCall) -> Any:
         customer_id_not=filter_values(call.optional("customer_id_not")),
         sort=str(sort) if sort else None,
         label_id=project_label_ids(call, labels, allow_none=True) if labels is not None else None,
+        include_archived=call.optional("include_archived", False) is True,
     )
     return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -593,6 +606,18 @@ def _update_project(call: ToolCall) -> Any:
         fields["open_issues"] = choice
     payload = ProjectUpdate.model_validate(fields)
     return _project_json(update_project(call.repositories, call.context, project_id, payload))
+
+
+def _archive_project(call: ToolCall) -> Any:
+    """Archive a project, hiding it from the projects list until it is restored."""
+    project_id = _project_id(call, call.require("project_id"))
+    return _project_json(set_project_archived(call.repositories, call.context, project_id, True))
+
+
+def _unarchive_project(call: ToolCall) -> Any:
+    """Restore an archived project to the projects list."""
+    project_id = _project_id(call, call.require("project_id"))
+    return _project_json(set_project_archived(call.repositories, call.context, project_id, False))
 
 
 def _delete_project(call: ToolCall) -> Any:
@@ -942,6 +967,10 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                     "type": "boolean",
                     "description": "With team_id, also list the projects of that team's sub-teams, default false",
                 },
+                "include_archived": {
+                    "type": "boolean",
+                    "description": "Also list archived projects, default false",
+                },
                 "is_blocked": {
                     "type": "boolean",
                     "description": "true for projects an open project blocks, false for the rest",
@@ -951,7 +980,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                     "description": "true for open projects that block another project, false for the rest",
                 },
                 "customer_id": one_or_many(
-                    "Only projects any of these customers asked for; 'none' is projects no customer asked for"
+                    "Only projects any of these customers asked for; 'none' is projects no customer asked for, "
+                    "'important' projects with an important request"
                 ),
                 "customer_id_not": one_or_many("Only projects none of these customers asked for"),
                 "label_id": one_or_many(
@@ -960,7 +990,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "sort": enum(
                     PROJECT_SORTS,
                     "The order, defaulting to target_asc; customer_requests_desc puts the most customer requests "
-                    "first and customer_revenue_desc the highest summed revenue of the customers asking",
+                    "first, customer_important_desc the most important ones and customer_revenue_desc the highest "
+                    "summed revenue of the customers asking",
                 ),
                 **page_properties(),
             }
@@ -1029,6 +1060,23 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             required=("project_id",),
         ),
         handler=_update_project,
+    ),
+    Tool(
+        name="archive_project",
+        description=(
+            "Archive a project: it leaves the projects list but keeps its issues, milestones and updates, "
+            "and can be restored. Archiving an archived project answers it unchanged."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
+        handler=_archive_project,
+    ),
+    Tool(
+        name="unarchive_project",
+        description="Restore an archived project to the projects list. Restoring a live project answers it unchanged.",
+        scopes=("projects:write",),
+        schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
+        handler=_unarchive_project,
     ),
     Tool(
         name="delete_project",

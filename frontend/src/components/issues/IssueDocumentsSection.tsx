@@ -8,10 +8,10 @@
 import React from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { LuFileText } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { listIssueDocuments } from '../../api/documents';
 import { documentPath } from '../../lib/paths';
+import DocumentIcon from '../planning/DocumentIcon';
 import { issueDocumentsKey } from '../../lib/queryKeys';
 import RailSection from './RailSection';
 
@@ -53,10 +53,7 @@ export const IssueDocumentsSection: React.FC<IssueDocumentsSectionProps> = ({
               to={documentPath(slug, row.document_id)}
               className="flex min-w-0 items-center gap-1.5 rounded-xs text-xs text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <LuFileText
-                aria-hidden="true"
-                className="h-3.5 w-3.5 shrink-0 text-text-faint"
-              />
+              <DocumentIcon icon={row.icon ?? null} />
               <span className="truncate">{row.title}</span>
               <span className="shrink-0 truncate text-text-faint">
                 {row.parent_name}

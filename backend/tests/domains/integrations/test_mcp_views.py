@@ -435,3 +435,20 @@ def test_a_project_view_is_saved_listed_and_rearranged(client: TestClient, repos
     assert [(row["name"], row["entity"]) for row in listed["views"]] == [("Roadmap", "projects")]
     assert listed["views"][0]["projects_display"]["group"] == "lead"
     assert "q" in bad
+
+
+def test_a_view_groups_by_a_label_group_through_the_tools(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The tools take `label_group:<id>` for a grouping and refuse a malformed one."""
+    secret = mint_for(repositories, MEMBER, VIEWS)
+
+    created = answer(tool(client, secret, "create_view", {"name": "By area", "group_by": "label_group:grp-area"}))
+    updated = answer(
+        tool(client, secret, "update_view", {"view_id": created["view_id"], "sub_group_by": "label_group:grp-type"})
+    )
+    bad = refusal(tool(client, secret, "create_view", {"name": "Nope", "group_by": "label_group:"}))
+
+    assert created["group_by"] == "label_group:grp-area"
+    assert updated["sub_group_by"] == "label_group:grp-type"
+    assert "group_by" in bad

@@ -18,9 +18,9 @@ from fastapi import HTTPException
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
+    GROUP_BY_PROPERTIES,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
-    GroupByField,
     InboxClearRequest,
     InboxReadRequest,
     InboxSnoozeRequest,
@@ -32,6 +32,7 @@ from app.common.api.schemas.views import (
     ViewCreate,
     ViewRead,
     ViewUpdate,
+    grouping_pattern,
 )
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox import (
@@ -49,7 +50,9 @@ from app.common.saved_views import (
     delete_saved_view,
     load_visible_view,
     readable_views,
+    set_view_subscription,
     update_saved_view,
+    view_read,
 )
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
@@ -72,7 +75,7 @@ SORTS: tuple[str, ...] = get_args(SortField)
 
 LAYOUTS: tuple[str, ...] = get_args(LayoutField)
 
-GROUPINGS: tuple[str, ...] = get_args(GroupByField)
+GROUPING_PATTERN = grouping_pattern()
 
 VIEW_COLORS: tuple[str, ...] = get_args(ViewColorField)
 
@@ -114,10 +117,13 @@ def _boolean(description: str) -> dict[str, Any]:
 
 
 def _grouping(description: str, *, clearable: bool = False) -> dict[str, Any]:
-    """A grouping property, taking null too where an update may clear it."""
+    """A grouping property, a property name or `label_group:<id>`, taking null too where an update may clear it."""
     kind: Any = ["string", "null"] if clearable else "string"
-    values: list[Any] = [*GROUPINGS, None] if clearable else list(GROUPINGS)
-    return {"type": kind, "enum": values, "description": description}
+    return {
+        "type": kind,
+        "pattern": GROUPING_PATTERN,
+        "description": f"{description}: {', '.join(GROUP_BY_PROPERTIES)}, or label_group:<id> for one label group",
+    }
 
 
 def _view_properties(*, clearable: bool) -> dict[str, Any]:
@@ -269,6 +275,22 @@ def _delete_view(call: ToolCall) -> Any:
     view = view_ref(call, call.require("view_id"))
     removed = delete_saved_view(call.repositories, call.context, view.view_id)
     return {"deleted": True, "view_id": removed.view_id, "name": removed.name}
+
+
+def _subscribe_to_view(call: ToolCall) -> Any:
+    """Follow an issue view, to hear about each issue that newly matches it, as the subscription route does."""
+    _workspace_member(call)
+    view = set_view_subscription(call.repositories, call.context, view_ref(call, call.require("view_id")).view_id, True)
+    return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
+
+
+def _unsubscribe_from_view(call: ToolCall) -> Any:
+    """Stop following a view, a no-op when the caller did not follow it."""
+    _workspace_member(call)
+    view = set_view_subscription(
+        call.repositories, call.context, view_ref(call, call.require("view_id")).view_id, False
+    )
+    return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
 
 
 def _ids(call: ToolCall) -> Optional[list[str]]:
@@ -423,6 +445,26 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
         handler=_delete_view,
         destructive=True,
+    ),
+    Tool(
+        name="subscribe_to_view",
+        description=(
+            "Subscribe to a saved issue view you can read: from now on you get a view_issue_added notification "
+            "each time an issue newly matches its filter. Issues already in the view do not notify, nor do your "
+            "own changes or issues you cannot see. Project views cannot be subscribed to. Repeating is a no-op."
+        ),
+        scopes=("views:write",),
+        schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
+        handler=_subscribe_to_view,
+        idempotent=True,
+    ),
+    Tool(
+        name="unsubscribe_from_view",
+        description="Stop getting notified about issues entering a saved view. A no-op when you were not subscribed.",
+        scopes=("views:write",),
+        schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
+        handler=_unsubscribe_from_view,
+        idempotent=True,
     ),
     Tool(
         name="list_notifications",

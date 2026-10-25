@@ -172,6 +172,10 @@ export interface SavedViewDisplayRead extends SavedViewRead, SavedViewDisplay {
   description?: string | null;
   /** Whether the caller starred this view; a star is theirs alone. */
   favorite?: boolean;
+  /** Whether the caller follows this view and hears when issues enter it. */
+  subscribed?: boolean;
+  /** How many members follow this view. */
+  subscriber_count?: number;
   /** What the view lists; an older server leaves it out, which reads as issues. */
   entity?: ViewEntity;
   /** A view of projects' arrangement, null on a view of issues. */
@@ -531,6 +535,25 @@ export const setViewFavorite = async (
 ): Promise<SavedViewDisplayRead> => {
   const path = viewFavoritePath(workspaceId, viewId);
   const response = favorite
+    ? await apiClient.put<SavedViewDisplayRead>(path)
+    : await apiClient.delete<SavedViewDisplayRead>(path);
+  return response.data;
+};
+
+/** The route a saved view is followed and unfollowed through. */
+export const viewSubscriptionPath = (
+  workspaceId: string,
+  viewId: string
+): string => `${viewPath(workspaceId, viewId)}/subscription`;
+
+/** Follows or unfollows a saved view, so issues newly matching it reach the caller's inbox. */
+export const setViewSubscription = async (
+  workspaceId: string,
+  viewId: string,
+  subscribed: boolean
+): Promise<SavedViewDisplayRead> => {
+  const path = viewSubscriptionPath(workspaceId, viewId);
+  const response = subscribed
     ? await apiClient.put<SavedViewDisplayRead>(path)
     : await apiClient.delete<SavedViewDisplayRead>(path);
   return response.data;

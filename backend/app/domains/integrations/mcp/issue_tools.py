@@ -23,6 +23,7 @@ from app.common.api.schemas.issues import (
     ActivityRead,
     IssueBulkUpdate,
     IssueCreate,
+    IssueDescriptionVersionRead,
     IssueUpdate,
     LinkCreate,
     LinkRead,
@@ -30,6 +31,7 @@ from app.common.api.schemas.issues import (
     SubscribersRead,
 )
 from app.common.change_source import CHANGE_SOURCES
+from app.common.comment_anchors import ANCHOR_QUOTE_MAX, anchor_from_quote
 from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
 from app.common.customer_index import require_customer_list_reader
@@ -43,6 +45,7 @@ from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_conversion import duplicate_issue
+from app.common.issue_descriptions import list_description_versions
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
@@ -52,9 +55,10 @@ from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import (
     bulk_update_issues,
-    create_issue,
+    create_issue_tree,
     descending,
     list_issues,
+    restore_description,
     sort_key,
     status_ranks,
     unset_value,
@@ -102,8 +106,9 @@ SORT_HELP = (
     "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
     "and issues without a running SLA last; status_asc follows the board's status order, "
     "start_asc the earliest start date and estimate_desc the largest estimate; "
-    "customer_requests_desc puts the most customer requests first and customer_revenue_desc "
-    "the highest summed revenue of the customers asking; completed_desc puts the latest completed_at "
+    "customer_requests_desc puts the most customer requests first, customer_important_desc the most "
+    "important ones and customer_revenue_desc the highest summed revenue of the customers asking; "
+    "completed_desc puts the latest completed_at "
     "first and issues not completed last"
 )
 
@@ -256,8 +261,14 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "project_id_not": one_or_many("In none of these projects"),
         "project_milestone_id_not": one_or_many("In none of these project milestones"),
         "cycle_id_not": one_or_many("In none of these cycles"),
-        "customer_id": one_or_many("Requested by any of these customers; 'none' is issues no customer asked for"),
-        "customer_id_not": one_or_many("Requested by none of these customers; 'none' keeps requested issues only"),
+        "customer_id": one_or_many(
+            "Requested by any of these customers; 'none' is issues no customer asked for, "
+            "'important' issues with an important request"
+        ),
+        "customer_id_not": one_or_many(
+            "Requested by none of these customers; 'none' keeps requested issues only, "
+            "'important' drops issues with an important request"
+        ),
         "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
         "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
         "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),
@@ -549,6 +560,8 @@ def _create_issue(call: ToolCall) -> Any:
     A template fills every field the caller left out, so an argument sent always
     wins over the template's value, as it does in the create dialog. A form
     template holds `form_answers` to its questions, a missing required one included.
+    The template's sub-issues are created with it, all or none, and listed in the
+    answer.
     """
     fields = (
         "team_id",
@@ -573,12 +586,18 @@ def _create_issue(call: ToolCall) -> Any:
         payload["template_id"] = template_ref(call, str(payload["team_id"]), call.optional("template_id")).template_id
     if call.optional("form_answers") is not None:
         payload["form_answers"] = call.arguments["form_answers"]
+    if call.optional("template_sub_issue_keys") is not None:
+        payload["template_sub_issue_keys"] = call.arguments["template_sub_issue_keys"]
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     if payload.get("label_ids"):
         payload["label_ids"] = _label_refs(call, str(payload["team_id"]), payload["label_ids"])
-    created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
-    return {**_answer(call, created), "possible_duplicates": _safe_duplicates(call, created)}
+    created, sub_issues = create_issue_tree(call.repositories, call.context, IssueCreate.model_validate(payload))
+    return {
+        **_answer(call, created),
+        "sub_issues": [{"issue_id": row.issue_id, "issue_key": row.key, "title": row.title} for row in sub_issues],
+        "possible_duplicates": _safe_duplicates(call, created),
+    }
 
 
 def _safe_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
@@ -669,6 +688,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
         "github_thread": comment.github_thread.model_dump(mode="json") if comment.github_thread else None,
         "resolution": comment.resolution.model_dump(mode="json") if comment.resolution else None,
+        "anchor": comment.anchor.model_dump(mode="json") if comment.anchor else None,
     }
 
 
@@ -685,9 +705,23 @@ def _add_comment(call: ToolCall) -> Any:
 
     With `sync_to_github` the thread is synced too: a reply's thread before the
     reply is written, so the reply is posted, and a new thread once its root is.
+
+    `quote` pins a new thread to the first place the description shows that text,
+    with the context either side found here, so an agent names only the words.
     """
     issue = issue_ref(call, call.require("issue_id"))
     parent = call.optional("parent_comment_id")
+    quote = call.optional("quote")
+    anchor = None
+    if quote is not None:
+        if parent:
+            raise ToolError("quote pins a new thread, so it cannot go on a reply")
+        text = str(quote).strip()
+        if not text or len(text) > ANCHOR_QUOTE_MAX:
+            raise ToolError(f"quote must be between 1 and {ANCHOR_QUOTE_MAX} characters")
+        anchor = anchor_from_quote(issue.body or "", text)
+        if anchor is None:
+            raise ToolError("quote must be text the issue description shows")
     sync = call.optional("sync_to_github") is True
     if sync and parent:
         _sync_root(call, issue, str(parent))
@@ -697,6 +731,7 @@ def _add_comment(call: ToolCall) -> Any:
         issue.issue_id,
         str(call.require("body")),
         parent_comment_id=str(parent) if parent else None,
+        anchor=anchor,
     )
     clear_posted_draft(
         call.repositories,
@@ -777,6 +812,20 @@ def _list_issue_activity(call: ToolCall) -> Any:
         "activity": [ActivityRead.from_row(row).model_dump(mode="json", by_alias=True) for row in rows],
         "next_cursor": next_cursor,
     }
+
+
+def _list_issue_description_versions(call: ToolCall) -> Any:
+    """An issue's saved description versions, newest first, the newest being the current text."""
+    issue = issue_ref(call, call.require("issue_id"))
+    _, versions = list_description_versions(call.repositories, call.context, issue.issue_id)
+    return {"versions": [IssueDescriptionVersionRead.from_row(row).model_dump(mode="json") for row in versions]}
+
+
+def _restore_issue_description(call: ToolCall) -> Any:
+    """Make one earlier description version the issue's current text, as an edit by the caller."""
+    issue = issue_ref(call, call.require("issue_id"))
+    restored = restore_description(call.repositories, call.context, issue, str(call.require("version_id")))
+    return _answer(call, restored)
 
 
 def _link_json(link: LinkRead) -> dict[str, Any]:
@@ -1187,8 +1236,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
             "and title may then be omitted when the template has one. A form template (one with form_fields) also "
             "takes form_answers keyed by each field's key: required fields must be answered, a select takes one of "
-            "its options, and the answers land in the body and send the issue to triage. "
-            "The answer lists possible_duplicates: open issues whose titles share its terms."
+            "its options, and the answers land in the body and send the issue to triage. A template's sub_issues "
+            "are created under the new issue, all or none; template_sub_issue_keys keeps only those keys. "
+            "The answer lists the sub_issues created and possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -1219,6 +1269,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                     ),
                     "additionalProperties": {"type": ["string", "boolean"]},
                 },
+                "template_sub_issue_keys": string_list(
+                    "The template sub-issues to create, by key (s1, s2, ...); omit for all, [] for none"
+                ),
             },
             required=("team_id",),
         ),
@@ -1335,6 +1388,29 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         handler=_list_issue_activity,
     ),
     Tool(
+        name="list_issue_description_versions",
+        description=(
+            "An issue's saved description versions, newest first; the newest is the current text. "
+            "Rapid edits by one author are kept as one version."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_list_issue_description_versions,
+    ),
+    Tool(
+        name="restore_issue_description",
+        description=(
+            "Replace an issue's description with one earlier version from list_issue_description_versions. "
+            "Recorded as a description edit by the caller."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "version_id": string("The version_id to restore")},
+            required=("issue_id", "version_id"),
+        ),
+        handler=_restore_issue_description,
+    ),
+    Tool(
         name="add_comment",
         description="Add a comment to an issue, or a reply to a top level comment with parent_comment_id.",
         scopes=("comments:write",),
@@ -1343,6 +1419,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "body": string("The comment body, in Markdown; @mentions notify"),
                 "parent_comment_id": string("A top level comment on the same issue to reply to"),
+                "quote": string(
+                    "Pin a new thread to this passage of the issue description, copied as it reads; the "
+                    "description highlights it. Not for replies"
+                ),
                 "sync_to_github": boolean(
                     "Also sync the thread to a pull request or GitHub issue linked to this issue, so the App "
                     "posts it there and GitHub replies land in the thread. A public repository publishes it"

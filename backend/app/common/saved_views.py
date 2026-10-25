@@ -21,6 +21,7 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.api.schemas.views import (
     DISPLAY_SWITCHES,
     ViewCreate,
+    ViewRead,
     ViewUpdate,
     completed_window_of,
     invalid_project_filter_keys,
@@ -313,6 +314,7 @@ def delete_saved_view(repositories: Repositories, context: AuthzContext, view_id
     require_view_writer(repositories, context, view)
     repositories.views.delete(context.workspace_id, view.view_key)
     _drop_view_favorite(repositories, context, view.view_id)
+    repositories.views.delete_view_subscriptions(context.workspace_id, view.view_id)
     return view
 
 
@@ -346,4 +348,55 @@ def set_view_favorite(repositories: Repositories, context: AuthzContext, view_id
             raise unprocessable(f"A member keeps at most {FAVORITES_MAX} favorites")
         starred = FavoriteItem(kind="view", target_id=view.view_id)
         repositories.views.set_favorite_items(context.workspace_id, context.user_id, [*items, starred])
+    return view
+
+
+def view_read(repositories: Repositories, context: AuthzContext, view: SavedView, *, favorite: bool) -> ViewRead:
+    """One view as the caller reads it, with their star, whether they follow it and how many do."""
+    subscribers = repositories.views.subscriber_ids(context.workspace_id, view.view_id)
+    return ViewRead.from_row(
+        view,
+        favorite=favorite,
+        subscribed=context.user_id in subscribers,
+        subscriber_count=len(subscribers),
+    )
+
+
+def view_reads(repositories: Repositories, context: AuthzContext, views: Sequence[SavedView]) -> list[ViewRead]:
+    """A listing's views as the caller reads them, the subscriptions taken in one workspace read."""
+    starred = favorite_ids(repositories, context)
+    counts: dict[str, int] = {}
+    mine: set[str] = set()
+    for row in repositories.views.list_subscriptions(context.workspace_id):
+        counts[row.view_id] = counts.get(row.view_id, 0) + 1
+        if row.user_id == context.user_id:
+            mine.add(row.view_id)
+    return [
+        ViewRead.from_row(
+            view,
+            favorite=view.view_id in starred,
+            subscribed=view.view_id in mine,
+            subscriber_count=counts.get(view.view_id, 0),
+        )
+        for view in views
+    ]
+
+
+def set_view_subscription(
+    repositories: Repositories, context: AuthzContext, view_id: str, subscribed: bool
+) -> SavedView:
+    """Follow or stop following an issue view the caller may read, answering the view.
+
+    A follower hears about each issue that newly matches the view from then on;
+    issues that already matched stay quiet, because the subscription only watches
+    transitions. Following twice, or unfollowing a view not followed, is a no-op.
+    A project view lists projects, which never enter a view the way an issue
+    does, so it refuses a subscription with a 422.
+    """
+    view = load_visible_view(repositories, context, view_id)
+    if not subscribed:
+        repositories.views.unsubscribe(context.workspace_id, view.view_id, context.user_id)
+        return view
+    require_issue_view(view)
+    repositories.views.subscribe(context.workspace_id, view, context.user_id)
     return view

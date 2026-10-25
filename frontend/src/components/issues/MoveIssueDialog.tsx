@@ -1,19 +1,18 @@
 /**
  * Move to team: a searchable list of the teams the caller may write issues
- * in, opened from the rail, the issue menu, the palette or Cmd+Shift+M.
- * Picking one moves the issue, which takes the next key in that team while
- * the old key keeps resolving, so the page follows it to the new address.
- * The move is recorded for undo, which moves the issue back.
+ * in, opened from the rail, the issue menu, the palette, the bulk bar or
+ * Cmd+Shift+M. Picking one moves every issue given, each taking the next key
+ * in that team while its old key keeps resolving, so the issue page follows
+ * its issue to the new address. A move maps what the target team cannot hold
+ * on its own, so one pick covers the whole selection. The moves are recorded
+ * as one undo, which moves the issues back.
  */
 
 import React, { useState } from 'react';
 import { LuUsers } from 'react-icons/lu';
-import { moveIssue } from '../../api/issues';
+import { issueCount, moveIssues } from '../../lib/bulkIssueActions';
+import { useTeamsFor } from '../../hooks/useTeams';
 import { canWriteIssues } from '../../lib/capabilities';
-import { errorMessage } from '../../lib/errors';
-import { recordMove } from '../../lib/issueUndo';
-import { issueKey } from '../../lib/queryKeys';
-import { showErrorToast } from '../../lib/toast';
 import type { IssueRead, TeamRead, WorkspaceRole } from '../../types/Api';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import Dialog from '../ui/dialog';
@@ -30,11 +29,12 @@ export interface MoveIssueDialogProps {
   open: boolean;
   workspaceId: string;
   workspaceRole: WorkspaceRole | undefined;
-  issue: IssueRead;
+  /** The issues to move, one or a selection. */
+  issues: readonly IssueRead[];
   teams: TeamRead[];
   onClose: () => void;
-  /** Called with the issue as the move answered it, under its new key. */
-  onMoved: (moved: IssueRead) => void;
+  /** Called with the issues as the moves answered them, under their new keys. */
+  onMoved: (moved: IssueRead[]) => void;
 }
 
 /** The teams an issue may move to, which are the ones the caller writes in. */
@@ -51,13 +51,14 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
   open,
   workspaceId,
   workspaceRole,
-  issue,
+  issues,
   teams,
   onClose,
   onMoved,
 }) => {
   const [busy, setBusy] = useState(false);
-  if (!open) return null;
+  if (!open || issues.length === 0) return null;
+  const teamIds = [...new Set(issues.map((issue) => issue.team_id))];
 
   const targets = teamTree(moveTargets(teams, workspaceRole));
   const options: ComboboxOption[] = targets.map(
@@ -76,48 +77,44 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
   );
 
   const pick = async (teamId: string): Promise<void> => {
-    if (teamId === issue.team_id) {
+    const target = teams.find((team) => team.id === teamId);
+    if (
+      target === undefined ||
+      issues.every((issue) => issue.team_id === teamId)
+    ) {
       onClose();
       return;
     }
-    const target = teams.find((team) => team.id === teamId);
     setBusy(true);
     try {
-      const moved = await moveIssue(workspaceId, issue.id, teamId);
-      recordMove(
-        workspaceId,
-        issue,
-        `Moved ${issue.key} to ${target?.name ?? 'the team'} as ${moved.key}`,
-        { invalidate: [issueKey(workspaceId, moved.key)] }
-      );
-      onMoved(moved);
+      const moved = await moveIssues(workspaceId, issues, target);
+      if (moved.length > 0) onMoved(moved);
       onClose();
-    } catch (cause) {
-      showErrorToast(errorMessage(cause, 'Could not move that issue.'));
     } finally {
       setBusy(false);
     }
   };
+  const subject = issueCount(issues);
 
   return (
     <Dialog
       open
       onClose={onClose}
-      title={`${MOVE_ISSUE_LABEL}, ${issue.key}`}
+      title={`${MOVE_ISSUE_LABEL}, ${subject}`}
       hideTitle
       size="sm"
     >
       <div className="-mx-4 -mt-8 -mb-4">
         <p className="border-b border-line px-3 pt-2.5 pb-2 text-xs text-text-muted">
           <span className="rounded-sm bg-raised px-1.5 py-0.5 font-mono text-2xs text-text">
-            {issue.key}
+            {subject}
           </span>
         </p>
         <Combobox
           label={MOVE_ISSUE_LABEL}
           placeholder={`${MOVE_ISSUE_LABEL}...`}
           options={options}
-          selected={[issue.team_id]}
+          selected={teamIds.length === 1 ? teamIds : []}
           emptyMessage="No other team you can write in."
           onSelect={(teamId) => {
             void pick(teamId);
@@ -157,5 +154,16 @@ export const IssueTeamRow: React.FC<IssueTeamRowProps> = ({
     <span className="min-w-0 truncate">{team.name}</span>
   </button>
 );
+
+/**
+ * The dialog over the workspace's teams, read only once it mounts, for a
+ * caller such as a list that does not hold them already.
+ */
+export const SelectionMoveDialog: React.FC<
+  Omit<MoveIssueDialogProps, 'teams'>
+> = (props) => {
+  const { data: teams } = useTeamsFor(props.workspaceId, props.open);
+  return <MoveIssueDialog {...props} teams={teams ?? []} />;
+};
 
 export default MoveIssueDialog;

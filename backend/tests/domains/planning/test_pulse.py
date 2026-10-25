@@ -6,7 +6,9 @@ an explicit follow or unfollow wins over a role; that following an initiative
 follows its projects; that a guest never sees an initiative or a team outside
 their own; that unread state is per person and their own entries never count;
 that edits and deletes of an update carry onto its entry; and that health
-changes and completed milestones are posted once.
+changes and completed milestones are posted once; and that "popular" ranks the
+last two weeks' updates a reader may see by replies plus reactions, newest first
+among equals.
 """
 
 from __future__ import annotations
@@ -292,6 +294,86 @@ def test_the_feed_pages_with_a_cursor(client: TestClient, workspace: str) -> Non
     assert [item["body"] for item in first["items"]] == ["three", "two"]
     assert first["next_cursor"]
     second = _feed(client, workspace, limit=2, cursor=first["next_cursor"])
+    assert [item["body"] for item in second["items"]] == ["one"]
+    assert second["next_cursor"] is None
+
+
+def _engage(client: TestClient, workspace: str, project_id: str, update_id: str, *, replies: int, emojis: str) -> None:
+    """Reply on an update some number of times and react to it with each emoji given."""
+    base = f"/api/workspaces/{workspace}/projects/{project_id}/updates/{update_id}"
+    for index in range(replies):
+        response = client.post(f"{base}/comments", json={"body": f"Reply {index}"})
+        assert response.status_code == 201, response.text
+    for emoji in emojis.split():
+        response = client.put(f"{base}/reactions", json={"emoji": emoji})
+        assert response.status_code < 300, response.text
+
+
+def test_popular_ranks_updates_by_replies_plus_reactions(client: TestClient, workspace: str) -> None:
+    """The most engaged update leads, equal scores fall to the newer one, and health changes are left out."""
+    sign_in(client, ADMIN)
+    project_id = seed_project(client, workspace)["project_id"]
+    quiet = _post_update(client, workspace, project_id, body="Quiet")
+    busy = _post_update(client, workspace, project_id, body="Busy")
+    liked = _post_update(client, workspace, project_id, body="Liked")
+    _post_update(client, workspace, project_id, body="Newer quiet")
+    initiative_id = _initiative(client, workspace)["initiative_id"]
+    _post_initiative_update(client, workspace, initiative_id, "Initiative news")
+    _engage(client, workspace, project_id, busy["update_id"], replies=2, emojis="👍")
+    _engage(client, workspace, project_id, liked["update_id"], replies=0, emojis="👍 🎉")
+    _engage(client, workspace, project_id, quiet["update_id"], replies=1, emojis="")
+
+    sign_in(client, MEMBER)
+    popular = _feed(client, workspace, scope="popular")
+    assert [item["body"] for item in popular["items"]] == [
+        "Busy",
+        "Liked",
+        "Quiet",
+        "Initiative news",
+        "Newer quiet",
+    ]
+    assert set(_types(popular)) == {"project_update", "initiative_update"}
+    assert popular["next_cursor"] is None
+
+
+def test_popular_holds_only_what_the_reader_may_see(client: TestClient, workspace: str) -> None:
+    """A guest's popular feed leaves out initiatives and other teams' projects, however engaged."""
+    sign_in(client, ADMIN)
+    initiative_id = _initiative(client, workspace)["initiative_id"]
+    _post_initiative_update(client, workspace, initiative_id, "News")
+    visible = seed_project(client, workspace, name="Visible")["project_id"]
+    hidden = seed_project(client, workspace, name="Hidden", team_id=OTHER_TEAM)["project_id"]
+    _post_update(client, workspace, visible, body="Seen")
+    loud = _post_update(client, workspace, hidden, body="Hidden and loud")
+    _engage(client, workspace, hidden, loud["update_id"], replies=3, emojis="👍 🎉")
+
+    sign_in(client, GUEST)
+    assert [item["body"] for item in _feed(client, workspace, scope="popular")["items"]] == ["Seen"]
+
+
+def test_popular_reaches_back_two_weeks(client: TestClient, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An update older than the window drops out of popular while recent still lists it."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace, lead_id=MEMBER)["project_id"]
+    _post_update(client, workspace, project_id, body="Old news")
+    later = datetime.now(UTC) + timedelta(days=15)
+    monkeypatch.setattr("app.common.pulse.utc_now", lambda: later)
+
+    assert _feed(client, workspace, scope="popular")["items"] == []
+    assert [item["body"] for item in _feed(client, workspace, scope="recent")["items"]] == ["Old news"]
+
+
+def test_popular_pages_with_a_cursor(client: TestClient, workspace: str) -> None:
+    """The popular cursor resumes after the last ranked entry, and the last page carries none."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace, lead_id=MEMBER)["project_id"]
+    for body in ["one", "two", "three"]:
+        _post_update(client, workspace, project_id, body=body)
+
+    first = _feed(client, workspace, scope="popular", limit=2)
+    assert [item["body"] for item in first["items"]] == ["three", "two"]
+    assert first["next_cursor"]
+    second = _feed(client, workspace, scope="popular", limit=2, cursor=first["next_cursor"])
     assert [item["body"] for item in second["items"]] == ["one"]
     assert second["next_cursor"] is None
 

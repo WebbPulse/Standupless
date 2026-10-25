@@ -19,6 +19,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { LuSlidersHorizontal } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
+import { IssueHoverTrigger } from '../ui/IssueHoverCard';
 import { createIssue, type OrderedIssueRead } from '../../api/issues';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
 import { useOptimisticIssues } from '../../hooks/useOptimisticIssues';
@@ -509,25 +510,29 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                       }}
                       className="shrink-0"
                     />
-                    <Link
-                      to={issuePath(slug, child.key)}
-                      title={child.title}
-                      draggable={false}
-                      data-hover="parent"
-                      className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm pr-1 text-xs focus-visible:outline-none"
-                      onKeyDown={(event) => {
-                        if (event.key !== ' ') return;
-                        event.preventDefault();
-                        peekIssue({ id: child.id, key: child.key });
-                      }}
-                    >
-                      <span className="shrink-0 font-mono text-text-faint">
-                        {child.key}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-text">
-                        {child.title}
-                      </span>
-                    </Link>
+                    <IssueHoverTrigger issueKey={child.key}>
+                      {(hover) => (
+                        <Link
+                          to={issuePath(slug, child.key)}
+                          {...hover}
+                          draggable={false}
+                          data-hover="parent"
+                          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm pr-1 text-xs focus-visible:outline-none"
+                          onKeyDown={(event) => {
+                            if (event.key !== ' ') return;
+                            event.preventDefault();
+                            peekIssue({ id: child.id, key: child.key });
+                          }}
+                        >
+                          <span className="shrink-0 font-mono text-text-faint">
+                            {child.key}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-text">
+                            {child.title}
+                          </span>
+                        </Link>
+                      )}
+                    </IssueHoverTrigger>
                     {(canEdit || !noPriority) && (
                       <PriorityPicker
                         variant="icon"

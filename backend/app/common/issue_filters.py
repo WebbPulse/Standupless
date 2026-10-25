@@ -469,8 +469,10 @@ class IssueFilter:
         if self.has_relations:
             yield any(kind is not None and self._linked(kind, issue.issue_id) for kind in self.has_relations)
         if self.customer_ids or self.customer_ids_not:
-            held = self.customer_index.customer_ids("issue", issue.issue_id) if self.customer_index else frozenset()
-            yield customer_match(self.customer_ids, self.customer_ids_not, held)
+            index = self.customer_index
+            held = index.customer_ids("issue", issue.issue_id) if index else frozenset()
+            important = index.important_count("issue", issue.issue_id) if index else 0
+            yield customer_match(self.customer_ids, self.customer_ids_not, held, important)
         if self.content or self.content_not:
             yield _content_matches(self.content, self.content_not, issue)
         if self.query and self.query.strip():
@@ -654,7 +656,8 @@ def build_issue_filter(
     or `true` and `false`, and `has_relation` a link type, each refused with
     `InvalidFilterValue` otherwise. `customer_id` keeps the issues one of the
     named customers asked for, and `customer_id_not` drops them, `none` standing
-    for an issue no customer asked for. Relative cycles, the link index and the
+    for an issue no customer asked for and `important` for one with an important
+    request. Relative cycles, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
     each built by these same names plus its own `match`; a group naming a key

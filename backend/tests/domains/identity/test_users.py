@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
+from app.common.db.dynamo.users import SIDEBAR_ITEMS
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
 ALL_ON = {"in_app": True, "email": True, "chat": True}
@@ -47,6 +48,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "email_verified": False,
         "email_notifications": True,
         "notification_preferences": {kind: ALL_ON for kind in NOTIFICATION_KINDS},
+        "email_format": "digest",
         "avatar_url": None,
         "two_factor": False,
         "timezone": None,
@@ -55,6 +57,12 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "week_start": "monday",
         "name_display": "username",
         "font_size": "default",
+        "theme": None,
+        "pointer_cursors": False,
+        "convert_emoticons": True,
+        "activity_filter": "all",
+        "sidebar_items": {item: "show" for item in SIDEBAR_ITEMS},
+        "sidebar_badge_style": "count",
         "projects_display": {
             "layout": "list",
             "group": "status",
@@ -69,6 +77,12 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
         },
         "projects_display_saved": False,
+        "initiatives_display": {
+            "order": "target",
+            "completed": "show",
+            "columns": "health,owner,projects,target,progress",
+        },
+        "initiatives_display_saved": False,
         "auto_assign_to_self": False,
         "branch_copy_starts": True,
         "branch_copy_assigns": True,
@@ -116,6 +130,22 @@ def test_the_pulse_digest_defaults_off_and_takes_a_cadence(client: TestClient, r
     assert client.patch("/api/users/me/preferences", json={"pulse_digest": "off"}).json()["pulse_digest"] == "off"
 
 
+def test_the_email_format_defaults_to_a_digest_and_takes_immediate(client: TestClient, repositories: Any) -> None:
+    """The format is a digest until the person picks immediate, and refuses a format it does not have."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["email_format"] == "digest"
+
+    response = client.patch("/api/users/me/preferences", json={"email_format": "immediate"})
+    assert response.status_code == 200
+    assert response.json()["email_format"] == "immediate"
+    assert repositories.users.get(OWNER).email_format == "immediate"
+
+    assert client.patch("/api/users/me/preferences", json={"email_format": "hourly"}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"email_format": "digest"}).json()["email_format"] == "digest"
+
+
 def test_interface_preferences_default_and_change_one_at_a_time(client: TestClient, repositories: Any) -> None:
     """Each interface preference saves on its own, keeps the others and refuses a choice it does not have."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
@@ -153,6 +183,82 @@ def test_interface_preferences_default_and_change_one_at_a_time(client: TestClie
         assert client.patch("/api/users/me/preferences", json={field: value}).status_code == 422
 
 
+def test_the_activity_filter_defaults_to_all_and_saves_comments_only(client: TestClient, repositories: Any) -> None:
+    """The issue activity filter starts on all activity, saves comments only and refuses a filter it does not have."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["activity_filter"] == "all"
+
+    response = client.patch("/api/users/me/preferences", json={"activity_filter": "comments"})
+    assert response.status_code == 200
+    assert response.json()["activity_filter"] == "comments"
+    assert repositories.users.get(OWNER).activity_filter == "comments"
+    assert client.get("/api/users/me").json()["activity_filter"] == "comments"
+
+    assert client.patch("/api/users/me/preferences", json={"activity_filter": "history"}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"activity_filter": "all"}).json()["activity_filter"] == "all"
+
+
+def test_the_sidebar_starts_with_every_item_shown_and_count_badges(client: TestClient, repositories: Any) -> None:
+    """A person who never customized the sidebar reads every item shown and numbered badges."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+    assert body["sidebar_items"] == {item: "show" for item in SIDEBAR_ITEMS}
+    assert body["sidebar_badge_style"] == "count"
+
+
+def test_sidebar_items_move_between_shown_more_and_hidden(client: TestClient, repositories: Any) -> None:
+    """Each item moves alone to the More menu, to hidden and back, and only moved items are stored."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_items": {"customers": "hide"}})
+    assert response.status_code == 200
+    assert response.json()["sidebar_items"]["customers"] == "hide"
+    assert response.json()["sidebar_items"]["roadmap"] == "show"
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_items": {"roadmap": "more"}})
+    assert response.json()["sidebar_items"]["customers"] == "hide"
+    assert response.json()["sidebar_items"]["roadmap"] == "more"
+    assert repositories.users.get(OWNER).sidebar_items == {"customers": "hide", "roadmap": "more"}
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_items": {"customers": "show"}})
+    assert response.json()["sidebar_items"]["customers"] == "show"
+    assert repositories.users.get(OWNER).sidebar_items == {"roadmap": "more"}
+    assert client.get("/api/users/me").json()["sidebar_items"]["roadmap"] == "more"
+
+
+def test_the_sidebar_refuses_an_unknown_item_or_place(client: TestClient, repositories: Any) -> None:
+    """An item the sidebar does not have, or a place it cannot sit, is a 422 and changes nothing."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.patch("/api/users/me/preferences", json={"sidebar_items": {"documents": "hide"}}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"sidebar_items": {"views": "pinned"}}).status_code == 422
+    assert repositories.users.get(OWNER).sidebar_items == {}
+
+
+def test_the_sidebar_badge_style_switches_to_a_dot_and_back(client: TestClient, repositories: Any) -> None:
+    """The badge style saves a dot, refuses a style it does not have and returns to a count."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_badge_style": "dot"})
+    assert response.status_code == 200
+    assert response.json()["sidebar_badge_style"] == "dot"
+    assert repositories.users.get(OWNER).sidebar_badge_style == "dot"
+    assert client.get("/api/users/me").json()["sidebar_badge_style"] == "dot"
+
+    assert client.patch("/api/users/me/preferences", json={"sidebar_badge_style": "ring"}).status_code == 422
+    assert (
+        client.patch("/api/users/me/preferences", json={"sidebar_badge_style": "count"}).json()["sidebar_badge_style"]
+        == "count"
+    )
+
+
 def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, repositories: Any) -> None:
     """Auto assign starts off and the branch copy switches start on; each turns on and off alone and is stored."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
@@ -182,14 +288,64 @@ def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, re
     assert client.patch("/api/users/me/preferences", json={"branch_copy_starts": "sometimes"}).status_code == 422
 
 
+def test_theme_and_pointer_cursors_are_stored_on_the_account(client: TestClient, repositories: Any) -> None:
+    """The theme reads null until saved, then follows the account; pointer cursors start off and toggle."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+    assert (body["theme"], body["pointer_cursors"]) == (None, False)
+
+    body = client.patch("/api/users/me/preferences", json={"theme": "light", "pointer_cursors": True}).json()
+    assert (body["theme"], body["pointer_cursors"]) == ("light", True)
+    stored = repositories.users.get(OWNER)
+    assert (stored.theme, stored.pointer_cursors) == ("light", True)
+
+    body = client.patch("/api/users/me/preferences", json={"theme": "system"}).json()
+    assert (body["theme"], body["pointer_cursors"]) == ("system", True)
+
+    assert client.patch("/api/users/me/preferences", json={"theme": "sepia"}).status_code == 422
+
+    repositories.users.update(OWNER, theme="sepia")
+    assert client.get("/api/users/me").json()["theme"] is None
+
+
+def test_emoticon_conversion_starts_on_and_toggles(client: TestClient, repositories: Any) -> None:
+    """Emoticon conversion reads on for a new account and follows the account once turned off."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["convert_emoticons"] is True
+
+    body = client.patch("/api/users/me/preferences", json={"convert_emoticons": False}).json()
+    assert body["convert_emoticons"] is False
+    assert repositories.users.get(OWNER).convert_emoticons is False
+
+    body = client.patch("/api/users/me/preferences", json={"font_size": "large"}).json()
+    assert body["convert_emoticons"] is False
+
+    assert client.patch("/api/users/me/preferences", json={"convert_emoticons": "sometimes"}).status_code == 422
+
+
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:
     """A value written before a choice was withdrawn reads as the default rather than failing the read."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
-    repositories.users.update(OWNER, home_view="roadmap", font_size="tiny")
+    repositories.users.update(
+        OWNER,
+        home_view="roadmap",
+        font_size="tiny",
+        activity_filter="history",
+        sidebar_items={"views": "pinned", "documents": "hide"},
+        sidebar_badge_style="ring",
+    )
     sign_in(client, OWNER)
     body = client.get("/api/users/me").json()
     assert body["home_view"] == "home"
     assert body["font_size"] == "default"
+    assert body["activity_filter"] == "all"
+    assert body["sidebar_items"]["views"] == "show"
+    assert "documents" not in body["sidebar_items"]
+    assert body["sidebar_badge_style"] == "count"
 
 
 def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: TestClient, repositories: Any) -> None:
@@ -265,6 +421,45 @@ def test_a_saved_projects_display_is_marked_and_null_forgets_it(client: TestClie
     assert forgotten.json()["projects_display"] == built_in
     assert repositories.users.get(OWNER).projects_display == {}
     assert client.patch("/api/users/me/preferences", json={"projects_display": None}).status_code == 200
+
+
+def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgotten_by_null(
+    client: TestClient, repositories: Any
+) -> None:
+    """The initiatives list arrangement follows the account, refuses a choice it lacks, and null forgets it."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    saved = client.patch(
+        "/api/users/me/preferences",
+        json={"initiatives_display": {"order": "name", "completed": "hide", "columns": ["progress", "owner"]}},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["initiatives_display"] == {"order": "name", "completed": "hide", "columns": "owner,progress"}
+    assert saved.json()["initiatives_display_saved"] is True
+    assert repositories.users.get(OWNER).initiatives_display["order"] == "name"
+    assert client.get("/api/users/me").json()["projects_display_saved"] is False
+
+    for field, value in (("order", "manual"), ("completed", "yes"), ("columns", "owner,budget")):
+        refused = client.patch("/api/users/me/preferences", json={"initiatives_display": {field: value}})
+        assert refused.status_code == 422
+
+    forgotten = client.patch("/api/users/me/preferences", json={"initiatives_display": None})
+    assert forgotten.status_code == 200, forgotten.text
+    assert forgotten.json()["initiatives_display_saved"] is False
+    assert forgotten.json()["initiatives_display"]["order"] == "target"
+    assert repositories.users.get(OWNER).initiatives_display == {}
+
+
+def test_a_retired_initiatives_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
+    """A stored choice the list no longer offers reads back as the default rather than failing the read."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+    repositories.users.update(OWNER, initiatives_display={"order": "manual", "columns": "budget,health"})
+
+    display = client.get("/api/users/me").json()["initiatives_display"]
+
+    assert display == {"order": "target", "completed": "show", "columns": "health"}
 
 
 def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:

@@ -15,7 +15,8 @@
  *
  * An issue template can also be a form: a list of questions the create dialog
  * asks in place of a free description, whose answers land in the body and
- * whose issues go to the team's triage.
+ * whose issues go to the team's triage. It can also carry sub-issues, created
+ * under every issue made from it.
  */
 
 import React, { useState } from 'react';
@@ -62,6 +63,12 @@ import { Checkbox } from '../ui/checkbox';
 import { Input, Textarea } from '../ui/input';
 import Label from '../ui/label';
 import { FormFieldsEditor, formFieldsComplete } from './FormFieldsEditor';
+import {
+  type SubIssueDraft,
+  SubIssuesEditor,
+  subIssueDrafts,
+  subIssuesOf,
+} from './SubIssuesEditor';
 
 /** The lists the form's pickers choose from. Planning lists are team only. */
 export interface TemplateEditorOptions {
@@ -114,6 +121,7 @@ interface FormState {
   cycleId: string | null;
   isForm: boolean;
   formFields: FormField[];
+  subIssues: SubIssueDraft[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -129,6 +137,7 @@ const EMPTY_FORM: FormState = {
   cycleId: null,
   isForm: false,
   formFields: [],
+  subIssues: [],
 };
 
 /** The form a saved template opens into. */
@@ -145,6 +154,7 @@ const formOf = (template: TemplateRead): FormState => ({
   cycleId: template.cycle_id,
   isForm: (template.form_fields ?? []).length > 0,
   formFields: template.form_fields ?? [],
+  subIssues: subIssueDrafts(template.sub_issues),
 });
 
 /** The questions a write sends: none unless the template is a form. */
@@ -156,9 +166,10 @@ const formFieldsOf = (form: FormState): FormField[] =>
       }))
     : [];
 
-/** Whether the form can be saved: a name, and a complete set of questions when it is a form. */
+/** Whether the form can be saved: a name, titled sub-issues, and a complete set of questions when it is a form. */
 const savable = (form: FormState): boolean =>
   form.name.trim() !== '' &&
+  form.subIssues.every((row) => row.title.trim() !== '') &&
   (!form.isForm ||
     (form.formFields.length > 0 && formFieldsComplete(form.formFields)));
 
@@ -174,6 +185,7 @@ const fieldsOf = (form: FormState) => ({
   project_id: form.projectId,
   cycle_id: form.cycleId,
   form_fields: formFieldsOf(form),
+  sub_issues: subIssuesOf(form.subIssues),
 });
 
 /** The fields a document template carries, blanks as null. */
@@ -447,6 +459,24 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
           )}
         </div>
       )}
+      {kind === 'issue' && (
+        <div className="border-t border-line pt-3">
+          <SubIssuesEditor
+            rows={form.subIssues}
+            statuses={options.statuses}
+            labels={options.labels}
+            team={team}
+            people={options.people ?? []}
+            estimateScale={options.estimateScale ?? 'off'}
+            {...(options.estimateOptions
+              ? { estimateOptions: options.estimateOptions }
+              : {})}
+            onChange={(subIssues) => {
+              set({ subIssues });
+            }}
+          />
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           Cancel
@@ -567,6 +597,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     )}
                     {(template.form_fields ?? []).length > 0 && (
                       <Badge>Form</Badge>
+                    )}
+                    {(template.sub_issues ?? []).length > 0 && (
+                      <Badge>
+                        {(template.sub_issues ?? []).length === 1
+                          ? '1 sub-issue'
+                          : `${String((template.sub_issues ?? []).length)} sub-issues`}
+                      </Badge>
                     )}
                   </p>
                   {template.title !== null && (

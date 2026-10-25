@@ -4,7 +4,10 @@
  * Every write carries the `updated_at` the page last saw, so an edit made over
  * someone else's newer one is refused and the page offers their version
  * rather than silently replacing it. Earlier versions open in a dialog, and
- * the issues the text names are listed and linked under it.
+ * the issues the text names are listed and linked under it. The title takes
+ * an icon or an emoji, an outline of the headings sits beside the text on a
+ * wide screen, and Move files the document under another project, initiative
+ * or team.
  */
 
 import React, {
@@ -20,7 +23,7 @@ import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   LuChevronRight,
   LuEllipsis,
-  LuFileText,
+  LuFolderInput,
   LuHistory,
   LuTrash2,
 } from 'react-icons/lu';
@@ -32,7 +35,13 @@ import {
   updateDocument,
 } from '../../api/documents';
 import type { RichMarkdownHandle } from '../../components/editor/RichMarkdownEditor';
+import DocumentIcon from '../../components/planning/DocumentIcon';
+import DocumentIconPicker from '../../components/planning/DocumentIconPicker';
+import DocumentOutline from '../../components/planning/DocumentOutline';
 import EditableText from '../../components/planning/EditableText';
+import MoveDocumentDialog, {
+  type Destination,
+} from '../../components/planning/MoveDocumentDialog';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
@@ -42,20 +51,30 @@ import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import { refreshDocumentLists } from '../../hooks/useDocuments';
+import { useShortcut } from '../../hooks/useShortcuts';
+import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { CONFLICT, errorMessage, hasStatus } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
-import { initiativePath, issuePath, projectPath } from '../../lib/paths';
+import {
+  initiativePath,
+  issuePath,
+  projectPath,
+  teamDocumentsPagePath,
+  workspacePath,
+} from '../../lib/paths';
 import {
   documentKey,
   documentVersionsKey,
+  favoritesKey,
   issueDocumentsKey,
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
-import type { DocumentPatch, DocumentRead } from '../../types/Api';
+import type { DocumentPatch, DocumentRead, TeamRead } from '../../types/Api';
 
 const RichMarkdownEditor = lazy(
   () => import('../../components/editor/RichMarkdownEditor')
@@ -95,11 +114,20 @@ const newer = (
   return other.updated_at > one.updated_at ? other : one;
 };
 
-/** The page's own link to the project or initiative a document sits under. */
-const parentLink = (slug: string, page: DocumentRead): string =>
-  page.parent_kind === 'project'
-    ? projectPath(slug, page.parent_id)
-    : initiativePath(slug, page.parent_id);
+/** The page's own link to the project, initiative or team a document sits under. */
+const parentLink = (
+  slug: string,
+  page: DocumentRead,
+  teams: TeamRead[] | null
+): string => {
+  if (page.parent_kind === 'project') return projectPath(slug, page.parent_id);
+  if (page.parent_kind === 'initiative')
+    return initiativePath(slug, page.parent_id);
+  const team = (teams ?? []).find((row) => row.id === page.parent_id);
+  return team === undefined
+    ? workspacePath(slug)
+    : teamDocumentsPagePath(slug, team.key_prefix);
+};
 
 /** The dialog listing a document's earlier versions, each readable in full. */
 const VersionsDialog: React.FC<{
@@ -178,6 +206,7 @@ export const DocumentDetail: React.FC = () => {
   const slug = workspace?.slug ?? '';
   const isMember = workspace !== null && workspace.role !== 'guest';
   const people = useWorkspaceMembers(workspaceId, isMember);
+  const teams = useTeams();
 
   const { data, error, isLoading, refetch } = usePolledQuery(
     ({ signal }) => getDocument(workspaceId, documentId, signal),
@@ -194,7 +223,10 @@ export const DocumentDetail: React.FC = () => {
   const [saveError, setSaveError] = useState<unknown>(null);
   const [showVersions, setShowVersions] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showMove, setShowMove] = useState(false);
+  const [liveBody, setLiveBody] = useState<string | null>(null);
   const editor = useRef<RichMarkdownHandle>(null);
+  const bodyArea = useRef<HTMLDivElement>(null);
   const base = useRef<string | null>(null);
   const savedBody = useRef<string | null>(null);
   const pendingBody = useRef<string | null>(null);
@@ -240,13 +272,18 @@ export const DocumentDetail: React.FC = () => {
           setLocal(saved);
           setSaveError(null);
           setSaveState('saved');
-          if (patch.title !== undefined) {
+          if (
+            patch.title !== undefined ||
+            patch.icon !== undefined ||
+            patch.parent_id !== undefined
+          ) {
             refreshDocumentLists(
               workspaceId,
               saved.parent_kind,
               saved.parent_id,
               saved.document_id
             );
+            invalidateQueries(favoritesKey(workspaceId));
           }
           if (patch.body !== undefined) {
             for (const mention of saved.mentions) {
@@ -281,6 +318,7 @@ export const DocumentDetail: React.FC = () => {
         timer.current = null;
       }
       pendingBody.current = markdown;
+      setLiveBody(markdown);
       return write({ body: markdown });
     },
     [write]
@@ -289,6 +327,7 @@ export const DocumentDetail: React.FC = () => {
   const scheduleSave = useCallback(
     (markdown: string, uploading: boolean): void => {
       pendingBody.current = markdown;
+      setLiveBody(markdown);
       if (timer.current !== null) clearTimeout(timer.current);
       if (uploading) return;
       timer.current = setTimeout(() => {
@@ -309,6 +348,7 @@ export const DocumentDetail: React.FC = () => {
         base.current = fresh.updated_at;
         savedBody.current = fresh.body;
         setLocal(fresh);
+        setLiveBody(null);
         setSaveError(null);
         setSaveState('idle');
         editor.current?.setMarkdown(fresh.body);
@@ -319,11 +359,22 @@ export const DocumentDetail: React.FC = () => {
       });
   };
 
+  useShortcut({
+    keys: '',
+    label: 'Move document',
+    scope: 'page',
+    group: 'Document',
+    enabled: page?.can_edit === true,
+    handler: () => {
+      setShowMove(true);
+    },
+  });
+
   const crumbs =
     page === null ? null : (
       <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
         <Link
-          to={parentLink(slug, page)}
+          to={parentLink(slug, page, teams.data)}
           className="max-w-48 truncate rounded-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
         >
           {page.parent_name}
@@ -362,13 +413,27 @@ export const DocumentDetail: React.FC = () => {
       .then(() => {
         refreshDocumentLists(workspaceId, page.parent_kind, page.parent_id);
         showToast(`Deleted ${page.title}`);
-        void navigate(parentLink(slug, page));
+        void navigate(parentLink(slug, page, teams.data));
       })
       .catch((problem: unknown) => {
         setSaveError(problem);
       });
   };
 
+  const move = (destination: Destination): void => {
+    setShowMove(false);
+    const from = { kind: page.parent_kind, id: page.parent_id };
+    void write({
+      parent_kind: destination.kind,
+      parent_id: destination.id,
+    }).then((done) => {
+      if (!done) return;
+      refreshDocumentLists(workspaceId, from.kind, from.id);
+      showToast(`Moved to ${destination.name}`);
+    });
+  };
+
+  const outlineSource = liveBody ?? page.body;
   const author = people.find((person) => person.user_id === page.author_id);
   const editorPerson = people.find(
     (person) => person.user_id === page.updated_by
@@ -378,10 +443,7 @@ export const DocumentDetail: React.FC = () => {
     <WorkspaceShell
       title={
         <span className="flex min-w-0 items-center gap-1.5">
-          <LuFileText
-            aria-hidden="true"
-            className="h-3.5 w-3.5 shrink-0 text-text-faint"
-          />
+          <DocumentIcon icon={page.icon ?? null} />
           <span className="truncate">{page.title}</span>
         </span>
       }
@@ -419,6 +481,16 @@ export const DocumentDetail: React.FC = () => {
               <LuHistory aria-hidden="true" className="h-3.5 w-3.5" />
               Version history
             </MenuItem>
+            {page.can_edit && (
+              <MenuItem
+                onSelect={() => {
+                  setShowMove(true);
+                }}
+              >
+                <LuFolderInput aria-hidden="true" className="h-3.5 w-3.5" />
+                Move to...
+              </MenuItem>
+            )}
             {page.can_delete && (
               <>
                 <MenuSeparator />
@@ -437,8 +509,8 @@ export const DocumentDetail: React.FC = () => {
         </span>
       }
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <article className="mx-auto max-w-3xl space-y-6 px-4 py-8 lg:px-8">
+      <div className="min-h-0 flex-1 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,48rem)_minmax(0,1fr)]">
+        <article className="mx-auto w-full max-w-3xl min-w-0 space-y-6 px-4 py-8 lg:px-8 xl:col-start-2">
           {saveState === 'conflict' && (
             <div
               role="alert"
@@ -459,6 +531,13 @@ export const DocumentDetail: React.FC = () => {
             />
           )}
           <header className="space-y-2">
+            <DocumentIconPicker
+              icon={page.icon ?? null}
+              disabled={!page.can_edit}
+              onChange={(icon) => {
+                void write({ icon });
+              }}
+            />
             <EditableText
               label="Document title"
               placeholder="Untitled"
@@ -492,20 +571,28 @@ export const DocumentDetail: React.FC = () => {
               )
             }
           >
-            <RichMarkdownEditor
-              ref={editor}
-              value={page.body}
-              editable={page.can_edit}
-              ariaLabel="Document"
-              className={`${BODY_CLASS} min-h-48`}
-              onCommit={saveBody}
-              onChange={scheduleSave}
-              onCancel={() => {
-                editor.current?.focus();
-              }}
-              {...(page.can_edit ? { placeholder: 'Start writing...' } : {})}
-              {...(isMember ? { mentionPeople: people } : {})}
-            />
+            <DocumentLinkContext.Provider
+              value={{ kind: page.parent_kind, id: page.parent_id }}
+            >
+              <div ref={bodyArea}>
+                <RichMarkdownEditor
+                  ref={editor}
+                  value={page.body}
+                  editable={page.can_edit}
+                  ariaLabel="Document"
+                  className={`${BODY_CLASS} min-h-48`}
+                  onCommit={saveBody}
+                  onChange={scheduleSave}
+                  onCancel={() => {
+                    editor.current?.focus();
+                  }}
+                  {...(page.can_edit
+                    ? { placeholder: 'Start writing...' }
+                    : {})}
+                  {...(isMember ? { mentionPeople: people } : {})}
+                />
+              </div>
+            </DocumentLinkContext.Provider>
           </Suspense>
           {page.mentions.length > 0 && (
             <section
@@ -533,6 +620,13 @@ export const DocumentDetail: React.FC = () => {
             </section>
           )}
         </article>
+        <aside className="hidden min-w-0 xl:block">
+          <DocumentOutline
+            markdown={outlineSource}
+            container={bodyArea}
+            className="sticky top-0 max-h-screen w-56 overflow-y-auto px-6 py-10"
+          />
+        </aside>
       </div>
 
       {showVersions && (
@@ -543,6 +637,18 @@ export const DocumentDetail: React.FC = () => {
           onClose={() => {
             setShowVersions(false);
           }}
+        />
+      )}
+
+      {showMove && (
+        <MoveDocumentDialog
+          workspaceId={workspaceId}
+          document={page}
+          offerInitiatives={isMember}
+          onClose={() => {
+            setShowMove(false);
+          }}
+          onPick={move}
         />
       )}
 

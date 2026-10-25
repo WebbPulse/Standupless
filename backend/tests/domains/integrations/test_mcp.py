@@ -144,6 +144,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_notification",
         "delete_all_notifications",
         "delete_project",
+        "archive_project",
+        "unarchive_project",
         "delete_project_relation",
         "delete_project_update",
         "list_project_update_comments",
@@ -198,6 +200,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_audit_events",
         "list_invites",
         "list_issue_activity",
+        "list_issue_description_versions",
+        "restore_issue_description",
         "list_issue_relations",
         "list_issue_subscribers",
         "list_issues",
@@ -258,10 +262,12 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "cancel_issue_reminder",
         "snooze_notification",
         "subscribe_to_issue",
+        "subscribe_to_view",
         "test_channel",
         "triage_issue",
         "unarchive_issue",
         "unsubscribe_from_issue",
+        "unsubscribe_from_view",
         "update_channel",
         "update_cycle",
         "update_issue",
@@ -328,6 +334,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_customer",
         "create_customer_request",
         "list_customer_requests",
+        "update_customer_request",
         "delete_customer_request",
         "list_approved_domains",
         "add_approved_domain",
@@ -346,7 +353,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 232
+    assert len(TOOLS) == 239
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

@@ -541,6 +541,7 @@ def _walk(repositories: Any, job: ExportJob, writer: _Writer) -> datetime:
             writer.write("releases", _dump(release))
         for view in repositories.views.list_for_team(workspace_id, team_id, limit=10_000):
             writer.write("views", _dump(view))
+        _documents(repositories, writer, workspace_id, "team", team_id)
     for view in repositories.views.list_personal(workspace_id, job.requested_by, limit=10_000):
         writer.write("views", _dump(view))
     for view in repositories.views.list_workspace(workspace_id, limit=10_000):

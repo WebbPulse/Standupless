@@ -101,17 +101,18 @@ describe('referenceQuery', () => {
 });
 
 describe('isSearchable', () => {
-  it('answers a full key and any term of four characters', () => {
+  it('answers a full key and any word of two characters', () => {
     expect(isSearchable('ENG-12')).toBe(true);
-    expect(isSearchable('road')).toBe(true);
+    expect(isSearchable('ui')).toBe(true);
+    expect(isSearchable('roa')).toBe(true);
     expect(isSearchable('a roadmap')).toBe(true);
   });
 
   it('holds back a query search would refuse', () => {
     expect(isSearchable('')).toBe(false);
-    expect(isSearchable('abc')).toBe(false);
+    expect(isSearchable('a')).toBe(false);
     expect(isSearchable('ENG-')).toBe(false);
-    expect(isSearchable('ab cd')).toBe(false);
+    expect(isSearchable('a b')).toBe(false);
   });
 });
 

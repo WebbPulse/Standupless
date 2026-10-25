@@ -1,9 +1,10 @@
 /**
  * The project overview's progress panel. Covers that it draws the graph from
  * the issues once they have all been read, gives way to a note while they
- * have not, lists each milestone's share done as a way into its issues, and
- * leads with the latest update when there is one, and splits the stage list
- * per status. Progress reads in estimate points when a team on the project
+ * have not, lists each milestone's share done and scopes the panel to one
+ * when it is chosen, breaks the issues down by assignee, label and priority
+ * with rows that filter and clear, leads with the latest update when there
+ * is one, and splits the stage list per status. Progress reads in estimate points when a team on the project
  * estimates and in issues otherwise, and a toggle switches the numbers, the
  * graph and the projection between the two, remembered per project.
  */
@@ -214,13 +215,19 @@ describe('ProjectProgressPanel', () => {
     ).toBeInTheDocument();
   });
 
-  it('opens a milestone from its progress row', async () => {
+  it('scopes the panel to a milestone and opens its issues from the chip', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
     render(
       <ProjectProgressPanel
         project={project}
-        issues={[]}
+        issues={[
+          { ...issue('1', 'todo'), project_milestone_id: 'ms-1' },
+          { ...issue('2', 'done'), project_milestone_id: 'ms-1' },
+          { ...issue('3', 'done'), project_milestone_id: 'ms-1' },
+          issue('4', 'todo'),
+          issue('5', 'todo'),
+        ]}
         statuses={statuses}
         complete
         milestones={[alpha]}
@@ -229,12 +236,189 @@ describe('ProjectProgressPanel', () => {
       />
     );
 
+    expect(stat('Scope')).toHaveTextContent('5issues');
+    expect(
+      screen.queryByTestId('project-milestone-scope')
+    ).not.toBeInTheDocument();
+
     const list = screen.getByRole('list', { name: 'Milestone progress' });
+    const row = within(list).getByRole('button', {
+      name: 'Alpha, 75% complete',
+    });
+    await user.click(row);
+
+    expect(row).toHaveAttribute('aria-pressed', 'true');
+    expect(stat('Scope')).toHaveTextContent('3issues');
+    expect(stat('Completed')).toHaveTextContent('267%');
+    const chip = screen.getByTestId('project-milestone-scope');
+    expect(chip).toHaveTextContent('Alpha');
+
+    await user.click(within(chip).getByRole('button', { name: 'View issues' }));
+    expect(onOpen).toHaveBeenCalledWith('ms-1');
+
     await user.click(
-      within(list).getByRole('button', { name: 'Alpha, 75% complete' })
+      within(chip).getByRole('button', { name: 'Clear the Alpha scope' })
+    );
+    expect(stat('Scope')).toHaveTextContent('5issues');
+    expect(row).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('scopes to a milestone from its stored counts before every issue loads', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[]}
+        statuses={statuses}
+        complete={false}
+        milestones={[alpha]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
     );
 
-    expect(onOpen).toHaveBeenCalledWith('ms-1');
+    await user.click(
+      screen.getByRole('button', { name: 'Alpha, 75% complete' })
+    );
+
+    expect(stat('Scope')).toHaveTextContent('4issues');
+    expect(stat('Completed')).toHaveTextContent('375%');
+  });
+
+  it('breaks the issues down and filters by a row, a second click clearing it', async () => {
+    const user = userEvent.setup();
+    const onFilter = vi.fn();
+    const people = [
+      {
+        user_id: 'ada',
+        email: 'ada@example.com',
+        display_name: 'Ada',
+        avatar_url: null,
+      },
+    ];
+    const breakdownIssues = [
+      { ...issue('1', 'done'), assignee_id: 'ada', label_ids: ['bug'] },
+      { ...issue('2', 'todo'), assignee_id: 'ada', priority: 'high' as const },
+      issue('3', 'todo'),
+    ];
+    const context = {
+      labels: [{ id: 'bug', name: 'Bug', color: '#f00', team_id: 'team-1' }],
+      people,
+      projects: [],
+    };
+    const { rerender } = render(
+      <ProjectProgressPanel
+        project={project}
+        issues={breakdownIssues}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        context={context}
+        onFilter={onFilter}
+      />
+    );
+
+    const tabs = screen.getByRole('tablist', {
+      name: 'Break the project down by',
+    });
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent)
+    ).toEqual(['Assignees', 'Labels', 'Priorities']);
+
+    const rows = screen.getByTestId('project-breakdown-rows');
+    await user.click(
+      within(rows).getByRole('button', { name: 'Ada, 1 of 2 done' })
+    );
+    expect(onFilter).toHaveBeenLastCalledWith('assignee', 'ada', null);
+    expect(
+      within(rows).getByRole('button', { name: 'No assignee, 0 of 1 done' })
+    ).toBeInTheDocument();
+
+    rerender(
+      <ProjectProgressPanel
+        project={project}
+        issues={breakdownIssues}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        context={context}
+        onFilter={onFilter}
+        activeFilters={{ assignee: ['ada'] }}
+      />
+    );
+    const active = screen.getByRole('button', { name: 'Ada, 1 of 2 done' });
+    expect(active).toHaveAttribute('aria-pressed', 'true');
+    await user.click(active);
+    expect(onFilter).toHaveBeenLastCalledWith('assignee', null, null);
+
+    await user.click(within(tabs).getByRole('tab', { name: 'Labels' }));
+    expect(
+      screen.getByRole('button', { name: 'Bug, 1 of 1 done' })
+    ).toBeInTheDocument();
+    await user.click(within(tabs).getByRole('tab', { name: 'Priorities' }));
+    await user.click(screen.getByRole('button', { name: 'High, 0 of 1 done' }));
+    expect(onFilter).toHaveBeenLastCalledWith('priority', 'high', null);
+  });
+
+  it('filters within the milestone in scope', async () => {
+    const user = userEvent.setup();
+    const onFilter = vi.fn();
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[
+          { ...issue('1', 'done'), project_milestone_id: 'ms-1' },
+          issue('2', 'todo'),
+          issue('3', 'todo'),
+        ]}
+        statuses={statuses}
+        complete
+        milestones={[alpha]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        context={{ labels: [], people: [], projects: [] }}
+        onFilter={onFilter}
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'No assignee, 1 of 3 done' })
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Alpha, 75% complete' })
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'No assignee, 1 of 1 done' })
+    );
+
+    expect(onFilter).toHaveBeenLastCalledWith('assignee', 'none', 'ms-1');
+  });
+
+  it('reads the breakdown in points when the measure is points', () => {
+    render(
+      <ProjectProgressPanel
+        project={pointedProject}
+        teams={[estimating]}
+        issues={sizedIssues()}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        context={{ labels: [], people: [], projects: [] }}
+        onFilter={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'No assignee, 3 of 8 points done' })
+    ).toBeInTheDocument();
   });
 
   it('leads with the latest update and opens the rest', async () => {

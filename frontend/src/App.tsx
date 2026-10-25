@@ -95,6 +95,7 @@ import {
 } from './lib/paths';
 import Team from './pages/teams/Team';
 import TeamArchive from './pages/teams/TeamArchive';
+import TeamDocuments from './pages/teams/TeamDocuments';
 import TeamTriage from './pages/teams/TeamTriage';
 import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
@@ -238,6 +239,7 @@ const App: React.FC = () => (
             path="team/:keyPrefix/releases/:releaseId"
             element={<ReleaseDetail />}
           />
+          <Route path="team/:keyPrefix/documents" element={<TeamDocuments />} />
           <Route path="team/:keyPrefix/standup" element={<Standup />} />
           <Route path="team/:keyPrefix/views" element={<Views />} />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />

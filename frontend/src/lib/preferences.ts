@@ -21,6 +21,10 @@ export interface InterfacePreferences {
   weekStart: WeekStart;
   nameDisplay: NameDisplay;
   fontSize: FontSize;
+  /** Whether buttons, menu items, rows and other interactive elements show the pointer cursor. */
+  pointerCursors: boolean;
+  /** Whether the editor turns typed emoticons such as `:)` into emoji. */
+  convertEmoticons: boolean;
   /** Whether an issue the person creates starts assigned to them. */
   autoAssignToSelf: boolean;
   /** Whether copying a git branch name moves a not yet started issue to the team's first started status. */
@@ -35,6 +39,8 @@ export const DEFAULT_PREFERENCES: InterfacePreferences = {
   weekStart: 'monday',
   nameDisplay: 'username',
   fontSize: 'default',
+  pointerCursors: false,
+  convertEmoticons: true,
   autoAssignToSelf: false,
   branchCopyStarts: true,
   branchCopyAssigns: true,
@@ -84,12 +90,24 @@ export const paintFontSize = (size: FontSize): void => {
   }
 };
 
+/** Sets the document attribute the stylesheet shows pointer cursors under. */
+export const paintPointerCursors = (on: boolean): void => {
+  const root = globalThis.document.documentElement;
+  if (on) {
+    root.setAttribute('data-pointer-cursors', '');
+  } else {
+    root.removeAttribute('data-pointer-cursors');
+  }
+};
+
 /** The preference fields a profile may carry, any of them missing. */
 export interface StoredPreferences {
   home_view?: HomeView | undefined;
   week_start?: WeekStart | undefined;
   name_display?: NameDisplay | undefined;
   font_size?: FontSize | undefined;
+  pointer_cursors?: boolean | undefined;
+  convert_emoticons?: boolean | undefined;
   auto_assign_to_self?: boolean | undefined;
   branch_copy_starts?: boolean | undefined;
   branch_copy_assigns?: boolean | undefined;
@@ -103,6 +121,9 @@ export const preferencesOf = (
   weekStart: user?.week_start ?? DEFAULT_PREFERENCES.weekStart,
   nameDisplay: user?.name_display ?? DEFAULT_PREFERENCES.nameDisplay,
   fontSize: user?.font_size ?? DEFAULT_PREFERENCES.fontSize,
+  pointerCursors: user?.pointer_cursors ?? DEFAULT_PREFERENCES.pointerCursors,
+  convertEmoticons:
+    user?.convert_emoticons ?? DEFAULT_PREFERENCES.convertEmoticons,
   autoAssignToSelf:
     user?.auto_assign_to_self ?? DEFAULT_PREFERENCES.autoAssignToSelf,
   branchCopyStarts:
@@ -113,15 +134,17 @@ export const preferencesOf = (
 
 /**
  * Takes the preferences in force and tells the subscribers, repainting the
- * text size when it moved. Unchanged values are a no-op, so a re-read of the
+ * text size and the cursors when they moved. Unchanged values are a no-op, so a re-read of the
  * same profile never re-renders anything.
  */
 export const setPreferences = (next: InterfacePreferences): void => {
   const keys = Object.keys(next) as (keyof InterfacePreferences)[];
   if (keys.every((key) => next[key] === current[key])) return;
   const resized = next.fontSize !== current.fontSize;
+  const recursored = next.pointerCursors !== current.pointerCursors;
   current = next;
   if (resized) paintFontSize(next.fontSize);
+  if (recursored) paintPointerCursors(next.pointerCursors);
   for (const listener of [...listeners]) listener();
 };
 

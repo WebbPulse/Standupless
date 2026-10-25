@@ -1,7 +1,8 @@
 /**
- * A cycle's issues broken down by assignee, label, project and priority: how many each
- * one holds and how many of those are done. Cancelled issues are left out, as
- * they are from the cycle's scope, so a row's share matches the header's.
+ * A cycle's or project's issues broken down by assignee, label, project and
+ * priority: how much each one holds and how much of that is done, in issues or
+ * weighed in points. Cancelled issues are left out, as they are from the
+ * scope, so a row's share matches the header's.
  */
 
 import { NONE } from '../api/issues';
@@ -22,7 +23,13 @@ export const PRIORITY_ORDER: readonly IssuePriority[] = [
   'none',
 ];
 
-/** One row of a breakdown: who or what, the issues it holds and those done. */
+/** What one issue adds to a row: one in issues, or its points. */
+export type BreakdownWeigher = (issue: IssueRead) => number;
+
+/** Weighs every issue as one, so a breakdown sums in issues. */
+const ONE_EACH: BreakdownWeigher = () => 1;
+
+/** One row of a breakdown: who or what, the amount it holds and the amount done. */
 export interface BreakdownRow {
   /** The id the list filters on, or `none` for the unset row. */
   id: string;
@@ -52,13 +59,15 @@ const idsOf = (issue: IssueRead, field: BreakdownField): string[] => {
  * The rows of one breakdown, the largest first and the unset row last, or by
  * priority from urgent down to no priority, with only the priorities held. Like
  * named labels across a rolled up cycle's teams share one row, filed under
- * the first label id met so a click filters by all of them.
+ * the first label id met so a click filters by all of them. A weigher sums
+ * the rows in points instead of issues.
  */
 export const cycleBreakdown = (
   issues: readonly IssueRead[],
   statuses: readonly StatusRead[],
   field: BreakdownField,
-  context: Pick<IssueContext, 'labels' | 'people' | 'projects'>
+  context: Pick<IssueContext, 'labels' | 'people' | 'projects'>,
+  weigh: BreakdownWeigher = ONE_EACH
 ): BreakdownRow[] => {
   const categories = new Map(
     statuses.map((status) => [status.id, status.category])
@@ -92,6 +101,7 @@ export const cycleBreakdown = (
   for (const issue of issues) {
     const category = categories.get(issue.status_id) ?? 'backlog';
     if (category === 'cancelled') continue;
+    const weight = weigh(issue);
     const seen = new Set<string>();
     for (const id of idsOf(issue, field)) {
       const key = field === 'label' && id !== NONE ? labelKeyOf(id) : id;
@@ -102,9 +112,11 @@ export const cycleBreakdown = (
         row = { id, name: nameOf(key, id), total: 0, completed: 0, started: 0 };
         rows.set(key, row);
       }
-      row.total += 1;
-      if (category === 'completed') row.completed += 1;
-      if (category === 'completed' || category === 'started') row.started += 1;
+      row.total += weight;
+      if (category === 'completed') row.completed += weight;
+      if (category === 'completed' || category === 'started') {
+        row.started += weight;
+      }
     }
   }
   if (field === 'priority') {

@@ -6,24 +6,41 @@
  */
 
 import React from 'react';
+import type { SidebarBadgeStyle } from '../../types/Api';
 import { useReviews } from '../../hooks/useSidebarData';
 
 /** Props for ReviewsBadge: the workspace whose reviews are counted. */
 export interface ReviewsBadgeProps {
   workspaceId: string;
+  /** Draws a dot in place of the number. */
+  badgeStyle?: SidebarBadgeStyle;
 }
 
 /** The count past which the badge shows "99+". */
 const SATURATES_AT = 100;
 
 /** Shows how many pull requests need the caller's review, or nothing when none do. */
-export const ReviewsBadge: React.FC<ReviewsBadgeProps> = ({ workspaceId }) => {
+export const ReviewsBadge: React.FC<ReviewsBadgeProps> = ({
+  workspaceId,
+  badgeStyle = 'count',
+}) => {
   const reviews = useReviews(workspaceId);
 
   const waiting = reviews?.counts.needs_review ?? 0;
   if (waiting <= 0) return null;
 
   const shown = waiting >= SATURATES_AT ? '99+' : String(waiting);
+
+  if (badgeStyle === 'dot') {
+    return (
+      <span
+        role="img"
+        aria-label={`${shown} waiting for your review`}
+        data-testid="sidebar-badge-dot"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-text-muted"
+      />
+    );
+  }
 
   return (
     <span

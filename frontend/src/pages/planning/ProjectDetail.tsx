@@ -2,7 +2,9 @@
  * One project. The overview leads with the name and a row of property chips
  * under it, then the description, the milestones, the Resources links and
  * the issues, with a side panel of progress: the numbers, a graph over the
- * project's days and each milestone's share done. The issues tab is the project's issues as a
+ * project's days, a breakdown by assignee, label and priority whose rows
+ * filter the issues tab, and each milestone's share done, which scopes the
+ * panel to that milestone. The issues tab is the project's issues as a
  * list or board that groups and filters by milestone too. Every property
  * edits in place and shows at once, and a failed write is undone with a
  * notice. The chip row also names the projects this one is blocked by and
@@ -20,8 +22,10 @@
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  LuArchive,
+  LuArchiveRestore,
   LuArrowRight,
   LuCalendar,
   LuCalendarCheck,
@@ -38,10 +42,12 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import {
+  archiveProject,
   createProjectLink,
   deleteProject,
   deleteProjectLink,
   getProject,
+  unarchiveProject,
   updateProject,
   updateProjectLink,
 } from '../../api/planning';
@@ -54,7 +60,9 @@ import CustomerRequestsSection from '../../components/customers/CustomerRequests
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
-import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
+import ProjectIssuesView, {
+  PROJECT_VIEW_BASE,
+} from '../../components/planning/ProjectIssuesView';
 import {
   CadencePicker,
   DependencyPicker,
@@ -72,6 +80,7 @@ import ProjectActivityFeed from '../../components/planning/ProjectActivityFeed';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import ProjectResources from '../../components/planning/ProjectResources';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
+import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
@@ -100,7 +109,14 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage, hasStatus, NOT_FOUND } from '../../lib/errors';
+import type { BreakdownField } from '../../lib/cycleBreakdown';
 import { personLabel } from '../../lib/issuePeople';
+import {
+  filterValuesFor,
+  narrowFilters,
+  parseViewState,
+  writeViewState,
+} from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
 import { progressPercent, updateNudge } from '../../lib/planningDisplay';
@@ -238,7 +254,14 @@ export const ProjectDetail: React.FC = () => {
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
-  const { statuses, people } = usePlanningTeamLists(workspaceId, teamIds);
+  const { statuses, labels, people } = usePlanningTeamLists(
+    workspaceId,
+    teamIds
+  );
+  const breakdownContext = useMemo(
+    () => ({ labels, people, projects: [] }),
+    [labels, people]
+  );
   const issuesKey = ['projectIssues', workspaceId, projectId] as const;
   const issues = usePlanningIssues(
     workspaceId,
@@ -362,6 +385,62 @@ export const ProjectDetail: React.FC = () => {
     void refetch();
   };
 
+  const viewState = useMemo(
+    () => parseViewState(params, PROJECT_VIEW_BASE),
+    [params]
+  );
+  const activeFilters = useMemo(() => {
+    const held: Partial<Record<BreakdownField, string[]>> = {};
+    for (const clause of viewState.filters) {
+      if (
+        clause.op === 'is' &&
+        (clause.field === 'assignee' ||
+          clause.field === 'label' ||
+          clause.field === 'priority')
+      ) {
+        held[clause.field as BreakdownField] = clause.values;
+      }
+    }
+    return held;
+  }, [viewState.filters]);
+  const filterIssuesBy = (
+    field: BreakdownField,
+    value: string | null,
+    milestoneId: string | null
+  ): void => {
+    if (value === null) {
+      setParams(
+        writeViewState(
+          {
+            ...viewState,
+            filters: viewState.filters.filter(
+              (clause) => clause.field !== field
+            ),
+          },
+          PROJECT_VIEW_BASE,
+          params
+        ),
+        { replace: true }
+      );
+      return;
+    }
+    let filters = narrowFilters(
+      viewState.filters,
+      field,
+      filterValuesFor(field, value, { statuses, labels })
+    );
+    if (milestoneId !== null) {
+      filters = narrowFilters(filters, 'milestone', [milestoneId]);
+    }
+    const held = writeViewState(
+      { ...viewState, filters },
+      PROJECT_VIEW_BASE,
+      params
+    );
+    held.set('tab', 'issues');
+    setParams(held);
+  };
+
   const openMilestoneIssues = (milestoneId: string): void => {
     const held = new URLSearchParams(params);
     held.set('tab', 'issues');
@@ -456,6 +535,27 @@ export const ProjectDetail: React.FC = () => {
       },
       (failure: unknown) => {
         setDeleteError(failure);
+      }
+    );
+  };
+
+  const archived = project.archived_at != null;
+  const toggleArchived = (): void => {
+    (archived ? unarchiveProject : archiveProject)(workspaceId, projectId).then(
+      () => {
+        invalidateQueries(detailKey);
+        invalidateQueries(listKey);
+        showToast(`${archived ? 'Restored' : 'Archived'} ${project.name}`);
+      },
+      (failure: unknown) => {
+        showErrorToast(
+          errorMessage(
+            failure,
+            archived
+              ? 'Could not restore this project.'
+              : 'Could not archive this project.'
+          )
+        );
       }
     );
   };
@@ -635,7 +735,7 @@ export const ProjectDetail: React.FC = () => {
               New issue
             </Button>
           )}
-          {canDelete && (
+          {(canEdit || canDelete) && (
             <Menu
               label="Project actions"
               align="end"
@@ -645,15 +745,30 @@ export const ProjectDetail: React.FC = () => {
                 </IconButton>
               )}
             >
-              <MenuItem
-                danger
-                onSelect={() => {
-                  setIsConfirmingDelete(true);
-                }}
-              >
-                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                Delete project
-              </MenuItem>
+              {canEdit && (
+                <MenuItem onSelect={toggleArchived}>
+                  {archived ? (
+                    <LuArchiveRestore
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                    />
+                  ) : (
+                    <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
+                  )}
+                  {archived ? 'Restore project' : 'Archive project'}
+                </MenuItem>
+              )}
+              {canDelete && (
+                <MenuItem
+                  danger
+                  onSelect={() => {
+                    setIsConfirmingDelete(true);
+                  }}
+                >
+                  <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                  Delete project
+                </MenuItem>
+              )}
             </Menu>
           )}
         </div>
@@ -666,20 +781,40 @@ export const ProjectDetail: React.FC = () => {
           />
         </div>
       )}
+      {archived && (
+        <div
+          role="status"
+          className="flex items-center gap-3 border-b border-line bg-raised px-4 py-2 text-sm text-text-muted lg:px-6"
+        >
+          <LuArchive aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            This project is archived. It is hidden from the projects list.
+          </span>
+          {canEdit && (
+            <Button variant="secondary" size="sm" onClick={toggleArchived}>
+              Restore
+            </Button>
+          )}
+        </div>
+      )}
       {tab === 'updates' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <ProjectUpdatesFeed
-            feed={updates}
-            people={people}
-            canPost={canEdit}
-            defaultHealth={project.health ?? 'on_track'}
-            dueState={project.update_due_state ?? null}
-            dueAt={project.next_update_due_at ?? null}
-            composing={composing}
-            onComposingChange={setComposing}
-            templates={updateTemplates.templates}
-            defaultTemplate={updateTemplates.defaultUpdate}
-          />
+          <DocumentLinkContext.Provider
+            value={{ kind: 'project', id: projectId }}
+          >
+            <ProjectUpdatesFeed
+              feed={updates}
+              people={people}
+              canPost={canEdit}
+              defaultHealth={project.health ?? 'on_track'}
+              dueState={project.update_due_state ?? null}
+              dueAt={project.next_update_due_at ?? null}
+              composing={composing}
+              onComposingChange={setComposing}
+              templates={updateTemplates.templates}
+              defaultTemplate={updateTemplates.defaultUpdate}
+            />
+          </DocumentLinkContext.Provider>
         </div>
       ) : tab === 'issues' ? (
         <ProjectIssuesView
@@ -861,6 +996,10 @@ export const ProjectDetail: React.FC = () => {
               complete={!issues.isLoading && !issues.hasMore}
               milestones={milestones.milestones}
               onOpenMilestone={openMilestoneIssues}
+              context={breakdownContext}
+              isLoadingIssues={issues.isLoading}
+              activeFilters={activeFilters}
+              onFilter={filterIssuesBy}
               latestUpdate={updates.latest}
               history={history}
               {...(latestAuthor === undefined ? {} : { latestAuthor })}

@@ -50,8 +50,10 @@ import {
   LuCopyPlus,
   LuCornerUpLeft,
   LuEllipsis,
+  LuFileText,
   LuGitBranch,
   LuHexagon,
+  LuHistory,
   LuLink2,
   LuListTree,
   LuMaximize2,
@@ -101,9 +103,12 @@ import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import {
   COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
+  COPY_ISSUE_MARKDOWN_LABEL,
   COPY_ISSUE_URL_KEYS,
   copyBranchName,
+  copyIssueMarkdown,
   copyText,
+  issueUrl,
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { useRecordRecentIssue } from '../../lib/recentIssues';
@@ -144,6 +149,9 @@ import { useTruncationTooltip } from '../ui/truncated-text';
 import { Toaster } from '../ui/toast';
 import AddLinkDialog from './AddLinkDialog';
 import AddRelationDialog from './AddRelationDialog';
+import DescriptionHistoryDialog, {
+  DESCRIPTION_HISTORY_LABEL,
+} from './DescriptionHistoryDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
@@ -153,6 +161,10 @@ import IssueSubscribeButton from './IssueSubscribeButton';
 import RemindMeDialog from './RemindMeDialog';
 import FavoriteButton from '../ui/FavoriteButton';
 import IssueTimeline from './IssueTimeline';
+import {
+  DocumentLinkContext,
+  issueDocumentParent,
+} from '../../contexts/DocumentLinkContext';
 import IssueTrailNav from './IssueTrailNav';
 import MoveIssueDialog, {
   MOVE_ISSUE_KEYS,
@@ -370,6 +382,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [parenting, setParenting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [reminding, setReminding] = useState(false);
+  const [history, setHistory] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -716,6 +729,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
             {`${REMIND_ME_LABEL}…`}
             {remindKeys !== '' && <MenuShortcut keys={remindKeys} />}
           </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setHistory(true);
+            }}
+          >
+            <LuHistory aria-hidden="true" className="h-3.5 w-3.5" />
+            {`${DESCRIPTION_HISTORY_LABEL}…`}
+          </MenuItem>
           <MenuSeparator />
           <MenuItem onSelect={copyIssueId}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
@@ -747,6 +768,21 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
             Copy git branch name
             <MenuShortcut keys={COPY_BRANCH_KEYS} />
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              if (issue === null) return;
+              copyIssueMarkdown(issue, issueUrl(slug, issue.key), {
+                statuses: options.statuses,
+                labels: options.labels,
+                people: options.people,
+                projects: projects?.projects ?? [],
+                cycles: cycles?.cycles ?? [],
+              });
+            }}
+          >
+            <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+            {COPY_ISSUE_MARKDOWN_LABEL}
           </MenuItem>
           {canAct && (
             <>
@@ -808,6 +844,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
         enabled={issue !== null}
         onRun={() => {
           setReminding(true);
+        }}
+      />
+      <IssueCommand
+        keys=""
+        label={`${DESCRIPTION_HISTORY_LABEL}…`}
+        enabled={issue !== null}
+        onRun={() => {
+          setHistory(true);
         }}
       />
       <IssueCommand
@@ -992,6 +1036,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     onSaved={receive}
                     people={options.people}
                     onDropFiles={attachFiles}
+                    canComment={canEdit}
                     {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
                   />
 
@@ -1020,18 +1065,22 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 </div>
 
                 <div className="order-3 min-w-0 border-t border-line pt-6 @min-[860px]:mt-8">
-                  <IssueTimeline
-                    workspaceId={workspaceId}
-                    issueId={issue.id}
-                    currentUserId={currentUserId}
-                    canComment={canEdit}
-                    isAdmin={isAdmin}
-                    context={context}
-                    slug={slug}
-                    teamKeyPrefix={team?.key_prefix ?? ''}
-                    onCommentAttachments={onCommentAttachments}
-                    quote={descriptionQuotes.request}
-                  />
+                  <DocumentLinkContext.Provider
+                    value={issueDocumentParent(issue.project_id)}
+                  >
+                    <IssueTimeline
+                      workspaceId={workspaceId}
+                      issueId={issue.id}
+                      currentUserId={currentUserId}
+                      canComment={canEdit}
+                      isAdmin={isAdmin}
+                      context={context}
+                      slug={slug}
+                      teamKeyPrefix={team?.key_prefix ?? ''}
+                      onCommentAttachments={onCommentAttachments}
+                      quote={descriptionQuotes.request}
+                    />
+                  </DocumentLinkContext.Provider>
                 </div>
               </div>
 
@@ -1101,12 +1150,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
               open={moving}
               workspaceId={workspaceId}
               workspaceRole={workspace?.role}
-              issue={issue}
+              issues={[issue]}
               teams={teams ?? []}
               onClose={() => {
                 setMoving(false);
               }}
-              onMoved={onMoved}
+              onMoved={([moved]) => {
+                if (moved !== undefined) onMoved(moved);
+              }}
             />
             <RemindMeDialog
               open={reminding}
@@ -1116,6 +1167,21 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 setReminding(false);
               }}
             />
+            {history && (
+              <DescriptionHistoryDialog
+                workspaceId={workspaceId}
+                issue={issue}
+                people={options.people}
+                canEdit={canAct}
+                onRestored={(saved) => {
+                  receive(saved);
+                  invalidateQueries([issueKey(workspaceId, issueRef)]);
+                }}
+                onClose={() => {
+                  setHistory(false);
+                }}
+              />
+            )}
             <AddLinkDialog
               workspaceId={workspaceId}
               issueId={issue.id}

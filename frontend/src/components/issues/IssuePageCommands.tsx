@@ -6,7 +6,9 @@
  * Ctrl+Shift+Up and Down open the parent and the first sub-issue. The
  * pickers are the list's own, fed the page's lists and writing through the
  * page's optimistic update, so both surfaces behave alike. The confirmation
- * can be held by the page, so its menu's Delete opens the same dialog.
+ * can be held by the page, so its menu's Delete opens the same dialog. The
+ * pickers' values are published with the page's subject, so the command palette
+ * can set them directly.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -16,6 +18,11 @@ import { usePublishIssueSubject } from '../../hooks/useIssueSubject';
 import { useIssueTreeKeys } from '../../hooks/useIssueTreeKeys';
 import { useQuickActions } from '../../hooks/useQuickActions';
 import { useShortcut } from '../../hooks/useShortcuts';
+import {
+  COPY_ISSUE_MARKDOWN_LABEL,
+  copyIssueMarkdown,
+  issueUrl,
+} from '../../lib/copyIssue';
 import { changeToUpdate } from '../../lib/issueChange';
 import { withGroupNames } from '../../lib/labelGroups';
 import { issuePath } from '../../lib/paths';
@@ -42,6 +49,7 @@ import {
   type IssueViewEnv,
 } from './view/IssueViewContext';
 import PropertyCommand from './view/PropertyCommand';
+import { usePropertyValues } from './view/propertyValues';
 import { PROPERTY_KEYS, type CommandProperty } from './view/propertyKeys';
 
 /** The properties the page binds, with their palette labels. */
@@ -195,7 +203,8 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
 
   const targets = useMemo<OrderedIssueRead[]>(() => [issue], [issue]);
 
-  usePublishIssueSubject({ key: issue.key, title: issue.title });
+  const values = usePropertyValues(targets, env, canEdit);
+  usePublishIssueSubject({ key: issue.key, title: issue.title }, values);
 
   useIssueTreeKeys({
     workspaceId: issue.workspace_id,
@@ -215,6 +224,22 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
     write: env.update,
     cyclesFor: () => cycles,
     group: 'Issue',
+  });
+
+  useShortcut({
+    keys: '',
+    label: COPY_ISSUE_MARKDOWN_LABEL,
+    scope: 'issue',
+    group: 'Issue',
+    handler: () => {
+      copyIssueMarkdown(issue, issueUrl(slug, issue.key), {
+        statuses,
+        labels,
+        people,
+        projects,
+        cycles,
+      });
+    },
   });
 
   const assignable = people.some((person) => person.user_id === currentUserId);

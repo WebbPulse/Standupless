@@ -30,16 +30,18 @@ from app.common.api.schemas.teams import (
     TeamDisplayDefaultsRead,
     TeamDisplayDefaultsUpdate,
     TeamUpdate,
+    TriageSettingsRead,
     display_name,
 )
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
+    GROUP_BY_PROPERTIES,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
-    GroupByField,
     LayoutField,
     SortField,
     completed_window_of,
+    grouping_pattern,
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -62,6 +64,7 @@ from app.common.issue_rules import require_team_admin, require_team_reader, team
 from app.common.labels import create_label, label_path, ordered_labels
 from app.common.saved_views import readable_views
 from app.common.status_appearance import ICONS_BY_CATEGORY, STATUS_COLORS, STATUS_ICONS
+from app.common.triage_rules import rule_warnings
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
@@ -206,6 +209,7 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
         "start_weekday": settings.start_weekday,
         "upcoming_count": settings.upcoming_count,
         "auto_add_started": settings.auto_add_started,
+        "auto_add_completed": settings.auto_add_completed,
         "move_unfinished": settings.move_unfinished,
     }
 
@@ -461,8 +465,14 @@ def _get_team(call: ToolCall) -> Any:
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
     body["sla_settings"] = _sla_settings_json(team_writes.sla_settings(call.repositories, workspace_id, team.team_id))
+    triage = issue_triage.triage_settings(call.repositories, workspace_id, team.team_id)
+    read = TriageSettingsRead.from_row(triage, rule_warnings(call.repositories, triage))
     body["triage_settings"] = {
-        "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
+        "enabled": read.enabled,
+        "responsible_user_ids": list(read.responsible_user_ids),
+        "responsibility_action": read.responsibility_action,
+        "require_priority": read.require_priority,
+        "rules": [rule.model_dump(mode="json") for rule in read.rules],
     }
     body["display_defaults"] = _display_defaults_json(call, team.team_id)
     return body
@@ -537,6 +547,7 @@ def _update_cycle_settings(call: ToolCall) -> Any:
         "start_weekday",
         "upcoming_count",
         "auto_add_started",
+        "auto_add_completed",
         "move_unfinished",
     )
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
@@ -572,6 +583,15 @@ def _update_display_defaults(call: ToolCall) -> Any:
     return {"team_id": team.team_id, **_display_defaults_json(call, team.team_id)}
 
 
+def _display_grouping(description: str) -> dict[str, Any]:
+    """A team default grouping: a property name, `label_group:<id>` for one label group, or none."""
+    return {
+        "type": "string",
+        "pattern": grouping_pattern("none"),
+        "description": f"{description}. One of {', '.join(GROUP_BY_PROPERTIES)}, none, or label_group:<id>",
+    }
+
+
 def _display_options_schema(page: str) -> dict[str, Any]:
     """The options object one team page takes, null clearing it back to the built-in default."""
     return {
@@ -582,11 +602,8 @@ def _display_options_schema(page: str) -> dict[str, Any]:
         ),
         "properties": {
             "layout": enum(get_args(LayoutField), "list or board"),
-            "group_by": enum((*get_args(GroupByField), "none"), "Group rows by this property, none for no grouping"),
-            "sub_group_by": enum(
-                (*get_args(GroupByField), "none"),
-                "Sub group within each group, needs group_by; none for no sub grouping",
-            ),
+            "group_by": _display_grouping("Group rows by this property, none for no grouping"),
+            "sub_group_by": _display_grouping("Sub group within each group, needs group_by; none for no sub grouping"),
             "ordering": enum(get_args(SortField), "Ordering within groups"),
             "ordering_reversed": {"type": "boolean", "description": "Reverse the ordering"},
             "visible_properties": {
@@ -991,8 +1008,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="update_team_cycle_settings",
         description=(
             "Turn a team's automatic cycles on or off and set their length, cooldown, start day and "
-            "how many upcoming cycles exist, and whether unfinished issues move to the next cycle when "
-            "one ends. Needs team admin. Turning cycles off keeps existing cycles."
+            "how many upcoming cycles exist, whether started or completed issues join the current cycle, "
+            "and whether unfinished issues move to the next cycle when one ends. Needs team admin. "
+            "Turning cycles off keeps existing cycles."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1004,6 +1022,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "start_weekday": integer("Day cycles start, Monday 0 to Sunday 6", 0, 6),
                 "upcoming_count": integer("How many upcoming cycles to keep created", 1, MAX_UPCOMING_CYCLES),
                 "auto_add_started": boolean("Add issues to the current cycle when they are started"),
+                "auto_add_completed": boolean("Add issues to the current cycle when they are completed"),
                 "move_unfinished": boolean("Move unfinished issues to the next cycle when a cycle ends"),
             },
             required=("team_id",),

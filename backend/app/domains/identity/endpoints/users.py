@@ -25,18 +25,31 @@ from app.common.api.dependencies.authz import (
     require_person,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.api.schemas.initiatives_display import InitiativesDisplay, stored_initiatives_display
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
+    ACTIVITY_FILTERS,
+    EMAIL_FORMATS,
     FONT_SIZES,
     HOME_VIEWS,
     NAME_DISPLAYS,
     PULSE_DIGESTS,
+    SIDEBAR_BADGE_STYLES,
+    SIDEBAR_ITEMS,
+    SIDEBAR_VISIBILITIES,
+    THEMES,
     WEEK_STARTS,
+    ActivityFilterField,
+    EmailFormatField,
     FontSizeField,
     HomeViewField,
     NameDisplayField,
     PulseDigestField,
+    SidebarBadgeStyleField,
+    SidebarItemField,
+    SidebarVisibilityField,
+    ThemeField,
     User,
     WeekStartField,
 )
@@ -86,7 +99,10 @@ class UserRead(BaseModel):
     `projects_display` is the person's projects arrangement, the built-in one
     when they never arranged the page, and `projects_display_saved` says whether
     they did. A person who has not opens the page with their team's or the
-    workspace's default instead.
+    workspace's default instead. `initiatives_display` and
+    `initiatives_display_saved` are the same for the initiatives list. `theme`
+    is null until the person first saves one. `sidebar_items` names every
+    sidebar item with where it sits, `show` unless the person moved it.
     """
 
     id: str
@@ -96,6 +112,7 @@ class UserRead(BaseModel):
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
+    email_format: EmailFormatField = "digest"
     avatar_url: Optional[str] = None
     two_factor: bool = False
     timezone: Optional[str] = None
@@ -104,8 +121,16 @@ class UserRead(BaseModel):
     week_start: WeekStartField = "monday"
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
+    theme: Optional[ThemeField] = None
+    pointer_cursors: bool = False
+    convert_emoticons: bool = True
+    activity_filter: ActivityFilterField = "all"
+    sidebar_items: dict[SidebarItemField, SidebarVisibilityField] = Field(default_factory=dict)
+    sidebar_badge_style: SidebarBadgeStyleField = "count"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
+    initiatives_display: InitiativesDisplay = Field(default_factory=InitiativesDisplay)
+    initiatives_display_saved: bool = False
     auto_assign_to_self: bool = False
     branch_copy_starts: bool = True
     branch_copy_assigns: bool = True
@@ -154,15 +179,23 @@ class UserPreferencesUpdate(BaseModel):
     """The preferences a person may change on their own account.
 
     Every field is optional, so the global email switch, one kind's channels and
-    the timezone can each be changed without restating the others. `timezone` is
+    the timezone can each be changed without restating the others. `email_format`
+    picks a digest or one email per notification. `timezone` is
     the IANA zone due date reminders are judged in, which the browser captures on
     sign in and the person can change. `pulse_digest` is how often the Pulse
     digest email comes, `off` by default. `home_view`, `week_start`,
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
-    device. `projects_display` replaces how the projects list is arranged as a
+    device. `theme` is the interface theme and `pointer_cursors` whether
+    interactive elements show the pointer cursor. `convert_emoticons` is
+    whether the editor turns typed emoticons into emoji. `activity_filter` is
+    whether issue activity shows every change or only comments.
+    `sidebar_items` moves the named sidebar items, leaving the others where
+    they are, and `sidebar_badge_style` picks a count or a dot for the unread
+    badges. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
-    the workspace's default again. `auto_assign_to_self`, `branch_copy_starts`
+    the workspace's default again, and `initiatives_display` does the same for
+    the initiatives list. `auto_assign_to_self`, `branch_copy_starts`
     and `branch_copy_assigns` are the Workflow group: assigning issues the person
     creates to them, and starting and assigning an issue when its git branch name
     is copied. `auto_grant_new_scopes` lets scopes the product adds later reach the
@@ -173,13 +206,21 @@ class UserPreferencesUpdate(BaseModel):
 
     email_notifications: Optional[bool] = None
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
+    email_format: Optional[EmailFormatField] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     pulse_digest: Optional[PulseDigestField] = None
     home_view: Optional[HomeViewField] = None
     week_start: Optional[WeekStartField] = None
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
+    theme: Optional[ThemeField] = None
+    pointer_cursors: Optional[bool] = None
+    convert_emoticons: Optional[bool] = None
+    activity_filter: Optional[ActivityFilterField] = None
+    sidebar_items: Optional[dict[SidebarItemField, SidebarVisibilityField]] = None
+    sidebar_badge_style: Optional[SidebarBadgeStyleField] = None
     projects_display: Optional[ProjectsDisplay] = None
+    initiatives_display: Optional[InitiativesDisplay] = None
     auto_assign_to_self: Optional[bool] = None
     branch_copy_starts: Optional[bool] = None
     branch_copy_assigns: Optional[bool] = None
@@ -243,6 +284,7 @@ def _as_read(user: "Any") -> UserRead:
             )
             for kind in NOTIFICATION_KINDS
         },
+        email_format=_known(user.email_format, EMAIL_FORMATS, "digest"),
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
         pulse_digest=user.pulse_digest if user.pulse_digest in PULSE_DIGESTS else "off",
@@ -250,8 +292,16 @@ def _as_read(user: "Any") -> UserRead:
         week_start=_known(user.week_start, WEEK_STARTS, "monday"),
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
+        theme=user.theme if user.theme in THEMES else None,
+        pointer_cursors=bool(user.pointer_cursors),
+        convert_emoticons=bool(user.convert_emoticons),
+        activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
+        sidebar_items=_sidebar_read(user.sidebar_items),
+        sidebar_badge_style=_known(user.sidebar_badge_style, SIDEBAR_BADGE_STYLES, "count"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
+        initiatives_display=stored_initiatives_display(user.initiatives_display),
+        initiatives_display_saved=bool(user.initiatives_display),
         auto_assign_to_self=bool(user.auto_assign_to_self),
         branch_copy_starts=bool(user.branch_copy_starts),
         branch_copy_assigns=bool(user.branch_copy_assigns),
@@ -262,6 +312,11 @@ def _as_read(user: "Any") -> UserRead:
 def _known(value: str, allowed: tuple[str, ...], fallback: str) -> Any:
     """A stored choice when it is still one of `allowed`, else the default, so a retired value never fails a read."""
     return value if value in allowed else fallback
+
+
+def _sidebar_read(stored: dict[str, str]) -> Any:
+    """Every sidebar item with where it sits, `show` for one never moved or stored with a retired place."""
+    return {item: _known(stored.get(item, "show"), SIDEBAR_VISIBILITIES, "show") for item in SIDEBAR_ITEMS}
 
 
 def _summaries(rows: list[WorkspaceSummary]) -> list[WorkspaceSummaryRead]:
@@ -310,6 +365,21 @@ def _merged_preferences(stored: dict[str, dict[str, bool]], changes: dict[Any, N
             else:
                 channels[channel] = False
     return {kind: channels for kind, channels in merged.items() if channels}
+
+
+def _merged_sidebar(stored: dict[str, str], changes: dict[Any, str]) -> dict[str, str]:
+    """The stored sidebar placements with a partial change applied, kept sparse.
+
+    Only an item moved off the sidebar is kept, and a stored item the sidebar no
+    longer has is dropped, so the row holds just what differs from the default.
+    """
+    merged = {item: place for item, place in stored.items() if item in SIDEBAR_ITEMS}
+    for item, place in changes.items():
+        if place == "show":
+            merged.pop(str(item), None)
+        else:
+            merged[str(item)] = place
+    return merged
 
 
 @router.get("/me", response_model=UserRead)
@@ -361,10 +431,16 @@ def update_current_user_preferences(
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
     for field in (
+        "email_format",
         "home_view",
         "week_start",
         "name_display",
         "font_size",
+        "theme",
+        "pointer_cursors",
+        "convert_emoticons",
+        "activity_filter",
+        "sidebar_badge_style",
         "auto_assign_to_self",
         "branch_copy_starts",
         "branch_copy_assigns",
@@ -373,12 +449,22 @@ def update_current_user_preferences(
         value = getattr(payload, field)
         if value is not None and value != getattr(user, field):
             changes[field] = value
+    if payload.sidebar_items:
+        placed = _merged_sidebar(user.sidebar_items, dict(payload.sidebar_items))
+        if placed != user.sidebar_items:
+            changes["sidebar_items"] = placed
     if payload.projects_display is not None:
         display = payload.projects_display.model_dump()
         if display != user.projects_display:
             changes["projects_display"] = display
     elif "projects_display" in payload.model_fields_set and user.projects_display:
         changes["projects_display"] = {}
+    if payload.initiatives_display is not None:
+        arranged = payload.initiatives_display.model_dump()
+        if arranged != user.initiatives_display:
+            changes["initiatives_display"] = arranged
+    elif "initiatives_display" in payload.model_fields_set and user.initiatives_display:
+        changes["initiatives_display"] = {}
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))

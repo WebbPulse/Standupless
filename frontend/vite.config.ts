@@ -1,8 +1,10 @@
 /**
  * Vite build configuration. Every dependency lands in one `vendor` chunk except
- * three that load on demand: the emoji dataset, which the reaction picker
+ * four that load on demand: the emoji dataset, which the reaction picker
  * imports on first open, the rich text editor, which loads when a description
- * is shown, and the syntax highlighter, which loads with the first code block. Each stays a chunk of its own rather than weighing down every page.
+ * is shown, the syntax highlighter, which loads with the first code block, and
+ * the Mermaid diagram renderer, which loads with the first diagram. Each stays
+ * a chunk of its own rather than weighing down every page.
  * After the bundle is written, the public pages are prerendered to static HTML.
  * The dev server proxies `/api` to the backend `VITE_BACKEND` names.
  */
@@ -188,6 +190,84 @@ const HIGHLIGHT_MODULES =
  */
 const HIGHLIGHT_CORE = /node_modules[\\/]highlight\.js[\\/]lib[\\/]core\.js$/;
 
+/** The installed packages, beside this config. */
+const NODE_MODULES = fileURLToPath(new URL('./node_modules/', import.meta.url));
+
+/** The packages one installed package depends on, or none when it cannot be read. */
+const packageDependencies = (name: string): string[] => {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(`${NODE_MODULES}${name}/package.json`, 'utf8')
+    ) as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    return Object.keys({
+      ...manifest.dependencies,
+      ...manifest.optionalDependencies,
+      ...manifest.peerDependencies,
+    });
+  } catch {
+    return [];
+  }
+};
+
+/** Every package reachable from some roots through their dependencies. */
+const dependencyClosure = (roots: string[]): Set<string> => {
+  const seen = new Set<string>();
+  const queue = [...roots];
+  for (let name = queue.pop(); name !== undefined; name = queue.pop()) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    queue.push(...packageDependencies(name));
+  }
+  return seen;
+};
+
+/**
+ * The packages only the diagram renderer brings in. Mermaid and everything it
+ * alone depends on load on demand the first time a diagram is shown, so they
+ * stay out of the vendor and editor chunks and land in the lazy chunks that
+ * import them. A package the app also reaches some other way stays where it
+ * was.
+ */
+const mermaidOnlyPackages = (): Set<string> => {
+  const app = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL('./package.json', import.meta.url)),
+      'utf8'
+    )
+  ) as { dependencies?: Record<string, string> };
+  const others = dependencyClosure(
+    Object.keys(app.dependencies ?? {}).filter((name) => name !== 'mermaid')
+  );
+  const mermaid = dependencyClosure(['mermaid']);
+  return new Set([...mermaid].filter((name) => !others.has(name)));
+};
+
+const MERMAID_ONLY = mermaidOnlyPackages();
+
+/** The package a module id belongs to, by its innermost `node_modules`. */
+const packageOf = (id: string): string | null => {
+  const path = id.replaceAll('\\', '/');
+  const index = path.lastIndexOf('/node_modules/');
+  if (index === -1) return null;
+  const parts = path.slice(index + '/node_modules/'.length).split('/');
+  const [first, second] = parts;
+  if (first === undefined) return null;
+  return first.startsWith('@') && second !== undefined
+    ? `${first}/${second}`
+    : first;
+};
+
+/** Whether a module belongs to the diagram renderer alone. */
+const isMermaidModule = (id: string): boolean => {
+  if (id.replaceAll('\\', '/').includes('/node_modules/mermaid/')) return true;
+  const name = packageOf(id);
+  return name !== null && MERMAID_ONLY.has(name);
+};
+
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
   const watch = devWatch(env);
@@ -219,12 +299,14 @@ export default defineConfig(({ mode }) => {
                   id.includes('node_modules') &&
                   !id.includes('emojibase-data') &&
                   !EDITOR_MODULES.test(id) &&
-                  !HIGHLIGHT_MODULES.test(id),
+                  !HIGHLIGHT_MODULES.test(id) &&
+                  !isMermaidModule(id),
                 priority: 2,
               },
               {
                 name: 'editor',
-                test: EDITOR_MODULES,
+                test: (id: string) =>
+                  EDITOR_MODULES.test(id) && !isMermaidModule(id),
                 priority: 1,
               },
               {

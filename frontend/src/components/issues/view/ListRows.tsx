@@ -23,7 +23,7 @@ import {
   treeRows,
   type TreeGuide,
 } from '../../../lib/issueTree';
-import type { IssueGroup } from '../../../lib/issueView';
+import { isLabelGroupField, type IssueGroup } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
@@ -75,7 +75,7 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
       <Avatar name={group.person} size="xs" />
     );
   }
-  if (group.field === 'label') {
+  if (group.field === 'label' || isLabelGroupField(group.field)) {
     return (
       <span
         aria-hidden="true"

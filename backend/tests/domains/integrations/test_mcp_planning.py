@@ -100,6 +100,8 @@ def test_destructive_tools_say_so(name: str) -> None:
         ("update_project_link", ("projects:write",)),
         ("delete_project_link", ("projects:write",)),
         ("delete_project", ("projects:write",)),
+        ("archive_project", ("projects:write",)),
+        ("unarchive_project", ("projects:write",)),
         ("update_project_update", ("projects:write",)),
         ("delete_project_update", ("projects:write",)),
         ("list_project_relations", ("projects:read",)),
@@ -472,6 +474,25 @@ def test_delete_project_needs_a_team_admin(client: TestClient, repositories: Any
     assert deleted == {"deleted": True, "project_id": planning["project_id"]}
     assert repositories.planning.get_project(WORKSPACE, planning["project_id"]) is None
     assert repositories.planning.list_milestones(WORKSPACE, planning["project_id"]) == []
+
+
+def test_archive_project_hides_it_from_list_projects_until_restored(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """An archived project leaves list_projects unless asked for, and a restore brings it back."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    archived = answer(tool(client, secret, "archive_project", {"project_id": planning["project_id"]}))
+    hidden = answer(tool(client, secret, "list_projects", {}))
+    shown = answer(tool(client, secret, "list_projects", {"include_archived": True}))
+    restored = answer(tool(client, secret, "unarchive_project", {"project_id": planning["project_id"]}))
+    listed = answer(tool(client, secret, "list_projects", {}))
+
+    assert archived["archived_at"] is not None
+    assert planning["project_id"] not in {row["project_id"] for row in hidden["projects"]}
+    assert planning["project_id"] in {row["project_id"] for row in shown["projects"]}
+    assert restored["archived_at"] is None
+    assert planning["project_id"] in {row["project_id"] for row in listed["projects"]}
 
 
 def test_a_project_name_shared_by_two_projects_is_ambiguous(

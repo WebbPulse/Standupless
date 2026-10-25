@@ -33,7 +33,7 @@ import type {
   ViewGroupBy,
 } from '../types/Api';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
-import { pickableLabels, replacedSiblings } from './labelGroups';
+import { isLabelGroup, pickableLabels, replacedSiblings } from './labelGroups';
 import { completionPercent, progressPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
@@ -49,6 +49,23 @@ import {
 
 /** A property an issue list can be grouped by, or `none`. */
 export type GroupField = ViewGroupBy | 'none';
+
+/** A grouping by one label group, `label_group:<id>` naming the group label. */
+export type LabelGroupField = `label_group:${string}`;
+
+/** A grouping by a fixed property rather than by a label group. */
+export type GroupProperty = Exclude<GroupField, LabelGroupField>;
+
+const LABEL_GROUP_PREFIX = 'label_group:';
+
+/** Whether a grouping is by one label group. */
+export const isLabelGroupField = (field: string): field is LabelGroupField =>
+  field.startsWith(LABEL_GROUP_PREFIX) &&
+  field.length > LABEL_GROUP_PREFIX.length;
+
+/** The grouping by the label group with this id. */
+export const labelGroupField = (groupId: string): LabelGroupField =>
+  `${LABEL_GROUP_PREFIX}${groupId}`;
 
 export type { CompletedWindow };
 
@@ -314,7 +331,7 @@ export const GROUP_FIELDS: GroupField[] = [
  * one an issue's own fields hold. A parent, team or SLA column only shows
  * where an issue sits.
  */
-export const MOVABLE_GROUP_FIELDS: ReadonlySet<GroupField> = new Set([
+export const MOVABLE_GROUP_FIELDS: ReadonlySet<GroupProperty> = new Set([
   'status',
   'assignee',
   'priority',
@@ -323,6 +340,10 @@ export const MOVABLE_GROUP_FIELDS: ReadonlySet<GroupField> = new Set([
   'milestone',
   'cycle',
 ]);
+
+/** Whether a board column of this grouping can be dragged into; a label group's always can. */
+export const isMovableGroupField = (field: GroupField): boolean =>
+  isLabelGroupField(field) || MOVABLE_GROUP_FIELDS.has(field);
 
 /**
  * The fields a list with this context can be grouped or filtered by. A
@@ -357,7 +378,7 @@ export const filterFieldsFor = (
   );
 
 /** How a grouping reads in the interface. */
-export const GROUP_LABELS: Record<GroupField, string> = {
+export const GROUP_LABELS: Record<GroupProperty, string> = {
   status: 'Status',
   assignee: 'Assignee',
   priority: 'Priority',
@@ -370,6 +391,94 @@ export const GROUP_LABELS: Record<GroupField, string> = {
   sla: 'SLA status',
   none: 'No grouping',
 };
+
+/** The group label a label group grouping names, when the lists hold it. */
+export const labelGroupOf = (
+  field: LabelGroupField,
+  context: Pick<IssueContext, 'labels'>
+): ScopedLabel | undefined => {
+  const id = field.slice(LABEL_GROUP_PREFIX.length);
+  return context.labels.find((label) => label.id === id && isLabelGroup(label));
+};
+
+const groupNameKey = (name: string): string => name.trim().toLowerCase();
+
+const memberCache = new WeakMap<
+  readonly ScopedLabel[],
+  Map<LabelGroupField, ScopedLabel[]>
+>();
+
+/**
+ * The labels a label group grouping sorts issues by: the group's own labels,
+ * and those of like named groups of the other teams a list spans.
+ */
+export const labelGroupMembers = (
+  field: LabelGroupField,
+  context: Pick<IssueContext, 'labels'>
+): ScopedLabel[] => {
+  let cached = memberCache.get(context.labels);
+  if (cached === undefined) {
+    cached = new Map();
+    memberCache.set(context.labels, cached);
+  }
+  const hit = cached.get(field);
+  if (hit !== undefined) return hit;
+  const group = labelGroupOf(field, context);
+  const name = group === undefined ? undefined : groupNameKey(group.name);
+  const members =
+    group === undefined
+      ? []
+      : pickableLabels(context.labels).filter(
+          (label) =>
+            label.parent_id === group.id ||
+            (label.group_name !== undefined &&
+              groupNameKey(label.group_name) === name)
+        );
+  cached.set(field, members);
+  return members;
+};
+
+/**
+ * The label group groupings a list offers, one per group name, in name order,
+ * so like named groups of several teams read as one choice.
+ */
+export const labelGroupFields = (
+  context: Pick<IssueContext, 'labels'>
+): LabelGroupField[] => {
+  const seen = new Set<string>();
+  const fields: LabelGroupField[] = [];
+  for (const group of context.labels
+    .filter(isLabelGroup)
+    .sort((left, right) => left.name.localeCompare(right.name))) {
+    const key = groupNameKey(group.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fields.push(labelGroupField(group.id));
+  }
+  return fields;
+};
+
+/**
+ * The groupings a list with this context offers, in menu order: each label
+ * group follows the plain label grouping, as in Linear.
+ */
+export const groupFieldsFor = (
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels'>
+): GroupField[] => {
+  const groups = labelGroupFields(context);
+  return fieldsFor(GROUP_FIELDS, context).flatMap((field) =>
+    field === 'label' ? [field, ...groups] : [field]
+  );
+};
+
+/** How a grouping reads in the interface, a label group by its own name. */
+export const groupFieldLabel = (
+  field: GroupField,
+  context: Pick<IssueContext, 'labels'>
+): string =>
+  isLabelGroupField(field)
+    ? (labelGroupOf(field, context)?.name ?? 'Label group')
+    : GROUP_LABELS[field];
 
 /** The orderings a list offers, in menu order. */
 export const ORDERINGS: IssueListSort[] = [
@@ -385,6 +494,7 @@ export const ORDERINGS: IssueListSort[] = [
   'sla_asc',
   'key_asc',
   'customer_requests_desc',
+  'customer_important_desc',
   'customer_revenue_desc',
 ];
 
@@ -402,6 +512,7 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   start_asc: 'Start date',
   estimate_desc: 'Estimate',
   customer_requests_desc: 'Customer requests',
+  customer_important_desc: 'Important customer requests',
   customer_revenue_desc: 'Customer revenue',
 };
 
@@ -593,7 +704,8 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
 });
 
 const isGroupField = (value: string | null): value is GroupField =>
-  value !== null && (GROUP_FIELDS as string[]).includes(value);
+  value !== null &&
+  ((GROUP_FIELDS as string[]).includes(value) || isLabelGroupField(value));
 
 const isOrdering = (value: string | null): value is IssueListSort =>
   value !== null && (ORDERINGS as string[]).includes(value);
@@ -1551,8 +1663,16 @@ export const groupKeysOf = (
       return [issue.team_id];
     case 'sla':
       return [liveSlaStatus(issue)];
-    default:
-      return ['all'];
+    default: {
+      if (!isLabelGroupField(field)) return ['all'];
+      const members = new Set(
+        labelGroupMembers(field, context).map((label) => label.id)
+      );
+      const held = labelsOf(issue, context).find((label) =>
+        members.has(label.id)
+      );
+      return [held === undefined ? NONE : labelGroupKey(held)];
+    }
   }
 };
 
@@ -1618,6 +1738,29 @@ const fallbackLabel = (
     default:
       return key;
   }
+};
+
+/**
+ * The groups of a label group grouping: No <group> first, then one per label
+ * of the group in name order, like named labels of several teams sharing one.
+ */
+const labelGroupShells = (
+  field: LabelGroupField,
+  context: IssueContext
+): Omit<IssueGroup, 'issues'>[] => {
+  const shells: Omit<IssueGroup, 'issues'>[] = [
+    { key: NONE, field, label: `No ${groupFieldLabel(field, context)}` },
+  ];
+  const seen = new Set<string>();
+  for (const label of [...labelGroupMembers(field, context)].sort(
+    (left, right) => left.name.localeCompare(right.name)
+  )) {
+    const key = labelGroupKey(label);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    shells.push({ key, field, label: label.name, color: label.color });
+  }
+  return shells;
 };
 
 /** Every group a field can have, in display order, before rows are placed. */
@@ -1766,7 +1909,9 @@ const groupShells = (
         label: SLA_STATUS_LABELS[status],
       }));
     default:
-      return [{ key: 'all', field, label: 'All issues' }];
+      return isLabelGroupField(field)
+        ? labelGroupShells(field, context)
+        : [{ key: 'all', field, label: 'All issues' }];
   }
 };
 
@@ -2139,6 +2284,43 @@ const labelsForKey = (
   );
 
 /**
+ * The change that moves an issue into another column of a label group
+ * grouping: the label it holds from the group swapped for the target's, or
+ * dropped for No <group>. Answers null when the issue's team has no label of
+ * that name in the group.
+ */
+const labelGroupMove = (
+  issue: OrderedIssueRead,
+  field: LabelGroupField,
+  toKey: string,
+  context: IssueContext
+): IssueChange | null => {
+  const members = labelGroupMembers(field, context);
+  const memberIds = new Set(members.map((label) => label.id));
+  const carried = issue.label_ids.filter((id) => memberIds.has(id));
+  if (toKey === NONE) {
+    return carried.length === 0 ? {} : { remove_label_ids: carried };
+  }
+  const adding = [
+    ...new Set(
+      members
+        .filter(
+          (label) =>
+            labelGroupKey(label) === toKey &&
+            (label.team_id === undefined || label.team_id === issue.team_id)
+        )
+        .map((label) => label.id)
+    ),
+  ];
+  if (adding.length === 0) return null;
+  const dropping = carried.filter((id) => !adding.includes(id));
+  return {
+    add_label_ids: adding,
+    ...(dropping.length === 0 ? {} : { remove_label_ids: dropping }),
+  };
+};
+
+/**
  * The change that moves an issue from one group to another: the grouped
  * property set to the target's value. A label move swaps the source label
  * for the target one and keeps the rest. Answers null when the target cannot
@@ -2222,7 +2404,9 @@ export const moveChange = (
     case 'sla':
       return null;
     default:
-      return {};
+      return isLabelGroupField(field)
+        ? labelGroupMove(issue, field, toKey, context)
+        : {};
   }
 };
 

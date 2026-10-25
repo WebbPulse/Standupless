@@ -30,7 +30,8 @@ export type ProjectActivityIcon =
   | 'initiative'
   | 'labels'
   | 'milestone'
-  | 'link';
+  | 'link'
+  | 'archive';
 
 /** One piece of a sentence: plain words, a named thing, or a status or health with its glyph. */
 export type ProjectActivityPart =
@@ -355,6 +356,12 @@ export const describeProjectActivity = (
 ): ProjectActivityDescription => {
   if (row.kind === 'created') {
     return { icon: 'created', parts: [text('created the project')] };
+  }
+  if (row.kind === 'archived') {
+    return { icon: 'archive', parts: [text('archived the project')] };
+  }
+  if (row.kind === 'unarchived') {
+    return { icon: 'archive', parts: [text('restored the project')] };
   }
   if (row.kind === 'field_changed') return describeField(row, lookups);
   if (row.kind.startsWith('link_')) return describeLink(row);

@@ -10,9 +10,9 @@ widens when a field is renamed.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping, Optional, get_args
+from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
 
-from pydantic import BaseModel, Field, StrictBool, field_validator
+from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
@@ -34,6 +34,7 @@ SortField = Literal[
     "start_asc",
     "estimate_desc",
     "customer_requests_desc",
+    "customer_important_desc",
     "customer_revenue_desc",
     "completed_desc",
 ]
@@ -85,7 +86,7 @@ def completed_window_of(window: Optional[str], show_completed: Optional[bool]) -
     return "all"
 
 
-GroupByField = Literal[
+GroupByProperty = Literal[
     "status",
     "assignee",
     "priority",
@@ -98,6 +99,23 @@ GroupByField = Literal[
     "sla",
 ]
 """The properties a view may group or sub-group its rows by."""
+
+GROUP_BY_PROPERTIES: tuple[str, ...] = get_args(GroupByProperty)
+
+LABEL_GROUP_GROUPING_PATTERN = r"^label_group:[0-9A-Za-z_-]{1,64}$"
+"""A grouping by one label group, `label_group:` then the group label's id."""
+
+LabelGroupGrouping = Annotated[str, StringConstraints(pattern=LABEL_GROUP_GROUPING_PATTERN)]
+
+GroupByField = Union[GroupByProperty, LabelGroupGrouping]
+"""What a view may group or sub-group its rows by: a property, or one label group."""
+
+
+def grouping_pattern(*extra: str) -> str:
+    """A regular expression matching every grouping, and any extra choices, for a tool schema."""
+    choices = "|".join((*GROUP_BY_PROPERTIES, *extra))
+    return rf"^(?:{choices}|label_group:[0-9A-Za-z_-]{{1,64}})$"
+
 
 ScopeField = Literal["mine", "team", "workspace", "all"]
 
@@ -117,6 +135,8 @@ NotificationKindField = Literal[
     "sla_at_risk",
     "sla_breached",
     "reminder",
+    "triage_new",
+    "view_issue_added",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -509,7 +529,9 @@ class ViewRead(BaseModel):
     """One saved view as the API returns it.
 
     `favorite` is the caller's own star, not a property of the view, so the same
-    view reads differently to two members. `projects_display` is the arrangement of
+    view reads differently to two members, and so is `subscribed`, whether the
+    caller follows the view to hear about issues entering it. `subscriber_count`
+    is how many members follow it. `projects_display` is the arrangement of
     a project view and null on an issue view.
     """
 
@@ -537,12 +559,16 @@ class ViewRead(BaseModel):
     color: Optional[str] = None
     description: Optional[str] = None
     favorite: bool = False
+    subscribed: bool = False
+    subscriber_count: int = 0
     owner_id: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, view: SavedView, *, favorite: bool = False) -> "ViewRead":
+    def from_row(
+        cls, view: SavedView, *, favorite: bool = False, subscribed: bool = False, subscriber_count: int = 0
+    ) -> "ViewRead":
         """Build the response shape from a stored view row."""
         return cls(
             view_id=view.view_id,
@@ -569,6 +595,8 @@ class ViewRead(BaseModel):
             color=view.color,
             description=view.description,
             favorite=favorite,
+            subscribed=subscribed,
+            subscriber_count=subscriber_count,
             owner_id=view.owner_id,
             created_at=view.created_at,
             updated_at=view.updated_at,
