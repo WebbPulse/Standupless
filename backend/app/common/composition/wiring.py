@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, Sequence, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, Sequence, Tuple
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -156,15 +156,15 @@ def _build_identity_settings(current: Any) -> Any:
     return build_identity_settings(current)
 
 
-def add_local_authorizer(app: FastAPI, domains: "Sequence[composition.Domain]" = ()) -> bool:
+def add_local_authorizer(app: FastAPI, domains: "Sequence[composition.Domain]" = ()) -> None:
     """Stand in for the gateway's JWT authorizer, but only on a local stack.
 
     The package's `local_authorizer` bound to this product's settings and its
-    lazily imported identity settings factory. Returns whether it was added.
+    lazily imported identity settings factory.
     """
     del domains
 
-    return local_authorizer(app, settings, build_identity_settings=_build_identity_settings)
+    local_authorizer(app, settings, build_identity_settings=_build_identity_settings)
 
 
 def add_root_routes(app: FastAPI, domains: "Sequence[composition.Domain]" = ()) -> None:
