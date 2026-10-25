@@ -719,12 +719,14 @@ def apply_patch(
             require_triage_on(repositories, context.workspace_id, issue.team_id)
             updated.in_triage = True
             updated.snoozed_until = None
+            updated.snoozed_by = None
     elif "status_id" in attributes and attributes["status_id"] is not None:
         chosen = check_status(repositories, context.workspace_id, issue.team_id, attributes["status_id"])
         updated.status_id = chosen.status_id
         if issue.in_triage and not context.is_guest:
             updated.in_triage = False
             updated.snoozed_until = None
+            updated.snoozed_by = None
             leaving_into = chosen.category
     if "title" in attributes and attributes["title"] is not None:
         updated.title = attributes["title"]

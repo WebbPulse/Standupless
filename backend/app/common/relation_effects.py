@@ -230,7 +230,13 @@ def close_as_duplicate(
         if categories.get(current.status_id) in COMPLETED_CATEGORIES or current.status_id != issue.status_id:
             return None
         moved = current.model_copy(
-            update={"status_id": target.status_id, "updated_at": utc_now(), "in_triage": False, "snoozed_until": None}
+            update={
+                "status_id": target.status_id,
+                "updated_at": utc_now(),
+                "in_triage": False,
+                "snoozed_until": None,
+                "snoozed_by": None,
+            }
         )
         apply_sla(repositories, current, moved)
         return moved

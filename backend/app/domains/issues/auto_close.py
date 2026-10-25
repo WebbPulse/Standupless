@@ -108,6 +108,7 @@ def close_team(repositories: Any, settings: AutoCloseSettings, now: datetime) ->
                     "status_id": target,
                     "in_triage": False,
                     "snoozed_until": None,
+                    "snoozed_by": None,
                     "updated_at": now,
                     "updated_by": SYSTEM_ACTOR,
                     "updated_source": SYSTEM,

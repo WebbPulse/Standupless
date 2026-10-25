@@ -349,6 +349,121 @@ def test_snooze_holds_its_bounds_and_null_unsnoozes(client: TestClient, triage: 
     assert _waiting(client) == [waiting["id"]]
 
 
+def _snoozed(client: TestClient, repositories: Any) -> str:
+    """A member's waiting issue snoozed for a day by the owner, with the admin on the team."""
+    add_team_member(repositories, WORKSPACE, TEAM, ADMIN, "member")
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE)
+    sign_in(client, OWNER)
+    until = (utc_now() + timedelta(days=1)).isoformat()
+    response = client.post(f"{BASE}/{waiting['id']}/triage/snooze", json={"until": until})
+    assert response.status_code == 200, response.text
+    return str(waiting["id"])
+
+
+def _comment(client: TestClient, issue_id: str, body: str = "Any news?") -> "dict[str, Any]":
+    """Post one comment on an issue as the signed in user."""
+    response = client.post(f"{BASE}/{issue_id}/comments", json={"body": body})
+    assert response.status_code == 201, response.text
+    return dict(response.json())
+
+
+def test_snooze_keeps_who_snoozed_it(client: TestClient, triage: str, repositories: Any) -> None:
+    """The snoozer is kept with the snooze and cleared with it."""
+    issue_id = _snoozed(client, repositories)
+
+    assert repositories.issues.get(WORKSPACE, issue_id).snoozed_by == OWNER
+    client.post(f"{BASE}/{issue_id}/triage/snooze", json={"until": None})
+    assert repositories.issues.get(WORKSPACE, issue_id).snoozed_by is None
+
+
+def test_someone_elses_comment_wakes_a_snoozed_issue(client: TestClient, triage: str, repositories: Any) -> None:
+    """Another member's comment brings the issue back at once, with no history and no new `updated_at`."""
+    issue_id = _snoozed(client, repositories)
+    before = repositories.issues.get(WORKSPACE, issue_id)
+    history = len(repositories.activity.list_for_issue(WORKSPACE, issue_id, limit=50).items)
+
+    sign_in(client, ADMIN)
+    _comment(client, issue_id)
+
+    after = repositories.issues.get(WORKSPACE, issue_id)
+    assert after.snoozed_until is None
+    assert after.snoozed_by is None
+    assert after.in_triage is True
+    assert after.updated_at == before.updated_at
+    assert len(repositories.activity.list_for_issue(WORKSPACE, issue_id, limit=50).items) == history
+    sign_in(client, OWNER)
+    assert _waiting(client) == [issue_id]
+    assert _waiting(client, snoozed="true") == []
+
+
+def test_the_snoozers_own_comment_keeps_it_snoozed(client: TestClient, triage: str, repositories: Any) -> None:
+    """A comment from the person who snoozed the issue is not new activity from someone else."""
+    issue_id = _snoozed(client, repositories)
+
+    _comment(client, issue_id)
+
+    assert repositories.issues.get(WORKSPACE, issue_id).snoozed_until is not None
+    assert _waiting(client) == []
+    assert _waiting(client, snoozed="true") == [issue_id]
+
+
+def test_editing_a_comment_does_not_wake_it(client: TestClient, triage: str, repositories: Any) -> None:
+    """Only a new comment wakes the issue, not an edit to one written before the snooze."""
+    add_team_member(repositories, WORKSPACE, TEAM, ADMIN, "member")
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE)
+    sign_in(client, ADMIN)
+    written = _comment(client, waiting["id"])
+    sign_in(client, OWNER)
+    until = (utc_now() + timedelta(days=1)).isoformat()
+    client.post(f"{BASE}/{waiting['id']}/triage/snooze", json={"until": until})
+
+    sign_in(client, ADMIN)
+    edited = client.patch(
+        f"/api/workspaces/{WORKSPACE}/comments/{written['comment_id']}",
+        json={"issue_id": waiting["id"], "body": "Edited"},
+    )
+
+    assert edited.status_code == 200, edited.text
+    assert repositories.issues.get(WORKSPACE, waiting["id"]).snoozed_until is not None
+
+
+def test_a_comment_on_an_issue_not_snoozed_changes_nothing(client: TestClient, triage: str, repositories: Any) -> None:
+    """A waiting issue with no snooze is left exactly as it was."""
+    add_team_member(repositories, WORKSPACE, TEAM, ADMIN, "member")
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE)
+    before = repositories.issues.get(WORKSPACE, waiting["id"])
+
+    sign_in(client, ADMIN)
+    _comment(client, waiting["id"])
+
+    after = repositories.issues.get(WORKSPACE, waiting["id"])
+    assert after.snoozed_until is None
+    assert after.read_revision() == before.read_revision()
+
+
+def test_a_comment_on_an_issue_out_of_triage_changes_nothing(
+    client: TestClient, triage: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A stray snooze stamp on an issue outside triage is not touched by a comment."""
+    add_team_member(repositories, WORKSPACE, TEAM, ADMIN, "member")
+    sign_in(client, OWNER)
+    direct = create_issue(client, WORKSPACE, status_id=statuses["started"].status_id)
+    stored = repositories.issues.get(WORKSPACE, direct["id"])
+    until = utc_now() + timedelta(days=1)
+    stamped = repositories.issues.replace(stored.model_copy(update={"snoozed_until": until, "snoozed_by": OWNER}))
+
+    sign_in(client, ADMIN)
+    _comment(client, direct["id"])
+
+    after = repositories.issues.get(WORKSPACE, direct["id"])
+    assert after.in_triage is False
+    assert after.snoozed_until is not None
+    assert after.read_revision() == stamped.read_revision()
+
+
 def test_a_status_change_accepts_it(client: TestClient, triage: str, statuses: "dict[str, Any]") -> None:
     """Moving a waiting issue by an ordinary edit takes it out of triage too."""
     sign_in(client, MEMBER)

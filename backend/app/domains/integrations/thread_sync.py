@@ -39,6 +39,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.issue_keys import current
 from app.common.issue_rules import load_visible_issue, require_team_member
 from app.common.thread_resolution import reopen_on_reply
+from app.common.triage_wake import wake_on_activity
 from app.domains.integrations import github_issues
 from app.domains.integrations.issue_sync import (
     GITHUB_AUTHOR_PREFIX,
@@ -560,6 +561,7 @@ def handle_inbound(repositories: Repositories, workspace_id: str, body: Mapping[
     except ConditionFailed:
         return True
     reopen_on_reply(repositories, root, reply.author_id, actor_kind="github", source=GITHUB)
+    wake_on_activity(repositories, issue, reply.author_id)
     _log.info("Added a GitHub comment to a synced thread.", extra={"event": "integrations.thread.received"})
     return True
 
