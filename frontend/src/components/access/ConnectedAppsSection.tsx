@@ -288,8 +288,8 @@ export const MyConnectedAppsSection: React.FC = () => {
                 {(app.new_scopes ?? []).length > 0 && (
                   <p className="truncate text-xs text-text-muted">
                     New permissions available:{' '}
-                    {(app.new_scopes ?? []).join(', ')}. Authorize the app
-                    again to add them.
+                    {(app.new_scopes ?? []).join(', ')}. Authorize the app again
+                    to add them.
                   </p>
                 )}
                 <Timeline
