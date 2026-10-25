@@ -65,6 +65,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "theme": None,
         "pointer_cursors": False,
         "underline_links": False,
+        "code_theme": "app",
         "convert_emoticons": True,
         "activity_filter": "all",
         "sidebar_items": {item: "show" for item in SIDEBAR_ITEMS},
@@ -334,6 +335,26 @@ def test_underline_links_starts_off_and_toggles(client: TestClient, repositories
     assert body["underline_links"] is True
 
     assert client.patch("/api/users/me/preferences", json={"underline_links": "sometimes"}).status_code == 422
+
+
+def test_code_theme_follows_the_app_until_chosen(client: TestClient, repositories: Any) -> None:
+    """The code block theme reads `app` for a new account, keeps a chosen theme, and falls back from a retired one."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["code_theme"] == "app"
+
+    body = client.patch("/api/users/me/preferences", json={"code_theme": "dark_high_contrast"}).json()
+    assert body["code_theme"] == "dark_high_contrast"
+    assert repositories.users.get(OWNER).code_theme == "dark_high_contrast"
+
+    body = client.patch("/api/users/me/preferences", json={"font_size": "large"}).json()
+    assert body["code_theme"] == "dark_high_contrast"
+
+    assert client.patch("/api/users/me/preferences", json={"code_theme": "sepia"}).status_code == 422
+
+    repositories.users.update(OWNER, code_theme="sepia")
+    assert client.get("/api/users/me").json()["code_theme"] == "app"
 
 
 def test_emoticon_conversion_starts_on_and_toggles(client: TestClient, repositories: Any) -> None:

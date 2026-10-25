@@ -116,3 +116,122 @@
     @apply opacity-100;
   }
 }
+
+:root[data-code-theme='light'] {
+  --code-bg: #f7f8fa;
+  --code-fg: #1d2127;
+  --code-border: #d5d9de;
+  --code-muted: #57606a;
+  --code-keyword: #8034d6;
+  --code-string: #106a35;
+  --code-number: #9b4600;
+  --code-title: #0b55b0;
+  --code-type: #b42332;
+  --code-comment: #5c6670;
+  --code-meta: #4a525c;
+  --code-addition: #11622b;
+  --code-addition-bg: #dcf5e2;
+  --code-deletion: #8e1626;
+  --code-deletion-bg: #fde7e7;
+}
+
+:root[data-code-theme='dark'] {
+  --code-bg: #1a1d23;
+  --code-fg: #d5d9df;
+  --code-border: #30343c;
+  --code-muted: #9ba3ad;
+  --code-keyword: #c99af0;
+  --code-string: #9fd8a3;
+  --code-number: #efb47f;
+  --code-title: #87aefc;
+  --code-type: #f68f8f;
+  --code-comment: #8f99a3;
+  --code-meta: #aab2bb;
+  --code-addition: #9fe6aa;
+  --code-addition-bg: #173a24;
+  --code-deletion: #ffb4ae;
+  --code-deletion-bg: #4a2023;
+}
+
+:root[data-code-theme='light_high_contrast'] {
+  --code-bg: #ffffff;
+  --code-fg: #000000;
+  --code-border: #6e7781;
+  --code-muted: #30363d;
+  --code-keyword: #56199e;
+  --code-string: #044a1b;
+  --code-number: #6b2a00;
+  --code-title: #033a90;
+  --code-type: #80081c;
+  --code-comment: #3f4750;
+  --code-meta: #22272e;
+  --code-addition: #044a1b;
+  --code-addition-bg: #d4f8dc;
+  --code-deletion: #80081c;
+  --code-deletion-bg: #ffe3e1;
+}
+
+:root[data-code-theme='dark_high_contrast'] {
+  --code-bg: #0b0d11;
+  --code-fg: #ffffff;
+  --code-border: #7a828e;
+  --code-muted: #d2d8de;
+  --code-keyword: #dcbcff;
+  --code-string: #7beb8c;
+  --code-number: #ffbe66;
+  --code-title: #9ccfff;
+  --code-type: #ff9d9b;
+  --code-comment: #c0c7cf;
+  --code-meta: #dde2e7;
+  --code-addition: #86f29a;
+  --code-addition-bg: #0f3b1c;
+  --code-deletion: #ffb8b5;
+  --code-deletion-bg: #4d1218;
+}
+
+:root[data-code-theme] .code-highlight {
+  --syntax-keyword: var(--code-keyword);
+  --syntax-string: var(--code-string);
+  --syntax-number: var(--code-number);
+  --syntax-title: var(--code-title);
+  --syntax-type: var(--code-type);
+  --syntax-comment: var(--code-comment);
+  --syntax-meta: var(--code-meta);
+  --syntax-addition: var(--code-addition);
+  --syntax-addition-bg: var(--code-addition-bg);
+  --syntax-deletion: var(--code-deletion);
+  --syntax-deletion-bg: var(--code-deletion-bg);
+  color: var(--code-fg);
+}
+
+:root[data-code-theme] pre:has(> .code-highlight) {
+  border-color: var(--code-border);
+  background-color: var(--code-bg);
+  color: var(--code-fg);
+}
+
+:root[data-code-theme] .code-block-copy,
+:root[data-code-theme] .rich-markdown .rich-code-language {
+  border-color: var(--code-border);
+  background-color: var(--code-bg);
+  color: var(--code-muted);
+}
+
+:root[data-code-theme] .code-block-copy:hover,
+:root[data-code-theme] .rich-markdown .rich-code-language:hover,
+:root[data-code-theme] .rich-markdown .rich-code-language:focus-visible {
+  color: var(--code-fg);
+}
+
+:root[data-code-theme] .code-block-copy[data-copied='true'] {
+  color: var(--code-string);
+}
+
+:root[data-code-theme] .rich-markdown .rich-code-label,
+:root[data-code-theme] .rich-markdown .rich-code-block:hover .rich-code-label,
+:root[data-code-theme]
+  .rich-markdown
+  .rich-code-block:focus-within
+  .rich-code-label {
+  color: var(--code-muted);
+}

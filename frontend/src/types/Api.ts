@@ -45,6 +45,8 @@ export interface UserRead {
   pointer_cursors?: boolean;
   /** Whether links in rich text and inline text links are underlined at rest. */
   underline_links?: boolean;
+  /** The syntax highlighting theme of code blocks. */
+  code_theme?: CodeTheme;
   /** Whether the editor turns typed emoticons such as `:)` into emoji. */
   convert_emoticons?: boolean;
   /** Whether issue activity shows every change or only comments. */
@@ -153,6 +155,10 @@ export type FontSize = 'small' | 'default' | 'large';
 /** The interface themes a person may pick. */
 export type Theme = 'system' | 'light' | 'dark';
 
+/** The syntax highlighting theme of code blocks, `app` following the interface theme. */
+export type CodeTheme =
+  'app' | 'light' | 'dark' | 'light_high_contrast' | 'dark_high_contrast';
+
 /** Whether an issue's activity shows every change or only its comments. */
 export type ActivityFilter = 'all' | 'comments';
 
@@ -238,6 +244,7 @@ export interface UserPreferencesUpdate {
   theme?: Theme;
   pointer_cursors?: boolean;
   underline_links?: boolean;
+  code_theme?: CodeTheme;
   convert_emoticons?: boolean;
   activity_filter?: ActivityFilter;
   /** Moves the named sidebar items, leaving the others where they are. */

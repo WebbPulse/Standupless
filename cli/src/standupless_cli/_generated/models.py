@@ -3277,6 +3277,7 @@ class UserPreferencesUpdate(TypedDict):
     auto_grant_new_scopes: NotRequired[bool | None]
     branch_copy_assigns: NotRequired[bool | None]
     branch_copy_starts: NotRequired[bool | None]
+    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"] | None]
     convert_emoticons: NotRequired[bool | None]
     email_format: NotRequired[Literal["digest", "immediate"] | None]
     email_notifications: NotRequired[bool | None]
@@ -3360,6 +3361,7 @@ class UserRead(TypedDict):
     avatar_url: NotRequired[str | None]
     branch_copy_assigns: NotRequired[bool]
     branch_copy_starts: NotRequired[bool]
+    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"]]
     convert_emoticons: NotRequired[bool]
     display_name: str
     email: str

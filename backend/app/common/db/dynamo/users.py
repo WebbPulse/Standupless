@@ -84,6 +84,11 @@ ThemeField = Literal["system", "light", "dark"]
 THEMES: tuple[str, ...] = ("system", "light", "dark")
 """The interface themes a person may pick."""
 
+CodeThemeField = Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"]
+
+CODE_THEMES: tuple[str, ...] = ("app", "light", "dark", "light_high_contrast", "dark_high_contrast")
+"""The syntax highlighting themes code blocks may use, `app` following the interface theme."""
+
 ActivityFilterField = Literal["all", "comments"]
 
 ACTIVITY_FILTERS: tuple[str, ...] = ("all", "comments")
@@ -165,7 +170,9 @@ class User(BaseModel):
     `theme` is the interface theme, None until the person first saves one, so a
     browser's earlier local choice can be uploaded once. `pointer_cursors` shows
     the pointer cursor on interactive elements, off by default. `underline_links`
-    underlines links in rich text at rest, off by default. `convert_emoticons`
+    underlines links in rich text at rest, off by default. `code_theme` is the
+    syntax highlighting theme of code blocks, `app` to follow the interface
+    theme by default. `convert_emoticons`
     turns typed emoticons such as `:)` into emoji in the editor, on by default.
     `activity_filter` is whether every issue's activity shows all of it or only
     its comments, all by default.
@@ -213,6 +220,7 @@ class User(BaseModel):
     theme: Optional[str] = None
     pointer_cursors: bool = False
     underline_links: bool = False
+    code_theme: str = "app"
     convert_emoticons: bool = True
     activity_filter: str = "all"
     sidebar_items: dict[str, str] = Field(default_factory=dict)
