@@ -12,7 +12,14 @@
  */
 
 import React from 'react';
-import { LuArchive, LuChevronRight, LuPlus } from 'react-icons/lu';
+import {
+  LuArchive,
+  LuBan,
+  LuChevronRight,
+  LuFlame,
+  LuPlus,
+  LuRefreshCcw,
+} from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { NONE, type OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
@@ -24,6 +31,7 @@ import {
   type TreeGuide,
 } from '../../../lib/issueTree';
 import { groupFigure } from '../../../lib/groupHeader';
+import { FOCUS_FIELD } from '../../../lib/focusGrouping';
 import { isLabelGroupField, type IssueGroup } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
@@ -77,8 +85,36 @@ export const GroupFigure: React.FC<{
   );
 };
 
+const FOCUS_ICONS: Partial<Record<string, React.ReactNode>> = {
+  sla: <LuFlame aria-hidden="true" className="h-3.5 w-3.5 text-text-muted" />,
+  blockers: (
+    <LuBan aria-hidden="true" className="h-3.5 w-3.5 text-text-muted" />
+  ),
+  cycle: (
+    <LuRefreshCcw aria-hidden="true" className="h-3.5 w-3.5 text-text-muted" />
+  ),
+};
+
+/**
+ * The glyph a Focus section heads with: the urgent priority, a status glyph
+ * for the sections a status category names, and an icon for the rest.
+ */
+const FocusGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
+  if (group.priority !== undefined) {
+    return <PriorityGlyph priority={group.priority} />;
+  }
+  if (group.statusLook !== undefined) {
+    return <StatusIcon look={group.statusLook} />;
+  }
+  if (group.category !== undefined) {
+    return <StatusIcon status={{ category: group.category }} />;
+  }
+  return FOCUS_ICONS[group.key] ?? null;
+};
+
 /** The glyph a group header leads with. */
 export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
+  if (group.field === FOCUS_FIELD) return <FocusGlyph group={group} />;
   if (group.field === 'status') {
     return group.statusLook === undefined ? (
       <StatusIcon

@@ -124,6 +124,14 @@ def test_an_unknown_property_or_layout_is_a_422(client: TestClient, workspace: s
     assert _create(client, workspace, layout="timeline").status_code == 422
 
 
+def test_the_my_issues_focus_grouping_is_not_storable(client: TestClient, workspace: str) -> None:
+    """Focus is a client-only grouping of My issues, so a view refuses it as a grouping or sub-grouping."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace, group_by="focus").status_code == 422
+    assert _create(client, workspace, group_by="status", sub_group_by="focus").status_code == 422
+
+
 def test_a_filter_may_hold_lists_and_negations(client: TestClient, workspace: str) -> None:
     """The list's repeatable keys store lists, and the negation keys are accepted."""
     sign_in(client, MEMBER)

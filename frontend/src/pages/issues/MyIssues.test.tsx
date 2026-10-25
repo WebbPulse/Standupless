@@ -1,7 +1,8 @@
 /**
  * The cross-team "my issues" page. Covers that the read is fixed to the
- * caller with `assignee_id=me` and spans teams, that rows group by status and
- * name their team, that the assignee filter is left out because the page
+ * caller with `assignee_id=me` and spans teams, that Assigned groups by
+ * Focus by default and alone offers it, that rows group by status and name
+ * their team, that the assignee filter is left out because the page
  * fixes it, that the display options hide sub-issues and completed issues,
  * that the Created and Subscribed tabs read by creator and subscriber, that the
  * Activity tab lists each issue once under the caller's latest action, newest
@@ -315,8 +316,59 @@ describe('my issues', () => {
     expect(query).not.toHaveProperty('team_id');
   });
 
-  it('groups the rows by status across teams and names each team', async () => {
+  it('groups Assigned by focus by default, hiding the empty sections', async () => {
     renderPage();
+
+    const active = await screen.findByRole('list', {
+      name: 'Other active work',
+    });
+    expect(within(active).getByText('Cache the token')).toBeInTheDocument();
+    expect(
+      within(active).getByText('Ship the pricing page')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('list', { name: 'Completed' })).getByText(
+        'Retire the old cache'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'Urgent' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers Focus on Assigned and not on Created', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const grouping = await screen.findByLabelText('Grouping');
+    expect(grouping).toHaveValue('focus');
+    expect(
+      within(grouping).getByRole('option', { name: 'Focus' })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Sub-grouping')).queryByRole('option', {
+        name: 'Focus',
+      })
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps Created on status grouping and ignores a focus link there', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/issues?tab=created&group=focus');
+
+    await screen.findByRole('list', { name: 'Todo' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const grouping = await screen.findByLabelText('Grouping');
+    expect(grouping).toHaveValue('status');
+    expect(
+      within(grouping).queryByRole('option', { name: 'Focus' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('groups the rows by status across teams and names each team', async () => {
+    renderPage('/w/mine/issues?group=status');
 
     const todo = await screen.findByRole('list', { name: 'Todo' });
     expect(within(todo).getByText('Cache the token')).toBeInTheDocument();

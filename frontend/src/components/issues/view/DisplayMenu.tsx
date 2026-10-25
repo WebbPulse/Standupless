@@ -19,6 +19,7 @@ import {
 import type { IssueListSort } from '../../../api/issues';
 import type { ViewGroupHeader } from '../../../api/views';
 import { cn } from '../../../lib/cn';
+import { FOCUS_FIELD } from '../../../lib/focusGrouping';
 import {
   COMPLETED_WINDOWS,
   COMPLETED_WINDOW_LABELS,
@@ -270,7 +271,11 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             }}
           >
             {groupFields
-              .filter((field) => field === 'none' || field !== state.groupBy)
+              .filter(
+                (field) =>
+                  field === 'none' ||
+                  (field !== state.groupBy && field !== FOCUS_FIELD)
+              )
               .map((field) => (
                 <option key={field} value={field}>
                   {groupFieldLabel(field, context)}

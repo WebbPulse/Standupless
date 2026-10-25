@@ -40,6 +40,15 @@ import {
   pickableLabels,
   replacedSiblings,
 } from './labelGroups';
+import {
+  currentCycleIds,
+  FOCUS_FIELD,
+  FOCUS_SECTION_LABELS,
+  FOCUS_SECTIONS,
+  focusSectionOf,
+  orderWithinFocus,
+  type FocusSection,
+} from './focusGrouping';
 import { completionPercent, progressPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
@@ -53,8 +62,19 @@ import {
   triageStatusFor,
 } from './triageStatus';
 
-/** A property an issue list can be grouped by, or `none`. */
-export type GroupField = ViewGroupBy | 'none';
+/**
+ * A property an issue list can be grouped by, `none`, or the client-only
+ * Focus grouping My issues > Assigned offers, which no saved view stores.
+ */
+export type GroupField = ViewGroupBy | 'none' | typeof FOCUS_FIELD;
+
+/** A grouping a saved view or a team default can store: anything but Focus. */
+export type StorableGroupField = Exclude<GroupField, typeof FOCUS_FIELD>;
+
+/** Whether a state groups or sub-groups by Focus, which a saved view refuses. */
+export const usesFocusGrouping = (
+  state: Pick<ViewState, 'groupBy' | 'subGroupBy'>
+): boolean => state.groupBy === FOCUS_FIELD || state.subGroupBy === FOCUS_FIELD;
 
 /** A grouping by one label group, `label_group:<id>` naming the group label. */
 export type LabelGroupField = `label_group:${string}`;
@@ -430,6 +450,7 @@ export const GROUP_LABELS: Record<GroupProperty, string> = {
   team: 'Team',
   sla: 'SLA status',
   customer: 'Customer',
+  focus: 'Focus',
   none: 'No grouping',
 };
 
@@ -530,12 +551,14 @@ export const labelGroupFields = (
  * group follows the plain label grouping, as in Linear.
  */
 export const groupFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels' | 'customers'>
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels' | 'customers'>,
+  options: { focus?: boolean } = {}
 ): GroupField[] => {
   const groups = labelGroupFields(context);
-  return fieldsFor(GROUP_FIELDS, context).flatMap((field) =>
+  const fields = fieldsFor(GROUP_FIELDS, context).flatMap((field) =>
     field === 'label' ? [field, ...groups] : [field]
   );
+  return options.focus === true ? [FOCUS_FIELD, ...fields] : fields;
 };
 
 /** How a grouping reads in the interface, a label group by its own name. */
@@ -775,9 +798,21 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   groupHeader: 'count',
 });
 
-const isGroupField = (value: string | null): value is GroupField =>
+const isGroupField = (value: string | null): value is StorableGroupField =>
   value !== null &&
   ((GROUP_FIELDS as string[]).includes(value) || isLabelGroupField(value));
+
+/**
+ * Whether the URL may ask for this grouping over `base`. Focus is only read
+ * back where the page itself opens on it, so a link carrying it elsewhere
+ * keeps the page's own grouping.
+ */
+const isGroupFieldOver = (
+  value: string | null,
+  base: ViewState
+): value is GroupField =>
+  isGroupField(value) ||
+  (value === FOCUS_FIELD && base.groupBy === FOCUS_FIELD);
 
 const isOrdering = (value: string | null): value is IssueListSort =>
   value !== null && (ORDERINGS as string[]).includes(value);
@@ -923,7 +958,7 @@ export const parseViewState = (
   const done = params.get('done');
   const archived = params.get('archived');
   const head = params.get('head');
-  const groupBy = isGroupField(group) ? group : base.groupBy;
+  const groupBy = isGroupFieldOver(group, base) ? group : base.groupBy;
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
     filters,
@@ -1510,6 +1545,14 @@ export const stateToViewFilter = (
   return filter;
 };
 
+/**
+ * The grouping a saved view or team default stores for a field, null for
+ * none. Focus has no stored form, so it stores as none; every save path
+ * refuses a Focus state through `usesFocusGrouping` before it gets here.
+ */
+export const storedGrouping = (field: GroupField): ViewGroupBy | null =>
+  field === 'none' || field === FOCUS_FIELD ? null : field;
+
 /** The display settings a state saves as. */
 export const stateToViewDisplay = (
   state: ViewState
@@ -1531,11 +1574,11 @@ export const stateToViewDisplay = (
   sort: state.ordering,
   ordering: state.ordering,
   ordering_reversed: state.reverse,
-  group_by: state.groupBy === 'none' ? null : state.groupBy,
+  group_by: storedGrouping(state.groupBy),
   sub_group_by:
-    state.subGroupBy === 'none' || state.subGroupBy === state.groupBy
+    state.subGroupBy === state.groupBy
       ? null
-      : state.subGroupBy,
+      : storedGrouping(state.subGroupBy),
   visible_properties: state.visible,
   layout: state.layout,
   show_sub_issues: state.showSubIssues,
@@ -1757,6 +1800,32 @@ export const milestoneOf = (
   );
 };
 
+const currentCycleCache = new WeakMap<
+  readonly CycleRead[],
+  ReadonlySet<string>
+>();
+
+/** The current cycles of the teams a list spans, worked out once per cycle list. */
+const currentCyclesOf = (context: IssueContext): ReadonlySet<string> => {
+  let ids = currentCycleCache.get(context.cycles);
+  if (ids === undefined) {
+    ids = currentCycleIds(context.cycles);
+    currentCycleCache.set(context.cycles, ids);
+  }
+  return ids;
+};
+
+/** The Focus section an issue lands in, from its status as the lists resolve it. */
+export const focusKeyOf = (
+  issue: OrderedIssueRead,
+  context: IssueContext
+): string =>
+  focusSectionOf(
+    issue,
+    statusOf(issue, context)?.category,
+    currentCyclesOf(context)
+  );
+
 /** The group keys one issue falls under. A label group may hold it several times. */
 export const groupKeysOf = (
   issue: OrderedIssueRead,
@@ -1788,6 +1857,8 @@ export const groupKeysOf = (
       return [issue.team_id];
     case 'sla':
       return [liveSlaStatus(issue)];
+    case FOCUS_FIELD:
+      return [focusKeyOf(issue, context)];
     case 'customer': {
       const keys = [...new Set(context.customerRequests?.get(issue.id) ?? [])];
       return keys.length === 0 ? [NONE] : keys;
@@ -1816,6 +1887,17 @@ export const SLA_GROUP_ORDER: readonly SlaStatus[] = [
   'on_track',
   'none',
 ];
+
+/** The glyph each Focus section heads with: a priority, a status category or triage. */
+const FOCUS_GLYPHS: Partial<
+  Record<FocusSection, Pick<IssueGroup, 'priority' | 'category' | 'statusLook'>>
+> = {
+  urgent: { priority: 'urgent' },
+  active: { category: 'started' },
+  triage: { category: 'backlog', statusLook: TRIAGE_LOOK },
+  backlog: { category: 'backlog' },
+  completed: { category: 'completed' },
+};
 
 const CLOSED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
   'completed',
@@ -2043,6 +2125,13 @@ const groupShells = (
         field,
         label: SLA_STATUS_LABELS[status],
       }));
+    case FOCUS_FIELD:
+      return FOCUS_SECTIONS.map((section) => ({
+        key: section,
+        field,
+        label: FOCUS_SECTION_LABELS[section],
+        ...FOCUS_GLYPHS[section],
+      }));
     case 'customer':
       return [
         ...[...(context.customers ?? [])]
@@ -2073,7 +2162,9 @@ const groupShells = (
  * group. A group with no rows is kept only when `showEmpty` is set, and a
  * row whose value is missing from the lists, such as someone who has left
  * the team, gets a group of its own rather than disappearing. Issues waiting
- * in triage lead a status grouping under a Triage group of their own.
+ * in triage lead a status grouping under a Triage group of their own. Focus
+ * sections never show empty, and order their rows started first, then by
+ * priority, the incoming order breaking ties.
  */
 export const groupIssues = (
   issues: OrderedIssueRead[],
@@ -2122,6 +2213,17 @@ export const groupIssues = (
   if (field === 'parent') {
     const index = groups.findIndex((group) => group.key === NONE);
     if (index !== -1) groups.push(...groups.splice(index, 1));
+  }
+  if (field === FOCUS_FIELD) {
+    return groups
+      .filter((group) => group.issues.length > 0)
+      .map((group) => ({
+        ...group,
+        issues: orderWithinFocus(
+          group.issues,
+          (issue) => statusOf(issue, context)?.category
+        ),
+      }));
   }
   return showEmpty || field === 'none'
     ? groups
