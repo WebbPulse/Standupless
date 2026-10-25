@@ -421,6 +421,18 @@ describe('activating a row', () => {
     });
   });
 
+  it('opens the Activity tab of My issues', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('my activity');
+    await user.click(
+      await screen.findByRole('option', { name: /My activity/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/issues?tab=activity');
+  });
+
   it('navigates on a click', async () => {
     const user = renderPalette();
 

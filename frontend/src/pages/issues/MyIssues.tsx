@@ -1,29 +1,42 @@
 /**
- * The signed in person's own issues across the workspace, drawn as the same
- * grouped list or board as a team's issues, under three tabs like Linear's:
- * Assigned (`assignee_id=me`), Created (`creator_id=me`) and Subscribed
- * (`subscriber_id=me`). Each is resolved server side from a keyed index and
- * spans every team the caller belongs to, so rows name their team and
- * statuses group by name. The tab lives in the URL, so a link lands on it.
+ * The signed in person's own issues across the workspace, under four tabs
+ * like Linear's. Assigned (`assignee_id=me`), Created (`creator_id=me`) and
+ * Subscribed (`subscriber_id=me`) draw the same grouped list or board as a
+ * team's issues, resolved server side from a keyed index across every team
+ * the caller belongs to. Activity lists the issues the caller last changed or
+ * commented on, one row per issue led by its latest action, from the same
+ * member activity read the member page uses. The tab lives in the URL, so a
+ * link lands on it, and the number keys switch tabs while the page is open.
  */
 
 import React, { useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ME, type IssueListFilters } from '../../api/issues';
 import IssueViewPage from '../../components/issues/view/IssueViewPage';
+import MemberActivityFeed from '../../components/members/MemberActivityFeed';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useAuth } from '../../hooks/useAuth';
+import {
+  useMemberActivity,
+  type MemberActivity,
+} from '../../hooks/useMemberActivity';
+import { useShortcut, type ShortcutDefinition } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { defaultViewState, type FilterField } from '../../lib/issueView';
+import type { MemberActivityRead } from '../../types/Api';
 
 /** Which of the caller's relationships to an issue the page lists. */
-export type MyIssuesTab = 'assigned' | 'created' | 'subscribed';
+export type MyIssuesTab = 'assigned' | 'created' | 'subscribed' | 'activity';
+
+/** The tabs that list issues through the shared issue view. */
+type IssueTab = Exclude<MyIssuesTab, 'activity'>;
 
 /** The URL parameter holding the tab; absent means Assigned. */
 export const TAB_PARAM = 'tab';
@@ -37,7 +50,7 @@ interface TabSpec {
 }
 
 /** The tabs in the order they show. The assignee filter is hidden where the tab fixes it. */
-const TABS: Record<MyIssuesTab, TabSpec> = {
+const TABS: Record<IssueTab, TabSpec> = {
   assigned: {
     label: 'Assigned',
     scope: { assignee_id: ME },
@@ -58,7 +71,43 @@ const TABS: Record<MyIssuesTab, TabSpec> = {
   },
 };
 
-const TAB_ORDER: MyIssuesTab[] = ['assigned', 'created', 'subscribed'];
+/** What the Activity tab says when the caller has done nothing yet. */
+export const ACTIVITY_EMPTY =
+  'Issues you change or comment on will show up here.';
+
+/** Every tab's label, in the order the switch shows them. */
+const TAB_LABELS: Record<MyIssuesTab, string> = {
+  assigned: TABS.assigned.label,
+  created: TABS.created.label,
+  subscribed: TABS.subscribed.label,
+  activity: 'Activity',
+};
+
+const TAB_ORDER: MyIssuesTab[] = [
+  'assigned',
+  'created',
+  'subscribed',
+  'activity',
+];
+
+/** The address of a tab, relative to the page. */
+const tabSearch = (tab: MyIssuesTab): string =>
+  tab === 'assigned' ? '' : `?${TAB_PARAM}=${tab}`;
+
+/**
+ * Keeps the newest row for each issue, so the Activity tab lists each issue
+ * once, ordered by the caller's latest action on it.
+ */
+export const latestPerIssue = (
+  rows: MemberActivityRead[]
+): MemberActivityRead[] => {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.issue_id)) return false;
+    seen.add(row.issue_id);
+    return true;
+  });
+};
 
 /** Reads the tab from the URL, falling back to Assigned for anything unknown. */
 const readTab = (value: string | null): MyIssuesTab =>
@@ -74,34 +123,92 @@ const tabClass = (active: boolean): string =>
   );
 
 /**
- * The Assigned, Created and Subscribed switch. Links rather than buttons, so
- * each tab is an address; switching starts the new tab from its own defaults.
+ * The Assigned, Created, Subscribed and Activity switch. Links rather than
+ * buttons, so each tab is an address; switching starts the new tab from its
+ * own defaults.
  */
 const MyIssuesTabs: React.FC<{ current: MyIssuesTab }> = ({ current }) => (
   <nav aria-label="My issues" className="flex items-center gap-1">
     {TAB_ORDER.map((tab) => (
       <Link
         key={tab}
-        to={{ search: tab === 'assigned' ? '' : `?${TAB_PARAM}=${tab}` }}
+        to={{ search: tabSearch(tab) }}
         className={tabClass(current === tab)}
         {...(current === tab ? { 'aria-current': 'page' as const } : {})}
       >
-        {TABS[tab].label}
+        {TAB_LABELS[tab]}
       </Link>
     ))}
   </nav>
 );
 
+/** Binds 1 to 4 to the tabs in order, so the help sheet lists each one. */
+const useTabShortcuts = (): void => {
+  const navigate = useNavigate();
+  const bind = (tab: MyIssuesTab, index: number): ShortcutDefinition => ({
+    keys: String(index + 1),
+    label: `Show ${TAB_LABELS[tab].toLowerCase()}`,
+    scope: 'page',
+    group: 'My issues',
+    handler: () => {
+      void navigate({ search: tabSearch(tab) });
+    },
+  });
+  useShortcut(bind('assigned', 0));
+  useShortcut(bind('created', 1));
+  useShortcut(bind('subscribed', 2));
+  useShortcut(bind('activity', 3));
+};
+
+/** The caller's activity feed, folded to one row per issue. */
+const useMyActivity = (
+  workspaceId: string,
+  enabled: boolean
+): MemberActivity => {
+  const feed = useMemberActivity(workspaceId, ME, enabled);
+  const activity = useMemo(
+    () => latestPerIssue(feed.activity),
+    [feed.activity]
+  );
+  return { ...feed, activity };
+};
+
 /** The cross-team list of the caller's own issues. */
 export const MyIssues: React.FC = () => {
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const { teams, isLoading, error } = useTeam(undefined);
   const [params] = useSearchParams();
   const tab = readTab(params.get(TAB_PARAM));
-  const spec = TABS[tab];
   const base = useMemo(() => defaultViewState('list'), []);
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
+  const feed = useMyActivity(workspaceId, tab === 'activity');
+  useTabShortcuts();
+
+  if (tab === 'activity') {
+    return (
+      <WorkspaceShell
+        title="My issues"
+        toolbar={<MyIssuesTabs current={tab} />}
+      >
+        {workspace === null ? (
+          <SkeletonRows label="Loading activity" />
+        ) : (
+          <MemberActivityFeed
+            feed={feed}
+            workspaceId={workspaceId}
+            slug={slug}
+            name="You"
+            avatarUrl={user?.avatar_url ?? null}
+            emptyMessage={ACTIVITY_EMPTY}
+          />
+        )}
+      </WorkspaceShell>
+    );
+  }
+
+  const spec = TABS[tab];
 
   if (workspace === null || teams.length === 0) {
     return (

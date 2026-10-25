@@ -717,6 +717,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         to: myIssuesPath(slug),
       },
       {
+        id: 'nav-my-activity',
+        label: 'My activity',
+        keywords: 'recent changes comments history touched',
+        icon: <LuActivity className={ICON} />,
+        to: `${myIssuesPath(slug)}?tab=activity`,
+      },
+      {
         id: 'nav-inbox',
         label: 'Inbox',
         hint: 'G then I',
