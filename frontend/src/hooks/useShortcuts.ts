@@ -195,6 +195,8 @@ const keyFromCode = (code: string | undefined): string | undefined => {
  * Whether one keyboard event is the given token. A `shift+` token on a
  * punctuation or digit key is also matched by the physical key, because Shift
  * turns `.` into `>` on most layouts and the event reports the shifted glyph.
+ * An `alt+` token on a letter is matched by the physical key too, because
+ * Option on a Mac turns `f` into `ƒ`.
  */
 export const eventMatches = (
   event: KeyboardEvent,
@@ -206,7 +208,12 @@ export const eventMatches = (
     !isLetter(token.key) &&
     event.shiftKey &&
     keyFromCode(event.code) === token.key;
-  if (key !== token.key && !byCode) return false;
+  const byLetterCode =
+    token.alt &&
+    isLetter(token.key) &&
+    event.altKey &&
+    event.code === `Key${token.key.toUpperCase()}`;
+  if (key !== token.key && !byCode && !byLetterCode) return false;
   if (event.altKey !== token.alt) return false;
   const mod = event.ctrlKey || event.metaKey;
   if (mod !== token.mod) return false;

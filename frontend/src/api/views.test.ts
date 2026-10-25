@@ -385,6 +385,17 @@ describe('the inbox', () => {
     );
   });
 
+  it('narrows marking every row read to the kinds named', async () => {
+    post.mockResolvedValue({ data: { updated: 2 } });
+
+    await expect(markAllRead(WS, ['mentioned'])).resolves.toBe(2);
+    expect(post).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/inbox/read',
+      { all: true, kinds: ['mentioned'] },
+      undefined
+    );
+  });
+
   it('deletes rows in bulk and reports how many went', async () => {
     post.mockResolvedValue({ data: { deleted: 4 } });
 

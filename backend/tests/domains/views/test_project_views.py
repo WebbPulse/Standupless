@@ -73,6 +73,7 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
         "lead_team": "all",
         "empty": "show",
         "zoom": "quarter",
+        "dependencies": "show",
         "columns": "health,status",
     }
     read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}")
@@ -95,6 +96,7 @@ def test_a_project_view_without_an_arrangement_takes_the_default(client: TestCli
         "lead_team": "all",
         "empty": "show",
         "zoom": "month",
+        "dependencies": "show",
         "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
     }
 

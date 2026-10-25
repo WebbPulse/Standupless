@@ -99,6 +99,7 @@ describe('projectViewBase', () => {
       lead_team: 'all',
       empty: 'show',
       zoom: 'year',
+      dependencies: 'show',
       columns: 'health,status',
     });
   });

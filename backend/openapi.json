@@ -6385,12 +6385,20 @@
         "type": "object"
       },
       "InboxReadRequest": {
-        "description": "The body a mark-read takes: either a list of ids or the whole inbox.",
+        "description": "The body a mark-read takes: either a list of ids or the whole inbox.\n\n`kinds` narrows `all` to those notification kinds, matching the list's filter,\nso marking everything read under a filter leaves the hidden types alone.",
         "properties": {
           "all": {
             "default": false,
             "title": "All",
             "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Kinds",
+            "type": "array"
           },
           "notification_ids": {
             "anyOf": [
@@ -10501,6 +10509,132 @@
         "title": "MediaTokensRead",
         "type": "object"
       },
+      "MemberActivityListRead": {
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/MemberActivityRead"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "activity"
+        ],
+        "title": "MemberActivityListRead",
+        "type": "object"
+      },
+      "MemberActivityRead": {
+        "description": "One entry of a member's feed: a change they made or a comment they wrote.\n\nExactly one of `activity` and `comment` is set, as `type` says. The issue it\nbelongs to is named so the feed renders without a read per row.",
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberCommentRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "issue_key": {
+            "title": "Issue Key",
+            "type": "string"
+          },
+          "issue_title": {
+            "title": "Issue Title",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "issue_change",
+              "comment"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "created_at",
+          "issue_id",
+          "issue_key",
+          "issue_title",
+          "team_id"
+        ],
+        "title": "MemberActivityRead",
+        "type": "object"
+      },
+      "MemberCommentRead": {
+        "description": "The comment one feed entry is, cut to an excerpt.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          }
+        },
+        "required": [
+          "comment_id",
+          "body"
+        ],
+        "title": "MemberCommentRead",
+        "type": "object"
+      },
       "MemberListRead": {
         "description": "The body the members list route answers with.",
         "properties": {
@@ -10516,6 +10650,65 @@
           "members"
         ],
         "title": "MemberListRead",
+        "type": "object"
+      },
+      "MemberProfileRead": {
+        "description": "One workspace member as their page shows them.\n\n`team_ids` are the teams they belong to that the caller can see, so a private\nteam stays hidden from anyone outside it.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "member",
+              "guest"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "role",
+          "joined_at"
+        ],
+        "title": "MemberProfileRead",
         "type": "object"
       },
       "MemberRead": {
@@ -10991,7 +11184,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.\n`summary` is the line the row reads, naming who acted and, for a status change,\nthe status it moved to, which `new_value` also carries on its own.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty, and a `project_update_comment` one also names the reply in\n`comment_id`. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.\n`summary` is the line the row reads, naming who acted and, for a status change,\nthe status it moved to, which `new_value` also carries on its own.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -13257,6 +13450,150 @@
         "title": "ProjectUpdate",
         "type": "object"
       },
+      "ProjectUpdateCommentCreate": {
+        "description": "The body a reply on a project update takes.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "ProjectUpdateCommentCreate",
+        "type": "object"
+      },
+      "ProjectUpdateCommentListRead": {
+        "description": "An update's whole thread, oldest reply first.\n\nNot a cursor page: a thread is read in one query and renders whole, as an\nupdate's replies are a conversation of a few messages rather than a feed.",
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectUpdateCommentRead"
+            },
+            "title": "Comments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "title": "ProjectUpdateCommentListRead",
+        "type": "object"
+      },
+      "ProjectUpdateCommentPatch": {
+        "description": "The body a reply edit takes.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "ProjectUpdateCommentPatch",
+        "type": "object"
+      },
+      "ProjectUpdateCommentRead": {
+        "description": "One reply on a project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams.",
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/AuthorRead"
+          },
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "edited_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited At"
+          },
+          "mentions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reactions": {
+            "items": {
+              "$ref": "#/components/schemas/ReactionGroupRead"
+            },
+            "title": "Reactions",
+            "type": "array"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "update_id": {
+            "title": "Update Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "update_id",
+          "project_id",
+          "workspace_id",
+          "body",
+          "author_id",
+          "author",
+          "created_at"
+        ],
+        "title": "ProjectUpdateCommentRead",
+        "type": "object"
+      },
       "ProjectUpdateCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.\n\nHealth is required, as in Linear, because an update is the report of how the\nproject stands and posting one is what sets the project's health. `body`\nmay be left out when `template_id` names a document template, whose body\nthe update then takes.",
         "properties": {
@@ -13359,8 +13696,34 @@
         "title": "ProjectUpdatePatch",
         "type": "object"
       },
+      "ProjectUpdateReactionWrite": {
+        "description": "The body a reaction `PUT` on an update or one of its replies takes.\n\n`comment_id` names a reply of the update to react to, and leaving it out\nreacts to the update itself.",
+        "properties": {
+          "comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment Id"
+          },
+          "emoji": {
+            "minLength": 1,
+            "title": "Emoji",
+            "type": "string"
+          }
+        },
+        "required": [
+          "emoji"
+        ],
+        "title": "ProjectUpdateReactionWrite",
+        "type": "object"
+      },
       "ProjectUpdateRead": {
-        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule.",
+        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -13374,6 +13737,11 @@
             "default": false,
             "title": "Can Edit",
             "type": "boolean"
+          },
+          "comment_count": {
+            "default": 0,
+            "title": "Comment Count",
+            "type": "integer"
           },
           "created_at": {
             "format": "date-time",
@@ -13404,6 +13772,13 @@
           "project_id": {
             "title": "Project Id",
             "type": "string"
+          },
+          "reactions": {
+            "items": {
+              "$ref": "#/components/schemas/ReactionGroupRead"
+            },
+            "title": "Reactions",
+            "type": "array"
           },
           "source": {
             "anyOf": [
@@ -13452,7 +13827,7 @@
         "type": "object"
       },
       "ProjectsDisplay": {
-        "description": "How the person arranges the workspace projects list.\n\n`direction` runs the groups in their own order or reversed, and `rows`\ngroups again inside each group, `none` by default. `closed` is which\nclosed projects show: all of them, canceled ones included, the projects\ncompleted in the past two weeks (the default) or month, or none.\n`lead_team` set to `lead` keeps, on a team's projects page, only the\nprojects that team leads. `empty` shows or hides\nboard columns with no projects. `zoom` is the timeline layout's scale.\n`columns` names the properties shown beside the project name, comma\nseparated in the list's own order, and empty shows the name alone; a list of\nnames is accepted and stored the same way. Every field has the list's own\ndefault, so an account that never arranged the list reads as the list opens.",
+        "description": "How the person arranges the workspace projects list.\n\n`direction` runs the groups in their own order or reversed, and `rows`\ngroups again inside each group, `none` by default. `closed` is which\nclosed projects show: all of them, canceled ones included, the projects\ncompleted in the past two weeks (the default) or month, or none.\n`lead_team` set to `lead` keeps, on a team's projects page, only the\nprojects that team leads. `empty` shows or hides\nboard columns with no projects. `zoom` is the timeline layout's scale, and\n`dependencies` shows or hides the lines between blocking and blocked\nprojects on it.\n`columns` names the properties shown beside the project name, comma\nseparated in the list's own order, and empty shows the name alone; a list of\nnames is accepted and stored the same way. Every field has the list's own\ndefault, so an account that never arranged the list reads as the list opens.",
         "properties": {
           "closed": {
             "default": "fortnight",
@@ -13468,6 +13843,15 @@
           "columns": {
             "default": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
             "title": "Columns",
+            "type": "string"
+          },
+          "dependencies": {
+            "default": "show",
+            "enum": [
+              "show",
+              "hide"
+            ],
+            "title": "Dependencies",
             "type": "string"
           },
           "direction": {
@@ -21180,8 +21564,19 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
+          "auto_assign_to_self": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Assign To Self"
+          },
           "auto_grant_new_scopes": {
             "anyOf": [
               {
@@ -21192,6 +21587,28 @@
               }
             ],
             "title": "Auto Grant New Scopes"
+          },
+          "branch_copy_assigns": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Copy Assigns"
+          },
+          "branch_copy_starts": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Copy Starts"
           },
           "email_notifications": {
             "anyOf": [
@@ -21268,6 +21685,7 @@
                     "status_changed",
                     "subscribed",
                     "project_update",
+                    "project_update_comment",
                     "project_update_due",
                     "initiative_update_due",
                     "due_soon",
@@ -21381,6 +21799,11 @@
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead.",
         "properties": {
+          "auto_assign_to_self": {
+            "default": false,
+            "title": "Auto Assign To Self",
+            "type": "boolean"
+          },
           "auto_grant_new_scopes": {
             "default": false,
             "title": "Auto Grant New Scopes",
@@ -21396,6 +21819,16 @@
               }
             ],
             "title": "Avatar Url"
+          },
+          "branch_copy_assigns": {
+            "default": true,
+            "title": "Branch Copy Assigns",
+            "type": "boolean"
+          },
+          "branch_copy_starts": {
+            "default": true,
+            "title": "Branch Copy Starts",
+            "type": "boolean"
           },
           "display_name": {
             "title": "Display Name",
@@ -33234,7 +33667,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 20,
+              "maxItems": 21,
               "title": "Kind",
               "type": "array"
             }
@@ -42574,6 +43007,463 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/comments": {
+      "get": {
+        "description": "Every reply on an update, oldest first.",
+        "operationId": "list_update_replies_api_workspaces__workspace_id__projects__project_id__updates__update_id__comments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectUpdateCommentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Update Replies",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Reply on an update, notifying its author and anyone mentioned.",
+        "operationId": "create_update_reply_api_workspaces__workspace_id__projects__project_id__updates__update_id__comments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectUpdateCommentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectUpdateCommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Update Reply",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/comments/{comment_id}": {
+      "delete": {
+        "description": "Delete a reply and its reactions, as its author or an admin.",
+        "operationId": "delete_update_reply_api_workspaces__workspace_id__projects__project_id__updates__update_id__comments__comment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Update Reply",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Edit a reply, as its author or an admin.",
+        "operationId": "edit_update_reply_api_workspaces__workspace_id__projects__project_id__updates__update_id__comments__comment_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectUpdateCommentPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectUpdateCommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Update Reply",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/reactions": {
+      "delete": {
+        "description": "Take the caller's reaction off an update or one of its replies.",
+        "operationId": "remove_update_reaction_route_api_workspaces__workspace_id__projects__project_id__updates__update_id__reactions_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "emoji",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Emoji",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Update Reaction Route",
+        "tags": [
+          "planning"
+        ]
+      },
+      "put": {
+        "description": "React to an update, or to one of its replies when `comment_id` names one.",
+        "operationId": "add_update_reaction_route_api_workspaces__workspace_id__projects__project_id__updates__update_id__reactions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectUpdateReactionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionGroupRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Update Reaction Route",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/pulse": {
       "get": {
         "description": "One page of the caller's Pulse, newest first: what they follow, or everything they may read.",
@@ -51753,6 +52643,154 @@
           }
         ],
         "summary": "Get Insights",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/members/{user_id}": {
+      "get": {
+        "description": "One member's page header: name, avatar, role and the teams of theirs the caller can see.\n\nA 404 when they are not a member of this workspace. No email is returned.",
+        "operationId": "get_member_profile_api_workspaces__workspace_id__views_members__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Member Profile",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/members/{user_id}/activity": {
+      "get": {
+        "description": "One page of a member's issue changes and comments, newest first.\n\nOnly rows on issues the caller can read are returned, so a page can be short\nwhile `next_cursor` still walks the whole history.",
+        "operationId": "list_member_activity_api_workspaces__workspace_id__views_members__user_id__activity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberActivityListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Member Activity",
         "tags": [
           "views"
         ]

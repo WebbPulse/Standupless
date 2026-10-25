@@ -533,6 +533,7 @@ def delete_project(
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_links(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.planning.update_threads.delete_project_threads(context.workspace_id, project_id)
     repositories.planning.delete_project_activity(context.workspace_id, project_id)
     repositories.planning.delete_project_history(context.workspace_id, project_id)
     repositories.planning.delete_project_relations_for(context.workspace_id, project_id)

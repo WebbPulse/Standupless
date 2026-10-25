@@ -672,9 +672,15 @@ export const markRead = async (
   return response.data?.updated ?? 0;
 };
 
-/** Marks every row read in one call. */
-export const markAllRead = async (workspaceId: string): Promise<number> =>
-  markRead(workspaceId, { all: true });
+/** Marks every row read in one call, or only the rows of the given kinds. */
+export const markAllRead = async (
+  workspaceId: string,
+  kinds: string[] = []
+): Promise<number> =>
+  markRead(
+    workspaceId,
+    kinds.length > 0 ? { all: true, kinds } : { all: true }
+  );
 
 /**
  * Deletes the caller's rows in bulk, read ones only or all of them, and

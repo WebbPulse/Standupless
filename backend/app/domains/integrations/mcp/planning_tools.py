@@ -294,7 +294,7 @@ def _milestone_json(milestone: MilestoneRead) -> dict[str, Any]:
 
 
 def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
-    """One project update as the tools answer it, with whether the caller may change it."""
+    """One project update as the tools answer it, with whether the caller may change it and its thread summary."""
     return {
         "update_id": update.update_id,
         "project_id": update.project_id,
@@ -305,6 +305,8 @@ def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
         "created_at": update.created_at.isoformat(),
         "edited_at": update.edited_at.isoformat() if update.edited_at else None,
         "can_edit": update.can_edit,
+        "comment_count": update.comment_count,
+        "reactions": [group.model_dump(mode="json") for group in update.reactions],
     }
 
 

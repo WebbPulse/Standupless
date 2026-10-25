@@ -24,6 +24,7 @@ import Avatar from '../ui/avatar';
 import Button from '../ui/button';
 import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
+import MemberLink from '../members/MemberLink';
 
 /** Props for MembersSection: the workspace whose members are shown. */
 export interface MembersSectionProps {
@@ -112,13 +113,18 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
                 className={`${COLUMNS} min-h-row border-b border-line py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface`}
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Avatar
-                    name={member.display_name ?? member.email}
-                    src={member.avatar_url}
-                  />
-                  <span className="truncate text-sm font-medium">
-                    {member.display_name ?? member.email}
-                  </span>
+                  <MemberLink
+                    userId={member.user_id}
+                    className="flex min-w-0 items-center gap-2"
+                  >
+                    <Avatar
+                      name={member.display_name ?? member.email}
+                      src={member.avatar_url}
+                    />
+                    <span className="truncate text-sm font-medium">
+                      {member.display_name ?? member.email}
+                    </span>
+                  </MemberLink>
                   <span className="hidden min-w-0 truncate text-xs text-text-muted sm:inline">
                     {member.email}
                   </span>

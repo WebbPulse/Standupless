@@ -37,6 +37,12 @@ export interface UserRead {
   projects_display?: ProjectsDisplayPreference;
   /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
   projects_display_saved?: boolean;
+  /** Whether issues the person creates start assigned to them. */
+  auto_assign_to_self?: boolean;
+  /** Whether copying a git branch name moves a backlog or unstarted issue to the team's first started status. */
+  branch_copy_starts?: boolean;
+  /** Whether copying a git branch name assigns an unassigned, not yet started issue to the person. */
+  branch_copy_assigns?: boolean;
   /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
   auto_grant_new_scopes?: boolean;
 }
@@ -67,6 +73,8 @@ export interface ProjectsDisplayPreference {
   /** Whether the board shows columns that hold no project. */
   empty?: 'show' | 'hide';
   zoom: 'week' | 'month' | 'quarter' | 'year';
+  /** Whether the timeline draws the lines between blocking and blocked projects. */
+  dependencies?: 'show' | 'hide';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
   columns?: string;
 }
@@ -138,6 +146,9 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
+  auto_assign_to_self?: boolean;
+  branch_copy_starts?: boolean;
+  branch_copy_assigns?: boolean;
   auto_grant_new_scopes?: boolean;
 }
 
@@ -1806,6 +1817,7 @@ export type NotificationKind =
   | 'status_changed'
   | 'subscribed'
   | 'project_update'
+  | 'project_update_comment'
   | 'project_update_due'
   | 'initiative_update_due'
   | 'due_soon'
@@ -1883,7 +1895,8 @@ export interface InboxCountRead {
 }
 
 /** What a mark-read call takes: named rows, or every row. */
-export type InboxReadWrite = { notification_ids: string[] } | { all: true };
+export type InboxReadWrite =
+  { notification_ids: string[] } | { all: true; kinds?: string[] };
 
 /** What a mark-unread call takes: the rows to bring back as unread. */
 export interface InboxUnreadWrite {
@@ -2640,9 +2653,46 @@ export interface StatusUpdateRead {
   source?: ChangeSource | null;
 }
 
-/** One written update on a project. */
+/**
+ * One written update on a project. `reactions` and `comment_count` summarise
+ * its thread, so the feed shows the reaction bar and reply toggle without a
+ * read per card.
+ */
 export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
+  reactions?: ReactionGroup[];
+  comment_count?: number;
+}
+
+/**
+ * One reply on a project update. `can_edit` says whether the caller may edit
+ * or delete it: its author, a workspace admin or an admin of a project team.
+ */
+export interface ProjectUpdateCommentRead {
+  comment_id: string;
+  update_id: string;
+  project_id: string;
+  workspace_id: string;
+  body: string;
+  author_id: string;
+  author: AuthorRead;
+  mentions: string[];
+  reactions: ReactionGroup[];
+  source?: ChangeSource | null;
+  created_at: string;
+  edited_at: string | null;
+  can_edit: boolean;
+}
+
+/** An update's whole thread, oldest reply first. */
+export interface ProjectUpdateCommentListRead {
+  comments: ProjectUpdateCommentRead[];
+}
+
+/** A reaction on a project update, or on one of its replies when `comment_id` is set. */
+export interface ProjectUpdateReactionWrite {
+  emoji: string;
+  comment_id?: string;
 }
 
 /** One page of a project's updates, newest first. */
@@ -4984,4 +5034,42 @@ export interface CustomerRequestCreate {
 export interface CustomerRequestListRead {
   requests: CustomerRequestRead[];
   next_cursor: string | null;
+}
+
+/** A workspace member as their member page shows them, without an email. */
+export interface MemberProfileRead {
+  user_id: string;
+  display_name: string;
+  full_name?: string;
+  avatar_url?: string | null;
+  role: 'owner' | 'admin' | 'member' | 'guest';
+  joined_at: string;
+  /** The teams the member belongs to that the viewer can see. */
+  team_ids?: string[];
+}
+
+/** A comment as a member's activity feed carries it, its body cut to an excerpt. */
+export interface MemberCommentRead {
+  comment_id: string;
+  body: string;
+  parent_comment_id?: string | null;
+}
+
+/** One row of a member's activity: an issue change or a comment. */
+export interface MemberActivityRead {
+  type: 'issue_change' | 'comment';
+  id: string;
+  created_at: string;
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  team_id: string;
+  activity?: ActivityRead | null;
+  comment?: MemberCommentRead | null;
+}
+
+/** A page of a member's activity, newest first. */
+export interface MemberActivityListRead {
+  activity: MemberActivityRead[];
+  next_cursor?: string | null;
 }

@@ -456,7 +456,7 @@ locals {
           stream_arn = module.dynamodb.stream_arns["planning"]
           filter_patterns = [jsonencode({
             eventName = ["INSERT"]
-            dynamodb  = { NewImage = { kind = { S = ["project_update"] } } }
+            dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment"] } } }
           })]
         })
         } : name == "views-search-consumer" && local.views_search_stream_enabled ? {

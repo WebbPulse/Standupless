@@ -139,6 +139,19 @@ describe('modifiers', () => {
     expect(shifted).toHaveBeenCalledTimes(1);
   });
 
+  it('matches an Alt letter by its physical key, as Option types it on a Mac', () => {
+    const registry = createShortcutRegistry();
+    const favorite = bind(registry, 'alt+f');
+    const clear = bind(registry, 'alt+shift+f');
+
+    press(registry, 'ƒ', { altKey: true, code: 'KeyF' });
+    press(registry, 'Ï', { altKey: true, shiftKey: true, code: 'KeyF' });
+    press(registry, 'ƒ', { code: 'KeyF' });
+
+    expect(favorite).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
   it('matches punctuation that needs Shift to type', () => {
     const registry = createShortcutRegistry();
     const run = bind(registry, '?');

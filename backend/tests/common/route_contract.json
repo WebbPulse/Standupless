@@ -1473,6 +1473,42 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/updates/{update_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/pulse"
   },
   {
@@ -2158,6 +2194,18 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/insights"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/members/{user_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/members/{user_id}/activity"
   },
   {
     "auth": "workspace:read",

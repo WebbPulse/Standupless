@@ -29,6 +29,8 @@ ProjectsLeadTeamField = Literal["all", "lead"]
 
 ProjectsEmptyField = Literal["show", "hide"]
 
+ProjectsDependenciesField = Literal["show", "hide"]
+
 PROJECTS_COLUMNS: tuple[str, ...] = (
     "summary",
     "milestones",
@@ -81,7 +83,9 @@ class ProjectsDisplay(BaseModel):
     completed in the past two weeks (the default) or month, or none.
     `lead_team` set to `lead` keeps, on a team's projects page, only the
     projects that team leads. `empty` shows or hides
-    board columns with no projects. `zoom` is the timeline layout's scale.
+    board columns with no projects. `zoom` is the timeline layout's scale, and
+    `dependencies` shows or hides the lines between blocking and blocked
+    projects on it.
     `columns` names the properties shown beside the project name, comma
     separated in the list's own order, and empty shows the name alone; a list of
     names is accepted and stored the same way. Every field has the list's own
@@ -97,6 +101,7 @@ class ProjectsDisplay(BaseModel):
     lead_team: ProjectsLeadTeamField = "all"
     empty: ProjectsEmptyField = "show"
     zoom: ProjectsZoomField = "month"
+    dependencies: ProjectsDependenciesField = "show"
     columns: str = DEFAULT_PROJECTS_COLUMNS
 
     @field_validator("columns", mode="before")
@@ -122,6 +127,7 @@ PROJECTS_DISPLAY_FIELDS: dict[str, tuple[str, ...]] = {
     "lead_team": get_args(ProjectsLeadTeamField),
     "empty": get_args(ProjectsEmptyField),
     "zoom": get_args(ProjectsZoomField),
+    "dependencies": get_args(ProjectsDependenciesField),
 }
 """The choices each stored single choice projects display field may still hold; `columns` is a set instead."""
 

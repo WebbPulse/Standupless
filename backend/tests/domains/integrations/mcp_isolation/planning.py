@@ -68,4 +68,11 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "delete_project_link": {"project_id": project, "link_id": foreign["link_id"]},
         "update_project_update": {"project_id": project, "update_id": foreign["update_id"], "body": "Should not land"},
         "delete_project_update": {"project_id": project, "update_id": foreign["update_id"]},
+        "list_project_update_comments": {"project_id": project, "update_id": foreign["update_id"]},
+        "add_project_update_comment": {
+            "project_id": project,
+            "update_id": foreign["update_id"],
+            "body": "Should not land",
+        },
+        "react_to_project_update": {"project_id": project, "update_id": foreign["update_id"], "emoji": "👍"},
     }

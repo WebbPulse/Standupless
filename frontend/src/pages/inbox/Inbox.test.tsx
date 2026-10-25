@@ -49,7 +49,7 @@ import Inbox from './Inbox';
 
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
 const markRead = vi.fn<(body: unknown) => Promise<number>>();
-const markAllRead = vi.fn<() => Promise<number>>();
+const markAllRead = vi.fn<(kinds?: string[]) => Promise<number>>();
 const deleteNotification = vi.fn<(id: string) => Promise<void>>();
 const clearInbox = vi.fn<(body: unknown) => Promise<number>>();
 const markUnread = vi.fn<(body: unknown) => Promise<number>>();
@@ -93,7 +93,7 @@ vi.mock('../../api/views', async () => {
     ...actual,
     listInbox: (_w: string, query: unknown) => listInbox(query),
     markRead: (_w: string, body: unknown) => markRead(body),
-    markAllRead: () => markAllRead(),
+    markAllRead: (_w: string, kinds?: string[]) => markAllRead(kinds),
     deleteNotification: (_w: string, id: string) => deleteNotification(id),
     clearInbox: (_w: string, body: unknown) => clearInbox(body),
     markUnread: (_w: string, body: unknown) => markUnread(body),
@@ -320,6 +320,27 @@ describe('inbox', () => {
       expect(markAllRead).toHaveBeenCalled();
     });
     expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it('marks only the filtered types read under a filter', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: /^Filter/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Comments' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Mentions' }));
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    expect(
+      screen.queryByRole('menuitem', { name: 'Mark all read' })
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Mark filtered types read' })
+    );
+
+    await waitFor(() => {
+      expect(markAllRead).toHaveBeenCalledWith(['mentioned', 'commented']);
+    });
   });
 
   it('deletes every read row after a confirmation', async () => {

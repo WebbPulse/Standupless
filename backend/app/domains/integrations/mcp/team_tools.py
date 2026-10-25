@@ -1053,8 +1053,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "board_display": _display_options_schema("board"),
                 "projects_display": projects_display_schema(
                     "What the team's projects page opens with: layout, group and direction, rows, order, "
-                    "closed, lead_team, empty, zoom and columns, replacing the saved default whole; a missing "
-                    "field takes the built-in choice and null clears the team default",
+                    "closed, lead_team, empty, zoom, dependencies and columns, replacing the saved default whole; "
+                    "a missing field takes the built-in choice and null clears the team default",
                     clearable=True,
                 ),
             },

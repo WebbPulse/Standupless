@@ -17,6 +17,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import type {
+  MemberRead,
   SearchResultRead,
   TeamRead,
   TemplateListRead,
@@ -45,6 +46,12 @@ const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 const navigate = vi.fn();
 const listTeamTemplates =
   vi.fn<(workspaceId: string, teamId: string) => Promise<TemplateListRead>>();
+
+const workspaceMembers = vi.fn<() => MemberRead[]>(() => []);
+
+vi.mock('../../hooks/useWorkspaceMembers', () => ({
+  useWorkspaceMembers: () => workspaceMembers(),
+}));
 
 vi.mock('../../api/documents', () => ({
   listWorkspaceDocuments: () => Promise.resolve([]),
@@ -237,6 +244,7 @@ beforeEach(() => {
     default_template_id: null,
   });
   search.mockResolvedValue([]);
+  workspaceMembers.mockReturnValue([]);
   globalThis.localStorage.removeItem(THEME_STORAGE_KEY);
 });
 
@@ -962,12 +970,40 @@ describe('the team preset commands', () => {
   });
 });
 
+describe('going to a member', () => {
+  it('finds a person by name and opens their member page', async () => {
+    workspaceMembers.mockReturnValue([
+      {
+        user_id: 'user-7',
+        email: 'riley@example.com',
+        display_name: 'riley',
+        full_name: 'Riley Chen',
+        role: 'member',
+        joined_at: '2026-09-17T00:00:00Z',
+      },
+    ]);
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('chen');
+    const row = await screen.findByRole('option', {
+      name: /Go to member riley/,
+    });
+    expect(row).not.toHaveTextContent('example.com');
+
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/members/user-7');
+  });
+});
+
 describe('the team go-to commands', () => {
   it.each([
     ['active issues', /Go to active issues/, 'G then A'],
     ['go to backlog', /Go to backlog/, 'G then B'],
     ['Engine board', /Engine board/, 'G then D'],
     ['archived issues', /Engine archived issues/, 'G then X'],
+    ['Engine views', /Engine views/, 'G then Shift V'],
   ])('shows %s with its keys', async (term, name, keys) => {
     const user = renderPalette({ path: '/w/mine/team/ENG' });
 
