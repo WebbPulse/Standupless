@@ -186,10 +186,7 @@ export const propertyFiltersFromView = (
   filter: ProjectViewFilter
 ): ProjectPropertyFilters =>
   PROPERTY_FILTER_KEYS.reduce((filters, key) => {
-    const stored = filter[PROPERTY_VIEW_KEYS[key]] as
-      | string
-      | string[]
-      | undefined;
+    const stored = filter[PROPERTY_VIEW_KEYS[key]];
     return isListKey(key)
       ? { ...filters, [key]: cleanList(key, asList(stored)) }
       : { ...filters, [key]: cleanScalar(key, asList(stored)[0] ?? '') };
@@ -205,7 +202,7 @@ export const propertyFiltersToView = (
     if (Array.isArray(value) ? value.length === 0 : value === '') continue;
     stored[PROPERTY_VIEW_KEYS[key]] = Array.isArray(value) ? [...value] : value;
   }
-  return stored as Partial<ProjectViewFilter>;
+  return stored;
 };
 
 /** Whether two saved filters hold the same property filters, list order aside. */

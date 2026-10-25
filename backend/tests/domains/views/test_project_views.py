@@ -191,7 +191,7 @@ def test_a_project_view_patch_moves_the_arrangement_and_filter(client: TestClien
     moved = client.patch(
         url, json={"projects_display": {"layout": "board", "group": "health"}, "filter": {"status": "paused"}}
     )
-    bad = client.patch(url, json={"filter": {"priority": "high"}})
+    bad = client.patch(url, json={"filter": {"assignee_id": "user-1"}})
     cleared = client.patch(url, json={"projects_display": None})
 
     assert moved.status_code == 200, moved.text

@@ -10,8 +10,9 @@ the view and comes back notifies again, as Linear does for project views.
 The view is judged with the projects page's own rules, so the inbox and the page
 agree on what a view holds: the team filter rolled up to the team's sub-teams
 unless the view turns that off, the status, lead, label, customer and dependency
-filters, the health, priority, member, date and update age filters, the closed projects window, the lead team choice, and archived projects
-always left out. A guest never filters by customer, as the page ignores that
+filters, the health, priority, member, date and update age filters, the
+closed projects window, the lead team choice, and archived projects always
+left out. A guest never filters by customer, as the page ignores that
 filter for them. Only a write that changes a property the view reads is judged,
 so the rollup counters a project row takes on every issue change cost nothing.
 

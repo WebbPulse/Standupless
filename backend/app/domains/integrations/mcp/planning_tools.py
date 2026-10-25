@@ -61,6 +61,7 @@ from app.common.planning_rules import (
 )
 from app.common.project_activity import activity_page
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
+from app.common.project_filters import parse_property_filter
 from app.common.project_link_writes import create_link, delete_link, project_links, update_link
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_update_report import report_lines
@@ -70,7 +71,6 @@ from app.common.project_updates import (
     list_project_updates,
     update_project_update,
 )
-from app.common.project_filters import parse_property_filter
 from app.common.project_writes import (
     create_project,
     delete_project,
