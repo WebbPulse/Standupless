@@ -1,12 +1,14 @@
 /**
  * The search behind the `#` reference picker. Covers that a query search
  * cannot answer sends nothing, that a burst of typing costs one request after
- * the pause, and that the answer arrives as the picker's list.
+ * the pause, that the answer arrives as the picker's list with linked pull
+ * requests last, and that a key query or a failed pull request read still
+ * answers with the issues.
  */
 
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SearchListRead } from '../types/Api';
+import type { PullRequestHitRead, SearchListRead } from '../types/Api';
 import {
   REFERENCE_DEBOUNCE_MS,
   useReferenceResults,
@@ -27,8 +29,36 @@ vi.mock('../api/views', async (importOriginal) => ({
     searchAll(workspaceId, q, options),
 }));
 
+const searchPullRequests =
+  vi.fn<
+    (
+      workspaceId: string,
+      q: string,
+      options: unknown
+    ) => Promise<PullRequestHitRead[]>
+  >();
+
+vi.mock('../api/pullRequests', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  searchPullRequests: (workspaceId: string, q: string, options: unknown) =>
+    searchPullRequests(workspaceId, q, options),
+}));
+
+const PULL_REQUEST: PullRequestHitRead = {
+  repository_full_name: 'acme/app',
+  number: 12,
+  title: 'Roadmap page',
+  url: 'https://github.com/acme/app/pull/12',
+  state: 'merged',
+  author_login: 'octocat',
+  issue_keys: ['ENG-1'],
+  updated_at: '2026-10-23T00:00:00Z',
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
+  searchPullRequests.mockReset();
+  searchPullRequests.mockResolvedValue([]);
   searchAll.mockReset();
   searchAll.mockResolvedValue({
     results: [],
@@ -99,5 +129,54 @@ describe('useReferenceResults', () => {
         color: null,
       },
     ]);
+  });
+
+  it('lists linked pull requests after everything else', async () => {
+    searchPullRequests.mockResolvedValue([PULL_REQUEST]);
+    const { result } = renderHook(() => useReferenceResults('ws-1', 'road'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFERENCE_DEBOUNCE_MS);
+    });
+
+    expect(searchPullRequests).toHaveBeenCalledWith('ws-1', 'road', {
+      limit: 3,
+    });
+    expect(result.current.items.map((item) => item.kind)).toEqual([
+      'project',
+      'pull_request',
+    ]);
+  });
+
+  it('answers a failed pull request read with the rest', async () => {
+    searchPullRequests.mockRejectedValue(new Error('down'));
+    const { result } = renderHook(() => useReferenceResults('ws-1', 'road'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFERENCE_DEBOUNCE_MS);
+    });
+
+    expect(result.current.items.map((item) => item.kind)).toEqual(['project']);
+  });
+
+  it('asks for no pull requests for an issue key', async () => {
+    renderHook(() => useReferenceResults('ws-1', 'ENG-12'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFERENCE_DEBOUNCE_MS);
+    });
+
+    expect(searchAll).toHaveBeenCalledTimes(1);
+    expect(searchPullRequests).not.toHaveBeenCalled();
+  });
+
+  it('searches a bare pull request number', async () => {
+    renderHook(() => useReferenceResults('ws-1', '4'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFERENCE_DEBOUNCE_MS);
+    });
+
+    expect(searchPullRequests).toHaveBeenCalledWith('ws-1', '4', { limit: 3 });
   });
 });

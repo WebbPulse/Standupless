@@ -1,9 +1,12 @@
 /**
  * A link to a project or a document of this workspace, drawn as a chip with
  * the project's mark or a page glyph and the name it carries today, the way
- * issue keys already render. The name is read live, so a rename shows
- * everywhere it was linked, and until the read lands, or when the reader
- * cannot see the target, the chip shows the link's own text.
+ * issue keys already render. A GitHub pull request link draws as a chip with
+ * the pull request glyph in its open, draft, merged or closed colour, read
+ * from the issues it is linked to. The name and state are read live, so a
+ * rename or a merge shows everywhere it was linked, and until the read lands,
+ * or when the reader cannot see the target, the chip shows the link's own
+ * text.
  */
 
 import React, { useContext } from 'react';
@@ -13,13 +16,27 @@ import { LuFileText } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { getDocument } from '../../api/documents';
 import { getProject } from '../../api/planning';
+import { searchPullRequests } from '../../api/pullRequests';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
+import { cn } from '../../lib/cn';
 import { documentPath, projectPath } from '../../lib/paths';
+import { pullRequestStateStyle } from '../../lib/pullRequestState';
 import { projectGlyph } from '../../lib/projectLook';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
-import { documentKey, projectDetailKey } from '../../lib/queryKeys';
-import { useLinkedReference } from '../../hooks/useLinkedReference';
-import { currentOrigin, type LinkedReference } from '../../lib/references';
+import {
+  documentKey,
+  projectDetailKey,
+  pullRequestLookupKey,
+} from '../../lib/queryKeys';
+import {
+  useLinkedPullRequest,
+  useLinkedReference,
+} from '../../hooks/useLinkedReference';
+import {
+  currentOrigin,
+  type LinkedPullRequest,
+  type LinkedReference,
+} from '../../lib/references';
 import type { ProjectIconName } from '../../types/Api';
 
 /** The classes every reference chip shares with the issue chip. */
@@ -118,6 +135,70 @@ const DocumentChip: React.FC<ResolvedChipProps> = ({
   );
 };
 
+/** Props for a chip that stands for a GitHub pull request. */
+interface PullRequestChipProps {
+  workspaceId: string;
+  target: LinkedPullRequest;
+  fallback: React.ReactNode;
+  href: string;
+}
+
+/**
+ * A linked pull request, with its state glyph and current title. One that no
+ * visible issue links keeps a muted glyph and the link's own text, and still
+ * opens on GitHub.
+ */
+const PullRequestChip: React.FC<PullRequestChipProps> = ({
+  workspaceId,
+  target,
+  fallback,
+  href,
+}) => {
+  const auth = useQueryAuth();
+  const reference = `${target.repository}#${String(target.number)}`;
+  const { data: hits } = usePolledQuery(
+    ({ signal }) =>
+      searchPullRequests(workspaceId, reference, { limit: 1 }, signal),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      queryKey: pullRequestLookupKey(workspaceId, reference.toLowerCase()),
+      auth,
+    }
+  );
+  const hit = hits?.find(
+    (candidate) =>
+      candidate.number === target.number &&
+      candidate.repository_full_name.toLowerCase() ===
+        target.repository.toLowerCase()
+  );
+  const style = hit === undefined ? null : pullRequestStateStyle(hit.state);
+  const Icon = style?.icon ?? pullRequestStateStyle('open').icon;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={hit === undefined ? reference : `${hit.title} (${reference})`}
+      data-reference="pull_request"
+      data-state={hit?.state}
+      data-md-href={href}
+      className={REFERENCE_CHIP_CLASS}
+    >
+      <Icon
+        role="img"
+        aria-label={
+          style === null ? 'Pull request' : `${style.label} pull request`
+        }
+        className={cn(
+          'h-3 w-3 shrink-0 self-center',
+          style?.colorClass ?? 'text-text-muted'
+        )}
+      />
+      <span className="min-w-0 truncate">{hit?.title ?? fallback}</span>
+    </a>
+  );
+};
+
 /** Props for ReferenceChip: the link's address and its written text. */
 export interface ReferenceChipProps {
   href: string;
@@ -126,7 +207,7 @@ export interface ReferenceChipProps {
   origin?: string;
 }
 
-/** A project or document link in rendered Markdown, drawn as a chip. */
+/** A project, document or pull request link in rendered Markdown, drawn as a chip. */
 export const ReferenceChip: React.FC<ReferenceChipProps> = ({
   href,
   children,
@@ -134,6 +215,17 @@ export const ReferenceChip: React.FC<ReferenceChipProps> = ({
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const target = useLinkedReference(href, origin);
+  const pullRequest = useLinkedPullRequest(href);
+  if (workspace !== null && target === null && pullRequest !== null) {
+    return (
+      <PullRequestChip
+        workspaceId={workspace.id}
+        target={pullRequest}
+        fallback={children}
+        href={href}
+      />
+    );
+  }
   if (workspace === null || target === null) return <>{children}</>;
   const Chip = target.kind === 'project' ? ProjectChip : DocumentChip;
   return (

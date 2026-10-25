@@ -79,8 +79,10 @@ import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
 import {
   currentOrigin,
   isSearchable,
+  linkedPullRequest,
   linkedReference,
-  referenceHref,
+  referenceLabel,
+  referenceLinkHref,
   referenceQuery,
   type ReferenceItem,
 } from '../../lib/references';
@@ -444,8 +446,10 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         },
         isReferenceLink: (href) => {
           const slug = lookup.current.workspace?.slug;
+          if (slug === undefined) return false;
+          if (linkedPullRequest(href) !== null) return true;
           const target = linkedReference(href, currentOrigin());
-          return slug !== undefined && target?.slug === slug;
+          return target?.slug === slug;
         },
       }),
     [placeholder]
@@ -775,11 +779,11 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         .insertContentAt(range, [
           {
             type: 'text',
-            text: item.kind === 'project' ? item.name : item.title,
+            text: referenceLabel(item),
             marks: [
               {
                 type: 'link',
-                attrs: { href: referenceHref(currentOrigin(), slug, item) },
+                attrs: { href: referenceLinkHref(item, currentOrigin(), slug) },
               },
             ],
           },

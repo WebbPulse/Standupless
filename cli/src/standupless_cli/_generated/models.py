@@ -2084,6 +2084,21 @@ class ProjectsDisplay(TypedDict):
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
 
+class PullRequestHitRead(TypedDict):
+    author_login: str
+    issue_keys: NotRequired[list[str]]
+    number: int
+    repository_full_name: str
+    state: Literal["open", "draft", "merged", "closed"]
+    title: str
+    updated_at: str
+    url: str
+
+
+class PullRequestSearchRead(TypedDict):
+    pull_requests: NotRequired[list[PullRequestHitRead]]
+
+
 class PullRequestSummaryEntryRead(TypedDict):
     ci_state: Literal["none", "pending", "success", "failure"]
     number: int
