@@ -234,6 +234,10 @@ export interface IssueListViewProps {
   customerRequests?: CustomerRequestMap | undefined;
   /** Positions by issue id the manual ordering follows, as {@link SortOptions} reads them. */
   rank?: ReadonlyMap<string, number> | undefined;
+  /** Muted text after each list row's title, as {@link IssueViewEnv} reads it. */
+  rowNote?: ((issue: OrderedIssueRead) => React.ReactNode) | undefined;
+  /** What the list shows below its last row, such as a pager that reads further. */
+  footer?: React.ReactNode | undefined;
 }
 
 /**
@@ -360,6 +364,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   statusCategories,
   customerRequests,
   rank,
+  rowNote,
+  footer,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1450,6 +1456,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       filterFor,
       milestones,
       parentOf,
+      ...(rowNote === undefined ? {} : { rowNote }),
     }),
     [
       slug,
@@ -1479,6 +1486,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       filterFor,
       milestones,
       parentOf,
+      rowNote,
     ]
   );
 
@@ -1746,6 +1754,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             see the rest.
           </p>
         )}
+        {footer}
       </div>
     );
   }

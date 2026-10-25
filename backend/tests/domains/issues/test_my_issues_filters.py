@@ -1,4 +1,4 @@
-"""The My issues filters: created by, subscribed by and assigned to the caller.
+"""The My issues filters: created by, subscribed by and assigned to the caller, and named ids.
 
 Each reads a keyed index rather than fanning out across teams, so the properties
 worth holding are the ones an index read could lose: a row from a team the caller
@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common.db.dynamo.issues import IssueRepository
 from tests.domains.helpers import GUEST, MEMBER, OWNER, make_team, make_workspace, sign_in
 from tests.domains.issues.conftest import OTHER_TEAM, create_issue
 
@@ -162,3 +163,24 @@ def test_a_cursor_from_one_mode_does_not_serve_another(client: TestClient, works
     carried = _list(client, workspace, limit=1, cursor=cursor)
 
     assert carried["issues"] == _list(client, workspace, limit=1)["issues"]
+
+
+def test_named_issue_ids_are_read_by_id(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any, monkeypatch: Any
+) -> None:
+    """A list naming its issues reads them by id, never walking a team, and still hides another team's row."""
+    sign_in(client, OWNER)
+    first = create_issue(client, workspace, title="First")
+    create_issue(client, workspace, title="Unnamed")
+    hidden = create_issue(client, workspace, team_id=OTHER_TEAM, title="Hidden")
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        """Fails the test if the list fans out across a team."""
+        raise AssertionError("an id list walked a team")
+
+    monkeypatch.setattr(IssueRepository, "read_team_newest", refuse)
+
+    named = {"issue_id": [first["id"], hidden["id"], "-"]}
+    assert _ids(_list(client, workspace, **named)) == {first["id"], hidden["id"]}
+    sign_in(client, GUEST)
+    assert _ids(_list(client, workspace, **named)) == {first["id"]}
