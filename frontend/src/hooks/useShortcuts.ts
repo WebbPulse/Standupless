@@ -21,8 +21,8 @@
  * ```
  *
  * - `keys` is one key or a space separated sequence (`'c'`, `'g i'`, `'?'`,
- *   `'/'`, `'escape'`, `'space'`). A token may carry `shift+`, `alt+` or `mod+`
- *   (Ctrl, or Cmd on a Mac). Letters are matched case-insensitively and never match while Shift
+ *   `'/'`, `'escape'`, `'space'`). A token may carry `shift+`, `alt+`, `mod+`
+ *   (Ctrl, or Cmd on a Mac) or `ctrl+` (Ctrl on every platform, never Cmd). Letters are matched case-insensitively and never match while Shift
  *   is held unless the token says `shift+`; punctuation such as `?` ignores
  *   Shift, because producing it needs Shift on most layouts.
  * - `scope` is `'global'` (the default) for shortcuts that work anywhere in a
@@ -52,7 +52,7 @@
  *
  * Nothing fires while focus is in an input, a textarea, a select or anything
  * contenteditable, while Ctrl, Cmd or Alt is held (unless the token asks for
- * `mod+` or `alt+`), while a modal dialog is open, or when another handler already
+ * `mod+`, `ctrl+` or `alt+`), while a modal dialog is open, or when another handler already
  * claimed the event. Outside a {@link ShortcutRegistryContext} provider the
  * hooks do nothing, so a page renders the same in a test without the shell.
  */
@@ -65,7 +65,12 @@ import {
   useRef,
   useSyncExternalStore,
 } from 'react';
-import { altKeyLabel, modKeyLabel, shiftKeyLabel } from '../lib/platform';
+import {
+  altKeyLabel,
+  ctrlKeyLabel,
+  modKeyLabel,
+  shiftKeyLabel,
+} from '../lib/platform';
 import { isModalOpen, isTypingTarget } from './useCommandPalette';
 
 /**
@@ -145,6 +150,7 @@ interface KeyToken {
   shift: boolean;
   alt: boolean;
   mod: boolean;
+  ctrl: boolean;
 }
 
 /** Splits a `keys` string into its tokens. */
@@ -161,6 +167,7 @@ export const parseKeys = (keys: string): KeyToken[] =>
         shift: pieces.includes('shift'),
         alt: pieces.includes('alt'),
         mod: pieces.includes('mod'),
+        ctrl: pieces.includes('ctrl'),
       };
     });
 
@@ -217,8 +224,11 @@ export const eventMatches = (
     event.code === `Key${token.key.toUpperCase()}`;
   if (key !== token.key && !byCode && !byLetterCode) return false;
   if (event.altKey !== token.alt) return false;
-  const mod = event.ctrlKey || event.metaKey;
-  if (mod !== token.mod) return false;
+  if (token.ctrl) {
+    if (!event.ctrlKey || event.metaKey) return false;
+  } else if ((event.ctrlKey || event.metaKey) !== token.mod) {
+    return false;
+  }
   if (isLetter(token.key) && event.shiftKey !== token.shift) return false;
   if (token.shift && !event.shiftKey) return false;
   return true;
@@ -285,7 +295,8 @@ export const createShortcutRegistry = (
         want.key !== got.key ||
         want.shift !== got.shift ||
         want.alt !== got.alt ||
-        want.mod !== got.mod
+        want.mod !== got.mod ||
+        want.ctrl !== got.ctrl
       ) {
         return 'none';
       }
@@ -300,6 +311,7 @@ export const createShortcutRegistry = (
     shift: isLetter(keyName(event)) && event.shiftKey,
     alt: event.altKey,
     mod: event.ctrlKey || event.metaKey,
+    ctrl: false,
   });
 
   const attempt = (event: KeyboardEvent, prefix: KeyToken[]): boolean => {
@@ -460,6 +472,7 @@ const KEY_NAMES: Record<string, string> = {
 export const displayKeys = (keys: string): string[] =>
   parseKeys(keys).map((token) => {
     const caps: string[] = [];
+    if (token.ctrl) caps.push(ctrlKeyLabel());
     if (token.mod) caps.push(modKeyLabel());
     if (token.alt) caps.push(altKeyLabel());
     if (token.shift) caps.push(shiftKeyLabel());

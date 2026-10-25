@@ -18,7 +18,8 @@ import {
 import type { ShortcutScope } from '../../hooks/useShortcuts';
 import { IconButton } from '../ui/button';
 import { desktopHasTabs } from '../../lib/desktop';
-import { modKeyLabel } from '../../lib/platform';
+import { ctrlKeyLabel, modKeyLabel, shiftKeyLabel } from '../../lib/platform';
+import { isTeamShortcutKeys } from '../../lib/teamShortcuts';
 
 /** Props for ShortcutHelp. */
 export interface ShortcutHelpProps {
@@ -55,6 +56,7 @@ const ALIASES: Record<string, string[]> = {
   mod: ['ctrl', 'cmd', 'command'],
   '⌘': ['cmd', 'command', 'mod'],
   ctrl: ['control', 'mod'],
+  '⌃': ['ctrl', 'control'],
   '⇧': ['shift'],
   alt: ['option', 'opt'],
   '⌥': ['alt', 'option', 'opt'],
@@ -91,6 +93,17 @@ const fromKeys = (keys: string): Binding => {
 const fromCaps = (caps: string[]): Binding => ({
   steps: [caps],
   words: keyWords(caps),
+});
+
+/** The one binding that stands for every Ctrl+Shift+digit team shortcut. */
+const teamBinding = (): Binding => ({
+  ...fromCaps([ctrlKeyLabel(), shiftKeyLabel(), '1-9']),
+  words: [
+    ...keyWords([ctrlKeyLabel(), shiftKeyLabel(), '1-9']),
+    'ctrl',
+    'control',
+    'shift',
+  ],
 });
 
 /** A fixed row and the bindings that run it. */
@@ -269,8 +282,10 @@ const ShortcutPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         rows: [],
         local: !APP_WIDE.includes(shortcut.group),
       };
-      const binding = fromKeys(shortcut.keys);
+      const team = isTeamShortcutKeys(shortcut.keys);
+      const binding = team ? teamBinding() : fromKeys(shortcut.keys);
       const same = group.rows.find((row) => row.label === shortcut.label);
+      if (same !== undefined && team) continue;
       if (same === undefined) {
         group.rows.push({
           id: shortcut.id,
