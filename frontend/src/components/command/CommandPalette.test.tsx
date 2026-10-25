@@ -537,6 +537,20 @@ describe('the actions', () => {
     });
   });
 
+  it('opens the create issue dialog expanded from the fullscreen action', async () => {
+    const dialog = issueDialog();
+    const user = renderPalette({ createIssue: dialog });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Create issue in fullscreen/ })
+    );
+
+    await waitFor(() => {
+      expect(dialog.open).toHaveBeenCalledWith({ expanded: true });
+    });
+  });
+
   it('creates an issue from a template of the current team', async () => {
     listTeamTemplates.mockResolvedValue({
       templates: [

@@ -72,6 +72,7 @@ import {
   LuLink,
   LuList,
   LuMap,
+  LuMaximize2,
   LuMonitor,
   LuMoon,
   LuRefreshCcw,
@@ -104,6 +105,7 @@ import ViewIcon from '../views/ViewIcon';
 import { StatusIcon } from '../ui/StatusIcon';
 import {
   CREATE_FROM_TEMPLATE_KEYS,
+  CREATE_FULLSCREEN_KEYS,
   useCreateIssue,
 } from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
@@ -590,6 +592,16 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuSquarePen className={ICON} />,
         run: () => {
           createIssue.open();
+        },
+      });
+      built.push({
+        id: 'action-create-issue-fullscreen',
+        label: 'Create issue in fullscreen',
+        keywords: 'new expanded maximize',
+        hint: shortcutHint(CREATE_FULLSCREEN_KEYS),
+        icon: <LuMaximize2 className={ICON} />,
+        run: () => {
+          createIssue.open({ expanded: true });
         },
       });
       built.push({
