@@ -123,7 +123,11 @@ import {
   writeViewState,
 } from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectPath, projectsPath } from '../../lib/paths';
+import {
+  projectMilestonePath,
+  projectPath,
+  projectsPath,
+} from '../../lib/paths';
 import {
   useReadableAddress,
   useRouteEntityId,
@@ -1008,6 +1012,9 @@ export const ProjectDetail: React.FC = () => {
                 onDelete={setDeletingMilestone}
                 onConvert={setConvertingMilestone}
                 onOpenIssues={openMilestoneIssues}
+                milestoneUrl={(milestoneId) =>
+                  `${globalThis.location.origin}${projectMilestonePath(slug, project, milestoneId)}`
+                }
               />
               <ProjectResources
                 links={project.links ?? []}
