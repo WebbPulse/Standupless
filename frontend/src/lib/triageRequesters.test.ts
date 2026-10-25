@@ -78,7 +78,7 @@ describe('groupByRequester', () => {
         email: 'mia@example.com',
         display_name: 'mia',
         avatar_url: null,
-        full_name: null,
+        full_name: '',
       },
     ]);
 
