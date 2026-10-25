@@ -44,17 +44,18 @@ const minted: ApiKeyCreatedRead = {
 
 describe('teamCsvRows', () => {
   it('writes the team columns with the parent key and retired date', () => {
+    const { member_count: _count, ...uncounted } = team();
     const rows = teamCsvRows([
       team(),
-      team({
+      {
+        ...uncounted,
         id: 'team-2',
         name: 'Web',
         key_prefix: 'WEB',
         parent_team_id: 'team-1',
         private: true,
-        member_count: undefined,
         retired_at: '2026-10-01T12:00:00Z',
-      }),
+      },
     ]);
 
     expect(rows).toEqual([
