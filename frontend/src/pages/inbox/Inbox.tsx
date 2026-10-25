@@ -965,6 +965,9 @@ const SEARCH_KEYS = 'mod+f';
 /** The keys that offer to delete every read notification, as Linear binds them. */
 const DELETE_READ_KEYS = 'shift+backspace';
 
+/** The keys that mark every notification read, as Linear binds them. */
+const MARK_ALL_READ_KEYS = 'alt+u';
+
 /** Which rows a bulk delete removes: the read ones or every one. */
 type ClearScope = 'read' | 'all';
 
@@ -1581,7 +1584,7 @@ export const Inbox: React.FC = () => {
     },
   });
   useShortcut({
-    keys: 'shift+r',
+    keys: MARK_ALL_READ_KEYS,
     label: readAllLabel,
     group: 'Inbox',
     enabled: allGroups.length > 0 && !isReadingAll,
@@ -1688,6 +1691,7 @@ export const Inbox: React.FC = () => {
             >
               <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
               {readAllLabel}
+              <MenuShortcut keys={MARK_ALL_READ_KEYS} />
             </MenuItem>
             <MenuSeparator />
             <MenuItem
