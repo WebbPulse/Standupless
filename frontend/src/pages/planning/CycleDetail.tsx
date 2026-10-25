@@ -806,7 +806,11 @@ export const CycleDetail: React.FC = () => {
             canEdit={canEdit}
             createTeamId={mayCreate ? teamId : undefined}
             createCycleId={mayCreate ? id : undefined}
-            folds={{ collapsed: folds.collapsed, onToggle: folds.toggle }}
+            folds={{
+              collapsed: folds.collapsed,
+              onToggle: folds.toggle,
+              onSet: folds.set,
+            }}
             emptyMessage={
               state.filters.length === 0
                 ? 'No issues in this cycle yet.'

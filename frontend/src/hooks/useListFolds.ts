@@ -49,6 +49,8 @@ export interface ListFolds {
   collapsed: ReadonlySet<string>;
   /** Folds or unfolds one key and keeps the change on the server. */
   toggle: (key: string) => void;
+  /** Folds or unfolds every key named, in one change kept on the server. */
+  set: (keys: readonly string[], folded: boolean) => void;
   /** Unfolds everything, as resetting the list's display does. */
   clear: () => void;
 }
@@ -136,6 +138,24 @@ export const useListFolds = (
     [id, save]
   );
 
+  const set = useCallback(
+    (keys: readonly string[], folded: boolean): void => {
+      if (id === undefined) return;
+      touched.current = id;
+      const next = new Set(
+        latest.current.id === id ? latest.current.keys : NONE
+      );
+      for (const key of keys) {
+        if (folded) next.add(key);
+        else next.delete(key);
+      }
+      latest.current = { id, keys: next };
+      setHeld(latest.current);
+      save([...next]);
+    },
+    [id, save]
+  );
+
   const clear = useCallback((): void => {
     if (id === undefined) return;
     touched.current = id;
@@ -144,7 +164,7 @@ export const useListFolds = (
     save([]);
   }, [id, save]);
 
-  return { collapsed: current.keys, toggle, clear };
+  return { collapsed: current.keys, toggle, set, clear };
 };
 
 export default useListFolds;

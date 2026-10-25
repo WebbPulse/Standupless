@@ -1,8 +1,8 @@
 /**
  * A person's folds on a list that is not a saved view. Covers that the server
- * read lays the folds in, that a toggle and a clear write the whole set, that
- * no list key reads or writes nothing, and that a browser entry left from
- * before folds moved to the server is carried over once and then dropped.
+ * read lays the folds in, that a toggle, a set and a clear write the whole
+ * set, that no list key reads or writes nothing, and that a browser entry left
+ * from before folds moved to the server is carried over once and then dropped.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -84,6 +84,39 @@ describe('useListFolds', () => {
     expect(result.current.collapsed.size).toBe(0);
     await waitFor(() => {
       expect(putListFolds).toHaveBeenLastCalledWith('ws', 'cycle:c1', []);
+    });
+  });
+
+  it('folds and unfolds many keys in one write on a set', async () => {
+    getListFolds.mockResolvedValue({
+      list_key: 'team:t2',
+      collapsed_groups: ['column/done'],
+    });
+    const { result } = renderHook(() => useListFolds('ws', 'team:t2'));
+    await waitFor(() => {
+      expect(result.current.collapsed.has('column/done')).toBe(true);
+    });
+
+    act(() => {
+      result.current.set(['todo', 'doing'], true);
+    });
+    expect([...result.current.collapsed].sort()).toEqual([
+      'column/done',
+      'doing',
+      'todo',
+    ]);
+    await waitFor(() => {
+      expect(putListFolds).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      result.current.set(['todo', 'doing'], false);
+    });
+    expect([...result.current.collapsed]).toEqual(['column/done']);
+    await waitFor(() => {
+      expect(putListFolds).toHaveBeenLastCalledWith('ws', 'team:t2', [
+        'column/done',
+      ]);
     });
   });
 

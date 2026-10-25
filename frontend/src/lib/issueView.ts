@@ -1792,6 +1792,60 @@ export const shownIssues = <T extends OrderedIssueRead>(
 /** The folded-set key that hides a board column. */
 export const hiddenColumnKey = (column: string): string => `column/${column}`;
 
+/**
+ * The folded-set key that hides a list sub-group inside its parent group. It
+ * shares the board column prefix, so the hidden state lives in the same set
+ * and saves with the view the same way.
+ */
+export const hiddenSubGroupKey = (group: string, sub: string): string =>
+  hiddenColumnKey(`${group}/${sub}`);
+
+/** A group hidden from a list, with the parent it sits in when it is a sub-group. */
+export interface HiddenGroup {
+  /** The folded-set key that hides the group. */
+  key: string;
+  group: IssueGroup;
+  parent?: IssueGroup | undefined;
+}
+
+/**
+ * Splits a list's sections into the ones it shows, with their hidden
+ * sub-groups dropped, and the groups hidden from it. A grouping of none has
+ * no header to hide, so its one section always shows.
+ */
+export const splitHiddenSections = <
+  S extends { group: IssueGroup; subs: IssueGroup[] | null },
+>(
+  sections: readonly S[],
+  collapsed: ReadonlySet<string>
+): { shown: S[]; hidden: HiddenGroup[] } => {
+  const shown: S[] = [];
+  const hidden: HiddenGroup[] = [];
+  for (const section of sections) {
+    const { group, subs } = section;
+    const key = hiddenColumnKey(group.key);
+    if (group.field !== 'none' && collapsed.has(key)) {
+      hidden.push({ key, group });
+      continue;
+    }
+    if (subs === null) {
+      shown.push(section);
+      continue;
+    }
+    const kept: IssueGroup[] = [];
+    for (const sub of subs) {
+      const subKey = hiddenSubGroupKey(group.key, sub.key);
+      if (collapsed.has(subKey))
+        hidden.push({ key: subKey, group: sub, parent: group });
+      else kept.push(sub);
+    }
+    shown.push(
+      kept.length === subs.length ? section : { ...section, subs: kept }
+    );
+  }
+  return { shown, hidden };
+};
+
 /** The ids an issue is resolved by: its own team and the rows it points at. */
 export type IssueRefs = Pick<
   OrderedIssueRead,

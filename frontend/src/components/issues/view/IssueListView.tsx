@@ -70,6 +70,7 @@ import {
   filterValuesFor,
   groupIssues,
   hiddenColumnKey,
+  splitHiddenSections,
   manualEdgeKeys,
   manualMoveKeys,
   narrowFilters,
@@ -214,10 +215,18 @@ export interface IssueListViewProps {
   customerRequests?: CustomerRequestMap | undefined;
 }
 
-/** The folds a page holds for its list, and the toggle for one of them. */
+/**
+ * The folds a page holds for its list, the toggle for one of them, and a
+ * setter that folds or unfolds many at once.
+ */
 export interface ListFoldControl {
   collapsed: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  /**
+   * Folds or unfolds every key named in one write. Left out, each key that
+   * differs is toggled in turn, which suits a toggle that reads its latest set.
+   */
+  onSet?: ((keys: readonly string[], folded: boolean) => void) | undefined;
 }
 
 /** The palette label of each property command. */
@@ -325,6 +334,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [ownFolds, toggleOwnFold] = useStoredSet(undefined);
   const collapsed = folds?.collapsed ?? ownFolds;
   const onToggle = folds?.onToggle ?? toggleOwnFold;
+  const onFoldMany = folds?.onSet;
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set()
@@ -435,6 +445,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.subGroupBy,
   ]);
 
+  const listSections = useMemo(
+    () => splitHiddenSections(sections, collapsed).shown,
+    [sections, collapsed]
+  );
+
   const nest = state.layout === 'list' && showSubIssues;
   const { order, tree } = useMemo(() => {
     const nodes = new Map<string, TreeNode>();
@@ -453,7 +468,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         nodes.set(id, { parentId: row.parentId, childCount: row.childCount });
       }
     };
-    for (const { group, subs } of sections) {
+    for (const { group, subs } of listSections) {
       if (collapsed.has(group.key)) continue;
       if (subs === null) {
         take(group.issues);
@@ -464,7 +479,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       }
     }
     return { order: ids, tree: nodes };
-  }, [board, sections, collapsed, nest]);
+  }, [board, listSections, collapsed, nest]);
 
   const from = `${location.pathname}${location.search}`;
   const rememberOrder = useCallback(() => {
@@ -611,7 +626,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       issues.filter(
         (issue) => (tree.get(issue.id)?.parentId ?? null) === parentId
       );
-    for (const { group, subs } of sections) {
+    for (const { group, subs } of listSections) {
       if (collapsed.has(group.key)) continue;
       if (subs === null) {
         if (group.issues.some((issue) => issue.id === id))
@@ -1557,6 +1572,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           sections={sections}
           collapsed={collapsed}
           onToggle={onToggle}
+          onFoldMany={onFoldMany}
           nest={nest}
           createIn={createIn}
         />
