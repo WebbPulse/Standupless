@@ -114,6 +114,10 @@ import {
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { useRecordRecentIssue } from '../../lib/recentIssues';
+import {
+  parentOfIssue,
+  subIssueDialogPresets,
+} from '../../lib/subIssueCreation';
 import { timestampLabel } from '../../lib/issueDisplay';
 import {
   CONVERT_TO_PROJECT_LABEL,
@@ -489,9 +493,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const addSubIssue = (): void => {
     if (issue === null) return;
     createIssue.open({
-      teamId: issue.team_id,
-      parentId: issue.id,
-      parentKey: issue.key,
+      ...subIssueDialogPresets(parentOfIssue(issue)),
       onCreated: () => {
         invalidateQueries([childrenKey(issue.id), activityKey(issue.id)]);
       },

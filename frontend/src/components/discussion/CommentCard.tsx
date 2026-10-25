@@ -94,6 +94,7 @@ import { activityKey, childrenKey, commentsKey } from '../../lib/queryKeys';
 import {
   createSubIssues,
   resolveSubIssueParent,
+  subIssueDialogPresets,
   type ResolvedSubIssueParent,
 } from '../../lib/subIssueCreation';
 import {
@@ -333,11 +334,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
     void resolveSubIssueParent(workspaceId, { id: issueId })
       .then((parent) => {
         issueCreator.open({
-          teamId: parent.teamId,
-          parentId: parent.id,
-          parentKey: parent.key,
-          ...(parent.priority === 'none' ? {} : { priority: parent.priority }),
-          ...(parent.projectId === null ? {} : { projectId: parent.projectId }),
+          ...subIssueDialogPresets(parent),
           ...draft(parent),
           onCreated: () => {
             invalidateQueries([childrenKey(issueId), activityKey(issueId)]);
