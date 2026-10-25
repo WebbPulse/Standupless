@@ -88,10 +88,14 @@ describe('the first sub-issue shown', () => {
     { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
     { id: 'st-9', name: 'Done', category: 'completed', position: 1 },
   ];
-  const open = (id: string, sortOrder: string): OrderedIssueRead =>
-    ({ ...row(id, sortOrder), status_id: 'st-1' }) as OrderedIssueRead;
-  const done = (id: string, sortOrder: string): OrderedIssueRead =>
-    ({ ...row(id, sortOrder), status_id: 'st-9' }) as OrderedIssueRead;
+  const open = (id: string, sortOrder: string): OrderedIssueRead => ({
+    ...row(id, sortOrder),
+    status_id: 'st-1',
+  });
+  const done = (id: string, sortOrder: string): OrderedIssueRead => ({
+    ...row(id, sortOrder),
+    status_id: 'st-9',
+  });
 
   it('takes the first row in manual order', () => {
     expect(firstSubIssue([open('b', 'D'), done('a', 'B')], statuses)?.id).toBe(
