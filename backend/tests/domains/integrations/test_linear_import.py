@@ -271,6 +271,7 @@ def test_an_import_carries_every_issue_field(
     assert bug.color == "#eb5757"
     assert labels[bug.parent_id].name == "Type"
     assert labels[bug.parent_id].is_group is True
+    assert labels[bug.parent_id].allow_multiple is True
     frontend = next(labels[label_id] for label_id in parent.label_ids if labels[label_id].name == "Frontend")
     assert frontend.color == issue_import.label_color("Frontend")
     assert parent.cycle_id == row_id("cycle", "cycle-1", "2026-08-30T10:00:00.000Z")

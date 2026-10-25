@@ -35,6 +35,8 @@ export interface ComboboxOption {
   disabled?: boolean;
   /** Draws the option one step in, under the option before it, as a sub-team under its parent. */
   indent?: boolean;
+  /** In multiple mode, draws a radio mark rather than a checkbox, for an option that replaces its group's others. */
+  exclusive?: boolean;
 }
 
 /** Props for Combobox: the options, what is selected and what picking does. */
@@ -315,19 +317,38 @@ export const Combobox: React.FC<ComboboxProps> = ({
                       row.indent === true ? 'pr-2 pl-7' : 'px-2'
                     )}
                   >
-                    {multiple && row.value !== CREATE_VALUE && (
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-xs border',
-                          isSelected
-                            ? 'border-accent bg-accent text-on-accent'
-                            : 'border-line-strong'
-                        )}
-                      >
-                        {isSelected && <LuCheck className="h-2.5 w-2.5" />}
-                      </span>
-                    )}
+                    {multiple &&
+                      row.value !== CREATE_VALUE &&
+                      row.exclusive === true && (
+                        <span
+                          aria-hidden="true"
+                          data-mark="radio"
+                          className={cn(
+                            'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border',
+                            isSelected ? 'border-accent' : 'border-line-strong'
+                          )}
+                        >
+                          {isSelected && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                          )}
+                        </span>
+                      )}
+                    {multiple &&
+                      row.value !== CREATE_VALUE &&
+                      row.exclusive !== true && (
+                        <span
+                          aria-hidden="true"
+                          data-mark="checkbox"
+                          className={cn(
+                            'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-xs border',
+                            isSelected
+                              ? 'border-accent bg-accent text-on-accent'
+                              : 'border-line-strong'
+                          )}
+                        >
+                          {isSelected && <LuCheck className="h-2.5 w-2.5" />}
+                        </span>
+                      )}
                     {row.icon !== undefined && (
                       <span
                         aria-hidden="true"

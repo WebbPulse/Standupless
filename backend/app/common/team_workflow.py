@@ -46,6 +46,8 @@ from app.common.db.dynamo.team_config import (
 from app.common.issue_rules import unprocessable
 from app.common.labels import (
     GROUP_IN_GROUP,
+    MULTIPLE_NOT_GROUP,
+    check_group_fields,
     check_move_into_group,
     check_unique_name,
     name_key,
@@ -531,9 +533,12 @@ def _label_patch(payload: LabelUpdate, existing: Label) -> tuple[dict[str, Any],
 
     A null or empty `description` clears it. A move into the group the label is
     already in is no change, and a group is refused a parent with a 422 because
-    groups nest one level.
+    groups nest one level. `allow_multiple` is a 422 on a label that is not a
+    group, and turning it off clears it without touching issues already carrying
+    several of the group's labels: their next label edit is held to one.
     """
     given = payload.model_dump(exclude_unset=True)
+    allow_multiple = given.pop("allow_multiple", None)
     if "description" in given:
         given["description"] = (given["description"] or "").strip() or None
         if given["description"] == existing.description:
@@ -546,6 +551,13 @@ def _label_patch(payload: LabelUpdate, existing: Label) -> tuple[dict[str, Any],
         attributes.pop("parent_id", None)
     if "parent_id" in attributes and existing.is_group:
         raise unprocessable(GROUP_IN_GROUP)
+    if allow_multiple is not None:
+        if not existing.is_group:
+            raise unprocessable(MULTIPLE_NOT_GROUP)
+        if allow_multiple and not existing.allow_multiple:
+            attributes["allow_multiple"] = True
+        elif not allow_multiple and existing.allow_multiple:
+            clear.append("allow_multiple")
     return attributes, clear
 
 
@@ -679,9 +691,8 @@ def delete_workspace_status(
 
 def create_workspace_label(repositories: Repositories, workspace_id: str, payload: LabelCreate) -> Label:
     """Add a workspace label or label group every team inherits, in a workspace group when `parent_id` names one."""
+    check_group_fields(payload)
     if payload.parent_id is not None:
-        if payload.is_group:
-            raise unprocessable(GROUP_IN_GROUP)
         workspace_group(repositories, workspace_id, payload.parent_id)
     team_ids = _team_ids(repositories, workspace_id)
     check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id)
@@ -695,6 +706,7 @@ def create_workspace_label(repositories: Repositories, workspace_id: str, payloa
             color=payload.color,
             description=(payload.description or "").strip() or None,
             is_group=payload.is_group,
+            allow_multiple=payload.is_group and payload.allow_multiple,
             parent_id=payload.parent_id,
             scope=WORKSPACE_SCOPE,
         )

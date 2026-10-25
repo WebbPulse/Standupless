@@ -406,4 +406,24 @@ describe('label groups', () => {
       await screen.findByText('Its labels stay, outside any group.')
     ).toBeInTheDocument();
   });
+
+  it('lets a group allow multiple labels from its settings', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Area' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Edit group' }));
+    const toggle = await screen.findByRole('switch', {
+      name: /Allow multiple labels from this group/,
+    });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(updateLabel).toHaveBeenCalledWith('area', {
+        allow_multiple: true,
+      });
+    });
+  });
 });

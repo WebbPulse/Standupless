@@ -164,7 +164,7 @@ def list_workspace_templates(
 
 
 def _check_workspace_labels(repositories: Repositories, workspace_id: str, label_ids: list[str]) -> list[str]:
-    """Hold labels to the workspace's own, never a group and one per group, or raise a 422."""
+    """Hold labels to the workspace's own, never a group and one per exclusive group, or raise a 422."""
     groups: set[str] = set()
     for label_id in label_ids:
         row = repositories.team_config.get_workspace_label(workspace_id, label_id)
@@ -174,6 +174,9 @@ def _check_workspace_labels(repositories: Repositories, workspace_id: str, label
             raise unprocessable(f"{row.name} is a label group. Choose one of its labels instead.")
         if row.parent_id:
             if row.parent_id in groups:
+                group = repositories.team_config.get_workspace_label(workspace_id, row.parent_id)
+                if group is not None and group.allow_multiple:
+                    continue
                 raise unprocessable("A template can carry one label from each group.")
             groups.add(row.parent_id)
     return label_ids

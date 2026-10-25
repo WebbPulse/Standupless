@@ -209,6 +209,7 @@ def label_json(label: Label) -> dict[str, Any]:
         "hidden": label.hidden,
         "inherited_name": label.inherited_name,
         "is_group": label.is_group,
+        "allow_multiple": label.allow_multiple,
         "parent_id": label.parent_id,
     }
 
@@ -859,6 +860,7 @@ def _create_label(call: ToolCall) -> Any:
             "color": call.require("color"),
             "description": call.optional("description"),
             "is_group": bool(call.optional("is_group", False)),
+            "allow_multiple": bool(call.optional("allow_multiple", False)),
             "parent_id": group_id,
         }
     )
@@ -871,7 +873,7 @@ def _update_label(call: ToolCall) -> Any:
     """Rename, recolour, group or ungroup a label."""
     team = admin_team(call)
     found = label_ref(call, team.team_id, call.require("label"))
-    fields = given_arguments(call, ("name", "color", "description"))
+    fields = given_arguments(call, ("name", "color", "description", "allow_multiple"))
     own = [
         row
         for row in call.repositories.team_config.list_labels(call.context.workspace_id, team.team_id)
@@ -1457,7 +1459,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="create_label",
         description=(
             "Add a label or a label group to a team. Needs team admin. team_id: id, key such as ENG, or name. "
-            "A group holds labels and is never put on an issue, and an issue carries one label per group."
+            "A group holds labels and is never put on an issue, and an issue carries one label per group "
+            "unless the group sets allow_multiple."
         ),
         scopes=("labels:write",),
         schema=object_schema(
@@ -1467,6 +1470,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "color": string("A hex colour such as #5e6ad2"),
                 "description": string("A short description, up to 100 characters, shown on synced GitHub repositories"),
                 "is_group": boolean("Create a label group rather than a label"),
+                "allow_multiple": boolean("For a group, let an issue carry several of its labels rather than one"),
                 "group": string("Put the label in this team label group: its id or its name"),
             },
             required=("team_id", "name", "color"),
@@ -1488,6 +1492,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "name": string("A new name"),
                 "color": string("A new hex colour such as #5e6ad2"),
                 "description": string("A new description; an empty string clears it"),
+                "allow_multiple": boolean("For a group, whether an issue may carry several of its labels"),
                 "group": string("Move it into this team label group, by id or name; an empty string ungroups it"),
             },
             required=("team_id", "label"),

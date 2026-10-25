@@ -1451,6 +1451,7 @@ class JoinableWorkspaceRead(TypedDict):
 
 
 class LabelCreate(TypedDict):
+    allow_multiple: NotRequired[bool]
     color: str
     description: NotRequired[str | None]
     is_group: NotRequired[bool]
@@ -1463,6 +1464,7 @@ class LabelMerge(TypedDict):
 
 
 class LabelRead(TypedDict):
+    allow_multiple: NotRequired[bool]
     color: str
     description: NotRequired[str | None]
     hidden: NotRequired[bool]
@@ -1486,6 +1488,7 @@ class LabelSetWrite(TypedDict):
 
 
 class LabelUpdate(TypedDict):
+    allow_multiple: NotRequired[bool | None]
     color: NotRequired[str | None]
     description: NotRequired[str | None]
     name: NotRequired[str | None]

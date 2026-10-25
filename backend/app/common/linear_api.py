@@ -277,7 +277,7 @@ query Issues($team: String!, $first: Int!, $after: String) {
         cycle { id createdAt }
         project { id createdAt }
         projectMilestone { id createdAt }
-        labels(first: 50) { nodes { id name color parent { id name color } } }
+        labels(first: 50) { nodes { id name color parent { id name color groupType } } }
         attachments(first: 50) { nodes { title url } }
         comments(first: 50) {
           nodes { id body createdAt parent { id createdAt } user { name email } }
