@@ -14,6 +14,9 @@
  * lowest one still open with its position in the stack and the stack's review
  * and check icons, and expand to every entry with its own. The section count
  * treats a stack as one row.
+ *
+ * O then G opens the linked pull request, or the synced GitHub issue when
+ * there is none, from anywhere on the issue.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -21,6 +24,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuGitBranch } from 'react-icons/lu';
 import { listIssueLinks } from '../../api/integrations';
+import { useOpenPullRequestShortcut } from '../../hooks/useOpenPullRequestShortcut';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import {
   COPY_BRANCH_KEYS,
@@ -250,6 +254,8 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
     enabled: branch !== null,
     handler: copyBranch,
   });
+
+  useOpenPullRequestShortcut(workspaceId, issueId);
 
   const { data, error } = usePolledQuery(
     ({ signal }) => listIssueLinks(workspaceId, issueId, {}, signal),
