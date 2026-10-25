@@ -60,7 +60,7 @@ const placeAt = (
   position: number
 ): { top: number; left: number } => {
   try {
-    const dom = editor.view.dom as HTMLElement;
+    const dom = editor.view.dom;
     const host = (dom.offsetParent ?? dom.parentElement) as HTMLElement | null;
     if (host === null) return { top: 0, left: 0 };
     const box = host.getBoundingClientRect();
@@ -144,7 +144,7 @@ const createAndLink = (
         tab.location.href = href;
       }
       if (editor.isDestroyed) return;
-      const link = editor.schema.marks.link;
+      const link = editor.schema.marks['link'];
       if (
         link === undefined ||
         span.to <= span.from ||
