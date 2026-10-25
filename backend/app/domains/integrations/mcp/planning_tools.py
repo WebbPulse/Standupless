@@ -42,9 +42,10 @@ from app.common.api.schemas.planning import (
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
-from app.common.cycle_rollover import start_cycle_today_read
+from app.common.cycle_rollover import end_cycle_today, start_cycle_today_read
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
+from app.common.date_resolution import DATE_RESOLUTIONS, date_label
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_conversion import convert_to_project
 from app.common.issue_keys import current
@@ -123,6 +124,8 @@ PROJECT_FIELDS: tuple[str, ...] = (
     "description",
     "start_date",
     "target_date",
+    "start_date_resolution",
+    "target_date_resolution",
     "icon",
     "color",
     "health",
@@ -245,6 +248,7 @@ def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
         "cancelled": cycle.cancelled,
         "counts": cycle.counts.model_dump(),
         "carry": cycle.carry.model_dump(),
+        "gap_before_days": cycle.gap_before_days,
     }
 
 
@@ -273,6 +277,10 @@ def _project_json(project: ProjectRead, names: dict[str, str]) -> dict[str, Any]
         "initiative_id": project.initiative_id,
         "start_date": project.start_date,
         "target_date": project.target_date,
+        "start_date_resolution": project.start_date_resolution,
+        "target_date_resolution": project.target_date_resolution,
+        "start_date_label": date_label(project.start_date, project.start_date_resolution),
+        "target_date_label": date_label(project.target_date, project.target_date_resolution),
         "counts": project.counts.model_dump(),
         "status_counts": project.status_counts,
         "last_update_at": project.last_update_at.isoformat() if project.last_update_at else None,
@@ -403,6 +411,13 @@ def _start_cycle_today(call: ToolCall) -> Any:
         "ended": None if result.ended is None else _cycle_json(result.ended),
         "moved_issues": result.moved_issues,
     }
+
+
+def _end_cycle_today(call: ToolCall) -> Any:
+    """End the current cycle at the close of today; the cycle close rolls its open issues on."""
+    team_id = _team_id(call)
+    cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
+    return _cycle_json(end_cycle_today(call.repositories, call.context, team_id, cycle_id))
 
 
 def _delete_cycle(call: ToolCall) -> Any:
@@ -846,8 +861,18 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "name": string("The project name"),
     "description": nullable("The description, in Markdown"),
     "lead_id": nullable("The lead: user id, email, 'me' for the caller, or null"),
-    "start_date": nullable("Start date, YYYY-MM-DD"),
-    "target_date": nullable("Target date, YYYY-MM-DD"),
+    "start_date": nullable("Start date, YYYY-MM-DD; any day in the period when start_date_resolution is coarse"),
+    "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
+    "start_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide start_date is: day (the default), or the month, quarter, half or year it opens; "
+        "the date moves to that period's first day",
+    ),
+    "target_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide target_date is: day (the default), or the month, quarter, half or year it closes; "
+        "the date moves to that period's last day",
+    ),
     "status": string(STATUS_HELP),
     "status_id": string("The project status by id or name, as list_project_statuses names it"),
     "team_ids": string_list(
@@ -925,7 +950,11 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="update_cycle",
         description=(
             "Change a cycle's name, dates, goal or cancellation. "
-            "Only the fields named are written; null clears the goal."
+            "Only the fields named are written; null clears the goal. "
+            "Dates already in the past cannot change and no date may move before today. "
+            "Extending a cycle into the next one moves that cycle's start to the day after, "
+            "refused when it would leave the next cycle no days. "
+            "A name ending in a number renumbers the automatically named cycles after it."
         ),
         scopes=("cycles:write",),
         schema=object_schema(
@@ -955,6 +984,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "cycle_id"),
         ),
         handler=_start_cycle_today,
+    ),
+    Tool(
+        name="end_cycle_today",
+        description=(
+            "End a team's current cycle at the close of today in the team's timezone. "
+            "The next cycle keeps its dates, and unfinished issues roll into it when the cycle closes. "
+            "Refused for any cycle but the current one."
+        ),
+        scopes=("cycles:write",),
+        schema=object_schema(
+            {"team_id": string(TEAM_HELP), "cycle_id": string(CYCLE_HELP)},
+            required=("team_id", "cycle_id"),
+        ),
+        handler=_end_cycle_today,
     ),
     Tool(
         name="delete_cycle",

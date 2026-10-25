@@ -180,6 +180,13 @@ export const issueKey = (workspaceId: string, issueId: string): QueryKey => [
   issueId,
 ];
 
+/** One team's recently deleted issues, the trash a restore takes them out of. */
+export const trashKey = (workspaceId: string, teamId: string): QueryKey => [
+  'issue-trash',
+  workspaceId,
+  teamId,
+];
+
 /** One issue's direct children. */
 export const childrenKey = (issueId: string): QueryKey => ['children', issueId];
 
@@ -264,6 +271,33 @@ export const viewsKey = (
   teamId: string
 ): QueryKey => ['views', workspaceId, scope, teamId];
 
+/** One workspace's dashboards, as one list scope and team narrow them. */
+export const dashboardsKey = (
+  workspaceId: string,
+  scope: string,
+  teamId: string
+): QueryKey => ['dashboards', workspaceId, scope, teamId];
+
+/** One dashboard read by id. */
+export const dashboardKey = (
+  workspaceId: string,
+  dashboardId: string
+): QueryKey => ['dashboard', workspaceId, dashboardId];
+
+/** One widget's breakdown, read again when the dashboard changes. */
+export const dashboardWidgetKey = (
+  workspaceId: string,
+  dashboardId: string,
+  widgetId: string,
+  updatedAt: string
+): QueryKey => [
+  'dashboard-widget',
+  workspaceId,
+  dashboardId,
+  widgetId,
+  updatedAt,
+];
+
 /** How many issues one saved view selects, read again when the view changes. */
 export const viewCountKey = (
   workspaceId: string,
@@ -308,6 +342,12 @@ export const issueReminderKey = (
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
+  workspaceId,
+];
+
+/** Every unread count, which the inbox page reads for its Priority and Other tabs. */
+export const inboxCountsKey = (workspaceId: string): QueryKey => [
+  'inbox-counts',
   workspaceId,
 ];
 
@@ -654,6 +694,12 @@ export const MY_CONNECTED_APPS_KEY: QueryKey = ['connected-apps', 'me'];
 export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
   'connected-apps',
   'workspace',
+  workspaceId,
+];
+
+/** A workspace's third-party app approval records, for an admin. */
+export const appApprovalsKey = (workspaceId: string): QueryKey => [
+  'app-approvals',
   workspaceId,
 ];
 

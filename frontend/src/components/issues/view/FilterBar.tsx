@@ -10,7 +10,9 @@
  * picked from a few relative presets or a calendar, and its verb flips
  * between "before" and "after". Content takes free text matched against the
  * title and description. As in Linear, Shift F drops the filter added last and
- * Alt Shift F clears every filter, the same as the chips' Clear button.
+ * Alt Shift F clears every filter, the same as the chips' Clear button, and
+ * Alt click or Alt Enter on a value makes it the only one chosen. The team
+ * filter leads with My teams, which follows whoever views the list.
  */
 
 import React, { useState } from 'react';
@@ -52,6 +54,7 @@ import {
   FILTER_LABELS,
   KEEP_ONLY_FIELDS,
   MAX_FILTER_GROUPS,
+  MY_TEAMS,
   RELATIVE_CYCLES,
   filterFieldsFor,
   isDateField,
@@ -77,6 +80,7 @@ import {
   TRIAGE_STATUS_NAME,
 } from '../../../lib/triageStatus';
 import { cn } from '../../../lib/cn';
+import { isApplePlatform } from '../../../lib/platform';
 import type { LinkType } from '../../../types/Api';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
@@ -418,15 +422,25 @@ const filterChoices = (
         ),
       ];
     case 'team':
-      return (context.teams ?? []).map((team) => ({
-        option: {
-          value: team.id,
-          label: team.name,
-          icon: <LuUsers className="h-3.5 w-3.5 text-text-muted" />,
-          ...(team.key === undefined ? {} : { detail: team.key }),
+      return [
+        {
+          option: {
+            value: MY_TEAMS,
+            label: 'My teams',
+            icon: <LuUsers className="h-3.5 w-3.5 text-accent" />,
+          },
+          ids: [MY_TEAMS],
         },
-        ids: [team.id],
-      }));
+        ...(context.teams ?? []).map((team) => ({
+          option: {
+            value: team.id,
+            label: team.name,
+            icon: <LuUsers className="h-3.5 w-3.5 text-text-muted" />,
+            ...(team.key === undefined ? {} : { detail: team.key }),
+          },
+          ids: [team.id],
+        })),
+      ];
     case 'created':
     case 'updated':
     case 'completed':
@@ -596,6 +610,25 @@ const toggleChoice = (
   );
 };
 
+/** Sets a field's clause to exactly one choice's ids, as Alt click asks, keeping its verb. */
+const onlyChoice = (
+  filters: FilterClause[],
+  field: FilterField,
+  choice: FilterChoice
+): FilterClause[] => {
+  const index = filters.findIndex((clause) => clause.field === field);
+  if (index === -1) {
+    return [...filters, { field, op: 'is', values: [...choice.ids] }];
+  }
+  return filters.map((clause, at) =>
+    at === index ? { ...clause, values: [...choice.ids] } : clause
+  );
+};
+
+/** The footer hint naming the key that picks one value alone: Option on macOS, Alt elsewhere. */
+export const selectOnlyHint = (apple: boolean = isApplePlatform()): string =>
+  `${apple ? 'Option' : 'Alt'}+click to select only one`;
+
 /** The choices a clause has on. */
 const chosen = (
   clause: FilterClause | undefined,
@@ -745,6 +778,17 @@ const ValueList: React.FC<{
         if (choice !== undefined)
           onChange(toggleChoice(filters, field, choice));
       }}
+      onSelectOnly={(value) => {
+        const choice = choices.find((item) => item.option.value === value);
+        if (choice !== undefined) onChange(onlyChoice(filters, field, choice));
+      }}
+      footer={
+        choices.length > 1 ? (
+          <span className="px-0.5 text-xs text-text-faint">
+            {selectOnlyHint()}
+          </span>
+        ) : undefined
+      }
     />
   );
 };

@@ -1,7 +1,8 @@
 /**
  * The insights panel beside an issue list: the issues the list's filter
- * selects, counted or summed in points and grouped by one property, with an
- * optional second property splitting each bar. It sends the same query the
+ * selects, counted, summed in points or timed, and grouped by one property,
+ * with an optional second property splitting each bar. A time measure draws a
+ * scatterplot of issues instead of bars. It sends the same query the
  * list runs, so the bars always describe the rows on screen, and a bar on a
  * filterable property narrows the list to it when clicked.
  */
@@ -9,16 +10,21 @@
 import React, { useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { LuX } from 'react-icons/lu';
+import { LuEllipsis, LuLayoutDashboard, LuX } from 'react-icons/lu';
 import { getInsights, type InsightsQuery } from '../../../api/insights';
+import { usePeekIssue } from '../../../hooks/usePeekIssue';
+import type { WidgetSource } from '../../../lib/dashboards';
 import { errorMessage } from '../../../lib/errors';
 import {
   FILTER_FOR,
   INSIGHT_DIMENSIONS,
+  INSIGHT_MEASURES,
   INSIGHTS_POLL_MS,
   UNSET_COLOR,
   bucketColor,
+  formatHours,
   formatMeasure,
+  isTimeMeasure,
 } from '../../../lib/insights';
 import type { FilterField } from '../../../lib/issueView';
 import type {
@@ -28,9 +34,12 @@ import type {
   InsightMeasure,
   InsightsRead,
 } from '../../../types/Api';
+import AddToDashboardDialog from '../../dashboards/AddToDashboardDialog';
 import { IconButton } from '../../ui/button';
+import { Menu, MenuItem } from '../../ui/menu';
 import { Select } from '../../ui/select';
 import Spinner from '../../ui/spinner';
+import InsightsScatter from './InsightsScatter';
 
 /** Props for InsightsChart. */
 export interface InsightsChartProps {
@@ -191,6 +200,17 @@ export const InsightsChart: React.FC<InsightsChartProps> = ({
   );
 };
 
+/** The line above a scatterplot: how many issues were timed and their average. */
+const timedSummary = (
+  issueCount: number,
+  average: number | null | undefined
+): string => {
+  const counted = formatMeasure(issueCount, 'count');
+  return average === null || average === undefined
+    ? counted
+    : `${counted}, average ${formatHours(average)}`;
+};
+
 /** Props for InsightsPanel. */
 export interface InsightsPanelProps {
   workspaceId: string;
@@ -199,6 +219,8 @@ export interface InsightsPanelProps {
   /** The list's filters, exactly as the list sends them, without its sort. */
   filters: Omit<InsightsQuery, 'group_by' | 'segment_by' | 'measure'>;
   onPick?: ((field: FilterField, value: string) => void) | undefined;
+  /** What a widget added from this panel reads, which offers Add to dashboard. */
+  widget?: WidgetSource | undefined;
   onClose: () => void;
   className?: string;
 }
@@ -209,10 +231,13 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
   scopeKey,
   filters,
   onPick,
+  widget,
   onClose,
   className = '',
 }) => {
   const auth = useQueryAuth();
+  const [adding, setAdding] = useState(false);
+  const { peekIssue } = usePeekIssue();
   const [groupBy, setGroupBy] = useState<InsightDimension>('status');
   const [segmentBy, setSegmentBy] = useState<InsightDimension | ''>('');
   const [measure, setMeasure] = useState<InsightMeasure>('count');
@@ -247,6 +272,26 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
     >
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <h2 className="flex-1 text-sm font-medium text-text">Insights</h2>
+        {widget !== undefined && (
+          <Menu
+            label="Insights actions"
+            align="end"
+            trigger={(props) => (
+              <IconButton {...props} size="sm" label="Insights actions">
+                <LuEllipsis aria-hidden="true" className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
+          >
+            <MenuItem
+              onSelect={() => {
+                setAdding(true);
+              }}
+            >
+              <LuLayoutDashboard aria-hidden="true" className="h-3.5 w-3.5" />
+              Add to dashboard
+            </MenuItem>
+          </Menu>
+        )}
         <IconButton size="sm" label="Close insights" onClick={onClose}>
           <LuX aria-hidden="true" className="h-3.5 w-3.5" />
         </IconButton>
@@ -293,8 +338,11 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
               setMeasure(event.target.value as InsightMeasure);
             }}
           >
-            <option value="count">Issue count</option>
-            <option value="points">Estimate points</option>
+            {INSIGHT_MEASURES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
         </label>
       </div>
@@ -310,9 +358,11 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
         ) : (
           <div className="flex flex-col gap-3">
             <p className="px-2 text-xs text-text-muted">
-              {data.measure === 'points'
-                ? `${formatMeasure(data.total, 'points')} over ${formatMeasure(data.issue_count, 'count')}`
-                : formatMeasure(data.total, 'count')}
+              {isTimeMeasure(data.measure)
+                ? timedSummary(data.issue_count, data.durations?.average)
+                : data.measure === 'points'
+                  ? `${formatMeasure(data.total, 'points')} over ${formatMeasure(data.issue_count, 'count')}`
+                  : formatMeasure(data.total, 'count')}
             </p>
             {data.truncated && (
               <p className="mx-2 rounded-md border border-line px-2 py-1.5 text-xs text-text-muted">
@@ -320,10 +370,30 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
                 for exact figures.
               </p>
             )}
-            <InsightsChart data={data} onPick={onPick} />
+            {isTimeMeasure(data.measure) ? (
+              <InsightsScatter data={data} onOpenIssue={peekIssue} />
+            ) : (
+              <InsightsChart data={data} onPick={onPick} />
+            )}
           </div>
         )}
       </div>
+      {adding && widget !== undefined && (
+        <AddToDashboardDialog
+          workspaceId={workspaceId}
+          widget={{
+            ...widget,
+            kind: 'chart',
+            group_by: groupBy,
+            segment_by:
+              segmentBy === '' || segmentBy === groupBy ? null : segmentBy,
+            measure,
+          }}
+          onClose={() => {
+            setAdding(false);
+          }}
+        />
+      )}
     </aside>
   );
 };

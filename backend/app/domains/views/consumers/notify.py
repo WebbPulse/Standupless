@@ -76,6 +76,7 @@ from app.common.db.dynamo.users import User
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.team_privacy import person_can_see_team
+from app.common.trash_stream import touches_trash
 from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
@@ -175,11 +176,11 @@ def can_receive(repositories: Repositories, workspace_id: str, team_id: str, use
 
 
 def can_receive_workspace_subject(repositories: Repositories, workspace_id: str, user_id: str) -> bool:
-    """Whether one person is a workspace member other than a guest, who alone reads workspace level subjects."""
+    """Whether one person is an active workspace member other than a guest, who alone reads workspace level subjects."""
     if not workspace_id or not user_id:
         return False
     membership = repositories.memberships.get(workspace_id, user_id)
-    return membership is not None and membership.role != "guest"
+    return membership is not None and membership.role != "guest" and not membership.is_suspended
 
 
 def actor_name(repositories: Repositories, actor_id: str) -> str:
@@ -1134,6 +1135,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     are imported here rather than at the top because they build on this module's
     writers.
 
+    An issue moving into, out of or within the trash notifies nobody.
+
     A record whose ARN names none of the six tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
@@ -1161,6 +1164,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     prefix = settings.dynamodb_table_prefix
 
     if physical == table_name("issues", prefix):
+        if touches_trash(record):
+            return
         written = handle_issue_record(repositories, record)
     elif physical == table_name("comments", prefix):
         written = handle_comment_record(repositories, record)

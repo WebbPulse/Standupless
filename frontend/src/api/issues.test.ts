@@ -17,6 +17,7 @@ import {
   createIssue,
   createLink,
   deleteIssue,
+  deleteIssuePermanently,
   deleteLink,
   emptyActivityPage,
   emptyPage,
@@ -31,11 +32,13 @@ import {
   issuesExportPath,
   issuesPath,
   listActivity,
+  listDeletedIssues,
   listChildren,
   listIssueDelta,
   listIssues,
   listLinks,
   orderBetween,
+  restoreIssue,
   updateIssue,
 } from './issues';
 import type { ActivityRead, IssueRead, LinkRead } from '../types/Api';
@@ -338,6 +341,42 @@ describe('the single issue routes', () => {
       '/workspaces/ws-mine/issues/iss-1',
       undefined
     );
+  });
+});
+
+describe('the trash routes', () => {
+  it('restores an issue from the trash', async () => {
+    post.mockResolvedValue({ data: issue });
+
+    await expect(restoreIssue(WS, ISSUE)).resolves.toEqual(issue);
+    expect(post).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/issues/iss-1/restore',
+      undefined,
+      undefined
+    );
+  });
+
+  it('deletes an issue permanently', async () => {
+    del.mockResolvedValue({ data: undefined });
+
+    await deleteIssuePermanently(WS, ISSUE);
+
+    expect(del).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/issues/iss-1/permanent',
+      undefined
+    );
+  });
+
+  it('lists one team trash with its retention', async () => {
+    get.mockResolvedValue({ data: { issues: [issue], retention_days: 30 } });
+
+    await expect(listDeletedIssues(WS, 'proj-1')).resolves.toEqual({
+      issues: [issue],
+      retention_days: 30,
+    });
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/issues/deleted', {
+      query: { team_id: 'proj-1' },
+    });
   });
 });
 

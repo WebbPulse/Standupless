@@ -1,19 +1,45 @@
 /**
- * The new issue a person was writing when the create dialog closed, kept in
- * this browser per workspace and per viewer so pressing C again brings it
- * back. Storage can be missing, full or hold something another version wrote,
- * so anything unreadable reads as no draft, and a refused write reports
- * failure so the dialog can fall back to asking before it throws text away.
+ * The new issues a person has started in the create dialog and not filed yet,
+ * kept on the server per workspace and per viewer so they follow the person
+ * across devices, many at a time.
+ *
+ * Every change lands first in a small outbox in this browser and is then sent,
+ * so a failed request or a closed tab never loses typed text: the outbox is
+ * sent again on the next load. A discard is held in the outbox the same way,
+ * as a tombstone, until the server has removed the draft. Storage can be
+ * missing, full or hold something another version wrote, so anything
+ * unreadable reads as nothing held, and a refused write reports failure so
+ * the dialog can fall back to asking before it throws text away.
+ *
+ * The single draft an earlier version kept in this browser is moved into the
+ * outbox once, and sent from there like any other.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
+import {
+  deleteNewIssueDraft,
+  listNewIssueDrafts,
+  saveNewIssueDraft,
+} from '../api/newIssueDrafts';
 import { hasPending, stripPending } from './draftUploads';
-import type { IssuePriority } from '../types/Api';
+import { CONFLICT, hasStatus } from './errors';
+import type {
+  IssueDraftRead,
+  IssueDraftWrite,
+  IssuePriority,
+} from '../types/Api';
 
-/** The prefix every draft's storage key starts with. */
+/** The prefix of the single draft an earlier version kept in this browser. */
 export const ISSUE_DRAFT_STORAGE_PREFIX = 'standupless.issueDraft';
 
-/** The window event fired whenever a draft is written or cleared here. */
+/** The prefix of the outbox of drafts not yet confirmed by the server. */
+export const ISSUE_DRAFT_OUTBOX_PREFIX = 'standupless.issueDrafts';
+
+/** What a person reads once they hold as many drafts as they may keep. */
+export const ISSUE_DRAFT_LIMIT_MESSAGE =
+  'You have reached the most drafts you can keep. Delete a draft to save another.';
+
+/** The window event fired whenever a draft changes here. */
 const CHANGE_EVENT = 'standupless:issue-draft';
 
 /** The parent a draft is filed under. */
@@ -46,6 +72,24 @@ export interface IssueDraft {
   subIssues: string[];
 }
 
+/** One draft in the Drafts list, with its id and when it was last saved. */
+export interface SavedIssueDraft {
+  id: string;
+  draft: IssueDraft;
+  updatedAt: string;
+}
+
+/** How sending one draft to the server ended. */
+export type IssueDraftUpload = 'saved' | 'limit' | 'failed';
+
+/** One outbox entry: the draft to save, or null for a discard still to send. */
+interface OutboxEntry {
+  draft: IssueDraft | null;
+  updatedAt: string;
+}
+
+type Outbox = Record<string, OutboxEntry>;
+
 const PRIORITIES: readonly string[] = [
   'none',
   'urgent',
@@ -54,17 +98,42 @@ const PRIORITIES: readonly string[] = [
   'low',
 ];
 
-/** The storage key of one viewer's draft in one workspace, or null without both. */
+/** Whether a viewer and workspace are both known. */
+const known = (
+  workspaceId: string,
+  viewerId: string | null | undefined
+): viewerId is string =>
+  workspaceId !== '' &&
+  viewerId !== null &&
+  viewerId !== undefined &&
+  viewerId !== '';
+
+/** The storage key of the earlier single draft, or null without both ids. */
 export const issueDraftStorageKey = (
   workspaceId: string,
   viewerId: string | null | undefined
 ): string | null =>
-  workspaceId === '' ||
-  viewerId === null ||
-  viewerId === undefined ||
-  viewerId === ''
-    ? null
-    : `${ISSUE_DRAFT_STORAGE_PREFIX}.${workspaceId}.${viewerId}`;
+  known(workspaceId, viewerId)
+    ? `${ISSUE_DRAFT_STORAGE_PREFIX}.${workspaceId}.${viewerId}`
+    : null;
+
+/** The storage key of one viewer's outbox in one workspace, or null without both. */
+export const issueDraftOutboxKey = (
+  workspaceId: string,
+  viewerId: string | null | undefined
+): string | null =>
+  known(workspaceId, viewerId)
+    ? `${ISSUE_DRAFT_OUTBOX_PREFIX}.${workspaceId}.${viewerId}`
+    : null;
+
+/** A fresh draft id, unique enough to be named before the first save. */
+export const newIssueDraftId = (): string => {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+};
 
 /** Whether a value is a string or null. */
 const isNullableString = (value: unknown): value is string | null =>
@@ -124,6 +193,94 @@ export const isIssueDraft = (value: unknown): value is IssueDraft => {
   );
 };
 
+/** Whether a draft holds anything typed, the same test the server holds a save to. */
+export const issueDraftHasContent = (draft: IssueDraft): boolean =>
+  draft.title.trim() !== '' ||
+  draft.body.trim() !== '' ||
+  draft.subIssues.some((row) => row.trim() !== '') ||
+  Object.values(draft.answers).some(
+    (answer) =>
+      answer === true || (typeof answer === 'string' && answer.trim() !== '')
+  );
+
+/**
+ * A draft as it is kept: placeholders for files not yet uploaded are taken out
+ * of the description, since those files cannot outlive the dialog, and blank
+ * sub-issue rows are dropped.
+ */
+const keptDraft = (draft: IssueDraft): IssueDraft => ({
+  ...draft,
+  body: hasPending(draft.body) ? stripPending(draft.body) : draft.body,
+  subIssues: draft.subIssues.filter((row) => row.trim() !== ''),
+});
+
+/** The body the save route takes for a draft. */
+export const issueDraftWrite = (draft: IssueDraft): IssueDraftWrite => ({
+  team_id: draft.teamId,
+  title: draft.title,
+  body: draft.body,
+  template_id: draft.templateId,
+  template_title: draft.templateTitle,
+  template_body: draft.templateBody,
+  answers: draft.answers,
+  status_id: draft.statusId === '' ? null : draft.statusId,
+  priority: draft.priority,
+  assignee_id: draft.assigneeId,
+  label_ids: draft.labelIds,
+  estimate: draft.estimate,
+  project_id: draft.projectId,
+  project_milestone_id: draft.projectMilestoneId,
+  cycle_id: draft.cycleId,
+  start_date: draft.startDate,
+  due_date: draft.dueDate,
+  parent_id: draft.parent?.id ?? null,
+  parent_key: draft.parent?.key ?? null,
+  parent_title: draft.parent?.title ?? null,
+  sub_issues: draft.subIssues,
+});
+
+/** A draft the server sent back, as the dialog holds it. */
+export const issueDraftOfRead = (row: IssueDraftRead): SavedIssueDraft => ({
+  id: row.draft_id,
+  updatedAt: row.updated_at,
+  draft: {
+    teamId: row.team_id,
+    title: row.title,
+    body: row.body,
+    templateId: row.template_id ?? null,
+    templateTitle: row.template_title ?? '',
+    templateBody: row.template_body ?? '',
+    answers: row.answers ?? {},
+    statusId: row.status_id ?? '',
+    priority: PRIORITIES.includes(row.priority ?? '')
+      ? (row.priority as IssuePriority)
+      : 'none',
+    assigneeId: row.assignee_id ?? null,
+    labelIds: row.label_ids ?? [],
+    estimate: row.estimate ?? null,
+    projectId: row.project_id ?? null,
+    projectMilestoneId: row.project_milestone_id ?? null,
+    cycleId: row.cycle_id ?? null,
+    startDate: row.start_date ?? null,
+    dueDate: row.due_date ?? null,
+    parent:
+      row.parent_id === null || row.parent_id === undefined
+        ? null
+        : {
+            id: row.parent_id,
+            key: row.parent_key ?? '',
+            title: row.parent_title ?? '',
+          },
+    subIssues: row.sub_issues ?? [],
+  },
+});
+
+/** The drafts the server last listed, per outbox key. */
+const serverDrafts = new Map<string, SavedIssueDraft[]>();
+
+/** The send in flight per draft, so saves of one draft never overtake each other. */
+const sends = new Map<string, Promise<IssueDraftUpload>>();
+
 /** Tells this tab's listeners that a draft changed. */
 const announce = (): void => {
   try {
@@ -133,66 +290,255 @@ const announce = (): void => {
   }
 };
 
-/** The saved draft, or null when there is none or storage is unreadable. */
-export const readIssueDraft = (
-  workspaceId: string,
-  viewerId: string | null | undefined
-): IssueDraft | null => {
-  const storageKey = issueDraftStorageKey(workspaceId, viewerId);
-  if (storageKey === null) return null;
+/** Whether a parsed value is an outbox entry. */
+const isEntry = (value: unknown): value is OutboxEntry => {
+  if (typeof value !== 'object' || value === null) return false;
+  const row = value as Partial<Record<keyof OutboxEntry, unknown>>;
+  return (
+    typeof row.updatedAt === 'string' &&
+    (row.draft === null || isIssueDraft(row.draft))
+  );
+};
+
+/** The outbox under one key, reading anything unreadable as empty. */
+const readOutbox = (storageKey: string): Outbox => {
   try {
     const raw = globalThis.localStorage.getItem(storageKey);
-    if (raw === null) return null;
+    if (raw === null) return {};
     const parsed: unknown = JSON.parse(raw);
-    return isIssueDraft(parsed) ? parsed : null;
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    const outbox: Outbox = {};
+    for (const [id, entry] of Object.entries(parsed)) {
+      if (isEntry(entry)) outbox[id] = entry;
+    }
+    return outbox;
   } catch {
-    return null;
+    return {};
   }
 };
 
-/**
- * Saves a draft, with placeholders for files not yet uploaded taken out of
- * its description since those files cannot outlive the dialog. Answers
- * whether the draft is now stored.
- */
-export const writeIssueDraft = (
-  workspaceId: string,
-  viewerId: string | null | undefined,
-  draft: IssueDraft
-): boolean => {
-  const storageKey = issueDraftStorageKey(workspaceId, viewerId);
-  if (storageKey === null) return false;
-  const stored: IssueDraft = {
-    ...draft,
-    body: hasPending(draft.body) ? stripPending(draft.body) : draft.body,
-    subIssues: draft.subIssues.filter((row) => row.trim() !== ''),
-  };
+/** Writes the outbox under one key, answering whether it is stored. */
+const writeOutbox = (storageKey: string, outbox: Outbox): boolean => {
   try {
-    const next = JSON.stringify(stored);
-    const held = globalThis.localStorage.getItem(storageKey);
-    if (held === next) return true;
-    globalThis.localStorage.setItem(storageKey, next);
+    if (Object.keys(outbox).length === 0) {
+      globalThis.localStorage.removeItem(storageKey);
+    } else {
+      globalThis.localStorage.setItem(storageKey, JSON.stringify(outbox));
+    }
+    return true;
   } catch {
     return false;
   }
+};
+
+/** The drafts the server holds and the outbox has not changed, merged with the outbox, newest first. */
+const mergedDrafts = (storageKey: string): SavedIssueDraft[] => {
+  const byId = new Map<string, SavedIssueDraft>();
+  for (const row of serverDrafts.get(storageKey) ?? []) byId.set(row.id, row);
+  for (const [id, entry] of Object.entries(readOutbox(storageKey))) {
+    if (entry.draft === null) byId.delete(id);
+    else byId.set(id, { id, draft: entry.draft, updatedAt: entry.updatedAt });
+  }
+  return [...byId.values()].sort((left, right) => {
+    const byTime = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    if (Number.isFinite(byTime) && byTime !== 0) return byTime;
+    return right.id < left.id ? -1 : right.id > left.id ? 1 : 0;
+  });
+};
+
+/** The viewer's drafts in one workspace, newest first, as this tab knows them. */
+export const readIssueDrafts = (
+  workspaceId: string,
+  viewerId: string | null | undefined
+): SavedIssueDraft[] => {
+  const storageKey = issueDraftOutboxKey(workspaceId, viewerId);
+  return storageKey === null ? [] : mergedDrafts(storageKey);
+};
+
+/**
+ * Holds a draft in the outbox to be sent, or a discard when it holds nothing
+ * typed. Answers whether the change is stored, so the dialog can ask before
+ * it closes over text it could not keep.
+ */
+export const stashIssueDraft = (
+  workspaceId: string,
+  viewerId: string | null | undefined,
+  draftId: string,
+  draft: IssueDraft
+): boolean => {
+  const storageKey = issueDraftOutboxKey(workspaceId, viewerId);
+  if (storageKey === null) return false;
+  const kept = keptDraft(draft);
+  const typed = issueDraftHasContent(kept);
+  const outbox = readOutbox(storageKey);
+  const held = outbox[draftId];
+  const current =
+    held === undefined
+      ? serverDrafts.get(storageKey)?.find((row) => row.id === draftId)?.draft
+      : held.draft;
+  const next = typed ? kept : null;
+  if (JSON.stringify(current ?? null) === JSON.stringify(next)) {
+    return true;
+  }
+  outbox[draftId] = { draft: next, updatedAt: new Date().toISOString() };
+  if (!writeOutbox(storageKey, outbox)) return false;
   announce();
   return true;
 };
 
-/** Removes the saved draft, if any. */
-export const clearIssueDraft = (
+/**
+ * Sends one draft's held change to the server and, once it is confirmed and
+ * unchanged since, drops it from the outbox. Answers "limit" when the person
+ * already keeps as many drafts as they may, leaving the draft held here.
+ */
+export const uploadIssueDraft = (
+  workspaceId: string,
+  viewerId: string | null | undefined,
+  draftId: string
+): Promise<IssueDraftUpload> => {
+  const storageKey = issueDraftOutboxKey(workspaceId, viewerId);
+  if (storageKey === null) return Promise.resolve('failed');
+  const sendKey = `${storageKey}.${draftId}`;
+  const send = async (): Promise<IssueDraftUpload> => {
+    const entry = readOutbox(storageKey)[draftId];
+    if (entry === undefined) return 'saved';
+    const listed = serverDrafts.get(storageKey) ?? [];
+    try {
+      if (entry.draft === null) {
+        await deleteNewIssueDraft(workspaceId, draftId);
+        serverDrafts.set(
+          storageKey,
+          listed.filter((row) => row.id !== draftId)
+        );
+      } else {
+        const saved: IssueDraftRead | undefined = await saveNewIssueDraft(
+          workspaceId,
+          draftId,
+          issueDraftWrite(entry.draft)
+        );
+        const row: SavedIssueDraft =
+          saved?.draft_id === undefined
+            ? { id: draftId, draft: entry.draft, updatedAt: entry.updatedAt }
+            : issueDraftOfRead(saved);
+        serverDrafts.set(storageKey, [
+          row,
+          ...listed.filter((held) => held.id !== draftId),
+        ]);
+      }
+    } catch (error) {
+      return hasStatus(error, CONFLICT) ? 'limit' : 'failed';
+    }
+    const outbox = readOutbox(storageKey);
+    if (JSON.stringify(outbox[draftId]) === JSON.stringify(entry)) {
+      writeOutbox(
+        storageKey,
+        Object.fromEntries(
+          Object.entries(outbox).filter(([id]) => id !== draftId)
+        )
+      );
+    }
+    announce();
+    return 'saved';
+  };
+  const next = (
+    sends.get(sendKey) ?? Promise.resolve<IssueDraftUpload>('saved')
+  )
+    .catch(() => 'failed' as const)
+    .then(send);
+  sends.set(sendKey, next);
+  void next.finally(() => {
+    if (sends.get(sendKey) === next) sends.delete(sendKey);
+  });
+  return next;
+};
+
+/** Discards one draft here at once and on the server as soon as it answers. */
+export const discardIssueDraft = (
+  workspaceId: string,
+  viewerId: string | null | undefined,
+  draftId: string
+): void => {
+  const storageKey = issueDraftOutboxKey(workspaceId, viewerId);
+  if (storageKey === null) return;
+  const outbox = readOutbox(storageKey);
+  const listed = serverDrafts.get(storageKey) ?? [];
+  const onServer = listed.some((row) => row.id === draftId);
+  if (outbox[draftId] === undefined && !onServer) return;
+  outbox[draftId] = { draft: null, updatedAt: new Date().toISOString() };
+  writeOutbox(storageKey, outbox);
+  serverDrafts.set(
+    storageKey,
+    listed.filter((row) => row.id !== draftId)
+  );
+  announce();
+  void uploadIssueDraft(workspaceId, viewerId, draftId);
+};
+
+/** Sends every change the outbox holds, such as those a closed tab left behind. */
+export const flushIssueDrafts = async (
   workspaceId: string,
   viewerId: string | null | undefined
-): void => {
-  const storageKey = issueDraftStorageKey(workspaceId, viewerId);
+): Promise<void> => {
+  const storageKey = issueDraftOutboxKey(workspaceId, viewerId);
+  if (storageKey === null) return;
+  await Promise.all(
+    Object.keys(readOutbox(storageKey)).map((draftId) =>
+      uploadIssueDraft(workspaceId, viewerId, draftId)
+    )
+  );
+};
+
+/** Reads the viewer's drafts from the server, keeping what was known on a failure. */
+export const refreshIssueDrafts = async (
+  workspaceId: string,
+  viewerId: string | null | undefined
+): Promise<void> => {
+  const storageKey = issueDraftOutboxKey(workspaceId, viewerId);
   if (storageKey === null) return;
   try {
-    if (globalThis.localStorage.getItem(storageKey) === null) return;
-    globalThis.localStorage.removeItem(storageKey);
+    const rows = await listNewIssueDrafts(workspaceId);
+    serverDrafts.set(storageKey, rows.map(issueDraftOfRead));
   } catch {
     return;
   }
   announce();
+};
+
+/**
+ * Moves the single draft an earlier version kept in this browser into the
+ * outbox under a new id, then removes it, so it is sent once like any other.
+ */
+export const migrateLegacyIssueDraft = (
+  workspaceId: string,
+  viewerId: string | null | undefined
+): void => {
+  const legacyKey = issueDraftStorageKey(workspaceId, viewerId);
+  if (legacyKey === null) return;
+  try {
+    const raw = globalThis.localStorage.getItem(legacyKey);
+    if (raw === null) return;
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+    if (
+      isIssueDraft(parsed) &&
+      !stashIssueDraft(workspaceId, viewerId, newIssueDraftId(), parsed)
+    ) {
+      return;
+    }
+    globalThis.localStorage.removeItem(legacyKey);
+  } catch {
+    return;
+  }
+};
+
+/** Forgets every draft the server listed, for tests and sign out. */
+export const resetIssueDraftCache = (): void => {
+  serverDrafts.clear();
+  sends.clear();
 };
 
 /** Calls back whenever a draft changes in this tab or another one. */
@@ -209,13 +555,15 @@ const subscribe = (onChange: () => void): (() => void) => {
   };
 };
 
-/** Whether a draft is saved for this viewer in this workspace, kept current. */
-export const useHasIssueDraft = (
+/** The viewer's drafts in one workspace, newest first, kept current. */
+export const useIssueDrafts = (
   workspaceId: string,
   viewerId: string | null | undefined
-): boolean =>
-  useSyncExternalStore(
+): SavedIssueDraft[] => {
+  const snapshot = useSyncExternalStore(
     subscribe,
-    () => readIssueDraft(workspaceId, viewerId) !== null,
-    () => false
+    () => JSON.stringify(readIssueDrafts(workspaceId, viewerId)),
+    () => '[]'
   );
+  return useMemo(() => JSON.parse(snapshot) as SavedIssueDraft[], [snapshot]);
+};

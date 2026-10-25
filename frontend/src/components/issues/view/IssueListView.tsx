@@ -94,6 +94,7 @@ import { boardStep } from '../../../lib/boardNav';
 import {
   CONVERT_TO_PROJECT_LABEL,
   DUPLICATE_ISSUE_LABEL,
+  duplicateAsks,
   convertedPath,
   duplicatePath,
   runDuplicate,
@@ -134,6 +135,7 @@ import PropertyCommand from './PropertyCommand';
 import { usePropertyValues } from './propertyValues';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
+import DuplicateIssueDialog from '../DuplicateIssueDialog';
 import {
   MOVE_ISSUE_KEYS,
   MOVE_ISSUE_LABEL,
@@ -158,6 +160,8 @@ export interface IssueListViewProps {
   collection: IssueCollection;
   lists: IssueContextState;
   scaleFor: (teamId: string) => EstimateScale;
+  /** Whether a team counts an unestimated issue as one point in a total estimate. */
+  countsUnestimated?: ((teamId: string) => boolean) | undefined;
   estimateOptionsFor?: (teamId: string) => EstimateOptions;
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
@@ -243,6 +247,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   collection,
   lists,
   scaleFor,
+  countsUnestimated,
   estimateOptionsFor,
   teamNameFor,
   canEdit,
@@ -284,6 +289,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [command, setCommand] = useState<OpenCommand | null>(null);
   const [parenting, setParenting] = useState<string[] | null>(null);
   const [converting, setConverting] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
@@ -803,6 +809,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     );
   };
   const duplicate = async (issue: OrderedIssueRead): Promise<void> => {
+    if (duplicateAsks(issue)) {
+      setDuplicating(issue.id);
+      return;
+    }
     const copy = await runDuplicate(workspaceId, issue);
     if (copy === null) return;
     invalidateQueries(queryKey);
@@ -1133,6 +1143,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       context,
       forTeam,
       scaleFor,
+      countsUnestimated,
       ...(estimateOptionsFor === undefined ? {} : { estimateOptionsFor }),
       ...(teamNameFor === undefined ? {} : { teamNameFor }),
       canEdit,
@@ -1157,6 +1168,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       context,
       forTeam,
       scaleFor,
+      countsUnestimated,
       estimateOptionsFor,
       teamNameFor,
       canEdit,
@@ -1186,6 +1198,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const commandIssues = command === null ? [] : resolve(command.ids);
   const parentIssues = parenting === null ? [] : resolve(parenting);
   const [convertIssue] = converting === null ? [] : resolve([converting]);
+  const [duplicateTarget] = duplicating === null ? [] : resolve([duplicating]);
   const [renameIssue] = renaming === null ? [] : resolve([renaming]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const movingIssues = moving === null ? [] : resolve(moving);
@@ -1435,6 +1448,19 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
           onClose={() => {
             setParenting(null);
+          }}
+        />
+      )}
+      {duplicateTarget !== undefined && (
+        <DuplicateIssueDialog
+          workspaceId={workspaceId}
+          issue={duplicateTarget}
+          onClose={() => {
+            setDuplicating(null);
+          }}
+          onDuplicated={(copy) => {
+            invalidateQueries(queryKey);
+            void navigate(duplicatePath(slug, copy));
           }}
         />
       )}

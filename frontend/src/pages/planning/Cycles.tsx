@@ -13,9 +13,18 @@
  * the highlighted cycle.
  *
  * Every cycle row and the current cycle's card carry a `...` menu with
- * cancel or restore and delete. The next upcoming cycle's menu also offers
- * "Start cycle today", which ends the current cycle yesterday and moves its
- * open issues across, behind a confirm that names the cycle and the count.
+ * "Edit cycle..." for the name, goal and dates, cancel or restore, and
+ * delete. The next upcoming cycle's menu also offers "Start cycle today",
+ * which ends the current cycle yesterday and moves its open issues across,
+ * behind a confirm that names the cycle and the count, and the current
+ * cycle's offers "End cycle today", behind a confirm that its unfinished
+ * issues roll into the next cycle and that it cannot be undone. An edit or a
+ * cancel shows at once and offers Undo once it lands.
+ *
+ * Where the dates leave days with no cycle, a muted "Cycles paused" row sits
+ * between the cycles, read from the server's gap field. Each upcoming row
+ * carries a capacity dial: how much of the last three cycles' velocity the
+ * cycle already holds.
  *
  * The header's `...` menu offers "Subscribe to cycle calendar", a private
  * feed URL that puts the team's cycles in a calendar app as all-day events.
@@ -38,8 +47,11 @@ import {
   LuBan,
   LuCalendarPlus,
   LuChevronRight,
+  LuCalendarCheck,
   LuEllipsis,
   LuLayers,
+  LuPause,
+  LuPencil,
   LuPlay,
   LuPlus,
   LuRotateCcw,
@@ -49,6 +61,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   createCycle,
   deleteCycle,
+  endCycleToday,
   getVelocity,
   listCycles,
   startCycleToday,
@@ -62,7 +75,9 @@ import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import Spinner from '../../components/ui/spinner';
+import CapacityDial from '../../components/planning/CapacityDial';
 import CycleCalendarDialog from '../../components/planning/CycleCalendarDialog';
+import EditCycleDialog from '../../components/planning/EditCycleDialog';
 import ProgressBar from '../../components/planning/ProgressBar';
 import ProgressRing from '../../components/planning/ProgressRing';
 import VelocityPanel from '../../components/planning/VelocityPanel';
@@ -89,9 +104,22 @@ import {
   shortCountsLabel,
 } from '../../lib/planningDisplay';
 import { cyclePath } from '../../lib/paths';
+import {
+  cycleCapacity,
+  cycleEntries,
+  pausedLabel,
+  type CycleCapacity,
+  type CycleEdit,
+} from '../../lib/planningModel';
 import { cyclesKey } from '../../lib/queryKeys';
+import { showErrorToast, showToast } from '../../lib/toast';
 import { validateCycleDates } from '../../lib/validation';
-import type { CycleListRead, CycleRead, CycleStatus } from '../../types/Api';
+import type {
+  CycleListRead,
+  CycleRead,
+  CycleStatus,
+  VelocityRead,
+} from '../../types/Api';
 
 /** How often the list re-reads. */
 const POLL_MS = 60000;
@@ -110,9 +138,12 @@ interface CycleRowProps {
   href: string;
   canEdit: boolean;
   isAdmin: boolean;
+  onEdit: (cycle: CycleRead) => void;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
   onStartToday?: ((cycle: CycleRead) => void) | undefined;
+  /** The cycle's capacity dial, drawn only for one that has not started. */
+  capacity?: CycleCapacity | null;
   isActive: boolean;
   rowRef: (node: HTMLElement | null) => void;
   onPointerEnter: () => void;
@@ -123,14 +154,18 @@ interface CycleMenuProps {
   cycle: CycleRead;
   canEdit: boolean;
   isAdmin: boolean;
+  onEdit: (cycle: CycleRead) => void;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
   /** Present only on the next upcoming cycle, the one that may start today. */
   onStartToday?: ((cycle: CycleRead) => void) | undefined;
+  /** Present only on the current cycle, the one that may end today. */
+  onEndToday?: ((cycle: CycleRead) => void) | undefined;
 }
 
 /**
- * The `...` menu for one cycle: start today, cancel or restore, and delete.
+ * The `...` menu for one cycle: edit, start or end today, cancel or restore,
+ * and delete.
  * Shared by the rows and the active card, because the running cycle is the
  * one most likely to need cancelling and must not lose the actions by being
  * promoted. Draws nothing for a caller who may do none of them.
@@ -139,9 +174,11 @@ const CycleMenu: React.FC<CycleMenuProps> = ({
   cycle,
   canEdit,
   isAdmin,
+  onEdit,
   onCancel,
   onDelete,
   onStartToday,
+  onEndToday,
 }) => {
   if (!canEdit && !isAdmin) return null;
   const title = cycleTitle(cycle);
@@ -155,6 +192,16 @@ const CycleMenu: React.FC<CycleMenuProps> = ({
         </IconButton>
       )}
     >
+      {canEdit && (
+        <MenuItem
+          onSelect={() => {
+            onEdit(cycle);
+          }}
+        >
+          <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+          Edit cycle...
+        </MenuItem>
+      )}
       {canEdit && onStartToday !== undefined && (
         <MenuItem
           onSelect={() => {
@@ -163,6 +210,16 @@ const CycleMenu: React.FC<CycleMenuProps> = ({
         >
           <LuPlay aria-hidden="true" className="h-3.5 w-3.5" />
           Start cycle today
+        </MenuItem>
+      )}
+      {canEdit && onEndToday !== undefined && (
+        <MenuItem
+          onSelect={() => {
+            onEndToday(cycle);
+          }}
+        >
+          <LuCalendarCheck aria-hidden="true" className="h-3.5 w-3.5" />
+          End cycle today
         </MenuItem>
       )}
       {canEdit && (
@@ -213,15 +270,40 @@ const startTodayMessage = (
   return `${title} will start today and ${cycleTitle(current)} will end yesterday. ${issues} will move from ${cycleTitle(current)} into ${title}.`;
 };
 
+/** The confirm sentence for ending the current cycle today. */
+const endTodayMessage = (cycle: CycleRead): string => {
+  const count = movingCount(cycle);
+  const issues =
+    count === 0
+      ? 'Any unfinished issues'
+      : count === 1
+        ? 'Its 1 unfinished issue'
+        : `Its ${String(count)} unfinished issues`;
+  return `${cycleTitle(cycle)} will end at the close of today. ${issues} will roll into the next cycle. This cannot be undone.`;
+};
+
+/** A muted row for the days between two cycles that no cycle covers. */
+const PausedRow: React.FC<{ days: number }> = ({ days }) => (
+  <li
+    className="flex h-8 items-center gap-3 border-b border-line bg-bg px-3 text-xs text-text-faint last:border-b-0"
+    data-testid="cycles-paused"
+  >
+    <LuPause aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+    <span className="tabular-nums">{pausedLabel(days)}</span>
+  </li>
+);
+
 /** One cycle as a dense row that opens its page, in the upcoming and past lists. */
 const CycleRow: React.FC<CycleRowProps> = ({
   cycle,
   href,
   canEdit,
   isAdmin,
+  onEdit,
   onCancel,
   onDelete,
   onStartToday,
+  capacity = null,
   isActive,
   rowRef,
   onPointerEnter,
@@ -258,6 +340,11 @@ const CycleRow: React.FC<CycleRowProps> = ({
           {CYCLE_STATUS_LABELS[cycle.status]}
         </Badge>
       )}
+      {capacity !== null && (
+        <span className="relative z-10 flex shrink-0 items-center">
+          <CapacityDial capacity={capacity} />
+        </span>
+      )}
       <span className="pointer-events-none shrink-0 text-xs whitespace-nowrap text-text-muted tabular-nums">
         {cycleDatesLabel(cycle.start_date, cycle.end_date)}
       </span>
@@ -269,6 +356,7 @@ const CycleRow: React.FC<CycleRowProps> = ({
           cycle={cycle}
           canEdit={canEdit}
           isAdmin={isAdmin}
+          onEdit={onEdit}
           onCancel={onCancel}
           onDelete={onDelete}
           onStartToday={onStartToday}
@@ -292,8 +380,10 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
   href,
   canEdit,
   isAdmin,
+  onEdit,
   onCancel,
   onDelete,
+  onEndToday,
   isActive,
   cardRef,
   onPointerEnter,
@@ -331,8 +421,10 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
             cycle={cycle}
             canEdit={canEdit}
             isAdmin={isAdmin}
+            onEdit={onEdit}
             onCancel={onCancel}
             onDelete={onDelete}
+            onEndToday={onEndToday}
           />
         </span>
       </div>
@@ -363,8 +455,15 @@ interface CycleGroupProps {
   onToggle: () => void;
   canEdit: boolean;
   isAdmin: boolean;
+  onEdit: (cycle: CycleRead) => void;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
+  /** Whether the rows read oldest first, or newest first as the past does. */
+  order?: 'ascending' | 'descending';
+  /** The cycle after the group, whose paused days lead a descending list. */
+  after?: CycleRead | undefined;
+  /** The team's velocity, for the capacity dial on a cycle not yet started. */
+  velocity?: VelocityRead | null;
   /** The one cycle of the group that may start today, if any. */
   startableId?: string | null;
   onStartToday?: ((cycle: CycleRead) => void) | undefined;
@@ -388,8 +487,12 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
   onToggle,
   canEdit,
   isAdmin,
+  onEdit,
   onCancel,
   onDelete,
+  order = 'ascending',
+  after,
+  velocity = null,
   startableId = null,
   onStartToday,
   start,
@@ -398,6 +501,10 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
   setActiveIndex,
 }) => {
   if (cycles.length === 0) return null;
+  const entries = cycleEntries(cycles, order, after);
+  const positions = new Map(
+    cycles.map((cycle, index) => [cycle.cycle_id, start + index])
+  );
 
   return (
     <section>
@@ -421,25 +528,36 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
       </button>
       {isOpen && (
         <ul className="rounded-md border border-line">
-          {cycles.map((cycle, index) => (
-            <CycleRow
-              key={cycle.cycle_id}
-              cycle={cycle}
-              href={hrefFor(cycle)}
-              canEdit={canEdit}
-              isAdmin={isAdmin}
-              onCancel={onCancel}
-              onDelete={onDelete}
-              onStartToday={
-                cycle.cycle_id === startableId ? onStartToday : undefined
-              }
-              isActive={start + index === activeIndex}
-              rowRef={registerItem(start + index)}
-              onPointerEnter={() => {
-                setActiveIndex(start + index);
-              }}
-            />
-          ))}
+          {entries.map((entry) => {
+            if (entry.kind === 'gap') {
+              return <PausedRow key={entry.key} days={entry.days} />;
+            }
+            const { cycle } = entry;
+            const position = positions.get(cycle.cycle_id) ?? start;
+            return (
+              <CycleRow
+                key={cycle.cycle_id}
+                cycle={cycle}
+                href={hrefFor(cycle)}
+                canEdit={canEdit}
+                isAdmin={isAdmin}
+                onEdit={onEdit}
+                onCancel={onCancel}
+                onDelete={onDelete}
+                onStartToday={
+                  cycle.cycle_id === startableId ? onStartToday : undefined
+                }
+                capacity={
+                  velocity === null ? null : cycleCapacity(velocity, cycle)
+                }
+                isActive={position === activeIndex}
+                rowRef={registerItem(position)}
+                onPointerEnter={() => {
+                  setActiveIndex(position);
+                }}
+              />
+            );
+          })}
         </ul>
       )}
     </section>
@@ -469,6 +587,11 @@ export const Cycles: React.FC = () => {
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
   const [isPastOpen, setIsPastOpen] = useState(false);
   const [starting, setStarting] = useState<CycleRead | null>(null);
+  const [ending, setEnding] = useState<CycleRead | null>(null);
+  const [editing, setEditing] = useState<CycleRead | null>(null);
+  const [overlay, setOverlay] = useState<Record<string, Partial<CycleRead>>>(
+    {}
+  );
 
   const teamId = team?.id ?? '';
   const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
@@ -531,6 +654,41 @@ export const Cycles: React.FC = () => {
     queryKey
   );
 
+  const { mutate: edit } = useMutationWithRefetch(
+    (cycleId: string, patch: CycleEdit) =>
+      updateCycle(workspaceId, cycleId, { team_id: teamId, ...patch }),
+    queryKey
+  );
+
+  const {
+    mutate: endToday,
+    isMutating: isEnding,
+    error: endError,
+  } = useMutationWithRefetch(
+    (cycleId: string) => endCycleToday(workspaceId, cycleId, teamId),
+    queryKey
+  );
+
+  const optimistic = useCallback(
+    async <T,>(
+      cycleId: string,
+      fields: Partial<CycleRead>,
+      run: () => Promise<T>
+    ): Promise<T> => {
+      setOverlay((held) => ({ ...held, [cycleId]: fields }));
+      try {
+        return await run();
+      } finally {
+        setOverlay((held) => {
+          return Object.fromEntries(
+            Object.entries(held).filter(([key]) => key !== cycleId)
+          );
+        });
+      }
+    },
+    []
+  );
+
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
     (cycleId: string) => deleteCycle(workspaceId, cycleId, teamId),
     queryKey
@@ -556,11 +714,67 @@ export const Cycles: React.FC = () => {
 
   const onCancel = useCallback(
     (cycle: CycleRead): void => {
-      void setCancelled(cycle.cycle_id, !cycle.cancelled).catch(
-        () => undefined
-      );
+      const cancelled = !cycle.cancelled;
+      const title = cycleTitle(cycle);
+      void optimistic(
+        cycle.cycle_id,
+        {
+          cancelled,
+          status: cancelled
+            ? 'cancelled'
+            : cycle.status === 'cancelled'
+              ? 'upcoming'
+              : cycle.status,
+        },
+        () => setCancelled(cycle.cycle_id, cancelled)
+      )
+        .then(() => {
+          showToast(
+            `${title} ${cancelled ? 'cancelled' : 'restored'}`,
+            'info',
+            {
+              action: {
+                label: 'Undo',
+                run: () => {
+                  void setCancelled(cycle.cycle_id, !cancelled).catch(() => {
+                    showErrorToast('Could not undo that change.');
+                  });
+                },
+              },
+            }
+          );
+        })
+        .catch(() => undefined);
     },
-    [setCancelled]
+    [setCancelled, optimistic]
+  );
+
+  const onEdit = useCallback((cycle: CycleRead): void => {
+    setEditing(cycle);
+  }, []);
+
+  const saveEdit = useCallback(
+    async (cycle: CycleRead, patch: CycleEdit, before: CycleEdit) => {
+      const shown: Partial<CycleRead> = {};
+      if (patch.name !== undefined) shown.name = patch.name;
+      if (patch.goal !== undefined) shown.goal = patch.goal;
+      await optimistic(cycle.cycle_id, shown, () =>
+        edit(cycle.cycle_id, patch)
+      );
+      showToast(`${cycleTitle({ ...cycle, ...shown })} updated`, 'info', {
+        action: {
+          label: 'Undo',
+          run: () => {
+            void edit(cycle.cycle_id, before).catch((failure: unknown) => {
+              showErrorToast(
+                errorMessage(failure, 'Could not undo that edit.')
+              );
+            });
+          },
+        },
+      });
+    },
+    [edit, optimistic]
   );
 
   const onDelete = useCallback(
@@ -574,7 +788,14 @@ export const Cycles: React.FC = () => {
     setIsCreating(false);
   }, []);
 
-  const cycles = useMemo(() => data?.cycles ?? [], [data]);
+  const cycles = useMemo(
+    () =>
+      (data?.cycles ?? []).map((row) => {
+        const fields = overlay[row.cycle_id];
+        return fields === undefined ? row : { ...row, ...fields };
+      }),
+    [data, overlay]
+  );
   const { active, upcoming, past } = useMemo(
     () => ({
       active: cycles.filter((row) => row.status === 'active'),
@@ -595,6 +816,12 @@ export const Cycles: React.FC = () => {
   }, []);
   const closeStart = useCallback((): void => {
     setStarting(null);
+  }, []);
+  const onEndToday = useCallback((cycle: CycleRead): void => {
+    setEnding(cycle);
+  }, []);
+  const closeEnd = useCallback((): void => {
+    setEnding(null);
   }, []);
   const visible = useMemo(
     () => [
@@ -621,7 +848,12 @@ export const Cycles: React.FC = () => {
     count: visible.length,
     onActivate,
     resetKey: visible.map((row) => row.cycle_id).join(','),
-    enabled: !isCreating && !isSubscribing && starting === null,
+    enabled:
+      !isCreating &&
+      !isSubscribing &&
+      starting === null &&
+      ending === null &&
+      editing === null,
   });
 
   useShortcut({
@@ -739,8 +971,12 @@ export const Cycles: React.FC = () => {
                 href={hrefFor(cycle)}
                 canEdit={canEdit}
                 isAdmin={isAdmin}
+                onEdit={onEdit}
                 onCancel={onCancel}
                 onDelete={onDelete}
+                onEndToday={
+                  !rollUp || cycle.team_id === teamId ? onEndToday : undefined
+                }
                 isActive={index === activeIndex}
                 cardRef={registerItem(index)}
                 onPointerEnter={() => {
@@ -756,6 +992,7 @@ export const Cycles: React.FC = () => {
               cycles={upcoming}
               startableId={startable?.cycle_id ?? null}
               onStartToday={onStartToday}
+              velocity={velocity ?? null}
               hrefFor={hrefFor}
               isOpen={isUpcomingOpen}
               onToggle={() => {
@@ -767,12 +1004,15 @@ export const Cycles: React.FC = () => {
               setActiveIndex={setActiveIndex}
               canEdit={canEdit}
               isAdmin={isAdmin}
+              onEdit={onEdit}
               onCancel={onCancel}
               onDelete={onDelete}
             />
             <CycleGroup
               title="Past"
               cycles={past}
+              order="descending"
+              after={current}
               hrefFor={hrefFor}
               isOpen={isPastOpen}
               onToggle={() => {
@@ -784,6 +1024,7 @@ export const Cycles: React.FC = () => {
               setActiveIndex={setActiveIndex}
               canEdit={canEdit}
               isAdmin={isAdmin}
+              onEdit={onEdit}
               onCancel={onCancel}
               onDelete={onDelete}
             />
@@ -825,6 +1066,47 @@ export const Cycles: React.FC = () => {
             </div>
           </div>
         </Dialog>
+      )}
+
+      {ending !== null && (
+        <Dialog open title="End cycle today" onClose={closeEnd} size="sm">
+          <div className="space-y-4">
+            {endError !== null && (
+              <ErrorAlert
+                message={errorMessage(endError, 'Could not end that cycle.')}
+              />
+            )}
+            <p className="text-sm text-text-muted">{endTodayMessage(ending)}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={closeEnd}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={isEnding}
+                onClick={() => {
+                  void endToday(ending.cycle_id)
+                    .then(() => {
+                      setEnding(null);
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {isEnding ? 'Ending' : `End ${cycleTitle(ending)} today`}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {editing !== null && (
+        <EditCycleDialog
+          cycle={editing}
+          onSave={(patch, before) => saveEdit(editing, patch, before)}
+          onClose={() => {
+            setEditing(null);
+          }}
+        />
       )}
 
       {isSubscribing && (

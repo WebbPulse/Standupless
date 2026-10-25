@@ -2,7 +2,8 @@
  * Grouping an issue's links into rows: a stack is one row in position order,
  * led by its lowest entry still open, and an unstacked pull request is its own
  * row. Covers a three pull request stack, a stack with its bottom entry merged,
- * and an unstacked pull request beside one.
+ * and an unstacked pull request beside one, and which pull request O then G
+ * opens.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -10,6 +11,7 @@ import type { GithubIssueLinkRead } from '../types/Api';
 import {
   ciStateStyle,
   groupPullRequests,
+  pullRequestToOpen,
   reviewStateStyle,
 } from './pullRequestStacks';
 
@@ -83,6 +85,49 @@ describe('groupPullRequests', () => {
     const rows = groupPullRequests([link(7, null), link(10, 1), link(11, 2)]);
 
     expect(rows.map((row) => row.kind)).toEqual(['single', 'stack']);
+  });
+});
+
+/** A link with its linked time set. */
+const linkedAt = (
+  base: GithubIssueLinkRead,
+  at: string
+): GithubIssueLinkRead => ({ ...base, linked_at: at });
+
+describe('pullRequestToOpen', () => {
+  it('opens the most recently linked open pull request over a merged one', () => {
+    const target = pullRequestToOpen([
+      linkedAt(link(1, null, 'merged'), '2026-10-05T00:00:00Z'),
+      linkedAt(link(2, null), '2026-10-02T00:00:00Z'),
+      linkedAt(link(3, null, 'draft'), '2026-10-03T00:00:00Z'),
+    ]);
+
+    expect(target?.pr_number).toBe(3);
+  });
+
+  it('offers only the lowest open entry of a stack', () => {
+    const target = pullRequestToOpen([
+      linkedAt(link(10, 1, 'merged'), '2026-10-01T00:00:00Z'),
+      linkedAt(link(11, 2), '2026-10-02T00:00:00Z'),
+      linkedAt(link(12, 3), '2026-10-03T00:00:00Z'),
+    ]);
+
+    expect(target?.pr_number).toBe(11);
+  });
+
+  it('falls back to the most recently linked merged pull request', () => {
+    const target = pullRequestToOpen([
+      linkedAt(link(1, null, 'merged'), '2026-10-01T00:00:00Z'),
+      linkedAt(link(2, null, 'merged'), '2026-10-04T00:00:00Z'),
+      linkedAt(link(3, null, 'closed'), '2026-10-05T00:00:00Z'),
+    ]);
+
+    expect(target?.pr_number).toBe(2);
+  });
+
+  it('answers null when only closed pull requests are linked', () => {
+    expect(pullRequestToOpen([link(1, null, 'closed')])).toBeNull();
+    expect(pullRequestToOpen([])).toBeNull();
   });
 });
 

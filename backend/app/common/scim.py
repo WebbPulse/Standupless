@@ -238,7 +238,7 @@ def subject_of(repositories: Repositories, row: ScimUserRow) -> str:
 
 
 def guard_last_owner(repositories: Repositories, workspace_id: str, row: ScimUserRow) -> None:
-    """Refuse with 409 to deprovision the workspace's only owner, which would orphan it."""
+    """Refuse with 409 to deprovision the workspace's only active owner, which would orphan it."""
     user_id = subject_of(repositories, row)
     if not user_id:
         return
@@ -246,6 +246,7 @@ def guard_last_owner(repositories: Repositories, workspace_id: str, row: ScimUse
     if (
         membership is not None
         and membership.role == "owner"
+        and not membership.is_suspended
         and repositories.memberships.count_owners(workspace_id) <= 1
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)

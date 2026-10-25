@@ -86,6 +86,8 @@ vi.mock('../../api/discussion', async () => {
 
 vi.mock('../../api/integrations', () => ({
   listThreadTargets: () => listThreadTargets(),
+  listIssueLinks: () => Promise.resolve({ items: [], next_cursor: null }),
+  getIssueSync: () => Promise.resolve(null),
   syncThread: () => Promise.resolve({}),
   unsyncThread: () => Promise.resolve(),
 }));

@@ -8,6 +8,10 @@
  * button sits beside it and hands on the selected range, so the caller can pin
  * a new thread to that passage.
  *
+ * Where the text sits on an issue that may take sub-issues, a Sub-issue button
+ * hands the selected passage on as Markdown, and Ctrl or Cmd Shift O does the
+ * same while the selection is held, ahead of the page's own binding.
+ *
  * The button never takes focus or the selection from the text, so a
  * formatting toolbar over an editable selection keeps working beside it, and
  * it follows the selection as the page scrolls.
@@ -15,7 +19,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LuMessageSquarePlus, LuTextQuote } from 'react-icons/lu';
+import { LuListTree, LuMessageSquarePlus, LuTextQuote } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import { quoteMarkdown, rangeMarkdown } from '../../lib/quote';
 
@@ -25,6 +29,8 @@ export interface SelectionQuoteProps {
   onQuote?: ((markdown: string) => void) | undefined;
   /** Receives the selected range to comment on; unset offers no Comment button. */
   onComment?: ((range: Range) => void) | undefined;
+  /** Receives the selected passage as Markdown to file sub-issues from; unset offers none. */
+  onSubIssue?: ((markdown: string) => void) | undefined;
   /** Hears clicks inside the wrapped text, such as on a highlighted passage. */
   onClick?: React.MouseEventHandler<HTMLDivElement>;
   className?: string;
@@ -57,6 +63,7 @@ const BUTTON_CLASS =
 export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
   onQuote,
   onComment,
+  onSubIssue,
   onClick,
   className,
   children,
@@ -67,8 +74,14 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
   handler.current = onQuote;
   const commenter = useRef(onComment);
   commenter.current = onComment;
+  const subIssuer = useRef(onSubIssue);
+  subIssuer.current = onSubIssue;
+  const subIssueRef = useRef<() => void>(() => undefined);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const enabled = onQuote !== undefined || onComment !== undefined;
+  const enabled =
+    onQuote !== undefined ||
+    onComment !== undefined ||
+    onSubIssue !== undefined;
 
   useEffect(() => {
     if (!enabled) return;
@@ -97,11 +110,28 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
       selected.current = range.cloneRange();
       setAnchor(rangeBox(range));
     };
+    const press = (event: KeyboardEvent): void => {
+      if (
+        subIssuer.current === undefined ||
+        selected.current === null ||
+        !(event.metaKey || event.ctrlKey) ||
+        !event.shiftKey ||
+        event.altKey ||
+        event.key.toLowerCase() !== 'o'
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      subIssueRef.current();
+    };
     document.addEventListener('selectionchange', read);
+    document.addEventListener('keydown', press, true);
     window.addEventListener('scroll', read, true);
     window.addEventListener('resize', read);
     return () => {
       document.removeEventListener('selectionchange', read);
+      document.removeEventListener('keydown', press, true);
       window.removeEventListener('scroll', read, true);
       window.removeEventListener('resize', read);
     };
@@ -124,6 +154,17 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
     if (range === null) return;
     commenter.current?.(range);
   };
+
+  const subIssue = (): void => {
+    const range = selected.current;
+    selected.current = null;
+    setAnchor(null);
+    if (range === null) return;
+    const markdown = rangeMarkdown(range);
+    document.getSelection()?.removeAllRanges();
+    if (markdown !== '') subIssuer.current?.(markdown);
+  };
+  subIssueRef.current = subIssue;
 
   const keepSelection = (event: React.MouseEvent): void => {
     event.preventDefault();
@@ -164,6 +205,18 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
               >
                 <LuTextQuote aria-hidden="true" className="h-3.5 w-3.5" />
                 Quote
+              </button>
+            )}
+            {onSubIssue !== undefined && (
+              <button
+                type="button"
+                aria-label="Create sub-issue from selection"
+                className={BUTTON_CLASS}
+                onMouseDown={keepSelection}
+                onClick={subIssue}
+              >
+                <LuListTree aria-hidden="true" className="h-3.5 w-3.5" />
+                Sub-issue
               </button>
             )}
           </div>,

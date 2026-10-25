@@ -22,6 +22,7 @@ from typing import Any
 
 from app.common.db.dynamo.base import utc_now
 from app.common.recurring_issues import is_due, run_due
+from app.common.team_retirement import is_active
 
 _log = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def sweep(repositories: Any, now: datetime | None = None) -> RecurringSummary:
     for row in repositories.team_config.iter_active_recurring():
         if not is_due(row, moment):
             continue
-        if repositories.teams.get(row.workspace_id, row.team_id) is None:
+        if not is_active(repositories.teams.get(row.workspace_id, row.team_id)):
             continue
         summary.due += 1
         try:

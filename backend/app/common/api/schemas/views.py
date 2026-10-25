@@ -67,6 +67,7 @@ VisiblePropertyField = Literal[
     "links",
     "created_at",
     "updated_at",
+    "time_in_status",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
@@ -74,6 +75,17 @@ CompletedWindowField = Literal["all", "past_week", "past_month", "none"]
 """How many completed and cancelled issues a view shows: all, those finished in the last week or month, or none."""
 
 COMPLETED_WINDOWS: tuple[str, ...] = get_args(CompletedWindowField)
+
+GroupHeaderField = Literal["count", "estimate"]
+"""What a view's group headers read beside each group's name: the issue count or the total estimate."""
+
+GROUP_HEADERS: tuple[str, ...] = get_args(GroupHeaderField)
+
+
+def group_header_of(value: Optional[str]) -> GroupHeaderField:
+    """The group header a stored row reads as, the issue count when it predates the choice."""
+    return "estimate" if value == "estimate" else "count"
+
 
 PROJECT_STATUS_ID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
 """The shape of a workspace project status id a view's status filter may name beside a category."""
@@ -462,6 +474,7 @@ class ViewCreate(BaseModel):
     show_completed: StrictBool = True
     completed_window: Optional[CompletedWindowField] = None
     show_archived: StrictBool = False
+    group_header: GroupHeaderField = "count"
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -506,6 +519,7 @@ class ViewUpdate(BaseModel):
     show_completed: Optional[StrictBool] = None
     completed_window: Optional[CompletedWindowField] = None
     show_archived: Optional[StrictBool] = None
+    group_header: Optional[GroupHeaderField] = None
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -531,8 +545,9 @@ DISPLAY_SWITCHES: tuple[str, ...] = (
     "show_completed",
     "completed_window",
     "show_archived",
+    "group_header",
 )
-"""The view's display switches, booleans and the completed window, which a patch may set but never clear to null."""
+"""The view's display switches, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):
@@ -564,6 +579,7 @@ class ViewRead(BaseModel):
     show_completed: bool = True
     completed_window: CompletedWindowField = "all"
     show_archived: bool = False
+    group_header: GroupHeaderField = "count"
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = None
     color: Optional[str] = None
@@ -600,6 +616,7 @@ class ViewRead(BaseModel):
             show_completed=view.show_completed is not False,
             completed_window=completed_window_of(view.completed_window, view.show_completed),
             show_archived=view.show_archived is True,
+            group_header=group_header_of(view.group_header),
             projects_display=stored_projects_display(view.projects_display) if view.lists_projects else None,
             icon=view.icon,
             color=view.color,
@@ -722,10 +739,23 @@ InboxListRead = cursor_page(NotificationRead, "notifications", model_name="Inbox
 """The body the inbox list answers with, items under `notifications`."""
 
 
+InboxBucket = Literal["all", "priority", "other"]
+"""Which tab of the split inbox a read or bulk action covers: both, Priority or Other."""
+
+
 class InboxCountRead(BaseModel):
-    """The unread badge, counted from the sparse index and capped."""
+    """The unread badge, counted from the sparse index and capped.
+
+    `unread` counts everything. `priority_unread` and `other_unread` count each
+    tab of the split inbox by the caller's own priority kinds, and `badge` is
+    the number the sidebar shows: Priority alone while `priority_inbox` is on.
+    """
 
     unread: int = 0
+    priority_unread: int = 0
+    other_unread: int = 0
+    priority_inbox: bool = True
+    badge: int = 0
 
 
 class InboxReadRequest(BaseModel):
@@ -733,11 +763,13 @@ class InboxReadRequest(BaseModel):
 
     `kinds` narrows `all` to those notification kinds, matching the list's filter,
     so marking everything read under a filter leaves the hidden types alone.
+    `bucket` narrows `all` to one tab of the split inbox in the same way.
     """
 
     notification_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=INBOX_READ_MAX_IDS)
     all: bool = False
     kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
+    bucket: InboxBucket = "all"
 
 
 class InboxUnreadRequest(BaseModel):
@@ -776,12 +808,13 @@ class InboxClearRequest(BaseModel):
 
     `read_only` keeps to rows already read. Without it every row goes except those
     still snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those
-    notification kinds, matching the list's filter.
+    notification kinds, matching the list's filter, and `bucket` to one tab of the split inbox.
     """
 
     read_only: bool = False
     include_snoozed: bool = False
     kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
+    bucket: InboxBucket = "all"
 
 
 class InboxClearResult(BaseModel):

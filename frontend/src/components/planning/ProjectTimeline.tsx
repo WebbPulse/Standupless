@@ -66,6 +66,7 @@ import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { milestoneProgress, progressPercent } from '../../lib/planningDisplay';
+import { isCoarse } from '../../lib/dateResolution';
 import { canEditProject } from '../../lib/planningModel';
 import {
   dependencyLines,
@@ -88,6 +89,7 @@ import {
   milestoneMarks,
   offscreenSide,
   stepZoom,
+  timelineDate,
   timelineHeader,
   timelineRange,
   todayNumber,
@@ -351,10 +353,13 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   const labelLeft = inside
     ? clampLabel(left, width, view.left, wanted) - left + 8
     : width + 6;
+  const approximate = drag === null && isCoarse(project.target_date_resolution);
   const dates =
     bar === null
       ? 'Not scheduled'
-      : `${dayValue(bar.start)} to ${dayValue(bar.end)}`;
+      : drag === null
+        ? `${timelineDate(dayValue(bar.start), project.start_date_resolution)} to ${timelineDate(dayValue(bar.end), project.target_date_resolution)}`
+        : `${dayValue(bar.start)} to ${dayValue(bar.end)}`;
   const marks = milestoneMarks(
     project.milestone_markers ?? [],
     range,
@@ -500,7 +505,14 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
               )}
               style={{ left, width, ...barTint(project.color) }}
               data-color={project.color ?? ''}
+              data-approximate-end={approximate ? 'true' : undefined}
             >
+              {approximate && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 right-0 w-2 rounded-r-sm border-r-2 border-dashed border-accent/60 bg-bg/50"
+                />
+              )}
               <span
                 aria-hidden="true"
                 className="absolute inset-y-0 left-0 rounded-l-sm bg-accent/25"

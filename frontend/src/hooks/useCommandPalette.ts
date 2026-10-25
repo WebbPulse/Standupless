@@ -27,6 +27,7 @@ export type PalettePicker =
   | 'cycles'
   | 'teams'
   | 'views'
+  | 'members'
   | 'template'
   | 'workspaces';
 

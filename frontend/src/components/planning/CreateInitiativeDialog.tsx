@@ -1,6 +1,6 @@
 /**
  * The new initiative dialog: a large name field, a summary, and a footer of
- * property chips for status, owner and target date, the way a new project is
+ * property chips for status, owner, lead team and target date, the way a new project is
  * written. Cmd or Ctrl and Enter creates it from anywhere in the dialog.
  * Opened from a parent's page, it creates a sub-initiative of that parent.
  */
@@ -8,14 +8,24 @@
 import React, { useState } from 'react';
 import { LuCalendarCheck } from 'react-icons/lu';
 import { createInitiative } from '../../api/initiatives';
+import { isCoarse } from '../../lib/dateResolution';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import type { InitiativeRead, InitiativeStatus } from '../../types/Api';
-import { DatePicker } from '../issues/PropertyPickers';
+import type {
+  DateResolution,
+  InitiativeRead,
+  InitiativeStatus,
+  TeamRead,
+} from '../../types/Api';
+import PlanningDatePicker from './PlanningDatePicker';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
-import { InitiativeStatusPicker, LeadPicker } from './ProjectPickers';
+import {
+  InitiativeStatusPicker,
+  LeadPicker,
+  LeadTeamPicker,
+} from './ProjectPickers';
 
 /** Props for CreateInitiativeDialog. */
 export interface CreateInitiativeDialogProps {
@@ -24,6 +34,10 @@ export interface CreateInitiativeDialogProps {
   people: Assignable[];
   /** The owner the initiative starts with, the creator by default. */
   initialOwnerId: string | null;
+  /** The teams a lead team is picked from; none hides the team chip. */
+  teams?: TeamRead[];
+  /** The lead team the initiative starts with, such as the team the list is filtered to. */
+  initialTeamId?: string | null;
   /** The parent a sub-initiative is created under, none for a top-level one. */
   parent?: { initiative_id: string; name: string } | null;
   onClose: () => void;
@@ -35,6 +49,8 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
   workspaceId,
   people,
   initialOwnerId,
+  teams = [],
+  initialTeamId = null,
   parent = null,
   onClose,
   onCreated,
@@ -43,7 +59,10 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
   const [summary, setSummary] = useState('');
   const [status, setStatus] = useState<InitiativeStatus>('planned');
   const [ownerId, setOwnerId] = useState<string | null>(initialOwnerId);
+  const [teamId, setTeamId] = useState<string | null>(initialTeamId);
   const [targetDate, setTargetDate] = useState<string | null>(null);
+  const [targetResolution, setTargetResolution] =
+    useState<DateResolution | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -57,8 +76,12 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
       name: name.trim(),
       description: summary.trim() === '' ? null : summary.trim(),
       owner_id: ownerId,
+      ...(teamId === null ? {} : { team_id: teamId }),
       status,
       target_date: targetDate,
+      ...(targetDate !== null && isCoarse(targetResolution)
+        ? { target_date_resolution: targetResolution }
+        : {}),
       ...(parent === null
         ? {}
         : { parent_initiative_id: parent.initiative_id }),
@@ -134,11 +157,24 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
             people={people}
             onChange={setOwnerId}
           />
-          <DatePicker
+          {teams.length > 0 && (
+            <LeadTeamPicker
+              variant="chip"
+              value={teamId}
+              teams={teams}
+              onChange={setTeamId}
+            />
+          )}
+          <PlanningDatePicker
             variant="chip"
             field="Target date"
+            edge="end"
             value={targetDate}
-            onChange={setTargetDate}
+            resolution={targetResolution}
+            onChange={(value, resolution) => {
+              setTargetDate(value);
+              setTargetResolution(resolution);
+            }}
             icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
           />
         </div>

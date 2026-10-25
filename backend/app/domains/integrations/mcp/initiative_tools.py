@@ -1,4 +1,4 @@
-"""The MCP tools for initiatives: workspace-level groups of projects across teams.
+"""The MCP tools for initiatives: groups of projects across teams, each with an optional lead team.
 
 Every tool runs the same `app.common.initiative_writes` path the initiative routes
 do, so a guest is refused as it is over HTTP, the rollup counts only the projects
@@ -6,7 +6,8 @@ the credential can see, and adding a project needs the same write right on one o
 its teams the project form does. Initiatives are named by id or by a name unique
 in the workspace, and projects by id or by a name unique among the visible ones.
 An initiative may sit under a parent as a sub-initiative, and its rollup and
-progress take in every project below it.
+progress take in every project below it. A lead team is named by id, key prefix
+or name, and a private one hides the initiative from everyone outside that team.
 """
 
 from __future__ import annotations
@@ -23,8 +24,10 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectHealthField,
 )
+from app.common.date_resolution import DATE_RESOLUTIONS, date_label
 from app.common.initiative_progress import initiative_progress
 from app.common.initiative_writes import (
+    NO_TEAM,
     add_project_to_initiative,
     create_initiative,
     create_initiative_update,
@@ -51,6 +54,7 @@ from app.domains.integrations.mcp.toolkit import (
     project_id_ref,
     resolve_user,
     string,
+    team_id_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -62,7 +66,7 @@ INITIATIVE_HELP = "The initiative: id or name"
 
 PROJECT_HELP = "The project: id or name"
 
-TEXT_FIELDS: tuple[str, ...] = ("name", "description", "status", "health", "target_date")
+TEXT_FIELDS: tuple[str, ...] = ("name", "description", "status", "health", "target_date", "target_date_resolution")
 
 CLEARABLE_FIELDS: tuple[str, ...] = ("description", "health", "target_date")
 """The initiative fields a tool call clears by passing null."""
@@ -75,9 +79,12 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
         "name": initiative.name,
         "description": initiative.description,
         "owner_id": initiative.owner_id,
+        "team_id": initiative.team_id,
         "status": initiative.status,
         "health": initiative.health,
         "target_date": initiative.target_date,
+        "target_date_resolution": initiative.target_date_resolution,
+        "target_date_label": date_label(initiative.target_date, initiative.target_date_resolution),
         "parent_initiative_id": initiative.parent_initiative_id,
         "ancestors": [ancestor.model_dump() for ancestor in initiative.ancestors],
         "sub_initiative_ids": initiative.sub_initiative_ids,
@@ -134,6 +141,10 @@ def _payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]:
             payload[name] = None
     if call.present("owner_id"):
         payload["owner_id"] = resolve_user(call, call.arguments["owner_id"])
+    if call.optional("team_id") is not None:
+        payload["team_id"] = team_id_ref(call, call.arguments["team_id"])
+    elif nullable_fields and call.present("team_id"):
+        payload["team_id"] = None
     if call.optional("parent_initiative_id") is not None:
         payload["parent_initiative_id"] = initiative_id_ref(call, call.arguments["parent_initiative_id"])
     elif nullable_fields and call.present("parent_initiative_id"):
@@ -146,12 +157,20 @@ def _payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]:
 
 
 def _list_initiatives(call: ToolCall) -> Any:
-    """One page of the workspace's initiatives by target date, optionally narrowed by status."""
+    """One page of the initiatives the credential sees by target date, optionally narrowed by status or lead team."""
     status_filter = call.optional("status")
+    team = call.optional("team_id")
+    if bool(call.optional("no_team")):
+        if team is not None:
+            raise ToolError("Pass team_id or no_team, not both")
+        team_filter: str | None = NO_TEAM
+    else:
+        team_filter = team_id_ref(call, team) if team is not None else None
     rows, next_cursor = list_initiatives(
         call.repositories,
         call.context,
         status_filter=str(status_filter) if status_filter else None,
+        team_filter=team_filter,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
@@ -261,9 +280,18 @@ INITIATIVE_PROPERTIES: dict[str, Any] = {
     "name": string("The initiative name"),
     "description": nullable("The description, in Markdown"),
     "owner_id": nullable("The owner: user id, 'me' for the caller, or null"),
+    "team_id": nullable(
+        "The lead team: id, key prefix or name; a private team hides the initiative from non-members. "
+        "null makes it workspace level"
+    ),
     "status": enum(INITIATIVE_STATUSES, "The initiative status"),
     "health": nullable_enum(HEALTHS, "The initiative health, or null for none"),
-    "target_date": nullable("Target date, YYYY-MM-DD"),
+    "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
+    "target_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide target_date is: day (the default), or the month, quarter, half or year it closes; "
+        "the date moves to that period's last day",
+    ),
     "parent_initiative_id": nullable(
         "The parent initiative to nest this one under, by id or name; null makes it top level"
     ),
@@ -287,11 +315,16 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
         description=(
             "One page of the workspace's initiatives by target date, each rolled up from the projects in it and "
             "in its sub-initiatives: project count, issue counts, points and how many projects stand at each "
-            "health. Each names its parent and direct sub-initiatives."
+            "health. Each names its lead team, parent and direct sub-initiatives."
         ),
         scopes=("projects:read",),
         schema=object_schema(
-            {"status": enum(INITIATIVE_STATUSES, "Only initiatives in this status"), **page_properties()}
+            {
+                "status": enum(INITIATIVE_STATUSES, "Only initiatives in this status"),
+                "team_id": string("Only initiatives led by this team: id, key prefix or name"),
+                "no_team": {"type": "boolean", "description": "Only workspace level initiatives, with no lead team"},
+                **page_properties(),
+            }
         ),
         handler=_list_initiatives,
     ),

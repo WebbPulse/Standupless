@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
-from tests.domains.helpers import ADMIN, GUEST, MEMBER
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, add_team_member
 from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal, seed_planning
@@ -162,3 +162,66 @@ def test_sub_initiatives_are_nested_by_name_and_roll_up(
     assert progress["days"]
     assert "sub-initiatives" in cycle
     assert detached["parent_initiative_id"] is None
+
+
+def test_an_initiative_target_round_trips_its_resolution(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """The initiative tools take a resolution beside the date and answer it with a readable label."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_initiative",
+            {"name": "Scale", "target_date": "2027-08-01", "target_date_resolution": "quarter"},
+        )
+    )
+    plain = answer(tool(client, secret, "create_initiative", {"name": "Plain", "target_date": "2027-08-01"}))
+    updated = answer(
+        tool(
+            client,
+            secret,
+            "update_initiative",
+            {"initiative_id": created["initiative_id"], "target_date_resolution": "year"},
+        )
+    )
+
+    assert (created["target_date"], created["target_date_resolution"]) == ("2027-09-30", "quarter")
+    assert created["target_date_label"] == "Q3 2027"
+    assert (plain["target_date_resolution"], plain["target_date_label"]) == ("day", "2027-08-01")
+    assert (updated["target_date"], updated["target_date_label"]) == ("2027-12-31", "2027")
+
+
+def test_a_lead_team_is_named_by_key_filtered_on_and_cleared(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An agent sets the lead team by key prefix, lists by it or by no team, and clears it with null."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    led = answer(tool(client, secret, "create_initiative", {"name": "Led", "team_id": "ABC"}))
+    answer(tool(client, secret, "create_initiative", {"name": "Open"}))
+    assert led["team_id"] == TEAM
+
+    by_team = answer(tool(client, secret, "list_initiatives", {"team_id": "ABC"}))
+    assert [row["name"] for row in by_team["initiatives"]] == ["Led"]
+    no_team = answer(tool(client, secret, "list_initiatives", {"no_team": True}))
+    assert [row["name"] for row in no_team["initiatives"]] == ["Open"]
+
+    cleared = answer(tool(client, secret, "update_initiative", {"initiative_id": "Led", "team_id": None}))
+    assert cleared["team_id"] is None
+
+
+def test_a_private_lead_team_hides_the_initiative_from_an_outside_agent(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An initiative led by a private team the key's person is outside is not found by id or name."""
+    owner_key = mint_for(repositories, MEMBER, PROJECTS)
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "member")
+    led = answer(tool(client, owner_key, "create_initiative", {"name": "Secret", "team_id": TEAM}))
+    repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+
+    outside = mint_for(repositories, ADMIN, PROJECTS)
+    assert refusal(tool(client, outside, "get_initiative", {"initiative_id": led["initiative_id"]})) == NOT_VISIBLE
+    assert refusal(tool(client, outside, "get_initiative", {"initiative_id": "Secret"})) == NOT_VISIBLE
+    assert answer(tool(client, outside, "list_initiatives", {}))["initiatives"] == []

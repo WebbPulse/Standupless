@@ -1,9 +1,10 @@
 """Initiative routes: list, create, read, patch, delete, project membership and the update feed.
 
-An initiative is workspace level and groups projects across teams, as in Linear.
-Every rule lives in `app.common.initiative_writes`, which the MCP tools share: a
-guest is refused, any other member reads and edits, and the rollup counts only
-the projects the caller can see.
+An initiative groups projects across teams, as in Linear, and may name a lead
+team. Every rule lives in `app.common.initiative_writes`, which the MCP tools
+share: a guest is refused, any other member reads and edits unless the lead team
+is private and they are outside it, and the rollup counts only the projects the
+caller can see.
 """
 
 from __future__ import annotations
@@ -53,11 +54,17 @@ def list_initiative_page(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
     status_filter: Annotated[Optional[str], Query(alias="status")] = None,
+    team_id: Annotated[
+        Optional[str],
+        Query(min_length=1, description="Keep one lead team's initiatives, or `none` for the workspace level ones"),
+    ] = None,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> Any:
-    """One page of the workspace's initiatives by target date, undated last, each rolled up."""
-    rows, next_cursor = list_initiatives(repositories, context, status_filter=status_filter, cursor=cursor, limit=limit)
+    """One page of the initiatives the caller sees by target date, undated last, each rolled up."""
+    rows, next_cursor = list_initiatives(
+        repositories, context, status_filter=status_filter, team_filter=team_id, cursor=cursor, limit=limit
+    )
     return InitiativeListRead(items=rows, next_cursor=next_cursor)
 
 
@@ -102,7 +109,7 @@ def update_initiative_row(
     workspace_id: Annotated[str, Path()],
     initiative_id: Annotated[str, Path()],
 ) -> InitiativeRead:
-    """Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent."""
+    """Patch an initiative's fields; null clears the description, owner, team, health, date, cadence or parent."""
     return update_initiative(repositories, context, initiative_id, payload)
 
 

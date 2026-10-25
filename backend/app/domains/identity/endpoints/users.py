@@ -30,6 +30,7 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
     ACTIVITY_FILTERS,
+    DEFAULT_PRIORITY_KINDS,
     EMAIL_FORMATS,
     FONT_SIZES,
     HOME_VIEWS,
@@ -66,6 +67,7 @@ from app.common.icons import (
     user_owner,
     verify_upload,
 )
+from app.common.inbox import INBOX_KINDS
 from app.domains.identity.account_revocation import revoke_account_access
 from app.domains.identity.email import render_account_deletion
 
@@ -104,6 +106,8 @@ class UserRead(BaseModel):
     `initiatives_display_saved` are the same for the initiatives list. `theme`
     is null until the person first saves one. `sidebar_items` names every
     sidebar item with where it sits, `show` unless the person moved it.
+    `priority_inbox` says whether the inbox splits into Priority and Other, and
+    `priority_kinds` names every kind the Priority tab holds.
     """
 
     id: str
@@ -113,6 +117,8 @@ class UserRead(BaseModel):
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
+    priority_inbox: bool = True
+    priority_kinds: list[str] = Field(default_factory=list)
     email_format: EmailFormatField = "digest"
     avatar_url: Optional[str] = None
     two_factor: bool = False
@@ -200,13 +206,17 @@ class UserPreferencesUpdate(BaseModel):
     and `branch_copy_assigns` are the Workflow group: assigning issues the person
     creates to them, and starting and assigning an issue when its git branch name
     is copied. `auto_grant_new_scopes` lets scopes the product adds later reach the
-    connected apps that were given every scope. Deliberately not a settings
+    connected apps that were given every scope. `priority_inbox` turns the
+    split inbox on or off, and `priority_kinds` replaces the whole set of kinds
+    its Priority tab holds. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
 
     email_notifications: Optional[bool] = None
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
+    priority_inbox: Optional[bool] = None
+    priority_kinds: Optional[list[str]] = Field(default=None, max_length=len(INBOX_KINDS))
     email_format: Optional[EmailFormatField] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     pulse_digest: Optional[PulseDigestField] = None
@@ -237,6 +247,17 @@ class UserPreferencesUpdate(BaseModel):
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError(f"{value!r} is not a known IANA timezone") from exc
+        return value
+
+    @field_validator("priority_kinds")
+    @classmethod
+    def _known_kinds(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Refuse a kind no inbox row can carry."""
+        if value is None:
+            return None
+        unknown = sorted(set(value) - set(INBOX_KINDS))
+        if unknown:
+            raise ValueError(f"Unknown notification kind: {', '.join(unknown)}")
         return value
 
 
@@ -285,6 +306,8 @@ def _as_read(user: "Any") -> UserRead:
             )
             for kind in NOTIFICATION_KINDS
         },
+        priority_inbox=bool(user.priority_inbox),
+        priority_kinds=[kind for kind in INBOX_KINDS if user.is_priority(kind)],
         email_format=_known(user.email_format, EMAIL_FORMATS, "digest"),
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
@@ -369,6 +392,16 @@ def _merged_preferences(stored: dict[str, dict[str, bool]], changes: dict[Any, N
     return {kind: channels for kind, channels in merged.items() if channels}
 
 
+def _priority_overrides(kinds: list[str]) -> dict[str, bool]:
+    """The sparse overrides that make the Priority tab hold exactly `kinds`.
+
+    Only a kind that differs from `DEFAULT_PRIORITY_KINDS` is kept, so a kind added
+    later still takes its default for everyone.
+    """
+    chosen = set(kinds)
+    return {kind: kind in chosen for kind in INBOX_KINDS if (kind in chosen) != (kind in DEFAULT_PRIORITY_KINDS)}
+
+
 def _merged_sidebar(stored: dict[str, str], changes: dict[Any, str]) -> dict[str, str]:
     """The stored sidebar placements with a partial change applied, kept sparse.
 
@@ -428,12 +461,17 @@ def update_current_user_preferences(
         changes["notification_preferences"] = _merged_preferences(
             user.notification_preferences, dict(payload.notification_preferences)
         )
+    if payload.priority_kinds is not None:
+        overrides = _priority_overrides(payload.priority_kinds)
+        if overrides != user.priority_kinds:
+            changes["priority_kinds"] = overrides
     if payload.timezone is not None and payload.timezone != user.timezone:
         changes["timezone"] = payload.timezone
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
     for field in (
         "email_format",
+        "priority_inbox",
         "home_view",
         "week_start",
         "name_display",

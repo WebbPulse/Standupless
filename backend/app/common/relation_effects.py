@@ -132,13 +132,16 @@ def recount_relations(repositories: Repositories, workspace_id: str, issue_id: s
     """Write how many links one issue holds in either direction, answering the count.
 
     Recounted from the stored links like `recount_blocked`, so a repeated write
-    lands on the same number. Nothing is written when the count already holds or
-    the issue is gone.
+    lands on the same number. A link to an issue in the trash is not counted, since
+    the links list leaves it out. Nothing is written when the count already holds
+    or the issue is gone.
     """
     issue = repositories.issues.get(workspace_id, issue_id)
     if issue is None:
         return None
-    count = len(repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000))
+    relations = repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
+    live = repositories.issues.get_many(workspace_id, [relation.target_issue_id for relation in relations])
+    count = sum(1 for relation in relations if relation.target_issue_id in live)
     if issue.relation_count != count:
         repositories.issues.set_relation_count(workspace_id, issue_id, count)
     return count

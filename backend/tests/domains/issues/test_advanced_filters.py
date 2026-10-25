@@ -13,7 +13,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.team_config import Label, label_key, new_config_id
-from tests.domains.helpers import MEMBER, OWNER, sign_in
+from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 
 
@@ -189,3 +189,19 @@ def test_a_subscriber_condition_inside_a_group(client: TestClient, workspace: st
     groups = json.dumps([{"match": "any", "priority": "urgent", "subscriber_id": MEMBER}])
 
     assert _ids(_list(client, workspace, groups=groups)) == {urgent["id"], followed["id"]}
+
+
+def test_my_teams_follows_each_viewer(client: TestClient, repositories: Any, workspace: str, statuses: Any) -> None:
+    """`my_teams` keeps the caller's own teams, excludes them under `_not`, and matches nothing for no team."""
+    sign_in(client, OWNER)
+    home = create_issue(client, workspace, title="Home")
+    away = create_issue(client, workspace, team_id=OTHER_TEAM, title="Away")
+    add_team_member(repositories, workspace, OTHER_TEAM, MEMBER, "member")
+
+    sign_in(client, MEMBER)
+    assert _ids(_list(client, workspace, team_id_in="my_teams")) == {away["id"]}
+    assert _ids(_list(client, workspace, team_id_not="my_teams")) == {home["id"]}
+
+    sign_in(client, ADMIN)
+    assert _ids(_list(client, workspace, team_id_in="my_teams")) == set()
+    assert _ids(_list(client, workspace, team_id_not="my_teams")) == {home["id"], away["id"]}

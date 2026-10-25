@@ -613,6 +613,9 @@ class Project(BaseModel):
     `status` is the category the project's status sits in, which every rule
     reads, and `status_id` the workspace project status itself; None on a row
     written before custom statuses, which reads as its category's seeded default.
+    `start_date_resolution` and `target_date_resolution` widen a date to its
+    month, quarter, half or year, the date held at that period's first or last
+    day; None is an exact day.
     """
 
     workspace_id: str
@@ -625,6 +628,8 @@ class Project(BaseModel):
     lead_id: str | None = None
     start_date: str | None = None
     target_date: str | None = None
+    start_date_resolution: str | None = None
+    target_date_resolution: str | None = None
     status: str = "backlog"
     status_id: str | None = None
     icon: str | None = None
@@ -673,6 +678,11 @@ class Initiative(BaseModel):
     project's do, and `update_interval_days` follows the same cadence rules.
     `parent_initiative_id` nests it under another initiative as a sub-initiative,
     held on the child so a parent keeps no list of children to hold in step.
+    `target_date_resolution` widens the target to its month, quarter, half or
+    year, the date held at that period's last day; None is an exact day.
+    `team_id` names a lead team, so the team's page lists it and a private
+    team's initiative is seen only by that team's members; None keeps it
+    workspace level, seen by every member but a guest.
     """
 
     workspace_id: str
@@ -682,10 +692,12 @@ class Initiative(BaseModel):
     name: str
     description: str | None = None
     owner_id: str | None = None
+    team_id: str | None = None
     parent_initiative_id: str | None = None
     status: str = "planned"
     health: str | None = None
     target_date: str | None = None
+    target_date_resolution: str | None = None
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
     created_by: str
@@ -959,6 +971,8 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "status_id",
     "target_date",
     "start_date",
+    "start_date_resolution",
+    "target_date_resolution",
     "lead_id",
     "description",
     "icon",
@@ -976,9 +990,11 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
 INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "description",
     "owner_id",
+    "team_id",
     "parent_initiative_id",
     "health",
     "target_date",
+    "target_date_resolution",
     "last_update_at",
     "update_interval_days",
     "import_batch_id",

@@ -19,6 +19,7 @@ from webbpulse.http import cursor_page
 
 from app.common.api.schemas.teams import COLOR_PATTERN
 from app.common.change_source import ChangeSource
+from app.common.date_resolution import DateEdge, DateResolution, read_resolution, snap
 from app.common.db.dynamo.planning import (
     CarryOver,
     Cycle,
@@ -151,6 +152,20 @@ def _check_description(value: Optional[str]) -> Optional[str]:
     if len(value.encode("utf-8")) > DESCRIPTION_MAX_BYTES:
         raise ValueError(f"description must be at most {DESCRIPTION_MAX_BYTES} bytes")
     return value
+
+
+START_RESOLUTION_HELP = "How wide the start date is: an exact day, or the month, quarter, half or year it opens"
+
+TARGET_RESOLUTION_HELP = "How wide the target date is: an exact day, or the month, quarter, half or year it closes"
+
+
+def _settle_resolution(value: Optional[str], resolution: Optional[str], edge: DateEdge, name: str) -> Optional[str]:
+    """One created date moved to the edge of its period, refusing a resolution with no date to widen."""
+    if value is None:
+        if resolution not in (None, "day"):
+            raise ValueError(f"{name}_resolution needs a {name}")
+        return None
+    return snap(value, resolution, edge)
 
 
 def _check_order(start_date: Optional[str], end_date: Optional[str], end_name: str = "end_date") -> None:
@@ -356,7 +371,13 @@ class CycleUpdate(BaseModel):
 
 
 class CycleRead(BaseModel):
-    """One cycle as the API returns it, with its status derived from its dates."""
+    """One cycle as the API returns it, with its status derived from its dates.
+
+    `gap_before_days` is set on the cycle list: the days with no live cycle
+    between the team's cycles before this one and its start, which the cycles
+    page draws as "Cycles paused". It is null on the first live cycle, on a
+    cancelled one, and on reads other than the list.
+    """
 
     cycle_id: str
     workspace_id: str
@@ -372,6 +393,7 @@ class CycleRead(BaseModel):
     points: CountsRead = Field(default_factory=CountsRead)
     unestimated: CountsRead = Field(default_factory=CountsRead)
     carry: CarryOverRead = Field(default_factory=CarryOverRead)
+    gap_before_days: Optional[int] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -417,6 +439,12 @@ CycleListRead = cursor_page(CycleRead, "cycles", model_name="CycleListRead")
 
 class CycleStartToday(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today` takes."""
+
+    team_id: str = Field(min_length=1)
+
+
+class CycleEndToday(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/end-today` takes."""
 
     team_id: str = Field(min_length=1)
 
@@ -506,6 +534,9 @@ class ProjectHistoryRead(BaseModel):
     project_id: str
     start_date: Optional[str] = None
     target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = Field(
+        default=None, description="How wide the target date is, null without one"
+    )
     today: str
     measure: ProgressMeasureField
     recorded_since: Optional[str] = None
@@ -575,6 +606,8 @@ class ProjectCreate(BaseModel):
     lead_id: Optional[str] = Field(default=None, min_length=1)
     start_date: Optional[str] = None
     target_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(default=None, description=START_RESOLUTION_HELP)
+    target_date_resolution: Optional[DateResolution] = Field(default=None, description=TARGET_RESOLUTION_HELP)
     status: ProjectStatusField = Field(
         default="backlog", description="The status category; alone it lands on the category's default status"
     )
@@ -646,13 +679,19 @@ class ProjectCreate(BaseModel):
 
     @model_validator(mode="after")
     def check_teams_and_dates(self) -> "ProjectCreate":
-        """Settle the team list from either spelling and hold the dates in order."""
+        """Settle the team list from either spelling, widen each coarse date to its period and hold them in order."""
         if self.team_ids is None:
             if self.team_id is None:
                 raise ValueError("team_ids must name at least one team")
             self.team_ids = [self.team_id]
         elif self.team_id is not None and self.team_id not in self.team_ids:
             raise ValueError("team_id must be one of team_ids")
+        start = _settle_resolution(self.start_date, self.start_date_resolution, "start", "start_date")
+        if start != self.start_date:
+            self.start_date = start
+        target = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
+        if target != self.target_date:
+            self.target_date = target
         _check_order(self.start_date, self.target_date, "target_date")
         return self
 
@@ -707,6 +746,12 @@ class ProjectUpdate(BaseModel):
     lead_id: Optional[str] = Field(default=None, min_length=1)
     start_date: Optional[str] = None
     target_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None, description=f"{START_RESOLUTION_HELP}; set alone it widens the stored date"
+    )
+    target_date_resolution: Optional[DateResolution] = Field(
+        default=None, description=f"{TARGET_RESOLUTION_HELP}; set alone it widens the stored date"
+    )
     status: Optional[ProjectStatusField] = Field(
         default=None, description="The status category; a project already in it keeps its status"
     )
@@ -975,6 +1020,14 @@ class ProjectRead(BaseModel):
     lead_id: Optional[str] = None
     start_date: Optional[str] = None
     target_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None,
+        description="How wide the start date is, null without one; a coarse start is its period's first day",
+    )
+    target_date_resolution: Optional[DateResolution] = Field(
+        default=None,
+        description="How wide the target date is, null without one; a coarse target is its period's last day",
+    )
     status: ProjectStatusField = Field(description="The category of the project's status, which every rule reads")
     status_id: str = Field(default="", description="The workspace project status the project sits in")
     icon: Optional[str] = None
@@ -1076,6 +1129,8 @@ class ProjectRead(BaseModel):
             lead_id=project.lead_id,
             start_date=project.start_date,
             target_date=project.target_date,
+            start_date_resolution=read_resolution(project.start_date, project.start_date_resolution),
+            target_date_resolution=read_resolution(project.target_date, project.target_date_resolution),
             status=project.status,  # pyright: ignore[reportArgumentType]
             status_id=project.effective_status_id,
             icon=project.icon,
@@ -1434,6 +1489,12 @@ class RoadmapEntryRead(BaseModel):
     name: str
     target_date: Optional[str] = None
     start_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = Field(
+        default=None, description="How wide a project's target date is; a cycle's end is always a day"
+    )
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None, description="How wide a project's start date is; a cycle's start is always a day"
+    )
     status: str
     status_id: Optional[str] = Field(default=None, description="A project's workspace project status, null on a cycle")
     icon: Optional[str] = None
@@ -1459,6 +1520,8 @@ class RoadmapEntryRead(BaseModel):
             name=cycle.name,
             target_date=cycle.end_date,
             start_date=cycle.start_date,
+            target_date_resolution="day",
+            start_date_resolution="day",
             status=cycle.status(today),
             counts=CountsRead.from_counts(cycle.counts),
             progress=CountsRead.from_counts(cycle.counts),
@@ -1479,6 +1542,8 @@ class RoadmapEntryRead(BaseModel):
             name=project.name,
             target_date=project.target_date,
             start_date=project.start_date,
+            target_date_resolution=read_resolution(project.target_date, project.target_date_resolution),
+            start_date_resolution=read_resolution(project.start_date, project.start_date_resolution),
             status=project.status,
             status_id=project.effective_status_id,
             icon=project.icon,
@@ -1504,15 +1569,22 @@ class HealthBreakdownRead(BaseModel):
     none: int = 0
 
 
+INITIATIVE_TEAM_HELP = (
+    "The lead team, by id; its page lists the initiative, and a private team's initiative is seen only by its members"
+)
+
+
 class InitiativeCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/initiatives` takes."""
 
     name: str = Field(min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     owner_id: Optional[str] = Field(default=None, min_length=1)
+    team_id: Optional[str] = Field(default=None, min_length=1, description=INITIATIVE_TEAM_HELP)
     status: InitiativeStatusField = "planned"
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = Field(default=None, description=TARGET_RESOLUTION_HELP)
     update_interval_days: Optional[int] = None
     parent_initiative_id: Optional[str] = Field(
         default=None, min_length=1, description="The initiative this one sits under as a sub-initiative"
@@ -1542,16 +1614,30 @@ class InitiativeCreate(BaseModel):
         """Hold the target date to the contract's format."""
         return _check_date(value)
 
+    @model_validator(mode="after")
+    def widen_target_date(self) -> "InitiativeCreate":
+        """Move a coarse target date to the last day of its period."""
+        target = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
+        if target != self.target_date:
+            self.target_date = target
+        return self
+
 
 class InitiativeUpdate(BaseModel):
-    """The body an initiative patch takes; null clears the description, owner, health, date, cadence or parent."""
+    """The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent."""
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     owner_id: Optional[str] = Field(default=None, min_length=1)
+    team_id: Optional[str] = Field(
+        default=None, min_length=1, description=f"{INITIATIVE_TEAM_HELP}; null makes it workspace level"
+    )
     status: Optional[InitiativeStatusField] = None
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = Field(
+        default=None, description=f"{TARGET_RESOLUTION_HELP}; set alone it widens the stored date"
+    )
     update_interval_days: Optional[int] = None
     parent_initiative_id: Optional[str] = Field(
         default=None, min_length=1, description="The initiative to nest this one under; null makes it top level"
@@ -1604,9 +1690,14 @@ class InitiativeRead(BaseModel):
     name: str
     description: Optional[str] = None
     owner_id: Optional[str] = None
+    team_id: Optional[str] = Field(default=None, description="The lead team, null for a workspace level initiative")
     status: InitiativeStatusField
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = Field(
+        default=None,
+        description="How wide the target date is, null without one; a coarse target is its period's last day",
+    )
     parent_initiative_id: Optional[str] = None
     ancestors: list[InitiativeRefRead] = Field(
         default_factory=list, description="The chain of parent initiatives, root first"
@@ -1674,9 +1765,11 @@ class InitiativeRead(BaseModel):
             name=initiative.name,
             description=initiative.description,
             owner_id=initiative.owner_id,
+            team_id=initiative.team_id,
             status=initiative.status,  # pyright: ignore[reportArgumentType]
             health=initiative.health,  # pyright: ignore[reportArgumentType]
             target_date=initiative.target_date,
+            target_date_resolution=read_resolution(initiative.target_date, initiative.target_date_resolution),
             parent_initiative_id=initiative.parent_initiative_id,
             ancestors=[InitiativeRefRead(initiative_id=row.initiative_id, name=row.name) for row in ancestors or []],
             sub_initiative_ids=list(sub_initiative_ids or []),

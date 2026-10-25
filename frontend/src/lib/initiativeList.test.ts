@@ -38,7 +38,20 @@ describe('resolveInitiativesDisplay', () => {
         order: 'created',
         completed: 'hide',
       })
-    ).toEqual({ order: 'name', completed: 'hide', columns: 'owner,progress' });
+    ).toEqual({
+      grouping: 'status',
+      order: 'name',
+      completed: 'hide',
+      columns: 'owner,progress',
+    });
+  });
+
+  it('reads the team grouping from the URL', () => {
+    const params = new URLSearchParams('grouping=team');
+    expect(
+      resolveInitiativesDisplay((field) => params.get(field), undefined)
+        .grouping
+    ).toBe('team');
   });
 
   it('ignores a value it does not know', () => {
@@ -52,6 +65,22 @@ describe('resolveInitiativesDisplay', () => {
 });
 
 describe('matchesInitiativeFilters', () => {
+  it('matches a lead team or no team', () => {
+    const led = initiative('led', { team_id: 'T1' });
+    const open = initiative('open');
+    const filters = { status: [], owner: '', health: [] };
+    expect(matchesInitiativeFilters(led, { ...filters, team: 'T1' })).toBe(
+      true
+    );
+    expect(matchesInitiativeFilters(open, { ...filters, team: 'T1' })).toBe(
+      false
+    );
+    expect(matchesInitiativeFilters(open, { ...filters, team: 'none' })).toBe(
+      true
+    );
+    expect(matchesInitiativeFilters(led, { ...filters, team: '' })).toBe(true);
+  });
+
   it('matches no owner and no health', () => {
     const row = initiative('a');
     expect(

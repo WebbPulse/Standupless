@@ -29,6 +29,8 @@ ActivityRead = TypedDict(
             "child_removed",
             "archived",
             "unarchived",
+            "deleted",
+            "restored",
             "subscriber_added",
             "subscriber_removed",
             "mentioned",
@@ -123,6 +125,34 @@ class ApiKeyRead(TypedDict):
     prefix: str
     revoked_at: NotRequired[str | None]
     scopes: list[str]
+
+
+class AppAccessRequestCreate(TypedDict):
+    reason: NotRequired[str]
+    ticket: str
+
+
+class AppApprovalDecision(TypedDict):
+    client_name: NotRequired[str]
+    reason: NotRequired[str]
+
+
+class AppApprovalPersonRead(TypedDict):
+    display_name: str
+    id: str
+
+
+class AppApprovalRead(TypedDict):
+    client_id: str
+    client_name: str
+    decided_at: NotRequired[str | None]
+    decided_by: NotRequired[AppApprovalPersonRead | None]
+    decision_reason: NotRequired[str]
+    request_reason: NotRequired[str]
+    requested_at: NotRequired[str | None]
+    requested_by: NotRequired[AppApprovalPersonRead | None]
+    status: Literal["pending", "approved", "denied"]
+    updated_at: str
 
 
 class ApprovedDomainCreate(TypedDict):
@@ -571,6 +601,10 @@ class CycleCreate(TypedDict):
     team_id: str
 
 
+class CycleEndToday(TypedDict):
+    team_id: str
+
+
 class CycleHistoryPoint(TypedDict):
     completed: int
     completed_points: int
@@ -599,6 +633,7 @@ class CycleRead(TypedDict):
     created_by: str
     cycle_id: str
     end_date: str
+    gap_before_days: NotRequired[int | None]
     goal: NotRequired[str | None]
     name: str
     number: NotRequired[int | None]
@@ -654,6 +689,19 @@ class CycleUpdate(TypedDict):
     team_id: str
 
 
+class DashboardMove(TypedDict):
+    scope: Literal["personal", "team", "workspace"]
+    team_id: NotRequired[str | None]
+
+
+class DashboardUpdate(TypedDict):
+    description: NotRequired[str | None]
+    filter: NotRequired[dict[str, Any] | None]
+    icon: NotRequired[str | None]
+    name: NotRequired[str | None]
+    owner_id: NotRequired[str | None]
+
+
 class DeliveryAttemptRead(TypedDict):
     at: str
     attempt: int
@@ -705,6 +753,7 @@ class DisplayOptionsBody(TypedDict):
         | Literal["none"]
         | None
     ]
+    group_header: NotRequired[Literal["count", "estimate"] | None]
     layout: NotRequired[Literal["list", "board"] | None]
     ordering: NotRequired[
         Literal[
@@ -755,6 +804,7 @@ class DisplayOptionsBody(TypedDict):
                 "links",
                 "created_at",
                 "updated_at",
+                "time_in_status",
             ]
         ]
         | None
@@ -979,6 +1029,7 @@ class ImportRowRead(TypedDict):
 
 
 class InboxClearRequest(TypedDict):
+    bucket: NotRequired[Literal["all", "priority", "other"]]
     include_snoozed: NotRequired[bool]
     kinds: NotRequired[list[str]]
     read_only: NotRequired[bool]
@@ -989,11 +1040,16 @@ class InboxClearResult(TypedDict):
 
 
 class InboxCountRead(TypedDict):
+    badge: NotRequired[int]
+    other_unread: NotRequired[int]
+    priority_inbox: NotRequired[bool]
+    priority_unread: NotRequired[int]
     unread: NotRequired[int]
 
 
 class InboxReadRequest(TypedDict):
     all: NotRequired[bool]
+    bucket: NotRequired[Literal["all", "priority", "other"]]
     kinds: NotRequired[list[str]]
     notification_ids: NotRequired[list[str] | None]
 
@@ -1019,6 +1075,8 @@ class InitiativeCreate(TypedDict):
     parent_initiative_id: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"]]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    team_id: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1050,6 +1108,8 @@ class InitiativeUpdate(TypedDict):
     parent_initiative_id: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"] | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    team_id: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1081,53 +1141,28 @@ class InitiativeUpdateRead(TypedDict):
 class InitiativesDisplay(TypedDict):
     columns: NotRequired[str]
     completed: NotRequired[Literal["show", "hide"]]
+    grouping: NotRequired[Literal["status", "team"]]
     order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
 
 
-class InsightBucket(TypedDict):
-    color: NotRequired[str | None]
-    issue_count: NotRequired[int]
-    key: NotRequired[str | None]
-    label: str
-    value: NotRequired[int]
+class InsightDurations(TypedDict):
+    average: NotRequired[float | None]
+    count: NotRequired[int]
+    maximum: NotRequired[float | None]
+    minimum: NotRequired[float | None]
+    p25: NotRequired[float | None]
+    p50: NotRequired[float | None]
+    p75: NotRequired[float | None]
+    p95: NotRequired[float | None]
 
 
-class InsightGroup(TypedDict):
-    color: NotRequired[str | None]
-    issue_count: NotRequired[int]
-    key: NotRequired[str | None]
-    label: str
-    segments: NotRequired[list[InsightBucket]]
-    value: NotRequired[int]
-
-
-class InsightsRead(TypedDict):
-    group_by: Literal[
-        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
-    ]
-    groups: list[InsightGroup]
-    issue_count: int
-    measure: Literal["count", "points"]
-    row_cap: NotRequired[int]
-    segment_by: NotRequired[
-        Literal[
-            "status",
-            "status_category",
-            "assignee",
-            "creator",
-            "priority",
-            "label",
-            "project",
-            "cycle",
-            "estimate",
-            "team",
-        ]
-        | None
-    ]
-    team_ids: list[str]
-    total: int
-    truncated: NotRequired[bool]
-    view_id: NotRequired[str | None]
+class InsightPoint(TypedDict):
+    group: NotRequired[str | None]
+    hours: float
+    issue_id: str
+    key: str
+    segment: NotRequired[str | None]
+    title: str
 
 
 class InstallUrlRead(TypedDict):
@@ -1225,6 +1260,61 @@ class IssueDescriptionVersionRead(TypedDict):
     issue_id: str
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     version_id: str
+
+
+class IssueDraftRead(TypedDict):
+    answers: NotRequired[dict[str, bool | str]]
+    assignee_id: NotRequired[str | None]
+    body: str
+    created_at: str
+    cycle_id: NotRequired[str | None]
+    draft_id: str
+    due_date: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
+    parent_id: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    parent_title: NotRequired[str | None]
+    priority: NotRequired[str]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[str]]
+    team_id: str
+    template_body: NotRequired[str]
+    template_id: NotRequired[str | None]
+    template_title: NotRequired[str]
+    title: str
+    updated_at: str
+
+
+class IssueDraftWrite(TypedDict):
+    answers: NotRequired[dict[str, bool | str]]
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str]
+    cycle_id: NotRequired[str | None]
+    due_date: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
+    parent_id: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    parent_title: NotRequired[str | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[str]]
+    team_id: str
+    template_body: NotRequired[str]
+    template_id: NotRequired[str | None]
+    template_title: NotRequired[str]
+    title: NotRequired[str]
+
+
+class IssueDuplicate(TypedDict):
+    include_sub_issues: NotRequired[bool]
 
 
 class IssueExportRead(TypedDict):
@@ -1456,9 +1546,13 @@ class MemberRead(TypedDict):
     display_name: str
     email: str
     full_name: NotRequired[str]
+    invite_id: NotRequired[str | None]
     joined_at: str
     previous_handles: NotRequired[list[str]]
     role: Literal["owner", "admin", "member", "guest"]
+    status: NotRequired[Literal["active", "suspended", "invited"]]
+    suspended_at: NotRequired[str | None]
+    suspended_by: NotRequired[str | None]
     user_id: str
 
 
@@ -1667,9 +1761,11 @@ class ProjectCreate(TypedDict):
     name: str
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]]
     status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
     template_id: NotRequired[str | None]
@@ -1853,9 +1949,11 @@ class ProjectUpdate(TypedDict):
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
     status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
     update_interval_days: NotRequired[int | None]
@@ -2181,9 +2279,11 @@ class RoadmapEntryRead(TypedDict):
     priority: NotRequired[str | None]
     progress: NotRequired[CountsRead]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: str
     status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: str
     team_ids: list[str]
 
@@ -2243,6 +2343,7 @@ class SearchInitiativeRead(TypedDict):
     owner_id: NotRequired[str | None]
     status: str
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[str | None]
     updated_at: str
 
 
@@ -2256,6 +2357,7 @@ class SearchProjectRead(TypedDict):
     status: str
     status_id: NotRequired[str]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[str | None]
     team_ids: NotRequired[list[str]]
     updated_at: str
 
@@ -2818,6 +2920,8 @@ class TeamRead(TypedDict):
     name: str
     parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
+    retired_at: NotRequired[str | None]
+    retired_by: NotRequired[str | None]
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
     sync_pr_labels: NotRequired[bool]
@@ -3052,6 +3156,8 @@ class UserPreferencesUpdate(TypedDict):
         | None
     ]
     pointer_cursors: NotRequired[bool | None]
+    priority_inbox: NotRequired[bool | None]
+    priority_kinds: NotRequired[list[str] | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
     sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
@@ -3106,6 +3212,8 @@ class UserRead(TypedDict):
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
     pointer_cursors: NotRequired[bool]
+    priority_inbox: NotRequired[bool]
+    priority_kinds: NotRequired[list[str]]
     projects_display: NotRequired[ProjectsDisplay]
     projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
@@ -3175,6 +3283,7 @@ class ViewCreate(TypedDict):
         | str
         | None
     ]
+    group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
@@ -3248,6 +3357,7 @@ class ViewCreate(TypedDict):
                 "links",
                 "created_at",
                 "updated_at",
+                "time_in_status",
             ]
         ]
         | None
@@ -3263,6 +3373,7 @@ class ViewRead(TypedDict):
     favorite: NotRequired[bool]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[str | None]
+    group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
     kind: str
     layout: str
@@ -3298,6 +3409,7 @@ class ViewUpdate(TypedDict):
         | str
         | None
     ]
+    group_header: NotRequired[Literal["count", "estimate"] | None]
     icon: NotRequired[str | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
@@ -3370,6 +3482,7 @@ class ViewUpdate(TypedDict):
                 "links",
                 "created_at",
                 "updated_at",
+                "time_in_status",
             ]
         ]
         | None
@@ -3427,6 +3540,124 @@ class WebhookEndpointUpdate(TypedDict, closed=True):
     ]
     team_id: NotRequired[str | None]
     url: NotRequired[str | None]
+
+
+class WidgetCreate(TypedDict):
+    filter: NotRequired[dict[str, Any]]
+    group_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+    ]
+    include_sub_teams: NotRequired[bool]
+    kind: NotRequired[Literal["chart", "table", "metric"]]
+    measure: NotRequired[Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"]]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    size: NotRequired[Literal["half", "full"]]
+    source: NotRequired[Literal["workspace", "team", "view"]]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    view_id: NotRequired[str | None]
+
+
+class WidgetOrder(TypedDict):
+    widget_ids: list[str]
+
+
+class WidgetRead(TypedDict):
+    filter: NotRequired[dict[str, Any]]
+    group_by: Literal[
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
+    ]
+    include_sub_teams: NotRequired[bool]
+    kind: Literal["chart", "table", "metric"]
+    measure: Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    size: Literal["half", "full"]
+    source: Literal["workspace", "team", "view"]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    view_id: NotRequired[str | None]
+    widget_id: str
+
+
+class WidgetUpdate(TypedDict):
+    filter: NotRequired[dict[str, Any] | None]
+    group_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    include_sub_teams: NotRequired[bool | None]
+    kind: NotRequired[Literal["chart", "table", "metric"] | None]
+    measure: NotRequired[Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"] | None]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    size: NotRequired[Literal["half", "full"] | None]
+    source: NotRequired[Literal["workspace", "team", "view"] | None]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    view_id: NotRequired[str | None]
 
 
 class WorkspaceChannelCreate(TypedDict, closed=True):
@@ -3535,12 +3766,15 @@ class WorkspaceRead(TypedDict):
     deletion_scheduled_by: NotRequired[str | None]
     icon_url: NotRequired[str | None]
     id: str
+    invite_permission: NotRequired[Literal["admins", "members"]]
     name: str
     plan: str
     project_update_interval_days: NotRequired[int]
     purge_after: NotRequired[str | None]
     role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
     slug: str
+    team_creation_permission: NotRequired[Literal["admins", "members"]]
+    third_party_app_approvals: NotRequired[bool]
 
 
 class WorkspaceSummaryRead(TypedDict):
@@ -3553,8 +3787,11 @@ class WorkspaceSummaryRead(TypedDict):
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
     branch_format: NotRequired[Literal["key_title", "user_key_title", "key"] | None]
+    invite_permission: NotRequired[Literal["admins", "members"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
+    team_creation_permission: NotRequired[Literal["admins", "members"] | None]
+    third_party_app_approvals: NotRequired[bool | None]
 
 
 class AppCommonApiSchemasIssuesIssueRead(TypedDict):
@@ -3568,6 +3805,8 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     created_at: str
     created_by: str
     cycle_id: NotRequired[str | None]
+    deleted_at: NotRequired[str | None]
+    deleted_by: NotRequired[str | None]
     due_date: NotRequired[str | None]
     estimate: NotRequired[str | None]
     external_ref: NotRequired[str | None]
@@ -3593,6 +3832,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     started_at: NotRequired[str | None]
+    status_changed_at: NotRequired[str | None]
     status_id: str
     team_id: str
     title: str
@@ -3654,6 +3894,21 @@ class AgentProfileVersionListRead(TypedDict):
 
 class ApiKeyListRead(TypedDict):
     api_keys: list[ApiKeyRead]
+
+
+class AppAccessRequestRead(TypedDict):
+    approval: NotRequired[AppApprovalRead | None]
+    client_id: str
+    client_name: str
+    enabled: bool
+    return_to: str
+    workspace_id: str
+    workspace_name: str
+
+
+class AppApprovalListRead(TypedDict):
+    approvals: list[AppApprovalRead]
+    enabled: bool
 
 
 class ApprovedDomainListRead(TypedDict):
@@ -3759,6 +4014,36 @@ class CustomerRequestListRead(TypedDict):
 class CycleListRead(TypedDict):
     cycles: list[CycleRead]
     next_cursor: NotRequired[str | None]
+
+
+class DashboardCreate(TypedDict):
+    description: NotRequired[str | None]
+    filter: NotRequired[dict[str, Any]]
+    icon: NotRequired[str | None]
+    name: str
+    scope: NotRequired[Literal["personal", "team", "workspace"]]
+    team_id: NotRequired[str | None]
+    widgets: NotRequired[list[WidgetCreate]]
+
+
+class DashboardRead(TypedDict):
+    can_edit: NotRequired[bool]
+    created_at: str
+    description: NotRequired[str | None]
+    filter: NotRequired[dict[str, Any]]
+    icon: NotRequired[str | None]
+    id: str
+    name: str
+    owner_id: str
+    scope: Literal["personal", "team", "workspace"]
+    team_id: NotRequired[str | None]
+    updated_at: str
+    widgets: NotRequired[list[WidgetRead]]
+
+
+class DeletedIssueListRead(TypedDict):
+    issues: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    retention_days: int
 
 
 class DocumentListRead(TypedDict):
@@ -3905,6 +4190,8 @@ class InitiativeRead(TypedDict):
     status_counts: NotRequired[dict[str, int]]
     sub_initiative_ids: NotRequired[list[str]]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    team_id: NotRequired[str | None]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
     update_interval_days: NotRequired[int]
     update_interval_inherited: NotRequired[bool]
@@ -3915,6 +4202,56 @@ class InitiativeRead(TypedDict):
 class InitiativeUpdateListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     updates: list[InitiativeUpdateRead]
+
+
+class InsightBucket(TypedDict):
+    color: NotRequired[str | None]
+    durations: NotRequired[InsightDurations | None]
+    issue_count: NotRequired[int]
+    key: NotRequired[str | None]
+    label: str
+    value: NotRequired[int]
+
+
+class InsightGroup(TypedDict):
+    color: NotRequired[str | None]
+    durations: NotRequired[InsightDurations | None]
+    issue_count: NotRequired[int]
+    key: NotRequired[str | None]
+    label: str
+    segments: NotRequired[list[InsightBucket]]
+    value: NotRequired[int]
+
+
+class InsightsRead(TypedDict):
+    durations: NotRequired[InsightDurations | None]
+    group_by: Literal[
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
+    ]
+    groups: list[InsightGroup]
+    issue_count: int
+    measure: Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"]
+    points: NotRequired[list[InsightPoint]]
+    row_cap: NotRequired[int]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    team_ids: list[str]
+    total: int
+    truncated: NotRequired[bool]
+    view_id: NotRequired[str | None]
 
 
 class InstallationRead(TypedDict):
@@ -3943,6 +4280,11 @@ class IssueBulkRead(TypedDict):
 
 class IssueDescriptionVersionListRead(TypedDict):
     versions: list[IssueDescriptionVersionRead]
+
+
+class IssueDraftListRead(TypedDict):
+    drafts: list[IssueDraftRead]
+    limit: int
 
 
 class IssueImportPreviewRead(TypedDict):
@@ -4139,6 +4481,7 @@ class ProjectHistoryRead(TypedDict):
     recorded_since: NotRequired[str | None]
     start_date: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     today: str
 
 
@@ -4185,10 +4528,12 @@ class ProjectRead(TypedDict):
     slug_id: NotRequired[str]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]
     status_id: NotRequired[str]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: str
     team_ids: list[str]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
@@ -4530,6 +4875,10 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class DashboardList(TypedDict):
+    dashboards: list[DashboardRead]
 
 
 class DocumentTemplateListRead(TypedDict):

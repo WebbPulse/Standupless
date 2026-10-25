@@ -20,7 +20,9 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
 from app.common.api.schemas.views import (
+    InboxBucket,
     InboxClearRequest,
+    InboxCountRead,
     InboxReadRequest,
     InboxSnoozeRequest,
     InboxUnreadRequest,
@@ -28,6 +30,7 @@ from app.common.api.schemas.views import (
 )
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification, NotificationKind
+from app.common.db.dynamo.users import DEFAULT_PRIORITY_KINDS
 from app.common.issue_keys import display_key
 from app.common.issue_rules import not_found, unprocessable
 
@@ -39,8 +42,59 @@ INBOX_KINDS: tuple[str, ...] = (
     "export_failed",
     "import_ready",
     "import_failed",
+    "app_approval_requested",
+    "app_approval_decided",
 )
 """Every kind an inbox row can carry: the member facing ones plus the workspace notices."""
+
+INBOX_BUCKETS: tuple[str, ...] = ("all", "priority", "other")
+"""The tabs a read or a bulk action may keep to: both, Priority or Other."""
+
+
+def priority_kinds(repositories: Repositories, context: AuthzContext) -> tuple[bool, frozenset[str]]:
+    """Whether the caller splits their inbox, and the kinds their Priority tab holds.
+
+    A caller with no person row, such as a workspace key, gets the defaults.
+    """
+    user = repositories.users.get(context.user_id) if context.user_id else None
+    if user is None:
+        return True, DEFAULT_PRIORITY_KINDS
+    return bool(user.priority_inbox), frozenset(kind for kind in INBOX_KINDS if user.is_priority(kind))
+
+
+def bucket_kinds(
+    repositories: Repositories, context: AuthzContext, bucket: str, kinds: Sequence[str]
+) -> Optional[tuple[str, ...]]:
+    """The kinds a read keeps to once `bucket` narrows `kinds`, or `None` when nothing can match.
+
+    `all` leaves `kinds` as sent. Priority keeps the caller's priority kinds and
+    Other every kind but those, each within `kinds` when it names any.
+    """
+    if bucket not in INBOX_BUCKETS:
+        raise unprocessable(f"Unknown inbox bucket: {bucket}")
+    wanted = tuple(dict.fromkeys(kinds))
+    if bucket == "all":
+        return wanted
+    _, priority = priority_kinds(repositories, context)
+    within = wanted or INBOX_KINDS
+    narrowed = tuple(kind for kind in within if (kind in priority) == (bucket == "priority"))
+    return narrowed or None
+
+
+def inbox_counts(repositories: Repositories, context: AuthzContext) -> InboxCountRead:
+    """The caller's unread counts: everything, each tab of the split inbox, and the sidebar badge."""
+    split, priority = priority_kinds(repositories, context)
+    total = repositories.inbox.unread_count(context.workspace_id, context.user_id)
+    priority_unread, other_unread = repositories.inbox.split_unread_counts(
+        context.workspace_id, context.user_id, lambda kind: kind in priority
+    )
+    return InboxCountRead(
+        unread=total,
+        priority_unread=priority_unread,
+        other_unread=other_unread,
+        priority_inbox=split,
+        badge=priority_unread if split else total,
+    )
 
 
 def cursor_scope(
@@ -76,27 +130,34 @@ def list_notifications(
     limit: int,
     include_snoozed: bool = False,
     kinds: Sequence[str] = (),
+    bucket: InboxBucket = "all",
 ) -> tuple[list[NotificationRead], Optional[str]]:
     """One page of the caller's own notifications, newest first, with the next cursor.
 
     Snoozed notifications stay out of both lists until their time comes unless
     `include_snoozed` keeps them in, and `snoozed` lists only them, so it cannot be
-    combined with `unread`. `kinds` keeps only those notification kinds.
+    combined with `unread`. `kinds` keeps only those notification kinds, and
+    `bucket` only the caller's Priority or Other tab.
     """
     if unread and snoozed:
         raise unprocessable("unread and snoozed cannot be combined")
     unknown = sorted(set(kinds) - set(INBOX_KINDS))
     if unknown:
         raise unprocessable(f"Unknown notification kind: {', '.join(unknown)}")
+    narrowed = bucket_kinds(repositories, context, bucket, kinds)
+    if narrowed is None:
+        return [], None
     workspace_id = context.workspace_id
-    scope = cursor_scope(workspace_id, context.user_id, unread, snoozed, include_snoozed=include_snoozed, kinds=kinds)
+    scope = cursor_scope(
+        workspace_id, context.user_id, unread, snoozed, include_snoozed=include_snoozed, kinds=narrowed
+    )
     page = repositories.inbox.list(
         workspace_id,
         context.user_id,
         unread_only=unread,
         snoozed_only=snoozed,
         include_snoozed=include_snoozed,
-        kinds=tuple(dict.fromkeys(kinds)),
+        kinds=narrowed,
         limit=limit,
         start_key=resume_key(cursor, scope),
     )
@@ -116,17 +177,18 @@ def mark_read(repositories: Repositories, context: AuthzContext, payload: InboxR
     """Mark some or all of the caller's notifications read, answering how many moved.
 
     An id already read, or belonging to someone else, counts as nothing changed.
-    `kinds` narrows a mark of everything to those kinds and is refused beside ids.
+    `kinds` and `bucket` narrow a mark of everything and are refused beside ids.
     """
-    if payload.kinds and not payload.all:
-        raise unprocessable("kinds only narrows all")
+    if (payload.kinds or payload.bucket != "all") and not payload.all:
+        raise unprocessable("kinds and bucket only narrow all")
     if payload.all:
         unknown = sorted(set(payload.kinds) - set(INBOX_KINDS))
         if unknown:
             raise unprocessable(f"Unknown notification kind: {', '.join(unknown)}")
-        return repositories.inbox.mark_all_read(
-            context.workspace_id, context.user_id, kinds=tuple(dict.fromkeys(payload.kinds))
-        )
+        narrowed = bucket_kinds(repositories, context, payload.bucket, payload.kinds)
+        if narrowed is None:
+            return 0
+        return repositories.inbox.mark_all_read(context.workspace_id, context.user_id, kinds=narrowed)
     if not payload.notification_ids:
         raise unprocessable("Send notification_ids or all")
     return repositories.inbox.mark_read(context.workspace_id, context.user_id, payload.notification_ids)
@@ -154,18 +216,21 @@ def snooze(repositories: Repositories, context: AuthzContext, payload: InboxSnoo
 def clear_notifications(repositories: Repositories, context: AuthzContext, payload: InboxClearRequest) -> int:
     """Delete the caller's own notifications in bulk, the read ones or all, answering how many went.
 
-    `kinds` narrows it the way the list's filter does, and a snoozed row is only
-    taken by a full clear that asks for snoozed rows too.
+    `kinds` and `bucket` narrow it the way the list's filters do, and a snoozed
+    row is only taken by a full clear that asks for snoozed rows too.
     """
     unknown = sorted(set(payload.kinds) - set(INBOX_KINDS))
     if unknown:
         raise unprocessable(f"Unknown notification kind: {', '.join(unknown)}")
+    narrowed = bucket_kinds(repositories, context, payload.bucket, payload.kinds)
+    if narrowed is None:
+        return 0
     return repositories.inbox.delete_matching(
         context.workspace_id,
         context.user_id,
         read_only=payload.read_only,
         include_snoozed=payload.include_snoozed,
-        kinds=tuple(dict.fromkeys(payload.kinds)),
+        kinds=narrowed,
     )
 
 

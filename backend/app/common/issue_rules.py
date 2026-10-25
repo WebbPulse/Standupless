@@ -28,6 +28,7 @@ from app.common.db.dynamo.teams import Team
 from app.common.estimates import allowed_estimates
 from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
+from app.common.team_retirement import refuse_if_retired
 
 COMPLETED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """Which status categories count an issue as finished for the parent's rollup.
@@ -198,13 +199,16 @@ def check_assignee(
 
     A guest only reads the teams they hold a membership in, and anyone reads a
     private team only as its member, so assigning such a person an issue in a
-    team they cannot open would hide it from them entirely.
+    team they cannot open would hide it from them entirely. A suspended member
+    cannot take new work, though issues already theirs keep them.
     """
     if not assignee_id:
         return None
     membership = repositories.memberships.get(workspace_id, assignee_id)
     if membership is None:
         raise unprocessable("The assignee is not a member of this workspace")
+    if membership.is_suspended:
+        raise unprocessable("The assignee is suspended")
     if not needs_team_membership(repositories, workspace_id, team_id, membership.role):
         return assignee_id
     team_membership = repositories.memberships.get_team_membership(workspace_id, team_id, assignee_id)
@@ -420,10 +424,17 @@ def require_team_reader(repositories: Repositories, context: AuthzContext, team_
     A guest outside the team gets the same answer as for a team that never
     existed, which is what keeps the team set unenumerable.
     """
+    _readable_team(repositories, context, team_id)
+
+
+def _readable_team(repositories: Repositories, context: AuthzContext, team_id: str) -> Team:
+    """The team the caller may read, or 404, read once for the checks built on it."""
     if not context.can_see_team(team_id):
         raise team_not_found(team_id)
-    if repositories.teams.get(context.workspace_id, team_id) is None:
+    team = repositories.teams.get(context.workspace_id, team_id)
+    if team is None:
         raise team_not_found(team_id)
+    return team
 
 
 def require_team_member(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
@@ -431,8 +442,9 @@ def require_team_member(repositories: Repositories, context: AuthzContext, team_
 
     Invisibility is a 404 so nothing leaks, but a caller who can see the team and
     still may not write gets a 403: the resource is not in doubt, only the verb.
+    A retired team is read-only, so a write into it is a 409.
     """
-    require_team_reader(repositories, context, team_id)
+    refuse_if_retired(_readable_team(repositories, context, team_id))
     role = team_role(repositories, context, team_id)
     if role is None:
         raise HTTPException(
@@ -442,8 +454,8 @@ def require_team_member(repositories: Repositories, context: AuthzContext, team_
 
 
 def require_team_admin(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
-    """Hold that the caller administers one team, or 404 or 403."""
-    require_team_reader(repositories, context, team_id)
+    """Hold that the caller administers one team, or 404 or 403, and that it is not retired, or 409."""
+    refuse_if_retired(_readable_team(repositories, context, team_id))
     if context.is_workspace_admin:
         return
     if team_role(repositories, context, team_id) != "admin":
@@ -453,13 +465,16 @@ def require_team_admin(repositories: Repositories, context: AuthzContext, team_i
         )
 
 
-def load_visible_issue(repositories: Repositories, context: AuthzContext, issue_id: str) -> Issue:
+def load_visible_issue(
+    repositories: Repositories, context: AuthzContext, issue_id: str, *, include_deleted: bool = False
+) -> Issue:
     """One issue the caller may read, or a 404.
 
     Every issue route starts here, so an issue in a team the caller is outside is
-    indistinguishable from one that was never created.
+    indistinguishable from one that was never created. A deleted issue is a 404
+    too, unless `include_deleted`, which the reads and the trash actions pass.
     """
-    issue = repositories.issues.get(context.workspace_id, issue_id)
+    issue = repositories.issues.get(context.workspace_id, issue_id, include_deleted=include_deleted)
     if issue is None:
         raise not_found()
     if not context.can_see_team(issue.team_id):

@@ -7,7 +7,7 @@
  * its foot, so a thread can be read and answered without leaving the list.
  * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard, and
  * Cmd or Ctrl+Shift+Up and Down peek its parent and its first sub-issue in
- * place.
+ * place, and O then G opens its linked pull request.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -22,6 +22,7 @@ import {
   useIssueTreeKeys,
   type IssueTreeTarget,
 } from '../../hooks/useIssueTreeKeys';
+import { useOpenPullRequestShortcut } from '../../hooks/useOpenPullRequestShortcut';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
@@ -36,6 +37,9 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPatch } from '../../lib/milestones';
 import { issuePath, projectMilestonePath, projectPath } from '../../lib/paths';
 import { activityKey, issueKey } from '../../lib/queryKeys';
+import { fullTimestamp } from '../../lib/relativeTime';
+import { enteredStatusAt, timeInStatusSentence } from '../../lib/timeInStatus';
+import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import type { IssueRead, IssueUpdate } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
@@ -104,6 +108,12 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
     parents: true,
   });
   const team = teams?.find((item) => item.id === teamId);
+  const peekStatusName =
+    issue === null
+      ? undefined
+      : issue.in_triage === true
+        ? TRIAGE_STATUS.name
+        : options.statuses.find((item) => item.id === issue.status_id)?.name;
   const canEdit = canWriteIssues(workspace?.role, team?.role);
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const parents = options.parents.filter(
@@ -196,6 +206,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
       onUpdate({ parent_id: null });
     },
   });
+  useOpenPullRequestShortcut(workspaceId, issueId, issue !== null);
 
   return (
     <aside
@@ -346,6 +357,14 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                   </PropertySection>
                 )}
 
+                {peekStatusName !== undefined && (
+                  <p
+                    className="text-xs text-text-faint"
+                    title={fullTimestamp(enteredStatusAt(issue))}
+                  >
+                    {timeInStatusSentence(peekStatusName, issue)}
+                  </p>
+                )}
                 <p className="text-xs text-text-faint">
                   Last updated {timestampLabel(issue.updated_at)}
                 </p>

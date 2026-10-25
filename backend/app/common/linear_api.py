@@ -225,6 +225,7 @@ query Projects($team: String!, $first: Int!, $after: String) {
     projects(first: $first, after: $after) {
       nodes {
         id name description content url createdAt startDate targetDate priority health
+        startDateResolution targetDateResolution
         status { type }
         lead { email }
         projectMilestones(first: 50) {

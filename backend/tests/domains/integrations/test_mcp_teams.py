@@ -54,6 +54,20 @@ def test_create_team_makes_the_caller_admin_and_seeds_statuses(
     assert read["caller_role"] == "admin"
 
 
+def test_create_team_follows_the_team_creation_setting(client: TestClient, repositories: Any, workspace: str) -> None:
+    """With team creation closed to admins, a member is refused and an admin key still creates."""
+    repositories.workspaces.set_permissions(WORKSPACE, team_creation_permission="admins")
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read", "admin"))
+
+    assert "Only workspace admins can create teams" in refusal(
+        tool(client, member, "create_team", {"name": "Nope", "key_prefix": "NOP"})
+    )
+    created = answer(tool(client, admin, "create_team", {"name": "Platform", "key_prefix": "PLT"}))
+
+    assert created["caller_role"] == "admin"
+
+
 def test_create_team_refuses_a_guest_and_a_taken_prefix(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest may not create a team, and a prefix in use is the route's conflict."""
     guest = mint_for(repositories, GUEST, ("teams:write",))
@@ -725,3 +739,27 @@ def test_merge_labels_folds_one_label_into_another_by_name(
     assert "different label" in itself
     assert repositories.issues.get(WORKSPACE, issue.issue_id).label_ids == [bug.label_id]
     assert [row.label_id for row in repositories.team_config.list_labels(WORKSPACE, TEAM)] == [bug.label_id]
+
+
+def test_a_retired_team_leaves_the_list_and_refuses_writes_until_unretired(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """`retire_team` hides the team from `list_teams`, write tools naming it refuse, and `unretire_team` undoes it."""
+    secret = mint_for(repositories, ADMIN, ("teams:write", "teams:read", "issues:write", "issues:read"))
+
+    retired = answer(tool(client, secret, "retire_team", {"team_id": "ABC"}))
+    listed = answer(tool(client, secret, "list_teams", {}))["teams"]
+    everything = answer(tool(client, secret, "list_teams", {"include_retired": True}))["teams"]
+    refused = refusal(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "Nope"}))
+    read = answer(tool(client, secret, "get_team", {"team_id": "ABC"}))
+
+    assert retired["retired_at"] is not None
+    assert TEAM not in [row["team_id"] for row in listed]
+    assert TEAM in [row["team_id"] for row in everything]
+    assert "retired" in refused
+    assert read["team_id"] == TEAM
+
+    restored = answer(tool(client, secret, "unretire_team", {"team_id": "ABC"}))
+    assert restored["retired_at"] is None
+    created = answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "Back"}))
+    assert repositories.issues.get(WORKSPACE, created["issue_id"]) is not None

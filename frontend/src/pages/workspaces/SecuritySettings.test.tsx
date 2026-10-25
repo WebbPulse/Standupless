@@ -77,6 +77,7 @@ vi.mock('../../api/workspaces', () => ({
   recordSsoTestResult: vi.fn(),
   updateSsoPolicy: vi.fn(),
   joinSsoWorkspace: vi.fn(),
+  updateWorkspace: vi.fn(() => Promise.resolve({})),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -231,6 +232,13 @@ describe('the workspace security page', () => {
     });
   });
 
+  it('shows an admin who may invite people and create teams', () => {
+    renderPage();
+
+    expect(screen.getByLabelText('Invite members')).toHaveValue('admins');
+    expect(screen.getByLabelText('Create teams')).toHaveValue('members');
+  });
+
   it('tells a member they cannot change it', () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
     renderPage();
@@ -242,6 +250,7 @@ describe('the workspace security page', () => {
     ).toBeInTheDocument();
     expect(getAuthPolicy).not.toHaveBeenCalled();
     expect(listApprovedDomains).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Invite members')).not.toBeInTheDocument();
   });
 });
 

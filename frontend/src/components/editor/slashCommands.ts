@@ -13,6 +13,7 @@ import type { Editor, Range } from '@tiptap/core';
 import type { IconType } from 'react-icons';
 import {
   LuAtSign,
+  LuCalendar,
   LuHeading1,
   LuHeading2,
   LuHeading3,
@@ -29,6 +30,7 @@ import {
   LuWorkflow,
 } from 'react-icons/lu';
 import { MERMAID_LANGUAGE, MERMAID_STARTER } from '../../lib/mermaid';
+import { insertStarterTable } from './tableShortcut';
 
 /** What a surface can do that some commands depend on. */
 export interface SlashContext {
@@ -36,6 +38,8 @@ export interface SlashContext {
   pickFiles?: () => void;
   /** True when the surface suggests people for an @mention. */
   mentions?: boolean;
+  /** Opens the date picker whose pick inserts a chip. Unset hides `/date`. */
+  pickDate?: () => void;
 }
 
 /** One row of the insert menu. */
@@ -137,7 +141,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     id: 'diagram',
     label: 'Mermaid diagram',
     icon: LuWorkflow,
-    keywords: ['diagram', 'mermaid', 'flowchart', 'chart', 'sequence', 'graph'],
+    keywords: [
+      'diagram',
+      'mermaid',
+      'chart',
+      'flow',
+      'flowchart',
+      'sequence',
+      'graph',
+    ],
     run: (editor, range) => {
       editor
         .chain()
@@ -186,13 +198,20 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     label: 'Table',
     icon: LuTable,
     keywords: ['grid', 'columns', 'rows'],
+    hint: '|--',
     run: (editor, range) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-        .run();
+      insertStarterTable(editor.chain().focus().deleteRange(range)).run();
+    },
+  },
+  {
+    id: 'date',
+    label: 'Date',
+    icon: LuCalendar,
+    keywords: ['day', 'today', 'tomorrow', 'calendar', 'when', 'deadline'],
+    available: (context) => context.pickDate !== undefined,
+    run: (editor, range, context) => {
+      editor.chain().focus().deleteRange(range).run();
+      context.pickDate?.();
     },
   },
   {

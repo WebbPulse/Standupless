@@ -1,6 +1,7 @@
 /**
- * The team settings route: the General section's rename, the typed-confirm
- * delete in the danger zone at the bottom of the page, and the status, label
+ * The team settings route: the General section's rename, the retire and
+ * typed-confirm delete in the danger zone at the bottom of the page, the
+ * retired banner, and the status, label
  * and team member sections, including the reorder that the contract makes two
  * position PATCHes because it exposes no bulk route, and the pull request
  * labels switch.
@@ -43,6 +44,7 @@ const removeTeamMember = vi.fn<(userId: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const updateTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
 const deleteTeam = vi.fn<() => Promise<void>>();
+const retireTeam = vi.fn<() => Promise<TeamRead>>();
 const navigate = vi.fn();
 const getStandupSettings = vi.fn<() => Promise<StandupSettingsRead>>();
 const updateStandupSettings =
@@ -72,6 +74,8 @@ vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
   updateTeam: (_w: string, _t: string, body: unknown) => updateTeam(body),
   deleteTeam: () => deleteTeam(),
+  retireTeam: () => retireTeam(),
+  unretireTeam: vi.fn(),
   listStatuses: () => listStatuses(),
   createStatus: (_w: string, _p: string, body: unknown) => createStatus(body),
   updateStatus: (_w: string, _p: string, statusId: string, body: unknown) =>
@@ -346,14 +350,100 @@ describe('the general section', () => {
     renderPage();
 
     expect(
-      await screen.findByLabelText('Name', { selector: '#team-general-name' })
+      await screen.findByRole('button', { name: 'Retire team' })
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Delete team' })
     ).not.toBeInTheDocument();
+  });
+
+  it('hides the danger zone from someone who does not administer the team', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    listTeams.mockResolvedValue([{ ...team, role: 'member' }]);
+    renderPage();
+
+    expect(
+      await screen.findByLabelText('Name', { selector: '#team-general-name' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retire team' })
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: 'Danger zone' })
     ).not.toBeInTheDocument();
+  });
+
+  it('retires the team after one confirmation', async () => {
+    retireTeam.mockResolvedValue({
+      ...team,
+      retired_at: '2026-10-25T00:00:00Z',
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Retire team' })
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Retire team' })
+    );
+
+    await waitFor(() => {
+      expect(retireTeam).toHaveBeenCalled();
+    });
+  });
+
+  it('names the open issues that hold a retire back and links to them', async () => {
+    retireTeam.mockRejectedValue(
+      new ApiError({
+        status: 409,
+        statusText: 'Conflict',
+        body: {
+          success: false,
+          error_code: 'TEAM_HAS_OPEN_ISSUES',
+          message:
+            'Team ENG still has 2 open issues. Complete, cancel or move them before retiring it.',
+          details: { open_issue_count: 2 },
+        },
+        url: '/api/workspaces/ws-1/teams/proj-1/retire',
+        method: 'POST',
+      })
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Retire team' })
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Retire team' })
+    );
+
+    expect(
+      await within(dialog).findByText(/still has 2 open issues/)
+    ).toBeInTheDocument();
+    const link = within(dialog).getByRole('link', {
+      name: 'View 2 open issues',
+    });
+    expect(link.getAttribute('href')).toMatch(/\/team\/ENG\?done=0$/);
+  });
+
+  it('shows a retired team as read-only with an un-retire action', async () => {
+    listTeams.mockResolvedValue([
+      { ...team, retired_at: '2026-10-25T00:00:00Z' },
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /is retired\. Its issues, projects and cycles are/
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button', { name: /Un-retire/ }).length
+    ).toBeGreaterThan(0);
   });
 });
 

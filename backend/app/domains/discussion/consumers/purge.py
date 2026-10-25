@@ -48,7 +48,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
     """Purge the discussion of the team's issues numbered after the cursor."""
     after = job.cursor
     while True:
-        issues = repositories.issues.page_after(job.workspace_id, job.team_id, after, limit=PAGE)
+        issues = repositories.issues.page_with_trash_after(job.workspace_id, job.team_id, after, limit=PAGE)
         if not issues:
             return None
         for issue in issues:

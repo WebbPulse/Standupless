@@ -95,7 +95,9 @@ def list_issue_changes(
     if since < utc_now() - TOMBSTONE_RETENTION + SYNC_OVERLAP:
         return IssueChanges(synced_at=since, resync_required=True)
 
-    teams = listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams)
+    teams = listed_teams(
+        repositories, context, team_id, include_sub_teams=include_sub_teams, named=wanted.named_team_ids
+    )
     if not teams:
         return IssueChanges(synced_at=since)
 

@@ -12,7 +12,12 @@ import apiClient, { type RequestOptions } from './client';
 import { untilMergeComplete } from '../lib/labelMerge';
 import { conditionalGet, type ReadContext } from './conditional';
 import type { IssueListSort } from './issues';
-import type { CompletedWindow, ViewLayout, ViewVisibleProperty } from './views';
+import type {
+  CompletedWindow,
+  ViewGroupHeader,
+  ViewLayout,
+  ViewVisibleProperty,
+} from './views';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -91,6 +96,7 @@ export interface TeamDisplayOptions {
   completed_window?: CompletedWindow | null;
   show_empty_groups?: boolean | null;
   show_archived?: boolean | null;
+  group_header?: ViewGroupHeader | null;
 }
 
 /**
@@ -254,6 +260,31 @@ export const updateTeam = async (
   const response = await apiClient.patch<TeamRead>(
     teamPath(workspaceId, teamId),
     body
+  );
+  return response.data;
+};
+
+/**
+ * Retires a team: it leaves the sidebar and the team pickers, and its work
+ * turns read-only. Team admin only.
+ */
+export const retireTeam = async (
+  workspaceId: string,
+  teamId: string
+): Promise<TeamRead> => {
+  const response = await apiClient.post<TeamRead>(
+    `${teamPath(workspaceId, teamId)}/retire`
+  );
+  return response.data;
+};
+
+/** Brings a retired team back so it takes changes again. Team admin only. */
+export const unretireTeam = async (
+  workspaceId: string,
+  teamId: string
+): Promise<TeamRead> => {
+  const response = await apiClient.post<TeamRead>(
+    `${teamPath(workspaceId, teamId)}/unretire`
   );
   return response.data;
 };

@@ -309,3 +309,23 @@ def test_only_the_author_owner_or_an_admin_edits_an_update(client: TestClient, w
     assert client.patch(f"{feed}/{update['update_id']}", json={"body": "Owner edit"}).status_code == 200
     sign_in(client, OWNER)
     assert client.get(feed).json()["updates"][0]["can_edit"] is True
+
+
+def test_an_initiative_target_may_be_a_month_quarter_half_or_year(client: TestClient, workspace: str) -> None:
+    """A coarse target closes its period, sorts by that end, widens on a resolution alone and clears with the date."""
+    sign_in(client, MEMBER)
+    half = _create(client, workspace, name="Half", target_date="2027-02-10", target_date_resolution="half")
+    exact = _create(client, workspace, name="Exact", target_date="2027-05-01")
+    path = f"{_base(workspace)}/{half['initiative_id']}"
+
+    listed = client.get(_base(workspace)).json()["initiatives"]
+    yearly = client.patch(path, json={"target_date_resolution": "year"}).json()
+    refused = client.post(_base(workspace), json={"name": "None", "target_date_resolution": "quarter"})
+    cleared = client.patch(path, json={"target_date": None}).json()
+
+    assert (half["target_date"], half["target_date_resolution"]) == ("2027-06-30", "half")
+    assert exact["target_date_resolution"] == "day"
+    assert [row["name"] for row in listed] == ["Exact", "Half"]
+    assert (yearly["target_date"], yearly["target_date_resolution"]) == ("2027-12-31", "year")
+    assert refused.status_code == 422
+    assert (cleared["target_date"], cleared["target_date_resolution"]) == (None, None)

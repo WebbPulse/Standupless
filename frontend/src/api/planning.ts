@@ -234,10 +234,6 @@ export const updateCycle = async (
   return response.data;
 };
 
-/**
- * Starts a team's next upcoming cycle today. The current cycle ends yesterday
- * and its unfinished issues move into the started one.
- */
 const cycleCalendarFeedPath = (workspaceId: string): string =>
   `${cyclesPath(workspaceId)}/calendar-feed`;
 
@@ -278,6 +274,10 @@ export const revokeCycleCalendarFeed = async (
   });
 };
 
+/**
+ * Starts a team's next upcoming cycle today. The current cycle ends yesterday
+ * and its unfinished issues move into the started one.
+ */
 export const startCycleToday = async (
   workspaceId: string,
   cycleId: string,
@@ -285,6 +285,23 @@ export const startCycleToday = async (
 ): Promise<CycleStartTodayRead> => {
   const response = await apiClient.post<CycleStartTodayRead>(
     `${cyclePath(workspaceId, cycleId)}/start-today`,
+    { team_id: teamId }
+  );
+  return response.data;
+};
+
+/**
+ * Ends a team's current cycle at the close of today, in the team's timezone.
+ * The cycle close rolls its unfinished issues into the next cycle once today
+ * is over; a cycle that is not current answers 409.
+ */
+export const endCycleToday = async (
+  workspaceId: string,
+  cycleId: string,
+  teamId: string
+): Promise<CycleRead> => {
+  const response = await apiClient.post<CycleRead>(
+    `${cyclePath(workspaceId, cycleId)}/end-today`,
     { team_id: teamId }
   );
   return response.data;

@@ -223,3 +223,33 @@ describe('DisplayMenu', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('DisplayMenu group header', () => {
+  it('offers the total estimate where the list estimates', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn<(state: ViewState) => void>();
+    render(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={onChange}
+        estimates
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const header = screen.getByLabelText('Group header');
+    expect(optionsOf(header)).toEqual(['Issue count', 'Total estimate']);
+    await user.selectOptions(header, 'estimate');
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ groupHeader: 'estimate' })
+    );
+  });
+
+  it('leaves the choice out where no team estimates', async () => {
+    const user = userEvent.setup();
+    render(<DisplayMenu state={defaultViewState('list')} onChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    expect(screen.queryByLabelText('Group header')).toBeNull();
+  });
+});

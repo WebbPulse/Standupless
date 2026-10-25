@@ -17,6 +17,7 @@ import type {
   SavedViewDisplayRead,
   SavedViewFilter,
   SavedViewLook,
+  ViewGroupHeader,
   ViewLayout,
   ViewVisibleProperty,
 } from '../api/views';
@@ -132,6 +133,9 @@ export const TEXT_FIELDS: ReadonlySet<FilterField> = new Set(['content']);
 export const isTextField = (field: FilterField): boolean =>
   TEXT_FIELDS.has(field);
 
+/** The team filter value that stands for the viewer's own teams, resolved per viewer. */
+export const MY_TEAMS = 'my_teams';
+
 /** Cycle values the server resolves per team when the list runs. */
 export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
 
@@ -181,6 +185,18 @@ export const COMPLETED_WINDOW_LABELS: Record<CompletedWindow, string> = {
   none: 'None',
 };
 
+/** Every group header figure, in the order the display menu offers them. */
+export const GROUP_HEADERS: ViewGroupHeader[] = ['count', 'estimate'];
+
+/** How a group header figure reads in the display menu. */
+export const GROUP_HEADER_LABELS: Record<ViewGroupHeader, string> = {
+  count: 'Issue count',
+  estimate: 'Total estimate',
+};
+
+const isGroupHeader = (value: string | null): value is ViewGroupHeader =>
+  value !== null && (GROUP_HEADERS as string[]).includes(value);
+
 /** The days each bounded completed window reaches back. */
 const WINDOW_DAYS: Partial<Record<CompletedWindow, number>> = {
   past_week: 7,
@@ -225,6 +241,8 @@ export interface ViewState {
   completed: CompletedWindow;
   /** True to list archived issues, which every list and board leaves out by default. */
   showArchived: boolean;
+  /** What each group header reads beside its name: the issue count or the total estimate. */
+  groupHeader: ViewGroupHeader;
 }
 
 /**
@@ -274,7 +292,7 @@ export interface IssueContext {
    * The teams a list spans. Only a list over more than one team offers a team
    * filter, since a single team's list already fixes it.
    */
-  teams?: { id: string; name: string; key?: string }[];
+  teams?: { id: string; name: string; key?: string; isMember?: boolean }[];
   /**
    * The issues a list holds that other rows name as their parent, so a
    * grouping by parent issue heads each group with its key and title.
@@ -646,6 +664,7 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'due_date',
   'created_at',
   'updated_at',
+  'time_in_status',
   'assignee',
 ];
 
@@ -668,6 +687,7 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   links: 'Links',
   created_at: 'Created',
   updated_at: 'Updated',
+  time_in_status: 'Time in status',
 };
 
 /** The properties a row shows until someone changes them. */
@@ -701,6 +721,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   showSubIssues: true,
   completed: 'all',
   showArchived: false,
+  groupHeader: 'count',
 });
 
 const isGroupField = (value: string | null): value is GroupField =>
@@ -810,7 +831,8 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.showEmpty === right.showEmpty &&
   left.showSubIssues === right.showSubIssues &&
   left.completed === right.completed &&
-  left.showArchived === right.showArchived;
+  left.showArchived === right.showArchived &&
+  left.groupHeader === right.groupHeader;
 
 /**
  * Reads the state out of the URL. Every parameter overrides `base`, and one
@@ -849,6 +871,7 @@ export const parseViewState = (
   const subs = params.get('subs');
   const done = params.get('done');
   const archived = params.get('archived');
+  const head = params.get('head');
   const groupBy = isGroupField(group) ? group : base.groupBy;
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
@@ -875,6 +898,7 @@ export const parseViewState = (
     showSubIssues: subs === null ? base.showSubIssues : subs === '1',
     completed: (done === null ? undefined : parseDone(done)) ?? base.completed,
     showArchived: archived === null ? base.showArchived : archived === '1',
+    groupHeader: isGroupHeader(head) ? head : base.groupHeader,
   };
 };
 
@@ -905,6 +929,7 @@ export const writeViewState = (
         'subs',
         'done',
         'archived',
+        'head',
       ].includes(key)
     ) {
       params.append(key, value);
@@ -942,6 +967,9 @@ export const writeViewState = (
   }
   if (state.showArchived !== base.showArchived) {
     params.set('archived', state.showArchived ? '1' : '0');
+  }
+  if (state.groupHeader !== base.groupHeader) {
+    params.set('head', state.groupHeader);
   }
   return params;
 };
@@ -1077,9 +1105,48 @@ const contentHolds = (issue: IssueRead, text: string): boolean =>
     .toLowerCase()
     .includes(text.trim().toLowerCase());
 
-/** Whether one clause holds for an issue, true for a clause only the server decides. */
-const clauseHolds = (issue: IssueRead, clause: FilterClause): boolean => {
-  if (decidedByServer(clause)) return true;
+/** The viewer's teams, read from a list's team context, for resolving `my_teams`. */
+export const myTeamIds = (
+  context: Pick<IssueContext, 'teams'>
+): ReadonlySet<string> =>
+  new Set(
+    (context.teams ?? [])
+      .filter((team) => team.isMember === true)
+      .map((team) => team.id)
+  );
+
+/** A clause with `my_teams` swapped for the viewer's teams, unchanged when it names none. */
+export const resolveMyTeams = (
+  clause: FilterClause,
+  myTeams: ReadonlySet<string>
+): FilterClause =>
+  clause.field === 'team' && clause.values.includes(MY_TEAMS)
+    ? {
+        ...clause,
+        values: [
+          ...new Set([
+            ...clause.values.filter((value) => value !== MY_TEAMS),
+            ...myTeams,
+          ]),
+        ],
+      }
+    : clause;
+
+/**
+ * Whether one clause holds for an issue, true for a clause only the server
+ * decides. `my_teams` is resolved from `myTeams`, and left to the server when
+ * the viewer's teams are not known.
+ */
+const clauseHolds = (
+  issue: IssueRead,
+  raw: FilterClause,
+  myTeams?: ReadonlySet<string>
+): boolean => {
+  if (decidedByServer(raw)) return true;
+  const named = raw.field === 'team' && raw.values.includes(MY_TEAMS);
+  if (named && myTeams === undefined) return true;
+  const clause =
+    named && myTeams !== undefined ? resolveMyTeams(raw, myTeams) : raw;
   if (isTextField(clause.field)) {
     const hit = contentHolds(issue, clause.values[0] ?? '');
     return clause.op === 'is_not' ? !hit : hit;
@@ -1108,19 +1175,21 @@ const combined = (results: boolean[], match: FilterMatch): boolean =>
  * Whether an issue passes the filters, for a list filtered on the client. The
  * top level clauses and each group combine under `match`, every clause by
  * default, and each group combines its own clauses under its own match.
+ * `myTeams` is the viewer's teams, which `my_teams` in a team clause names.
  */
 export const matchesFilters = (
   issue: IssueRead,
   filters: FilterClause[],
   match: FilterMatch = 'all',
-  groups: readonly FilterGroup[] = []
+  groups: readonly FilterGroup[] = [],
+  myTeams?: ReadonlySet<string>
 ): boolean =>
   combined(
     [
-      ...filters.map((clause) => clauseHolds(issue, clause)),
+      ...filters.map((clause) => clauseHolds(issue, clause, myTeams)),
       ...groups.map((group) =>
         combined(
-          group.filters.map((clause) => clauseHolds(issue, clause)),
+          group.filters.map((clause) => clauseHolds(issue, clause, myTeams)),
           group.match
         )
       ),
@@ -1340,6 +1409,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     completed:
       view.completed_window ?? (view.show_completed === false ? 'none' : 'all'),
     showArchived: view.show_archived === true,
+    groupHeader: view.group_header === 'estimate' ? 'estimate' : 'count',
   };
 };
 
@@ -1405,6 +1475,7 @@ export const stateToViewDisplay = (
   | 'show_completed'
   | 'completed_window'
   | 'show_archived'
+  | 'group_header'
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
@@ -1420,6 +1491,7 @@ export const stateToViewDisplay = (
   show_completed: state.completed !== 'none',
   completed_window: state.completed,
   show_archived: state.showArchived,
+  group_header: state.groupHeader,
 });
 
 /** How a new view is filed and how it looks, beyond its filters and display. */
@@ -2524,3 +2596,17 @@ export const sharedChange = (
   view.team_id === null && shared !== (view.scope === 'workspace')
     ? { shared }
     : {};
+
+/**
+ * The team ids a view's team clauses ask for by name, top level and in groups.
+ * A team the view names stays in reach after it retires.
+ */
+export const namedTeamIds = (
+  state: Pick<ViewState, 'filters' | 'groups'>
+): Set<string> =>
+  new Set(
+    [...state.filters, ...state.groups.flatMap((group) => group.filters)]
+      .filter((clause) => clause.field === 'team' && clause.op === 'is')
+      .flatMap((clause) => clause.values)
+      .filter((value) => value !== MY_TEAMS)
+  );

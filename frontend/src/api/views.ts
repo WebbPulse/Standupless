@@ -17,6 +17,7 @@ import type {
   BoardQuery,
   BoardRead,
   InboxClearResult,
+  InboxBucket,
   InboxClearWrite,
   InboxCountRead,
   InboxReadResult,
@@ -49,6 +50,9 @@ export type ViewLayout = 'list' | 'board';
 /** How far back a view reaches for issues in a completed or canceled status. */
 export type CompletedWindow = 'all' | 'past_week' | 'past_month' | 'none';
 
+/** What a group header reads beside its name: the issue count or the total estimate. */
+export type ViewGroupHeader = 'count' | 'estimate';
+
 /** The issue properties a view may show, in the vocabulary the server checks. */
 export type ViewVisibleProperty =
   | 'id'
@@ -67,7 +71,8 @@ export type ViewVisibleProperty =
   | 'milestone'
   | 'links'
   | 'created_at'
-  | 'updated_at';
+  | 'updated_at'
+  | 'time_in_status';
 
 /** One stored group of conditions, combined under its own `match`, holding groups of its own at most one level down. */
 export interface SavedViewFilterGroup {
@@ -156,6 +161,8 @@ export interface SavedViewDisplay {
    */
   completed_window?: CompletedWindow;
   show_archived?: boolean;
+  /** What group headers read; an older server leaves it out, which reads as the count. */
+  group_header?: ViewGroupHeader;
 }
 
 /**
@@ -224,6 +231,7 @@ export interface SavedViewDisplayCreate extends Omit<
   show_completed?: boolean;
   completed_window?: CompletedWindow;
   show_archived?: boolean;
+  group_header?: ViewGroupHeader;
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -251,6 +259,7 @@ export interface SavedViewDisplayUpdate extends Omit<
   show_completed?: boolean;
   completed_window?: CompletedWindow;
   show_archived?: boolean;
+  group_header?: ViewGroupHeader;
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -647,6 +656,7 @@ export const listInbox = async (
     snoozed?: boolean;
     include_snoozed?: boolean;
     kind?: string[];
+    bucket?: InboxBucket;
     cursor?: string;
     limit?: number;
   } = {},
@@ -664,8 +674,31 @@ export const listInbox = async (
 };
 
 /**
- * Counts the unread rows for the badge. It reads the sparse index rather than
- * filtering the list, and the answer saturates at 100.
+ * Reads every unread count: the total, each tab of the split inbox and the
+ * badge. Each saturates at 100.
+ */
+export const getInboxCounts = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<Required<InboxCountRead>> => {
+  const response = await apiClient.get<InboxCountRead>(
+    inboxCountPath(workspaceId),
+    signalOptions(signal)
+  );
+  const unread = response.data?.unread ?? 0;
+  return {
+    unread,
+    priority_unread: response.data?.priority_unread ?? 0,
+    other_unread: response.data?.other_unread ?? 0,
+    priority_inbox: response.data?.priority_inbox ?? false,
+    badge: response.data?.badge ?? unread,
+  };
+};
+
+/**
+ * Counts the unread rows for the badge, which keeps to the Priority tab while
+ * the split inbox is on. It reads the sparse index rather than filtering the
+ * list, and the answer saturates at 100.
  */
 export const getInboxCount = async (
   workspaceId: string,
@@ -675,7 +708,7 @@ export const getInboxCount = async (
     inboxCountPath(workspaceId),
     signalOptions(signal)
   );
-  return response.data?.unread ?? 0;
+  return response.data?.badge ?? response.data?.unread ?? 0;
 };
 
 /**
@@ -694,15 +727,17 @@ export const markRead = async (
   return response.data?.updated ?? 0;
 };
 
-/** Marks every row read in one call, or only the rows of the given kinds. */
+/** Marks every row read in one call, or only the rows of the given kinds or tab. */
 export const markAllRead = async (
   workspaceId: string,
-  kinds: string[] = []
+  kinds: string[] = [],
+  bucket: InboxBucket = 'all'
 ): Promise<number> =>
-  markRead(
-    workspaceId,
-    kinds.length > 0 ? { all: true, kinds } : { all: true }
-  );
+  markRead(workspaceId, {
+    all: true,
+    ...(kinds.length > 0 ? { kinds } : {}),
+    ...(bucket === 'all' ? {} : { bucket }),
+  });
 
 /**
  * Deletes the caller's rows in bulk, read ones only or all of them, and

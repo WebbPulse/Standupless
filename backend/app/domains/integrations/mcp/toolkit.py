@@ -27,9 +27,10 @@ from app.common.issue_rules import TRIAGE_STATUS_NAME, load_visible_issue, shown
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
 from app.common.plan_limits import PLAN_LIMIT_REACHED
-from app.common.planning_rules import visible_project_teams, visible_team_ids
+from app.common.planning_rules import can_see_initiative, visible_project_teams, visible_team_ids
 from app.common.sla import sla_status
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
+from app.common.team_retirement import refuse_if_retired
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -239,19 +240,23 @@ def team_id_ref(call: ToolCall, value: Any) -> str:
     return team_ref(call, value).team_id
 
 
-def resolve_team_arguments(call: ToolCall, *, administer: bool = False) -> ToolCall:
+def resolve_team_arguments(call: ToolCall, *, administer: bool = False, writes: bool = False) -> ToolCall:
     """The call with every `team_id` and `team_ids` argument resolved to team ids.
 
     The one place a tool's team reference is read, so every tool accepts an id, a
     key prefix such as SUP or a name without resolving it itself. A null is left
     alone, because on a patch it clears the field rather than naming a team.
     `administer` also resolves a private team a workspace admin is outside, for
-    the tools that manage a team's settings and members.
+    the tools that manage a team's settings and members. `writes` refuses a
+    `team_id` naming a retired team, which is read-only.
     """
     arguments = dict(call.arguments)
     value = arguments.get("team_id")
     if isinstance(value, str) and value.strip():
-        arguments["team_id"] = team_ref(call, value, administer=administer).team_id
+        team = team_ref(call, value, administer=administer)
+        if writes:
+            refuse_if_retired(team)
+        arguments["team_id"] = team.team_id
     values = arguments.get("team_ids")
     if isinstance(values, list):
         arguments["team_ids"] = [
@@ -299,10 +304,11 @@ def project_id_ref(call: ToolCall, value: Any) -> str:
 
 
 def initiative_id_ref(call: ToolCall, value: Any) -> str:
-    """An initiative id from an id or a name unique within the workspace.
+    """An initiative id from an id or a name unique among the initiatives the caller sees.
 
     A guest is never matched, since initiatives span the workspace and a guest is
-    refused every one of them.
+    refused every one of them, and one on a private team the caller is outside
+    answers as unknown.
     """
     reference = str(value).strip()
     if not reference:
@@ -310,10 +316,15 @@ def initiative_id_ref(call: ToolCall, value: Any) -> str:
     if call.context.is_guest:
         raise ToolError(NOT_VISIBLE)
     workspace_id = call.context.workspace_id
-    if call.repositories.planning.get_initiative(workspace_id, reference) is not None:
+    found = call.repositories.planning.get_initiative(workspace_id, reference)
+    if found is not None and can_see_initiative(call.context, found):
         return reference
     folded = reference.casefold()
-    named = [row for row in call.repositories.planning.list_initiatives(workspace_id) if row.name.casefold() == folded]
+    named = [
+        row
+        for row in call.repositories.planning.list_initiatives(workspace_id)
+        if row.name.casefold() == folded and can_see_initiative(call.context, row)
+    ]
     if len(named) > 1:
         raise ambiguous("initiative", reference)
     if not named:
@@ -343,12 +354,13 @@ def user_ref(call: ToolCall, value: Any) -> str:
     return reference
 
 
-def issue_by_key(call: ToolCall, key: str) -> Issue:
+def issue_by_key(call: ToolCall, key: str, *, include_deleted: bool = False) -> Issue:
     """One issue by its human key, resolved through its team's prefix.
 
     Visibility is the issue's own team's, so a key held before a move answers the
     issue where it now lives, and an unknown prefix answers the same not-found an
-    invisible issue does, so keys cannot be used to probe for teams.
+    invisible issue does, so keys cannot be used to probe for teams. A deleted
+    issue resolves only with `include_deleted`.
     """
     prefix, _, number = key.rpartition("-")
     if not prefix or not number.isdigit():
@@ -358,23 +370,26 @@ def issue_by_key(call: ToolCall, key: str) -> Issue:
     if team is None:
         raise issue_not_found()
 
-    issue = find_issue_by_number(call.repositories, call.context.workspace_id, team.team_id, int(number))
+    issue = find_issue_by_number(
+        call.repositories, call.context.workspace_id, team.team_id, int(number), include_deleted=include_deleted
+    )
     if issue is None or not call.context.can_see_team(issue.team_id):
         raise issue_not_found()
     return issue
 
 
-def issue_ref(call: ToolCall, value: Any) -> Issue:
+def issue_ref(call: ToolCall, value: Any, *, include_deleted: bool = False) -> Issue:
     """One visible issue named by its id or its key.
 
     Both spellings because an agent reading a conversation has the key a person
     wrote and an agent chaining calls has the id a previous tool answered. Ids are
-    ULIDs and carry no dash, so the two cannot be confused.
+    ULIDs and carry no dash, so the two cannot be confused. A deleted issue
+    resolves only with `include_deleted`, which the read and restore tools pass.
     """
     reference = str(value).strip()
     if "-" in reference:
-        return issue_by_key(call, reference)
-    return load_visible_issue(call.repositories, call.context, reference)
+        return issue_by_key(call, reference, include_deleted=include_deleted)
+    return load_visible_issue(call.repositories, call.context, reference, include_deleted=include_deleted)
 
 
 def issue_id_ref(call: ToolCall, value: Any) -> Optional[str]:
@@ -421,6 +436,8 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "created_at": issue.created_at.isoformat(),
         "updated_at": issue.updated_at.isoformat(),
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
+        "deleted_at": issue.deleted_at.isoformat() if issue.deleted_at else None,
+        "deleted_by": issue.deleted_by,
         "in_triage": issue.in_triage,
         "snoozed_until": issue.snoozed_until.isoformat() if issue.snoozed_until else None,
         "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
@@ -430,6 +447,7 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "started_at": issue.started_at.isoformat() if issue.started_at else None,
         "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
         "cancelled_at": issue.cancelled_at.isoformat() if issue.cancelled_at else None,
+        "status_changed_at": issue.entered_status_at().isoformat(),
         "external_ref": issue.external_ref,
     }
 

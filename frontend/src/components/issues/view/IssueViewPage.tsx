@@ -48,9 +48,11 @@ import { useCustomers } from '../../../hooks/useCustomers';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
+import { widgetSourceFor } from '../../../lib/dashboards';
 import {
   groupFieldsFor,
   filterFieldsFor,
+  namedTeamIds,
   parseViewState,
   sameViewState,
   sharedChange,
@@ -64,6 +66,7 @@ import {
   type ViewState,
 } from '../../../lib/issueView';
 import { viewPath, viewsPath } from '../../../lib/paths';
+import { teamFilterTeams } from '../../../lib/teamRetirement';
 import ShareButton from '../../access/ShareButton';
 import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
@@ -398,6 +401,8 @@ export interface IssueViewPageProps {
    * columns it cannot fill stay hidden. Left out, every category shows.
    */
   statusCategories?: readonly StatusCategory[] | undefined;
+  /** A notice above the list, such as the banner of a retired team. */
+  notice?: ReactNode;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -434,6 +439,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   titleAccessory,
   teamDefault,
   statusCategories,
+  notice,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -513,13 +519,15 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
   const isMember = workspace !== null && workspace.role !== 'guest';
   const { customers } = useCustomers(workspaceId, isMember);
+  const namedTeams = useMemo(() => namedTeamIds(state), [state]);
   const filterContext = useMemo(
     () => ({
       ...lists.context,
-      teams: teams.map((team) => ({
+      teams: teamFilterTeams(teams, namedTeams).map((team) => ({
         id: team.id,
         name: team.name,
         key: team.key_prefix,
+        isMember: team.is_member === true,
       })),
       ...(isMember
         ? {
@@ -530,7 +538,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           }
         : {}),
     }),
-    [lists.context, teams, isMember, customers]
+    [lists.context, teams, namedTeams, isMember, customers]
   );
   const viewLists = useMemo(
     () => ({ ...lists, context: filterContext }),
@@ -549,12 +557,23 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     () => insightsFilters(state, scope),
     [state, scope]
   );
+  const panelWidget = useMemo(
+    () => widgetSourceFor(state, scope, view),
+    [state, scope, view]
+  );
 
   const scaleFor = useCallback(
     (teamId: string) =>
       teams.find((team) => team.id === teamId)?.estimate_scale ?? 'off',
     [teams]
   );
+  const countsUnestimated = useCallback(
+    (teamId: string) =>
+      teams.find((team) => team.id === teamId)?.estimate_count_unestimated ===
+      true,
+    [teams]
+  );
+  const listEstimates = teams.some((team) => team.estimate_scale !== 'off');
   const estimateOptionsFor = useCallback(
     (teamId: string) =>
       estimateOptionsOf(teams.find((team) => team.id === teamId)),
@@ -791,6 +810,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           context={filterContext}
           teamDefault={teamDefaultActions}
           customerSorts={isMember}
+          estimates={listEstimates}
           onReset={
             !displayChanged
               ? undefined
@@ -920,6 +940,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     >
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {notice !== undefined && <div className="px-4 pt-3">{notice}</div>}
           <IssueListView
             slug={slug}
             state={state}
@@ -927,6 +948,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             collection={collection}
             lists={viewLists}
             scaleFor={scaleFor}
+            countsUnestimated={countsUnestimated}
             estimateOptionsFor={estimateOptionsFor}
             {...(teams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}
@@ -942,6 +964,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             workspaceId={workspaceId}
             scopeKey={scopeKey}
             filters={panelFilters}
+            widget={panelWidget}
             onPick={(field, value) => {
               setState({
                 ...state,

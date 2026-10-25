@@ -15,7 +15,19 @@ import { progressPercent } from './planningDisplay';
 /** The initiatives list arrangement, every field filled. */
 export type InitiativesDisplay = InitiativesDisplayPreference;
 
-/** How rows run inside each status group. */
+/** What the list groups rows by. */
+export type InitiativeGrouping = InitiativesDisplay['grouping'];
+
+/** The groupings, in the order the Display menu offers them. */
+export const INITIATIVE_GROUPINGS: InitiativeGrouping[] = ['status', 'team'];
+
+/** How each grouping reads. */
+export const INITIATIVE_GROUPING_LABELS: Record<InitiativeGrouping, string> = {
+  status: 'Status',
+  team: 'Team',
+};
+
+/** How rows run inside each group. */
 export type InitiativeOrdering = InitiativesDisplay['order'];
 
 /** Whether the completed group shows. */
@@ -23,11 +35,12 @@ export type CompletedChoice = InitiativesDisplay['completed'];
 
 /** A property the list can show beside the name. */
 export type InitiativeColumn =
-  'health' | 'owner' | 'projects' | 'target' | 'progress';
+  'health' | 'team' | 'owner' | 'projects' | 'target' | 'progress';
 
 /** Every property, in the order the row draws them. */
 export const INITIATIVE_COLUMNS: InitiativeColumn[] = [
   'health',
+  'team',
   'owner',
   'projects',
   'target',
@@ -37,6 +50,7 @@ export const INITIATIVE_COLUMNS: InitiativeColumn[] = [
 /** How each property reads in the Display menu and the header. */
 export const INITIATIVE_COLUMN_LABELS: Record<InitiativeColumn, string> = {
   health: 'Health',
+  team: 'Team',
   owner: 'Owner',
   projects: 'Projects',
   target: 'Target date',
@@ -63,6 +77,7 @@ export const INITIATIVE_ORDERING_LABELS: Record<InitiativeOrdering, string> = {
 
 /** The arrangement a list that was never arranged opens with. */
 export const DEFAULT_INITIATIVES_DISPLAY: InitiativesDisplay = {
+  grouping: 'status',
   order: 'target',
   completed: 'show',
   columns: INITIATIVE_COLUMNS.join(','),
@@ -70,6 +85,7 @@ export const DEFAULT_INITIATIVES_DISPLAY: InitiativesDisplay = {
 
 /** The arrangement fields, each one URL parameter. */
 export const INITIATIVES_DISPLAY_FIELDS: (keyof InitiativesDisplay)[] = [
+  'grouping',
   'order',
   'completed',
   'columns',
@@ -98,7 +114,11 @@ const parseField = <K extends keyof InitiativesDisplay>(
       initiativeColumnList(value)
     ) as InitiativesDisplay[K];
   const choices: readonly string[] =
-    field === 'order' ? INITIATIVE_ORDERINGS : ['show', 'hide'];
+    field === 'order'
+      ? INITIATIVE_ORDERINGS
+      : field === 'grouping'
+        ? INITIATIVE_GROUPINGS
+        : ['show', 'hide'];
   return choices.includes(value) ? (value as InitiativesDisplay[K]) : undefined;
 };
 
@@ -114,6 +134,7 @@ export const resolveInitiativesDisplay = (
     parseField(field, saved?.[field]) ??
     DEFAULT_INITIATIVES_DISPLAY[field];
   return {
+    grouping: pick('grouping'),
     order: pick('order'),
     completed: pick('completed'),
     columns: pick('columns'),
@@ -123,6 +144,9 @@ export const resolveInitiativesDisplay = (
 /** The owner filter value for initiatives nobody owns. */
 export const NO_OWNER = 'none';
 
+/** The team filter value for workspace level initiatives with no lead team. */
+export const NO_TEAM = 'none';
+
 /** The health filter value for initiatives with no health set. */
 export const NO_HEALTH = 'none';
 
@@ -131,6 +155,8 @@ export interface InitiativeFilters {
   status: InitiativeStatus[];
   owner: string;
   health: string[];
+  /** A lead team id, `NO_TEAM`, or empty for every team. */
+  team?: string;
 }
 
 /** Whether an initiative passes every filter. */
@@ -144,7 +170,10 @@ export const matchesInitiativeFilters = (
       ? initiative.owner_id === null
       : initiative.owner_id === filters.owner)) &&
   (filters.health.length === 0 ||
-    filters.health.includes(initiative.health ?? NO_HEALTH));
+    filters.health.includes(initiative.health ?? NO_HEALTH)) &&
+  (filters.team === undefined ||
+    filters.team === '' ||
+    (initiative.team_id ?? NO_TEAM) === filters.team);
 
 /** Whether a known health value or the no health value. */
 export const isHealthFilterValue = (

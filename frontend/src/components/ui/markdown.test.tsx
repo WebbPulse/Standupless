@@ -133,3 +133,13 @@ describe('Markdown callouts', () => {
     expect(screen.queryByRole('note')).toBeNull();
   });
 });
+
+describe('Markdown date chips', () => {
+  it('renders a stored day as a time element with the full date on hover', () => {
+    const { container } = render(<Markdown source="Due <2026-10-01>" />);
+    const chip = container.querySelector('time');
+    expect(chip?.getAttribute('datetime')).toBe('2026-10-01');
+    expect(chip?.getAttribute('title')).toContain('2026');
+    expect(container.textContent).not.toContain('<2026-10-01>');
+  });
+});

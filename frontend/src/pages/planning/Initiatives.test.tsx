@@ -5,7 +5,8 @@
  * a guest is told initiatives are for members and offered no way to start one,
  * that sub-initiatives sit indented under their parent and fold away, and
  * that the toolbar filters, orders and arranges the list from the URL and
- * saves the arrangement to the account.
+ * saves the arrangement to the account, and that rows filter and group by
+ * their lead team.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -18,6 +19,7 @@ import type {
   InitiativeListRead,
   InitiativeRead,
   MemberRead,
+  TeamRead,
   UserPreferencesUpdate,
   UserRead,
   WorkspaceRead,
@@ -29,6 +31,11 @@ const listInitiatives = vi.fn<() => Promise<InitiativeListRead>>();
 const createInitiative =
   vi.fn<(body: InitiativeCreate) => Promise<InitiativeRead>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+
+vi.mock('../../api/teams', () => ({
+  listTeams: () => listTeams(),
+}));
 const updatePreferences =
   vi.fn<(body: UserPreferencesUpdate) => Promise<UserRead>>();
 
@@ -111,6 +118,19 @@ const initiative = (
   ...overrides,
 });
 
+/** A team an initiative can be led by. */
+const team = (id: string, name: string, keyPrefix: string): TeamRead => ({
+  id,
+  workspace_id: 'ws-1',
+  name,
+  key_prefix: keyPrefix,
+  description: null,
+  estimate_scale: 'off',
+  created_at: '2026-09-17T00:00:00Z',
+  updated_at: '2026-09-17T00:00:00Z',
+  role: 'member',
+});
+
 /** The workspace member who owns things. */
 const ada: MemberRead = {
   user_id: 'user-1',
@@ -156,6 +176,10 @@ describe('Initiatives', () => {
     vi.clearAllMocks();
     useWorkspaceMock.mockReturnValue(resolved('member'));
     listMembers.mockResolvedValue([ada]);
+    listTeams.mockResolvedValue([
+      team('team-1', 'Platform', 'PLT'),
+      team('team-2', 'Growth', 'GRO'),
+    ]);
     listInitiatives.mockResolvedValue({ initiatives: [], next_cursor: null });
     updatePreferences.mockResolvedValue({
       id: 'user-1',
@@ -372,14 +396,65 @@ describe('Initiatives', () => {
     await waitFor(() => {
       expect(updatePreferences).toHaveBeenCalledWith({
         initiatives_display: {
+          grouping: 'status',
           order: 'target',
           completed: 'hide',
-          columns: 'health,owner,projects,target,progress',
+          columns: 'health,team,owner,projects,target,progress',
         },
       });
     });
 
     await user.click(screen.getByRole('button', { name: 'Projects' }));
     expect(screen.queryByText('2 projects')).not.toBeInTheDocument();
+  });
+
+  it('filters by lead team or no team from the URL', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Grow', { team_id: 'team-1' }),
+        initiative('ini-2', 'Expand', { team_id: 'team-2' }),
+        initiative('ini-3', 'Hire'),
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage('?team=PLT');
+
+    expect(
+      await screen.findByRole('link', { name: 'Grow' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Expand' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Hire' })
+    ).not.toBeInTheDocument();
+    unmount();
+
+    renderPage('?team=none');
+    expect(
+      await screen.findByRole('link', { name: 'Hire' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Grow' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('groups by lead team with a No team group last', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Grow', { team_id: 'team-2' }),
+        initiative('ini-2', 'Hire'),
+      ],
+      next_cursor: null,
+    });
+    renderPage('?grouping=team');
+
+    const growth = await screen.findByRole('region', { name: 'Growth' });
+    expect(within(growth).getByText('Grow')).toBeInTheDocument();
+    const none = screen.getByRole('region', { name: 'No team' });
+    expect(within(none).getByText('Hire')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Platform' })
+    ).not.toBeInTheDocument();
   });
 });

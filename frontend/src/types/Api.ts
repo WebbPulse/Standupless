@@ -19,6 +19,10 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether the inbox splits into Priority and Other tabs. */
+  priority_inbox?: boolean;
+  /** Every kind the Priority tab holds, fully resolved. */
+  priority_kinds?: InboxKind[];
   /** Whether notification emails are batched into a digest or sent one at a time. */
   email_format?: EmailFormat;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
@@ -67,6 +71,8 @@ export interface UserRead {
 
 /** The initiatives page arrangement an account saves, every field filled. */
 export interface InitiativesDisplayPreference {
+  /** What the list groups rows by: the initiative status or the lead team. */
+  grouping: 'status' | 'team';
   order: 'target' | 'name' | 'progress' | 'created' | 'updated';
   completed: 'show' | 'hide';
   /** The shown properties, comma separated in the list's own order. */
@@ -194,6 +200,9 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  priority_inbox?: boolean;
+  /** Replaces the whole set of kinds the Priority tab holds. */
+  priority_kinds?: InboxKind[];
   email_format?: EmailFormat;
   timezone?: string;
   pulse_digest?: PulseDigest;
@@ -238,6 +247,9 @@ export type StatusCategory =
 /** How a workspace builds the git branch names its members copy. */
 export type BranchFormat = 'key_title' | 'user_key_title' | 'key';
 
+/** Who a workspace permission setting lets act: admins only, or every member. */
+export type PermissionLevel = 'admins' | 'members';
+
 /** One workspace the signed in user belongs to. */
 export interface WorkspaceRead {
   id: string;
@@ -265,6 +277,12 @@ export interface WorkspaceRead {
   auth_policy_reason?: AuthPolicyReason | null;
   /** How every member's copied git branch names are built. */
   branch_format?: BranchFormat;
+  /** Who may invite people, admins only by default. */
+  invite_permission?: PermissionLevel;
+  /** Who may create teams, every member by default. */
+  team_creation_permission?: PermissionLevel;
+  /** Whether members need an admin's approval before connecting a third-party app. */
+  third_party_app_approvals?: boolean;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -517,7 +535,13 @@ export interface WorkspaceUpdate {
   accent_color?: string | null;
   project_update_interval_days?: ProjectUpdateInterval;
   branch_format?: BranchFormat;
+  invite_permission?: PermissionLevel;
+  team_creation_permission?: PermissionLevel;
+  third_party_app_approvals?: boolean;
 }
+
+/** Where a member stands: active, suspended by an admin, or invited and not yet joined. */
+export type MemberStatus = 'active' | 'suspended' | 'invited';
 
 /** One member of a workspace. */
 export interface MemberRead {
@@ -532,6 +556,14 @@ export interface MemberRead {
   full_name?: string;
   /** Handles the person gave up in a rename, which old mentions still use. */
   previous_handles?: string[];
+  /** Whether the member is active, suspended or only invited. */
+  status?: MemberStatus;
+  /** When the member was suspended, or null while active. */
+  suspended_at?: string | null;
+  /** Who suspended the member, or null while active. */
+  suspended_by?: string | null;
+  /** The invite behind an invited row, or null for a member. */
+  invite_id?: string | null;
 }
 
 /** A change to the caller's own name or handle. Fields left out keep their value. */
@@ -611,6 +643,10 @@ export interface TeamRead {
   private?: boolean;
   /** The parent team this one sits under, or null for a top-level team. */
   parent_team_id?: string | null;
+  /** When the team was retired, or null while it is active. A retired team is read-only. */
+  retired_at?: string | null;
+  /** The user who retired the team, or null while it is active. */
+  retired_by?: string | null;
 }
 
 /** The body the teams list route answers with. */
@@ -847,6 +883,8 @@ export type ActivityKind =
   | 'child_removed'
   | 'archived'
   | 'unarchived'
+  | 'deleted'
+  | 'restored'
   | 'subscriber_added'
   | 'subscriber_removed'
   | 'mentioned'
@@ -940,6 +978,13 @@ export interface IssueRead {
    */
   archived_at?: string | null;
   /**
+   * When the issue was moved to its team's trash, where it stays restorable
+   * for 30 days. Null or absent for a live issue.
+   */
+  deleted_at?: string | null;
+  /** Who moved the issue to the trash, set alongside `deleted_at`. */
+  deleted_by?: string | null;
+  /**
    * True while the issue waits in its team's triage inbox, filed from outside
    * the team. Optional so a row read before triage existed reads as accepted.
    */
@@ -984,6 +1029,12 @@ export interface IssueRead {
    */
   cancelled_at?: string | null;
   /**
+   * When the issue entered its current status, for time in status. Optional
+   * so a row built on the client before the server stamps it reads its
+   * creation instead.
+   */
+  status_changed_at?: string | null;
+  /**
    * How many relations the issue carries, every kind counted. Optional so a
    * row read before it was counted reads as none.
    */
@@ -1001,6 +1052,13 @@ export interface IssueExportRead {
   csv: string;
   rows: number;
   next_cursor?: string | null;
+}
+
+/** One team's recently deleted issues, the most recently deleted first. */
+export interface DeletedIssueListRead {
+  issues: IssueRead[];
+  /** How many days a deleted issue stays restorable before it is purged. */
+  retention_days: number;
 }
 
 /** The body the issue list and children routes answer with. */
@@ -1324,6 +1382,11 @@ export interface RecurringIssueRead {
 export interface RecurringIssueListRead {
   recurring_issues: RecurringIssueRead[];
   default_timezone: string;
+}
+
+/** The optional body a duplicate takes: whether the sub-issue tree is copied too. */
+export interface IssueDuplicate {
+  include_sub_issues?: boolean;
 }
 
 /** The body that moves an issue to another team, which gives it a new key. */
@@ -1903,6 +1966,7 @@ export interface SearchProjectRead {
   lead_id: string | null;
   team_ids: string[];
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   updated_at: string;
 }
 
@@ -1914,6 +1978,7 @@ export interface SearchInitiativeRead {
   health: ProjectHealth | null;
   owner_id: string | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   updated_at: string;
 }
 
@@ -2002,7 +2067,8 @@ export type NotificationKind =
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
  * team admin gets when a Slack or Discord channel was turned off, and the
  * notices an admin gets when a workspace export or an issue import finishes or
- * fails.
+ * fails, and the notices a third-party app approval sends to admins and to the
+ * member who asked.
  */
 export type InboxKind =
   | NotificationKind
@@ -2010,7 +2076,9 @@ export type InboxKind =
   | 'export_ready'
   | 'export_failed'
   | 'import_ready'
-  | 'import_failed';
+  | 'import_failed'
+  | 'app_approval_requested'
+  | 'app_approval_decided';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -2062,14 +2130,26 @@ export interface NotificationListRead {
   next_cursor: string | null;
 }
 
-/** The unread count, capped and reported as 100 above 100. */
+/** One tab of the split inbox, or both. */
+export type InboxBucket = 'all' | 'priority' | 'other';
+
+/**
+ * The unread counts, each capped and reported as 100 above 100: everything,
+ * each tab of the split inbox, and the sidebar badge, which counts Priority
+ * alone while the split is on.
+ */
 export interface InboxCountRead {
   unread: number;
+  priority_unread?: number;
+  other_unread?: number;
+  priority_inbox?: boolean;
+  badge?: number;
 }
 
 /** What a mark-read call takes: named rows, or every row. */
 export type InboxReadWrite =
-  { notification_ids: string[] } | { all: true; kinds?: string[] };
+  | { notification_ids: string[] }
+  | { all: true; kinds?: string[]; bucket?: InboxBucket };
 
 /** What a mark-unread call takes: the rows to bring back as unread. */
 export interface InboxUnreadWrite {
@@ -2118,6 +2198,7 @@ export interface InboxClearWrite {
   read_only?: boolean;
   include_snoozed?: boolean;
   kinds?: string[];
+  bucket?: InboxBucket;
 }
 
 /** How many rows a bulk delete removed. */
@@ -2177,6 +2258,11 @@ export interface CycleRead {
   unestimated?: RollupCounts;
   /** What the cycle close rolled in from the cycle before and out to the next. */
   carry?: CarryOver;
+  /**
+   * On the cycle list, the days with no live cycle before this one, drawn as
+   * "Cycles paused"; null on the first live cycle, a cancelled one and other reads.
+   */
+  gap_before_days?: number | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2248,6 +2334,7 @@ export interface ProjectHistoryRead {
   project_id: string;
   start_date: string | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   today: string;
   measure: 'points' | 'issues';
   recorded_since: string | null;
@@ -2323,6 +2410,11 @@ export interface CycleUpdate {
 
 /** Starting a team's next upcoming cycle today. The team names the row. */
 export interface CycleStartToday {
+  team_id: string;
+}
+
+/** Ending a team's current cycle at the close of today. The team names the row. */
+export interface CycleEndToday {
   team_id: string;
 }
 
@@ -2612,6 +2704,9 @@ export type ProjectIconName =
   | 'users'
   | 'wrench';
 
+/** How precise a planning date is: an exact day, or a whole month, quarter, half or year. */
+export type DateResolution = 'day' | 'month' | 'quarter' | 'half' | 'year';
+
 /**
  * One workspace level project shared by one or more teams. `team_ids` lists
  * only the teams the caller can see, and `team_id` is the first of them.
@@ -2625,7 +2720,9 @@ export interface ProjectRead {
   description: string | null;
   lead_id: string | null;
   start_date: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   status: ProjectStatus;
   /** The workspace project status the project sits in, within `status`. */
   status_id?: string;
@@ -2843,7 +2940,9 @@ export interface ProjectCreate {
   description?: string | null;
   lead_id?: string | null;
   start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   status?: ProjectStatus;
   /** A workspace project status by id; `status` then may only name its category. */
   status_id?: string;
@@ -2868,7 +2967,9 @@ export interface ProjectUpdate {
   description?: string | null;
   lead_id?: string | null;
   start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   status?: ProjectStatus;
   /** A workspace project status by id; a bare category keeps a status already in it. */
   status_id?: string;
@@ -3126,9 +3227,12 @@ export interface InitiativeRead {
   name: string;
   description: string | null;
   owner_id: string | null;
+  /** The lead team, or null for a workspace level initiative. A private lead team hides it from everyone outside. */
+  team_id?: string | null;
   status: InitiativeStatus;
   health: ProjectHealth | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   /** The initiative this one sits under, or null at the top level. */
   parent_initiative_id?: string | null;
   /** The chain of parents, root first. */
@@ -3189,6 +3293,8 @@ export interface InitiativeListRead {
 /** The filters and paging the initiative list reads. */
 export interface InitiativeListQuery {
   status?: InitiativeStatus;
+  /** One lead team's initiatives, or `none` for the workspace level ones. */
+  team_id?: string;
   cursor?: string;
   limit?: number;
 }
@@ -3198,21 +3304,25 @@ export interface InitiativeCreate {
   name: string;
   description?: string | null;
   owner_id?: string | null;
+  team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
   parent_initiative_id?: string | null;
 }
 
-/** The editable fields on an initiative. A null clears an owner, a date or the parent. */
+/** The editable fields on an initiative. A null clears an owner, the team, a date or the parent. */
 export interface InitiativeUpdate {
   name?: string;
   description?: string | null;
   owner_id?: string | null;
+  team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
   parent_initiative_id?: string | null;
 }
@@ -3328,7 +3438,9 @@ export interface RoadmapEntryRead {
   team_ids: string[];
   name: string;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   start_date: string | null;
+  start_date_resolution?: DateResolution | null;
   status: string;
   /** A project entry's workspace project status. */
   status_id?: string | null;
@@ -3999,6 +4111,46 @@ export interface WorkspaceConnectedAppRead {
   last_used_at: string | null;
 }
 
+/** Where a third-party app stands with a workspace's admins. */
+export type AppApprovalStatus = 'pending' | 'approved' | 'denied';
+
+/** Who requested or decided an app approval. */
+export interface AppApprovalPersonRead {
+  id: string;
+  display_name: string;
+}
+
+/** One third-party app's approval record in a workspace. */
+export interface AppApprovalRead {
+  client_id: string;
+  client_name: string;
+  status: AppApprovalStatus;
+  requested_by?: AppApprovalPersonRead | null;
+  request_reason?: string;
+  requested_at?: string | null;
+  decided_by?: AppApprovalPersonRead | null;
+  decision_reason?: string;
+  decided_at?: string | null;
+  updated_at: string;
+}
+
+/** Every approval record in a workspace, and whether approvals are required. */
+export interface AppApprovalListRead {
+  enabled: boolean;
+  approvals: AppApprovalRead[];
+}
+
+/** What the request access page shows for the app a member was stopped on. */
+export interface AppAccessRequestRead {
+  workspace_id: string;
+  workspace_name: string;
+  client_id: string;
+  client_name: string;
+  return_to: string;
+  enabled: boolean;
+  approval?: AppApprovalRead | null;
+}
+
 /** Which local folder an agent profile file belongs under. */
 export type AgentProfileRoot = 'home' | 'project' | 'memory';
 
@@ -4103,8 +4255,42 @@ export type InsightDimension =
   | 'estimate'
   | 'team';
 
-/** What each insights bar measures: issues, or the sum of their estimate points. */
-export type InsightMeasure = 'count' | 'points';
+/**
+ * What an insights breakdown measures: issues, the sum of their estimate
+ * points, or how long each issue took. Cycle time runs from started to
+ * completed, lead time from created to completed, triage time from entering
+ * triage to leaving it, and issue age from created to now.
+ */
+export type InsightMeasure =
+  'count' | 'points' | 'cycle_time' | 'lead_time' | 'triage_time' | 'issue_age';
+
+/** The time measures, which answer durations and points rather than sums. */
+export type InsightTimeMeasure = Exclude<InsightMeasure, 'count' | 'points'>;
+
+/** Summary statistics of a set of durations, in hours; null when the set is empty. */
+export interface InsightDurations {
+  count: number;
+  average: number | null;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  minimum: number | null;
+  maximum: number | null;
+}
+
+/**
+ * One issue's duration under a time measure. `group` is the bucket key it
+ * falls in and `segment` its first segment value, both null when unset.
+ */
+export interface InsightPoint {
+  issue_id: string;
+  key: string;
+  title: string;
+  group: string | null;
+  segment: string | null;
+  hours: number;
+}
 
 /**
  * One bar or bar segment. `key` is the raw value and null for the unset
@@ -4117,6 +4303,8 @@ export interface InsightBucket {
   color: string | null;
   value: number;
   issue_count: number;
+  /** Duration statistics under a time measure, null otherwise. */
+  durations?: InsightDurations | null;
 }
 
 /** One bar, split by the segment dimension when one was asked for. */
@@ -4140,6 +4328,92 @@ export interface InsightsRead {
   groups: InsightGroup[];
   truncated: boolean;
   row_cap: number;
+  /** Duration statistics over the whole set under a time measure, null otherwise. */
+  durations?: InsightDurations | null;
+  /** One point per measured issue under a time measure, empty otherwise. */
+  points?: InsightPoint[];
+}
+
+/** Where a dashboard is filed: its owner alone, one team, or the whole workspace. */
+export type DashboardScope = 'personal' | 'team' | 'workspace';
+
+/** How a widget draws its breakdown: bars, a table of the bars, or one figure. */
+export type DashboardWidgetKind = 'chart' | 'table' | 'metric';
+
+/** What a widget reads: every team the caller sees, one team, or a saved view. */
+export type DashboardWidgetSource = 'workspace' | 'team' | 'view';
+
+/** How much of a dashboard row a widget takes. */
+export type DashboardWidgetSize = 'half' | 'full';
+
+/** The fields a widget is created with, each defaulted on the server when left out. */
+export interface DashboardWidgetCreate {
+  kind?: DashboardWidgetKind;
+  title?: string | null;
+  source?: DashboardWidgetSource;
+  team_id?: string | null;
+  view_id?: string | null;
+  include_sub_teams?: boolean;
+  filter?: Record<string, unknown>;
+  group_by?: InsightDimension;
+  segment_by?: InsightDimension | null;
+  measure?: InsightMeasure;
+  size?: DashboardWidgetSize;
+}
+
+/** One widget of a dashboard, in the order the dashboard draws it. */
+export interface DashboardWidgetRead {
+  widget_id: string;
+  kind: DashboardWidgetKind;
+  title: string | null;
+  source: DashboardWidgetSource;
+  team_id: string | null;
+  view_id: string | null;
+  include_sub_teams: boolean;
+  filter: Record<string, unknown>;
+  group_by: InsightDimension;
+  segment_by: InsightDimension | null;
+  measure: InsightMeasure;
+  size: DashboardWidgetSize;
+}
+
+/**
+ * A page of widgets over several teams and views. `filter` applies to every
+ * widget on top of its own, and `can_edit` says whether the caller may change it.
+ */
+export interface DashboardRead {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  scope: DashboardScope;
+  team_id: string | null;
+  owner_id: string;
+  filter: Record<string, unknown>;
+  widgets: DashboardWidgetRead[];
+  can_edit: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body that creates a dashboard; the caller owns it. */
+export interface DashboardCreate {
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  scope?: DashboardScope;
+  team_id?: string | null;
+  filter?: Record<string, unknown>;
+  widgets?: DashboardWidgetCreate[];
+}
+
+/** The dashboard fields a patch may change. */
+export interface DashboardUpdate {
+  name?: string;
+  description?: string | null;
+  icon?: string | null;
+  filter?: Record<string, unknown> | null;
+  owner_id?: string;
 }
 
 /** The events a team channel may post, in the order the settings page lists them. */
@@ -5316,6 +5590,65 @@ export interface DraftListRead {
 /** The body a draft save takes, replacing what the thread's draft held. */
 export interface DraftWrite {
   body: string;
+}
+
+/** Everything a new issue draft save takes, replacing what the draft held. */
+export interface IssueDraftWrite {
+  team_id: string;
+  title?: string;
+  body?: string;
+  template_id?: string | null;
+  template_title?: string;
+  template_body?: string;
+  answers?: Record<string, string | boolean>;
+  status_id?: string | null;
+  priority?: IssuePriority;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  project_id?: string | null;
+  project_milestone_id?: string | null;
+  cycle_id?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  parent_id?: string | null;
+  parent_key?: string | null;
+  parent_title?: string | null;
+  sub_issues?: string[];
+}
+
+/** One of the caller's new issue drafts, with every field the create dialog held. */
+export interface IssueDraftRead {
+  draft_id: string;
+  team_id: string;
+  title: string;
+  body: string;
+  template_id?: string | null;
+  template_title?: string;
+  template_body?: string;
+  answers?: Record<string, string | boolean>;
+  status_id?: string | null;
+  priority?: string;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  project_id?: string | null;
+  project_milestone_id?: string | null;
+  cycle_id?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  parent_id?: string | null;
+  parent_key?: string | null;
+  parent_title?: string | null;
+  sub_issues?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's new issue drafts, newest saved first, with the most they may keep. */
+export interface IssueDraftListRead {
+  drafts: IssueDraftRead[];
+  limit: number;
 }
 
 /** The two kinds of record a customer request can name. */

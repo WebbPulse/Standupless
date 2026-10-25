@@ -60,7 +60,7 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["planning", "idempotency", "issues", "activity", "subscriptions", "counters", "rate-limits"]
+      tables      = ["planning", "idempotency", "issues", "activity", "subscriptions", "counters", "audit", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
     }
     planning-rollup-consumer = {
@@ -123,6 +123,7 @@ locals {
     workspaces-purge-consumer      = "workspaces"
     workspaces-export-consumer     = "workspaces"
     integrations-import-consumer   = "integrations"
+    integrations-email-consumer    = "integrations"
   }
 
   lambda_domain_commands = {
@@ -141,6 +142,7 @@ locals {
     workspaces-purge-consumer      = ["python", "-m", "app.domains.workspaces.consumers.purge_entrypoint"]
     workspaces-export-consumer     = ["python", "-m", "app.domains.workspaces.consumers.export_entrypoint"]
     integrations-import-consumer   = ["python", "-m", "app.domains.integrations.consumers.import_entrypoint"]
+    integrations-email-consumer    = ["python", "-m", "app.domains.integrations.consumers.email_entrypoint"]
   }
 
   team_purge_functions = var.team_purge_enabled ? merge(
@@ -182,9 +184,20 @@ locals {
     }
   } : {}
 
+  email_intake_functions = var.email_intake_enabled ? {
+    integrations-email-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 1024
+      tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "planning", "attachments", "idempotency", "inbox", "rate-limits"]
+      read_tables = ["workspaces", "memberships", "users", "teams", "github"]
+    }
+  } : {}
+
   lambda_domain_timeouts = {
     workspaces-export-consumer   = 900
     integrations-import-consumer = 900
+    integrations-email-consumer  = 120
   }
 
   lambda_domain_ephemeral_storage = {
@@ -194,6 +207,8 @@ locals {
   workspace_export_object_users = ["workspaces", "integrations", "workspaces-export-consumer"]
 
   issue_import_object_users = ["integrations", "integrations-import-consumer"]
+
+  email_intake_users = ["integrations", "integrations-email-consumer"]
 
   domain_functions_enabled = var.bootstrap_image_tag != ""
 
@@ -205,7 +220,7 @@ locals {
     workspaces-purge-consumer = ["icons/workspace/", "icons/user/", "icons/emoji/"]
   }
 
-  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions, local.workspace_export_functions, local.issue_import_functions) : {}
+  lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions, local.workspace_export_functions, local.issue_import_functions, local.email_intake_functions) : {}
 
   dynamodb_domain_write_actions = [
     "dynamodb:BatchGetItem",
@@ -274,10 +289,15 @@ locals {
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
       name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
 
-      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users, local.issue_import_object_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
+      contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users, local.issue_import_object_users, local.email_intake_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 
       contains(["workspaces", "integrations"], name) ? {
         WORKSPACE_EXPORT_QUEUE_URL = local.workspace_export_enabled ? module.workspace_export_queue[0].queue_url : ""
+      } : {},
+
+      contains(local.email_intake_users, name) ? {
+        EMAIL_INTAKE_DOMAIN = local.email_intake_enabled ? local.email_intake_domain : ""
+        EMAIL_INTAKE_BUCKET = local.email_intake_enabled ? module.email_intake_bucket[0].bucket_id : ""
       } : {},
 
       contains(local.issue_import_object_users, name) ? {
@@ -417,6 +437,13 @@ locals {
           batch_size                      = 1
           maximum_batching_window_seconds = 0
           maximum_concurrency             = 2
+        }
+        } : name == "integrations-email-consumer" && local.email_intake_enabled ? {
+        email-intake = {
+          queue_arn                       = module.email_intake_queue[0].queue_arn
+          batch_size                      = 1
+          maximum_batching_window_seconds = 0
+          maximum_concurrency             = 5
         }
       } : {}
     )
@@ -732,6 +759,20 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Condition = {
             StringLike = { "s3:prefix" = ["imports/*"] }
           }
+        },
+      ] : [],
+      each.key == "integrations-email-consumer" && local.email_intake_enabled ? [
+        {
+          Sid      = "ReadAndClearInboundMail"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:DeleteObject"]
+          Resource = ["${module.email_intake_bucket[0].bucket_arn}/inbound/*"]
+        },
+        {
+          Sid      = "WriteEmailAttachmentObjects"
+          Effect   = "Allow"
+          Action   = ["s3:PutObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
         },
       ] : [],
       each.key == "workspaces-export-consumer" ? [

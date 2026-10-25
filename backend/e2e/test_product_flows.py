@@ -400,6 +400,31 @@ class TestTeamsDomain:
                 api.delete(f"{base}/issues/{created['id']}")
             api.delete(f"{base}/teams/{sub['id']}")
 
+    @WRITES
+    def test_a_retired_team_refuses_writes_until_unretired(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]"
+    ) -> None:
+        """Retiring a team of the run's own refuses new issues with 409, and un-retiring lets them in again."""
+        base = f"/api/workspaces/{workspace['id']}"
+        body = {"name": run_scope.name("retired-team"), "key_prefix": "RTR"}
+        retiring = _created(api.post(f"{base}/teams", json=body), "team")
+        try:
+            retired = api.post(f"{base}/teams/{retiring['id']}/retire")
+            assert retired.status_code == 200, retired.text[:400]
+            assert retired.json()["retired_at"] is not None
+
+            refused = api.post(f"{base}/issues", json={"team_id": retiring["id"], "title": run_scope.name("refused")})
+            assert refused.status_code == 409, refused.text[:400]
+            assert refused.json()["error_code"] == "TEAM_RETIRED"
+            assert api.get(f"{base}/teams/{retiring['id']}").status_code == 200
+
+            restored = api.post(f"{base}/teams/{retiring['id']}/unretire")
+            assert restored.status_code == 200, restored.text[:400]
+            assert restored.json()["retired_at"] is None
+        finally:
+            api.post(f"{base}/teams/{retiring['id']}/unretire")
+            api.delete(f"{base}/teams/{retiring['id']}")
+
 
 class TestIssuesDomain:
     """Issues: the create, the read back by id and by key, and the list."""
@@ -636,6 +661,37 @@ class TestDiscussionDomain:
         listed = api.get(drafts, params={"issue_id": issue["id"]})
         assert listed.status_code == 200, listed.text[:400]
         assert [row["body"] for row in listed.json()["drafts"]] == [body]
+
+        for _ in range(2):
+            discarded = api.delete(path)
+            assert discarded.status_code == 204, discarded.text[:400]
+
+        gone = api.get(path)
+        assert gone.status_code == 404, gone.text[:400]
+
+    @WRITES
+    def test_a_new_issue_draft_is_saved_resumed_and_discarded(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A new issue draft created, saved again under its id, read, listed and discarded twice."""
+        drafts = f"/api/workspaces/{workspace['id']}/drafts/new-issues"
+        title = run_scope.name("issue draft")
+
+        created = api.post(drafts, json={"team_id": team["id"], "title": title, "priority": "high"})
+        assert created.status_code == 201, created.text[:400]
+        path = f"{drafts}/{created.json()['draft_id']}"
+
+        saved = api.put(path, json={"team_id": team["id"], "title": title, "body": "More detail"})
+        assert saved.status_code == 200, saved.text[:400]
+        assert saved.json()["created_at"] == created.json()["created_at"]
+
+        readback = api.get(path)
+        assert readback.status_code == 200, readback.text[:400]
+        assert readback.json()["body"] == "More detail"
+
+        listed = api.get(drafts)
+        assert listed.status_code == 200, listed.text[:400]
+        assert title in [row["title"] for row in listed.json()["drafts"]]
 
         for _ in range(2):
             discarded = api.delete(path)

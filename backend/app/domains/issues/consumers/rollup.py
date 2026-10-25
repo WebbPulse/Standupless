@@ -53,7 +53,8 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.relation_effects import recount_blocked_by, recount_blockers_of, recount_blocking
-from app.domains.issues import auto_archive, auto_close, parent_auto_close, recurring, sla_repair
+from app.common.trash_stream import live_view
+from app.domains.issues import auto_archive, auto_close, parent_auto_close, recurring, sla_repair, trash_purge
 from app.domains.issues.cycle_close import is_cycle_close, sweep
 
 _log = logging.getLogger(__name__)
@@ -299,7 +300,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch. The hourly trigger runs the
     recurring issue sweep, the cycle close sweep, the auto-close sweep, the
-    auto-archive sweep and then the finished SLA timer repair, and nothing else.
+    auto-archive sweep, the finished SLA timer repair and then the trash purge, and nothing else.
+    An issue moving into the trash reads as its removal and a restore as its creation.
     """
     if is_cycle_close(record):
         recurring.sweep(repositories)
@@ -307,7 +309,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         auto_close.sweep(repositories)
         auto_archive.sweep(repositories)
         sla_repair.sweep(repositories)
+        trash_purge.sweep(repositories)
         return
+
+    seen = live_view(record)
+    if seen is None:
+        return
+    record = seen
 
     milestone = removed_milestone(record)
     if milestone is not None:

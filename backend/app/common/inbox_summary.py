@@ -87,7 +87,22 @@ def _blocking_changed(value: Optional[str]) -> str:
     return phrase.format(key=key) if phrase is not None and key else "Blocking changed"
 
 
+def _app_approval_requested(actor: str, app: Optional[str]) -> str:
+    """Say who asked an admin to approve which third-party app."""
+    who = actor or "A member"
+    return f"{who} requested access to {app}" if app else f"{who} requested access to an app"
+
+
+def _app_approval_decided(actor: str, app: Optional[str], decision: Optional[str]) -> str:
+    """Say whether the requested app was approved or denied, and by whom."""
+    verb = "approved" if decision == "approved" else "denied"
+    who = actor or "An admin"
+    return f"{who} {verb} {app}" if app else f"{who} {verb} your app request"
+
+
 _SPECIAL: dict[str, Callable[[Notification, str], str]] = {
+    "app_approval_requested": lambda row, actor: _app_approval_requested(actor, row.issue_title),
+    "app_approval_decided": lambda row, actor: _app_approval_decided(actor, row.issue_title, row.new_value),
     "reaction": lambda row, actor: _reaction(actor, row.new_value),
     "issue_completed": lambda row, actor: _closed(actor, row.new_value, "completed"),
     "issue_cancelled": lambda row, actor: _closed(actor, row.new_value, "canceled"),

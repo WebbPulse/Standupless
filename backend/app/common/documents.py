@@ -6,8 +6,8 @@ history and leave the same backlinks a person's does.
 
 A document is read by whoever reads its parent. A project's documents are written
 by a writer on any of its visible teams, a team's by a member of that team, and
-an initiative's by any workspace member who is not a guest, which is who edits
-the parent itself. Deleting one is its author's, a workspace admin's, an admin of
+an initiative's by any workspace member who is not a guest and can see it, which
+is who edits the parent itself. Deleting one is its author's, a workspace admin's, an admin of
 the team or one of the project's teams, or the initiative's creator or owner.
 Moving one to another parent takes the right to edit under both.
 
@@ -53,6 +53,7 @@ from app.common.db.dynamo.documents import (
 from app.common.db.dynamo.search_index import SearchQuery, ranked_terms
 from app.common.initiative_writes import load_initiative
 from app.common.planning_rules import (
+    can_see_initiative,
     forbidden,
     load_readable_project,
     not_found,
@@ -164,6 +165,8 @@ def readable_parents(repositories: Repositories, context: AuthzContext) -> dict[
             )
     if not context.is_guest:
         for initiative in repositories.planning.list_initiatives(context.workspace_id):
+            if not can_see_initiative(context, initiative):
+                continue
             parents[("initiative", initiative.initiative_id)] = Parent(
                 kind="initiative",
                 parent_id=initiative.initiative_id,

@@ -4,8 +4,9 @@
  * Alt+C to pick a template of the team in context and create from it,
  * `G` then a letter to go somewhere: the team's active issues, backlog,
  * board, archive, cycles and, as in Linear, `G` then `V` for its current
- * cycle among them, with `G` then Shift+V for views,
- * `O` then a letter to open a favorite, project, cycle, team, view or
+ * cycle and `G` then `W` for its upcoming one among them, with `G` then
+ * Shift+V for views, `O` then `M` for the viewer's own member page,
+ * `O` then a letter to open a favorite, project, cycle, team, view, member or
  * workspace from a picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
  * list of every shortcut. Registered through the
  * same registry as any page's own shortcuts, so the help overlay and the
@@ -37,6 +38,7 @@ import {
 } from '../../lib/workspaceNav';
 import {
   inboxPath,
+  memberPath,
   myIssuesPath,
   projectsPath,
   roadmapPath,
@@ -49,6 +51,7 @@ import {
   teamPath,
   teamTriagePath,
 } from '../../lib/paths';
+import { openUpcomingCycle } from '../../lib/currentCycle';
 import { teamScopePath } from '../../lib/teamIssueScope';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
@@ -56,6 +59,8 @@ import type { TeamRead, WorkspaceRead } from '../../types/Api';
 export interface GlobalShortcutsProps {
   workspace: WorkspaceRead;
   teams: readonly TeamRead[];
+  /** The viewer, whose member page `O` then `M` opens. */
+  currentUserId?: string | undefined;
   /** Opens the list of every shortcut. */
   onShowHelp: () => void;
 }
@@ -86,6 +91,7 @@ const focusSearch = (go: () => void): void => {
 export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   workspace,
   teams,
+  currentUserId,
   onShowHelp,
 }) => {
   const navigate = useNavigate();
@@ -216,6 +222,23 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     enabled: team !== undefined,
   });
   useShortcut({
+    keys: 'g w',
+    label: 'Go to upcoming cycle',
+    group: NAVIGATION,
+    handler: () => {
+      if (team === undefined) return;
+      void openUpcomingCycle({
+        workspaceId: workspace.id,
+        slug,
+        team,
+        navigate: (to) => {
+          void navigate(to);
+        },
+      });
+    },
+    enabled: team !== undefined,
+  });
+  useShortcut({
     keys: 'g r',
     label: 'Go to roadmap',
     group: NAVIGATION,
@@ -272,6 +295,22 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: 'Open view',
     group: OPEN,
     handler: pick('views'),
+    enabled: canPick,
+  });
+  useShortcut({
+    keys: 'o m',
+    label: 'Open my profile',
+    group: OPEN,
+    handler: go(
+      currentUserId === undefined ? '' : memberPath(slug, currentUserId)
+    ),
+    enabled: currentUserId !== undefined,
+  });
+  useShortcut({
+    keys: 'o u',
+    label: 'Open member',
+    group: OPEN,
+    handler: pick('members'),
     enabled: canPick,
   });
   useShortcut({

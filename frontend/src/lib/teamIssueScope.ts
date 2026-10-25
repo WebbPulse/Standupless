@@ -41,6 +41,7 @@ export const DISPLAY_PARAMS: readonly string[] = [
   'subs',
   'done',
   'archived',
+  'head',
 ];
 
 /** The prefix each preset's remembered display is stored under. */

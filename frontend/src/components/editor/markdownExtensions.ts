@@ -24,7 +24,9 @@
  *
  * Images and videos are the one image node, shown through the page's media
  * tokens, and a link may point at an attachment's content path as well as the
- * web.
+ * web. A YouTube, Loom, Vimeo or Descript link alone in its paragraph reads as
+ * that provider's player and writes back as the bare link. A date chip reads
+ * and writes as its ISO day in angle brackets, such as `<2026-10-01>`.
  */
 
 import type { AnyExtension, JSONContent } from '@tiptap/core';
@@ -46,6 +48,7 @@ import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
 import { CustomEmojiChips } from './customEmojiChips';
+import { DateChip, dateChipTokenizer } from './dateChip';
 import {
   EditorShortcuts,
   LinearOrderedList,
@@ -56,6 +59,8 @@ import { EmojiSuggestion } from './EmojiSuggestion';
 import { EmoticonConversion } from './emoticons';
 import { MediaImage, MediaUpload } from './mediaNodes';
 import { SpreadsheetPaste } from './tablePaste';
+import { TableShortcut } from './tableShortcut';
+import { VideoEmbed, VideoEmbedPaste, videoEmbedTokenizer } from './videoEmbed';
 
 /** What {@link markdownExtensions} can be asked to vary per surface. */
 export interface MarkdownExtensionOptions {
@@ -88,8 +93,9 @@ const ISSUE_KEY = /(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])/g;
 
 /**
  * A marked instance of our own, so registering Tiptap's tokenizers never
- * touches the global one, with raw HTML switched off and single newlines read
- * as breaks.
+ * touches the global one, with raw HTML switched off, single newlines read
+ * as breaks, a bare video link alone in its paragraph read as an embed and
+ * `<2026-10-01>` read as a date chip.
  */
 const createMarked = (): Marked => {
   const instance = new Marked({ gfm: true, breaks: true });
@@ -99,6 +105,7 @@ const createMarked = (): Marked => {
       html: refuse,
       tag: refuse,
     },
+    extensions: [videoEmbedTokenizer, dateChipTokenizer],
   });
   return instance;
 };
@@ -331,8 +338,12 @@ export const markdownExtensions = (
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
     SpreadsheetPaste,
+    TableShortcut,
     MediaImage.configure({ inline: false, allowBase64: false }),
     MediaUpload,
+    VideoEmbed,
+    VideoEmbedPaste,
+    DateChip,
     CollapsibleSectionKit,
     Callout,
     EditorShortcuts,

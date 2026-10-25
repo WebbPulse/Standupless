@@ -14,7 +14,16 @@ from typing import Any, Callable
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import cycle_schedule, issue_keys, plan_usage, team_copy, team_join, team_purge, team_workflow
+from app.common import (
+    cycle_schedule,
+    issue_keys,
+    plan_usage,
+    team_copy,
+    team_join,
+    team_purge,
+    team_retirement,
+    team_workflow,
+)
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -618,6 +627,41 @@ def _paused_statuses(repositories: Repositories, workspace_id: str, team_id: str
     if any(status_id not in open_ids for status_id in chosen):
         raise unprocessable("paused_status_ids must be open statuses of this team")
     return chosen
+
+
+def retire_team(repositories: Repositories, workspace_id: str, team_id: str, actor_id: str) -> tuple[Team, bool]:
+    """Retire one team, answering the team and whether this call changed it.
+
+    A team already retired answers unchanged, so a retry is safe. A parent with
+    an active sub-team is a 409, since the sub-team would be left under a
+    read-only parent, and so is a team still holding open issues, which could
+    no longer be finished once it is read-only.
+    """
+    team = load_team(repositories, workspace_id, team_id)
+    if team_retirement.is_retired(team):
+        return team, False
+    team_retirement.check_retirable(repositories.teams, team)
+    team_retirement.check_no_open_issues(repositories, team)
+    retired = repositories.teams.set_retired(workspace_id, team_id, actor_id)
+    if retired is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    return retired, True
+
+
+def unretire_team(repositories: Repositories, workspace_id: str, team_id: str) -> tuple[Team, bool]:
+    """Bring a retired team back, answering the team and whether this call changed it.
+
+    A team that is not retired answers unchanged. A sub-team whose parent is
+    still retired is a 409.
+    """
+    team = load_team(repositories, workspace_id, team_id)
+    if not team_retirement.is_retired(team):
+        return team, False
+    team_retirement.check_unretirable(repositories.teams, team)
+    restored = repositories.teams.set_retired(workspace_id, team_id, None)
+    if restored is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    return restored, True
 
 
 def delete_team(repositories: Repositories, workspace_id: str, team_id: str) -> bool:

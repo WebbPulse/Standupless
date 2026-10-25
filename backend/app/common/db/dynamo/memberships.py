@@ -42,6 +42,10 @@ membership it stands for. None of these rows carries a `user_id`, so the user
 index never meets them, and none starts with `user#` or `team#`, so no member or
 team membership read does either.
 
+`app_approval#<client_id>` records whether the workspace lets its members authorize
+one third-party OAuth app, read by the identity function's consent gate under the
+grant it already holds here. It carries no `user_id`, so the user index never meets it.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -334,6 +338,43 @@ def private_team_key(team_id: str) -> str:
     return f"{PRIVATE_TEAM_PREFIX}{team_id}"
 
 
+APP_APPROVAL_PREFIX = "app_approval#"
+
+APP_APPROVAL_LIMIT = 1000
+"""The abuse ceiling on approval records one workspace lists, far above the apps any team connects."""
+
+AppApprovalStatus = Literal["pending", "approved", "denied"]
+
+APP_APPROVAL_STATUSES: tuple[str, ...] = ("pending", "approved", "denied")
+
+
+def app_approval_key(client_id: str) -> str:
+    """The sort key of one third-party app's approval record."""
+    return f"{APP_APPROVAL_PREFIX}{client_id}"
+
+
+class AppApproval(BaseModel):
+    """Whether a workspace lets its members authorize one third-party OAuth app.
+
+    One row per app, under `app_approval#<client_id>`. A request writes it pending
+    with who asked and why, a decision moves it to approved or denied with who
+    decided and why, and a fresh request after a denial moves it back to pending
+    while keeping the earlier decision readable until the next one replaces it.
+    """
+
+    workspace_id: str
+    client_id: str
+    client_name: str = ""
+    status: AppApprovalStatus = "pending"
+    requested_by: str | None = None
+    request_reason: str = ""
+    requested_at: datetime | None = None
+    decided_by: str | None = None
+    decision_reason: str = ""
+    decided_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class Membership(BaseModel):
     """One person's membership of a workspace, or of a team inside it."""
 
@@ -344,11 +385,18 @@ class Membership(BaseModel):
     team_id: str | None = None
     joined_at: datetime = Field(default_factory=utc_now)
     team_order: list[str] = Field(default_factory=list)
+    suspended_at: datetime | None = None
+    suspended_by: str | None = None
 
     @property
     def is_team_membership(self) -> bool:
         """Whether this row grants a team rather than the workspace."""
         return self.team_id is not None
+
+    @property
+    def is_suspended(self) -> bool:
+        """Whether this workspace membership is suspended, keeping its role and teams but granting nothing."""
+        return self.suspended_at is not None
 
 
 class MembershipRepository:
@@ -473,6 +521,46 @@ class MembershipRepository:
             return None
         return _as_membership(item) if item is not None else None
 
+    def set_suspended(self, workspace_id: str, user_id: str, *, suspended_by: str) -> Membership | None:
+        """Suspend a workspace member, or `None` when there is no such member or they are already suspended.
+
+        Conditional on the row existing unsuspended, so two racing suspensions
+        record one actor and suspending cannot create a membership.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="SET #at = :at, #by = :by",
+                expression_names={"#at": "suspended_at", "#by": "suspended_by"},
+                expression_values={":at": utc_now().isoformat(), ":by": suspended_by},
+                condition=Attr("member_key").exists()
+                & (Attr("suspended_at").not_exists() | Attr("suspended_at").attribute_type("NULL")),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
+
+    def clear_suspended(self, workspace_id: str, user_id: str) -> Membership | None:
+        """Reactivate a suspended workspace member, or `None` when there is no such member.
+
+        Leaves the role, team rows and team order alone, so access returns exactly
+        as it was.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="REMOVE #at, #by",
+                expression_names={"#at": "suspended_at", "#by": "suspended_by"},
+                condition=Attr("member_key").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
+
     def set_team_role(self, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
         """Grant or change a team role, creating the row when it is absent."""
         membership = Membership(
@@ -534,6 +622,10 @@ class MembershipRepository:
             max_items=limit,
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
+
+    def suspended_user_ids(self, workspace_id: str) -> frozenset[str]:
+        """Everyone whose workspace membership is suspended, for a fan-out over team rows that carry no suspension."""
+        return frozenset(row.user_id for row in self.list_members(workspace_id) if row.is_suspended)
 
     def list_team_members(
         self, workspace_id: str, team_id: str, *, limit: int = MEMBERSHIP_SCAN_LIMIT
@@ -962,11 +1054,12 @@ class MembershipRepository:
         return sorted({str(item["workspace_id"]) for item in items})
 
     def count_owners(self, workspace_id: str) -> int:
-        """How many workspace owners this tenant has.
+        """How many active workspace owners this tenant has.
 
-        Read before a role change or a removal, because the last owner must not be
-        able to leave a workspace nobody can then administer. Exact rather than
-        capped: every page is read, filtered to owners server side.
+        Read before a role change, a removal or a suspension, because the last
+        owner must not be able to leave a workspace nobody can then administer.
+        A suspended owner administers nothing, so is not counted. Exact rather
+        than capped: every page is read, filtered to owners server side.
         """
         if not workspace_id:
             return 0
@@ -975,7 +1068,7 @@ class MembershipRepository:
             filter_expression=Attr("role").eq("owner"),
             consistent=True,
         )
-        return sum(1 for _ in items)
+        return sum(1 for item in items if not item.get("suspended_at"))
 
     def get_scim_user(self, workspace_id: str, scim_id: str) -> ScimUserRow | None:
         """One provisioned directory user, or `None`."""
@@ -1183,6 +1276,32 @@ class MembershipRepository:
     def delete_scim_member(self, workspace_id: str, team_id: str, scim_id: str) -> None:
         """Forget one directory user in one linked group. Idempotent."""
         self._repository.delete({"workspace_id": workspace_id, "member_key": scim_member_key(team_id, scim_id)})
+
+    def get_app_approval(self, workspace_id: str, client_id: str) -> AppApproval | None:
+        """One third-party app's approval record in this workspace, or `None` when it has none."""
+        if not workspace_id or not client_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": app_approval_key(client_id)}, consistent=True
+        )
+        return None if item is None else AppApproval.model_validate(dict(item))
+
+    def put_app_approval(self, row: AppApproval) -> AppApproval:
+        """Store one third-party app's approval record, replacing the earlier one."""
+        self._repository.put(as_item(row, member_key=app_approval_key(row.client_id)))
+        return row
+
+    def list_app_approvals(self, workspace_id: str) -> list[AppApproval]:
+        """Every third-party app approval record of this workspace, most recently updated first."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(APP_APPROVAL_PREFIX),
+            max_items=APP_APPROVAL_LIMIT,
+            consistent=True,
+        )
+        rows = [AppApproval.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: row.updated_at, reverse=True)
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:

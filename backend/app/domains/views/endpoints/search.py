@@ -52,6 +52,7 @@ from app.common.api.dependencies.authz import ActorKind, AuthzContext, Capabilit
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.dependencies.scopes import PROJECTS_READ
 from app.common.api.schemas.documents import DocumentSummaryRead
+from app.common.date_resolution import read_resolution
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import (
     DOCUMENT_COMMENTS,
@@ -67,7 +68,7 @@ from app.common.documents import readable_parents, search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import TRIAGE_STATUS_CATEGORY, TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME
-from app.common.planning_rules import visible_project_teams
+from app.common.planning_rules import can_see_initiative, visible_project_teams
 from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
 from app.common.similar_issues import MAX_LIMIT as SIMILAR_MAX_LIMIT
 from app.common.similar_issues import SimilarIssue, find_similar
@@ -390,6 +391,7 @@ def _project_hits(
                     lead_id=project.lead_id,
                     team_ids=shown,
                     target_date=project.target_date,
+                    target_date_resolution=read_resolution(project.target_date, project.target_date_resolution),
                     updated_at=project.updated_at,
                 ),
                 _name_first(project.name, query),
@@ -402,10 +404,11 @@ def _project_hits(
 def _initiative_hits(
     repositories: Repositories, context: AuthzContext, team_id: Optional[str], query: SearchQuery, limit: int
 ) -> list[SearchInitiativeRead]:
-    """Initiatives whose name or description matches the query, for a workspace-wide search by a non-guest.
+    """Initiatives the caller sees whose name or description matches the query, for a workspace-wide search.
 
-    An initiative belongs to no team, so a search narrowed to one skips them, as
-    it does documents.
+    An initiative spans teams even when it has a lead team, so a search narrowed
+    to one skips them, as it does projects and documents. One led by a private
+    team the caller is outside never matches.
     """
     if team_id or context.is_guest or not _reads_projects(context):
         return []
@@ -418,12 +421,13 @@ def _initiative_hits(
                 health=initiative.health,
                 owner_id=initiative.owner_id,
                 target_date=initiative.target_date,
+                target_date_resolution=read_resolution(initiative.target_date, initiative.target_date_resolution),
                 updated_at=initiative.updated_at,
             ),
             _name_first(initiative.name, query),
         )
         for initiative in repositories.planning.list_initiatives(context.workspace_id)
-        if query.matches_text(initiative.name, initiative.description)
+        if can_see_initiative(context, initiative) and query.matches_text(initiative.name, initiative.description)
     ]
     hits.sort(key=lambda hit: (not hit[1], -hit[0].updated_at.timestamp()))
     return [read for read, _ in hits[:limit]]

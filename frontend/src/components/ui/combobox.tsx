@@ -4,7 +4,9 @@
  * filters, the arrows move, Enter picks, and a single character shortcut shown
  * on the right picks directly while the filter is empty. In multiple mode each
  * option carries a checkbox and Enter toggles without closing, which is what
- * picking several labels in a row wants.
+ * picking several labels in a row wants. Given `onSelectOnly`, Alt click and
+ * Alt Enter hand the value there instead, for a list that can replace its
+ * selection with one value.
  *
  * It renders no floating chrome of its own, so it sits inside a Popover for a
  * property picker and could equally sit inside a command palette.
@@ -46,6 +48,8 @@ export interface ComboboxProps {
   multiple?: boolean;
   /** Called with the picked value. */
   onSelect: (value: string) => void;
+  /** Called in place of `onSelect` when a value is picked with Alt held. */
+  onSelectOnly?: (value: string) => void;
   /** Offers a create row for text that matches no option. */
   onCreate?: (text: string) => void;
   /** How the create row reads for the typed text. */
@@ -90,6 +94,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   selected,
   multiple = false,
   onSelect,
+  onSelectOnly,
   onCreate,
   createLabel = (text) => `Create "${text}"`,
   placeholder = 'Search',
@@ -150,14 +155,15 @@ export const Combobox: React.FC<ComboboxProps> = ({
     node?.scrollIntoView?.({ block: 'nearest' });
   }, [activeIndex, activeRow]);
 
-  const pick = (row: ComboboxOption | undefined): void => {
+  const pick = (row: ComboboxOption | undefined, only = false): void => {
     if (row === undefined || row.disabled === true) return;
     if (row.value === CREATE_VALUE) {
       onCreate?.(trimmed);
       setQuery('');
       return;
     }
-    onSelect(row.value);
+    if (only && onSelectOnly !== undefined) onSelectOnly(row.value);
+    else onSelect(row.value);
   };
 
   const move = (step: number): void => {
@@ -192,7 +198,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
       case 'Enter':
         event.preventDefault();
         event.stopPropagation();
-        pick(activeRow);
+        pick(activeRow, event.altKey);
         return;
       default:
         break;
@@ -298,9 +304,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
                     onMouseMove={() => {
                       if (!isActive) setActive(index);
                     }}
-                    onClick={() => {
+                    onClick={(event) => {
                       setActive(index);
-                      pick(row);
+                      pick(row, event.altKey);
                     }}
                     className={cn(
                       'flex h-8 cursor-pointer pointer-coarse:h-11 items-center gap-2 rounded-sm text-sm text-text select-none hover:bg-raised active:bg-line aria-disabled:cursor-not-allowed',

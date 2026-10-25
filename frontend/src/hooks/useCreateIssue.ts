@@ -11,19 +11,21 @@
  * `projectId`, `cycleId`, `statusId`, `assigneeId` and `parentId` are held with
  * the request, exposed as {@link CreateIssueState.request}, and handed to the
  * dialog as its starting draft. A team change in the dialog drops them, since
- * each is scoped to the team it was chosen in. `templateId` names the template
+ * each is scoped to the team it was chosen in. `priority` starts the draft on a
+ * priority, such as a parent's, and survives a team change. `templateId` names the template
  * the draft starts from in place of the team's default. `title` and
  * `description` start the draft on text, such as a selection, and
  * `relatedIssueId` relates the new issue to the one the text came from.
- * `expanded` opens the dialog already expanded, as `V` does.
+ * `expanded` opens the dialog already expanded, as `V` does, and `showDrafts`
+ * opens it on its Drafts list.
  *
- * {@link CreateIssueState.hasDraft} says whether the viewer has a draft saved
- * in this workspace, so the new issue button can show that pressing it brings
- * the draft back.
+ * {@link CreateIssueState.hasDraft} says whether the viewer has any new issue
+ * draft saved in this workspace, so the new issue button can show that the
+ * Drafts list holds something to resume.
  */
 
 import { createContext, useContext } from 'react';
-import type { IssueRead } from '../types/Api';
+import type { IssuePriority, IssueRead } from '../types/Api';
 
 /** The keys that open the template picker, Alt+C (Option+C) as in Linear. */
 export const CREATE_FROM_TEMPLATE_KEYS = 'alt+c';
@@ -41,6 +43,8 @@ export interface CreateIssueOptions {
   parentId?: string;
   /** The parent's key, shown in the dialog header beside `parentId`. */
   parentKey?: string;
+  /** The priority the draft starts on, such as a parent's for a sub-issue. */
+  priority?: IssuePriority;
   /** A template the draft starts from, in place of the team's default. */
   templateId?: string;
   /** The title the draft starts with, such as a selected line of text. */
@@ -51,6 +55,8 @@ export interface CreateIssueOptions {
   relatedIssueId?: string;
   /** Whether the dialog opens expanded, as `V` opens it. */
   expanded?: boolean;
+  /** Whether the dialog opens on its Drafts list, as the command palette does. */
+  showDrafts?: boolean;
   /** Called with the new issue after the dialog closes on success. */
   onCreated?: (issue: IssueRead) => void;
 }
@@ -67,7 +73,7 @@ export interface CreateIssueState {
   canCreate: boolean;
   /** The options the open dialog was asked for, with the team resolved. */
   request: (CreateIssueOptions & { teamId: string }) | null;
-  /** Whether a closed dialog left a draft to restore. */
+  /** Whether the viewer has a saved draft to resume. */
   hasDraft?: boolean;
 }
 

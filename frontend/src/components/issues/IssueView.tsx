@@ -72,6 +72,7 @@ import {
   getIssueByKey,
   listChildren,
   listLinks,
+  restoreIssue,
   unarchiveIssue,
   updateIssue,
 } from '../../api/issues';
@@ -113,15 +114,20 @@ import {
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { useRecordRecentIssue } from '../../lib/recentIssues';
+import {
+  parentOfIssue,
+  subIssueDialogPresets,
+} from '../../lib/subIssueCreation';
 import { timestampLabel } from '../../lib/issueDisplay';
 import {
   CONVERT_TO_PROJECT_LABEL,
   DUPLICATE_ISSUE_LABEL,
+  duplicateAsks,
   convertedPath,
   duplicatePath,
   runDuplicate,
 } from '../../lib/issueConversion';
-import { recordArchive, recordPatch } from '../../lib/issueUndo';
+import { recordArchive, recordDelete, recordPatch } from '../../lib/issueUndo';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { reminderLabel } from '../../lib/reminders';
 import { useOptimisticRecord } from '../../lib/optimistic';
@@ -172,6 +178,7 @@ import MoveIssueDialog, {
   MOVE_ISSUE_LABEL,
 } from './MoveIssueDialog';
 import ConvertToProjectDialog from './ConvertToProjectDialog';
+import DuplicateIssueDialog from './DuplicateIssueDialog';
 import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
 import SubIssues from './SubIssues';
 import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
@@ -382,6 +389,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [moving, setMoving] = useState(false);
   const [parenting, setParenting] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [history, setHistory] = useState(false);
 
@@ -474,6 +482,10 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const duplicate = async (): Promise<void> => {
     if (issue === null) return;
+    if (duplicateAsks(issue)) {
+      setDuplicating(true);
+      return;
+    }
     const copy = await runDuplicate(workspaceId, issue);
     if (copy !== null) void navigate(duplicatePath(slug, copy));
   };
@@ -481,9 +493,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const addSubIssue = (): void => {
     if (issue === null) return;
     createIssue.open({
-      teamId: issue.team_id,
-      parentId: issue.id,
-      parentKey: issue.key,
+      ...subIssueDialogPresets(parentOfIssue(issue)),
       onCreated: () => {
         invalidateQueries([childrenKey(issue.id), activityKey(issue.id)]);
       },
@@ -498,7 +508,9 @@ export const IssueView: React.FC<IssueViewProps> = ({
       showErrorToast(errorMessage(cause, 'Could not delete that issue.'));
       return;
     }
-    showToast(`${issue.key} deleted`);
+    recordDelete(workspaceId, [issue], {
+      invalidate: [issueKey(workspaceId, issueRef)],
+    });
     if (onClose === undefined) {
       void navigate(teamPath(slug, team.key_prefix));
     } else {
@@ -507,6 +519,19 @@ export const IssueView: React.FC<IssueViewProps> = ({
   };
 
   const archived = issue !== null && (issue.archived_at ?? null) !== null;
+  const deleted = issue !== null && (issue.deleted_at ?? null) !== null;
+
+  const restoreFromTrash = async (): Promise<void> => {
+    if (issue === null) return;
+    try {
+      receive(await restoreIssue(workspaceId, issue.id));
+    } catch (cause) {
+      showErrorToast(errorMessage(cause, 'Could not restore that issue.'));
+      return;
+    }
+    invalidateQueries([issueKey(workspaceId, issueRef), activityKey(issue.id)]);
+    showToast(`Restored ${issue.key}`);
+  };
 
   const toggleArchive = async (): Promise<void> => {
     if (issue === null) return;
@@ -975,6 +1000,33 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-4 py-6 sm:px-8 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-center @min-[860px]:gap-10 @min-[860px]:py-10">
               <div className="contents @min-[860px]:block @min-[860px]:min-w-0 @min-[860px]:max-w-[680px] @min-[860px]:flex-1">
                 <div className="order-1 min-w-0 space-y-6">
+                  {deleted && (
+                    <div
+                      role="status"
+                      className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
+                    >
+                      <LuTrash2
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1">
+                        Deleted {timestampLabel(issue.deleted_at ?? '')}. It
+                        stays in the team&apos;s trash for 30 days before it is
+                        deleted permanently.
+                      </span>
+                      {canAct && (
+                        <button
+                          type="button"
+                          className={LINK_CLASS}
+                          onClick={() => {
+                            void restoreFromTrash();
+                          }}
+                        >
+                          Restore
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {archived && (
                     <div
                       role="status"
@@ -1134,6 +1186,18 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 }}
                 onClose={() => {
                   setParenting(false);
+                }}
+              />
+            )}
+            {duplicating && (
+              <DuplicateIssueDialog
+                workspaceId={workspaceId}
+                issue={issue}
+                onClose={() => {
+                  setDuplicating(false);
+                }}
+                onDuplicated={(copy) => {
+                  void navigate(duplicatePath(slug, copy));
                 }}
               />
             )}

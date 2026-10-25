@@ -100,10 +100,12 @@ import {
   searchPath,
   settingsTeamsPath,
   teamArchivePath,
+  teamTrashPath,
   teamBoardPath,
   teamCurrentCyclePath,
   teamCyclesPath,
   teamPath,
+  teamInitiativesPath,
   teamProjectsPath,
   teamReleasesPath,
   teamSettingsPath,
@@ -155,6 +157,7 @@ import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
 import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
+import { activeTeams } from '../../lib/teamRetirement';
 
 /** Props for Sidebar: the workspace and what to do when a link is followed. */
 export interface SidebarProps {
@@ -294,6 +297,8 @@ interface TeamSectionProps {
   pathname: string;
   /** True while the projects list is filtered to this team. */
   isProjectsActive: boolean;
+  /** True while the initiatives list is filtered to the ones this team leads. */
+  isInitiativesActive: boolean;
   /** How many issues wait in the team's triage inbox, or null when triage is off. */
   triageCount: number | null;
   /** Where a move up lands among the team's siblings, or null when it is first. */
@@ -330,6 +335,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onNavigate,
   pathname,
   isProjectsActive,
+  isInitiativesActive,
   triageCount,
   upTo,
   downTo,
@@ -459,6 +465,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         <MenuItem to={teamArchivePath(slug, team.key_prefix)}>
           Show archived issues
         </MenuItem>
+        <MenuItem to={teamTrashPath(slug, team.key_prefix)}>
+          Recently deleted
+        </MenuItem>
         <MenuItem
           onSelect={() => {
             copyLink(home);
@@ -555,6 +564,15 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           <LuTarget className={SUB_ICON} aria-hidden="true" />
           Projects
         </Link>
+        <Link
+          to={teamInitiativesPath(slug, team.key_prefix)}
+          className={subItemClass({ isActive: isInitiativesActive })}
+          aria-current={isInitiativesActive ? 'page' : undefined}
+          onClick={onNavigate}
+        >
+          <LuGoal className={SUB_ICON} aria-hidden="true" />
+          Initiatives
+        </Link>
         <NavLink
           to={teamViewsPath(slug, team.key_prefix)}
           end
@@ -597,6 +615,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? new URLSearchParams(location.search).get('team')
     : null;
   const allProjectsActive = onProjectsPage && projectsTeam === null;
+  const onInitiativesPage = /^\/w\/[^/]+\/initiatives\/?$/.test(
+    location.pathname
+  );
+  const initiativesTeam = onInitiativesPage
+    ? new URLSearchParams(location.search).get('team')
+    : null;
+  const allInitiativesActive =
+    /^\/w\/[^/]+\/initiatives(\/|$)/.test(location.pathname) &&
+    initiativesTeam === null;
   const prefix = routeTeamPrefix(location.pathname, location.search);
 
   const [expanded, setExpanded] = useState<string[]>(() =>
@@ -676,7 +703,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Initiatives',
       icon: LuGoal,
       to: initiativesPath(slug),
-      prefix: true,
+      active: allInitiativesActive,
     },
     customers: {
       item: 'customers',
@@ -778,7 +805,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     () =>
       nestTeams(
         applyTeamOrder(
-          (teams ?? []).filter(
+          activeTeams(teams ?? []).filter(
             (team) => team.private !== true || team.is_member === true
           ),
           pendingOrder
@@ -1108,6 +1135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onNavigate={onNavigate}
                     pathname={location.pathname}
                     isProjectsActive={projectsTeam === team.key_prefix}
+                    isInitiativesActive={initiativesTeam === team.key_prefix}
                     triageCount={triageCounts.get(team.id) ?? null}
                     upTo={siblingIndex(rows, index, -1)}
                     downTo={siblingIndex(rows, index, 1)}

@@ -241,6 +241,12 @@ def _initialize() -> dict[str, Any]:
     }
 
 
+RETIRED_TEAM_TOOLS: frozenset[str] = frozenset(
+    {"retire_team", "unretire_team", "delete_team", "leave_team", "remove_team_member"}
+)
+"""The write tools a retired team still takes: retiring, un-retiring, deleting and leaving it."""
+
+
 def _call_tool(
     params: Mapping[str, Any],
     context: AuthzContext,
@@ -256,7 +262,8 @@ def _call_tool(
     write paths raise and which reach the model as the message a person would read.
 
     The arguments are checked against the tool's schema before its handler runs, so
-    an unknown or missing argument is refused here, once, for every tool.
+    an unknown or missing argument is refused here, once, for every tool. A write
+    tool naming a retired team in `team_id` is refused here too.
     """
     name = params.get("name")
     if not isinstance(name, str) or not name:
@@ -277,7 +284,9 @@ def _call_tool(
     try:
         checked = check_arguments(tool.name, tool.schema, arguments)
         call = ToolCall(context=context, repositories=repositories, arguments=checked)
-        return tool_result(render(tool.handler(resolve_team_arguments(call, administer=tool.administers_team))))
+        writes = not tool.read_only and tool.name not in RETIRED_TEAM_TOOLS
+        resolved = resolve_team_arguments(call, administer=tool.administers_team, writes=writes)
+        return tool_result(render(tool.handler(resolved)))
     except ToolError as exc:
         return tool_result(exc.message, is_error=True)
     except HTTPException as exc:

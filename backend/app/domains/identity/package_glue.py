@@ -100,7 +100,9 @@ def build_router(settings: "Settings") -> "APIRouter":
     flow routes, an email sender and token store the email routes, and so on.
     The refresh token and login attempt stores are the audited ones, and every
     route captures its request, so sign-ins, revoked sessions and failed sign-ins
-    reach the workspace audit log with the address and client that made them.
+    reach the workspace audit log with the address and client that made them. A
+    consent post also keeps its authorization parameters, which the consent store's
+    third-party app gate needs to send a held member to the request page.
     """
     from dataclasses import replace
 
@@ -108,6 +110,7 @@ def build_router(settings: "Settings") -> "APIRouter":
     from webbpulse.identity import build_identity_router, signing_client
 
     from app.common.session_audit import capture_request, client_names_from, login_attempt_store, refresh_token_store
+    from app.domains.identity.app_approval_gate import capture_consent_request
     from app.domains.identity.consent_theme import build_consent_theme
     from app.domains.identity.identity_hooks import StanduplessIdentityHooks
 
@@ -150,7 +153,7 @@ def build_router(settings: "Settings") -> "APIRouter":
         sso=build_sso_service(identity_settings, hooks, stores),
     )
     audited = APIRouter()
-    audited.include_router(router, dependencies=[Depends(capture_request)])
+    audited.include_router(router, dependencies=[Depends(capture_request), Depends(capture_consent_request)])
     return audited
 
 

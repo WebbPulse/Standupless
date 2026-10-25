@@ -9,7 +9,7 @@
  */
 
 import type { MemberRead } from '../types/Api';
-import type { Assignable } from './issuePeople';
+import { isPickable, type Assignable } from './issuePeople';
 
 /** The mention being typed: where its `@` sits and what follows it. */
 export interface MentionQuery {
@@ -93,7 +93,7 @@ export const matchPeople = (
   query: string
 ): Assignable[] => {
   const term = query.toLowerCase();
-  const scored = people.flatMap((person) => {
+  const scored = people.filter(isPickable).flatMap((person) => {
     const name = (person.display_name ?? '').toLowerCase();
     const handle = mentionHandle(person).toLowerCase();
     if (term === '') return [{ person, score: 1 }];

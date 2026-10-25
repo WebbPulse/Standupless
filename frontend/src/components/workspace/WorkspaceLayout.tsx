@@ -28,7 +28,12 @@ import {
   useCommandPalette,
 } from '../../hooks/useCommandPalette';
 import { CreateIssueContext } from '../../hooks/useCreateIssue';
-import { useHasIssueDraft } from '../../lib/issueDraft';
+import {
+  flushIssueDrafts,
+  migrateLegacyIssueDraft,
+  refreshIssueDrafts,
+  useIssueDrafts,
+} from '../../lib/issueDraft';
 import type {
   CreateIssueOptions,
   CreateIssueState,
@@ -46,6 +51,7 @@ import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
+import { activeTeams } from '../../lib/teamRetirement';
 import { emptyFilters } from '../../lib/issueFilters';
 import { rememberWorkspace } from '../../lib/lastWorkspace';
 import { showToast } from '../../lib/toast';
@@ -101,6 +107,8 @@ interface CreateIssueHostProps {
   preset: CreateIssuePreset;
   /** Whether the dialog opens expanded. */
   expanded: boolean;
+  /** Whether the dialog opens on its Drafts list. */
+  showDrafts: boolean;
 }
 
 /** The dialog preset a create request carries, leaving out what it does not set. */
@@ -113,6 +121,7 @@ const presetOf = (request: Request): CreateIssuePreset => ({
   ...(request.cycleId === undefined ? {} : { cycleId: request.cycleId }),
   ...(request.parentId === undefined ? {} : { parentId: request.parentId }),
   ...(request.parentKey === undefined ? {} : { parentKey: request.parentKey }),
+  ...(request.priority === undefined ? {} : { priority: request.priority }),
   ...(request.templateId === undefined
     ? {}
     : { templateId: request.templateId }),
@@ -139,6 +148,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   currentUserId,
   preset,
   expanded,
+  showDrafts,
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
@@ -172,6 +182,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       {...(currentUserId === undefined ? {} : { currentUserId })}
       preset={preset}
       initialExpanded={expanded}
+      initialShowDrafts={showDrafts}
       onClose={onClose}
     />
   );
@@ -242,7 +253,7 @@ const WorkspaceOverlays: React.FC = () => {
   usePublishCustomEmoji(workspaceId);
 
   const writable = useMemo(
-    () => teams.filter((team) => canWriteIssues(role, team.role)),
+    () => activeTeams(teams).filter((team) => canWriteIssues(role, team.role)),
     [teams, role]
   );
   const routePrefix = routeTeamPrefix(location.pathname, location.search);
@@ -261,7 +272,15 @@ const WorkspaceOverlays: React.FC = () => {
     [writable, routePrefix]
   );
 
-  const hasDraft = useHasIssueDraft(workspaceId, user?.id);
+  const viewerId = user?.id;
+  useEffect(() => {
+    if (workspaceId === '' || viewerId === undefined) return;
+    migrateLegacyIssueDraft(workspaceId, viewerId);
+    void flushIssueDrafts(workspaceId, viewerId).then(() =>
+      refreshIssueDrafts(workspaceId, viewerId)
+    );
+  }, [workspaceId, viewerId]);
+  const hasDraft = useIssueDrafts(workspaceId, viewerId).length > 0;
 
   const closeCreateIssue = useCallback(() => {
     setRequest(null);
@@ -279,7 +298,10 @@ const WorkspaceOverlays: React.FC = () => {
     [openCreateIssue, closeCreateIssue, request, writable.length, hasDraft]
   );
 
-  const mayCreateTeam = canCreateTeam(role);
+  const mayCreateTeam = canCreateTeam(
+    role,
+    workspace?.team_creation_permission
+  );
   const createTeam = useMemo<CreateTeamState>(
     () => ({
       open: () => {
@@ -382,6 +404,7 @@ const WorkspaceOverlays: React.FC = () => {
                         <GlobalShortcuts
                           workspace={workspace}
                           teams={teams}
+                          currentUserId={user?.id}
                           onShowHelp={showHelp}
                         />
                         <CommandPalette
@@ -415,6 +438,7 @@ const WorkspaceOverlays: React.FC = () => {
                         currentUserId={user?.id}
                         preset={presetOf(request)}
                         expanded={request.expanded === true}
+                        showDrafts={request.showDrafts === true}
                       />
                     )}
 

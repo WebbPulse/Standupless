@@ -7,6 +7,7 @@ too. There is no MCP-shaped write path, which is what keeps the two from driftin
 
 There is no tool that deletes an issue or a comment: an agent that can create and
 update but never destroy history is a different risk from one that can do both.
+It can still list a team's deleted issues and restore one from the trash.
 Removing a relation is offered, marked destructive, because the link is all it loses.
 """
 
@@ -39,14 +40,14 @@ from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.document_comments import create_document_comment, document_comment_page
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
-from app.common.issue_conversion import duplicate_issue
+from app.common.issue_conversion import DUPLICATE_SUB_ISSUES_MAX, duplicate_issue
 from app.common.issue_descriptions import list_description_versions
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
@@ -55,6 +56,7 @@ from app.common.issue_move import move_issue
 from app.common.issue_parents import parents_of
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
+from app.common.issue_trash import list_trash, restore_issue
 from app.common.issue_writes import (
     bulk_update_issues,
     create_issue_tree,
@@ -247,8 +249,10 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "has_relation": one_or_many(
             "Holding a link of any of these types: blocks, blocked_by, relates_to, duplicate_of"
         ),
-        "team_id_in": one_or_many("In any of these teams, among the teams the list already covers"),
-        "team_id_not": one_or_many("In none of these teams"),
+        "team_id_in": one_or_many(
+            "In any of these teams, among the teams the list already covers; 'my_teams' is the caller's teams"
+        ),
+        "team_id_not": one_or_many("In none of these teams; 'my_teams' is the caller's teams"),
         "creator_id": one_or_many("Created by any of these people; 'me' is the caller"),
         "creator_id_not": one_or_many("Created by none of these people"),
         "subscriber_id": one_or_many("Subscribed to by any of these people; 'me' is the caller"),
@@ -522,8 +526,12 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 
 
 def _get_issue(call: ToolCall) -> Any:
-    """One issue by its id or its key, with its linked pull requests and the stacks they form."""
-    issue = issue_ref(call, call.require("issue_id"))
+    """One issue by its id or its key, with its linked pull requests and the stacks they form.
+
+    A deleted issue still answers, with `deleted_at` set, so an agent can tell it
+    sits in the trash and restore it.
+    """
+    issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
     answer = _answer(call, issue)
     answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
     return answer
@@ -668,13 +676,27 @@ def _move_issue(call: ToolCall) -> Any:
 def _duplicate_issue(call: ToolCall) -> Any:
     """Copy an issue into a new one in its team through the route's own path."""
     issue = issue_ref(call, call.require("issue_id"))
-    return _answer(call, duplicate_issue(call.repositories, call.context, issue))
+    include = call.optional("include_sub_issues") is True
+    return _answer(call, duplicate_issue(call.repositories, call.context, issue, include_sub_issues=include))
 
 
 def _unarchive_issue(call: ToolCall) -> Any:
     """Restore an archived issue through the route's own path, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
     return _answer(call, unarchive_issue(call.repositories, call.context, issue))
+
+
+def _restore_issue(call: ToolCall) -> Any:
+    """Take a deleted issue back out of its team's trash through the route's own path, idempotently."""
+    issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
+    return _answer(call, restore_issue(call.repositories, call.context, issue))
+
+
+def _list_deleted_issues(call: ToolCall) -> Any:
+    """One team's deleted issues, the most recently deleted first, with who deleted each and when."""
+    rows = list_trash(call.repositories, call.context, str(call.require("team_id")))
+    rows.sort(key=lambda row: row.deleted_at.isoformat() if row.deleted_at else "", reverse=True)
+    return {"issues": [_answer(call, row) for row in rows], "retention_days": TRASH_RETENTION_DAYS}
 
 
 def _comment_json(comment: Comment) -> dict[str, Any]:
@@ -1204,10 +1226,12 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_insights",
         description=(
-            "Issue count or estimate points grouped by one dimension, optionally segmented by a second, "
-            "over a team, every visible team, or a saved view with its filter, plus the list filters. "
-            "Answers groups with label, value, issue_count and segments, the total, and truncated when "
-            "the scope held more issues than row_cap."
+            "Issue count, estimate points, cycle time, lead time, triage time or issue age grouped by one "
+            "dimension, optionally segmented by a second, over a team, every visible team, or a saved view with "
+            "its filter, plus the list filters. Answers groups with label, value, issue_count and segments, the "
+            "total, and truncated when the scope held more issues than row_cap. A time measure also answers "
+            "durations (count, average, p25, p50, p75, p95, minimum, maximum in hours) overall and per group, "
+            "and points with each measured issue's key, title, group, segment and hours."
         ),
         scopes=("issues:read",),
         schema=object_schema(
@@ -1216,7 +1240,12 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "view_id": string("A saved view whose team and filter apply as well"),
                 "group_by": enum(INSIGHT_DIMENSIONS, "What each bar is, defaulting to status"),
                 "segment_by": enum(INSIGHT_DIMENSIONS, "What splits each bar, optional"),
-                "measure": enum(INSIGHT_MEASURES, "count of issues or sum of estimate points, defaulting to count"),
+                "measure": enum(
+                    INSIGHT_MEASURES,
+                    "count of issues or sum of estimate points, defaulting to count; cycle_time is started to "
+                    "completed, lead_time created to completed, triage_time entering to leaving triage, and "
+                    "issue_age created to now, each in hours over the issues it applies to",
+                ),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
                 "include_sub_teams": {
                     "type": "boolean",
@@ -1398,10 +1427,18 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Copy an issue into a new issue in the same team. The copy keeps the title with a (copy) suffix, "
             "the body, labels, priority, estimate, parent, project and milestone, and starts in the team's "
-            "default status, unassigned, outside any cycle and with no dates or relations."
+            "default status, unassigned, outside any cycle and with no dates or relations. With "
+            "include_sub_issues every sub-issue is copied under the copy by the same rules, "
+            f"keeping its title and order; more than {DUPLICATE_SUB_ISSUES_MAX} sub-issues is refused."
         ),
         scopes=("issues:write",),
-        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "include_sub_issues": boolean("Copy the issue's sub-issues under the copy too; default false"),
+            },
+            required=("issue_id",),
+        ),
         handler=_duplicate_issue,
     ),
     Tool(
@@ -1410,6 +1447,27 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         scopes=("issues:write",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
         handler=_unarchive_issue,
+    ),
+    Tool(
+        name="restore_issue",
+        description=(
+            "Restore a deleted issue from its team's trash, with its sub-issues, relations, labels and comments. "
+            "Deleted issues stay restorable for 30 days. Allowed for a team admin, or the creator of an issue "
+            "with no sub-issues. Idempotent."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_restore_issue,
+    ),
+    Tool(
+        name="list_deleted_issues",
+        description=(
+            "A team's recently deleted issues, the most recently deleted first, each with deleted_at and "
+            "deleted_by. They are purged for good 30 days after deletion; restore one with restore_issue."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema({"team_id": string("The team whose trash to list")}, required=("team_id",)),
+        handler=_list_deleted_issues,
     ),
     Tool(
         name="list_comments",

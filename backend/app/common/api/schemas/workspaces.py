@@ -29,6 +29,10 @@ InvitableRoleField = Literal["admin", "member", "guest"]
 
 BranchFormatField = Literal["key_title", "user_key_title", "key"]
 
+PermissionLevelField = Literal["admins", "members"]
+
+MemberStatusField = Literal["active", "suspended", "invited"]
+
 
 class WorkspaceCreate(BaseModel):
     """The body `POST /api/workspaces` takes."""
@@ -62,8 +66,10 @@ class WorkspaceCreate(BaseModel):
 class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
-    The name, the accent color, the default project update cadence and the git
-    branch name format are editable. The slug is not: it is the tenant's public handle and changing one
+    The name, the accent color, the default project update cadence, the git
+    branch name format, who may invite people or create teams and whether
+    third-party apps need an admin's approval are editable.
+    The slug is not: it is the tenant's public handle and changing one
     would break every link that carries it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
     """
@@ -74,6 +80,18 @@ class WorkspaceUpdate(BaseModel):
     branch_format: Optional[BranchFormatField] = Field(
         default=None,
         description="How copied git branch names are built: key_title, user_key_title or key",
+    )
+    invite_permission: Optional[PermissionLevelField] = Field(
+        default=None,
+        description="Who may invite new members: admins, or every member",
+    )
+    team_creation_permission: Optional[PermissionLevelField] = Field(
+        default=None,
+        description="Who may create teams: admins, or every member",
+    )
+    third_party_app_approvals: Optional[bool] = Field(
+        default=None,
+        description="Whether members need an admin's approval before authorizing a third-party app",
     )
 
     @field_validator("accent_color")
@@ -137,6 +155,18 @@ class WorkspaceRead(BaseModel):
         default="key_title",
         description="How copied git branch names are built: key_title, user_key_title or key",
     )
+    invite_permission: PermissionLevelField = Field(
+        default="admins",
+        description="Who may invite new members: admins, or every member",
+    )
+    team_creation_permission: PermissionLevelField = Field(
+        default="members",
+        description="Who may create teams: admins, or every member",
+    )
+    third_party_app_approvals: bool = Field(
+        default=False,
+        description="Whether members need an admin's approval before authorizing a third-party app",
+    )
 
     @classmethod
     def from_row(
@@ -170,6 +200,9 @@ class WorkspaceRead(BaseModel):
             auth_policy_reason=auth_policy_reason,  # pyright: ignore[reportArgumentType]
             auth_policy_allowed_methods=auth_policy_allowed_methods,
             branch_format=workspace.branch_format,  # pyright: ignore[reportArgumentType]
+            invite_permission=workspace.invite_permission,  # pyright: ignore[reportArgumentType]
+            team_creation_permission=workspace.team_creation_permission,  # pyright: ignore[reportArgumentType]
+            third_party_app_approvals=bool(workspace.third_party_app_approvals),
         )
 
 
@@ -194,6 +227,9 @@ class MemberRead(BaseModel):
 
     `display_name` is the member's handle. `previous_handles` are the handles they
     gave up, so a client can render a mention written under one as the current name.
+    `status` is `suspended` for a member who keeps their history but holds no
+    access, and `invited` for a pending invite, which then carries `invite_id`,
+    answers the invite id as `user_id` and the invite's sent time as `joined_at`.
     """
 
     user_id: str
@@ -204,6 +240,10 @@ class MemberRead(BaseModel):
     avatar_url: Optional[str] = None
     role: WorkspaceRoleField
     joined_at: datetime
+    status: MemberStatusField = "active"
+    suspended_at: Optional[datetime] = None
+    suspended_by: Optional[str] = None
+    invite_id: Optional[str] = None
 
     @classmethod
     def from_rows(cls, membership: Membership, user: Optional[User]) -> "MemberRead":
@@ -221,6 +261,22 @@ class MemberRead(BaseModel):
             avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             joined_at=membership.joined_at,
+            status="suspended" if membership.is_suspended else "active",
+            suspended_at=membership.suspended_at,
+            suspended_by=membership.suspended_by,
+        )
+
+    @classmethod
+    def from_invite(cls, invite: Invite) -> "MemberRead":
+        """A pending invite as an `invited` row of the members list."""
+        return cls(
+            user_id=invite.invite_id,
+            email=invite.email,
+            display_name=invite.email,
+            role=invite.role,  # pyright: ignore[reportArgumentType]
+            joined_at=invite.created_at,
+            status="invited",
+            invite_id=invite.invite_id,
         )
 
 

@@ -60,7 +60,8 @@ import {
 } from './ProjectPickers';
 import { openPropertyChip } from './ProjectPropertyKeys';
 import UpdateDueBadge from './UpdateDueBadge';
-import { DatePicker, PriorityPicker } from '../issues/PropertyPickers';
+import PlanningDatePicker from './PlanningDatePicker';
+import { PriorityPicker } from '../issues/PropertyPickers';
 import { IconButton } from '../ui/button';
 import { Menu, MenuItem } from '../ui/menu';
 import { useTruncationTooltip } from '../ui/truncated-text';
@@ -86,8 +87,9 @@ import {
   type ProjectMove,
   type ProjectOrdering,
 } from '../../lib/projectList';
-import { shortDateLabel } from '../../lib/propertyOptions';
+import { isCoarse, planningDateLabel } from '../../lib/dateResolution';
 import type {
+  DateResolution,
   ProjectLabelRead,
   ProjectOpenIssues,
   ProjectRead,
@@ -218,9 +220,14 @@ const BoardCard: React.FC<BoardCardProps> = ({
   }, [forced]);
 
   const dateTrigger =
-    (field: string, value: string | null) =>
+    (
+      field: string,
+      value: string | null,
+      resolution: DateResolution | null | undefined
+    ) =>
     (trigger: PopoverTriggerProps): React.ReactNode => {
-      const text = value === null ? 'No date' : shortDateLabel(value);
+      const text =
+        value === null ? 'No date' : planningDateLabel(value, resolution);
       return (
         <button
           type="button"
@@ -374,32 +381,54 @@ const BoardCard: React.FC<BoardCardProps> = ({
         )}
         {has('start') && (
           <span className={ON_CARD}>
-            <DatePicker
+            <PlanningDatePicker
               field="Start date"
+              edge="start"
               value={project.start_date}
+              resolution={project.start_date_resolution}
               disabled={!editable}
               {...(project.target_date === null
                 ? {}
                 : { max: project.target_date })}
-              renderTrigger={dateTrigger('Start date', project.start_date)}
-              onChange={(start) => {
-                onChange({ start_date: start });
+              renderTrigger={dateTrigger(
+                'Start date',
+                project.start_date,
+                project.start_date_resolution
+              )}
+              onChange={(start, resolution) => {
+                onChange({
+                  start_date: start,
+                  ...(isCoarse(resolution)
+                    ? { start_date_resolution: resolution }
+                    : {}),
+                });
               }}
             />
           </span>
         )}
         {has('target') && (
           <span className={ON_CARD}>
-            <DatePicker
+            <PlanningDatePicker
               field="Target date"
+              edge="end"
               value={project.target_date}
+              resolution={project.target_date_resolution}
               disabled={!editable}
               {...(project.start_date === null
                 ? {}
                 : { min: project.start_date })}
-              renderTrigger={dateTrigger('Target date', project.target_date)}
-              onChange={(target) => {
-                onChange({ target_date: target });
+              renderTrigger={dateTrigger(
+                'Target date',
+                project.target_date,
+                project.target_date_resolution
+              )}
+              onChange={(target, resolution) => {
+                onChange({
+                  target_date: target,
+                  ...(isCoarse(resolution)
+                    ? { target_date_resolution: resolution }
+                    : {}),
+                });
               }}
             />
           </span>

@@ -17,6 +17,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import require_team_reader, unprocessable, visible_team_ids
+from app.common.team_retirement import refuse_if_retired
 
 OWN_PARENT = "A team cannot be its own parent team."
 
@@ -63,13 +64,15 @@ def check_parent(
     """The team `parent_team_id` names, once it may take `team` as a sub-team, or a 422.
 
     `team` is `None` for a team being created. A parent the caller cannot read
-    answers as missing, so the refusal does not reveal a private team.
+    answers as missing, so the refusal does not reveal a private team, and a
+    retired parent is a 409.
     """
     if team is not None and parent_team_id == team.team_id:
         raise unprocessable(OWN_PARENT)
     parent = repositories.teams.get(workspace_id, parent_team_id)
     if parent is None or (can_see is not None and not can_see(parent_team_id)):
         raise unprocessable(NO_SUCH_PARENT.format(team_id=parent_team_id))
+    refuse_if_retired(parent)
     if parent.parent_team_id:
         raise unprocessable(PARENT_IS_SUB_TEAM.format(name=parent.name))
     if team is not None and sub_team_ids(repositories, workspace_id, team.team_id):
@@ -78,17 +81,36 @@ def check_parent(
 
 
 def listed_teams(
-    repositories: Repositories, context: AuthzContext, team_id: str | None, *, include_sub_teams: bool = False
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str | None,
+    *,
+    include_sub_teams: bool = False,
+    named: frozenset[str] | None = None,
 ) -> list[str]:
     """The teams an issue list reads: every visible team, or the one named and, rolled up, its visible sub-teams.
 
     Naming a team the caller cannot read is a 404 as before. A sub-team the caller
     cannot see is left out of the roll-up rather than refusing it, as Linear does.
+    With no team named, `named` turns on the default that leaves retired teams
+    out, keeping only those a team filter names explicitly.
     """
     if team_id is None:
-        return visible_team_ids(repositories, context)
+        if named is None:
+            return visible_team_ids(repositories, context)
+        return default_team_ids(repositories, context, named)
     require_team_reader(repositories, context, team_id)
     if not include_sub_teams:
         return [team_id]
     subs = [sub for sub in sub_team_ids(repositories, context.workspace_id, team_id) if context.can_see_team(sub)]
     return [team_id, *subs]
+
+
+def default_team_ids(repositories: Repositories, context: AuthzContext, named: frozenset[str]) -> list[str]:
+    """The visible teams a workspace-wide list spans by default: the active ones and any retired one in `named`."""
+    teams = repositories.teams.list_for_workspace(context.workspace_id)
+    return sorted(
+        team.team_id
+        for team in teams
+        if context.can_see_team(team.team_id) and (team.retired_at is None or team.team_id in named)
+    )

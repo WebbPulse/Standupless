@@ -22,6 +22,7 @@ from app.domains.integrations.mcp.asana_import_tools import ASANA_IMPORT_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.customer_tools import CUSTOMER_TOOLS
+from app.domains.integrations.mcp.dashboard_tools import DASHBOARD_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
 from app.domains.integrations.mcp.draft_tools import DRAFT_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
@@ -70,6 +71,7 @@ TOOLS: tuple[Tool, ...] = (
     *CUSTOMER_TOOLS,
     *RELEASE_TOOLS,
     *VIEW_TOOLS,
+    *DASHBOARD_TOOLS,
     *FAVORITE_TOOLS,
     *DRAFT_TOOLS,
     *WORKSPACE_TOOLS,

@@ -289,6 +289,9 @@ class SearchProjectRead(BaseModel):
     lead_id: Optional[str] = None
     team_ids: list[str] = Field(default_factory=list)
     target_date: Optional[str] = None
+    target_date_resolution: Optional[str] = Field(
+        default=None, description="How wide the target date is: day, month, quarter, half or year"
+    )
     updated_at: datetime
 
 
@@ -301,6 +304,9 @@ class SearchInitiativeRead(BaseModel):
     health: Optional[str] = None
     owner_id: Optional[str] = None
     target_date: Optional[str] = None
+    target_date_resolution: Optional[str] = Field(
+        default=None, description="How wide the target date is: day, month, quarter, half or year"
+    )
     updated_at: datetime
 
 

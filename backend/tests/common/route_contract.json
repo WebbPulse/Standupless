@@ -291,6 +291,12 @@
     "auth": "workspace:admin",
     "domain": "identity",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/connected-apps/{client_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "identity",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/connected-apps/{user_id}/{client_id}"
   },
   {
@@ -358,6 +364,42 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/slack/oauth/callback"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/app-approvals"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/request"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/requests"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/{client_id}/approve"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/{client_id}/deny"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/{client_id}/revoke"
   },
   {
     "auth": "workspace:admin",
@@ -927,6 +969,12 @@
     "auth": "workspace:read",
     "domain": "issues",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/deleted"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/export"
   },
   {
@@ -1028,8 +1076,20 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/permanent"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/releases"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/restore"
   },
   {
     "auth": "workspace:read",
@@ -1192,6 +1252,12 @@
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/cycles/{cycle_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/cycles/{cycle_id}/end-today"
   },
   {
     "auth": "workspace:read",
@@ -2034,6 +2100,12 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"
   },
   {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/retire"
+  },
+  {
     "auth": "team:read",
     "domain": "teams",
     "method": "GET",
@@ -2128,6 +2200,12 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/unretire"
   },
   {
     "auth": "workspace:read",
@@ -2188,6 +2266,36 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/drafts"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
   },
   {
     "auth": "workspace:read",
@@ -2350,6 +2458,72 @@
     "domain": "views",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/views"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/move"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/order"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}/insights"
   },
   {
     "auth": "workspace:read",
@@ -2766,13 +2940,13 @@
     "path": "/api/workspaces/{workspace_id}/invites"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "invite:create",
     "domain": "workspaces",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/invites"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "invite:revoke",
     "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/invites/{invite_id}"
@@ -2800,6 +2974,18 @@
     "domain": "workspaces",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/members/{user_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/members/{user_id}/reactivate"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/members/{user_id}/suspend"
   },
   {
     "auth": "workspace:admin",

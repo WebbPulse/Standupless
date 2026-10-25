@@ -93,6 +93,13 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
       teams.find((team) => team.id === teamId)?.estimate_scale ?? 'off',
     [teams]
   );
+  const countsUnestimated = useCallback(
+    (teamId: string) =>
+      teams.find((team) => team.id === teamId)?.estimate_count_unestimated ===
+      true,
+    [teams]
+  );
+  const listEstimates = teams.some((team) => team.estimate_scale !== 'off');
   const estimateOptionsFor = useCallback(
     (teamId: string) =>
       estimateOptionsOf(teams.find((team) => team.id === teamId)),
@@ -127,6 +134,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
             onChange={setState}
             groupFields={groupFieldsFor(lists.context)}
             context={lists.context}
+            estimates={listEstimates}
             onReset={
               sameViewState(
                 {
@@ -167,6 +175,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
         collection={collection}
         lists={lists}
         scaleFor={scaleFor}
+        countsUnestimated={countsUnestimated}
         estimateOptionsFor={estimateOptionsFor}
         {...(teams.length > 1 ? { teamNameFor } : {})}
         canEdit={canEdit}

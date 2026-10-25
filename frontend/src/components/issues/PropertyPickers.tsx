@@ -30,6 +30,7 @@ import { cn } from '../../lib/cn';
 import { labelPath, labelSections, toggleLabel } from '../../lib/labelGroups';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import {
+  isPickable,
   personAvatar,
   personLabel,
   type Assignable,
@@ -357,8 +358,11 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
   ...base
 }) => {
   const variant = base.variant ?? 'rail';
-  const me = people.find((person) => person.user_id === currentUserId);
-  const others = people.filter((person) => person.user_id !== currentUserId);
+  const pickable = people.filter(
+    (person) => isPickable(person) || person.user_id === value
+  );
+  const me = pickable.find((person) => person.user_id === currentUserId);
+  const others = pickable.filter((person) => person.user_id !== currentUserId);
   const ordered = me === undefined ? others : [me, ...others];
   const current =
     value === null
@@ -874,6 +878,61 @@ export const CustomDate: React.FC<CustomDateProps> = ({
   );
 };
 
+/** What the day list of a date picker needs: its value and the range it keeps. */
+export interface DayChoicesInput {
+  today: Date;
+  value: string | null;
+  min?: string;
+  max?: string;
+  clearable: boolean;
+  validate?: (value: string) => string | null;
+}
+
+/**
+ * The presets, the clear row and the typed day option a date picker lists.
+ * Presets outside the range are disabled rather than hidden, so the refusal
+ * shows, and the clear row carries the empty value.
+ */
+export const dayChoices = ({
+  today,
+  value,
+  min,
+  max,
+  clearable,
+  validate,
+}: DayChoicesInput): {
+  options: ComboboxOption[];
+  leadOption: (query: string) => ComboboxOption | null;
+} => {
+  const options: ComboboxOption[] = datePresets(today).map((preset) => ({
+    value: preset.value,
+    label: preset.label,
+    detail: shortDateLabel(preset.value, today),
+    disabled: !dateInRange(preset.value, min, max),
+  }));
+  if (value !== null && clearable) {
+    options.push({
+      value: NONE,
+      label: 'Clear date',
+      icon: <LuX className="h-3.5 w-3.5" />,
+    });
+  }
+  const leadOption = (query: string): ComboboxOption | null => {
+    const typed = typedDateOption(query, today, min, max);
+    if (typed === null) return null;
+    return {
+      value: typed.value,
+      label: typed.label,
+      icon: <LuCalendar className="h-3.5 w-3.5" />,
+      disabled:
+        validate === undefined
+          ? typed.disabled
+          : validate(typed.value) !== null,
+    };
+  };
+  return { options, leadOption };
+};
+
 /** Props for DatePicker: which date, its value and the range it must keep. */
 export interface DatePickerProps extends PickerBaseProps {
   /** The field's name, such as "Due date". */
@@ -912,32 +971,14 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 }) => {
   const variant = base.variant ?? 'rail';
   const [today] = useState(() => new Date());
-  const options: ComboboxOption[] = datePresets(today).map((preset) => ({
-    value: preset.value,
-    label: preset.label,
-    detail: shortDateLabel(preset.value, today),
-    disabled: !dateInRange(preset.value, min, max),
-  }));
-  if (value !== null && clearable) {
-    options.push({
-      value: NONE,
-      label: 'Clear date',
-      icon: <LuX className="h-3.5 w-3.5" />,
-    });
-  }
-  const leadOption = (query: string): ComboboxOption | null => {
-    const typed = typedDateOption(query, today, min, max);
-    if (typed === null) return null;
-    return {
-      value: typed.value,
-      label: typed.label,
-      icon: <LuCalendar className="h-3.5 w-3.5" />,
-      disabled:
-        validate === undefined
-          ? typed.disabled
-          : validate(typed.value) !== null,
-    };
-  };
+  const { options, leadOption } = dayChoices({
+    today,
+    value,
+    clearable,
+    ...(min === undefined ? {} : { min }),
+    ...(max === undefined ? {} : { max }),
+    ...(validate === undefined ? {} : { validate }),
+  });
   return (
     <SinglePicker
       {...base}

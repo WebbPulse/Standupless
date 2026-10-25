@@ -33,6 +33,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import AUTO_CLOSE_PERIODS, STALE_CATEGORIES, AutoCloseSettings
 from app.common.sla import apply_sla
+from app.common.team_retirement import is_active
 from app.domains.issues.auto_archive import SYSTEM_ACTOR, months_before
 
 _log = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ def sweep(repositories: Any, now: datetime | None = None) -> AutoCloseSummary:
         moment = moment.replace(tzinfo=timezone.utc)
     summary = AutoCloseSummary()
     for settings in repositories.team_config.iter_auto_close_settings():
-        if repositories.teams.get(settings.workspace_id, settings.team_id) is None:
+        if not is_active(repositories.teams.get(settings.workspace_id, settings.team_id)):
             continue
         summary.teams += 1
         closed, skipped = close_team(repositories, settings, moment)

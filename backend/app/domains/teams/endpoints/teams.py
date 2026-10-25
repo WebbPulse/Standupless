@@ -79,7 +79,9 @@ def list_teams(
     A guest sees only the teams they are a member of, which is the same rule
     the single team route applies, read off the context rather than repeated.
     Teams the saved order does not name follow it, oldest first. With
-    `parent_team_id`, only that team's sub-teams.
+    `parent_team_id`, only that team's sub-teams. Retired teams are listed with
+    `retired_at` set, so the client can keep them out of the sidebar and pickers
+    while workspace settings still lists them for un-retiring.
 
     The answer carries a weak `ETag` over its body, so a poll that sends it
     back in `If-None-Match` gets a 304 with no body while nothing changed.
@@ -421,6 +423,58 @@ def delete_team(
             before={"key_prefix": team.key_prefix} if team is not None else None,
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{workspace_id}/teams/{team_id}/retire", response_model=TeamRead)
+def retire_team(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN, allow_retired=True))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamRead:
+    """Retire a team: it leaves the sidebar and pickers, and its issues, projects and cycles turn read-only.
+
+    Retiring a team already retired answers it unchanged. A parent team with an
+    active sub-team is a 409 until the sub-team is retired or moved, and a team
+    with open issues, any not completed or cancelled, is a 409
+    `TEAM_HAS_OPEN_ISSUES` carrying `details.open_issue_count`.
+    """
+    team, changed = team_writes.retire_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
+    if changed:
+        audit.record(
+            repositories,
+            context,
+            "team.retired",
+            target_type="team",
+            target_id=team.team_id,
+            target_label=team.name,
+            before={"retired": False},
+            after={"retired": True},
+        )
+    return _read(repositories, context, team)
+
+
+@router.post("/{workspace_id}/teams/{team_id}/unretire", response_model=TeamRead)
+def unretire_team(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN, allow_retired=True))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamRead:
+    """Bring a retired team back into the sidebar and pickers, writable again.
+
+    A team that is not retired answers unchanged. A sub-team whose parent is
+    still retired is a 409 until the parent comes back.
+    """
+    team, changed = team_writes.unretire_team(repositories, context.workspace_id, str(context.team_id))
+    if changed:
+        audit.record(
+            repositories,
+            context,
+            "team.unretired",
+            target_type="team",
+            target_id=team.team_id,
+            target_label=team.name,
+            before={"retired": True},
+            after={"retired": False},
+        )
+    return _read(repositories, context, team)
 
 
 def _load(repositories: Repositories, context: AuthzContext) -> Team:

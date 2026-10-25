@@ -106,7 +106,7 @@ def test_an_admin_sets_and_clears_each_page(client: TestClient, team: str) -> No
                 "visible_properties": ["id", "milestone", "links", "id"],
                 "completed_window": "past_month",
             },
-            "board_display": {"show_empty_groups": True},
+            "board_display": {"show_empty_groups": True, "group_header": "estimate"},
         },
     )
 
@@ -117,6 +117,8 @@ def test_an_admin_sets_and_clears_each_page(client: TestClient, team: str) -> No
     assert body["list_display"]["completed_window"] == "past_month"
     assert body["list_display"]["show_sub_issues"] is None
     assert body["board_display"]["show_empty_groups"] is True
+    assert body["board_display"]["group_header"] == "estimate"
+    assert body["list_display"]["group_header"] is None
     assert body["updated_by"] == ADMIN
     assert body["updated_at"] is not None
 
@@ -286,3 +288,9 @@ def test_the_team_projects_page_falls_back_team_then_workspace_then_built_in(cli
     client.patch(WORKSPACE_URL, json={"projects_display": None})
 
     assert client.get(URL).json()["effective_projects_display"] == BUILT_IN
+
+
+def test_the_group_header_takes_only_count_or_estimate(client: TestClient, team: str) -> None:
+    """A team default group header is one a saved view could hold."""
+    sign_in(client, ADMIN)
+    assert client.patch(URL, json={"list_display": {"group_header": "points"}}).status_code == 422

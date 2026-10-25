@@ -153,6 +153,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "react_to_project_update",
         "delete_status",
         "delete_team",
+        "retire_team",
+        "unretire_team",
         "delete_view",
         "export_workspace",
         "delete_workspace_label",
@@ -235,6 +237,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_comment_draft",
         "list_comment_drafts",
         "delete_comment_draft",
+        "save_issue_draft",
+        "get_issue_draft",
+        "list_issue_drafts",
+        "delete_issue_draft",
         "list_workspace_labels",
         "list_workspace_exports",
         "list_workspace_members",
@@ -263,11 +269,14 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "cancel_issue_reminder",
         "snooze_notification",
         "start_cycle_today",
+        "end_cycle_today",
         "subscribe_to_issue",
         "subscribe_to_view",
         "test_channel",
         "triage_issue",
         "unarchive_issue",
+        "restore_issue",
+        "list_deleted_issues",
         "unsubscribe_from_issue",
         "unsubscribe_from_view",
         "update_channel",
@@ -355,8 +364,15 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_agent_profile",
         "save_agent_profile",
         "delete_agent_profile",
+        "list_dashboards",
+        "get_dashboard",
+        "create_dashboard",
+        "update_dashboard",
+        "delete_dashboard",
+        "suspend_member",
+        "reactivate_member",
     }
-    assert len(TOOLS) == 242
+    assert len(TOOLS) == 258
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

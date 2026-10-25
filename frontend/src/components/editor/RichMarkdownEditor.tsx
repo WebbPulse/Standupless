@@ -18,12 +18,20 @@
  * writing only what the Markdown shortcuts already write. A surface given a
  * selection issue source also offers filing an issue from the selection, which
  * opens the workspace's create dialog on the selected text and puts the new
- * issue's key in its place.
+ * issue's key in its place. One that names a parent issue also files
+ * sub-issues of it, from the toolbar when the selection is a list and on
+ * Ctrl or Cmd Shift O for any selection, which with nothing selected is left
+ * to the page.
+ *
+ * A day goes in as a date chip, from the `/date` picker or from the Date group
+ * the `@` menu shows when the text after the `@` reads as a date, and `|--`
+ * on an empty line starts a table.
  *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
- * Escape puts back the last committed text. Text input made only of control
- * characters is dropped, so a stray carriage return trailing Ctrl or Cmd
- * Enter never lands in the document. Committing on each pause would
+ * Escape puts back the last committed text, except right after a video link
+ * was pasted as an embed, when it keeps the link instead. Text input made
+ * only of control characters is dropped, so a stray carriage return trailing
+ * Ctrl or Cmd Enter never lands in the document. Committing on each pause would
  * record a history row per pause, since every write of a body is an activity
  * entry, so the commit waits for the person to be done.
  *
@@ -33,6 +41,8 @@
 
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
+import type { EditorState } from '@tiptap/pm/state';
+import { LuCalendar } from 'react-icons/lu';
 import React, {
   useCallback,
   useContext,
@@ -60,6 +70,11 @@ import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
 import type { CommentAnchor } from '../../types/Api';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
+import {
+  dateMentionOptions,
+  dateMentionQuery,
+  type DateMentionOption,
+} from '../../lib/dateChips';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
 import {
   currentOrigin,
@@ -71,11 +86,13 @@ import {
 } from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
+import { DateChipPicker } from './DateChipPicker';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
 import { toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
+import { keepPastedVideoAsLink } from './videoEmbed';
 import { useDelegatedIssueHoverCard } from '../ui/IssueHoverCard';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
@@ -86,6 +103,8 @@ import {
 import { ReferenceMenu } from './ReferenceMenu';
 import {
   createIssueFromSelection,
+  createSubIssuesFromList,
+  subIssuesFromSelection,
   type SelectionIssueSource,
 } from './selectionIssue';
 import {
@@ -104,8 +123,8 @@ import './richMarkdown.css';
 
 /** What a parent can do to the editor from outside. */
 export interface RichMarkdownHandle {
-  /** Puts the caret in the document, at the end. */
-  focus: () => void;
+  /** Puts the caret in the document, at the end unless told the start. */
+  focus: (at?: 'start' | 'end') => void;
   /** The document as Markdown right now, committed or not. */
   getMarkdown: () => string;
   /** Replaces the document and takes it as committed, as after a post. */
@@ -162,6 +181,11 @@ export interface RichMarkdownEditorProps {
   mentionPeople?: Assignable[];
   /** Told when focus enters or leaves the surface. */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * Backspace in an empty document, or ArrowUp at the very start of its first
+   * text block, calls this to hand the caret to the field above.
+   */
+  onExitTop?: () => void;
   /** The comment threads pinned to passages of this document, highlighted. */
   commentAnchors?: CommentAnchorsBinding;
   /**
@@ -186,6 +210,18 @@ interface MentionDraft {
   query: string;
   from: number;
   to: number;
+  top: number;
+  left: number;
+}
+
+/** One row of the @ menu: a person to mention or a day to insert as a chip. */
+type MentionOption =
+  | { kind: 'person'; person: Assignable }
+  | { kind: 'date'; date: DateMentionOption };
+
+/** Where the `/date` picker opens and the position its chip goes in at. */
+interface DatePickerDraft {
+  at: number;
   top: number;
   left: number;
 }
@@ -220,6 +256,35 @@ const currentHref = (editor: Editor): string => {
   return typeof attrs.href === 'string' ? attrs.href : '';
 };
 
+/** Whether the document is one empty text block, as a fresh one is. */
+const isEmptyDocument = (state: EditorState): boolean => {
+  const only = state.doc.firstChild;
+  return (
+    state.doc.childCount === 1 &&
+    only !== null &&
+    only.isTextblock &&
+    only.content.size === 0
+  );
+};
+
+/** Whether a collapsed caret sits at the very start of the first text block. */
+const isAtDocumentStart = (state: EditorState): boolean => {
+  const { selection } = state;
+  if (!selection.empty) return false;
+  const { $from } = selection;
+  if (!$from.parent.isTextblock || $from.parentOffset !== 0) return false;
+  let first = -1;
+  state.doc.descendants((node, pos) => {
+    if (first >= 0) return false;
+    if (node.isTextblock) {
+      first = pos;
+      return false;
+    }
+    return true;
+  });
+  return $from.before() === first;
+};
+
 /** The rich Markdown surface. */
 export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   value,
@@ -237,6 +302,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   onCancel,
   mentionPeople,
   onFocusChange,
+  onExitTop,
   commentAnchors,
   selectionIssue,
   ref,
@@ -256,6 +322,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     onChange,
     onSubmit,
     onCancel,
+    onExitTop,
     tokens,
   });
   handlers.current = {
@@ -266,23 +333,32 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     onChange,
     onSubmit,
     onCancel,
+    onExitTop,
     tokens,
   };
 
   const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null);
   const [mention, setMention] = useState<MentionDraft | null>(null);
   const [highlight, setHighlight] = useState(0);
-  const matches = useMemo(
-    () =>
-      mention === null || mentionPeople === undefined
+  const matches = useMemo<MentionOption[]>(() => {
+    if (mention === null) return [];
+    const people =
+      mentionPeople === undefined
         ? []
-        : matchPeople(mentionPeople, mention.query),
-    [mention, mentionPeople]
-  );
+        : matchPeople(mentionPeople, mention.query).map(
+            (person): MentionOption => ({ kind: 'person', person })
+          );
+    const dates = dateMentionOptions(mention.query).map(
+      (date): MentionOption => ({ kind: 'date', date })
+    );
+    return [...people, ...dates];
+  }, [mention, mentionPeople]);
   const mentionState = useRef({ mention, matches, highlight });
   mentionState.current = { mention, matches, highlight };
   const readMentionRef = useRef<(editor: Editor) => void>(() => undefined);
-  const chooseRef = useRef<(person: Assignable) => void>(() => undefined);
+  const chooseRef = useRef<(option: MentionOption) => void>(() => undefined);
+  const [datePicker, setDatePicker] = useState<DatePickerDraft | null>(null);
+  const openDatePickerRef = useRef<() => void>(() => undefined);
 
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const teams = useContext(TeamsContext)?.data ?? null;
@@ -322,6 +398,9 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   const slashContext = useMemo<SlashContext>(
     () => ({
       mentions: canMention,
+      pickDate: () => {
+        openDatePickerRef.current();
+      },
       ...(canUpload
         ? {
             pickFiles: () => {
@@ -373,6 +452,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   );
 
   const commitRef = useRef<() => void>(() => undefined);
+  const subIssueRef = useRef<() => boolean>(() => false);
   const revertRef = useRef<() => void>(() => undefined);
   const openLinkRef = useRef<() => void>(() => undefined);
 
@@ -456,10 +536,10 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               return true;
             }
             if ((event.key === 'Enter' && !mod) || event.key === 'Tab') {
-              const person = open.matches[open.highlight];
-              if (person !== undefined) {
+              const option = open.matches[open.highlight];
+              if (option !== undefined) {
                 event.preventDefault();
-                chooseRef.current(person);
+                chooseRef.current(option);
                 return true;
               }
             }
@@ -469,6 +549,20 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               setMention(null);
               return true;
             }
+          }
+          const exitTop = handlers.current.onExitTop;
+          if (
+            exitTop !== undefined &&
+            view.editable &&
+            !mod &&
+            !event.shiftKey &&
+            !event.altKey &&
+            ((event.key === 'Backspace' && isEmptyDocument(view.state)) ||
+              (event.key === 'ArrowUp' && isAtDocumentStart(view.state)))
+          ) {
+            event.preventDefault();
+            exitTop();
+            return true;
           }
           if (mod && event.key === 'Enter') {
             event.preventDefault();
@@ -490,6 +584,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
+            if (keepPastedVideoAsLink(editorRef.current)) return true;
             const cancel = handlers.current.onCancel;
             if (cancel !== undefined) {
               cancel();
@@ -497,6 +592,19 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
             }
             if (handlers.current.onSubmit === undefined) revertRef.current();
             (event.target as HTMLElement).blur();
+            return true;
+          }
+          if (
+            mod &&
+            event.shiftKey &&
+            !event.altKey &&
+            event.key.toLowerCase() === 'o' &&
+            view.editable &&
+            !view.state.selection.empty &&
+            subIssueRef.current()
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
             return true;
           }
           if (mod && !event.shiftKey && event.key.toLowerCase() === 'k') {
@@ -642,8 +750,10 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       }
     }
     setSlash(null);
-    if (mentionPeople === undefined) return;
-    const typed = mentionQuery(before, before.length);
+    const typed =
+      (mentionPeople === undefined
+        ? null
+        : mentionQuery(before, before.length)) ?? dateMentionQuery(before);
     if (typed === null) {
       setMention(null);
       return;
@@ -687,18 +797,37 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     command.run(editor, { from: open.from, to: open.to }, slashContext);
   };
 
-  chooseRef.current = (person: Assignable): void => {
+  chooseRef.current = (option: MentionOption): void => {
     const open = mentionState.current.mention;
     if (open === null) return;
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(
-        { from: open.from, to: open.to },
-        `@${mentionHandle(person)} `
-      )
-      .run();
+    const range = { from: open.from, to: open.to };
+    const chain = editor.chain().focus();
+    if (option.kind === 'date') {
+      chain.insertDateChip(option.date.value, range).run();
+    } else {
+      chain.insertContentAt(range, `@${mentionHandle(option.person)} `).run();
+    }
     setMention(null);
+  };
+
+  openDatePickerRef.current = (): void => {
+    const box = surface.current?.getBoundingClientRect();
+    if (box === undefined) return;
+    const at = editor.state.selection.from;
+    const caret = editor.view.coordsAtPos(at);
+    setDatePicker({
+      at,
+      top: caret.bottom - box.top + 4,
+      left: Math.max(0, Math.min(caret.left - box.left, box.width - 256)),
+    });
+  };
+
+  const pickDate = (value: string): void => {
+    const open = datePicker;
+    setDatePicker(null);
+    if (open === null) return;
+    const at = Math.min(open.at, editor.state.doc.content.size);
+    editor.chain().focus().insertDateChip(value, { from: at, to: at }).run();
   };
 
   const isDirty = useCallback(
@@ -786,8 +915,8 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => {
-        editor.commands.focus('end');
+      focus: (at = 'end') => {
+        editor.commands.focus(at);
       },
       getMarkdown: () => readMarkdown(editor),
       setMarkdown: (markdown: string) => {
@@ -828,8 +957,37 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
 
   const issueCreator = useCreateIssue();
   const canCreateIssue = selectionIssue !== undefined && issueCreator.canCreate;
-  const selectionIssueRef = useRef({ selectionIssue, open: issueCreator.open });
-  selectionIssueRef.current = { selectionIssue, open: issueCreator.open };
+  const workspaceId = workspace?.id;
+  const canCreateSubIssues =
+    canCreateIssue &&
+    selectionIssue?.parent !== undefined &&
+    workspaceId !== undefined;
+  const selectionIssueRef = useRef({
+    selectionIssue,
+    open: issueCreator.open,
+    workspaceId,
+  });
+  selectionIssueRef.current = {
+    selectionIssue,
+    open: issueCreator.open,
+    workspaceId,
+  };
+  const hideToolbar = useCallback((): void => {
+    editor.view.dispatch(editor.state.tr.setMeta(formattingToolbarKey, 'hide'));
+  }, [editor]);
+  subIssueRef.current = (): boolean => {
+    const {
+      selectionIssue: source,
+      open,
+      workspaceId: id,
+    } = selectionIssueRef.current;
+    const parent = source?.parent;
+    if (!canCreateSubIssues || parent === undefined || id === undefined) {
+      return false;
+    }
+    hideToolbar();
+    return subIssuesFromSelection(editor, id, parent, open);
+  };
 
   const formatContext = useMemo<FormatContext>(
     () => ({
@@ -842,15 +1000,25 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               const { selectionIssue: source, open } =
                 selectionIssueRef.current;
               if (source === undefined) return;
-              editor.view.dispatch(
-                editor.state.tr.setMeta(formattingToolbarKey, 'hide')
-              );
+              hideToolbar();
               createIssueFromSelection(editor, source, open);
             },
           }
         : {}),
+      ...(canCreateSubIssues
+        ? {
+            createSubIssues: () => {
+              const { selectionIssue: source, workspaceId: id } =
+                selectionIssueRef.current;
+              const parent = source?.parent;
+              if (parent === undefined || id === undefined) return;
+              hideToolbar();
+              createSubIssuesFromList(editor, id, parent);
+            },
+          }
+        : {}),
     }),
-    [canCreateIssue, editor]
+    [canCreateIssue, canCreateSubIssues, editor, hideToolbar]
   );
 
   const applyLink = (): void => {
@@ -964,41 +1132,101 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       {mention !== null && matches.length > 0 && (
         <ul
           role="listbox"
-          aria-label="Mention someone"
+          aria-label={
+            matches.every((option) => option.kind === 'date')
+              ? 'Insert a date'
+              : 'Mention someone'
+          }
           className="absolute z-20 w-64 overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-overlay"
           style={{ top: mention.top, left: mention.left }}
         >
-          {matches.map((person, index) => (
-            <li
-              key={person.user_id}
-              role="option"
-              aria-selected={index === highlight}
-              className={cn(
-                'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
-                index === highlight ? 'bg-raised text-text' : 'text-text-muted'
-              )}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                chooseRef.current(person);
-              }}
-              onMouseEnter={() => {
-                setHighlight(index);
-              }}
-            >
-              <Avatar
-                name={personLabel(person)}
-                src={personAvatar(person)}
-                size="sm"
-              />
-              <span className="min-w-0 flex-1 truncate text-text">
-                {personLabel(person)}
-              </span>
-              <span className="shrink-0 text-xs text-text-faint">
-                @{mentionHandle(person)}
-              </span>
-            </li>
-          ))}
+          {matches.map((option, index) => {
+            const rowClass = cn(
+              'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
+              index === highlight ? 'bg-raised text-text' : 'text-text-muted'
+            );
+            const pick = (event: React.MouseEvent): void => {
+              event.preventDefault();
+              chooseRef.current(option);
+            };
+            const hover = (): void => {
+              setHighlight(index);
+            };
+            if (option.kind === 'date') {
+              const firstDate = matches[index - 1]?.kind !== 'date';
+              return (
+                <React.Fragment key={`date-${option.date.value}`}>
+                  {firstDate && (
+                    <li
+                      role="presentation"
+                      className={cn(
+                        'px-2 pt-1.5 pb-1 text-xs font-medium text-text-faint',
+                        index > 0 && 'mt-1 border-t border-line'
+                      )}
+                    >
+                      Date
+                    </li>
+                  )}
+                  <li
+                    role="option"
+                    aria-selected={index === highlight}
+                    className={rowClass}
+                    onMouseDown={pick}
+                    onMouseEnter={hover}
+                  >
+                    <LuCalendar aria-hidden className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-text">
+                      {option.date.label}
+                    </span>
+                  </li>
+                </React.Fragment>
+              );
+            }
+            const { person } = option;
+            return (
+              <li
+                key={person.user_id}
+                role="option"
+                aria-selected={index === highlight}
+                className={rowClass}
+                onMouseDown={pick}
+                onMouseEnter={hover}
+              >
+                <Avatar
+                  name={personLabel(person)}
+                  src={personAvatar(person)}
+                  size="sm"
+                />
+                <span className="min-w-0 flex-1 truncate text-text">
+                  {personLabel(person)}
+                </span>
+                <span className="shrink-0 text-xs text-text-faint">
+                  @{mentionHandle(person)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
+      )}
+      {datePicker !== null && (
+        <DateChipPicker
+          top={datePicker.top}
+          left={datePicker.left}
+          onPick={pickDate}
+          onClose={() => {
+            setDatePicker(null);
+            editor.commands.focus();
+          }}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (next !== null && surface.current?.contains(next) === true) {
+              return;
+            }
+            setDatePicker(null);
+            handlers.current.onFocusChange?.(false);
+            commit();
+          }}
+        />
       )}
       {reference !== null && (
         <ReferenceMenu

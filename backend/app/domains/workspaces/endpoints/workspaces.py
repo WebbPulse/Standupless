@@ -9,9 +9,9 @@ it, never a 403, so the routes themselves never have to remember that rule.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 from webbpulse.http import conditional_response
 
@@ -43,6 +43,7 @@ from app.domains.workspaces.schemas.workspace import (
     InviteListRead,
     MemberListRead,
     MemberRead,
+    MemberStatusField,
     MemberUpdate,
     WorkspaceCreate,
     WorkspaceDeletionRequest,
@@ -103,10 +104,15 @@ def list_workspaces(
     Read through the memberships user index rather than an owner field, so a
     member who does not own the workspace still sees it. A workspace whose
     authentication policy refuses the caller's session is still listed, flagged,
-    so the client can say why instead of failing every call inside it.
+    so the client can say why instead of failing every call inside it. A
+    workspace that suspended the caller is left out, since it grants them nothing.
     """
     subject = str(claims.get("sub", "") or "").strip()
-    memberships = repositories.memberships.list_workspaces_for_user(subject)
+    memberships = [
+        membership
+        for membership in repositories.memberships.list_workspaces_for_user(subject)
+        if not membership.is_suspended
+    ]
     if not memberships:
         return WorkspaceListRead(workspaces=[])
 
@@ -202,7 +208,9 @@ def _notify_admins(
     reach an address costs the notice and never the request.
     """
     admins = [
-        m for m in repositories.memberships.list_members(workspace.id, limit=5000) if m.role in ("owner", "admin")
+        m
+        for m in repositories.memberships.list_members(workspace.id, limit=5000)
+        if m.role in ("owner", "admin") and not m.is_suspended
     ]
     users = repositories.users.get_many([m.user_id for m in admins] + [actor_id])
     actor_name = display_name_for(users.get(actor_id))
@@ -317,12 +325,15 @@ def list_members(
     request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    member_status: Annotated[Optional[list[MemberStatusField]], Query(alias="status")] = None,
 ) -> Response:
     """Everyone in the workspace, joined with their user rows for display.
 
-    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    `status` repeats to filter by active, suspended or invited. Without it the
+    answer holds active and suspended members, and invited rows answer only an
+    admin. The answer carries a weak `ETag`, so an unchanged poll gets a 304.
     """
-    return conditional_response(request, workspace_members.list_members(repositories, context))
+    return conditional_response(request, workspace_members.list_members(repositories, context, member_status))
 
 
 @router.patch("/{workspace_id}/members/{user_id}", response_model=MemberRead)
@@ -355,6 +366,30 @@ def remove_member(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{workspace_id}/members/{user_id}/suspend", response_model=MemberRead)
+def suspend_member(
+    user_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> MemberRead:
+    """Suspend a member, keeping their role, teams and history while every credential they hold stops working here.
+
+    An admin cannot suspend themselves, only an owner may suspend an owner, and
+    the last active owner stays.
+    """
+    return workspace_members.suspend_member(repositories, context, user_id)
+
+
+@router.post("/{workspace_id}/members/{user_id}/reactivate", response_model=MemberRead)
+def reactivate_member(
+    user_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> MemberRead:
+    """Reactivate a suspended member with the role and teams they held."""
+    return workspace_members.reactivate_member(repositories, context, user_id)
+
+
 @router.get("/{workspace_id}/invites", response_model=InviteListRead)
 def list_invites(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
@@ -367,7 +402,7 @@ def list_invites(
 @router.post("/{workspace_id}/invites", response_model=InviteCreated, status_code=status.HTTP_201_CREATED)
 def create_invite(
     payload: InviteCreate,
-    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    context: Annotated[AuthzContext, Depends(require(Capability.INVITE_CREATE))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InviteCreated:
     """Store an invite, mail it, and return its token exactly once.
@@ -375,7 +410,8 @@ def create_invite(
     Only the token's SHA-256 hash is stored, so this response is the only place
     the token is readable. It is still returned after the mail goes out, because
     the copy-link flow is what an admin falls back on when the address is one this
-    environment cannot reach, and a failed send never fails the invite.
+    environment cannot reach, and a failed send never fails the invite. A member
+    may invite at member or guest when the workspace's invite setting allows it.
     """
     return workspace_members.create_invite(repositories, context, payload)
 
@@ -383,10 +419,10 @@ def create_invite(
 @router.delete("/{workspace_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_invite(
     invite_id: Annotated[str, Path(min_length=1)],
-    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    context: Annotated[AuthzContext, Depends(require(Capability.INVITE_REVOKE))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Revoke an invite before it is accepted."""
+    """Revoke an invite before it is accepted. A member may revoke only an invite they sent."""
     workspace_members.revoke_invite(repositories, context, invite_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

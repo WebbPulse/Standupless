@@ -49,6 +49,7 @@ import Login from './pages/authentication/Login';
 import Register from './pages/authentication/Register';
 import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
+import AppAccess from './pages/apps/AppAccess';
 import VerifyEmail from './pages/authentication/VerifyEmail';
 import VerifyEmailChange from './pages/authentication/VerifyEmailChange';
 import GithubApp from './pages/admin/GithubApp';
@@ -95,11 +96,13 @@ import {
 } from './lib/paths';
 import Team from './pages/teams/Team';
 import TeamArchive from './pages/teams/TeamArchive';
+import TeamTrash from './pages/teams/TeamTrash';
 import TeamDocuments from './pages/teams/TeamDocuments';
 import TeamTriage from './pages/teams/TeamTriage';
 import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
+import DashboardDetail from './pages/views/DashboardDetail';
 import NewView from './pages/views/NewView';
 import ViewDetail from './pages/views/ViewDetail';
 import Views from './pages/views/Views';
@@ -164,6 +167,7 @@ const App: React.FC = () => (
       <Route path="/workspaces" element={<Workspaces />} />
       <Route path="/workspaces/new" element={<CreateWorkspace />} />
       <Route path="/security" element={<Security />} />
+      <Route path="/app-access" element={<AppAccess />} />
       <Route path="/admin/github-app" element={<GithubApp />} />
       <Route path="/admin/github-app/created" element={<GithubAppCreated />} />
 
@@ -231,6 +235,7 @@ const App: React.FC = () => (
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />
           <Route path="team/:keyPrefix/archive" element={<TeamArchive />} />
+          <Route path="team/:keyPrefix/trash" element={<TeamTrash />} />
           <Route path="team/:keyPrefix/triage" element={<TeamTriage />} />
           <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
           <Route
@@ -268,6 +273,10 @@ const App: React.FC = () => (
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="views" element={<Views />} />
           <Route path="views/new" element={<NewView />} />
+          <Route
+            path="views/dashboards/:dashboardId"
+            element={<DashboardDetail />}
+          />
           <Route path="views/:viewId" element={<ViewDetail />} />
           <Route path="members/:userId" element={<MemberDetail />} />
 

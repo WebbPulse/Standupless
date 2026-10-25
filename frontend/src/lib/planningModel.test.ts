@@ -1,11 +1,15 @@
 /**
  * The planning arithmetic: grouping projects and issues in list order, the
  * days of a cycle, and the burn-up read off the issues as they are now.
+ * The capacity dial reads an unstarted cycle against the last three closed
+ * cycles, a cycle list gains its paused gaps, and an edit sends only what
+ * changed beside what it held before.
  */
 
 import { describe, expect, it } from 'vitest';
 import type {
   CycleHistoryPoint,
+  CycleRead,
   IssueRead,
   ProjectHistoryRead,
   ProjectRead,
@@ -17,6 +21,11 @@ import {
   burnUpSeries,
   canEditProject,
   capacityGuidance,
+  capacityLabel,
+  cycleCapacity,
+  cycleEditPatch,
+  cycleEntries,
+  pausedLabel,
   historySeries,
   projectCompletion,
   projectionLabel,
@@ -693,5 +702,177 @@ describe('projectionNote', () => {
       )?.late
     ).toBe(true);
     expect(projectionNote(null, day)).toBeNull();
+  });
+});
+
+describe('cycleCapacity', () => {
+  const closed = (id: string, issues: number, points: number) => ({
+    cycle_id: id,
+    name: id,
+    start_date: '2026-08-01',
+    end_date: '2026-08-14',
+    completed_issues: issues,
+    completed_points: points,
+    scope_issues: issues,
+    scope_points: points,
+    carried_out: 0,
+    carried_out_points: 0,
+  });
+  const velocity: VelocityRead = {
+    team_id: 't',
+    estimate_scale: 'linear',
+    cycles: [
+      closed('a', 100, 100),
+      closed('b', 4, 8),
+      closed('c', 6, 10),
+      closed('d', 5, 12),
+    ],
+    average_points: 32.5,
+    average_issues: 28.8,
+    upcoming: null,
+  };
+  const cycle: CycleRead = {
+    cycle_id: 'next',
+    workspace_id: 'w',
+    team_id: 't',
+    name: 'Next',
+    start_date: '2026-09-15',
+    end_date: '2026-09-28',
+    goal: null,
+    cancelled: false,
+    status: 'upcoming',
+    counts: { todo: 6, in_progress: 0, done: 0, cancelled: 1, total: 7 },
+    points: { todo: 15, in_progress: 0, done: 0, cancelled: 2, total: 17 },
+    created_by: 'u',
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+  };
+
+  it('averages only the last three closed cycles, leaving cancelled work out', () => {
+    const capacity = cycleCapacity(velocity, cycle);
+    expect(capacity).toMatchObject({
+      measure: 'points',
+      average: 10,
+      planned: 15,
+      delta: 5,
+      percent: 150,
+      basis: 3,
+    });
+    expect(capacity === null ? '' : capacityLabel(capacity)).toBe(
+      '15 of 10 points, based on the last 3 cycles'
+    );
+  });
+
+  it('reads in issues when asked or when the team does not estimate', () => {
+    const capacity = cycleCapacity(
+      { ...velocity, estimate_scale: 'off' },
+      cycle
+    );
+    expect(capacity).toMatchObject({
+      measure: 'issues',
+      average: 5,
+      planned: 6,
+      percent: 120,
+    });
+  });
+
+  it('draws no dial for a cycle that has started or a team with no history', () => {
+    expect(cycleCapacity(velocity, { ...cycle, status: 'active' })).toBeNull();
+    expect(cycleCapacity({ ...velocity, cycles: [] }, cycle)).toBeNull();
+  });
+
+  it('names a single cycle of history in the singular', () => {
+    const capacity = cycleCapacity(
+      { ...velocity, cycles: [closed('b', 4, 8)] },
+      cycle
+    );
+    expect(capacity === null ? '' : capacityLabel(capacity)).toBe(
+      '15 of 8 points, based on the last cycle'
+    );
+  });
+});
+
+describe('cycleEntries', () => {
+  const row = (id: string, gap: number | null): CycleRead => ({
+    cycle_id: id,
+    workspace_id: 'w',
+    team_id: 't',
+    name: id,
+    start_date: '2026-09-01',
+    end_date: '2026-09-14',
+    goal: null,
+    cancelled: false,
+    status: 'upcoming',
+    counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+    gap_before_days: gap,
+    created_by: 'u',
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+  });
+  const shape = (entries: ReturnType<typeof cycleEntries>): string[] =>
+    entries.map((entry) =>
+      entry.kind === 'gap' ? `gap ${String(entry.days)}` : entry.cycle.cycle_id
+    );
+
+  it('puts a gap above the cycle it precedes when reading oldest first', () => {
+    expect(
+      shape(cycleEntries([row('a', 2), row('b', 0), row('c', 3)], 'ascending'))
+    ).toEqual(['gap 2', 'a', 'b', 'gap 3', 'c']);
+  });
+
+  it('puts a gap below its cycle when reading newest first, led by the next cycle', () => {
+    expect(
+      shape(
+        cycleEntries([row('c', 1), row('b', null)], 'descending', row('d', 4))
+      )
+    ).toEqual(['gap 4', 'c', 'gap 1', 'b']);
+  });
+
+  it('reads the gap length in days', () => {
+    expect(pausedLabel(1)).toBe('Cycles paused · 1 day');
+    expect(pausedLabel(5)).toBe('Cycles paused · 5 days');
+  });
+});
+
+describe('cycleEditPatch', () => {
+  const cycle: CycleRead = {
+    cycle_id: 'c',
+    workspace_id: 'w',
+    team_id: 't',
+    name: 'Sprint 4',
+    start_date: '2026-11-01',
+    end_date: '2026-11-14',
+    goal: 'Ship',
+    cancelled: false,
+    status: 'upcoming',
+    counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+    created_by: 'u',
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+  };
+
+  it('sends only the changed fields with what they held before', () => {
+    expect(
+      cycleEditPatch(cycle, {
+        name: ' Sprint 4 ',
+        goal: '',
+        start_date: '2026-11-01',
+        end_date: '2026-11-20',
+      })
+    ).toEqual({
+      patch: { goal: null, end_date: '2026-11-20' },
+      before: { goal: 'Ship', end_date: '2026-11-14' },
+    });
+  });
+
+  it('sends nothing when nothing changed or the name was cleared', () => {
+    expect(
+      cycleEditPatch(cycle, {
+        name: '',
+        goal: 'Ship',
+        start_date: '2026-11-01',
+        end_date: '2026-11-14',
+      })
+    ).toEqual({ patch: {}, before: {} });
   });
 });

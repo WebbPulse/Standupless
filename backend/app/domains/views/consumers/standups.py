@@ -187,10 +187,11 @@ def deliver_team(
     else:
         summary.sent += 1
         sent_at = send_moment(settings, day)
+        suspended = repositories.memberships.suspended_user_ids(workspace_id)
         member_ids = [
             member.user_id
             for member in repositories.memberships.list_team_members(workspace_id, settings.team_id)
-            if member.user_id
+            if member.user_id and member.user_id not in suspended
         ]
         for recipient_id in dict.fromkeys(member_ids):
             summary.notified += int(

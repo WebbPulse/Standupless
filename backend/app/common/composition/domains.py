@@ -167,6 +167,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.views.endpoints import (
         board,
+        dashboards,
         drafts,
         favorites,
         home,
@@ -183,6 +184,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
         (drafts.router, "/workspaces", ("views",)),
         (board.router, "/workspaces", ("views",)),
         (insights.router, "/workspaces", ("views",)),
+        (dashboards.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
         (members.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
@@ -337,13 +339,15 @@ def _admin_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_routers() -> "Sequence[RouterSpec]":
-    """The integrations domain: the GitHub install, links, transitions, issue sync, webhooks, standups and CSV imports.
+    """The integrations domain: the GitHub install, links, transitions, issue sync, webhooks, standups, CSV imports
+    and third-party app approvals.
 
     The transition rules sit under a team and the issue links under an issue,
     because each is read where it is shown rather than from a settings page that
     would have to know every team.
     """
     from app.domains.integrations.endpoints import (
+        app_approvals,
         asana_imports,
         channels,
         discord,
@@ -377,6 +381,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (imports.router, "/workspaces", ("integrations",)),
         (asana_imports.router, "/workspaces", ("integrations",)),
         (jira_imports.router, "/workspaces", ("integrations",)),
+        (app_approvals.router, "/workspaces", ("integrations",)),
     ]
 
 
@@ -529,13 +534,15 @@ _PLANNING_REPOSITORIES = (
     "activity",
     "subscriptions",
     "counters",
+    "audit",
 )
 """What the planning image writes.
 
 `issues`, `activity` and `subscriptions` are for completing or canceling a
 project, which can move or cancel its open issues through the issue patch path,
 and for a project made from a template, whose issues go through the issue create
-path, which allocates their keys from `counters`.
+path, which allocates their keys from `counters`. `audit` records an
+initiative's lead team changing.
 """
 
 _PLANNING_READ_REPOSITORIES = (

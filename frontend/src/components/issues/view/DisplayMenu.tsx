@@ -1,7 +1,8 @@
 /**
  * The display options of a list or board: the layout, the grouping and
  * sub-grouping, the ordering and its direction, whether empty groups,
- * sub-issues and completed issues show, and which properties the rows carry.
+ * sub-issues and completed issues show, what group headers read, and which
+ * properties the rows carry.
  * Every change lands in the URL at once, so the menu is a live control rather
  * than a form with a save button. On a team's own issues an admin may also
  * keep the current display as the team default every member opens with.
@@ -16,12 +17,15 @@ import {
   LuSlidersHorizontal,
 } from 'react-icons/lu';
 import type { IssueListSort } from '../../../api/issues';
+import type { ViewGroupHeader } from '../../../api/views';
 import { cn } from '../../../lib/cn';
 import {
   COMPLETED_WINDOWS,
   COMPLETED_WINDOW_LABELS,
   DISPLAY_PROPERTIES,
   GROUP_FIELDS,
+  GROUP_HEADERS,
+  GROUP_HEADER_LABELS,
   fieldsFor,
   groupFieldLabel,
   ORDERINGS,
@@ -62,6 +66,11 @@ export interface DisplayMenuProps {
    * customers, so the customer request and revenue orderings are offered.
    */
   customerSorts?: boolean;
+  /**
+   * True where a team the list covers estimates, so group headers may read
+   * the total estimate instead of the issue count.
+   */
+  estimates?: boolean;
 }
 
 /** The orderings that read the customers who asked for each issue. */
@@ -153,6 +162,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   archive = false,
   teamDefault,
   customerSorts = false,
+  estimates = false,
 }) => {
   const teamSave = teamDefault?.onSave;
   const teamClear = teamDefault?.onClear;
@@ -354,6 +364,24 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             set({ showEmpty });
           }}
         />
+        {(estimates || state.groupHeader !== 'count') && (
+          <Row label="Group header" htmlFor="display-head">
+            <Select
+              id="display-head"
+              className={SELECT_CLASS}
+              value={state.groupHeader}
+              onChange={(event) => {
+                set({ groupHeader: event.target.value as ViewGroupHeader });
+              }}
+            >
+              {GROUP_HEADERS.map((header) => (
+                <option key={header} value={header}>
+                  {GROUP_HEADER_LABELS[header]}
+                </option>
+              ))}
+            </Select>
+          </Row>
+        )}
       </div>
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>

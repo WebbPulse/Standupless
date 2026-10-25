@@ -36,7 +36,7 @@ import {
   removeInitiativeProject,
   updateInitiative,
 } from '../../api/initiatives';
-import { DatePicker } from '../../components/issues/PropertyPickers';
+import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
 import BurnUpChart from '../../components/planning/BurnUpChart';
 import CreateInitiativeDialog from '../../components/planning/CreateInitiativeDialog';
 import DocumentsSection from '../../components/planning/DocumentsSection';
@@ -50,6 +50,7 @@ import {
   InitiativePicker,
   InitiativeStatusPicker,
   LeadPicker,
+  LeadTeamPicker,
 } from '../../components/planning/ProjectPickers';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
@@ -73,6 +74,7 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
+import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { descendantIds, parentCandidates } from '../../lib/initiativeTree';
@@ -84,7 +86,7 @@ import {
   progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject, daysBetween } from '../../lib/planningModel';
-import { shortDateLabel } from '../../lib/propertyOptions';
+import { isCoarse, planningDateLabel } from '../../lib/dateResolution';
 import {
   initiativeDetailKey,
   initiativeProgressKey,
@@ -510,6 +512,11 @@ export const InitiativeDetail: React.FC = () => {
     (userId !== undefined &&
       (userId === initiative.created_by || userId === initiative.owner_id));
   const workspaceCadence = workspace?.project_update_interval_days ?? 7;
+  const leadTeams = teams.filter(
+    (team) =>
+      team.id === initiative.team_id ||
+      ((team.retired_at ?? null) === null && canWriteIssues(role, team.role))
+  );
 
   const refreshMembership = (): void => {
     invalidateQueries(detailKey);
@@ -696,14 +703,30 @@ export const InitiativeDetail: React.FC = () => {
           void update({ owner_id: ownerId });
         }}
       />
-      <DatePicker
+      <LeadTeamPicker
+        variant="chip"
+        value={initiative.team_id ?? null}
+        teams={leadTeams}
+        disabled={!canEdit}
+        onChange={(teamId) => {
+          void update({ team_id: teamId });
+        }}
+      />
+      <PlanningDatePicker
         variant="chip"
         field="Target date"
+        edge="end"
         value={initiative.target_date}
+        resolution={initiative.target_date_resolution}
         disabled={!canEdit}
         icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
-        onChange={(value) => {
-          void update({ target_date: value });
+        onChange={(value, resolution) => {
+          void update({
+            target_date: value,
+            ...(isCoarse(resolution)
+              ? { target_date_resolution: resolution }
+              : {}),
+          });
         }}
       />
       <CadencePicker
@@ -1011,7 +1034,10 @@ export const InitiativeDetail: React.FC = () => {
                           <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
                             {project.target_date === null
                               ? 'No date'
-                              : shortDateLabel(project.target_date)}
+                              : planningDateLabel(
+                                  project.target_date,
+                                  project.target_date_resolution
+                                )}
                           </span>
                           <span className="flex w-12 items-center justify-end gap-1 text-xs text-text-muted tabular-nums">
                             <ProgressRing percent={percent} />
@@ -1066,7 +1092,10 @@ export const InitiativeDetail: React.FC = () => {
                           <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
                             {project.target_date === null
                               ? 'No date'
-                              : shortDateLabel(project.target_date)}
+                              : planningDateLabel(
+                                  project.target_date,
+                                  project.target_date_resolution
+                                )}
                           </span>
                           <span className="flex w-12 items-center justify-end gap-1 text-xs text-text-muted tabular-nums">
                             <ProgressRing percent={percent} />
@@ -1100,6 +1129,8 @@ export const InitiativeDetail: React.FC = () => {
           workspaceId={workspaceId}
           people={people}
           initialOwnerId={userId ?? null}
+          teams={leadTeams.filter((team) => (team.retired_at ?? null) === null)}
+          initialTeamId={initiative.team_id ?? null}
           parent={{
             initiative_id: initiative.initiative_id,
             name: initiative.name,

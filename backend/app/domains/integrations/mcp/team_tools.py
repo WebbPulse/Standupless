@@ -37,11 +37,13 @@ from app.common.api.schemas.teams import (
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
     GROUP_BY_PROPERTIES,
+    GROUP_HEADERS,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     LayoutField,
     SortField,
     completed_window_of,
+    group_header_of,
     grouping_pattern,
 )
 from app.common.db.dynamo.memberships import Membership
@@ -166,6 +168,7 @@ def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
         "sync_pr_labels": team.sync_pr_labels,
         "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
+        "retired_at": team.retired_at.isoformat() if team.retired_at else None,
     }
 
 
@@ -436,9 +439,14 @@ def _workspace_user_ref(call: ToolCall, value: Any) -> str:
 
 
 def _list_teams(call: ToolCall) -> Any:
-    """Every team this credential may read, with what an agent needs to write, or one parent's sub-teams."""
+    """Every team this credential may read, with what an agent needs to write, or one parent's sub-teams.
+
+    Retired teams are left out unless `include_retired` asks for them.
+    """
     teams = call.repositories.teams.list_for_workspace(call.context.workspace_id)
     visible = [row for row in teams if call.context.can_see_team(row.team_id)]
+    if not call.arguments.get("include_retired"):
+        visible = [row for row in visible if row.retired_at is None]
     if call.arguments.get("parent_team_id") is not None:
         parent_id = team_ref(call, call.arguments["parent_team_id"]).team_id
         visible = [row for row in visible if row.parent_team_id == parent_id]
@@ -451,6 +459,7 @@ def _list_teams(call: ToolCall) -> Any:
                 "parent_team_id": row.parent_team_id,
                 "estimate_scale": row.estimate_scale,
                 "private": call.context.is_private_team(row.team_id),
+                "retired_at": row.retired_at.isoformat() if row.retired_at else None,
             }
             for row in sorted(visible, key=lambda row: row.name.lower())
         ]
@@ -560,6 +569,44 @@ def _delete_team(call: ToolCall) -> Any:
     return {"deleted": True, "team_id": team.team_id, "name": team.name, "key_prefix": team.key_prefix}
 
 
+def _retire_team(call: ToolCall) -> Any:
+    """Retire a team through the retire route's own path, held to team admin."""
+    team = admin_team(call)
+    retired, changed = team_writes.retire_team(
+        call.repositories, call.context.workspace_id, team.team_id, call.context.user_id
+    )
+    if changed:
+        audit.record(
+            call.repositories,
+            call.context,
+            "team.retired",
+            target_type="team",
+            target_id=retired.team_id,
+            target_label=retired.name,
+            before={"retired": False},
+            after={"retired": True},
+        )
+    return _team_json(call, retired)
+
+
+def _unretire_team(call: ToolCall) -> Any:
+    """Bring a retired team back through the un-retire route's own path, held to team admin."""
+    team = admin_team(call)
+    restored, changed = team_writes.unretire_team(call.repositories, call.context.workspace_id, team.team_id)
+    if changed:
+        audit.record(
+            call.repositories,
+            call.context,
+            "team.unretired",
+            target_type="team",
+            target_id=restored.team_id,
+            target_label=restored.name,
+            before={"retired": True},
+            after={"retired": False},
+        )
+    return _team_json(call, restored)
+
+
 def _update_cycle_settings(call: ToolCall) -> Any:
     """Change a team's automatic cycle settings, creating due cycles when they are on."""
     team = admin_team(call)
@@ -650,6 +697,7 @@ def _display_options_schema(page: str) -> dict[str, Any]:
             ),
             "show_empty_groups": {"type": "boolean", "description": "Show groups with no issues"},
             "show_archived": {"type": "boolean", "description": "Show archived issues"},
+            "group_header": enum(GROUP_HEADERS, "What group headers read: count (issues) or estimate (total points)"),
         },
         "additionalProperties": False,
     }
@@ -938,6 +986,7 @@ def _list_views(call: ToolCall) -> Any:
                 "show_completed": row.show_completed is not False,
                 "completed_window": completed_window_of(row.completed_window, row.show_completed),
                 "show_archived": row.show_archived is True,
+                "group_header": group_header_of(row.group_header),
                 "projects_display": (
                     stored_projects_display(row.projects_display).model_dump() if row.lists_projects else None
                 ),
@@ -978,10 +1027,16 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="list_teams",
         description=(
             "Every team this credential can read, with key prefix, estimate scale and parent team. "
-            "parent_team_id narrows the list to that team's sub-teams."
+            "parent_team_id narrows the list to that team's sub-teams. Retired teams are read-only and "
+            "left out unless include_retired is true."
         ),
         scopes=("teams:read",),
-        schema=object_schema({"parent_team_id": string("Only this team's sub-teams: id, key such as ENG, or name")}),
+        schema=object_schema(
+            {
+                "parent_team_id": string("Only this team's sub-teams: id, key such as ENG, or name"),
+                "include_retired": boolean("Also list retired teams, which are read-only"),
+            }
+        ),
         handler=_list_teams,
     ),
     Tool(
@@ -997,7 +1052,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_team",
         description=(
-            "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
+            "Create a team with the default statuses and the caller as its admin. Guests may not create teams, and "
+            "members only while the workspace lets every member create them. "
             "A private team is seen only by its members, who join by being added. parent_team_id creates it as a "
             "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings. "
             "copy_settings_from_team_id instead starts it with a copy of another team's statuses, labels, "
@@ -1047,6 +1103,32 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         handler=_delete_team,
         destructive=True,
         idempotent=True,
+    ),
+    Tool(
+        name="retire_team",
+        description=(
+            "Retire a team: it leaves the sidebar and team pickers, and its issues, projects and cycles stay "
+            "readable and searchable but can no longer be changed. A parent with active sub-teams cannot be "
+            "retired, and neither can a team with open issues: the refusal names how many are left. Needs team "
+            "admin. Undo with unretire_team. team_id: id, key such as ENG, or name."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
+        handler=_retire_team,
+        idempotent=True,
+        administers_team=True,
+    ),
+    Tool(
+        name="unretire_team",
+        description=(
+            "Bring a retired team back so it shows in the sidebar and takes changes again. A sub-team "
+            "needs its parent un-retired first. Needs team admin. team_id: id, key such as ENG, or name."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
+        handler=_unretire_team,
+        idempotent=True,
+        administers_team=True,
     ),
     Tool(
         name="update_team_cycle_settings",

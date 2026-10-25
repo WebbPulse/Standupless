@@ -9,6 +9,7 @@ import type { IssueRead, IssueUpdate } from '../types/Api';
 import {
   describeChange,
   patchedIssue,
+  recordDelete,
   recordMove,
   recordPatch,
   revertBetween,
@@ -32,6 +33,8 @@ const bulkUpdateIssues =
       body: IssueBulkUpdate
     ) => Promise<{ issues: IssueRead[]; skipped: string[] }>
   >();
+const restoreIssue =
+  vi.fn<(workspaceId: string, issueId: string) => Promise<IssueRead>>();
 const moveIssue =
   vi.fn<
     (workspaceId: string, issueId: string, teamId: string) => Promise<IssueRead>
@@ -48,6 +51,8 @@ vi.mock('../api/issues', async () => {
       bulkUpdateIssues(workspaceId, body),
     moveIssue: (workspaceId: string, issueId: string, teamId: string) =>
       moveIssue(workspaceId, issueId, teamId),
+    restoreIssue: (workspaceId: string, issueId: string) =>
+      restoreIssue(workspaceId, issueId),
   };
 });
 
@@ -82,6 +87,8 @@ beforeEach(() => {
   updateIssue.mockReset();
   bulkUpdateIssues.mockReset();
   moveIssue.mockReset();
+  restoreIssue.mockReset();
+  restoreIssue.mockImplementation((_ws, id) => Promise.resolve(issue(id)));
   updateIssue.mockImplementation((_ws, id) => Promise.resolve(issue(id)));
   bulkUpdateIssues.mockImplementation((_ws, body) =>
     Promise.resolve({
@@ -241,6 +248,23 @@ describe('recording changes', () => {
 
   it('records nothing for a title alone', () => {
     expect(recordPatch('ws-1', issue('a'), { title: 'renamed' })).toBe(false);
+  });
+
+  it('undoes a delete by restoring each issue from the trash', async () => {
+    const onReverted = vi.fn();
+    recordDelete('ws-1', [issue('a'), issue('b')], { onReverted });
+
+    await undoLast('ws-1');
+    expect(restoreIssue).toHaveBeenCalledWith('ws-1', 'a');
+    expect(restoreIssue).toHaveBeenCalledWith('ws-1', 'b');
+    expect(onReverted).toHaveBeenCalledWith([issue('a'), issue('b')]);
+  });
+
+  it('records nothing for an empty delete', async () => {
+    recordDelete('ws-1', []);
+
+    await undoLast('ws-1');
+    expect(restoreIssue).not.toHaveBeenCalled();
   });
 
   it('moves an issue back and puts back what the move dropped', async () => {

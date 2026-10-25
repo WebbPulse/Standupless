@@ -10,6 +10,8 @@
  * A collapsible section is a native `<details>`, closed until it is opened,
  * so it toggles from the keyboard as well as the caret. A GitHub alert such
  * as `> [!NOTE]` is a callout in its kind's tone, as the editor draws it.
+ * A YouTube, Loom, Vimeo or Descript link alone in its paragraph plays inline.
+ * A date chip such as `<2026-10-01>` shows its day in the viewer's locale.
  */
 
 import React, { useMemo } from 'react';
@@ -25,7 +27,9 @@ import {
   type InlineNode,
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
+import { VideoEmbedFrame } from '../media/VideoEmbedFrame';
 import { EmojiText } from './custom-emoji';
+import DateChip from './DateChip';
 import HighlightedCode from './highlighted-code';
 import MermaidBlock from './mermaid-block';
 import IssueChip from './IssueChip';
@@ -149,6 +153,8 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
         return <Mention key={key} handle={node.handle} />;
       case 'issue':
         return <IssueChip key={key} issueKeyText={node.key} />;
+      case 'date':
+        return <DateChip key={key} value={node.value} />;
     }
   });
 
@@ -202,6 +208,8 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
       );
     case 'rule':
       return <hr key={key} className="border-line" />;
+    case 'embed':
+      return <VideoEmbedFrame key={key} embed={block.embed} />;
     case 'details':
       return (
         <details key={key} className="group">

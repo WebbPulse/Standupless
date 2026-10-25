@@ -39,7 +39,11 @@ from app.common.db.dynamo.memberships import (
     WORKSPACE_ROLES,
     AuthPolicy,
 )
+from app.common.db.dynamo.teams import Team
 from app.common.team_refs import team_not_found
+from app.common.team_retirement import refuse_if_retired
+
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 __all__ = [
     "AuthPolicyRefusal",
@@ -80,6 +84,7 @@ __all__ = [
 NOT_FOUND_DETAIL = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
 FORBIDDEN_DETAIL = {"error_code": "FORBIDDEN", "message": "Not allowed"}
+
 
 UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in first."}
 
@@ -158,6 +163,8 @@ class Capability(str, Enum):
     WORKSPACE_ADMIN = "workspace:admin"
     WORKSPACE_OWNER = "workspace:owner"
     TEAM_CREATE = "team:create"
+    INVITE_CREATE = "invite:create"
+    INVITE_REVOKE = "invite:revoke"
     TEAM_READ = "team:read"
     TEAM_ADMIN = "team:admin"
     TEAM_DELETE = "team:delete"
@@ -168,6 +175,8 @@ WORKSPACE_CAPABILITIES: dict[Capability, tuple[str, ...]] = {
     Capability.WORKSPACE_ADMIN: ("owner", "admin"),
     Capability.WORKSPACE_OWNER: ("owner",),
     Capability.TEAM_CREATE: ("owner", "admin", "member"),
+    Capability.INVITE_CREATE: ("owner", "admin", "member"),
+    Capability.INVITE_REVOKE: ("owner", "admin", "member"),
     Capability.TEAM_READ: ("owner", "admin", "member", "guest"),
     Capability.TEAM_ADMIN: ("owner", "admin", "member", "guest"),
     Capability.TEAM_DELETE: ("owner", "admin"),
@@ -175,8 +184,30 @@ WORKSPACE_CAPABILITIES: dict[Capability, tuple[str, ...]] = {
 """Which workspace roles may even attempt a capability.
 
 `TEAM_ADMIN` admits `member` and `guest` here because a team membership can
-promote them; `_check_team` makes that second decision.
+promote them; `_check_team` makes that second decision. `TEAM_CREATE` and
+`INVITE_CREATE` admit `member` here and then ask the workspace's permission
+setting, in `_check_permission_setting`. `INVITE_REVOKE` admits `member` so they
+can take back an invite they sent; `workspace_members.revoke_invite` holds them to
+their own.
 """
+
+PERMISSION_SETTINGS: dict[Capability, str] = {
+    Capability.TEAM_CREATE: "team_creation_permission",
+    Capability.INVITE_CREATE: "invite_permission",
+}
+"""The capabilities a workspace setting can limit to admins, and the field naming who it admits."""
+
+ADMINS_ONLY_DETAIL = {
+    Capability.TEAM_CREATE: {
+        "error_code": "FORBIDDEN",
+        "message": "Only workspace admins can create teams in this workspace.",
+    },
+    Capability.INVITE_CREATE: {
+        "error_code": "FORBIDDEN",
+        "message": "Only workspace admins can invite people to this workspace.",
+    },
+}
+"""The refusal a member gets while a permission setting keeps a capability to admins."""
 
 TEAM_SCOPED = frozenset({Capability.TEAM_READ, Capability.TEAM_ADMIN, Capability.TEAM_DELETE})
 """Capabilities that need a team in the path and a guest's membership read."""
@@ -222,6 +253,19 @@ class AuthzContext:
     def is_workspace_admin(self) -> bool:
         """Whether the caller manages the workspace itself."""
         return self.role in ("owner", "admin")
+
+    @property
+    def acts_as_workspace_admin(self) -> bool:
+        """Whether the caller may exercise the admin role here: a person in it, or a credential carrying `admin`.
+
+        The credential half is what an admin-only route's `admin` scope enforces, so
+        a decision made in code rather than in the route table holds keys to it too.
+        """
+        from app.common.db.dynamo.api_keys import ADMIN_SCOPE
+
+        if not self.is_workspace_admin:
+            return False
+        return self.actor is ActorKind.USER or ADMIN_SCOPE in self.scopes
 
     @property
     def is_team_admin(self) -> bool:
@@ -550,8 +594,11 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, c
     A service principal has no membership row of its own, so it resolves to the fixed
     service role, but only while `creator`, the person who minted the workspace key,
     is still a live owner or admin here. A key's access is its scopes and its
-    creator's current role together, so demoting or removing that person closes the
-    key on the next request. A workspace key with no recorded creator fails closed.
+    creator's current role together, so demoting, suspending or removing that person
+    closes the key on the next request. A workspace key with no recorded creator
+    fails closed. A suspended member holds no role, so every credential they carry,
+    session, personal key or OAuth token, stops working here while other workspaces
+    are untouched.
 
     Both callers go through here so the path a key authenticates on cannot drift from
     the path a session does.
@@ -567,7 +614,7 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, c
         return SERVICE_ROLE
 
     membership = repositories.memberships.get(workspace_id, user_id)
-    if membership is None or membership.role not in WORKSPACE_ROLES:
+    if membership is None or membership.role not in WORKSPACE_ROLES or membership.is_suspended:
         return None
     return membership.role
 
@@ -869,6 +916,7 @@ def require(
     capability: Capability,
     *,
     team_param: str = "team_id",
+    allow_retired: bool = False,
 ) -> Callable[..., AuthzContext]:
     """The dependency a tenant-scoped route declares, naming what it needs.
 
@@ -876,7 +924,8 @@ def require(
     capability additionally reads `team_param` from the path, which is why the
     parameter name is settable rather than assumed, and answers an absent team
     with the team's own not-found. Deleting a team skips that check, because a
-    repeat delete of a purged team is a 204 by contract.
+    repeat delete of a purged team is a 204 by contract. A write to a retired
+    team is a 409 unless the route sets `allow_retired`, as un-retiring does.
     """
     needs_team = capability in TEAM_SCOPED
     checks_team_exists = capability is not Capability.TEAM_DELETE
@@ -913,15 +962,16 @@ def require(
             team_id = str(request.path_params.get(team_param, "") or "").strip()
             if not team_id:
                 raise _not_found()
-            if (
-                checks_team_exists
-                and "teams" in repositories.repository_names
-                and repositories.teams.get(workspace_id, team_id) is None
-            ):
-                raise team_not_found(team_id)
+            team: Optional[Team] = None
+            if checks_team_exists and "teams" in repositories.repository_names:
+                team = repositories.teams.get(workspace_id, team_id)
+                if team is None:
+                    raise team_not_found(team_id)
             team_role = _check_team(
                 repositories, capability, workspace_id, user_id, role, team_id, team_ids, private_team_ids
             )
+            if not allow_retired and request.method not in SAFE_METHODS:
+                refuse_if_retired(team)
 
         context = AuthzContext(
             workspace_id=workspace_id,
@@ -942,10 +992,34 @@ def require(
             auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
         )
         _enforce_route_scopes(request, context, repositories)
+        _check_permission_setting(repositories, context, capability)
         return context
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
+
+
+def _check_permission_setting(repositories: RepositoryBundle, context: AuthzContext, capability: Capability) -> None:
+    """Refuse a capability the workspace's permission setting keeps to admins, for anyone acting as less.
+
+    Read only for a setting-limited capability and a caller who does not act as an
+    admin, so every other request reads no extra row. A workspace key acts as the
+    workspace rather than as a person, so it never invites anyone.
+    """
+    from app.common.db.dynamo.api_keys import is_service_subject
+    from app.common.db.dynamo.workspaces import PermissionLevel
+
+    setting = PERMISSION_SETTINGS.get(capability)
+    if setting is None:
+        return
+    if capability is Capability.INVITE_CREATE and is_service_subject(context.user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
+    if context.acts_as_workspace_admin:
+        return
+    workspace = repositories.workspaces.get(context.workspace_id)
+    if workspace is not None and getattr(workspace, setting) == PermissionLevel.MEMBERS.value:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMINS_ONLY_DETAIL[capability])
 
 
 def check_capability(
@@ -964,6 +1038,7 @@ def check_capability(
     """
     if context.role not in WORKSPACE_CAPABILITIES[capability]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN_DETAIL)
+    _check_permission_setting(repositories, context, capability)
     if capability not in TEAM_SCOPED:
         return None
     if not team_id:

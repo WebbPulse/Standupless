@@ -83,13 +83,15 @@ def get_insights(
     include_archived: Annotated[bool, Query()] = False,
     archived_only: Annotated[bool, Query()] = False,
 ) -> InsightsRead:
-    """Issue count or estimate points grouped by one dimension, optionally segmented by a second.
+    """Issue count, estimate points or a time measure grouped by one dimension, optionally segmented by a second.
 
     Takes the issue list's filters with the same meaning. With `view_id` the saved
     view's team and live filter apply as well, ANDed with any filter sent. With
     neither a team nor a view, every team the caller can see is counted. A scope
     holding more than `row_cap` issues answers over the issues read with
-    `truncated` set rather than reading without bound.
+    `truncated` set rather than reading without bound. A time measure, one of
+    `cycle_time`, `lead_time`, `triage_time` or `issue_age`, counts only the issues
+    it applies to and answers duration percentiles in hours and one point per issue.
     """
     return insights_for(
         repositories,

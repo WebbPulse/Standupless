@@ -1,4 +1,4 @@
-"""Issue routes: list, create, read, look up by key, patch, delete and list children.
+"""Issue routes: list, create, read, look up by key, patch, delete, restore and list children.
 
 Issues are workspace scoped, so the team is a field rather than a path segment
 and every route decides visibility against the issue's own team through the
@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage, conditional_response
 
@@ -22,10 +22,12 @@ from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    DeletedIssueListRead,
     IssueBulkRead,
     IssueBulkUpdate,
     IssueConversionRead,
     IssueCreate,
+    IssueDuplicate,
     IssueListRead,
     IssueMove,
     IssueRead,
@@ -34,11 +36,7 @@ from app.common.api.schemas.issues import (
     SortField,
     parse_issue_key,
 )
-from app.common.db.dynamo.activity import build_activity
-from app.common.db.dynamo.issues import (
-    Issue,
-    as_issue,
-)
+from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, as_issue
 from app.common.issue_archive import archive_issue as archive_issue_row
 from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
@@ -51,15 +49,15 @@ from app.common.issue_parents import parents_of
 from app.common.issue_rules import (
     load_visible_issue,
     not_found,
-    require_team_admin,
-    require_team_member,
     unprocessable,
 )
+from app.common.issue_trash import delete_issue as trash_issue_row
+from app.common.issue_trash import list_trash, purge_now
+from app.common.issue_trash import restore_issue as restore_issue_row
 from app.common.issue_writes import bulk_update_issues as bulk_update_row
 from app.common.issue_writes import create_issue as create_issue_row
 from app.common.issue_writes import list_issues as list_issues_page
 from app.common.issue_writes import update_issue as update_issue_row
-from app.common.relation_effects import child_activity, delete_relations
 
 router = APIRouter()
 
@@ -305,6 +303,24 @@ def create_issue(
     return IssueRead.from_row(current(repositories.teams, created))
 
 
+@router.get("/{workspace_id}/issues/deleted", response_model=DeletedIssueListRead)
+def list_deleted_issues(
+    team_id: Annotated[str, Query(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> DeletedIssueListRead:
+    """One team's recently deleted issues, newest first, each restorable until it is purged.
+
+    Declared before `/issues/{issue_id}` so `deleted` is not swallowed as an id.
+    """
+    rows = list_trash(repositories, context, team_id)
+    rows.sort(key=lambda row: row.deleted_at or row.updated_at, reverse=True)
+    return DeletedIssueListRead(
+        issues=[IssueRead.from_row(current(repositories.teams, row)) for row in rows],
+        retention_days=TRASH_RETENTION_DAYS,
+    )
+
+
 @router.get("/{workspace_id}/issues/by-key/{key}", response_model=IssueRead)
 def read_issue_by_key(
     request: Request,
@@ -329,7 +345,7 @@ def read_issue_by_key(
     if team is None:
         raise not_found()
 
-    issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
+    issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number, include_deleted=True)
     if issue is None or not context.can_see_team(issue.team_id):
         raise not_found()
     return conditional_response(request, IssueRead.from_row(current(repositories.teams, issue)))
@@ -347,8 +363,8 @@ def read_issue(
     The answer carries a weak `ETag` over its body, so a poll that sends it back
     in `If-None-Match` gets a 304 with no body while the issue is unchanged.
     """
-    issue = IssueRead.from_row(current(repositories.teams, load_visible_issue(repositories, context, issue_id)))
-    return conditional_response(request, issue)
+    row = load_visible_issue(repositories, context, issue_id, include_deleted=True)
+    return conditional_response(request, IssueRead.from_row(current(repositories.teams, row)))
 
 
 @router.patch("/{workspace_id}/issues", response_model=IssueBulkRead)
@@ -415,15 +431,20 @@ def duplicate(
     issue_id: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    payload: IssueDuplicate | None = None,
 ) -> IssueRead:
     """Create a copy of an issue in its team, answering the new issue under its own key.
 
     The copy carries the title with a copy suffix, the description, labels,
     priority, estimate, parent, project and milestone, and starts in the team's
-    default status, unassigned and outside any cycle, as in Linear.
+    default status, unassigned and outside any cycle, as in Linear. With
+    `include_sub_issues` its sub-issues are copied under it too, and more than
+    the cap is refused with a 422.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    return IssueRead.from_row(current(repositories.teams, duplicate_issue(repositories, context, issue)))
+    include = payload is not None and payload.include_sub_issues
+    copy = duplicate_issue(repositories, context, issue, include_sub_issues=include)
+    return IssueRead.from_row(current(repositories.teams, copy))
 
 
 @router.post("/{workspace_id}/issues/{issue_id}/convert-to-project", response_model=IssueConversionRead)
@@ -482,72 +503,46 @@ def delete_issue(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Delete an issue, reparenting its children and removing its links and history.
+    """Move an issue to its team's trash, where it stays restorable for 30 days.
 
     A team admin may always delete. Anyone else may delete only an issue they
-    created and only while it has no children, so an ordinary member cannot orphan
-    someone else's sub-issues.
+    created and only while it has no sub-issues, so an ordinary member cannot hide
+    someone else's tree. Its children, links and history wait for a restore.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    children = repositories.issues.iter_children(context.workspace_id, issue_id)
-
-    if not _may_delete(repositories, context, issue, children):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error_code": "FORBIDDEN", "message": "Not allowed"},
-        )
-
-    for child in children:
-        repositories.issues.replace_with(child, lambda current: current.model_copy(update={"parent_id": None}))
-    repositories.activity.record_many(
-        [
-            build_activity(
-                context.workspace_id,
-                child.team_id,
-                child.issue_id,
-                context.user_id,
-                "field_changed",
-                field="parent_id",
-                from_value=issue_id,
-                to_value=None,
-                source=context.source,
-            )
-            for child in children
-        ]
-        + child_activity(
-            repositories, context.workspace_id, context.user_id, issue, issue.parent_id, None, context.source
-        )
-    )
-
-    delete_relations(repositories, context.workspace_id, issue_id)
-    repositories.activity.delete_for_issue(context.workspace_id, issue_id)
-    repositories.subscriptions.delete_for_issue(context.workspace_id, issue_id)
-    repositories.issues.delete(context.workspace_id, issue_id)
-    repositories.activity.record_tombstone(context.workspace_id, issue.team_id, issue_id, context.user_id)
+    trash_issue_row(repositories, context, issue)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _may_delete(repositories: Repositories, context: AuthzContext, issue: Issue, children: list[Issue]) -> bool:
-    """Whether this caller may delete this issue.
+@router.post("/{workspace_id}/issues/{issue_id}/restore", response_model=IssueRead)
+def restore_issue(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Bring a deleted issue back from the trash with its sub-issues, links, labels and comments.
 
-    Split out because the contract's rule is two clauses joined by an or, and
-    reading it as one condition inside the route hid the creator case.
+    Allowed for the same people who may delete it. Idempotent: restoring a live
+    issue answers with it unchanged.
     """
-    try:
-        require_team_admin(repositories, context, issue.team_id)
-        return True
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            raise
-    if issue.created_by != context.user_id:
-        return False
-    if children:
-        return False
-    try:
-        require_team_member(repositories, context, issue.team_id)
-    except HTTPException:
-        return False
-    return True
+    issue = load_visible_issue(repositories, context, issue_id, include_deleted=True)
+    return IssueRead.from_row(current(repositories.teams, restore_issue_row(repositories, context, issue)))
+
+
+@router.delete("/{workspace_id}/issues/{issue_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+def delete_issue_permanently(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> Response:
+    """Delete an issue in the trash for good, which only a team admin may do.
+
+    Its sub-issues lose their parent and its links and history are removed, as
+    the hourly sweep does once the 30 days have passed.
+    """
+    issue = load_visible_issue(repositories, context, issue_id, include_deleted=True)
+    purge_now(repositories, context, issue)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{workspace_id}/issues/{issue_id}/children", response_model=IssueListRead)

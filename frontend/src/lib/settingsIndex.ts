@@ -352,6 +352,23 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         anchor: settingsAnchorId('authentication'),
       },
       {
+        id: 'permissions',
+        title: 'Permissions',
+        synonyms: ['who can invite', 'invite permission'],
+        anchor: settingsAnchorId('permissions'),
+      },
+      {
+        id: 'third-party-apps',
+        title: 'Third-party applications',
+        synonyms: [
+          'require admin approval',
+          'oauth apps',
+          'app approval',
+          'third party apps',
+        ],
+        anchor: settingsAnchorId('third-party-apps'),
+      },
+      {
         id: 'approved-domains',
         title: 'Approved email domains',
         synonyms: ['allowed domains', 'auto join'],
