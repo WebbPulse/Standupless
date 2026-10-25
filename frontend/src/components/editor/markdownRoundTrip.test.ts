@@ -6,7 +6,8 @@
  * spellings the editor normalizes are listed here, and each one is stable on
  * a second pass so a description never drifts save after save. Collapsible
  * sections store as GitHub's `<details>` block and read back as the same
- * section in the static renderer.
+ * section in the static renderer. Callouts store as GitHub alerts such as
+ * `> [!NOTE]` and keep their kind both ways.
  */
 
 import { Editor } from '@tiptap/core';
@@ -96,6 +97,25 @@ const EXACT: [string, string][] = [
     'a collapsible summary with escaped markup',
     '<details>\n<summary>a &lt;b&gt; &amp;lt; c & d</summary>\n\nx\n\n</details>',
   ],
+  ['a note callout', '> [!NOTE]\n> Read this first.'],
+  ['a tip callout', '> [!TIP]\n> Use the CLI.'],
+  ['an important callout', '> [!IMPORTANT]\n> Needs sign off.'],
+  ['a warning callout', '> [!WARNING]\n> Deploys pause at noon.'],
+  ['a caution callout', '> [!CAUTION]\n> This deletes data.'],
+  ['a callout with a line break', '> [!NOTE]\n> line one\n> line two'],
+  [
+    'a callout holding a paragraph and a list',
+    '> [!WARNING]\n> Before deploying:\n>\n> - one\n> - two',
+  ],
+  [
+    'a callout between paragraphs',
+    'before\n\n> [!TIP]\n> **bold** tip\n\nafter',
+  ],
+  [
+    'a callout holding a fence with a blank line',
+    '> [!NOTE]\n> ```ts\n> const a = 1;\n>\n> const b = 2;\n> ```',
+  ],
+  ['an empty callout', '> [!NOTE]'],
 ];
 
 const NORMALIZED: [string, string, string][] = [
@@ -128,6 +148,16 @@ const NORMALIZED: [string, string, string][] = [
     'a collapsible section without a summary gains an empty one',
     '<details>\n\nbody\n\n</details>',
     '<details>\n<summary></summary>\n\nbody\n\n</details>',
+  ],
+  [
+    'a lowercase callout marker becomes uppercase',
+    '> [!warning]\n> body',
+    '> [!WARNING]\n> body',
+  ],
+  [
+    'text on the callout marker line moves onto its own line',
+    '> [!TIP] Use the CLI',
+    '> [!TIP]\n> Use the CLI',
   ],
 ];
 
@@ -245,6 +275,68 @@ describe('collapsible sections in the rich editor', () => {
                 checked: null,
                 children: [{ type: 'text', value: 'two' }],
               },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe('callouts in the rich editor', () => {
+  it('read as one callout node carrying its kind', () => {
+    writeMarkdown(editor, '> [!CAUTION]\n> Hot\n\nafter');
+    const [callout, after] = editor.getJSON().content ?? [];
+    expect(callout?.type).toBe('callout');
+    expect(callout?.attrs?.['kind']).toBe('danger');
+    expect(callout?.content?.map((child: JSONContent) => child.type)).toEqual([
+      'paragraph',
+    ]);
+    expect(after?.type).toBe('paragraph');
+  });
+
+  it('leave a quote without a marker a quote', () => {
+    writeMarkdown(editor, '> [!OTHER]\n> body');
+    const [quote] = editor.getJSON().content ?? [];
+    expect(quote?.type).toBe('blockquote');
+  });
+
+  it('drop blank lines typed inside a callout', () => {
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'callout',
+          attrs: { kind: 'tip' },
+          content: [
+            paragraph('one'),
+            paragraph(),
+            paragraph(),
+            paragraph('two'),
+          ],
+        },
+      ],
+    });
+    expect(readMarkdown(editor)).toBe('> [!TIP]\n> one\n>\n> two');
+  });
+
+  it('write what the static renderer reads as the same callout', () => {
+    const source = '> [!WARNING]\n> Before deploying:\n>\n> - one';
+    expect(parseMarkdown(roundTrip(source))).toEqual([
+      {
+        type: 'callout',
+        kind: 'warning',
+        children: [
+          {
+            type: 'paragraph',
+            children: [{ type: 'text', value: 'Before deploying:' }],
+          },
+          {
+            type: 'list',
+            ordered: false,
+            start: 1,
+            items: [
+              { checked: null, children: [{ type: 'text', value: 'one' }] },
             ],
           },
         ],

@@ -1,0 +1,106 @@
+.callout {
+  --callout-tone: var(--accent);
+  position: relative;
+  display: flex;
+  gap: 0.5rem;
+  border: 1px solid color-mix(in oklab, var(--callout-tone) 22%, transparent);
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--callout-tone) 8%, transparent);
+  padding: 0.5rem 0.75rem;
+}
+
+.callout[data-kind='tip'],
+.callout-switcher-option[data-kind='tip'] {
+  --callout-tone: var(--success);
+}
+
+.callout[data-kind='important'],
+.callout-switcher-option[data-kind='important'] {
+  --callout-tone: var(--merged);
+}
+
+.callout[data-kind='warning'],
+.callout-switcher-option[data-kind='warning'] {
+  --callout-tone: var(--warning);
+}
+
+.callout[data-kind='danger'],
+.callout-switcher-option[data-kind='danger'] {
+  --callout-tone: var(--danger);
+}
+
+.callout-icon {
+  display: flex;
+  height: 1.5em;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--callout-tone);
+}
+
+.callout-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.callout-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.callout-body > * + * {
+  margin-top: 0.5rem;
+}
+
+.callout-switcher {
+  position: absolute;
+  top: -0.875rem;
+  right: 0.5rem;
+  z-index: 1;
+  display: none;
+  gap: 0.125rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--overlay);
+  padding: 0.125rem;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+  user-select: none;
+}
+
+.callout:hover > .callout-switcher,
+.callout:focus-within > .callout-switcher {
+  display: flex;
+}
+
+.callout-switcher[hidden] {
+  display: none !important;
+}
+
+.callout-switcher-option {
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  --callout-tone: var(--accent);
+  color: var(--callout-tone);
+  outline: none;
+}
+
+.callout-switcher-option svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.callout-switcher-option:hover {
+  background: color-mix(in oklab, var(--text) 6%, transparent);
+}
+
+.callout-switcher-option:focus-visible {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.callout-switcher-option[aria-pressed='true'] {
+  background: color-mix(in oklab, var(--callout-tone) 16%, transparent);
+}
