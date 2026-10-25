@@ -14,7 +14,9 @@
  * that shows the server's refusal inline and offers Undo once saved, and the
  * current cycle's menu ends it today behind a confirm that it cannot be
  * undone. Days with no cycle read as a "Cycles paused" row, and an upcoming
- * row carries a capacity dial against the recent velocity.
+ * row carries a capacity dial against the recent velocity. An empty team
+ * offers Create cycle to a writer and the message alone to a guest, and a
+ * team with cycles turned off links an admin to its cycle settings.
  */
 
 import { ApiError } from '@webbpulse/api-client';
@@ -28,6 +30,7 @@ import type {
   CycleCreate,
   CycleListRead,
   CycleRead,
+  CycleSettingsRead,
   CycleStartTodayRead,
   TeamRead,
   VelocityRead,
@@ -52,6 +55,8 @@ const getCycleCalendarFeed =
 const createCycleCalendarFeed =
   vi.fn<(teamId: string) => Promise<CycleCalendarFeedRead>>();
 const revokeCycleCalendarFeed = vi.fn<(teamId: string) => Promise<void>>();
+const getCycleSettings =
+  vi.fn<(teamId: string) => Promise<CycleSettingsRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -130,7 +135,22 @@ const velocity: VelocityRead = {
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  getCycleSettings: (_w: string, teamId: string) => getCycleSettings(teamId),
 }));
+
+/** A team's cycle settings, on or off. */
+const cycleSettings = (enabled: boolean): CycleSettingsRead => ({
+  team_id: 'proj-1',
+  enabled,
+  duration_weeks: 2,
+  cooldown_weeks: 0,
+  start_weekday: 0,
+  upcoming_count: 2,
+  auto_add_started: false,
+  auto_add_completed: false,
+  move_unfinished: true,
+  updated_at: null,
+});
 
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
@@ -237,6 +257,8 @@ beforeEach(() => {
   useWorkspaceMock.mockReturnValue(resolved('member'));
   listTeams.mockResolvedValue([team]);
   listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
+  getCycleSettings.mockReset();
+  getCycleSettings.mockResolvedValue(cycleSettings(true));
   createCycle.mockResolvedValue(cycle);
   updateCycle.mockResolvedValue(cycle);
   deleteCycle.mockResolvedValue(undefined);
@@ -387,12 +409,61 @@ describe('reading the list', () => {
     expect(screen.getByText('Sprint 0')).toBeInTheDocument();
   });
 
-  it('says so when the team has no cycles yet', async () => {
+  it('offers the first cycle with its shortcut when the team has none', async () => {
     listCycles.mockResolvedValue({ cycles: [], next_cursor: null });
 
     renderPage();
 
-    expect(await screen.findByText(/No cycles yet/)).toBeInTheDocument();
+    const empty = (await screen.findByText(/No cycles yet/)).closest('div');
+    if (empty === null) throw new Error('no empty state');
+    expect(within(empty).getByText('N')).toBeInTheDocument();
+    await userEvent.click(
+      within(empty).getByRole('button', { name: 'Create cycle' })
+    );
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('shows a guest the empty message alone', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    const { role: _role, ...roleless } = team;
+    listTeams.mockResolvedValue([roleless]);
+    listCycles.mockResolvedValue({ cycles: [], next_cursor: null });
+
+    renderPage();
+
+    const empty = (await screen.findByText(/No cycles yet/)).closest('div');
+    if (empty === null) throw new Error('no empty state');
+    expect(within(empty).queryByRole('button')).toBeNull();
+  });
+
+  it('links an admin to the cycle settings when cycles are turned off', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listCycles.mockResolvedValue({ cycles: [], next_cursor: null });
+    getCycleSettings.mockResolvedValue(cycleSettings(false));
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Cycles are turned off for this team.')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Turn on cycles in team settings' })
+    ).toHaveAttribute('href', '/w/mine/team/ENG/settings#team-settings-cycles');
+  });
+
+  it('shows a member that cycles are off without the settings link', async () => {
+    listCycles.mockResolvedValue({ cycles: [], next_cursor: null });
+    getCycleSettings.mockResolvedValue(cycleSettings(false));
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Cycles are turned off for this team.')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Turn on cycles in team settings' })
+    ).toBeNull();
   });
 
   it('shows the team is invisible rather than an empty list', async () => {
