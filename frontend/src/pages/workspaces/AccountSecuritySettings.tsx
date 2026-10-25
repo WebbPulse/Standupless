@@ -13,7 +13,6 @@ import AccountDeletionPanel from '../../components/auth/AccountDeletionPanel';
 import ConnectedAccountsPanel from '../../components/auth/ConnectedAccountsPanel';
 import PasskeyPanel from '../../components/auth/PasskeyPanel';
 import TwoFactorPanel from '../../components/auth/TwoFactorPanel';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -23,12 +22,7 @@ const AccountSecuritySettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           <SettingsAnchor id="email">

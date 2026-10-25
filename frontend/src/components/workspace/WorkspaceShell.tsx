@@ -7,6 +7,11 @@
  * drag the sidebar's edge to resize it and collapse it with `[`, after which
  * the left edge shows it as an overlay on hover.
  *
+ * Under the settings layout route the grouped settings sidebar takes the app
+ * sidebar's place in every one of those spots. On a phone it opens as a full
+ * screen list instead of a drawer, from a back button in the page bar, so a
+ * settings page reads as one step into that list.
+ *
  * The command palette, the shortcut layer and the dialogs that outlive a page
  * live one level up in {@link WorkspaceLayout}. The shell renders the peek
  * pane's frame beside the page, because the pane shares the page's row.
@@ -21,10 +26,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { LuMenu, LuPanelLeftOpen, LuX } from 'react-icons/lu';
+import { LuChevronLeft, LuMenu, LuPanelLeftOpen, LuX } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
 import { useDesktopNotifications } from '../../hooks/useDesktopNotifications';
 import { useDesktopTabTitle } from '../../hooks/useDesktopTabTitle';
+import { useInSettings } from '../../hooks/useSettingsLayout';
 import { useSidebarLayout } from '../../hooks/useSidebarLayout';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
@@ -35,6 +41,7 @@ import { IconButton } from '../ui/button';
 import TextLink from '../ui/link';
 import PageHeader from '../ui/page-header';
 import { PeekPane } from './PeekPane';
+import SettingsSidebar from './SettingsSidebar';
 import Sidebar from './Sidebar';
 import SidebarResizeHandle from './SidebarResizeHandle';
 
@@ -102,6 +109,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   );
   useDesktopNotifications(workspace);
   const location = useLocation();
+  const inSettings = useInSettings();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const drawerOpen = openedAt === location.pathname;
   const setDrawerOpen = (open: boolean) =>
@@ -156,7 +164,16 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
     );
   }
 
-  const menuButton = (
+  const menuButton = inSettings ? (
+    <IconButton
+      label="All settings"
+      size="sm"
+      className="lg:hidden"
+      onClick={() => setDrawerOpen(true)}
+    >
+      <LuChevronLeft className="h-4 w-4" />
+    </IconButton>
+  ) : (
     <IconButton
       label="Open navigation"
       size="sm"
@@ -199,10 +216,17 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
           className="screen-only relative hidden min-h-0 shrink-0 overflow-hidden lg:block"
           style={{ width: layout.width }}
         >
-          <Sidebar
-            workspace={workspace}
-            onCollapse={() => layout.setCollapsed(true)}
-          />
+          {inSettings ? (
+            <SettingsSidebar
+              workspace={workspace}
+              onCollapse={() => layout.setCollapsed(true)}
+            />
+          ) : (
+            <Sidebar
+              workspace={workspace}
+              onCollapse={() => layout.setCollapsed(true)}
+            />
+          )}
           <SidebarResizeHandle
             width={layout.width}
             onResize={layout.setWidth}
@@ -219,11 +243,39 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
           style={{ width: layout.width }}
           onMouseLeave={() => setPeeking(false)}
         >
-          <Sidebar workspace={workspace} />
+          {inSettings ? (
+            <SettingsSidebar workspace={workspace} />
+          ) : (
+            <Sidebar workspace={workspace} />
+          )}
         </aside>
       )}
 
-      {drawerOpen && (
+      {drawerOpen && inSettings && (
+        <div
+          ref={drawer}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Settings"
+          className="fixed inset-0 z-50 flex animate-[backdrop-in_160ms_ease-out] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:hidden"
+        >
+          <SettingsSidebar
+            workspace={workspace}
+            fullScreen
+            onNavigate={() => setDrawerOpen(false)}
+          />
+          <div className="absolute top-2 right-2">
+            <IconButton
+              label="Close settings list"
+              onClick={() => setDrawerOpen(false)}
+            >
+              <LuX className="h-4 w-4" />
+            </IconButton>
+          </div>
+        </div>
+      )}
+
+      {drawerOpen && !inSettings && (
         <div
           ref={drawer}
           role="dialog"

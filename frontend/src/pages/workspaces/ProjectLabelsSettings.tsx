@@ -9,7 +9,6 @@
 
 import React from 'react';
 import ProjectLabelsEditor from '../../components/planning/ProjectLabelsEditor';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -24,12 +23,7 @@ const ProjectLabelsSettings: React.FC = () => {
   const slug = workspace?.slug ?? '';
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <div className="max-w-2xl space-y-4">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Project labels</h2>

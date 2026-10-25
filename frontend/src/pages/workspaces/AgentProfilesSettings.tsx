@@ -27,7 +27,6 @@ import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import RelativeTime from '../../components/ui/relative-time';
 import Spinner from '../../components/ui/spinner';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { errorMessage } from '../../lib/errors';
@@ -302,12 +301,7 @@ const AgentProfilesSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl">
           <AgentProfilesSection />

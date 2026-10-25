@@ -25,7 +25,6 @@ import ProjectTemplateEditor from '../../components/templates/ProjectTemplateEdi
 import TemplateEditor from '../../components/templates/TemplateEditor';
 import { ErrorAlert } from '../../components/ui/alert';
 import { SkeletonRows } from '../../components/ui/skeleton';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canManageMembers } from '../../lib/capabilities';
@@ -251,12 +250,7 @@ const WorkspaceTemplatesSettings: React.FC = () => {
   );
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <div className="max-w-2xl space-y-4">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Templates</h2>

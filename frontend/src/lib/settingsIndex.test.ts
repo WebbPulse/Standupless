@@ -1,6 +1,7 @@
 /**
  * The settings index: the tier each kind of match ranks at, the order ties
- * keep, the pages a member is not offered, and the anchors a section opens on.
+ * keep, the pages a member is not offered, the anchors a section opens on, and
+ * the groups the settings sidebar lists for an admin and for a member.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -9,6 +10,7 @@ import {
   MATCH_TIER,
   rankSettings,
   settingsMatchTier,
+  settingsNavGroups,
   type SettingsEntry,
 } from './settingsIndex';
 
@@ -209,5 +211,58 @@ describe('buildSettingsIndex', () => {
 
     expect(sso?.to).toBe('/w/mine/settings/security#settings-sso');
     expect(sso?.trail).toEqual(['Workspace', 'Security']);
+  });
+});
+
+describe('settingsNavGroups', () => {
+  /** The group titles and their page titles, for a role. */
+  const outline = (role: 'owner' | 'admin' | 'member' | 'guest') =>
+    settingsNavGroups(role).map((group) => [
+      group.title,
+      group.pages.map((page) => page.title),
+    ]);
+
+  it('lists every group in order for an admin', () => {
+    expect(settingsNavGroups('admin').map((group) => group.id)).toEqual([
+      'account',
+      'workspace',
+      'administration',
+      'features',
+      'integrations',
+    ]);
+  });
+
+  it('puts the admin only pages under Administration and Features', () => {
+    const groups = Object.fromEntries(outline('owner'));
+    expect(groups.Administration).toEqual(
+      expect.arrayContaining(['Security', 'Export', 'Audit log'])
+    );
+    expect(groups.Features).toEqual(['Features']);
+    expect(groups.Integrations).toEqual(
+      expect.arrayContaining(['API keys', 'Integrations'])
+    );
+  });
+
+  it('leaves a member no Administration or Features group but keeps Workspace', () => {
+    const groups = Object.fromEntries(outline('member'));
+    expect(Object.keys(groups)).toEqual([
+      'Account',
+      'Workspace',
+      'Integrations',
+    ]);
+    expect(groups.Workspace).toEqual(
+      expect.arrayContaining(['Workspace', 'Teams', 'Labels'])
+    );
+    expect(groups.Integrations).not.toContain('Integrations');
+  });
+
+  it('lists the workspace page for a member without offering it to search', () => {
+    const memberIds = indexFor('member').map((item) => item.id);
+    expect(memberIds).not.toContain('workspace:workspace');
+    expect(
+      settingsNavGroups('member')
+        .flatMap((group) => group.pages)
+        .map((page) => page.id)
+    ).toContain('workspace');
   });
 });

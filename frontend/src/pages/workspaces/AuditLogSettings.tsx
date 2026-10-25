@@ -13,7 +13,6 @@ import {
   listAuditLog,
   listMembers,
 } from '../../api/workspaces';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
@@ -397,12 +396,7 @@ const AuditLogSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-3xl space-y-8">
           {canManageMembers(workspace.role) ? (

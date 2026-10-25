@@ -155,15 +155,6 @@ describe('the team list', () => {
       screen.queryByRole('menuitem', { name: /Leave/ })
     ).not.toBeInTheDocument();
   });
-
-  it('links to the page from the settings tabs', async () => {
-    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
-
-    expect(await screen.findByRole('link', { name: 'Teams' })).toHaveAttribute(
-      'href',
-      '/w/mine/settings/teams'
-    );
-  });
 });
 
 describe('creating a team', () => {

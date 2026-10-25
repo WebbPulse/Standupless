@@ -118,17 +118,13 @@ const renderPage = () =>
   );
 
 describe('the workspace labels page', () => {
-  it('lists the labels in name order and links from the settings tabs', async () => {
+  it('lists the labels in name order', async () => {
     renderPage();
     const bug = await screen.findByDisplayValue('Bug');
     const security = screen.getByDisplayValue('Security');
     expect(
       bug.compareDocumentPosition(security) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Labels' })).toHaveAttribute(
-      'href',
-      '/w/mine/settings/labels'
-    );
   });
 
   it('adds a label', async () => {

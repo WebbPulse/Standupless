@@ -14,7 +14,6 @@ import AccentColorSection from '../../components/workspace/AccentColorSection';
 import DangerZoneSection from '../../components/workspace/DangerZoneSection';
 import ExportSection from '../../components/workspace/ExportSection';
 import GithubSection from '../../components/workspace/GithubSection';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import InvitesSection from '../../components/workspace/InvitesSection';
 import MembersSection from '../../components/workspace/MembersSection';
@@ -30,12 +29,7 @@ const WorkspaceSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (

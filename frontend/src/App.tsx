@@ -41,6 +41,7 @@ import GuestRoute from './components/routes/GuestRoute';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import LegacyTeamRedirect from './components/routes/LegacyTeamRedirect';
 import { ShellPublicRoute } from './components/routes/ShellRoutes';
+import SettingsLayout from './components/workspace/SettingsLayout';
 import WorkspaceLayout from './components/workspace/WorkspaceLayout';
 import WorkspaceProvider from './contexts/WorkspaceContext';
 import AcceptInvite from './pages/invites/AcceptInvite';
@@ -180,64 +181,76 @@ const App: React.FC = () => (
         <Route element={<WorkspaceLayout />}>
           <Route index element={<WorkspaceHome />} />
 
-          <Route path="settings" element={<WorkspaceSettings />} />
-          <Route path="settings/teams" element={<TeamsSettings />} />
-          <Route
-            path="settings/workflow"
-            element={<WorkspaceWorkflowSettings />}
-          />
-          <Route path="settings/labels" element={<WorkspaceLabelsSettings />} />
-          <Route
-            path="settings/project-labels"
-            element={<ProjectLabelsSettings />}
-          />
-          <Route path="settings/emoji" element={<CustomEmojiSettings />} />
-          <Route
-            path="settings/project-statuses"
-            element={<ProjectStatusesSettings />}
-          />
-          <Route path="settings/customers" element={<CustomersSettings />} />
-          <Route
-            path="settings/templates"
-            element={<WorkspaceTemplatesSettings />}
-          />
-          <Route path="settings/billing" element={<BillingSettings />} />
-          <Route path="settings/api-keys" element={<ApiKeysSettings />} />
-          <Route
-            path="settings/connected-apps"
-            element={<ConnectedAppsSettings />}
-          />
-          <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
-          <Route
-            path="settings/agent-profiles"
-            element={<AgentProfilesSettings />}
-          />
-          <Route path="settings/share-links" element={<ShareLinksSettings />} />
-          <Route
-            path="settings/integrations"
-            element={<IntegrationsSettings />}
-          />
-          <Route path="settings/export" element={<ExportSettings />} />
-          <Route path="settings/import" element={<ImportSettings />} />
-          <Route path="settings/security" element={<SecuritySettings />} />
-          <Route path="settings/features" element={<FeaturesSettings />} />
-          <Route path="settings/audit-log" element={<AuditLogSettings />} />
-          <Route
-            path="settings/notifications"
-            element={<NotificationsSettings />}
-          />
-          <Route
-            path="settings/account/profile"
-            element={<ProfileSettings />}
-          />
-          <Route
-            path="settings/account/preferences"
-            element={<PreferencesSettings />}
-          />
-          <Route
-            path="settings/account/security"
-            element={<AccountSecuritySettings />}
-          />
+          <Route element={<SettingsLayout />}>
+            <Route path="settings" element={<WorkspaceSettings />} />
+            <Route path="settings/teams" element={<TeamsSettings />} />
+            <Route
+              path="settings/workflow"
+              element={<WorkspaceWorkflowSettings />}
+            />
+            <Route
+              path="settings/labels"
+              element={<WorkspaceLabelsSettings />}
+            />
+            <Route
+              path="settings/project-labels"
+              element={<ProjectLabelsSettings />}
+            />
+            <Route path="settings/emoji" element={<CustomEmojiSettings />} />
+            <Route
+              path="settings/project-statuses"
+              element={<ProjectStatusesSettings />}
+            />
+            <Route path="settings/customers" element={<CustomersSettings />} />
+            <Route
+              path="settings/templates"
+              element={<WorkspaceTemplatesSettings />}
+            />
+            <Route path="settings/billing" element={<BillingSettings />} />
+            <Route path="settings/api-keys" element={<ApiKeysSettings />} />
+            <Route
+              path="settings/connected-apps"
+              element={<ConnectedAppsSettings />}
+            />
+            <Route
+              path="settings/mcp-and-cli"
+              element={<McpAndCliSettings />}
+            />
+            <Route
+              path="settings/agent-profiles"
+              element={<AgentProfilesSettings />}
+            />
+            <Route
+              path="settings/share-links"
+              element={<ShareLinksSettings />}
+            />
+            <Route
+              path="settings/integrations"
+              element={<IntegrationsSettings />}
+            />
+            <Route path="settings/export" element={<ExportSettings />} />
+            <Route path="settings/import" element={<ImportSettings />} />
+            <Route path="settings/security" element={<SecuritySettings />} />
+            <Route path="settings/features" element={<FeaturesSettings />} />
+            <Route path="settings/audit-log" element={<AuditLogSettings />} />
+            <Route
+              path="settings/notifications"
+              element={<NotificationsSettings />}
+            />
+            <Route
+              path="settings/account/profile"
+              element={<ProfileSettings />}
+            />
+            <Route
+              path="settings/account/preferences"
+              element={<PreferencesSettings />}
+            />
+            <Route
+              path="settings/account/security"
+              element={<AccountSecuritySettings />}
+            />
+            <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
+          </Route>
 
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />
@@ -269,7 +282,6 @@ const App: React.FC = () => (
           </Route>
           <Route path="team/:keyPrefix/standup" element={<Standup />} />
           <Route path="team/:keyPrefix/views" element={<Views />} />
-          <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:id" element={<ProjectDetail />} />

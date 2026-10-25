@@ -31,7 +31,6 @@ import EmptyState from '../../components/ui/empty-state';
 import Menu, { MenuItem } from '../../components/ui/menu';
 import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useTeam } from '../../hooks/useTeam';
@@ -155,12 +154,7 @@ const TeamsSettings: React.FC = () => {
   };
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <div className="max-w-2xl space-y-4">
         <div className="flex items-end justify-between gap-3">
           <div className="space-y-1">

@@ -20,7 +20,6 @@ import {
 import { ErrorAlert } from '../../components/ui/alert';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import StatusWorkflowEditor from '../../components/workflow/StatusWorkflowEditor';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -85,12 +84,7 @@ const WorkspaceWorkflowSettings: React.FC = () => {
   );
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <div className="max-w-2xl space-y-4">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Workflow</h2>
