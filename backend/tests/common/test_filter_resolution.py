@@ -58,25 +58,25 @@ def test_relative_values_resolve_per_team() -> None:
     """Each team's own current cycle, so a workspace view spans them all."""
     by_team = {"T1": SCHEDULE, "T2": [_cycle("C2", "2026-03-05", "2026-03-18", team="T2")]}
 
-    assert _resolve_cycles(frozenset({"current"}), by_team, TODAY) == frozenset({"C", "C2"})
+    assert _resolve_cycles(frozenset({"current"}), by_team, {"T1": TODAY, "T2": TODAY}) == frozenset({"C", "C2"})
 
 
 def test_a_relative_value_with_no_cycle_matches_nothing() -> None:
     """An empty set would mean no filter, so a sentinel no issue carries stands in."""
-    resolved = _resolve_cycles(frozenset({"next"}), {"T1": [_cycle("C", "2026-03-01", "2026-03-14")]}, TODAY)
+    resolved = _resolve_cycles(frozenset({"next"}), {"T1": [_cycle("C", "2026-03-01", "2026-03-14")]}, {"T1": TODAY})
 
     assert resolved == frozenset({NO_CYCLE_MATCH})
 
 
 def test_none_and_known_ids_pass_through() -> None:
     """`none` and a real cycle id are kept as they are."""
-    assert _resolve_cycles(frozenset({None, "P2"}), {"T1": SCHEDULE}, TODAY) == frozenset({None, "P2"})
+    assert _resolve_cycles(frozenset({None, "P2"}), {"T1": SCHEDULE}, {"T1": TODAY}) == frozenset({None, "P2"})
 
 
 def test_an_unknown_cycle_is_a_400_naming_it() -> None:
     """A typo or a cycle of another team is refused, naming the value."""
     with pytest.raises(HTTPException) as caught:
-        _resolve_cycles(frozenset({"nope"}), {"T1": SCHEDULE}, TODAY)
+        _resolve_cycles(frozenset({"nope"}), {"T1": SCHEDULE}, {"T1": TODAY})
 
     assert caught.value.status_code == 400
     assert caught.value.detail["value"] == "nope"
