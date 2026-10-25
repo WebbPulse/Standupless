@@ -1626,7 +1626,7 @@ export interface LinkCreate {
  * "via email" and the like.
  */
 export type ChangeSource =
-  'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system' | 'email';
+  'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system' | 'email' | 'slack';
 
 /** One entry in an issue's history. */
 export interface ActivityRead {
@@ -1725,6 +1725,8 @@ export interface CommentRead {
   source?: ChangeSource | null;
   /** Where a root comment's thread is mirrored on GitHub, when it is. */
   github_thread?: GithubThread | null;
+  /** The Slack thread a root comment's thread is synced with, when it is. */
+  slack_thread?: SlackThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
   /** The description passage a root comment is pinned to, when it is. */
@@ -1759,6 +1761,19 @@ export interface GithubThread {
   synced_by: string;
   synced_at: string;
   comment_url: string;
+}
+
+/**
+ * The Slack thread an issue was created from, synced both ways with one root
+ * comment's thread. `permalink` opens the thread in Slack.
+ */
+export interface SlackThread {
+  slack_team_id: string;
+  channel_id: string;
+  thread_ts: string;
+  permalink: string;
+  synced_by: string;
+  synced_at: string;
 }
 
 /** A linked pull request or GitHub issue a thread may be synced to. */

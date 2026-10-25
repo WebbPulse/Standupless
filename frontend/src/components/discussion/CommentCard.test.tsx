@@ -4,7 +4,7 @@
  * fade in, rather than in a row under the body that appears on hover, and a
  * reaction on a comment carries the issue it was written on. Also covers
  * syncing a thread to GitHub from its menu, the badge a synced thread wears,
- * and unsyncing it, and resolving a thread: the collapsed one-line summary,
+ * and unsyncing it, the badge a thread synced with Slack wears, and resolving a thread: the collapsed one-line summary,
  * expanding it, and unresolving it. And quoting: a whole comment from its
  * menu, or a selected passage of it, into the thread's reply as a blockquote.
  * And a thread pinned to a passage of the description: the quote at its top,
@@ -257,6 +257,35 @@ describe('comment card', () => {
     expect(
       screen.getByRole('link', { name: 'Synced to acme/api#7 on GitHub' })
     ).toHaveAttribute('href', synced.comment_url);
+  });
+
+  it('badges a thread synced with Slack and offers it no GitHub sync', async () => {
+    const user = userEvent.setup();
+    renderCard(
+      [],
+      {
+        source: 'slack',
+        slack_thread: {
+          slack_team_id: 'T0SLACK01',
+          channel_id: 'C0ENG',
+          thread_ts: '1700000000.000100',
+          permalink: 'https://acme.slack.com/archives/C0ENG/p1',
+          synced_by: 'u-owner',
+          synced_at: '2026-10-25T10:00:00Z',
+        },
+      },
+      [target()]
+    );
+
+    expect(
+      screen.getByRole('link', {
+        name: 'Synced with the Slack thread, open in Slack',
+      })
+    ).toHaveAttribute('href', 'https://acme.slack.com/archives/C0ENG/p1');
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+
+    expect(screen.queryByRole('menuitem', { name: /acme\/api#7/ })).toBeNull();
   });
 
   it('links the badge to the pull request until the opening comment lands', () => {

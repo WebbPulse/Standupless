@@ -25,14 +25,21 @@ BOT_SCOPES: tuple[str, ...] = (
     "chat:write",
     "chat:write.public",
     "channels:read",
+    "channels:history",
+    "channels:join",
     "groups:read",
+    "groups:history",
     "commands",
     "links:read",
     "links:write",
     "users:read",
     "users:read.email",
 )
-"""What the bot asks for: posting, picking a channel, the command, unfurls and finding the person."""
+"""What the bot asks for: posting, picking a channel, the command, unfurls, synced threads and finding the person.
+
+The history scopes are what deliver a synced thread's replies, and joining is how
+the bot comes to receive them in a public channel it was not yet in.
+"""
 
 GET_METHODS = frozenset(
     {"conversations.list", "users.info", "users.lookupByEmail", "auth.test", "auth.revoke", "chat.getPermalink"}

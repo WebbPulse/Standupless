@@ -59,6 +59,23 @@ class GithubThread(BaseModel):
     comment_url: str = ""
 
 
+class SlackThread(BaseModel):
+    """The Slack thread a root comment's thread is synced with.
+
+    Set on the root that pairing writes when an issue is created from a Slack
+    message: replies in the Slack thread land under this root, and replies under
+    this root are posted to the Slack thread. `permalink` is what the comment
+    area links to.
+    """
+
+    slack_team_id: str
+    channel_id: str
+    thread_ts: str
+    permalink: str = ""
+    synced_by: str
+    synced_at: datetime = Field(default_factory=utc_now)
+
+
 class ThreadResolution(BaseModel):
     """Who marked a root comment's thread resolved, and when.
 
@@ -92,7 +109,8 @@ class Comment(BaseModel):
     replied to, which is what keeps `reply_count` a count of direct replies rather
     than a tree walk. `github_thread` is set on a root comment whose thread is
     mirrored to a GitHub pull request or issue, and `resolution` on a root
-    whose thread was marked resolved. `anchor` is set on a root comment started
+    whose thread was marked resolved. `slack_thread` is set on the root that
+    pairs the issue with the Slack thread it was created from. `anchor` is set on a root comment started
     from a selected passage of the description.
 
     `document_id` is set on a comment on a document rather than an issue. Such a
@@ -115,6 +133,7 @@ class Comment(BaseModel):
     edited_at: datetime | None = None
     import_batch_id: str | None = None
     github_thread: GithubThread | None = None
+    slack_thread: SlackThread | None = None
     resolution: ThreadResolution | None = None
     anchor: CommentAnchor | None = None
     document_id: str | None = None
@@ -168,6 +187,8 @@ def as_comment_item(comment: Comment) -> dict[str, Any]:
         item.pop("import_batch_id", None)
     if item.get("github_thread") is None:
         item.pop("github_thread", None)
+    if item.get("slack_thread") is None:
+        item.pop("slack_thread", None)
     if item.get("resolution") is None:
         item.pop("resolution", None)
     if item.get("anchor") is None:
@@ -270,6 +291,25 @@ class CommentRepository:
                     condition=condition,
                     return_values="ALL_NEW",
                 )
+        except ConditionFailed:
+            return None
+        return as_comment(item) if item is not None else None
+
+    def clear_slack_thread(self, workspace_id: str, issue_id: str, comment_id: str) -> Comment | None:
+        """Remove a root comment's Slack thread mark, answering the stored comment.
+
+        What uninstalling Slack does to every synced root, so the comment area stops
+        saying the thread is synced. Answers `None` when the comment is gone.
+        """
+        key = {"ws_issue": ws_issue(workspace_id, issue_id), "comment_id": comment_id}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="REMOVE #thread",
+                expression_names={"#thread": "slack_thread"},
+                condition=Attr("comment_id").exists(),
+                return_values="ALL_NEW",
+            )
         except ConditionFailed:
             return None
         return as_comment(item) if item is not None else None

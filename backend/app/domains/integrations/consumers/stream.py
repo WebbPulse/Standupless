@@ -410,6 +410,13 @@ def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) ->
     return True
 
 
+def queue_slack_thread_reply(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Queue a Slack post for a new reply under a root synced with the Slack thread its issue came from."""
+    from app.domains.integrations.slack.threads import queue_reply
+
+    return queue_reply(repositories, record)
+
+
 def _thread_identity(image: Mapping[str, Any] | None) -> tuple[str, int, str] | None:
     """Which synced thread a comment image names, ignoring the link of its opening comment."""
     thread = (image or {}).get("github_thread")
@@ -501,6 +508,7 @@ def handle_record(
             return
         publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)
+        queue_slack_thread_reply(repositories, record)
         channel_events.on_comment(repositories, record, channel_cache)
     elif physical == table_name("planning", prefix):
         if from_bulk_import(record):

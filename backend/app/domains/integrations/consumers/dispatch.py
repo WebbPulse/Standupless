@@ -190,6 +190,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             label_sync.reconcile(repositories, job)
         else:
             label_sync.apply_rename(repositories, job)
+    elif kind == "slack.thread_comment":
+        from app.domains.integrations.slack.threads import push_reply
+
+        push_reply(repositories, job)
     elif kind == "github.label_set_push":
         from app.domains.integrations import label_set
 

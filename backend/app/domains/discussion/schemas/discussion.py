@@ -21,7 +21,7 @@ from app.common.change_source import ChangeSource
 from app.common.comment_anchors import ANCHOR_CONTEXT_MAX, ANCHOR_QUOTE_MAX
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
-from app.common.db.dynamo.comments import Comment, CommentAnchor, GithubThread, ThreadResolution
+from app.common.db.dynamo.comments import Comment, CommentAnchor, GithubThread, SlackThread, ThreadResolution
 from app.common.discussion_reads import AuthorRead, ReactionGroupRead, check_emoji
 from app.common.upload_rules import VIDEO_CONTENT_TYPES, normalized_content_type
 from app.common.url_attachments import TITLE_MAX, check_https_url
@@ -187,7 +187,8 @@ class CommentRead(BaseModel):
     """One comment as the API returns it.
 
     `github_thread` is set on a root comment whose thread is synced to a GitHub
-    pull request or issue, and `resolution` on a root whose thread is resolved,
+    pull request or issue, `slack_thread` on the root synced with the Slack
+    thread the issue was created from, and `resolution` on a root whose thread is resolved,
     which a reader collapses to one line. `anchor` is set on a root pinned to a
     passage of the issue description. `document_id` is set on a comment on a
     document, whose `issue_id` then repeats the document id and whose `team_id`
@@ -210,6 +211,7 @@ class CommentRead(BaseModel):
     created_at: datetime
     edited_at: Optional[datetime] = None
     github_thread: Optional[GithubThread] = None
+    slack_thread: Optional[SlackThread] = None
     resolution: Optional[ThreadResolution] = None
     anchor: Optional[CommentAnchor] = None
     document_id: Optional[str] = None
@@ -247,6 +249,7 @@ class CommentRead(BaseModel):
             created_at=comment.created_at,
             edited_at=comment.edited_at,
             github_thread=comment.github_thread,
+            slack_thread=comment.slack_thread,
             resolution=comment.resolution,
             anchor=comment.anchor,
             document_id=comment.document_id,

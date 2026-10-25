@@ -162,7 +162,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -2822,7 +2823,7 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line. `anchor` is set on a root pinned to a\npassage of the issue description. `document_id` is set on a comment on a\ndocument, whose `issue_id` then repeats the document id and whose `team_id`\nis empty.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, `slack_thread` on the root synced with the Slack\nthread the issue was created from, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line. `anchor` is set on a root pinned to a\npassage of the issue description. `document_id` is set on a comment on a\ndocument, whose `issue_id` then repeats the document id and whose `team_id`\nis empty.",
         "properties": {
           "anchor": {
             "anyOf": [
@@ -2938,6 +2939,16 @@
               }
             ]
           },
+          "slack_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlackThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "anyOf": [
               {
@@ -2948,7 +2959,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -4127,7 +4139,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -5999,7 +6012,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -6107,7 +6121,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -9258,7 +9273,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -10783,7 +10799,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -14818,7 +14835,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -15205,7 +15223,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -17596,7 +17615,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -17866,7 +17886,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -18545,7 +18566,8 @@
                   "api",
                   "github",
                   "system",
-                  "email"
+                  "email",
+                  "slack"
                 ],
                 "type": "string"
               },
@@ -22816,6 +22838,45 @@
           "available"
         ],
         "title": "SlackLinkRead",
+        "type": "object"
+      },
+      "SlackThread": {
+        "description": "The Slack thread a root comment's thread is synced with.\n\nSet on the root that pairing writes when an issue is created from a Slack\nmessage: replies in the Slack thread land under this root, and replies under\nthis root are posted to the Slack thread. `permalink` is what the comment\narea links to.",
+        "properties": {
+          "channel_id": {
+            "title": "Channel Id",
+            "type": "string"
+          },
+          "permalink": {
+            "default": "",
+            "title": "Permalink",
+            "type": "string"
+          },
+          "slack_team_id": {
+            "title": "Slack Team Id",
+            "type": "string"
+          },
+          "synced_at": {
+            "format": "date-time",
+            "title": "Synced At",
+            "type": "string"
+          },
+          "synced_by": {
+            "title": "Synced By",
+            "type": "string"
+          },
+          "thread_ts": {
+            "title": "Thread Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slack_team_id",
+          "channel_id",
+          "thread_ts",
+          "synced_by"
+        ],
+        "title": "SlackThread",
         "type": "object"
       },
       "SourceTeamMappingRead": {
@@ -48417,7 +48478,8 @@
                     "api",
                     "github",
                     "system",
-                    "email"
+                    "email",
+                    "slack"
                   ],
                   "type": "string"
                 },
