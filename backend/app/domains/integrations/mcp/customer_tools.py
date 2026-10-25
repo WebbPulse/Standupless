@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.common.api.schemas.customer_fields import CustomerFieldRead
 from app.common.api.schemas.customers import (
     CustomerCreate,
     CustomerMerge,
@@ -20,7 +21,6 @@ from app.common.api.schemas.customers import (
     CustomerRequestPatch,
     CustomerRequestRead,
 )
-from app.common.api.schemas.customer_fields import CustomerFieldRead
 from app.common.customer_fields import STATUS, TIER, list_customer_fields
 from app.common.customers import (
     create_customer,

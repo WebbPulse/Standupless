@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from app.common.db.dynamo.base import utc_now
 from app.common.customer_fields import legacy_tier_id
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.customers import Customer, CustomerRequest
 from app.common.db.dynamo.documents import Document, DocumentBody, ParentKind
 from app.common.db.dynamo.github import ORIGINAL_RESOURCE_TYPES, WebhookEndpoint, webhook_key

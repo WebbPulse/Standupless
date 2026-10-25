@@ -243,11 +243,23 @@ export const deleteCustomerRequest = async (
 /** The two lists a workspace admin sets up for its customers. */
 export type CustomerFieldKind = 'statuses' | 'tiers';
 
-/** The route one of the customer lists is read and added to on. */
-export const customerFieldsPath = (
+/** The route the workspace's customer statuses are read and added to on. */
+export const customerStatusesPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/customers/statuses`;
+
+/** The route the workspace's customer tiers are read and added to on. */
+export const customerTiersPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/customers/tiers`;
+
+/** The route one customer status is edited and deleted on. */
+export const customerStatusPath = (
   workspaceId: string,
-  kind: CustomerFieldKind
-): string => `/workspaces/${workspaceId}/customers/${kind}`;
+  statusId: string
+): string => `${customerStatusesPath(workspaceId)}/${statusId}`;
+
+/** The route one customer tier is edited and deleted on. */
+export const customerTierPath = (workspaceId: string, tierId: string): string =>
+  `${customerTiersPath(workspaceId)}/${tierId}`;
 
 /** Lists the workspace's customer statuses or tiers, by position. */
 export const listCustomerFields = async (
@@ -255,13 +267,19 @@ export const listCustomerFields = async (
   kind: CustomerFieldKind,
   signal?: AbortSignal
 ): Promise<CustomerFieldRead[]> => {
-  const response = await apiClient.get<
-    CustomerStatusListRead | CustomerTierListRead
-  >(customerFieldsPath(workspaceId, kind), signalOptions(signal));
-  const body = response.data as Partial<
-    CustomerStatusListRead & CustomerTierListRead
-  >;
-  const rows = kind === 'statuses' ? body?.statuses : body?.tiers;
+  if (kind === 'statuses') {
+    const response = await apiClient.get<CustomerStatusListRead>(
+      customerStatusesPath(workspaceId),
+      signalOptions(signal)
+    );
+    const rows = response.data?.statuses;
+    return Array.isArray(rows) ? rows : [];
+  }
+  const response = await apiClient.get<CustomerTierListRead>(
+    customerTiersPath(workspaceId),
+    signalOptions(signal)
+  );
+  const rows = response.data?.tiers;
   return Array.isArray(rows) ? rows : [];
 };
 
@@ -271,10 +289,16 @@ export const createCustomerField = async (
   kind: CustomerFieldKind,
   body: CustomerFieldCreate
 ): Promise<CustomerFieldRead> => {
-  const response = await apiClient.post<CustomerFieldRead>(
-    customerFieldsPath(workspaceId, kind),
-    body
-  );
+  const response =
+    kind === 'statuses'
+      ? await apiClient.post<CustomerFieldRead>(
+          customerStatusesPath(workspaceId),
+          body
+        )
+      : await apiClient.post<CustomerFieldRead>(
+          customerTiersPath(workspaceId),
+          body
+        );
   return response.data;
 };
 
@@ -285,10 +309,16 @@ export const updateCustomerField = async (
   fieldId: string,
   body: CustomerFieldUpdate
 ): Promise<CustomerFieldRead> => {
-  const response = await apiClient.patch<CustomerFieldRead>(
-    `${customerFieldsPath(workspaceId, kind)}/${fieldId}`,
-    body
-  );
+  const response =
+    kind === 'statuses'
+      ? await apiClient.patch<CustomerFieldRead>(
+          customerStatusPath(workspaceId, fieldId),
+          body
+        )
+      : await apiClient.patch<CustomerFieldRead>(
+          customerTierPath(workspaceId, fieldId),
+          body
+        );
   return response.data;
 };
 
@@ -302,10 +332,16 @@ export const deleteCustomerField = async (
   fieldId: string,
   replacementId?: string
 ): Promise<void> => {
-  await apiClient.delete<void>(
-    `${customerFieldsPath(workspaceId, kind)}/${fieldId}`,
+  const options =
     replacementId === undefined
       ? undefined
-      : { query: { replacement_id: replacementId } }
-  );
+      : { query: { replacement_id: replacementId } };
+  if (kind === 'statuses') {
+    await apiClient.delete<void>(
+      customerStatusPath(workspaceId, fieldId),
+      options
+    );
+    return;
+  }
+  await apiClient.delete<void>(customerTierPath(workspaceId, fieldId), options);
 };

@@ -155,7 +155,7 @@ def test_deleting_a_held_entry_asks_for_a_replacement(client: TestClient, reposi
     statuses = _list(client, workspace, "statuses")
     assert [(row["id"], row["position"]) for row in statuses] == [("active", 0), ("paused", 1), ("churned", 2)]
     deleted = _actions(repositories, "customer_status.deleted")
-    assert {event.target_id for event in deleted} == {"trial", "lead"}
+    assert {event.target.id for event in deleted} == {"trial", "lead"}
 
 
 def test_an_emptied_list_stays_empty(client: TestClient, workspace: str) -> None:
