@@ -22,6 +22,8 @@ from app.common.api.schemas.views import (
     LayoutField,
     SortField,
     VisiblePropertyField,
+    read_visible_properties,
+    stored_visible_properties,
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -944,14 +946,18 @@ class DisplayOptionsBody(BaseModel):
 
     def as_row(self) -> DisplayOptions:
         """The stored shape of these options."""
-        return DisplayOptions.model_validate(self.model_dump())
+        stored = self.model_dump()
+        stored["visible_properties"] = stored_visible_properties(stored["visible_properties"])
+        return DisplayOptions.model_validate(stored)
 
     @classmethod
     def from_row(cls, options: Optional[DisplayOptions]) -> Optional["DisplayOptionsBody"]:
         """The response shape of stored options, or `None` when the page keeps its built-in default."""
         if options is None:
             return None
-        return cls.model_validate(options.model_dump())
+        shown = options.model_dump()
+        shown["visible_properties"] = read_visible_properties(shown["visible_properties"])
+        return cls.model_validate(shown)
 
 
 class TeamDisplayDefaultsUpdate(BaseModel):

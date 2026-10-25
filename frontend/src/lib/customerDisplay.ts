@@ -51,6 +51,10 @@ const COMPACT = new Intl.NumberFormat('en-US', {
 export const revenueLabel = (revenue: number | null): string | null =>
   revenue === null ? null : `$${COMPACT.format(revenue)}`;
 
+/** An issue's summed customer revenue as a compact amount, or null when it is zero. */
+export const customerRevenueLabel = (revenue: number): string | null =>
+  revenue > 0 ? revenueLabel(revenue) : null;
+
 /** Headcount as a compact number such as 1.2K, or null when unset. */
 export const sizeLabel = (size: number | null): string | null =>
   size === null ? null : COMPACT.format(size);

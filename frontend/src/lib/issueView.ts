@@ -773,6 +773,9 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'estimate',
   'start_date',
   'due_date',
+  'sla',
+  'customers',
+  'customer_revenue',
   'created_at',
   'updated_at',
   'time_in_status',
@@ -801,6 +804,9 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   updated_at: 'Updated',
   time_in_status: 'Time in status',
   release: 'Release',
+  sla: 'SLA',
+  customers: 'Customers',
+  customer_revenue: 'Customer revenue',
 };
 
 /** The properties a row shows until someone changes them. */
@@ -814,6 +820,7 @@ export const DEFAULT_VISIBLE: ViewVisibleProperty[] = [
   'project',
   'estimate',
   'due_date',
+  'sla',
   'created_at',
   'assignee',
 ];
@@ -1978,6 +1985,49 @@ export const releasesOf = (
         right.id.localeCompare(left.id)
     );
 };
+
+/** The display properties that read the customers who asked for each issue. */
+export const CUSTOMER_PROPERTIES: readonly ViewVisibleProperty[] = [
+  'customers',
+  'customer_revenue',
+];
+
+/** Whether a row shows a property that needs each issue's customer requests. */
+export const showsCustomerProperties = (
+  visible: readonly ViewVisibleProperty[]
+): boolean =>
+  CUSTOMER_PROPERTIES.some((property) => visible.includes(property));
+
+/**
+ * The customers that asked for an issue, highest revenue first and then by
+ * name. Empty where the reader may not see customers or no request names it.
+ */
+export const customersOf = (
+  issue: Pick<IssueRead, 'id'>,
+  context: Pick<IssueContext, 'customers' | 'customerRequests'>
+): IssueCustomer[] => {
+  const all = context.customers;
+  if (all === undefined) return [];
+  const ids = context.customerRequests?.get(issue.id) ?? [];
+  if (ids.length === 0) return [];
+  return all
+    .filter((customer) => ids.includes(customer.id))
+    .sort(
+      (left, right) =>
+        (right.revenue ?? 0) - (left.revenue ?? 0) ||
+        left.name.localeCompare(right.name)
+    );
+};
+
+/** The summed revenue of the customers that asked for an issue, 0 for none. */
+export const customerRevenueOf = (
+  issue: Pick<IssueRead, 'id'>,
+  context: Pick<IssueContext, 'customers' | 'customerRequests'>
+): number =>
+  customersOf(issue, context).reduce(
+    (sum, customer) => sum + (customer.revenue ?? 0),
+    0
+  );
 
 /**
  * Releases in the order their groups read: by how far down the pipeline each
