@@ -258,7 +258,7 @@ def parent_key(team_id: str) -> str:
     return f"team#{team_id}#parent"
 
 
-EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name")
+EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name", "inherited_description")
 """Fields resolved at read time, never stored on a status or label row."""
 
 OverrideTarget = Literal["status", "label"]
@@ -321,7 +321,10 @@ class Status(BaseModel):
     and absent means the category default, so those rows render as they always did.
     A workspace row stores no `team_id`; read through a team it carries that team's
     id, its `scope` is `workspace`, and the team's override sets `hidden` and, for
-    a local rename, `name` with the workspace name kept in `inherited_name`.
+    a local rename, `name` with the workspace name kept in `inherited_name`. A
+    local description sets `description` the same way, the inherited one kept in
+    `inherited_description`, empty when the inherited status has none.
+    `description` is absent on a status that has none.
     """
 
     workspace_id: str
@@ -333,10 +336,12 @@ class Status(BaseModel):
     position: int = 0
     color: str | None = None
     icon: str | None = None
+    description: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     scope: str = TEAM_SCOPE
     hidden: bool = False
     inherited_name: str | None = None
+    inherited_description: str | None = None
     import_batch_id: str | None = None
 
 
@@ -393,6 +398,7 @@ class Override(BaseModel):
 
     `shown` is a sub-team showing a workspace row its parent team hides. It is
     absent on rows written before it existed, which read as not shown.
+    `description` is a status's team-only description, absent when it has none.
     """
 
     workspace_id: str
@@ -403,6 +409,7 @@ class Override(BaseModel):
     hidden: bool = False
     shown: bool = False
     name: str | None = None
+    description: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -758,10 +765,11 @@ def _hide_children_of_hidden_groups(rows: list[Label]) -> list[Label]:
 
 
 def _override_item(override: Override) -> dict[str, Any]:
-    """An override as a stored item, leaving out an unset name."""
+    """An override as a stored item, leaving out an unset name or description."""
     item = as_item(override)
-    if item.get("name") is None:
-        item.pop("name", None)
+    for name in ("name", "description"):
+        if item.get(name) is None:
+            item.pop(name, None)
     if not item.get("shown"):
         item.pop("shown", None)
     return item
@@ -775,6 +783,9 @@ def _inherit(row: Any, team_id: str, override: Override | None, scope: str = WOR
         if override.name:
             update["inherited_name"] = row.name
             update["name"] = override.name
+        if override.description and isinstance(row, Status):
+            update["inherited_description"] = row.description or ""
+            update["description"] = override.description
     return row.model_copy(update=update)
 
 
@@ -782,12 +793,18 @@ def _layered(parent: Override | None, own: Override | None) -> Override | None:
     """A parent's override of a workspace row with a sub-team's own on top.
 
     What the parent hides stays hidden in the sub-team unless the sub-team
-    shows it, and the sub-team's rename wins over the parent's.
+    shows it, and the sub-team's rename and description win over the parent's.
     """
     if parent is None or own is None:
         return own or parent
     hidden = own.hidden or (parent.hidden and not own.shown)
-    return own.model_copy(update={"hidden": hidden, "name": own.name or parent.name})
+    return own.model_copy(
+        update={
+            "hidden": hidden,
+            "name": own.name or parent.name,
+            "description": own.description or parent.description,
+        }
+    )
 
 
 def status_order(row: Status) -> tuple[bool, int, str]:
@@ -800,7 +817,7 @@ def label_order(row: Label) -> tuple[bool, str, str]:
     return (row.hidden, row.name.lower(), row.label_id)
 
 
-STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon")
+STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon", "description")
 """The status fields a patch may clear, which are removed from the row rather than nulled."""
 
 

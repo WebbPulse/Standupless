@@ -65,6 +65,17 @@ COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 LABEL_DESCRIPTION_MAX = 100
 """The longest label description, which is what GitHub accepts on a repository label."""
 
+STATUS_DESCRIPTION_MAX = 255
+"""The longest workflow status description, the secondary line a status picker shows."""
+
+
+def blank_as_none(value: Optional[str]) -> Optional[str]:
+    """A description with its outer whitespace trimmed, an empty one read as none."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
 
 def _check_key_prefix(value: str) -> str:
     """Hold a key prefix to the contract's alphabet, uppercase only."""
@@ -332,7 +343,8 @@ class StatusCreate(BaseModel):
     """The body a status create takes.
 
     `color` and `icon` are optional, and a status without them renders from its
-    category. The icon must be one of its category's variants.
+    category. The icon must be one of its category's variants. `description` is
+    the line a status picker shows under the name, and a blank one is none.
     """
 
     name: str = Field(min_length=1, max_length=60)
@@ -340,6 +352,13 @@ class StatusCreate(BaseModel):
     position: Optional[int] = Field(default=None, ge=0)
     color: Optional[StatusColor] = None
     icon: Optional[StatusIcon] = None
+    description: Optional[str] = Field(default=None, max_length=STATUS_DESCRIPTION_MAX)
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the description, reading a blank one as none."""
+        return blank_as_none(value)
 
     @model_validator(mode="after")
     def check_icon_category(self) -> "StatusCreate":
@@ -353,7 +372,8 @@ class StatusUpdate(BaseModel):
 
     An explicit null `color` or `icon` clears it back to the category default. The
     icon is checked against the category in `team_workflow.update_status`, where
-    the stored category is known when the patch does not name one.
+    the stored category is known when the patch does not name one. An explicit
+    null or blank `description` removes it.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
@@ -361,6 +381,13 @@ class StatusUpdate(BaseModel):
     position: Optional[int] = Field(default=None, ge=0)
     color: Optional[StatusColor] = None
     icon: Optional[StatusIcon] = None
+    description: Optional[str] = Field(default=None, max_length=STATUS_DESCRIPTION_MAX)
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the description, reading a blank one as a clear."""
+        return blank_as_none(value)
 
 
 ConfigScope = Literal["team", "parent", "workspace"]
@@ -371,7 +398,10 @@ class StatusRead(BaseModel):
 
     `scope` says whether the team owns it or inherits it from its parent team or
     the workspace. An inherited status the team hid carries `hidden`, and one it
-    renamed locally carries the inherited name in `inherited_name`.
+    renamed locally carries the inherited name in `inherited_name`. `description`
+    is the effective one, and an inherited status the team describes locally
+    carries the inherited description in `inherited_description`, an empty
+    string when the inherited status has none.
     """
 
     id: str
@@ -383,6 +413,8 @@ class StatusRead(BaseModel):
     scope: ConfigScope = "team"
     hidden: bool = False
     inherited_name: Optional[str] = None
+    description: Optional[str] = None
+    inherited_description: Optional[str] = None
 
     @classmethod
     def from_row(cls, status: Status) -> "StatusRead":
@@ -397,6 +429,8 @@ class StatusRead(BaseModel):
             scope=status.scope,  # pyright: ignore[reportArgumentType]
             hidden=status.hidden,
             inherited_name=status.inherited_name,
+            description=status.description,
+            inherited_description=status.inherited_description,
         )
 
 
@@ -535,6 +569,23 @@ class OverrideUpdate(BaseModel):
 
     hidden: Optional[bool] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+
+
+class StatusOverrideUpdate(OverrideUpdate):
+    """The body a team's override of an inherited status takes.
+
+    On top of the hide and rename every override carries, `description` describes
+    the status in the team only, and an explicit null or blank one goes back to
+    the inherited description.
+    """
+
+    description: Optional[str] = Field(default=None, max_length=STATUS_DESCRIPTION_MAX)
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the description, reading a blank one as a clear."""
+        return blank_as_none(value)
 
 
 class CycleSettingsUpdate(BaseModel):

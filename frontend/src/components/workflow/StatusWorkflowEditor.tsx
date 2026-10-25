@@ -1,12 +1,13 @@
 /**
  * The category grouped status list both workflow settings pages draw. Every
  * category has a heading and its own add row, and a status the caller may edit
- * carries its color and icon picker, an inline name, moves within its
- * category and a menu to recategorise or delete it.
+ * carries its color and icon picker, an inline name with an inline
+ * description under it, moves within its category and a menu to recategorise
+ * or delete it. The description is what the status pickers show beside it.
  *
  * On a team page the workspace's statuses appear among the team's own, marked
- * as inherited and offered only the team overrides, and a hidden one shows
- * when the toggle asks for it. Reordering swaps the positions of two statuses
+ * as inherited and offered only the team overrides, a team-only description
+ * among them, and a hidden one shows when the toggle asks for it. Reordering swaps the positions of two statuses
  * the caller may edit, as the contract has no bulk reorder route.
  *
  * Deleting a status asks where its issues go, as Linear does, and the API moves
@@ -34,6 +35,7 @@ import type {
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
+import Input from '../ui/input';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
@@ -73,6 +75,50 @@ export interface StatusWorkflowEditorProps {
   /** Where a status the team inherits from its parent team is edited. */
   parentSettingsPath?: string | undefined;
 }
+
+/** Props for StatusDescriptionField. */
+interface StatusDescriptionFieldProps {
+  status: StatusRead;
+  /** Saves the trimmed description, an empty one meaning none. */
+  onSave: (value: string) => void;
+  /** The placeholder when the status has no description. */
+  placeholder?: string;
+}
+
+/** The longest status description the API takes. */
+const DESCRIPTION_MAX = 255;
+
+/** The inline description input under a status name, saved on blur or Enter. */
+const StatusDescriptionField: React.FC<StatusDescriptionFieldProps> = ({
+  status,
+  onSave,
+  placeholder = 'Add description',
+}) => {
+  const current = status.description ?? '';
+  return (
+    <Input
+      key={`${status.id}-${current}`}
+      id={`status-description-${status.id}`}
+      aria-label={`Description of ${status.name}`}
+      placeholder={placeholder}
+      maxLength={DESCRIPTION_MAX}
+      autoComplete="off"
+      className="h-6 border-transparent bg-transparent px-1 text-xs text-text-muted hover:border-line"
+      defaultValue={current}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+        if (event.key === 'Escape') {
+          event.currentTarget.value = current;
+          event.currentTarget.blur();
+        }
+      }}
+      onBlur={(event) => {
+        const trimmed = event.target.value.trim();
+        if (trimmed !== current) onSave(trimmed);
+      }}
+    />
+  );
+};
 
 /** The empty look a new status starts on. */
 const NO_LOOK: StatusAppearance = { color: null, icon: null };
@@ -195,6 +241,11 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
   const { override, reset } = actions;
   const editable = (status: StatusRead): boolean =>
     canEdit && (scope === 'workspace' || !isInherited(status));
+  const describable = (status: StatusRead): boolean =>
+    canEdit &&
+    scope === 'team' &&
+    isInherited(status) &&
+    override !== undefined;
 
   const run = (write: Promise<unknown>, fallback: string): void => {
     setError(null);
@@ -327,22 +378,35 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
                             );
                           }}
                         />
-                        <Field
-                          key={`${status.id}-${status.name}`}
-                          id={`status-name-${status.id}`}
-                          label={`Name of ${status.name}`}
-                          hideLabel
-                          className="w-48"
-                          defaultValue={status.name}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.currentTarget.blur();
-                            }
-                          }}
-                          onBlur={(event) => {
-                            onRename(status, event.target.value);
-                          }}
-                        />
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5">
+                          <Field
+                            key={`${status.id}-${status.name}`}
+                            id={`status-name-${status.id}`}
+                            label={`Name of ${status.name}`}
+                            hideLabel
+                            className="w-48"
+                            defaultValue={status.name}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={(event) => {
+                              onRename(status, event.target.value);
+                            }}
+                          />
+                          <StatusDescriptionField
+                            status={status}
+                            onSave={(value) => {
+                              run(
+                                actions.update(status, {
+                                  description: value === '' ? null : value,
+                                }),
+                                'Could not update that description.'
+                              );
+                            }}
+                          />
+                        </div>
                         <div className="ml-auto flex items-center gap-1">
                           <IconButton
                             label={`Move ${status.name} up`}
@@ -410,9 +474,41 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
                     ) : (
                       <>
                         <StatusIcon status={status} statuses={visible} />
-                        <span className="truncate font-medium text-text">
-                          {status.name}
-                        </span>
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate font-medium text-text">
+                            {status.name}
+                          </span>
+                          {describable(status) ? (
+                            <StatusDescriptionField
+                              status={status}
+                              onSave={(value) => {
+                                if (override === undefined) return;
+                                const inherited =
+                                  status.inherited_description ??
+                                  status.description ??
+                                  '';
+                                run(
+                                  override(status, {
+                                    description:
+                                      value === '' || value === inherited
+                                        ? null
+                                        : value,
+                                  }),
+                                  'Could not change that description for this team.'
+                                );
+                              }}
+                              placeholder="Add a team description"
+                            />
+                          ) : (
+                            status.description !== undefined &&
+                            status.description !== null &&
+                            status.description !== '' && (
+                              <span className="truncate text-xs text-text-muted">
+                                {status.description}
+                              </span>
+                            )
+                          )}
+                        </div>
                         {isInherited(status) && scope === 'team' && (
                           <InheritedMarkers row={status} />
                         )}

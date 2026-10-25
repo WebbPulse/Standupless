@@ -878,6 +878,10 @@ export interface StatusRead {
   hidden?: boolean;
   /** The workspace name of an inherited status the team renamed, or null. */
   inherited_name?: string | null;
+  /** What the status means, shown under its name in status pickers, or null. */
+  description?: string | null;
+  /** The inherited description of a status the team describes locally, or null. */
+  inherited_description?: string | null;
 }
 
 /** The body the statuses route answers with, ordered by position. */
@@ -892,6 +896,7 @@ export interface StatusCreate {
   position?: number;
   color?: string | null;
   icon?: string | null;
+  description?: string | null;
 }
 
 /** The editable fields on a status. */
@@ -903,6 +908,8 @@ export interface StatusUpdate {
   color?: string | null;
   /** An icon variant, or null to go back to the category default. */
   icon?: string | null;
+  /** What the status means, or null to remove it. */
+  description?: string | null;
 }
 
 /** One label on a team or the workspace. */
@@ -979,6 +986,8 @@ export interface LabelUpdate {
 export interface OverrideUpdate {
   hidden?: boolean;
   name?: string | null;
+  /** A status's team-only description, or null to go back to the inherited one. Statuses only. */
+  description?: string | null;
 }
 
 /** The body `POST /api/invites/accept` takes. */

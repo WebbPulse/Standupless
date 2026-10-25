@@ -49,6 +49,7 @@ import {
   datePresets,
   shortDateLabel,
   sortStatuses,
+  statusDetail,
   typedDateOption,
 } from '../../lib/propertyOptions';
 import {
@@ -255,7 +256,8 @@ export interface StatusPickerProps extends PickerBaseProps {
 
 /**
  * Picks a workflow status. The list is grouped by category in workflow
- * order, and the number keys pick the first nine without typing. On a team
+ * order, each status's description quieter after its name, and the number
+ * keys pick the first nine without typing. On a team
  * with triage on, Triage leads the list, as Linear shows it.
  */
 export const StatusPicker: React.FC<StatusPickerProps> = ({
@@ -288,6 +290,7 @@ export const StatusPicker: React.FC<StatusPickerProps> = ({
       label: status.name,
       icon: <StatusIcon status={status} statuses={statuses} />,
       group: STATUS_CATEGORY_LABELS[status.category],
+      ...statusDetail(status),
       ...(index < 9 ? { shortcut: String(index + 1) } : {}),
     })),
   ];

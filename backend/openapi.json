@@ -23991,7 +23991,7 @@
         "type": "object"
       },
       "StatusCreate": {
-        "description": "The body a status create takes.\n\n`color` and `icon` are optional, and a status without them renders from its\ncategory. The icon must be one of its category's variants.",
+        "description": "The body a status create takes.\n\n`color` and `icon` are optional, and a status without them renders from its\ncategory. The icon must be one of its category's variants. `description` is\nthe line a status picker shows under the name, and a blank one is none.",
         "properties": {
           "category": {
             "enum": [
@@ -24030,6 +24030,18 @@
               }
             ],
             "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "icon": {
             "anyOf": [
@@ -24127,8 +24139,51 @@
         "title": "StatusMappingRead",
         "type": "object"
       },
+      "StatusOverrideUpdate": {
+        "description": "The body a team's override of an inherited status takes.\n\nOn top of the hide and rename every override carries, `description` describes\nthe status in the team only, and an explicit null or blank one goes back to\nthe inherited description.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "StatusOverrideUpdate",
+        "type": "object"
+      },
       "StatusRead": {
-        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from its parent team or\nthe workspace. An inherited status the team hid carries `hidden`, and one it\nrenamed locally carries the inherited name in `inherited_name`.",
+        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from its parent team or\nthe workspace. An inherited status the team hid carries `hidden`, and one it\nrenamed locally carries the inherited name in `inherited_name`. `description`\nis the effective one, and an inherited status the team describes locally\ncarries the inherited description in `inherited_description`, an empty\nstring when the inherited status has none.",
         "properties": {
           "category": {
             "enum": [
@@ -24168,6 +24223,17 @@
             ],
             "title": "Color"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "hidden": {
             "default": false,
             "title": "Hidden",
@@ -24205,6 +24271,17 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "inherited_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited Description"
           },
           "inherited_name": {
             "anyOf": [
@@ -24246,7 +24323,7 @@
         "type": "object"
       },
       "StatusUpdate": {
-        "description": "The body a status patch takes.\n\nAn explicit null `color` or `icon` clears it back to the category default. The\nicon is checked against the category in `team_workflow.update_status`, where\nthe stored category is known when the patch does not name one.",
+        "description": "The body a status patch takes.\n\nAn explicit null `color` or `icon` clears it back to the category default. The\nicon is checked against the category in `team_workflow.update_status`, where\nthe stored category is known when the patch does not name one. An explicit\nnull or blank `description` removes it.",
         "properties": {
           "category": {
             "anyOf": [
@@ -24292,6 +24369,18 @@
               }
             ],
             "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "icon": {
             "anyOf": [
@@ -62599,7 +62688,7 @@
         ]
       },
       "patch": {
-        "description": "Rename a status, recategorise it or move it in the order.",
+        "description": "Rename a status, recategorise or describe it, or move it in the order.",
         "operationId": "update_status_api_workspaces__workspace_id__teams__team_id__statuses__status_id__patch",
         "parameters": [
           {
@@ -62725,7 +62814,7 @@
         ]
       },
       "patch": {
-        "description": "Hide, show or rename an inherited workspace status in this team, a null name clearing the rename.",
+        "description": "Hide, show, rename or describe an inherited status in this team, a null name or description clearing it.",
         "operationId": "override_status_api_workspaces__workspace_id__teams__team_id__statuses__status_id__override_patch",
         "parameters": [
           {
@@ -62753,7 +62842,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OverrideUpdate"
+                "$ref": "#/components/schemas/StatusOverrideUpdate"
               }
             }
           },

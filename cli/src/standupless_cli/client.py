@@ -74,6 +74,7 @@ from standupless_cli._generated.models import (
     StandupSettingsUpdate,
     StatusCreate,
     StatusListRead,
+    StatusOverrideUpdate,
     StatusRead,
     StatusUpdate,
     SubscribersRead,
@@ -348,7 +349,9 @@ class StanduplessClient:
         params = {"replacement_status_id": replacement_status_id} if replacement_status_id else None
         self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}", params=params)
 
-    def override_status(self, workspace_id: str, team_id: str, status_id: str, body: OverrideUpdate) -> StatusRead:
+    def override_status(
+        self, workspace_id: str, team_id: str, status_id: str, body: StatusOverrideUpdate
+    ) -> StatusRead:
         """Hide, show or rename an inherited workspace status in one team."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
         return cast(StatusRead, self._request("PATCH", path, json=body))

@@ -47,6 +47,7 @@ from standupless_cli._generated.models import (
     ReleaseDetailRead,
     ReleaseRead,
     StatusCreate,
+    StatusOverrideUpdate,
     StatusRead,
     StatusUpdate,
     TeamCreate,
@@ -1836,7 +1837,7 @@ def status_delete(
     output.success(f"Deleted {found['name']}.{moved}")
 
 
-def _override_status(ctx: typer.Context, status: str, team: str, body: OverrideUpdate, done: str) -> None:
+def _override_status(ctx: typer.Context, status: str, team: str, body: StatusOverrideUpdate, done: str) -> None:
     """Apply one team override to an inherited workspace status and report it."""
     context = _state(ctx).context()
     team_id = context.team(team)["id"]

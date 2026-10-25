@@ -13,7 +13,14 @@ from typing import Any
 
 from app.common import label_merge, team_workflow
 from app.common.api.dependencies.authz import Capability, check_capability
-from app.common.api.schemas.teams import LabelCreate, LabelUpdate, OverrideUpdate, StatusCreate, StatusUpdate
+from app.common.api.schemas.teams import (
+    LabelCreate,
+    LabelUpdate,
+    OverrideUpdate,
+    StatusCreate,
+    StatusOverrideUpdate,
+    StatusUpdate,
+)
 from app.common.db.dynamo.team_config import Label, Status
 from app.common.status_appearance import STATUS_COLORS, STATUS_ICONS
 from app.domains.integrations.mcp.team_tools import (
@@ -85,6 +92,11 @@ def _override(call: ToolCall) -> OverrideUpdate:
     return OverrideUpdate.model_validate(given_arguments(call, ("hidden", "name")))
 
 
+def _status_override(call: ToolCall) -> StatusOverrideUpdate:
+    """The status override patch the caller sent, an explicit null name or description clearing it."""
+    return StatusOverrideUpdate.model_validate(given_arguments(call, ("hidden", "name", "description")))
+
+
 def _list_workspace_statuses(call: ToolCall) -> Any:
     """Every workspace status in board order."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_READ)
@@ -95,7 +107,9 @@ def _list_workspace_statuses(call: ToolCall) -> Any:
 def _create_workspace_status(call: ToolCall) -> Any:
     """Add a workspace status every team inherits."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
-    payload = StatusCreate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    payload = StatusCreate.model_validate(
+        given_arguments(call, ("name", "category", "position", "color", "icon", "description"))
+    )
     return status_json(team_workflow.create_workspace_status(call.repositories, call.context.workspace_id, payload))
 
 
@@ -103,7 +117,9 @@ def _update_workspace_status(call: ToolCall) -> Any:
     """Rename, recategorise, recolor or move a workspace status in every team at once."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
     found = _workspace_status_ref(call, call.require("status"))
-    payload = StatusUpdate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    payload = StatusUpdate.model_validate(
+        given_arguments(call, ("name", "category", "position", "color", "icon", "description"))
+    )
     updated = team_workflow.update_workspace_status(
         call.repositories, call.context.workspace_id, found.status_id, payload
     )
@@ -200,7 +216,7 @@ def _override_team_status(call: ToolCall) -> Any:
         call.context.workspace_id,
         team.team_id,
         found.status_id,
-        _override(call),
+        _status_override(call),
         can_see=call.context.can_see_team,
     )
     return status_json(updated)
@@ -268,6 +284,7 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
                 "position": integer("Zero-based position in the board order", 0, 10000),
                 "color": enum(STATUS_COLORS, "A palette color; omit for the category default"),
                 "icon": enum(STATUS_ICONS, ICON_ARGUMENT),
+                "description": string("What the status means, shown under its name in status pickers"),
             },
             required=("name", "category"),
         ),
@@ -276,7 +293,7 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_workspace_status",
         description=(
-            "Rename a workspace status, change its category, color or icon, or move it, in every team at once. "
+            "Rename a workspace status, change its category, color, icon or description, or move it, in every team at once. "
             "Needs workspace admin."
         ),
         scopes=("statuses:write", "admin"),
@@ -288,6 +305,7 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
                 "position": integer("A new zero-based position", 0, 10000),
                 "color": nullable_enum(STATUS_COLORS, "A palette color, or null for the category default"),
                 "icon": nullable_enum(STATUS_ICONS, f"{ICON_ARGUMENT}, or null for the category default"),
+                "description": nullable("What the status means, or null to remove it"),
             },
             required=("status",),
         ),
@@ -392,13 +410,18 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="override_team_status",
         description=(
-            "Hide an inherited workspace status in one team, show it again, or give it a team-only name. "
+            "Hide an inherited workspace status in one team, show it again, or give it a team-only name or description. "
             "Needs team admin; the team's last visible status of a category cannot be hidden, and neither can "
             "one that unarchived issues are still in, so move them first."
         ),
         scopes=("statuses:write",),
         schema=object_schema(
-            {"team_id": string(TEAM_ARGUMENT), "status": string("The status: its id or its name"), **_OVERRIDE_FIELDS},
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "status": string("The status: its id or its name"),
+                **_OVERRIDE_FIELDS,
+                "description": nullable("A team-only description, or null to go back to the inherited one"),
+            },
             required=("team_id", "status"),
         ),
         handler=_override_team_status,

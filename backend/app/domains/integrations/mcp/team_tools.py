@@ -189,6 +189,8 @@ def status_json(row: Status) -> dict[str, Any]:
         "scope": row.scope,
         "hidden": row.hidden,
         "inherited_name": row.inherited_name,
+        "description": row.description,
+        "inherited_description": row.inherited_description,
     }
 
 
@@ -810,7 +812,9 @@ def _list_statuses(call: ToolCall) -> Any:
 def _create_status(call: ToolCall) -> Any:
     """Add a status to a team, at the end of the order unless a position is given."""
     team = admin_team(call)
-    payload = StatusCreate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    payload = StatusCreate.model_validate(
+        given_arguments(call, ("name", "category", "position", "color", "icon", "description"))
+    )
     return status_json(team_workflow.create_status(call.repositories, call.context.workspace_id, team.team_id, payload))
 
 
@@ -818,7 +822,9 @@ def _update_status(call: ToolCall) -> Any:
     """Rename, recategorise, recolor or move a status; a null color or icon resets it."""
     team = admin_team(call)
     found = status_ref(call, team.team_id, call.require("status"))
-    payload = StatusUpdate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    payload = StatusUpdate.model_validate(
+        given_arguments(call, ("name", "category", "position", "color", "icon", "description"))
+    )
     updated = team_workflow.update_status(
         call.repositories, call.context.workspace_id, team.team_id, found.status_id, payload
     )
@@ -1452,6 +1458,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "position": integer("Zero-based position in the board order", 0, 10000),
                 "color": enum(STATUS_COLORS, "A palette color; omit for the category default"),
                 "icon": enum(STATUS_ICONS, ICON_ARGUMENT),
+                "description": string("What the status means, shown under its name in status pickers"),
             },
             required=("team_id", "name", "category"),
         ),
@@ -1460,7 +1467,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_status",
         description=(
-            "Rename a team's status, change its category, color or icon, or move it in the board order. "
+            "Rename a team's status, change its category, color, icon or description, or move it in the board order. "
             "Needs team admin."
         ),
         scopes=("statuses:write",),
@@ -1473,6 +1480,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "position": integer("A new zero-based position", 0, 10000),
                 "color": nullable_enum(STATUS_COLORS, "A palette color, or null for the category default"),
                 "icon": nullable_enum(STATUS_ICONS, f"{ICON_ARGUMENT}, or null for the category default"),
+                "description": nullable("What the status means, or null to remove it"),
             },
             required=("team_id", "status"),
         ),

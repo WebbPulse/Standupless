@@ -139,10 +139,12 @@ def _copy_statuses(copy: TeamCopy, rows: list[Status]) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for row in rows:
         if row.scope == WORKSPACE_SCOPE:
-            if row.hidden or row.inherited_name:
-                copy.overrides.append(
-                    _override(copy, "status", row.status_id, row.hidden, row.inherited_name, row.name)
-                )
+            described = row.inherited_description is not None
+            if row.hidden or row.inherited_name or described:
+                override = _override(copy, "status", row.status_id, row.hidden, row.inherited_name, row.name)
+                if described:
+                    override.description = row.description
+                copy.overrides.append(override)
             if not row.hidden:
                 copy.categories.add(row.category)
             continue
@@ -160,6 +162,7 @@ def _copy_statuses(copy: TeamCopy, rows: list[Status]) -> dict[str, str]:
                     "scope": TEAM_SCOPE,
                     "hidden": False,
                     "inherited_name": None,
+                    "inherited_description": None,
                 }
             )
         )
