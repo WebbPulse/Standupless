@@ -23,6 +23,8 @@ export interface InterfacePreferences {
   fontSize: FontSize;
   /** Whether buttons, menu items, rows and other interactive elements show the pointer cursor. */
   pointerCursors: boolean;
+  /** Whether the editor turns typed emoticons such as `:)` into emoji. */
+  convertEmoticons: boolean;
   /** Whether an issue the person creates starts assigned to them. */
   autoAssignToSelf: boolean;
   /** Whether copying a git branch name moves a not yet started issue to the team's first started status. */
@@ -38,6 +40,7 @@ export const DEFAULT_PREFERENCES: InterfacePreferences = {
   nameDisplay: 'username',
   fontSize: 'default',
   pointerCursors: false,
+  convertEmoticons: true,
   autoAssignToSelf: false,
   branchCopyStarts: true,
   branchCopyAssigns: true,
@@ -104,6 +107,7 @@ export interface StoredPreferences {
   name_display?: NameDisplay | undefined;
   font_size?: FontSize | undefined;
   pointer_cursors?: boolean | undefined;
+  convert_emoticons?: boolean | undefined;
   auto_assign_to_self?: boolean | undefined;
   branch_copy_starts?: boolean | undefined;
   branch_copy_assigns?: boolean | undefined;
@@ -118,6 +122,8 @@ export const preferencesOf = (
   nameDisplay: user?.name_display ?? DEFAULT_PREFERENCES.nameDisplay,
   fontSize: user?.font_size ?? DEFAULT_PREFERENCES.fontSize,
   pointerCursors: user?.pointer_cursors ?? DEFAULT_PREFERENCES.pointerCursors,
+  convertEmoticons:
+    user?.convert_emoticons ?? DEFAULT_PREFERENCES.convertEmoticons,
   autoAssignToSelf:
     user?.auto_assign_to_self ?? DEFAULT_PREFERENCES.autoAssignToSelf,
   branchCopyStarts:
