@@ -4,6 +4,7 @@
  */
 
 import type { Editor, JSONContent } from '@tiptap/core';
+import { parseVideoEmbed } from '../../lib/videoEmbeds';
 
 /** Fenced code and inline code, which the output clean up must not touch. */
 const CODE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/;
@@ -14,20 +15,41 @@ const BLANK_RUN = /\n{3,}/g;
 /** A link whose text is its own web address. */
 const SELF_LINK = /\[(https?:\/\/[^\]\s]+)\]\(\1\)/g;
 
+/** Whether a match stands alone on its line, after any quote markers. */
+const aloneOnLine = (source: string, start: number, end: number): boolean => {
+  const lineStart = source.lastIndexOf('\n', start - 1) + 1;
+  const lineEnd = source.indexOf('\n', end);
+  const before = source.slice(lineStart, start);
+  const after = source.slice(end, lineEnd === -1 ? source.length : lineEnd);
+  return /^(?: {0,3}> ?)* {0,3}$/.test(before) && after.trim() === '';
+};
+
+/**
+ * The bare address for a link whose text is its own address, except a video
+ * link alone on its line, which keeps its brackets so it reads back as the
+ * link it was kept as rather than as an embed.
+ */
+const bareSelfLinks = (part: string): string =>
+  part.replace(SELF_LINK, (match: string, url: string, offset: number) =>
+    parseVideoEmbed(url) !== null &&
+    aloneOnLine(part, offset, offset + match.length)
+      ? match
+      : url
+  );
+
 /**
  * Writes a link whose text is its own address back as the bare address, the
  * way it was typed, since the serializer can only write the bracketed form,
- * and collapses the blank lines empty paragraphs leave into one, so repeated
- * blank lines in the editor store as a single paragraph break. Code keeps its
- * blank lines.
+ * unless it is a video link kept as a link on a line of its own, and
+ * collapses the blank lines empty paragraphs leave into one, so repeated blank
+ * lines in the editor store as a single paragraph break. Code keeps its blank
+ * lines.
  */
 const tidyOutput = (markdown: string): string =>
   markdown
     .split(CODE)
     .map((part, index) =>
-      index % 2 === 1
-        ? part
-        : part.replace(SELF_LINK, '$1').replace(BLANK_RUN, '\n\n')
+      index % 2 === 1 ? part : bareSelfLinks(part).replace(BLANK_RUN, '\n\n')
     )
     .join('');
 
