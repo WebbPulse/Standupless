@@ -328,3 +328,32 @@ describe('the activity filter', () => {
     expect(screen.queryByRole('list', { name: 'Timeline' })).toBe(null);
   });
 });
+
+describe('long stretches of history', () => {
+  it('folds the middle behind a row that shows it on request', async () => {
+    const user = userEvent.setup();
+    listActivity.mockResolvedValue({
+      activity: Array.from({ length: 8 }, (_, place) =>
+        change(`ac-${String(place)}`, `2026-09-17T0${String(place)}:00:00Z`, {
+          kind: 'archived',
+        })
+      ),
+      next_cursor: null,
+    });
+    listComments.mockResolvedValue({ comments: [], next_cursor: null });
+    renderTimeline();
+
+    const timeline = await screen.findByRole('list', { name: 'Timeline' });
+    const more = await within(timeline).findByRole('button', {
+      name: 'Show 4 more events',
+    });
+    expect(within(timeline).getAllByRole('listitem')).toHaveLength(5);
+
+    await user.click(more);
+
+    expect(
+      within(timeline).queryByRole('button', { name: /more events/ })
+    ).toBe(null);
+    expect(within(timeline).getAllByRole('listitem')).toHaveLength(8);
+  });
+});

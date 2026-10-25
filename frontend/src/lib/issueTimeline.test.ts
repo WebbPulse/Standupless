@@ -6,6 +6,8 @@ import {
   buildTimeline,
   commentAttachmentIds,
   commentThreads,
+  foldLongRuns,
+  type TimelineItem,
 } from './issueTimeline';
 
 const context: ActivityContext = {
@@ -163,6 +165,165 @@ describe('buildTimeline', () => {
       context
     );
     expect(items[0]?.type).toBe('event');
+  });
+});
+
+describe('rapid repeated changes', () => {
+  const review = {
+    id: 'st-review',
+    name: 'In Review',
+    category: 'started' as const,
+  };
+  const withReview: ActivityContext = {
+    ...context,
+    statuses: [...context.statuses, review],
+  };
+
+  it('reads as one change from the first value to the last', () => {
+    const items = buildTimeline(
+      [
+        activity('a-1', '2026-09-20T10:00:00Z'),
+        activity('a-2', '2026-09-20T10:03:00Z', {
+          from: 'st-doing',
+          to: 'st-review',
+        }),
+      ],
+      [],
+      withReview
+    );
+    expect(items).toHaveLength(1);
+    const only = items[0];
+    expect(only?.id).toBe('a-2');
+    expect(only?.at).toBe('2026-09-20T10:03:00Z');
+    expect(only?.type === 'event' ? only.description.text : null).toBe(
+      'changed the status from Todo to In Review'
+    );
+  });
+
+  it('keeps changes further apart than the window', () => {
+    const items = buildTimeline(
+      [
+        activity('a-1', '2026-09-20T10:00:00Z'),
+        activity('a-2', '2026-09-20T10:06:00Z', {
+          from: 'st-doing',
+          to: 'st-done',
+        }),
+      ],
+      [],
+      context
+    );
+    expect(items.map((item) => item.id)).toEqual(['a-1', 'a-2']);
+  });
+
+  it('does not merge across a comment', () => {
+    const items = buildTimeline(
+      [
+        activity('a-1', '2026-09-20T10:00:00Z'),
+        activity('a-2', '2026-09-20T10:02:00Z', {
+          from: 'st-doing',
+          to: 'st-done',
+        }),
+      ],
+      [comment('c-1', '2026-09-20T10:01:00Z')],
+      context
+    );
+    expect(items.map((item) => item.id)).toEqual(['a-1', 'c-1', 'a-2']);
+  });
+
+  it('keeps both changes when the last undoes the first', () => {
+    const items = buildTimeline(
+      [
+        activity('a-1', '2026-09-20T10:00:00Z'),
+        activity('a-2', '2026-09-20T10:01:00Z', {
+          from: 'st-doing',
+          to: 'st-todo',
+        }),
+      ],
+      [],
+      context
+    );
+    expect(items.map((item) => item.id)).toEqual(['a-1', 'a-2']);
+  });
+
+  it('does not merge changes to different properties or by different people', () => {
+    const items = buildTimeline(
+      [
+        activity('a-1', '2026-09-20T10:00:00Z'),
+        activity('a-2', '2026-09-20T10:01:00Z', {
+          field: 'priority',
+          from: 'low',
+          to: 'high',
+        }),
+        activity('a-3', '2026-09-20T10:02:00Z', {
+          field: 'priority',
+          from: 'high',
+          to: 'urgent',
+          actor_id: 'u-2',
+        }),
+      ],
+      [],
+      context
+    );
+    expect(items.map((item) => item.id)).toEqual(['a-1', 'a-2', 'a-3']);
+  });
+});
+
+describe('foldLongRuns', () => {
+  const history = (count: number): TimelineItem[] =>
+    buildTimeline(
+      Array.from({ length: count }, (_, place) =>
+        activity(`a-${String(place)}`, `2026-09-20T1${String(place)}:00:00Z`, {
+          kind: 'created',
+          field: null,
+        })
+      ),
+      [],
+      context
+    );
+
+  it('leaves a short stretch alone', () => {
+    const rows = foldLongRuns(history(5));
+    expect(rows.map((row) => row.type)).toEqual(Array(5).fill('event'));
+  });
+
+  it('folds the middle of a long stretch, keeping two rows at each end', () => {
+    const rows = foldLongRuns(history(8));
+    expect(rows.map((row) => row.id)).toEqual([
+      'a-0',
+      'a-1',
+      'fold-a-0',
+      'a-6',
+      'a-7',
+    ]);
+    const fold = rows[2];
+    expect(fold?.type === 'fold' ? fold.items.length : 0).toBe(4);
+  });
+
+  it('shows every row once the fold is opened', () => {
+    const rows = foldLongRuns(history(8), new Set(['fold-a-0']));
+    expect(rows).toHaveLength(8);
+  });
+
+  it('starts a new stretch after each comment', () => {
+    const items = buildTimeline(
+      [
+        activity('a-1', '2026-09-20T10:00:00Z', {
+          kind: 'created',
+          field: null,
+        }),
+        activity('a-2', '2026-09-20T12:00:00Z', {
+          kind: 'created',
+          field: null,
+        }),
+      ],
+      [comment('c-1', '2026-09-20T11:00:00Z')],
+      context
+    );
+    expect(foldLongRuns(items).map((row) => row.id)).toEqual([
+      'a-1',
+      'c-1',
+      'a-2',
+    ]);
   });
 });
 
