@@ -875,8 +875,11 @@ class ViewRepository(DashboardRows):
             view_key=key["view_key"],
             team_id=team_id,
             user_id=user_id,
+            issue_created=values["issue_created"],
+            triage=values["triage"],
+            completed=values["completed"],
+            cancelled=values["cancelled"],
             created_at=existing.created_at if existing else utc_now(),
-            **values,
         )
         self._repository.put(as_item(row))
         return row
