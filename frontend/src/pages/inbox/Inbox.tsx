@@ -1277,6 +1277,10 @@ const emptyMessage = (view: InboxView): string =>
       ? 'Nothing here yet.'
       : 'Nothing unread.';
 
+/** What an empty Priority tab says lands in it, in the spirit of Linear's split inbox. */
+export const PRIORITY_EMPTY_MESSAGE =
+  'Nothing in Priority. Mentions, assignments, review requests, urgent issues, SLA breaches and reminders land here, and the view menu changes which kinds count.';
+
 /** What the list says when quick search leaves nothing. */
 const NO_MATCH_MESSAGE = 'No notifications match your search.';
 
@@ -2178,9 +2182,31 @@ export const Inbox: React.FC = () => {
               ))}
             </div>
           )}
-          {isLoading ? (
+          {isLoading || (allGroups.length === 0 && isPaging) ? (
             <div className="p-6">
               <Spinner label="Loading inbox" />
+            </div>
+          ) : allGroups.length === 0 &&
+            bucket === 'priority' &&
+            view.categories.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                icon={<LuInbox />}
+                message={PRIORITY_EMPTY_MESSAGE}
+                action={
+                  (counts?.other_unread ?? 0) > 0 ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        changeTab('other');
+                      }}
+                    >
+                      Go to Other
+                    </Button>
+                  ) : undefined
+                }
+              />
             </div>
           ) : allGroups.length === 0 ? (
             <div className="p-6 lg:hidden">
@@ -2220,14 +2246,21 @@ export const Inbox: React.FC = () => {
               ))}
             </ul>
           )}
-          {hasMore && (
+          {hasMore && !isLoading && !(allGroups.length === 0 && isPaging) && (
             <div className="p-3">
               <Button
                 variant="secondary"
                 size="sm"
                 disabled={isPaging}
+                aria-busy={isPaging}
                 onClick={loadMore}
               >
+                {isPaging && (
+                  <span
+                    aria-hidden="true"
+                    className="h-3 w-3 animate-spin rounded-full border-2 border-line-strong border-t-text-muted"
+                  />
+                )}
                 {isPaging ? 'Loading' : 'Load more'}
               </Button>
             </div>

@@ -6,7 +6,7 @@
  * filters does not describe the new list.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   serializeQueryKey,
@@ -48,6 +48,23 @@ export interface CursorPagesResult<T> {
   loadMore: () => void;
 }
 
+/** The most reads one Load more makes while the pages it reaches come back empty. */
+export const MAX_EMPTY_FOLLOWS = 10;
+
+/**
+ * Follows the cursor past empty pages, which a filtered read can return while
+ * more rows remain, until a page carries rows, the cursor runs out or `left`
+ * reads are spent.
+ */
+const followEmpty = <T>(
+  read: (cursor: string) => Promise<CursorPage<T>>,
+  page: CursorPage<T>,
+  left: number
+): Promise<CursorPage<T>> =>
+  page.rows.length > 0 || page.nextCursor === null || left <= 0
+    ? Promise.resolve(page)
+    : read(page.nextCursor).then((next) => followEmpty(read, next, left - 1));
+
 /** What the hook holds for the pages loaded after the first one. */
 interface LaterPages<T> {
   rows: T[];
@@ -64,7 +81,12 @@ interface LaterPages<T> {
  *
  * The later pages are dropped in the same render that changes the key or lands
  * a new first page, rather than a render later, so a cursor taken against the
- * old filters is never merged into the new list.
+ * old filters is never merged into the new list, and a page that lands after
+ * the key changed is thrown away.
+ *
+ * Load more follows the cursor past empty pages, so it either adds rows or
+ * reaches the end, and an empty first page that still carries a cursor loads
+ * on by itself once, so a list never sits blank above a Load more button.
  */
 export const useCursorPages = <T>(
   read: (
@@ -108,11 +130,19 @@ export const useCursorPages = <T>(
   const rows = held === null ? first.rows : merge(first.rows, held.rows);
   const cursor = held === null ? first.nextCursor : held.nextCursor;
 
+  const keyRef = useRef(serialisedKey);
+  useEffect(() => {
+    keyRef.current = serialisedKey;
+  }, [serialisedKey]);
+
   const loadMore = useCallback(() => {
     if (cursor === null || isPaging) return;
+    const startedOn = keyRef.current;
     setIsPaging(true);
     read(cursor)
+      .then((page) => followEmpty(read, page, MAX_EMPTY_FOLLOWS - 1))
       .then((page) => {
+        if (keyRef.current !== startedOn) return;
         setLater((held) => ({
           rows: held === null ? page.rows : merge(held.rows, page.rows),
           nextCursor: page.nextCursor,
@@ -123,6 +153,18 @@ export const useCursorPages = <T>(
         setIsPaging(false);
       });
   }, [read, merge, cursor, isPaging]);
+
+  const followed = useRef<CursorPage<T> | null>(null);
+  const emptyFirst =
+    data !== null &&
+    data.rows.length === 0 &&
+    data.nextCursor !== null &&
+    held === null;
+  useEffect(() => {
+    if (!emptyFirst || isPaging || followed.current === data) return;
+    followed.current = data;
+    loadMore();
+  }, [emptyFirst, isPaging, data, loadMore]);
 
   return {
     rows,

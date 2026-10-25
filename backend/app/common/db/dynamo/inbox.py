@@ -178,6 +178,16 @@ SNOOZE_MAX = RETENTION
 SPLIT_COUNT_SCAN = 1000
 """The most unread rows the split inbox counts read through, so a huge unread pile costs a bounded read."""
 
+FILL_SCAN = SPLIT_COUNT_SCAN
+"""The most rows one filtered list page reads through while filling, matching what the counts read."""
+
+FILL_READ = 100
+"""The fewest rows each read behind a filtered list page asks DynamoDB for."""
+
+_TABLE_KEYS = ("ws_user", "notification_id")
+
+_INDEX_KEYS = ("ws_user", "notification_id", "unread_at")
+
 
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -411,19 +421,19 @@ class InboxRepository:
         view. `include_snoozed` keeps rows still snoozed beside the rest, which with
         `unread_only` reads the partition for every row carrying `unread_at` rather
         than the index, so the order stays newest first. `kinds` keeps only those
-        kinds. A filtered page can come back short while still carrying a cursor.
+        kinds. A filtered page reads on until it fills, so it comes back short with a
+        cursor only once it has read `FILL_SCAN` rows without filling.
         """
         moment = now or utc_now()
         partition = inbox_partition(workspace_id, user_id)
         of_kind = Attr("kind").is_in(list(kinds)) if kinds else None
         if unread_only and not include_snoozed:
-            return self._repository.query(
+            return self._filled(
                 Key("ws_user").eq(partition) & Key("unread_at").lte(instant(moment)),
                 index_name=UNREAD_INDEX,
                 filter_expression=of_kind,
                 limit=limit,
-                start_key=dict(start_key) if start_key else None,
-                ascending=False,
+                start_key=start_key,
             )
         if unread_only:
             state: Any = Attr("unread_at").exists()
@@ -437,13 +447,55 @@ class InboxRepository:
         filter_expression = None
         for condition in conditions:
             filter_expression = condition if filter_expression is None else filter_expression & condition
-        return self._repository.query(
+        return self._filled(
             Key("ws_user").eq(partition),
+            index_name=None,
             filter_expression=filter_expression,
             limit=limit,
-            start_key=dict(start_key) if start_key else None,
-            ascending=False,
+            start_key=start_key,
         )
+
+    def _filled(
+        self,
+        key_condition: Any,
+        *,
+        index_name: str | None,
+        filter_expression: Any | None,
+        limit: int,
+        start_key: Mapping[str, Any] | None,
+    ) -> Page:
+        """One newest first page holding up to `limit` rows that pass `filter_expression`.
+
+        DynamoDB applies `Limit` before the filter, so a single read of a sparse
+        filter, such as the Priority tab over a partition of comments, can come back
+        empty while still carrying a cursor. This keeps reading until the page fills,
+        the partition runs out, or `FILL_SCAN` rows have been read. A read that passes
+        the page's end is cut at the last row kept and the cursor is built from it,
+        so the next page starts exactly after it.
+        """
+        held: list[Any] = []
+        scanned = 0
+        key: Mapping[str, Any] | None = start_key
+        while True:
+            page = self._repository.query(
+                key_condition,
+                index_name=index_name,
+                filter_expression=filter_expression,
+                limit=limit if filter_expression is None else max(limit, FILL_READ),
+                start_key=dict(key) if key else None,
+                ascending=False,
+            )
+            scanned += page.scanned_count
+            room = limit - len(held)
+            if len(page.items) > room:
+                held.extend(page.items[:room])
+                names = _INDEX_KEYS if index_name else _TABLE_KEYS
+                last = {name: held[-1][name] for name in names}
+                return Page(held, last, len(held), scanned)
+            held.extend(page.items)
+            key = page.last_evaluated_key
+            if key is None or len(held) >= limit or filter_expression is None or scanned >= FILL_SCAN:
+                return Page(held, dict(key) if key else None, len(held), scanned)
 
     def unread_count(self, workspace_id: str, user_id: str) -> int:
         """How many notifications are unread, counted no further than the cap.
