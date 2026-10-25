@@ -167,6 +167,17 @@ describe('comment card', () => {
     expect(screen.getByText('via MCP')).toBeInTheDocument();
   });
 
+  it('links the timestamp to the comment', () => {
+    renderCard();
+
+    const link = document.querySelector('a[href="#comment-c-1"]');
+    expect(link).not.toBeNull();
+    expect(link?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-09-20T10:00:00Z'
+    );
+  });
+
   it('leaves a web comment and an old comment unlabelled', () => {
     renderCard([], { source: 'web' });
     expect(screen.queryByText(/^via /)).toBeNull();

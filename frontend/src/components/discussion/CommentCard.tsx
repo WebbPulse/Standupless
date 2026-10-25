@@ -463,7 +463,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
             {author}
           </span>
         </MemberLink>
-        <RelativeTime value={comment.created_at} />
+        <a
+          href={`#${anchorOf(comment.comment_id)}`}
+          className="rounded-xs decoration-text-faint hover:underline"
+        >
+          <RelativeTime value={comment.created_at} />
+        </a>
         <ViaSource source={comment.source} />
         {comment.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>

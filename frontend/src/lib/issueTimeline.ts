@@ -3,7 +3,9 @@
  * list, oldest first, so the composer at the bottom follows the newest thing
  * that happened. A run of the same kind of entry by the same actor, such as a
  * push naming the issue in several commits, collapses into one row the reader
- * can expand.
+ * can expand. Rapid repeated changes to one property by one actor read as a
+ * single change from the first value to the last, and a long stretch of history
+ * between comments folds behind a row that shows it.
  */
 
 import type { AnchoredThread } from '../components/editor/commentAnchors';
@@ -44,6 +46,16 @@ export interface TimelineThread {
 
 /** Anything the timeline renders a row for. */
 export type TimelineItem = TimelineEvent | TimelineGroup | TimelineThread;
+
+/** The hidden middle of a long stretch of history, shown on request. */
+export interface TimelineFold {
+  type: 'fold';
+  id: string;
+  items: (TimelineEvent | TimelineGroup)[];
+}
+
+/** A timeline row once long stretches of history are folded. */
+export type TimelineRow = TimelineItem | TimelineFold;
 
 /**
  * Groups comments into roots and the replies under each. A reply whose root is
@@ -122,11 +134,140 @@ export const collapseRuns = (items: TimelineItem[]): TimelineItem[] => {
   return out;
 };
 
+/** The properties whose rapid repeated changes read as one change. */
+const MERGEABLE_FIELDS = new Set([
+  'status_id',
+  'assignee_id',
+  'priority',
+  'estimate',
+  'title',
+  'start_date',
+  'due_date',
+  'parent_id',
+  'cycle_id',
+  'project_id',
+]);
+
+/** How close together two changes must be to merge, in ms. */
+export const MERGE_WINDOW_MS = 5 * 60 * 1000;
+
+/** Whether an entry changes a property that merges. */
+const mergeable = (entry: ActivityRead): boolean =>
+  entry.kind === 'field_changed' &&
+  entry.field !== null &&
+  MERGEABLE_FIELDS.has(entry.field);
+
+/** Whether two recorded values are the same. */
+const sameValue = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Merges consecutive changes to one property by the same actor and client, each
+ * within the merge window of the last, into one change from the first value to
+ * the last. A run that ends where it began keeps its entries, since a change
+ * from a value to itself would read as nothing happening.
+ */
+export const mergeRapidChanges = (
+  items: TimelineItem[],
+  context: ActivityContext
+): TimelineItem[] => {
+  const out: TimelineItem[] = [];
+  let run: TimelineEvent[] = [];
+
+  const flush = (): void => {
+    const head = run[0];
+    const tail = run[run.length - 1];
+    if (head === undefined || tail === undefined) return;
+    if (run.length === 1 || sameValue(head.entry.from, tail.entry.to)) {
+      out.push(...run);
+    } else {
+      const entry: ActivityRead = { ...tail.entry, from: head.entry.from };
+      out.push({
+        type: 'event',
+        id: tail.id,
+        at: tail.at,
+        entry,
+        description: describeActivity(entry, context),
+      });
+    }
+    run = [];
+  };
+
+  for (const item of items) {
+    const tail = run[run.length - 1];
+    if (
+      item.type === 'event' &&
+      tail !== undefined &&
+      mergeable(item.entry) &&
+      item.entry.field === tail.entry.field &&
+      sameActor(tail, item) &&
+      Date.parse(item.at) - Date.parse(tail.at) <= MERGE_WINDOW_MS
+    ) {
+      run.push(item);
+      continue;
+    }
+    flush();
+    if (item.type === 'event' && mergeable(item.entry)) {
+      run = [item];
+    } else {
+      out.push(item);
+    }
+  }
+  flush();
+  return out;
+};
+
+/** How many history rows in a row stay unfolded. */
+export const FOLD_THRESHOLD = 5;
+
+/** How many rows a fold leaves showing at each end. */
+const FOLD_EDGE = 2;
+
+/**
+ * Folds the middle of every stretch of more than FOLD_THRESHOLD history rows
+ * between comments, leaving FOLD_EDGE rows showing at each end. A fold is named
+ * after the first row of its stretch, so it stays open as newer rows arrive.
+ */
+export const foldLongRuns = (
+  items: TimelineItem[],
+  expanded: ReadonlySet<string> = new Set()
+): TimelineRow[] => {
+  const out: TimelineRow[] = [];
+  let run: (TimelineEvent | TimelineGroup)[] = [];
+
+  const flush = (): void => {
+    const head = run[0];
+    if (head === undefined) return;
+    const id = `fold-${head.id}`;
+    if (run.length <= FOLD_THRESHOLD || expanded.has(id)) {
+      out.push(...run);
+    } else {
+      out.push(
+        ...run.slice(0, FOLD_EDGE),
+        { type: 'fold', id, items: run.slice(FOLD_EDGE, -FOLD_EDGE) },
+        ...run.slice(-FOLD_EDGE)
+      );
+    }
+    run = [];
+  };
+
+  for (const item of items) {
+    if (item.type === 'thread') {
+      flush();
+      out.push(item);
+    } else {
+      run.push(item);
+    }
+  }
+  flush();
+  return out;
+};
+
 /** Orders by time, then by id, so two rows in the same second never swap. */
 const byTime = (a: TimelineItem, b: TimelineItem): number =>
   a.at === b.at ? a.id.localeCompare(b.id) : a.at.localeCompare(b.at);
 
-/** Builds the merged timeline, oldest first, with runs collapsed. */
+/** Builds the merged timeline, oldest first, with rapid changes merged and runs collapsed. */
 export const buildTimeline = (
   activity: ActivityRead[],
   comments: CommentRead[],
@@ -142,7 +283,7 @@ export const buildTimeline = (
   const merged: TimelineItem[] = [...events, ...commentThreads(comments)].sort(
     byTime
   );
-  return collapseRuns(merged);
+  return collapseRuns(mergeRapidChanges(merged, context));
 };
 
 /** Every attachment id the loaded comments show inline. */
