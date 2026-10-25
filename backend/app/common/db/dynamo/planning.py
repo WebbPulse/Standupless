@@ -118,6 +118,9 @@ PULSE_READ = "pulse_read"
 PULSE_READ_PREFIX = "pulse_read#"
 """Where each person's Pulse read marker is filed."""
 
+CYCLE_FEED = "cycle_feed"
+"""The kind of one person's cycle calendar feed row for one team."""
+
 PulseSubject = Literal["project", "initiative"]
 
 PULSE_SUBJECTS: tuple[str, ...] = ("project", "initiative")
@@ -355,6 +358,20 @@ def pulse_read_key(user_id: str) -> str:
 def cycle_prefix(team_id: str) -> str:
     """The sort key prefix every cycle of one team shares."""
     return f"team#{team_id}#cycle#"
+
+
+def cycle_feed_prefix(team_id: str) -> str:
+    """The sort key prefix every cycle calendar feed of one team shares.
+
+    Filed under `cyclefeed#` rather than `cycle#`, so a cycle listing never reads a
+    feed row, while the team purge still clears it beside the team's cycles.
+    """
+    return f"team#{team_id}#cyclefeed#"
+
+
+def cycle_feed_key(team_id: str, user_id: str) -> str:
+    """The sort key of one person's cycle calendar feed for one team."""
+    return f"{cycle_feed_prefix(team_id)}{user_id}"
 
 
 def cycle_history_prefix(team_id: str, cycle_id: str | None = None) -> str:
@@ -1150,6 +1167,20 @@ def is_current_project(item: Mapping[str, Any]) -> bool:
     return str(item.get("kind", "")) == PROJECT and bool(item.get("team_ids"))
 
 
+class CycleFeed(BaseModel):
+    """One person's cycle calendar feed for one team, holding only the token's hash.
+
+    The token itself is answered once, when it is minted, and never stored, so a
+    read of this table cannot reproduce a working feed URL.
+    """
+
+    workspace_id: str
+    team_id: str
+    user_id: str
+    token_hash: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class CycleSnapshot(BaseModel):
     """One cycle's counters as they stood at the end of one day.
 
@@ -1889,6 +1920,25 @@ class PlanningRepository:
             }
         )
 
+    def get_cycle_feed(self, workspace_id: str, team_id: str, user_id: str) -> CycleFeed | None:
+        """One person's cycle calendar feed for one team, or `None` when they hold none."""
+        item = self._get(workspace_id, cycle_feed_key(team_id, user_id))
+        if item is None or str(item.get("kind", "")) != CYCLE_FEED:
+            return None
+        return CycleFeed.model_validate(dict(item))
+
+    def put_cycle_feed(self, feed: CycleFeed) -> CycleFeed:
+        """Store one person's feed for one team, replacing and so revoking any earlier token."""
+        item = feed.model_dump(mode="json")
+        item["planning_key"] = cycle_feed_key(feed.team_id, feed.user_id)
+        item["kind"] = CYCLE_FEED
+        self._repository.put(item)
+        return feed
+
+    def delete_cycle_feed(self, workspace_id: str, team_id: str, user_id: str) -> bool:
+        """Revoke one person's feed for one team, reporting whether one was there."""
+        return self.delete(workspace_id, cycle_feed_key(team_id, user_id))
+
     def claim_milestone_completion(self, workspace_id: str, project_id: str, milestone_id: str) -> bool:
         """Mark a milestone's completion as posted to Pulse, answering false when it already was or is gone."""
         try:
@@ -2373,6 +2423,8 @@ class PlanningRepository:
         page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, None)
         if not page.items:
             page = self._query_prefix(workspace_id, cycle_history_prefix(team_id), limit, None)
+        if not page.items:
+            page = self._query_prefix(workspace_id, cycle_feed_prefix(team_id), limit, None)
         if not page.items:
             return 0
         return self._repository.delete_many(

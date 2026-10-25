@@ -10,6 +10,7 @@
 import type { QueryValue } from '@webbpulse/api-client';
 import apiClient from './client';
 import type {
+  CycleCalendarFeedRead,
   CycleCreate,
   CycleHistoryRead,
   CycleListQuery,
@@ -237,6 +238,46 @@ export const updateCycle = async (
  * Starts a team's next upcoming cycle today. The current cycle ends yesterday
  * and its unfinished issues move into the started one.
  */
+const cycleCalendarFeedPath = (workspaceId: string): string =>
+  `${cyclesPath(workspaceId)}/calendar-feed`;
+
+/** Whether the caller holds a cycle calendar feed for a team, never its URL. */
+export const getCycleCalendarFeed = async (
+  workspaceId: string,
+  teamId: string
+): Promise<CycleCalendarFeedRead> => {
+  const response = await apiClient.get<CycleCalendarFeedRead>(
+    cycleCalendarFeedPath(workspaceId),
+    { query: { team_id: teamId } }
+  );
+  return response.data;
+};
+
+/**
+ * Mints the caller's cycle calendar feed URL for a team. Minting again retires
+ * the URL minted before, so this is also how a leaked URL is rotated.
+ */
+export const createCycleCalendarFeed = async (
+  workspaceId: string,
+  teamId: string
+): Promise<CycleCalendarFeedRead> => {
+  const response = await apiClient.post<CycleCalendarFeedRead>(
+    cycleCalendarFeedPath(workspaceId),
+    { team_id: teamId }
+  );
+  return response.data;
+};
+
+/** Revokes the caller's cycle calendar feed for a team. */
+export const revokeCycleCalendarFeed = async (
+  workspaceId: string,
+  teamId: string
+): Promise<void> => {
+  await apiClient.delete<void>(cycleCalendarFeedPath(workspaceId), {
+    query: { team_id: teamId },
+  });
+};
+
 export const startCycleToday = async (
   workspaceId: string,
   cycleId: string,

@@ -3658,6 +3658,63 @@
         "title": "CustomerRequestRead",
         "type": "object"
       },
+      "CycleCalendarFeedCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/cycles/calendar-feed` takes.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "CycleCalendarFeedCreate",
+        "type": "object"
+      },
+      "CycleCalendarFeedRead": {
+        "description": "The caller's cycle calendar feed for one team.\n\n`url` carries the feed token, so it is answered only by the call that minted\nit: the token is stored as a hash and cannot be read back. A read of an\nexisting feed says it is `active` with a null `url`, and minting again revokes\nthe old URL.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "team_id",
+          "active"
+        ],
+        "title": "CycleCalendarFeedRead",
+        "type": "object"
+      },
       "CycleCapacityRead": {
         "description": "The active or next cycle's current scope, which capacity guidance weighs.",
         "properties": {
@@ -31278,6 +31335,170 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/cycles/calendar-feed": {
+      "delete": {
+        "description": "Revoke the caller's feed for one team; revoking none is not an error.",
+        "operationId": "revoke_cycle_calendar_feed_api_workspaces__workspace_id__cycles_calendar_feed_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Revoke Cycle Calendar Feed",
+        "tags": [
+          "planning"
+        ]
+      },
+      "get": {
+        "description": "Whether the caller holds a cycle calendar feed for one team, never its URL.",
+        "operationId": "read_cycle_calendar_feed_api_workspaces__workspace_id__cycles_calendar_feed_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleCalendarFeedRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Cycle Calendar Feed",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Mint the caller's feed URL for one team, revoking any URL minted before.\n\nThe answer is the only place the token ever appears; the row keeps its hash.",
+        "operationId": "mint_cycle_calendar_feed_api_workspaces__workspace_id__cycles_calendar_feed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CycleCalendarFeedCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleCalendarFeedRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Mint Cycle Calendar Feed",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/cycles/velocity": {
       "get": {
         "description": "A team's completed work over its last completed cycles, and the cycle to plan next.\n\nEach cycle's figures are its value on its end date, so issues a cycle close\ncarried out the day after still count toward the scope it ended with and not\ntoward its completed work. Registered before the cycle id route so `velocity`\nis never read as a cycle id.",
@@ -47875,6 +48096,67 @@
         "summary": "Update Cycle Settings",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/cycles.ics": {
+      "get": {
+        "description": "A team's cycles as an iCalendar feed, on a feed token.\n\nThe last three completed cycles, the current one and every upcoming one, each\nan all-day event. The token's owner must still be able to read the team.",
+        "operationId": "read_cycle_calendar_api_workspaces__workspace_id__teams__team_id__cycles_ics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/calendar": {}
+            },
+            "description": "The team's cycles as iCalendar."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Cycle Calendar",
+        "tags": [
+          "planning"
         ]
       }
     },

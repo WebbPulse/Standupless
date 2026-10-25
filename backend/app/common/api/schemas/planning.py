@@ -434,6 +434,27 @@ class CycleStartTodayRead(BaseModel):
     moved_issues: int = 0
 
 
+class CycleCalendarFeedCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/cycles/calendar-feed` takes."""
+
+    team_id: str = Field(min_length=1)
+
+
+class CycleCalendarFeedRead(BaseModel):
+    """The caller's cycle calendar feed for one team.
+
+    `url` carries the feed token, so it is answered only by the call that minted
+    it: the token is stored as a hash and cannot be read back. A read of an
+    existing feed says it is `active` with a null `url`, and minting again revokes
+    the old URL.
+    """
+
+    team_id: str
+    active: bool
+    created_at: Optional[datetime] = None
+    url: Optional[str] = None
+
+
 class CycleHistoryPoint(BaseModel):
     """One day of a cycle's burn-up, in issues and in estimate points.
 

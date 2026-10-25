@@ -17,6 +17,9 @@
  * "Start cycle today", which ends the current cycle yesterday and moves its
  * open issues across, behind a confirm that names the cycle and the count.
  *
+ * The header's `...` menu offers "Subscribe to cycle calendar", a private
+ * feed URL that puts the team's cycles in a calendar app as all-day events.
+ *
  * Velocity sits under the current cycle: what the last closed cycles
  * delivered and how the cycle being planned compares with that average.
  *
@@ -33,6 +36,7 @@ import {
 } from '@webbpulse/api-client/react';
 import {
   LuBan,
+  LuCalendarPlus,
   LuChevronRight,
   LuEllipsis,
   LuLayers,
@@ -58,6 +62,7 @@ import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
 import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import Spinner from '../../components/ui/spinner';
+import CycleCalendarDialog from '../../components/planning/CycleCalendarDialog';
 import ProgressBar from '../../components/planning/ProgressBar';
 import ProgressRing from '../../components/planning/ProgressRing';
 import VelocityPanel from '../../components/planning/VelocityPanel';
@@ -456,6 +461,7 @@ export const Cycles: React.FC = () => {
   } = useTeam(keyPrefix);
 
   const [isCreating, setIsCreating] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -615,7 +621,7 @@ export const Cycles: React.FC = () => {
     count: visible.length,
     onActivate,
     resetKey: visible.map((row) => row.cycle_id).join(','),
-    enabled: !isCreating && starting === null,
+    enabled: !isCreating && !isSubscribing && starting === null,
   });
 
   useShortcut({
@@ -667,17 +673,37 @@ export const Cycles: React.FC = () => {
         </div>
       }
       actions={
-        canEdit ? (
-          <Button
-            variant="primary"
-            onClick={() => {
-              setIsCreating(true);
-            }}
+        <div className="flex items-center gap-2">
+          <Menu
+            label="Cycles options"
+            align="end"
+            trigger={(trigger) => (
+              <IconButton label="Cycles options" {...trigger}>
+                <LuEllipsis className="h-4 w-4" />
+              </IconButton>
+            )}
           >
-            <LuPlus aria-hidden="true" />
-            New cycle
-          </Button>
-        ) : undefined
+            <MenuItem
+              onSelect={() => {
+                setIsSubscribing(true);
+              }}
+            >
+              <LuCalendarPlus aria-hidden="true" className="h-3.5 w-3.5" />
+              Subscribe to cycle calendar
+            </MenuItem>
+          </Menu>
+          {canEdit && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setIsCreating(true);
+              }}
+            >
+              <LuPlus aria-hidden="true" />
+              New cycle
+            </Button>
+          )}
+        </div>
       }
     >
       <div className="space-y-6">
@@ -799,6 +825,17 @@ export const Cycles: React.FC = () => {
             </div>
           </div>
         </Dialog>
+      )}
+
+      {isSubscribing && (
+        <CycleCalendarDialog
+          workspaceId={workspaceId}
+          teamId={team.id}
+          teamName={team.name}
+          onClose={() => {
+            setIsSubscribing(false);
+          }}
+        />
       )}
 
       {isCreating && (
