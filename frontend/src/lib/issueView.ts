@@ -1798,10 +1798,11 @@ export const groupKeysOf = (
       const held = labelsOf(issue, context).filter((label) =>
         members.has(label.id)
       );
-      if (held.length === 0) return [NONE];
+      const [first] = held;
+      if (first === undefined) return [NONE];
       return groupAllowsMultiple(issue, field, context)
         ? [...new Set(held.map(labelGroupKey))]
-        : [labelGroupKey(held[0])];
+        : [labelGroupKey(first)];
     }
   }
 };
