@@ -365,3 +365,52 @@ def test_a_comment_carries_its_reactions_into_the_thread(client: TestClient, wor
     rows = client.get(f"/api/workspaces/{workspace}/issues/{issue.issue_id}/comments").json()["comments"]
     assert rows[0]["reactions"][0]["emoji"] == ROCKET
     assert rows[0]["reactions"][0]["count"] == 1
+
+
+def test_a_custom_emoji_is_a_reaction_and_outlives_its_deletion(
+    client: TestClient, workspace: str, issue: Any, repositories: Any
+) -> None:
+    """A custom shortcode reacts while the emoji exists, and stays readable and removable after."""
+    from app.common.db.dynamo.custom_emoji import CustomEmoji
+
+    repositories.custom_emoji.create(
+        CustomEmoji(
+            workspace_id=workspace, name="team-logo", image_key=f"icons/emoji/{workspace}/{'a' * 22}", created_by=MEMBER
+        )
+    )
+    sign_in(client, MEMBER)
+    group = add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=":Team-Logo:")
+    assert group["emoji"] == ":team-logo:"
+
+    repositories.custom_emoji.delete(workspace, "team-logo")
+    params = {"target_id": issue.issue_id, "target_kind": "issue"}
+    listed = client.get(f"/api/workspaces/{workspace}/reactions", params=params).json()["reactions"]
+    assert [entry["emoji"] for entry in listed] == [":team-logo:"]
+
+    again = client.put(f"/api/workspaces/{workspace}/reactions", json={**params, "emoji": ":team-logo:"})
+    assert again.status_code == 422
+    assert again.json()["error_code"] == "UNKNOWN_EMOJI"
+
+    removed = client.delete(f"/api/workspaces/{workspace}/reactions", params={**params, "emoji": ":team-logo:"})
+    assert removed.status_code == 204
+    assert client.get(f"/api/workspaces/{workspace}/reactions", params=params).json()["reactions"] == []
+
+
+def test_a_builtin_shortcode_reacts_as_its_emoji(client: TestClient, workspace: str, issue: Any) -> None:
+    """`:rocket:` is the Unicode rocket, so it groups with a picker tap on the same emoji."""
+    sign_in(client, MEMBER)
+    add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=ROCKET)
+    group = add(client, workspace, target_id=issue.issue_id, target_kind="issue", emoji=":rocket:")
+    assert group["emoji"] == ROCKET
+    assert group["count"] == 1
+
+
+def test_an_unknown_custom_shortcode_is_refused(client: TestClient, workspace: str, issue: Any) -> None:
+    """A shortcode the workspace never added is not a reaction."""
+    sign_in(client, MEMBER)
+    response = client.put(
+        f"/api/workspaces/{workspace}/reactions",
+        json={"target_id": issue.issue_id, "target_kind": "issue", "emoji": ":nope-not-here:"},
+    )
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "UNKNOWN_EMOJI"

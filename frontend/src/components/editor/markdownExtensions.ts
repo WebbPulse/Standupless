@@ -45,6 +45,7 @@ import { isLinkTarget } from '../../lib/markdown';
 import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
+import { CustomEmojiChips } from './customEmojiChips';
 import {
   EditorShortcuts,
   LinearOrderedList,
@@ -338,6 +339,7 @@ export const markdownExtensions = (
     MentionChips,
     EmojiSuggestion,
     EmoticonConversion,
+    CustomEmojiChips,
     DocumentLinkSuggestion,
     ReferenceChips.configure({
       ...(options.isIssueKey === undefined

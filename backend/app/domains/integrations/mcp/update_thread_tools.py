@@ -48,16 +48,18 @@ def _add_project_update_comment(call: ToolCall) -> Any:
 
 
 def _react_to_project_update(call: ToolCall) -> Any:
-    """Add or take back the caller's emoji reaction on an update or one of its replies."""
+    """Add or take back the caller's emoji reaction on an update or one of its replies.
+
+    The emoji is validated on both paths, so a shortcode is stored and removed in
+    the same form, and a custom one must exist in the workspace to be added.
+    """
     project_id = project_id_ref(call, call.require("project_id"))
     update_id = str(call.require("update_id"))
     comment_id = call.optional("comment_id")
-    if call.optional("remove", False):
-        remove_update_reaction(
-            call.repositories, call.context, project_id, update_id, str(call.require("emoji")), comment_id
-        )
-        return {"removed": True, "update_id": update_id, "comment_id": comment_id}
     payload = ProjectUpdateReactionWrite.model_validate({"emoji": call.require("emoji"), "comment_id": comment_id})
+    if call.optional("remove", False):
+        remove_update_reaction(call.repositories, call.context, project_id, update_id, payload.emoji, comment_id)
+        return {"removed": True, "update_id": update_id, "comment_id": comment_id}
     group = add_update_reaction(call.repositories, call.context, project_id, update_id, payload)
     return group.model_dump(mode="json")
 
@@ -101,7 +103,10 @@ UPDATE_THREAD_TOOLS: tuple[Tool, ...] = (
             {
                 "project_id": string(PROJECT_HELP),
                 "update_id": string(UPDATE_HELP),
-                "emoji": string("One emoji, such as 👍"),
+                "emoji": string(
+                    "One emoji, such as 👍, a built-in shortcode such as :tada:, "
+                    "or a custom workspace emoji shortcode such as :team-logo:"
+                ),
                 "comment_id": string("A reply on the update to react to instead of the update itself"),
                 "remove": {"type": "boolean", "description": "Take the reaction back rather than add it"},
             },

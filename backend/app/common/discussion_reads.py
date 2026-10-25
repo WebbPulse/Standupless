@@ -60,23 +60,46 @@ def is_single_emoji(value: str) -> bool:
 
 
 def check_emoji(value: str) -> str:
-    """Hold a reaction to exactly one emoji, in either presentation form.
+    """Hold a reaction to exactly one emoji, Unicode or a workspace's custom one.
 
     Any single emoji rather than an allow list, because a reader reaches for the
     one that says what they mean. Text and runs of emoji are refused, which keeps
     the sort keys a partition can hold to Unicode's emoji list. The normalised form
     is what is returned, so the stored sort key is the same whether or not the
     caller sent the variation selector.
+
+    A `:shortcode:` naming a built-in emoji is stored as that emoji, so an agent
+    may write `:tada:`. Any other well formed `:name:` is held as a custom emoji
+    shortcode, which the write route then checks the workspace really has.
     """
+    from app.common.custom_emoji import builtin_from_shortcode, custom_name
+
     raw = value.strip()
+    builtin = builtin_from_shortcode(raw)
+    if builtin is not None:
+        raw = builtin
+    elif custom_name(raw.lower()) is not None:
+        return raw.lower()
     candidate = normalize_emoji(raw)
     if not candidate:
         raise ValueError("emoji must not be empty")
     if len(candidate) > EMOJI_MAX_CODE_POINTS:
         raise ValueError(f"emoji must be at most {EMOJI_MAX_CODE_POINTS} code points")
     if not is_single_emoji(raw):
-        raise ValueError("emoji must be a single emoji")
+        raise ValueError("emoji must be a single emoji or a custom :shortcode:")
     return candidate
+
+
+def reaction_key(value: str) -> str:
+    """The stored form of an emoji a removal names, matching what the write stored.
+
+    A value the write would accept maps the same way, so `:rocket:` removes the
+    rocket; anything else is only normalised, so a removal is never refused.
+    """
+    try:
+        return check_emoji(value)
+    except ValueError:
+        return normalize_emoji(value)
 
 
 class AuthorRead(BaseModel):

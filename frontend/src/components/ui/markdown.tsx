@@ -25,6 +25,7 @@ import {
   type InlineNode,
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
+import { EmojiText } from './custom-emoji';
 import HighlightedCode from './highlighted-code';
 import MermaidBlock from './mermaid-block';
 import IssueChip from './IssueChip';
@@ -95,7 +96,7 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
     const key = `${prefix}-${String(index)}`;
     switch (node.type) {
       case 'text':
-        return <React.Fragment key={key}>{node.value}</React.Fragment>;
+        return <EmojiText key={key} value={node.value} />;
       case 'break':
         return <br key={key} />;
       case 'code':

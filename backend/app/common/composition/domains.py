@@ -66,6 +66,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         approved_domains,
         audit,
         billing,
+        custom_emoji,
         exports,
         icons,
         scim,
@@ -82,6 +83,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (approved_domains.router, "/workspaces", ("workspaces",)),
         (workspaces.router, "/workspaces", ("workspaces",)),
         (icons.router, "/workspaces", ("workspaces",)),
+        (custom_emoji.router, "/workspaces", ("workspaces",)),
         (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
@@ -228,7 +230,16 @@ authorization never writes a membership, and a token can only ever be issued for
 workspace the consenting user already belongs to.
 """
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "counters", "idempotency", "audit")
+_WORKSPACES_REPOSITORIES = (
+    "workspaces",
+    "memberships",
+    "invites",
+    "api_keys",
+    "counters",
+    "idempotency",
+    "audit",
+    "custom_emoji",
+)
 
 _WORKSPACES_READ_REPOSITORIES = ("users", "teams")
 
@@ -395,7 +406,7 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions", "activity")
 
-_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys")
+_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys", "custom_emoji")
 
 _INTEGRATIONS_REPOSITORIES = (
     "github",
@@ -431,6 +442,7 @@ with the trail each save, restore and delete leaves.
 
 _INTEGRATIONS_READ_REPOSITORIES = (
     "users",
+    "custom_emoji",
     "api_keys",
     "oauth_links",
     "search_index",
@@ -510,6 +522,7 @@ path, which allocates their keys from `counters`.
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",
+    "custom_emoji",
     "workspaces",
     "users",
     "teams",

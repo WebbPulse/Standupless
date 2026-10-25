@@ -41,6 +41,7 @@ import {
 } from '../../hooks/useCustomizeSidebar';
 import type { CreateTeamState } from '../../hooks/useCreateTeam';
 import { CreatePlanningContext } from '../../hooks/useCreatePlanning';
+import { usePublishCustomEmoji } from '../../hooks/useCustomEmojiList';
 import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -233,6 +234,7 @@ const WorkspaceOverlays: React.FC = () => {
     rememberWorkspace(slug);
   }, [slug]);
   useWorkspaceSwitchCacheClear(workspaceId);
+  usePublishCustomEmoji(workspaceId);
 
   const writable = useMemo(
     () => teams.filter((team) => canWriteIssues(role, team.role)),

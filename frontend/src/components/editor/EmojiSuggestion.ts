@@ -9,7 +9,9 @@
  * like `10:30` and URLs stay as typed.
  *
  * The emoji goes in as its Unicode character, which is what the Markdown
- * stores, so nothing new has to round trip. The menu is drawn by the plugin
+ * stores, so nothing new has to round trip. The workspace's custom emoji lead
+ * the list when their name starts with what was typed, and go in as their
+ * `:name:` shortcode, which the Markdown keeps and renderers draw as images. The menu is drawn by the plugin
  * itself, with the same classes as the mention and reference menus, so a
  * surface gains it by registering the extension and nothing else.
  */
@@ -23,6 +25,10 @@ import {
 } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import {
+  customEmojiSnapshot,
+  subscribeCustomEmoji,
+} from '../../lib/customEmoji';
+import {
   findShortcode,
   loadedShortcodeCatalog,
   loadShortcodeCatalog,
@@ -31,6 +37,36 @@ import {
   searchShortcodes,
   type EmojiEntry,
 } from '../../lib/emojiCatalog';
+
+/** One row of the menu: a Unicode entry, or a custom emoji with its image. */
+export type EmojiSuggestionItem = EmojiEntry & { image?: string };
+
+/** How many custom emoji the menu lists ahead of the Unicode ones. */
+const CUSTOM_LIMIT = 4;
+
+/** The workspace's custom emoji whose name starts with the typed code. */
+const customMatches = (query: string): EmojiSuggestionItem[] => {
+  const typed = query.toLowerCase().replaceAll('_', '-');
+  const hits: EmojiSuggestionItem[] = [];
+  for (const row of customEmojiSnapshot().values()) {
+    if (row.name.replaceAll('_', '-').startsWith(typed)) {
+      hits.push({
+        emoji: row.shortcode,
+        label: row.name,
+        keywords: [],
+        group: -1,
+        shortcodes: [row.name],
+        image: row.url,
+      });
+    }
+  }
+  return hits
+    .sort(
+      (a, b) =>
+        a.label.length - b.label.length || a.label.localeCompare(b.label)
+    )
+    .slice(0, CUSTOM_LIMIT);
+};
 
 /** The shortcode being typed: where its colon sits in the block, and the code. */
 export interface EmojiQuery {
@@ -43,7 +79,7 @@ export interface EmojiSuggestionState {
   from: number;
   to: number;
   query: string;
-  items: EmojiEntry[];
+  items: EmojiSuggestionItem[];
   highlight: number;
   dismissed: number | null;
 }
@@ -133,10 +169,18 @@ const nextState = (
         : null;
   if (dismissed !== null) return { ...closed, dismissed };
   const catalog = loadedShortcodeCatalog();
-  const items =
-    catalog === null
+  const custom = customMatches(typed.query);
+  const items: EmojiSuggestionItem[] = [
+    ...custom,
+    ...(catalog === null
       ? []
-      : searchShortcodes(catalog, typed.query, recentEmoji());
+      : searchShortcodes(
+          catalog,
+          typed.query,
+          recentEmoji(),
+          8 - custom.length
+        )),
+  ];
   const sameQuery = held.query === typed.query && held.from === typed.from;
   let highlight = sameQuery ? held.highlight : 0;
   if (action?.type === 'move' && items.length > 0) {
@@ -154,11 +198,11 @@ const isOpen = (held: EmojiSuggestionState | undefined): boolean =>
 /** Replaces the typed shortcode with an emoji and remembers it as used. */
 const insertEmoji = (
   view: EditorView,
-  entry: EmojiEntry,
+  entry: EmojiSuggestionItem,
   from: number,
   to: number
 ): void => {
-  rememberEmoji(entry.emoji);
+  if (entry.image === undefined) rememberEmoji(entry.emoji);
   view.dispatch(view.state.tr.insertText(entry.emoji, from, to));
 };
 
@@ -187,7 +231,15 @@ const drawRows = (
       const glyph = document.createElement('span');
       glyph.className = 'w-5 shrink-0 text-center text-base leading-none';
       glyph.setAttribute('aria-hidden', 'true');
-      glyph.textContent = entry.emoji;
+      if (entry.image === undefined) {
+        glyph.textContent = entry.emoji;
+      } else {
+        const image = document.createElement('img');
+        image.src = entry.image;
+        image.alt = '';
+        image.className = 'inline-block h-5 w-5 object-contain';
+        glyph.append(image);
+      }
       const code = document.createElement('span');
       code.className = 'min-w-0 flex-1 truncate text-text';
       code.textContent = `:${entry.shortcodes?.[0] ?? entry.label}:`;
@@ -254,6 +306,9 @@ const createMenuView = (view: EditorView) => {
   let destroyed = false;
   let loading = false;
   let drawn: EmojiSuggestionState | null = null;
+  const unsubscribe = subscribeCustomEmoji(() => {
+    if (!destroyed) act(view, { type: 'refresh' });
+  });
 
   const update = (current: EditorView): void => {
     const held = emojiSuggestionKey.getState(current.state);
@@ -293,6 +348,7 @@ const createMenuView = (view: EditorView) => {
     update,
     destroy: () => {
       destroyed = true;
+      unsubscribe();
       list.remove();
     },
   };

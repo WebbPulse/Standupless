@@ -63,7 +63,9 @@ _ID = r"[A-Za-z0-9_-]{1,64}"
 ICON_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{22}$")
 """The shape `new_icon_id` produces, so a commit can refuse anything else before S3."""
 
-ICON_KEY_PATTERN = re.compile(rf"^icons/(?:workspace/{_ID}|team/{_ID}/{_ID}|user/{_ID})/[A-Za-z0-9_-]{{22}}$")
+ICON_KEY_PATTERN = re.compile(
+    rf"^icons/(?:workspace/{_ID}|team/{_ID}/{_ID}|user/{_ID}|emoji/{_ID})/[A-Za-z0-9_-]{{22}}$"
+)
 """Every key an icon can live under, and nothing else in the bucket."""
 
 
@@ -114,6 +116,15 @@ def team_owner(workspace_id: str, team_id: str) -> IconOwner:
 def workspace_teams_prefix(workspace_id: str) -> str:
     """The prefix every team icon in one workspace shares, for the workspace purge."""
     return f"icons/team/{workspace_id}/"
+
+
+def emoji_owner(workspace_id: str) -> IconOwner:
+    """The icon owner every custom emoji image of one workspace is written under.
+
+    Unlike a logo the prefix holds many live images, one per emoji, so a commit
+    never sweeps it; a delete names its one key and the workspace purge clears it.
+    """
+    return IconOwner(f"icons/emoji/{workspace_id}/")
 
 
 def user_owner(user_id: str) -> IconOwner:
@@ -184,6 +195,11 @@ def _client() -> Any:
     import boto3
 
     return boto3.client("s3", region_name=settings.AWS_REGION or None)
+
+
+def icons_client() -> Any:
+    """The S3 client icon objects are read and written through, for callers outside this module."""
+    return _client()
 
 
 def _matches_magic(content_type: str, head: bytes) -> bool:
