@@ -135,6 +135,13 @@ export interface IssueListFilters {
   has_sub_issues?: 'true' | 'false';
   cycle_id?: FilterValues;
   cycle_id_not?: FilterValues;
+  /** Issues added to their cycle before it started or within its first day (`planned`), or later (`after_start`). */
+  cycle_added?: FilterValues<'planned' | 'after_start'>;
+  cycle_added_not?: FilterValues<'planned' | 'after_start'>;
+  /** Issues added to their cycle after this day. */
+  cycle_added_after?: string;
+  /** Issues added to their cycle before this day. */
+  cycle_added_before?: string;
   project_id?: FilterValues;
   project_id_not?: FilterValues;
   project_milestone_id?: FilterValues;

@@ -1216,6 +1216,12 @@ export interface IssueRead {
    */
   cancelled_at?: string | null;
   /**
+   * When the issue joined the cycle it sits in, null outside a cycle.
+   * Optional so a row read before it was stamped reads as none, which the
+   * "Added to cycle" filter treats as planned.
+   */
+  cycle_added_at?: string | null;
+  /**
    * When the issue entered its current status, for time in status. Optional
    * so a row built on the client before the server stamps it reads its
    * creation instead.

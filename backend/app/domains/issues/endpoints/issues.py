@@ -109,6 +109,10 @@ def list_issues(
     updated_before: Annotated[Optional[str], Query()] = None,
     completed_after: Annotated[Optional[str], Query()] = None,
     completed_before: Annotated[Optional[str], Query()] = None,
+    cycle_added: Values = None,
+    cycle_added_not: Values = None,
+    cycle_added_after: Annotated[Optional[str], Query()] = None,
+    cycle_added_before: Annotated[Optional[str], Query()] = None,
     content: Annotated[Optional[str], Query(max_length=200)] = None,
     content_not: Annotated[Optional[str], Query(max_length=200)] = None,
     q: Annotated[Optional[str], Query()] = None,
@@ -163,6 +167,10 @@ def list_issues(
     conditions in one group under the list's fixed scope. `content`
     matches title and description text, `label_id_all` wants every label named,
     and `completed_after` and `completed_before` bound the day an issue was done.
+    `cycle_added` keeps the issues added to their cycle at `planned`, before it
+    started or within its first day, or `after_start`, and `cycle_added_not` drops
+    them, while `cycle_added_after` and `cycle_added_before` bound the day an issue
+    joined its cycle; an issue in no cycle meets none of them.
     The `completed_desc` sort puts the latest `completed_at` first and issues not
     completed last.
     `customer_id` keeps the issues one of the named customers asked for and
@@ -248,6 +256,10 @@ def list_issues(
             updated_before=updated_before,
             completed_after=completed_after,
             completed_before=completed_before,
+            cycle_added=cycle_added,
+            cycle_added_not=cycle_added_not,
+            cycle_added_after=cycle_added_after,
+            cycle_added_before=cycle_added_before,
             content=content,
             content_not=content_not,
             q=q,

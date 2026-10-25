@@ -208,6 +208,8 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "customer_status_id_not",
     "customer_tier_id",
     "customer_tier_id_not",
+    "cycle_added",
+    "cycle_added_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -223,6 +225,8 @@ SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
     "updated_before",
     "completed_after",
     "completed_before",
+    "cycle_added_after",
+    "cycle_added_before",
     "content",
     "content_not",
     "match",
@@ -333,6 +337,15 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "updated_before": string(f"Updated before this day, {_DAY_BOUND}"),
         "completed_after": string(f"Completed after this day, {_DAY_BOUND}; only completed issues match"),
         "completed_before": string(f"Completed before this day, {_DAY_BOUND}; only completed issues match"),
+        "cycle_added": one_or_many(
+            "When the issue joined its cycle: planned (before the cycle started or within its first day) "
+            "or after_start; issues in no cycle never match"
+        ),
+        "cycle_added_not": one_or_many(
+            "Not added to its cycle at this phase, planned or after_start; issues in no cycle never match"
+        ),
+        "cycle_added_after": string(f"Joined its cycle after this day, {_DAY_BOUND}; issues in no cycle never match"),
+        "cycle_added_before": string(f"Joined its cycle before this day, {_DAY_BOUND}; issues in no cycle never match"),
         "content": string("Title or description contains this text, case insensitive"),
         "content_not": string("Neither title nor description contains this text"),
         "match": enum(("all", "any"), "How the conditions combine: all of them (default) or any one"),
