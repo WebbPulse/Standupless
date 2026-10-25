@@ -130,8 +130,8 @@ def read_billing(
         business_available=billing.business_available(),
         features=sorted(str(feature) for feature in features_of(workspace)),
         limits={str(resource): value for resource, value in limits_of(workspace).items()},
-        storage_bytes=storage_limit_of(plan),
-        guests_per_seat=guests_per_seat_of(plan),
+        storage_bytes=storage_limit_of(workspace),
+        guests_per_seat=guests_per_seat_of(workspace),
     )
 
 

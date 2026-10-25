@@ -293,10 +293,14 @@ locals {
         IDENTITY_AUDIENCE = local.identity_audience
         IDENTITY_JWKS_URL = "${local.identity_issuer}/.well-known/jwks.json"
 
-        BILLING_ENABLED = tostring(var.billing_enabled)
+        BILLING_ENABLED          = tostring(var.billing_enabled)
+        PLAN_LIMIT_E2E_EXEMPTION = tostring(var.plan_limit_e2e_exemption_enabled)
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
-      name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
+      name == "workspaces" ? {
+        BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled)
+        PLAN_LIMIT_E2E_USER_IDS  = join(",", var.plan_limit_e2e_user_ids)
+      } : {},
 
       contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users, local.issue_import_object_users, local.email_intake_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 

@@ -371,6 +371,33 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    PLAN_LIMIT_E2E_EXEMPTION: bool = Field(
+        default=False,
+        description=(
+            "Whether workspaces an e2e user created keep the free plan's preview limits "
+            "while billing is on, so the staging e2e suite can run against the launch "
+            "limits. On in staging only, and refused in production whatever it says."
+        ),
+    )
+
+    PLAN_LIMIT_E2E_USER_IDS: str = Field(
+        default="",
+        description=(
+            "Comma separated ids of the durable e2e users, whose new workspaces count as "
+            "e2e owned alongside those of the ephemeral users the identity package creates."
+        ),
+    )
+
+    @property
+    def plan_limit_e2e_user_ids(self) -> frozenset[str]:
+        """The durable e2e user ids from `PLAN_LIMIT_E2E_USER_IDS`."""
+        return frozenset(part.strip() for part in self.PLAN_LIMIT_E2E_USER_IDS.split(",") if part.strip())
+
+    @property
+    def plan_limit_e2e_exemption_active(self) -> bool:
+        """Whether the e2e plan limit exemption applies here: the flag is on and this is not production."""
+        return self.PLAN_LIMIT_E2E_EXEMPTION and self.APP_ENVIRONMENT.strip().lower() not in ("production", "prod")
+
     ATTACHMENTS_BUCKET: str = Field(
         default="",
         description=(

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from webbpulse.identity import AuthenticationRefused
+from webbpulse.identity.flows import EPHEMERAL_VIA
 
 from app.common.db.dynamo.users import User, UserRepository
 
@@ -148,12 +149,20 @@ class StanduplessIdentityHooks:
         return self._users.delete(user_id)
 
     def on_user_created(self, user: Mapping[str, Any], via: str) -> None:
-        """No side effects to run.
+        """Mark an account the ephemeral e2e route created as an e2e user, and nothing else.
 
-        The verification email is sent by the package's own register flow, and a new
+        `via` is the package's own word for the flow that created the account, and
+        only the admin-only ephemeral route, which never mounts in production, passes
+        `EPHEMERAL_VIA`. That keeps the marker out of reach of self sign-up, whose
+        client attributes `create_user` filters down to `REGISTRATION_ATTRIBUTES`. The
+        verification email is sent by the package's own register flow, and a new
         Standupless account owns no default rows.
         """
-        del user, via
+        if via != EPHEMERAL_VIA:
+            return
+        user_id = str(user.get("id", "") or "")
+        if user_id:
+            self._users.update(user_id, e2e_user=True)
 
     def has_other_sign_in_method(self, user_id: str) -> bool:
         """Whether this user holds a sign-in method the package cannot see.
