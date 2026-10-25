@@ -16,14 +16,16 @@ import type { IssueRead } from '../../types/Api';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CommandPalette from './CommandPalette';
 
-const showToast = vi.fn();
+const showToast = vi.fn<(message: string) => void>();
 
 vi.mock('../../lib/toast', async () => {
   const actual =
     await vi.importActual<typeof import('../../lib/toast')>('../../lib/toast');
   return {
     ...actual,
-    showToast: (message: string) => showToast(message),
+    showToast: (message: string) => {
+      showToast(message);
+    },
   };
 });
 
