@@ -71,7 +71,7 @@ import {
   LuPlus,
   LuX,
 } from 'react-icons/lu';
-import { uploadAttachment } from '../../api/discussion';
+import { createUrlAttachment, uploadAttachment } from '../../api/discussion';
 import { createIssue, createLink, updateIssue } from '../../api/issues';
 import { listTeamTemplates } from '../../api/templates';
 import { openingTemplateId } from '../../lib/templateDefaults';
@@ -254,6 +254,8 @@ export interface CreateIssuePreset {
   description?: string;
   /** An issue the new one is filed as related to, kept across a team change. */
   relatedIssueId?: string;
+  /** Web links attached to the first issue the dialog creates. */
+  links?: { url: string; title?: string }[];
 }
 
 /** The properties a draft holds, all of them team scoped except the last. */
@@ -632,6 +634,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     preset?.keepAsDraft === true ? null : initialText
   );
   const discarded = useRef(false);
+  const pendingLinks = useRef(preset?.links ?? []);
   const [draftId, setDraftId] = useState(newIssueDraftId);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [showDrafts, setShowDrafts] = useState(initialShowDrafts);
@@ -1222,6 +1225,35 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     }
   };
 
+  /**
+   * Attaches the web links the dialog was opened with to the first issue it
+   * creates, once, so creating more does not repeat them.
+   */
+  const attachLinks = async (issue: IssueRead): Promise<void> => {
+    const links = pendingLinks.current;
+    pendingLinks.current = [];
+    if (links.length === 0) return;
+    const outcomes = await Promise.all(
+      links.map((link) =>
+        createUrlAttachment(workspaceId, {
+          issue_id: issue.id,
+          url: link.url,
+          ...(link.title === undefined ? {} : { title: link.title }),
+        }).then(
+          () => true,
+          () => false
+        )
+      )
+    );
+    const failed = outcomes.filter((attached) => !attached).length;
+    if (failed > 0) {
+      showToast(
+        `Created ${issue.key}, but ${String(failed)} of ${String(links.length)} links could not be attached`,
+        'error'
+      );
+    }
+  };
+
   const submit = (): void => {
     if (!canSubmit) return;
     setIsSaving(true);
@@ -1280,6 +1312,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             );
           });
         }
+        await attachLinks(issue);
         setDuplicateOf(null);
         if (!createMore) {
           discarded.current = true;

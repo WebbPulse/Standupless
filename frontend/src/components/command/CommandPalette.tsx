@@ -111,6 +111,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { listWorkspaceDocuments } from '../../api/documents';
+import { getIssueByKey } from '../../api/issues';
 import { listFavorites } from '../../api/favorites';
 import { listCycles } from '../../api/planning';
 import { listStatuses } from '../../api/teams';
@@ -180,6 +181,12 @@ import {
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
+import {
+  absoluteUrl,
+  newIssuePath,
+  prefilledFieldsOf,
+} from '../../lib/newIssueUrl';
+import { showErrorToast, showToast } from '../../lib/toast';
 import { favoriteHref } from '../../lib/favorites';
 import { homeViewPath } from '../../lib/preferences';
 import { isFormTemplate } from '../../lib/issueTemplates';
@@ -677,8 +684,43 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         },
       });
     }
+    const prefillKey = subject?.key ?? issueKey;
+    if (prefillKey !== null && createIssue.canCreate) {
+      actions.push({
+        id: 'issue-copy-prefilled-create-url',
+        label: 'Copy prefilled create issue URL',
+        keywords: 'url link new issue template prefill share',
+        hint: prefillKey,
+        icon: <LuLink className={ICON} />,
+        run: () => {
+          void getIssueByKey(workspaceId, prefillKey)
+            .then((issue) =>
+              globalThis.navigator.clipboard.writeText(
+                absoluteUrl(newIssuePath(slug, prefilledFieldsOf(issue)))
+              )
+            )
+            .then(
+              () => {
+                showToast('Copied prefilled create issue URL');
+              },
+              () => {
+                showErrorToast(
+                  'Could not copy the prefilled create issue URL.'
+                );
+              }
+            );
+        },
+      });
+    }
     return actions;
-  }, [registered, issueKey, slug]);
+  }, [
+    registered,
+    issueKey,
+    slug,
+    subject?.key,
+    createIssue.canCreate,
+    workspaceId,
+  ]);
 
   const actions = useMemo<Command[]>(() => {
     const built: Command[] = [];

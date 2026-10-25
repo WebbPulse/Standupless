@@ -21,7 +21,8 @@
  * and `parentTitle` complete a copy of another issue, and `keepAsDraft`, as
  * Duplicate as draft sets it, keeps the prefilled text as a draft on close
  * even before it is edited, without the team's default template or the
- * assign to self preference.
+ * assign to self preference. `links` attaches web links to the issue once it
+ * is created, as a prefilled `/new` link carries them.
  *
  * {@link CreateIssueState.hasDraft} says whether the viewer has any new issue
  * draft saved in this workspace, so the new issue button can show that the
@@ -67,6 +68,8 @@ export interface CreateIssueOptions {
   description?: string;
   /** An issue the new one is filed as related to. */
   relatedIssueId?: string;
+  /** Web links attached to the issue once it is created. */
+  links?: { url: string; title?: string }[];
   /** Whether the dialog opens expanded, as `V` opens it. */
   expanded?: boolean;
   /** Whether the dialog opens on its Drafts list, as the command palette does. */
