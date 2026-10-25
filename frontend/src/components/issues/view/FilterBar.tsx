@@ -99,6 +99,7 @@ import {
   BlockingIcon,
 } from '../RelationGlyphs';
 import { useShortcut } from '../../../hooks/useShortcuts';
+import { dayFromToday, dayLabel } from '../../../lib/filterDays';
 
 const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   status: <LuCircleDashed className="h-3.5 w-3.5" />,
@@ -153,20 +154,6 @@ const useChoiceContext = (
   field: FilterField
 ): IssueContext => useMilestoneContext(context, field === 'milestone');
 
-/** A day as `YYYY-MM-DD` in local time, the way a date input reads it. */
-const isoDay = (date: Date): string => {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${String(date.getFullYear())}-${month}-${day}`;
-};
-
-/** The day `days` from today, negative for the past. */
-const dayFromToday = (days: number, today: Date = new Date()): string => {
-  const date = new Date(today);
-  date.setDate(date.getDate() + days);
-  return isoDay(date);
-};
-
 /** The relative days a date filter offers, past ones for most fields, both ways for due. */
 const datePresets = (field: FilterField): { label: string; days: number }[] => {
   const past = [
@@ -186,19 +173,6 @@ const datePresets = (field: FilterField): { label: string; days: number }[] => {
     { label: 'In 1 month', days: 30 },
     ...past.slice(0, 3),
   ];
-};
-
-/** How a stored day reads on a chip. */
-const dayLabel = (day: string): string => {
-  const [year, month, date] = day.split('-').map(Number);
-  if (year === undefined || month === undefined || date === undefined) {
-    return day;
-  }
-  return new Date(year, month - 1, date).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
 };
 
 /** Sets a date field's one bound, replacing any bound it held with the same verb. */

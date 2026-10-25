@@ -1,8 +1,8 @@
 /**
  * A saved view of projects, translated to and from the projects page. The
  * page filters by a team's key prefix, a set of statuses, one lead, one
- * customer, one project label, and whether a project is blocked or blocking, and a
- * view stores the team by id, so these helpers are the one place that maps
+ * customer, one project label, whether a project is blocked or blocking, and
+ * its health, priority, members, dates and update age, and a view stores the team by id, so these helpers are the one place that maps
  * between the two. Opened as a view, the page treats the view as its base:
  * the URL only carries what differs from it, and saving writes the page's
  * state back as the view's filter and arrangement.
@@ -11,6 +11,13 @@
 import type { ProjectViewFilter, SavedViewDisplayRead } from '../api/views';
 import type { TeamRead } from '../types/Api';
 import { PROJECT_STATUS_ORDER } from './planningModel';
+import {
+  EMPTY_PROPERTY_FILTERS,
+  propertyFiltersFromView,
+  propertyFiltersToView,
+  samePropertyFilters,
+  type ProjectPropertyFilters,
+} from './projectPropertyFilters';
 import { resolveDisplay, type ProjectsDisplay } from './projectList';
 
 /** The projects page state a view of projects opens on. */
@@ -33,6 +40,8 @@ export interface ProjectViewBase {
   customer: string;
   /** A project label's id, `none` for projects carrying none, or empty. */
   label: string;
+  /** Health, priority, members, date bounds and update age. */
+  properties: ProjectPropertyFilters;
   display: ProjectsDisplay;
 }
 
@@ -46,6 +55,7 @@ export interface ProjectViewState {
   rollUp: boolean;
   customer?: string;
   label?: string;
+  properties?: ProjectPropertyFilters;
 }
 
 /** A yes or no project filter as the page holds it, empty when unset. */
@@ -98,6 +108,7 @@ export const projectViewBase = (
     rollUp: filter.sub_teams !== 'false',
     customer: asList(filter.customer_id)[0] ?? '',
     label: asList(filter.label_id)[0] ?? '',
+    properties: propertyFiltersFromView(filter),
     display: resolveDisplay(() => null, view.projects_display ?? undefined),
   };
 };
@@ -117,6 +128,7 @@ export const toProjectViewFilter = (
     ? {}
     : { customer_id: [state.customer ?? ''] }),
   ...((state.label ?? '') === '' ? {} : { label_id: [state.label ?? ''] }),
+  ...propertyFiltersToView(state.properties ?? EMPTY_PROPERTY_FILTERS),
   ...(state.teamId !== '' && !state.rollUp
     ? { sub_teams: 'false' as const }
     : {}),
@@ -135,4 +147,5 @@ export const sameProjectFilter = (
   flagOf(left.is_blocking) === flagOf(right.is_blocking) &&
   asList(left.customer_id).join(',') === asList(right.customer_id).join(',') &&
   asList(left.label_id).join(',') === asList(right.label_id).join(',') &&
+  samePropertyFilters(left, right) &&
   (left.sub_teams ?? 'true') === (right.sub_teams ?? 'true');

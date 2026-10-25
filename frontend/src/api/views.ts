@@ -119,7 +119,9 @@ export interface ViewFilterNegations {
  * The keys a view of projects stores: the team narrowed to, the project
  * statuses, the lead (a user id or `none`), whether projects must or must not
  * be blocked or blocking, and whether a parent team rolls up its sub-teams'
- * projects, which an absent key reads as doing.
+ * projects, which an absent key reads as doing. The health, priority, member,
+ * date bound and update age keys are the projects list route's own parameters,
+ * an update age stored as its text.
  */
 export interface ProjectViewFilter {
   team_id?: string;
@@ -131,6 +133,15 @@ export interface ProjectViewFilter {
   customer_id?: string | string[];
   customer_id_not?: string | string[];
   label_id?: string | string[];
+  health?: string | string[];
+  priority?: string | string[];
+  member_id?: string | string[];
+  start_date_before?: string;
+  start_date_after?: string;
+  target_date_before?: string;
+  target_date_after?: string;
+  updated_within_days?: string;
+  not_updated_within_days?: string;
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */

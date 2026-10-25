@@ -22,6 +22,8 @@ from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.planning import PROJECT_STATUSES
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox_summary import notification_summary
+from app.common.project_filters import DATE_BOUND_FIELDS, UPDATE_AGE_FIELDS, property_entry_well_formed
+from app.common.project_filters import FILTER_KEYS as PROJECT_PROPERTY_FILTER_FIELDS
 
 SortField = Literal[
     "updated_desc",
@@ -258,6 +260,7 @@ PROJECT_FILTER_FIELDS: frozenset[str] = frozenset(
         "customer_id",
         "customer_id_not",
         "label_id",
+        *PROJECT_PROPERTY_FILTER_FIELDS,
     }
 )
 """Every key a project view's filter may carry, the projects page's own filters.
@@ -269,13 +272,18 @@ keeps projects an open blocker holds up, or with `false` the ones none does, and
 `is_blocking` open projects that hold another up, or with `false` the rest.
 `customer_id` and `customer_id_not` the customers whose requests it keeps or
 drops, `none` standing for projects no customer asked for. `label_id` the
-project labels it keeps, `none` standing for projects with no label.
+project labels it keeps, `none` standing for projects with no label. `health`,
+`priority` and `member_id` the healths, priorities and members it keeps, `none`
+standing for no health or no members, the four date bounds one day each, and
+`updated_within_days` and `not_updated_within_days` an update age in days.
 """
 
 PROJECT_FLAG_FILTER_FIELDS: frozenset[str] = frozenset({"sub_teams", "is_blocked", "is_blocking"})
 """The project filter keys that hold `true` or `false`."""
 
-PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", *PROJECT_FLAG_FILTER_FIELDS})
+PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
+    {"team_id", *PROJECT_FLAG_FILTER_FIELDS, *DATE_BOUND_FIELDS, *UPDATE_AGE_FIELDS}
+)
 """The project filter keys that hold one value rather than a list."""
 
 VIEW_NAME_MAX = 80
@@ -353,7 +361,12 @@ def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]
 
 
 def _normalized_entry(key: str, entry: Any) -> Any:
-    """One filter value with a boolean key's bool, or its upper cased text, turned into `true` or `false`."""
+    """One filter value with a boolean key's bool, or its upper cased text, turned into `true` or `false`.
+
+    An update age sent as a JSON number is stored as its text, as every other value is.
+    """
+    if key in UPDATE_AGE_FIELDS and isinstance(entry, int) and not isinstance(entry, bool):
+        return str(entry)
     if key not in BOOLEAN_FILTER_FIELDS:
         return entry
     if isinstance(entry, bool):
@@ -461,6 +474,8 @@ def _project_entry_well_formed(key: str, entry: Any) -> bool:
         return False
     if key == "status":
         return all(item in PROJECT_STATUSES or PROJECT_STATUS_ID_PATTERN.match(item) for item in values)
+    if key in PROJECT_PROPERTY_FILTER_FIELDS:
+        return property_entry_well_formed(key, entry)
     return True
 
 

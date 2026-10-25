@@ -1,7 +1,8 @@
 /**
  * The mapping between a saved view of projects and the projects page. Covers
  * reading a stored team id as the page's key prefix, a single value or a list,
- * the blocked and blocking flags and the roll-up switch; keeping a team the caller cannot see; and saving
+ * the blocked and blocking flags and the roll-up switch; keeping a team the caller cannot see; round
+ * tripping the health, priority, member, date and update age filters; and saving
  * only what narrows the page, compared the same way whatever order it holds.
  */
 
@@ -9,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { SavedViewDisplayRead } from '../api/views';
 import type { TeamRead } from '../types/Api';
 import { DEFAULT_PROJECTS_DISPLAY } from './projectList';
+import { EMPTY_PROPERTY_FILTERS } from './projectPropertyFilters';
 import {
   projectViewBase,
   sameProjectFilter,
@@ -60,6 +62,7 @@ describe('projectViewBase', () => {
       rollUp: false,
       customer: '',
       label: '',
+      properties: EMPTY_PROPERTY_FILTERS,
       display: DEFAULT_PROJECTS_DISPLAY,
     });
   });
@@ -184,6 +187,39 @@ describe('toProjectViewFilter', () => {
     expect(filter).toEqual({ label_id: ['label-1'] });
     expect(projectViewBase(stored({ ...filter }), []).label).toBe('label-1');
   });
+
+  it('stores the property filters under the route keys and reads them back', () => {
+    const properties = {
+      ...EMPTY_PROPERTY_FILTERS,
+      health: ['at_risk', 'none'],
+      priority: ['high'],
+      member: ['user-1'],
+      startAfter: '2026-01-01',
+      targetBefore: '2026-12-31',
+      notUpdatedWithin: '7',
+    };
+    const filter = toProjectViewFilter({
+      teamId: '',
+      status: [],
+      lead: '',
+      blocked: '',
+      blocking: '',
+      rollUp: true,
+      properties,
+    });
+
+    expect(filter).toEqual({
+      health: ['at_risk', 'none'],
+      priority: ['high'],
+      member_id: ['user-1'],
+      start_date_after: '2026-01-01',
+      target_date_before: '2026-12-31',
+      not_updated_within_days: '7',
+    });
+    expect(projectViewBase(stored({ ...filter }), []).properties).toEqual(
+      properties
+    );
+  });
 });
 
 describe('sameProjectFilter', () => {
@@ -203,6 +239,15 @@ describe('sameProjectFilter', () => {
     ).toBe(true);
     expect(
       sameProjectFilter({ customer_id: 'customer-1' }, { customer_id: [] })
+    ).toBe(false);
+    expect(
+      sameProjectFilter(
+        { health: ['at_risk', 'off_track'] },
+        { health: ['off_track', 'at_risk'] }
+      )
+    ).toBe(true);
+    expect(
+      sameProjectFilter({ updated_within_days: '7' }, { updated_within_days: '14' })
     ).toBe(false);
   });
 });

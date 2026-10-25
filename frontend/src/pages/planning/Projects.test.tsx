@@ -11,7 +11,10 @@
  * columns, reverses the groups, groups again inside each group, keeps only
  * the projects a filtered team leads, and drops empty board columns. On the
  * timeline it zooms, steps earlier and later, and offers only the properties
- * the timeline draws. The blocked and blocking filters narrow the rows. Save as view stores the filters and the
+ * the timeline draws. The blocked and blocking filters narrow the rows, as do
+ * health, member and date filters read from the URL, and the Filter menu adds
+ * a health or last update chip whose X removes it. Save as view stores the
+ * filters, property filters included, and the
  * arrangement as a view of projects and opens it. A board card edits its
  * properties in place and from its context menu, a column header menu hides,
  * collapses and isolates its column, and a drop into a swimlane changes both
@@ -562,6 +565,111 @@ describe('Projects', () => {
       await screen.findByRole('link', { name: 'Launch' })
     ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+  });
+
+  it('narrows by health, members and target date from the URL', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        { ...launch, health: 'at_risk' },
+        { ...rebrand, member_ids: ['user-1'] },
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage('/w/mine/projects?health=at_risk');
+    expect(
+      await screen.findByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    expect(
+      screen.getByRole('group', { name: 'Health is At risk' })
+    ).toBeInTheDocument();
+    unmount();
+
+    const second = renderPage('/w/mine/projects?member=none');
+    expect(
+      await screen.findByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    second.unmount();
+
+    renderPage('/w/mine/projects?target_after=2026-10-01');
+    expect(
+      await screen.findByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
+    expect(
+      screen.getByRole('group', { name: /Target date after/ })
+    ).toBeInTheDocument();
+  });
+
+  it('adds a health chip from the Filter menu and removes it with its X', async () => {
+    const user = userEvent.setup();
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, health: 'at_risk' }, rebrand],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+    await user.click(await screen.findByRole('option', { name: /Health/ }));
+    await user.click(await screen.findByRole('option', { name: /At risk/ }));
+    await user.keyboard('{Escape}');
+
+    expect(
+      await screen.findByRole('group', { name: 'Health is At risk' })
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    });
+    expect(screen.getByRole('link', { name: 'Launch' })).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove Health filter' })
+    );
+    expect(
+      screen.queryByRole('group', { name: 'Health is At risk' })
+    ).toBeNull();
+    expect(
+      await screen.findByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+  });
+
+  it('adds a last update chip from the Filter menu', async () => {
+    const user = userEvent.setup();
+    listProjects.mockResolvedValue({
+      projects: [
+        { ...launch, last_update_at: new Date().toISOString() },
+        rebrand,
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+    await user.click(
+      await screen.findByRole('option', { name: /Last update/ })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /No update in the last week/ })
+    );
+
+    expect(
+      await screen.findByRole('group', { name: 'Last update older than 7 days' })
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
+    });
+    expect(screen.getByRole('link', { name: 'Rebrand' })).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Remove Last update older than filter',
+      })
+    );
+    expect(
+      await screen.findByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
   });
 
   it('writes a health change from the row', async () => {
@@ -1320,6 +1428,39 @@ describe('Projects', () => {
 
     await screen.findByRole('link', { name: 'Launch' });
     expect(screen.queryByRole('link', { name: 'Shipped' })).toBeNull();
+  });
+
+  it('saves the property filters with a view of projects', async () => {
+    const user = userEvent.setup();
+    createView.mockResolvedValue({
+      view_id: 'view-9',
+      name: 'Stale risks',
+    } as SavedViewDisplayRead);
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, health: 'at_risk', priority: 'high' }, rebrand],
+      next_cursor: null,
+    });
+    renderPage(
+      '/w/mine/projects?health=at_risk&priority=high&not_updated_within=14'
+    );
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Save as view' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('View name'), 'Stale risks');
+    await user.click(within(dialog).getByRole('button', { name: 'Save view' }));
+
+    await waitFor(() => {
+      expect(createView).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filter: {
+            health: ['at_risk'],
+            priority: ['high'],
+            not_updated_within_days: '14',
+          },
+        })
+      );
+    });
   });
 
   it('saves the filters and arrangement as a view of projects', async () => {

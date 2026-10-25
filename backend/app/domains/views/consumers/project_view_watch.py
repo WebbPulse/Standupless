@@ -10,7 +10,7 @@ the view and comes back notifies again, as Linear does for project views.
 The view is judged with the projects page's own rules, so the inbox and the page
 agree on what a view holds: the team filter rolled up to the team's sub-teams
 unless the view turns that off, the status, lead, label, customer and dependency
-filters, the closed projects window, the lead team choice, and archived projects
+filters, the health, priority, member, date and update age filters, the closed projects window, the lead team choice, and archived projects
 always left out. A guest never filters by customer, as the page ignores that
 filter for them. Only a write that changes a property the view reads is judged,
 so the rollup counters a project row takes on every issue change cost nothing.
@@ -35,6 +35,7 @@ from app.common.api.schemas.projects_display import stored_projects_display
 from app.common.customer_index import CustomerIndex, customer_match, load_customer_index
 from app.common.db.dynamo.planning import PROJECT, Project, as_project, normalise_project_status
 from app.common.db.dynamo.views import SavedView, ViewSubscription
+from app.common.project_filters import ProjectPropertyFilter, stored_property_filter
 from app.common.project_labels import label_match, label_values
 from app.common.project_relations import Dependencies, dependency_map
 from app.common.project_statuses import project_in_filter, status_filter_match, workspace_project_statuses
@@ -58,6 +59,12 @@ WATCHED_FIELDS: tuple[str, ...] = (
     "label_ids",
     "archived_at",
     "completed_at",
+    "health",
+    "priority",
+    "member_ids",
+    "start_date",
+    "target_date",
+    "last_update_at",
 )
 """The project properties a project view reads, the only changes worth judging."""
 
@@ -160,6 +167,7 @@ class ProjectViewFilter:
     is_blocking: Optional[bool]
     closed: str
     lead_team: str
+    properties: ProjectPropertyFilter = field(default_factory=ProjectPropertyFilter)
 
 
 def parse_view(view: SavedView, workspace: _Workspace) -> ProjectViewFilter:
@@ -185,6 +193,7 @@ def parse_view(view: SavedView, workspace: _Workspace) -> ProjectViewFilter:
         is_blocking=_flag(stored.get("is_blocking")),
         closed=display.closed,
         lead_team=display.lead_team,
+        properties=stored_property_filter(stored),
     )
 
 
@@ -229,6 +238,8 @@ def project_in_view(
     if wanted.leads and project.lead_id not in wanted.leads:
         return False
     if not label_match(wanted.labels, project.label_ids):
+        return False
+    if wanted.properties.active and not wanted.properties.matches(project, now):
         return False
     if not guest and (wanted.customers or wanted.customers_not):
         index = workspace.customers()

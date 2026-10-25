@@ -70,6 +70,7 @@ from app.common.project_updates import (
     list_project_updates,
     update_project_update,
 )
+from app.common.project_filters import parse_property_filter
 from app.common.project_writes import (
     create_project,
     delete_project,
@@ -537,9 +538,28 @@ def _list_projects(call: ToolCall) -> Any:
         sort=str(sort) if sort else None,
         label_id=project_label_ids(call, labels, allow_none=True) if labels is not None else None,
         include_archived=call.optional("include_archived", False) is True,
+        properties=parse_property_filter(
+            health=filter_values(call.optional("health")),
+            priority=filter_values(call.optional("priority")),
+            member_id=_member_values(call),
+            start_date_before=call.optional("start_date_before"),
+            start_date_after=call.optional("start_date_after"),
+            target_date_before=call.optional("target_date_before"),
+            target_date_after=call.optional("target_date_after"),
+            updated_within_days=call.optional("updated_within_days"),
+            not_updated_within_days=call.optional("not_updated_within_days"),
+        ),
     )
     names = status_names(call)
     return {"projects": [_project_json(row, names) for row in rows], "next_cursor": next_cursor}
+
+
+def _member_values(call: ToolCall) -> Optional[list[str]]:
+    """The member filter with `me` read as the caller, `none` kept for projects with no members."""
+    values = filter_values(call.optional("member_id"))
+    if values is None:
+        return None
+    return [value if value == "none" else (resolve_user(call, value) or value) for value in values]
 
 
 def _optional_flag(call: ToolCall, name: str) -> Optional[bool]:
@@ -1110,6 +1130,29 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "label_id": one_or_many(
                     "Only projects carrying any of these project labels, by id or name; 'none' is projects with none"
                 ),
+                "health": one_or_many(
+                    "Only projects in any of these healths: on_track, at_risk, off_track, or 'none' for no health"
+                ),
+                "priority": one_or_many("Only projects at any of these priorities: none, urgent, high, medium, low"),
+                "member_id": one_or_many(
+                    "Only projects with any of these members, by user id or 'me'; 'none' is projects with no members"
+                ),
+                "start_date_before": string("Only projects starting before this day, YYYY-MM-DD"),
+                "start_date_after": string("Only projects starting after this day, YYYY-MM-DD"),
+                "target_date_before": string("Only projects targeting a day before this one, YYYY-MM-DD"),
+                "target_date_after": string("Only projects targeting a day after this one, YYYY-MM-DD"),
+                "updated_within_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Only projects with a project update posted in the last this many days",
+                },
+                "not_updated_within_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Only projects with no project update in the last this many days, never updated ones included"
+                    ),
+                },
                 "sort": enum(
                     PROJECT_SORTS,
                     "The order, defaulting to target_asc; customer_requests_desc puts the most customer requests "
