@@ -18,8 +18,10 @@ import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
-import { useIssueTreeKeys } from '../../hooks/useIssueTreeKeys';
-import { usePeekIssue } from '../../hooks/usePeekIssue';
+import {
+  useIssueTreeKeys,
+  type IssueTreeTarget,
+} from '../../hooks/useIssueTreeKeys';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -53,13 +55,19 @@ import { estimateOptionsOf } from '../../lib/validation';
 export interface IssuePeekProps {
   issueId: string;
   onClose: () => void;
+  /** Shows another issue in the pane in place of this one. */
+  onOpenIssue?: (issue: IssueTreeTarget) => void;
 }
 
 /** How often the issue and its lists are re-read while the pane is open. */
 const POLL_MS = 60000;
 
 /** The side pane showing one issue's title, properties and description. */
-export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
+export const IssuePeek: React.FC<IssuePeekProps> = ({
+  issueId,
+  onClose,
+  onOpenIssue,
+}) => {
   const { workspace } = useWorkspace();
   const { user } = useAuth();
   const auth = useQueryAuth();
@@ -156,13 +164,12 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     });
   };
 
-  const { peekIssue } = usePeekIssue();
   useIssueTreeKeys({
     workspaceId,
     issue,
     statuses: options.statuses,
     known: options.parents,
-    onOpen: peekIssue,
+    ...(onOpenIssue === undefined ? {} : { onOpen: onOpenIssue }),
   });
 
   const [parenting, setParenting] = useState(false);

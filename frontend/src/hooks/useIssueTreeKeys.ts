@@ -33,8 +33,8 @@ export interface IssueTreeKeysOptions {
   known?: readonly IssueRead[];
   /** The sub-issues already held, when the surface loads them. */
   subIssues?: readonly OrderedIssueRead[];
-  /** Opens the target, such as by navigating or by peeking it. */
-  onOpen: (target: IssueTreeTarget) => void;
+  /** Opens the target, such as by navigating or by peeking it. Both keys stand down without it. */
+  onOpen?: (target: IssueTreeTarget) => void;
 }
 
 /** How many sub-issues are read to find the first, when none are held. */
@@ -55,7 +55,7 @@ export const useIssueTreeKeys = ({
     ((subIssues?.length ?? 0) > 0 || issue.progress.total > 0);
 
   const open = (target: IssueTreeTarget | undefined): void => {
-    if (target !== undefined) onOpen({ id: target.id, key: target.key });
+    if (target !== undefined) onOpen?.({ id: target.id, key: target.key });
   };
 
   useShortcut({
@@ -63,7 +63,7 @@ export const useIssueTreeKeys = ({
     label: 'Open parent issue',
     scope: 'issue',
     group: 'Navigation',
-    enabled: parentId !== null && workspaceId !== '',
+    enabled: onOpen !== undefined && parentId !== null && workspaceId !== '',
     handler: (event) => {
       event?.preventDefault();
       if (parentId === null) return;
@@ -81,7 +81,7 @@ export const useIssueTreeKeys = ({
     label: 'Open first sub-issue',
     scope: 'issue',
     group: 'Navigation',
-    enabled: hasChildren && workspaceId !== '',
+    enabled: onOpen !== undefined && hasChildren && workspaceId !== '',
     handler: (event) => {
       event?.preventDefault();
       if (issue === null) return;

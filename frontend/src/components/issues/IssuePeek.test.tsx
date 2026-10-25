@@ -35,7 +35,6 @@ import type {
 } from '../../types/Api';
 import type { OrderedIssueRead } from '../../api/issues';
 import { clearToasts } from '../../lib/toast';
-import { PeekContext, type PeekState } from '../../hooks/usePeek';
 import {
   createShortcutRegistry,
   ShortcutRegistryContext,
@@ -513,22 +512,14 @@ describe('the peek activity feed', () => {
 });
 
 describe('walking the issue tree from the peek', () => {
-  /** Mounts the peek inside a shortcut registry and a peek pane. */
+  /** Mounts the peek inside a shortcut registry, as the pane does. */
   const renderInPane = () => {
     const registry = createShortcutRegistry();
-    const openPeek = vi.fn<PeekState['openPeek']>();
+    const openPeek = vi.fn<(issue: { id: string; key: string }) => void>();
     render(
       <MemoryRouter>
         <ShortcutRegistryContext.Provider value={registry}>
-          <PeekContext.Provider
-            value={{
-              content: { key: 'issue:ENG-7', label: 'Issue ENG-7', node: null },
-              openPeek,
-              closePeek: () => undefined,
-            }}
-          >
-            <IssuePeek issueId="iss-1" onClose={onClose} />
-          </PeekContext.Provider>
+          <IssuePeek issueId="iss-1" onClose={onClose} onOpenIssue={openPeek} />
         </ShortcutRegistryContext.Provider>
       </MemoryRouter>
     );
@@ -566,9 +557,7 @@ describe('walking the issue tree from the peek', () => {
     press('ArrowUp');
 
     await waitFor(() => {
-      expect(openPeek).toHaveBeenCalledWith(
-        expect.objectContaining({ key: 'issue:ENG-6' })
-      );
+      expect(openPeek).toHaveBeenCalledWith({ id: 'iss-0', key: 'ENG-6' });
     });
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -591,9 +580,7 @@ describe('walking the issue tree from the peek', () => {
     press('ArrowDown');
 
     await waitFor(() => {
-      expect(openPeek).toHaveBeenCalledWith(
-        expect.objectContaining({ key: 'issue:ENG-8' })
-      );
+      expect(openPeek).toHaveBeenCalledWith({ id: 'iss-8', key: 'ENG-8' });
     });
     expect(listChildren).toHaveBeenCalledWith('iss-1');
   });
