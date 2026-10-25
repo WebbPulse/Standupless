@@ -125,6 +125,11 @@ AWS_PROFILE=Standupless-Production/AdministratorAccess \
   uv run --no-sync python ../scripts/apply_slack_manifest.py staging --dry-run
 ```
 
+Until the production apply has created the role and that first run has moved the
+token, the deploy job passes `--skip-unprovisioned`: a role it cannot assume, or an
+empty dedicated secret it cannot fill, skips the job with a warning instead of
+failing the deploy. Every other failure still fails it.
+
 To seed or replace the refresh token, a person mints one on
 https://api.slack.com/apps under **Your App Configuration Tokens** with **Generate
 Token** for the WebbPulse workspace, and stores the refresh token with
