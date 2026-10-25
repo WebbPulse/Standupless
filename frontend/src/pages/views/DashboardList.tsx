@@ -2,10 +2,11 @@
  * The dashboards tab of the views page: the caller's personal dashboards
  * under their own heading, then the ones shared with a team or the workspace.
  * Under a team's route only that team's dashboards and the caller's own are
- * listed. Each row opens the dashboard, with edit and delete one menu away.
+ * listed. Each row opens the dashboard, with edit and delete one menu away,
+ * and J, K and Enter move through both headings' rows as one list.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -29,7 +30,9 @@ import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import { Menu, MenuItem, MenuSeparator } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { cn } from '../../lib/cn';
 import {
   dashboardLocation,
   refreshDashboards,
@@ -104,6 +107,29 @@ export const DashboardList: React.FC<DashboardListProps> = ({
       },
     ].filter((section) => section.rows.length > 0);
   }, [data, scoped]);
+
+  const ordered = useMemo(
+    () => sections.flatMap((section) => section.rows),
+    [sections]
+  );
+  const positions = useMemo(
+    () => new Map(ordered.map((dashboard, index) => [dashboard.id, index])),
+    [ordered]
+  );
+  const onActivate = useCallback(
+    (index: number) => {
+      const dashboard = ordered[index];
+      if (dashboard !== undefined)
+        void navigate(dashboardPath(slug, dashboard.id));
+    },
+    [ordered, navigate, slug]
+  );
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: ordered.length,
+    onActivate,
+    resetKey: `${teamId}:${ordered.map((dashboard) => dashboard.id).join(',')}`,
+    enabled: pending === null && !creating,
+  });
 
   const create = async (details: DashboardDetails): Promise<void> => {
     try {
@@ -183,10 +209,21 @@ export const DashboardList: React.FC<DashboardListProps> = ({
                 {section.rows.map((dashboard) => {
                   const owner = members_.get(dashboard.owner_id);
                   const ownerName = owner?.display_name ?? owner?.email;
+                  const position = positions.get(dashboard.id) ?? -1;
+                  const isActive = position === activeIndex;
                   return (
                     <li
                       key={dashboard.id}
-                      className="group flex h-row items-center gap-3 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6"
+                      ref={registerItem(position)}
+                      aria-current={isActive ? 'true' : undefined}
+                      onPointerEnter={() => {
+                        setActiveIndex(position);
+                      }}
+                      className={cn(
+                        'group relative flex h-row items-center gap-3 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6',
+                        isActive &&
+                          'bg-surface before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
+                      )}
                     >
                       <Link
                         to={dashboardPath(slug, dashboard.id)}

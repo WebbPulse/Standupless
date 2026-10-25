@@ -4,10 +4,11 @@
  * document is created untitled and opened straight away, the way a blank page
  * is started, and a row renames or deletes in place. When the parent offers
  * document templates, the new document button opens a menu of them beside a
- * blank page, the default one first.
+ * blank page, the default one first. Where the documents are the page's own
+ * list, as on a team's documents page, J, K and Enter move through them.
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   LuEllipsis,
   LuFileText,
@@ -18,6 +19,8 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import useDocumentTemplates from '../../hooks/useDocumentTemplates';
 import useDocuments from '../../hooks/useDocuments';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { cn } from '../../lib/cn';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { documentPath } from '../../lib/paths';
 import { showToast } from '../../lib/toast';
@@ -50,6 +53,11 @@ export interface DocumentsSectionProps {
   canCreate: boolean;
   /** The people author ids resolve against. */
   people: Assignable[];
+  /**
+   * Whether J, K, the arrow keys and Enter move through the rows. Left off
+   * where the documents sit beside other lists on the page.
+   */
+  keyboardNav?: boolean;
 }
 
 /** The field a document is renamed in, saved on Enter or blur. */
@@ -99,6 +107,7 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   parentId,
   canCreate,
   people,
+  keyboardNav = false,
 }) => {
   const navigate = useNavigate();
   const { documents, isLoading, create, rename, remove } = useDocuments(
@@ -115,6 +124,20 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<DocumentSummaryRead | null>(null);
+
+  const onActivate = useCallback(
+    (index: number) => {
+      const row = documents[index];
+      if (row !== undefined) void navigate(documentPath(slug, row.document_id));
+    },
+    [documents, navigate, slug]
+  );
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: documents.length,
+    onActivate,
+    resetKey: documents.map((row) => row.document_id).join(','),
+    enabled: keyboardNav && renaming === null && deleting === null,
+  });
 
   const startFrom = (body: string | DocumentCreate): void => {
     if (creating) return;
@@ -206,10 +229,26 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       )}
       {documents.length > 0 && (
         <ul aria-label="Documents" className="-mx-1.5">
-          {documents.map((row) => (
+          {documents.map((row, index) => (
             <li
               key={row.document_id}
-              className="group/document grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-surface"
+              ref={keyboardNav ? registerItem(index) : undefined}
+              aria-current={
+                keyboardNav && index === activeIndex ? 'true' : undefined
+              }
+              onPointerEnter={
+                keyboardNav
+                  ? () => {
+                      setActiveIndex(index);
+                    }
+                  : undefined
+              }
+              className={cn(
+                'group/document grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-surface',
+                keyboardNav &&
+                  index === activeIndex &&
+                  'bg-surface ring-1 ring-accent ring-inset'
+              )}
             >
               <DocumentIcon icon={row.icon ?? null} />
               {renaming === row.document_id ? (
