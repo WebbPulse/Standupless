@@ -73,8 +73,10 @@ import {
   type SavedViewFilter,
 } from '../../api/views';
 import {
+  SAVE_VIEW_KEYS,
   SaveViewDialog,
   refreshViewLists,
+  saveViewTitle,
   type ViewDetails,
 } from '../../components/issues/view/IssueViewPage';
 import BulkBar, {
@@ -1583,7 +1585,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   });
 
   useShortcut({
-    keys: 'shift+v',
+    keys: SAVE_VIEW_KEYS,
     label: 'Save as view',
     scope: 'page',
     group: 'Projects',
@@ -1771,6 +1773,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               size="sm"
               variant="ghost"
               className="gap-1.5"
+              title={saveViewTitle()}
               onClick={() => {
                 setSaving('new');
               }}

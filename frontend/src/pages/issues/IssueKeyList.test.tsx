@@ -6,7 +6,13 @@
  * ids the keys resolved to.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -350,5 +356,32 @@ describe('the issue key route', () => {
     expect(
       [...((filter['issue_id'] as string[] | undefined) ?? [])].sort()
     ).toEqual(['iss-1', 'iss-2', 'iss-3']);
+  });
+
+  it('opens Save as view on Option or Alt+V but not while typing', async () => {
+    renderAt('/w/mine/issues/ENG-3,WEB-4,ENG-1');
+    await screen.findByText('Retire the old cache');
+
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+    fireEvent.keyDown(field, { key: '\u221a', code: 'KeyV', altKey: true });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    field.remove();
+
+    fireEvent.keyDown(document.body, {
+      key: 'V',
+      code: 'KeyV',
+      shiftKey: true,
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, {
+      key: '\u221a',
+      code: 'KeyV',
+      altKey: true,
+    });
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('View name')).toBeInTheDocument();
   });
 });
