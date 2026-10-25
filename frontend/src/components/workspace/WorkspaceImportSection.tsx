@@ -44,6 +44,7 @@ import type {
   IssueImportRequest,
   JiraImportCount,
   LinearImportCount,
+  LinearTeamMappingRead,
   RowProblemRead,
   TeamRead,
   WorkspaceRead,
@@ -173,19 +174,32 @@ const STATUS_DISPLAY: Record<ImportStatus, { label: string; tone: BadgeTone }> =
 
 /** How each step of a Linear import reads while it runs. */
 const PHASE_LABELS: Record<string, string> = {
+  statuses: 'Creating statuses',
   cycles: 'Reading cycles',
   projects: 'Reading projects',
   issues: 'Reading issues',
   links: 'Linking sub-issues and relations',
+  templates: 'Reading issue templates',
   initiatives: 'Reading initiatives',
   project_relations: 'Linking project dependencies',
 };
 
-/** How many steps each Linear team takes, matching the server's phase list. */
+/** How many steps every Linear team takes before the optional ones, matching the server's phase list. */
 const TEAM_PHASES = 4;
 
+/** How many steps one Linear team takes, counting the optional phases it was started with. */
+const linearTeamPhases = (team: LinearTeamMappingRead): number =>
+  TEAM_PHASES +
+  (team.create_statuses === true ? 1 : 0) +
+  (team.import_templates === true ? 1 : 0);
+
 /** The tallies a finished Linear import lists, in order, with the noun each counts. */
-const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
+const LINEAR_TALLIES: {
+  name: LinearImportCount;
+  noun: string;
+  plural?: string;
+}[] = [
+  { name: 'statuses', noun: 'new status', plural: 'new statuses' },
   { name: 'comments', noun: 'comment' },
   { name: 'labels', noun: 'new label' },
   { name: 'sub_issues', noun: 'sub-issue link' },
@@ -196,6 +210,7 @@ const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
   { name: 'project_updates', noun: 'project update' },
   { name: 'initiatives', noun: 'initiative' },
   { name: 'project_relations', noun: 'project dependency link' },
+  { name: 'templates', noun: 'issue template' },
 ];
 
 /** How each step of a Shortcut import reads while it runs. */
@@ -306,19 +321,23 @@ const withoutTrelloActions = (text: string): string => {
 };
 
 /** Says how many of a thing there are, with the plural when it needs one. */
-const count = (n: number, noun: string): string =>
-  `${n} ${noun}${n === 1 ? '' : 's'}`;
+const count = (n: number, noun: string, plural = `${noun}s`): string =>
+  `${n} ${n === 1 ? noun : plural}`;
 
 /** The line under a running Linear job that says which step it is on. */
 const linearProgress = (job: IssueImportRead): string => {
   if (job.status === 'queued') return 'Waiting to start';
   const index = job.phase_index ?? 0;
   const total = job.phase_count ?? 0;
-  const teams = job.linear_teams ?? [];
-  const team =
-    index < teams.length * TEAM_PHASES
-      ? teams[Math.floor(index / TEAM_PHASES)]
-      : undefined;
+  let team: LinearTeamMappingRead | undefined;
+  let start = 0;
+  for (const candidate of job.linear_teams ?? []) {
+    start += linearTeamPhases(candidate);
+    if (index < start) {
+      team = candidate;
+      break;
+    }
+  }
   const step = PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
   const parts = [team === undefined ? step : `${step} in ${team.linear_key}`];
   if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
@@ -332,9 +351,9 @@ const linearOutcome = (job: IssueImportRead): string => {
   const parts = [`${count(job.created_count, 'issue')} created`];
   const updated = job.updated_count ?? counts.issues_updated ?? 0;
   if (updated > 0) parts.push(`${updated} updated`);
-  for (const { name, noun } of LINEAR_TALLIES) {
+  for (const { name, noun, plural } of LINEAR_TALLIES) {
     const n = counts[name] ?? 0;
-    if (n > 0) parts.push(count(n, noun));
+    if (n > 0) parts.push(count(n, noun, plural));
   }
   return parts.join(', ');
 };
