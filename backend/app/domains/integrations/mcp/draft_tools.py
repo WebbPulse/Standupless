@@ -21,8 +21,8 @@ from app.common.api.schemas.drafts import DraftRead, DraftWrite
 from app.common.api.schemas.issue_drafts import DRAFT_ID_PATTERN, IssueDraftRead, IssueDraftWrite
 from app.common.comment_drafts import delete_draft, get_draft, list_drafts, save_draft
 from app.common.db.dynamo.views import ISSUE_DRAFTS_MAX
-from app.common.issue_keys import current
 from app.common.issue_drafts import delete_issue_draft, get_issue_draft, list_issue_drafts, save_issue_draft
+from app.common.issue_keys import current
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
