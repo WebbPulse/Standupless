@@ -9615,7 +9615,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox. `template_sub_issue_keys` keeps\nonly the template sub-issues it names; left out, every one is created.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox. `template_sub_issue_keys` keeps\nonly the template sub-issues it names; left out, every one is created.\nA sub-issue that leaves out `cycle_id` joins its parent's open cycle when it\nstarts in an unstarted or started status, and one that leaves out\n`assignee_id` takes the parent's assignee when the creator is that assignee\nor every existing sub-issue shares it. Sending either, null included, wins.",
         "properties": {
           "assignee_id": {
             "anyOf": [
