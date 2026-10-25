@@ -7,7 +7,8 @@
  * deleting is offered only to an admin and returns to the list. The updates
  * tab opens from `?tab=updates`, lists updates under their anchors, posts,
  * edits and deletes them, and a quiet live project nudges for one. The
- * overview's activity interleaves property changes with the updates.
+ * overview's activity interleaves property changes with the updates. R
+ * focuses the name and Cmd or Ctrl+Shift+Comma copies the project's address.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -29,6 +30,10 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import { projectPath } from '../../lib/paths';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import ProjectDetail from './ProjectDetail';
 
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
@@ -1047,5 +1052,90 @@ describe('ProjectDetail', () => {
       'aria-selected',
       'true'
     );
+  });
+
+  describe('keyboard', () => {
+    /** Renders the page inside a shortcut registry, as the workspace shell does. */
+    const renderWithKeys = (entry = '/w/mine/projects/prj-1') =>
+      render(
+        <ShortcutProvider>
+          <BoundKeys />
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/w/:slug/projects/:id" element={<ProjectDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </ShortcutProvider>
+      );
+
+    /** Dispatches one key the way the shortcut layer listens for it. */
+    const press = (key: string, init: KeyboardEventInit = {}) => {
+      act(() => {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, ...init })
+        );
+      });
+    };
+
+    it('focuses and selects the name on R', async () => {
+      renderWithKeys();
+      const name = await screen.findByRole<HTMLInputElement>('textbox', {
+        name: 'Project name',
+      });
+      await keysBound('r');
+
+      press('r');
+
+      expect(name).toHaveFocus();
+      expect(name.selectionStart).toBe(0);
+      expect(name.selectionEnd).toBe('Launch'.length);
+    });
+
+    it('leaves R to the field being typed in', async () => {
+      const user = userEvent.setup();
+      renderWithKeys();
+      const name = await screen.findByRole('textbox', {
+        name: 'Project name',
+      });
+      const description = screen.getByRole('textbox', {
+        name: 'Description',
+      });
+      await keysBound('r');
+
+      await user.click(description);
+      await user.keyboard('r');
+
+      expect(description).toHaveFocus();
+      expect(name).not.toHaveFocus();
+    });
+
+    it('does not bind R for a viewer who cannot rename', async () => {
+      useWorkspaceMock.mockReturnValue(resolved('guest'));
+      listTeams.mockResolvedValue([{ ...engine, role: undefined }]);
+      renderWithKeys();
+      await screen.findByRole('textbox', { name: 'Project name' });
+      await keysBound('mod+shift+,');
+
+      expect(
+        screen.getByTestId('bound-keys').getAttribute('data-keys')?.split('|')
+      ).not.toContain('r');
+    });
+
+    it('copies the project URL on Cmd or Ctrl+Shift+,', async () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+      await keysBound('mod+shift+,');
+
+      press('<', { ctrlKey: true, shiftKey: true, code: 'Comma' });
+
+      expect(writeText).toHaveBeenCalledWith(
+        `${globalThis.location.origin}${projectPath('mine', launch)}`
+      );
+    });
   });
 });
