@@ -55,6 +55,7 @@ from app.common.planning_rules import (
 )
 from app.common.project_cadence import workspace_interval
 from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
+from app.common.project_link_writes import with_links
 from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
@@ -511,6 +512,7 @@ def update_project(
         default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id),
     )
     fill_one(repositories, context, body)
+    with_links(repositories, body)
     if closed and ("status" in fields or choice is not None):
         body.open_issue_count = len(open_issues) - store_open_issues(repositories, context, planned)
     return body
@@ -519,7 +521,7 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones, updates, history, documents and dependencies.
+    """Delete a project with its milestones, links, updates, history, documents and dependencies.
 
     Every issue that pointed at it stays in place.
 
@@ -529,6 +531,7 @@ def delete_project(
     project, _ = load_readable_project(repositories, context, project_id, team_id)
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
+    repositories.planning.delete_project_links(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
     repositories.planning.update_threads.delete_project_threads(context.workspace_id, project_id)
     repositories.planning.delete_project_activity(context.workspace_id, project_id)

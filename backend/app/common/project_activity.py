@@ -1,4 +1,4 @@
-"""A project's activity: who changed its properties and milestones, and when.
+"""A project's activity: who changed its properties, milestones and Resources links, and when.
 
 Held in `common` because the project and milestone writes it records are shared by
 the planning routes and the MCP tools, and the feed is read by both. Rows live in
@@ -13,6 +13,7 @@ a team the project's own read would hide.
 from __future__ import annotations
 
 from typing import Any, Mapping, Optional
+from urllib.parse import urlsplit
 
 from webbpulse.dynamodb import encode_start_key
 
@@ -23,6 +24,7 @@ from app.common.api.schemas.planning import MAX_LIMIT, PROJECT_ACTIVITY_DEFAULT_
 from app.common.db.dynamo.planning import (
     Project,
     ProjectActivityRow,
+    ProjectLink,
     ProjectMilestone,
     new_planning_id,
     project_activity_key,
@@ -48,6 +50,9 @@ TRACKED_FIELDS: tuple[str, ...] = (
 MILESTONE_FIELDS: tuple[str, ...] = ("name", "target_date")
 """The milestone properties a change to is recorded."""
 
+LINK_FIELDS: tuple[str, ...] = ("title", "url")
+"""The Resources link properties a change to is recorded; a reorder is not."""
+
 
 def _row(
     context: AuthzContext,
@@ -58,6 +63,7 @@ def _row(
     from_value: Any = None,
     to_value: Any = None,
     milestone_id: Optional[str] = None,
+    link_id: Optional[str] = None,
 ) -> ProjectActivityRow:
     """One activity row by the caller, with its sort key composed."""
     activity_id = new_planning_id()
@@ -71,6 +77,7 @@ def _row(
         from_value=from_value,
         to_value=to_value,
         milestone_id=milestone_id,
+        link_id=link_id,
         actor_id=context.user_id,
         source=context.source,
     )
@@ -152,6 +159,47 @@ def record_milestone_changes(
             milestone_id=after.milestone_id,
         )
         for name in MILESTONE_FIELDS
+        if _changed(getattr(before, name), getattr(after, name))
+    ]
+    repositories.planning.record_project_activity(rows)
+
+
+def link_label(link: ProjectLink) -> str:
+    """What a Resources link reads as: its title, or the hostname of its URL when it has none."""
+    if link.title:
+        return link.title
+    return urlsplit(link.url).hostname or link.url
+
+
+def record_link_added(repositories: Repositories, context: AuthzContext, link: ProjectLink) -> None:
+    """Record that the caller added a Resources link, naming it as it was created."""
+    repositories.planning.record_project_activity(
+        [_row(context, link.project_id, "link_added", to_value=link_label(link), link_id=link.link_id)]
+    )
+
+
+def record_link_removed(repositories: Repositories, context: AuthzContext, link: ProjectLink) -> None:
+    """Record that the caller removed a Resources link, keeping its label since the row is gone."""
+    repositories.planning.record_project_activity(
+        [_row(context, link.project_id, "link_removed", from_value=link_label(link), link_id=link.link_id)]
+    )
+
+
+def record_link_changes(
+    repositories: Repositories, context: AuthzContext, before: ProjectLink, after: ProjectLink
+) -> None:
+    """Record a new title or URL of one Resources link, one row per property moved."""
+    rows = [
+        _row(
+            context,
+            after.project_id,
+            "link_changed",
+            field=name,
+            from_value=getattr(before, name),
+            to_value=getattr(after, name),
+            link_id=after.link_id,
+        )
+        for name in LINK_FIELDS
         if _changed(getattr(before, name), getattr(after, name))
     ]
     repositories.planning.record_project_activity(rows)

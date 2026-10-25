@@ -37,6 +37,7 @@ from app.common.api.schemas.planning import (
 )
 from app.common.planning_rules import load_readable_project
 from app.common.project_cadence import workspace_interval
+from app.common.project_link_writes import with_links
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_writes import create_project as create_project_row
 from app.common.project_writes import delete_project as delete_project_row
@@ -127,10 +128,11 @@ def read_project(
     project_id: Annotated[str, Path()],
     team_id: Annotated[Optional[str], Query()] = None,
 ) -> ProjectRead:
-    """One project, or a 404 when the caller can see none of its teams."""
+    """One project with its Resources links, or a 404 when the caller can see none of its teams."""
     project, teams = load_readable_project(repositories, context, project_id, team_id)
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
-    return fill_one(repositories, context, ProjectRead.from_row(project, teams, default_interval_days=default_days))
+    body = fill_one(repositories, context, ProjectRead.from_row(project, teams, default_interval_days=default_days))
+    return with_links(repositories, body)
 
 
 @router.get("/{workspace_id}/projects/{project_id}/history", response_model=ProjectHistoryRead)
