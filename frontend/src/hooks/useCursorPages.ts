@@ -40,7 +40,7 @@ export interface CursorPagesResult<T> {
   rows: T[];
   error: unknown;
   isLoading: boolean;
-  /** True while a later page is being fetched. */
+  /** True while a later page is being fetched, or an empty first page is about to load on. */
   isPaging: boolean;
   /** Whether another page exists to load. */
   hasMore: boolean;
@@ -170,7 +170,7 @@ export const useCursorPages = <T>(
     rows,
     error,
     isLoading,
-    isPaging,
+    isPaging: isPaging || (emptyFirst && followed.current !== data),
     hasMore: cursor !== null,
     loadMore,
   };
