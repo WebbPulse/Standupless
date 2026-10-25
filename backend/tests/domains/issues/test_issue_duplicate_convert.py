@@ -158,7 +158,7 @@ def test_a_duplicate_with_sub_issues_copies_the_whole_tree(
     """Open and closed sub-issues are copied in order under the copy by the same rules."""
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Checklist")
-    later = create_issue(client, workspace, title="Later", parent_id=parent["id"], sort_order="b")
+    create_issue(client, workspace, title="Later", parent_id=parent["id"], sort_order="b")
     first = create_issue(
         client,
         workspace,
