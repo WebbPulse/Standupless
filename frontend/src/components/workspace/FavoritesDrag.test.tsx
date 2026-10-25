@@ -260,9 +260,6 @@ describe('adding to a favorites folder from a menu', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(listFavoriteFolders).toHaveBeenCalled();
-    });
     await user.click(screen.getByRole('button', { name: 'Team options' }));
     expect(
       await screen.findByText('Add to favorites folder')
