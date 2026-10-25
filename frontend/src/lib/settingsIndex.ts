@@ -719,6 +719,17 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
     synonyms: ['team auto close', 'autoclose', 'stale'],
   },
   {
+    id: 'parent-auto-close',
+    title: 'Parent and sub-issues',
+    paletteLabel: 'Parent and sub-issue auto-close settings',
+    synonyms: [
+      'auto-close parent issues',
+      'auto-close sub-issues',
+      'subissues',
+      'child issues',
+    ],
+  },
+  {
     id: 'archive',
     title: 'Auto-archive',
     paletteLabel: 'Auto-archive settings',
