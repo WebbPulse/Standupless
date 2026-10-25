@@ -2648,6 +2648,7 @@ class SkippedTemplateIssueRead(TypedDict):
 
 
 class SlaSettingsRead(TypedDict):
+    calendar: NotRequired[Literal["calendar", "business_days"]]
     enabled: bool
     high_hours: NotRequired[int | None]
     low_hours: NotRequired[int | None]
@@ -2660,6 +2661,7 @@ class SlaSettingsRead(TypedDict):
 
 
 class SlaSettingsUpdate(TypedDict):
+    calendar: NotRequired[Literal["calendar", "business_days"] | None]
     enabled: NotRequired[bool | None]
     high_hours: NotRequired[int | None]
     low_hours: NotRequired[int | None]
@@ -4065,9 +4067,11 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     relation_count: NotRequired[int]
     sla_breaches_at: NotRequired[str | None]
+    sla_calendar: NotRequired[Literal["calendar", "business_days"]]
     sla_paused_at: NotRequired[str | None]
     sla_started_at: NotRequired[str | None]
     sla_status: NotRequired[Literal["none", "on_track", "at_risk", "breached"]]
+    sla_timezone: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]

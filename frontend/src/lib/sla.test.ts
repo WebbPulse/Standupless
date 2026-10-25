@@ -146,6 +146,58 @@ describe('a paused timer', () => {
   });
 });
 
+describe('a business days timer', () => {
+  const friday = {
+    sla_started_at: '2026-10-23T12:00:00Z',
+    sla_breaches_at: '2026-10-26T12:00:00Z',
+    sla_status: 'on_track' as const,
+    sla_timezone: 'UTC',
+  };
+
+  it('counts only weekday time toward the window and the label', () => {
+    const saturday = new Date('2026-10-24T12:00:00Z');
+    expect(slaLabel(friday, saturday)).toBe('Breaches in 12h');
+    expect(slaLabel({ ...friday, sla_timezone: null }, saturday)).toBe(
+      'Breaches in 2d'
+    );
+  });
+
+  it('turns at risk on business time, not over the weekend', () => {
+    const sunday = new Date('2026-10-25T20:00:00Z');
+    expect(liveSlaStatus(friday, sunday)).toBe('on_track');
+    expect(liveSlaStatus({ ...friday, sla_timezone: null }, sunday)).toBe(
+      'at_risk'
+    );
+    expect(liveSlaStatus(friday, new Date('2026-10-26T07:00:00Z'))).toBe(
+      'at_risk'
+    );
+  });
+
+  it('counts breached time in business time', () => {
+    expect(slaLabel(friday, new Date('2026-10-27T15:00:00Z'))).toBe(
+      'Breached 1d 3h ago'
+    );
+  });
+
+  it('does not use up a paused window over the weekend', () => {
+    const paused = {
+      sla_started_at: '2026-10-23T00:00:00Z',
+      sla_breaches_at: '2026-10-23T20:00:00Z',
+      sla_paused_at: '2026-10-23T10:00:00Z',
+      sla_status: 'on_track' as const,
+      sla_timezone: 'UTC',
+    };
+    const sunday = new Date('2026-10-25T12:00:00Z');
+    expect(slaLabel(paused, sunday)).toBe('Paused, 10h left');
+    expect(slaEffectiveDeadline(paused, sunday)).toBe(
+      Date.parse('2026-10-26T10:00:00Z')
+    );
+    expect(
+      slaEffectiveDeadline({ ...paused, sla_timezone: null }, sunday)
+    ).toBe(Date.parse('2026-10-25T22:00:00Z'));
+  });
+});
+
 describe('slaHoursLabel', () => {
   it('reads hours, days and weeks, and a value off the list', () => {
     expect(slaHoursLabel(null)).toBe('Off');

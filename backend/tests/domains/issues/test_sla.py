@@ -7,6 +7,8 @@ moving between open statuses keeps it; finishing the issue drops it. The list
 answers each issue's SLA status and filters on it. Time in a status the team
 pauses does not count, and leaving it resumes with the time that was left.
 A team counting from creation keeps the timer through triage, from `created_at`.
+A team counting business days skips Saturday and Sunday in its timezone for
+every one of those rules, and a timer moves onto a new clock keeping its start.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from fastapi.testclient import TestClient
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import default_sla_settings, default_triage_settings
-from app.common.sla import apply_sla, at_risk_from, sla_breach_key, sla_status
+from app.common.sla import apply_sla, at_risk_from, recalendar, sla_breach_key, sla_status
 from tests.domains.helpers import MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.issues.conftest import TEAM, WORKSPACE, create_issue
 
@@ -640,3 +642,154 @@ def test_creation_mode_times_a_waiting_issue_through_the_routes(
 
     assert response.status_code == 200, response.text
     assert response.json()["sla_started_at"] == waiting["sla_started_at"]
+
+
+FRIDAY = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
+"""Noon UTC on a Friday, so a day long window crosses the weekend."""
+
+
+def _days(repositories: Any, zone: str | None = None, **settings: Any) -> None:
+    """Turn `TEAM`'s SLAs on counting business days, in `zone` when one is given."""
+    if zone is not None:
+        repositories.teams.update(WORKSPACE, TEAM, timezone=zone)
+    _enable(repositories, calendar="business_days", **settings)
+
+
+def test_calendar_time_stamps_no_zone(workspace: str, repositories: Any, statuses: "dict[str, Any]") -> None:
+    """The default calendar keeps counting the weekend and leaves the timer unzoned."""
+    _enable(repositories)
+    issue = _in(statuses["unstarted"].status_id)
+
+    apply_sla(repositories, None, issue, FRIDAY)
+
+    assert issue.sla_timezone is None
+    assert issue.sla_breaches_at == FRIDAY + timedelta(hours=24)
+
+
+def test_a_business_days_timer_skips_the_weekend(workspace: str, repositories: Any, statuses: "dict[str, Any]") -> None:
+    """An urgent issue filed Friday noon breaches Monday noon and stays on track over the weekend."""
+    _days(repositories)
+    issue = _in(statuses["unstarted"].status_id)
+
+    apply_sla(repositories, None, issue, FRIDAY)
+
+    assert issue.sla_timezone == "UTC"
+    assert issue.sla_started_at == FRIDAY
+    assert issue.sla_breaches_at == datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)
+    assert sla_status(issue, datetime(2026, 10, 25, 23, 0, tzinfo=timezone.utc)) == "on_track"
+    assert sla_status(issue, datetime(2026, 10, 26, 6, 0, tzinfo=timezone.utc)) == "at_risk"
+    assert sla_status(issue, datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)) == "breached"
+
+
+def test_business_days_follow_the_team_timezone(workspace: str, repositories: Any, statuses: "dict[str, Any]") -> None:
+    """Friday 18:00 in New York leaves six hours of Friday, so the day ends Monday 18:00 there."""
+    _days(repositories, "America/New_York")
+    issue = _in(statuses["unstarted"].status_id)
+
+    apply_sla(repositories, None, issue, datetime(2026, 10, 23, 22, 0, tzinfo=timezone.utc))
+
+    assert issue.sla_timezone == "America/New_York"
+    assert issue.sla_breaches_at == datetime(2026, 10, 26, 22, 0, tzinfo=timezone.utc)
+
+
+def test_a_timer_started_on_a_weekend_counts_from_monday(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """An issue filed on Saturday breaches at the end of Monday."""
+    _days(repositories)
+    issue = _in(statuses["unstarted"].status_id)
+
+    apply_sla(repositories, None, issue, datetime(2026, 10, 24, 9, 0, tzinfo=timezone.utc))
+
+    assert issue.sla_breaches_at == datetime(2026, 10, 27, 0, 0, tzinfo=timezone.utc)
+
+
+def test_a_pause_over_the_weekend_costs_nothing_extra(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Six hours used Friday, paused until Monday, then the eighteen left run from Monday midnight."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _days(repositories, paused_status_ids=[staging])
+    friday = datetime(2026, 10, 23, 0, 0, tzinfo=timezone.utc)
+    monday = datetime(2026, 10, 26, 0, 0, tzinfo=timezone.utc)
+    issue = _in(todo)
+    apply_sla(repositories, None, issue, friday)
+
+    paused = _move(repositories, issue, friday + timedelta(hours=6), status_id=staging)
+    resumed = _move(repositories, paused, monday, status_id=todo)
+
+    assert paused.sla_breaches_at == datetime(2026, 10, 24, 0, 0, tzinfo=timezone.utc)
+    assert resumed.sla_paused_at is None
+    assert resumed.sla_started_at == friday + timedelta(hours=18)
+    assert resumed.sla_breaches_at == monday + timedelta(hours=18)
+
+
+def test_a_priority_change_counts_business_days_from_the_start(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Lowering to high gives three business days from Friday noon, which is Wednesday noon."""
+    _days(repositories)
+    issue = _in(statuses["unstarted"].status_id)
+    apply_sla(repositories, None, issue, FRIDAY)
+
+    lowered = _move(repositories, issue, FRIDAY + timedelta(hours=1), priority="high")
+
+    assert lowered.sla_started_at == FRIDAY
+    assert lowered.sla_breaches_at == datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
+
+
+def test_creation_mode_counts_business_days_from_creation(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A team counting from creation lays the window out from `created_at` on business days too."""
+    _days(repositories, start_mode="on_creation")
+    issue = _in(statuses["unstarted"].status_id).model_copy(update={"created_at": FRIDAY})
+
+    apply_sla(repositories, None, issue, FRIDAY + timedelta(hours=2))
+
+    assert issue.sla_started_at == FRIDAY
+    assert issue.sla_breaches_at == datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)
+
+
+def test_a_calendar_timer_moves_onto_business_days_on_its_next_change(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A timer the mode switch missed converts when the issue next moves, keeping its start."""
+    todo, started = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories)
+    issue = _in(todo)
+    apply_sla(repositories, None, issue, FRIDAY)
+
+    _days(repositories)
+    moved = _move(repositories, issue, FRIDAY + timedelta(hours=1), status_id=started)
+
+    assert moved.sla_started_at == FRIDAY
+    assert moved.sla_timezone == "UTC"
+    assert moved.sla_breaches_at == datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)
+
+
+def test_recalendar_keeps_the_window_measured_on_the_old_clock() -> None:
+    """A business day timer goes back to calendar time with the same start and a day long window."""
+    issue = _timed(FRIDAY, 24)
+
+    assert recalendar(issue, "UTC") is True
+    assert issue.sla_breaches_at == datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)
+    assert recalendar(issue, "UTC") is False
+    assert recalendar(issue, None) is True
+    assert (issue.sla_started_at, issue.sla_breaches_at, issue.sla_timezone) == (
+        FRIDAY,
+        FRIDAY + timedelta(hours=24),
+        None,
+    )
+
+
+def test_the_route_answers_the_calendar(client: TestClient, workspace: str, repositories: Any) -> None:
+    """An issue answers which clock its timer runs on and the zone it skips weekends in."""
+    _days(repositories, "Europe/Berlin")
+    sign_in(client, OWNER)
+
+    timed = create_issue(client, WORKSPACE, priority="urgent")
+    untimed = create_issue(client, WORKSPACE)
+
+    assert (timed["sla_calendar"], timed["sla_timezone"]) == ("business_days", "Europe/Berlin")
+    assert (untimed["sla_calendar"], untimed["sla_timezone"]) == ("calendar", None)

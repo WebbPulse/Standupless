@@ -457,6 +457,21 @@ def test_a_paused_timer_is_judged_at_its_pause(repositories: Any, workspace: str
     assert event.data["slaBreached"] is False
 
 
+def test_the_timer_carries_its_clock(repositories: Any, workspace: str) -> None:
+    """A business days timer names its zone, a calendar one reads as calendar, and no timer is null."""
+    zoned = issue_image(sla_breaches_at="2999-01-01T00:00:00+00:00", sla_timezone="Europe/Berlin")
+    plain = issue_image(sla_breaches_at="2999-01-01T00:00:00+00:00")
+
+    business = payloads.describe(repositories, payloads.ISSUE, "INSERT", zoned, {})
+    calendar = payloads.describe(repositories, payloads.ISSUE, "INSERT", plain, {})
+    untimed = payloads.describe(repositories, payloads.ISSUE, "INSERT", issue_image(), {})
+
+    assert business is not None and calendar is not None and untimed is not None
+    assert (business.data["slaCalendar"], business.data["slaTimezone"]) == ("business_days", "Europe/Berlin")
+    assert (calendar.data["slaCalendar"], calendar.data["slaTimezone"]) == ("calendar", None)
+    assert (untimed.data["slaCalendar"], untimed.data["slaTimezone"]) == (None, None)
+
+
 def test_a_long_description_is_bounded(repositories: Any, workspace: str) -> None:
     """One body always fits the queue message and the log row that carry it."""
     event = payloads.describe(repositories, payloads.ISSUE, "INSERT", issue_image(body="x" * 50_000), {})

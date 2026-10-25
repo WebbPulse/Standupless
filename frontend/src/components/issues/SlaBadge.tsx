@@ -5,7 +5,9 @@
  * nothing. The status is recomputed once a minute from the issue's own
  * timestamps, so a list left open does not keep showing a stale state. While
  * the issue sits in one of its team's paused statuses the badge shows the time
- * it has left with a pause icon and stops ticking.
+ * it has left with a pause icon and stops ticking. On a team that counts
+ * business days the countdown skips weekends in the team's timezone, and the
+ * tooltip says so.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -16,6 +18,7 @@ import {
   liveSlaStatus,
   slaLabel,
   slaPaused,
+  slaZone,
   type SlaFields,
 } from '../../lib/sla';
 import type { SlaStatus } from '../../types/Api';
@@ -58,11 +61,13 @@ export const SlaBadge: React.FC<SlaBadgeProps> = ({ issue, className }) => {
   const label = slaLabel(issue, now);
   if (status === 'none' || label === null || !covered) return null;
   const deadline = fullTimestamp(issue.sla_breaches_at ?? '');
-  const title = paused
+  const base = paused
     ? 'SLA paused while the issue is in this status'
     : status === 'breached'
       ? `SLA breached ${deadline}`
       : `SLA breaches ${deadline}`;
+  const title =
+    slaZone(issue) === null ? base : `${base}. Counts business days only.`;
   const Icon = status === 'breached' ? LuFlame : paused ? LuPause : LuClock;
 
   return (

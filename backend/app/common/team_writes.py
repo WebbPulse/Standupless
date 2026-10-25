@@ -61,7 +61,7 @@ from app.common.db.dynamo.teams import DEFAULT_TEAM_TIMEZONE, Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
 from app.common.plan_limits import LimitedResource
 from app.common.planning_rules import unprocessable
-from app.common.sla import FINISHED_CATEGORIES, retime_column
+from app.common.sla import FINISHED_CATEGORIES, recalendar_team, retime_column, team_clock_zone
 from app.common.sub_teams import check_parent, sub_team_ids
 from app.common.team_time import team_today
 
@@ -336,7 +336,15 @@ def update_team(
     if "timezone" in inherited:
         for member_id in (team_id, *sub_team_ids(repositories, workspace_id, team_id)):
             _stock_cycles(repositories, workspace_id, member_id)
+            _recalendar_slas(repositories, workspace_id, member_id)
     return updated
+
+
+def _recalendar_slas(repositories: Repositories, workspace_id: str, team_id: str) -> None:
+    """Move a business-days team's open SLA timers onto its new timezone's weekends."""
+    settings = sla_settings(repositories, workspace_id, team_id)
+    if settings.calendar == "business_days":
+        recalendar_team(repositories, workspace_id, team_id, team_clock_zone(repositories, settings))
 
 
 def _inherited(what: str) -> HTTPException:
@@ -617,14 +625,14 @@ def update_sla_settings(
     statuses must be open statuses of the team, and issues already sitting in a
     status added to or taken out of the set are paused or resumed on the spot.
     A new start mode leaves running timers alone and applies from each issue's
-    next watched-field change.
+    next watched-field change. A new calendar moves every open timer onto the
+    new clock on the spot, each keeping its start and its window.
     """
     current = sla_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True)
-    if changes.get("enabled") is None:
-        changes.pop("enabled", None)
-    if changes.get("start_mode") is None:
-        changes.pop("start_mode", None)
+    for name in ("enabled", "start_mode", "calendar"):
+        if changes.get(name) is None:
+            changes.pop(name, None)
     if "paused_status_ids" in changes:
         changes["paused_status_ids"] = _paused_statuses(
             repositories, workspace_id, team_id, changes["paused_status_ids"] or []
@@ -634,6 +642,8 @@ def update_sla_settings(
     ):
         enforce_feature(repositories, workspace_id, Feature.ISSUE_SLAS)
     saved = repositories.team_config.put_sla_settings(current.model_copy(update=changes))
+    if saved.calendar != current.calendar:
+        recalendar_team(repositories, workspace_id, team_id, team_clock_zone(repositories, saved))
     before, after = set(current.paused_status_ids), set(saved.paused_status_ids)
     now = utc_now()
     for status_id in sorted(before ^ after):

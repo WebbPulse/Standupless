@@ -234,15 +234,22 @@ def _moment(value: Any) -> datetime | None:
 
 
 def _issue_sla(image: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any]:
-    """The issue's SLA timer as a receiver reads it: start, due time, pause and breached flag.
+    """The issue's SLA timer as a receiver reads it: start, due time, pause, breached flag and clock.
 
-    All four are null when no SLA rule applies to the issue, and an archived
+    All of them are null when no SLA rule applies to the issue, and an archived
     issue's timer no longer runs, so it reads as not breached. A paused timer is
     judged at the moment it paused.
     """
     breaches_at = _moment(image.get("sla_breaches_at"))
     if breaches_at is None:
-        return {"slaStartedAt": None, "slaBreachesAt": None, "slaPausedAt": None, "slaBreached": None}
+        return {
+            "slaStartedAt": None,
+            "slaBreachesAt": None,
+            "slaPausedAt": None,
+            "slaBreached": None,
+            "slaCalendar": None,
+            "slaTimezone": None,
+        }
     archived = bool(image.get("archived_at"))
     moment = now or datetime.now(timezone.utc)
     paused_at = _moment(image.get("sla_paused_at"))
@@ -253,6 +260,8 @@ def _issue_sla(image: Mapping[str, Any], now: datetime | None = None) -> dict[st
         "slaBreachesAt": image.get("sla_breaches_at"),
         "slaPausedAt": image.get("sla_paused_at") or None,
         "slaBreached": not archived and moment >= breaches_at,
+        "slaCalendar": "business_days" if image.get("sla_timezone") else "calendar",
+        "slaTimezone": image.get("sla_timezone") or None,
     }
 
 
