@@ -199,13 +199,16 @@ def check_assignee(
 
     A guest only reads the teams they hold a membership in, and anyone reads a
     private team only as its member, so assigning such a person an issue in a
-    team they cannot open would hide it from them entirely.
+    team they cannot open would hide it from them entirely. A suspended member
+    cannot take new work, though issues already theirs keep them.
     """
     if not assignee_id:
         return None
     membership = repositories.memberships.get(workspace_id, assignee_id)
     if membership is None:
         raise unprocessable("The assignee is not a member of this workspace")
+    if membership.is_suspended:
+        raise unprocessable("The assignee is suspended")
     if not needs_team_membership(repositories, workspace_id, team_id, membership.role):
         return assignee_id
     team_membership = repositories.memberships.get_team_membership(workspace_id, team_id, assignee_id)

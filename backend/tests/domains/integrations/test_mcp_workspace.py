@@ -425,3 +425,32 @@ def test_workspace_tools_leave_another_workspace_alone(client: TestClient, repos
     assert repositories.workspaces.get(OTHER_WORKSPACE).name == "Other"
     assert repositories.invites.get(OTHER_WORKSPACE, foreign.invite_id) is not None
     assert repositories.memberships.get(OTHER_WORKSPACE, OUTSIDER) is not None
+
+
+def test_suspend_and_reactivate_member(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin suspends a member by email and reactivates them with the same role, and suspend is destructive."""
+    secret = mint_for(repositories, ADMIN, ADMIN_MEMBERS)
+
+    suspended = answer(tool(client, secret, "suspend_member", {"user": "member@example.com"}))
+    assert suspended["status"] == "suspended" and suspended["user_id"] == MEMBER
+    assert repositories.memberships.get(WORKSPACE, MEMBER).is_suspended
+
+    listed = answer(tool(client, secret, "list_workspace_members", {"status": "suspended"}))
+    assert [row["user_id"] for row in listed["members"]] == [MEMBER]
+
+    reactivated = answer(tool(client, secret, "reactivate_member", {"user": MEMBER}))
+    assert reactivated["status"] == "active" and reactivated["role"] == "member"
+    assert not repositories.memberships.get(WORKSPACE, MEMBER).is_suspended
+    assert TOOLS_BY_NAME["suspend_member"].descriptor()["annotations"]["destructiveHint"] is True
+
+
+def test_suspend_member_refuses_what_the_route_refuses(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A member cannot carry admin, nobody suspends themselves, and an admin cannot suspend an owner."""
+    scope_refused(tool(client, mint_for(repositories, MEMBER, ADMIN_MEMBERS), "suspend_member", {"user": GUEST}))
+    admin = mint_for(repositories, ADMIN, ADMIN_MEMBERS)
+
+    assert "suspend yourself" in refusal(tool(client, admin, "suspend_member", {"user": "me"}))
+    assert "Only an owner" in refusal(tool(client, admin, "suspend_member", {"user": OWNER}))
+    assert "status must be one of" in refusal(tool(client, admin, "list_workspace_members", {"status": "gone"}))
+    assert not repositories.memberships.get(WORKSPACE, ADMIN).is_suspended
+    assert not repositories.memberships.get(WORKSPACE, OWNER).is_suspended

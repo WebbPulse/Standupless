@@ -176,11 +176,11 @@ def can_receive(repositories: Repositories, workspace_id: str, team_id: str, use
 
 
 def can_receive_workspace_subject(repositories: Repositories, workspace_id: str, user_id: str) -> bool:
-    """Whether one person is a workspace member other than a guest, who alone reads workspace level subjects."""
+    """Whether one person is an active workspace member other than a guest, who alone reads workspace level subjects."""
     if not workspace_id or not user_id:
         return False
     membership = repositories.memberships.get(workspace_id, user_id)
-    return membership is not None and membership.role != "guest"
+    return membership is not None and membership.role != "guest" and not membership.is_suspended
 
 
 def actor_name(repositories: Repositories, actor_id: str) -> str:

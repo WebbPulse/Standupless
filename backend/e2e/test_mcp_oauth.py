@@ -200,6 +200,8 @@ EXPECTED_TOOLS = frozenset(
         "override_team_status",
         "remove_issues_from_cycle",
         "remove_member",
+        "suspend_member",
+        "reactivate_member",
         "remove_team_member",
         "reset_team_label_override",
         "reset_team_status_override",

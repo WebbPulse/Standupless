@@ -9,6 +9,8 @@ both call these, so the two surfaces cannot drift apart.
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 from fastapi import HTTPException, status
 from webbpulse.audit import changed_fields
 from webbpulse.dynamodb import TransactionCanceled
@@ -30,6 +32,7 @@ from app.common.api.schemas.workspaces import (
 )
 from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
+from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.workspaces import PERMISSION_FIELDS, Workspace
 from app.common.email import deliver
 from app.common.email.invite import render_invite
@@ -44,6 +47,14 @@ OWNER_ONLY = {"error_code": "FORBIDDEN", "message": "Only an owner may grant or 
 ADMIN_INVITE_ONLY = {"error_code": "FORBIDDEN", "message": "Only a workspace admin may invite someone as an admin"}
 
 OWN_INVITES_ONLY = {"error_code": "FORBIDDEN", "message": "Only an admin may revoke an invite someone else sent"}
+
+ADMIN_ONLY = {"error_code": "FORBIDDEN", "message": "Only a workspace admin may suspend or reactivate a member"}
+
+SUSPEND_SELF = {"error_code": "CONFLICT", "message": "You cannot suspend yourself"}
+
+ALREADY_SUSPENDED = {"error_code": "CONFLICT", "message": "This member is already suspended"}
+
+DEFAULT_MEMBER_STATUSES: frozenset[str] = frozenset({"active", "suspended"})
 
 
 def _not_found() -> HTTPException:
@@ -126,11 +137,30 @@ def _member_label(repositories: Repositories, user_id: str) -> str:
     return display_name_for(user) if user is not None else user_id
 
 
-def list_members(repositories: Repositories, context: AuthzContext) -> MemberListRead:
-    """Everyone in the workspace, joined with their user rows for display."""
-    memberships = repositories.memberships.list_members(context.workspace_id)
+def list_members(
+    repositories: Repositories,
+    context: AuthzContext,
+    statuses: Collection[str] | None = None,
+) -> MemberListRead:
+    """Everyone in the workspace, joined with their user rows for display, filtered by `status`.
+
+    With no filter the answer holds active and suspended members, so a person chip
+    on old issues and comments still resolves a suspended author. Pending invites
+    answer only when `invited` is asked for, and only to an admin, because the
+    invites list is admin only.
+    """
+    wanted = set(statuses) if statuses else set(DEFAULT_MEMBER_STATUSES)
+    memberships = [
+        m
+        for m in repositories.memberships.list_members(context.workspace_id)
+        if ("suspended" if m.is_suspended else "active") in wanted
+    ]
     users = repositories.users.get_many([membership.user_id for membership in memberships])
-    return MemberListRead(members=[MemberRead.from_rows(m, users.get(m.user_id)) for m in memberships])
+    members = [MemberRead.from_rows(m, users.get(m.user_id)) for m in memberships]
+    if "invited" in wanted and context.acts_as_workspace_admin:
+        invites = repositories.invites.list_for_workspace(context.workspace_id)
+        members.extend(MemberRead.from_invite(invite) for invite in invites if not invite.is_expired())
+    return MemberListRead(members=members)
 
 
 def update_member_role(
@@ -151,7 +181,7 @@ def update_member_role(
     if touches_ownership and context.role != "owner":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
 
-    if existing.role == "owner" and payload.role != "owner":
+    if existing.role == "owner" and payload.role != "owner" and not existing.is_suspended:
         if repositories.memberships.count_owners(context.workspace_id) <= 1:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
@@ -194,7 +224,11 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
     if existing.role == "owner" and not removing_self and context.role != "owner":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
 
-    if existing.role == "owner" and repositories.memberships.count_owners(context.workspace_id) <= 1:
+    if (
+        existing.role == "owner"
+        and not existing.is_suspended
+        and repositories.memberships.count_owners(context.workspace_id) <= 1
+    ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
     plan_usage.remove_membership(repositories, context.workspace_id, user_id)
@@ -208,6 +242,76 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
         target_label=_member_label(repositories, user_id),
         before={"role": existing.role},
     )
+
+
+def suspend_member(repositories: Repositories, context: AuthzContext, user_id: str) -> MemberRead:
+    """Suspend a member: they keep their role, teams and history but hold no access here.
+
+    Only a workspace admin may suspend, never themselves, and suspending an owner
+    needs an owner, the rule a role change follows. The last active owner cannot
+    be suspended. Authorization reads the suspension on every request, so the
+    member's sessions, personal keys, OAuth tokens and any workspace key they
+    minted stop working here on their next call, while other workspaces are
+    untouched. The seat they held stops being billed.
+    """
+    existing = _suspension_target(repositories, context, user_id)
+    if user_id == context.user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SUSPEND_SELF)
+    if existing.is_suspended:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ALREADY_SUSPENDED)
+    if existing.role == "owner" and repositories.memberships.count_owners(context.workspace_id) <= 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
+    updated = repositories.memberships.set_suspended(context.workspace_id, user_id, suspended_by=context.user_id)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ALREADY_SUSPENDED)
+    sync_seats(repositories, context.workspace_id)
+    user = repositories.users.get(user_id)
+    audit.record(
+        repositories,
+        context,
+        "member.suspended",
+        target_type="member",
+        target_id=user_id,
+        target_label=display_name_for(user) if user is not None else user_id,
+        before={"status": "active"},
+        after={"status": "suspended"},
+    )
+    return MemberRead.from_rows(updated, user)
+
+
+def reactivate_member(repositories: Repositories, context: AuthzContext, user_id: str) -> MemberRead:
+    """Reactivate a suspended member with the role and teams they held. Idempotent, and audited only on a change."""
+    existing = _suspension_target(repositories, context, user_id)
+    user = repositories.users.get(user_id)
+    if not existing.is_suspended:
+        return MemberRead.from_rows(existing, user)
+    updated = repositories.memberships.clear_suspended(context.workspace_id, user_id)
+    if updated is None:
+        raise _not_found()
+    sync_seats(repositories, context.workspace_id)
+    audit.record(
+        repositories,
+        context,
+        "member.reactivated",
+        target_type="member",
+        target_id=user_id,
+        target_label=display_name_for(user) if user is not None else user_id,
+        before={"status": "suspended"},
+        after={"status": "active"},
+    )
+    return MemberRead.from_rows(updated, user)
+
+
+def _suspension_target(repositories: Repositories, context: AuthzContext, user_id: str) -> Membership:
+    """The membership a suspend or reactivate acts on, once the caller may act on it."""
+    if not context.acts_as_workspace_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_ONLY)
+    existing = repositories.memberships.get_consistent(context.workspace_id, user_id)
+    if existing is None:
+        raise _not_found()
+    if existing.role == "owner" and context.role != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
+    return existing
 
 
 def list_invites(repositories: Repositories, context: AuthzContext) -> InviteListRead:

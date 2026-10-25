@@ -79,7 +79,7 @@ def plan_account_deletion(repositories: "Repositories", user_id: str) -> Account
         if not others:
             plan.sole_member.append(summary)
             continue
-        other_owners = [member for member in others if member.role == "owner"]
+        other_owners = [member for member in others if member.role == "owner" and not member.is_suspended]
         if membership.role == "owner" and not other_owners:
             plan.blocking.append(summary)
             continue

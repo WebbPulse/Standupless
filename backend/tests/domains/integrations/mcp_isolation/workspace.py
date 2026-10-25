@@ -72,6 +72,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "invite_member": {"email": "isolation@example.com", "role": "member"},
         "update_member_role": {"user": foreign["member_id"], "role": "admin"},
         "remove_member": {"user": foreign["member_id"]},
+        "suspend_member": {"user": foreign["member_id"]},
+        "reactivate_member": {"user": foreign["member_id"]},
         "revoke_invite": {"invite": foreign["invite_id"]},
         "export_workspace": {},
         "list_workspace_exports": {},

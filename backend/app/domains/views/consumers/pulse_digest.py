@@ -182,7 +182,7 @@ def run_pulse_digests(repositories: Repositories, now: datetime | None = None) -
         if workspace.is_purging:
             continue
         for membership in repositories.memberships.list_members(workspace.id):
-            if not membership.user_id:
+            if not membership.user_id or membership.is_suspended:
                 continue
             if membership.user_id not in cache:
                 cache[membership.user_id] = repositories.users.get(membership.user_id)

@@ -594,8 +594,11 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, c
     A service principal has no membership row of its own, so it resolves to the fixed
     service role, but only while `creator`, the person who minted the workspace key,
     is still a live owner or admin here. A key's access is its scopes and its
-    creator's current role together, so demoting or removing that person closes the
-    key on the next request. A workspace key with no recorded creator fails closed.
+    creator's current role together, so demoting, suspending or removing that person
+    closes the key on the next request. A workspace key with no recorded creator
+    fails closed. A suspended member holds no role, so every credential they carry,
+    session, personal key or OAuth token, stops working here while other workspaces
+    are untouched.
 
     Both callers go through here so the path a key authenticates on cannot drift from
     the path a session does.
@@ -611,7 +614,7 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, c
         return SERVICE_ROLE
 
     membership = repositories.memberships.get(workspace_id, user_id)
-    if membership is None or membership.role not in WORKSPACE_ROLES:
+    if membership is None or membership.role not in WORKSPACE_ROLES or membership.is_suspended:
         return None
     return membership.role
 

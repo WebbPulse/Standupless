@@ -31,6 +31,8 @@ BranchFormatField = Literal["key_title", "user_key_title", "key"]
 
 PermissionLevelField = Literal["admins", "members"]
 
+MemberStatusField = Literal["active", "suspended", "invited"]
+
 
 class WorkspaceCreate(BaseModel):
     """The body `POST /api/workspaces` takes."""
@@ -225,6 +227,9 @@ class MemberRead(BaseModel):
 
     `display_name` is the member's handle. `previous_handles` are the handles they
     gave up, so a client can render a mention written under one as the current name.
+    `status` is `suspended` for a member who keeps their history but holds no
+    access, and `invited` for a pending invite, which then carries `invite_id`,
+    answers the invite id as `user_id` and the invite's sent time as `joined_at`.
     """
 
     user_id: str
@@ -235,6 +240,10 @@ class MemberRead(BaseModel):
     avatar_url: Optional[str] = None
     role: WorkspaceRoleField
     joined_at: datetime
+    status: MemberStatusField = "active"
+    suspended_at: Optional[datetime] = None
+    suspended_by: Optional[str] = None
+    invite_id: Optional[str] = None
 
     @classmethod
     def from_rows(cls, membership: Membership, user: Optional[User]) -> "MemberRead":
@@ -252,6 +261,22 @@ class MemberRead(BaseModel):
             avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             joined_at=membership.joined_at,
+            status="suspended" if membership.is_suspended else "active",
+            suspended_at=membership.suspended_at,
+            suspended_by=membership.suspended_by,
+        )
+
+    @classmethod
+    def from_invite(cls, invite: Invite) -> "MemberRead":
+        """A pending invite as an `invited` row of the members list."""
+        return cls(
+            user_id=invite.invite_id,
+            email=invite.email,
+            display_name=invite.email,
+            role=invite.role,  # pyright: ignore[reportArgumentType]
+            joined_at=invite.created_at,
+            status="invited",
+            invite_id=invite.invite_id,
         )
 
 
