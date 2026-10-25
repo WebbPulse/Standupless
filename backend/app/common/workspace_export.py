@@ -141,6 +141,7 @@ class ExportJob(BaseModel):
     requester_role: str
     team_ids: list[str] = Field(default_factory=list)
     private_team_ids: list[str] = Field(default_factory=list)
+    key_team_ids: Optional[list[str]] = None
     emails_masked: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     started_at: Optional[datetime] = None
@@ -158,6 +159,7 @@ class ExportJob(BaseModel):
             role=self.requester_role,
             team_ids=tuple(self.team_ids),
             private_team_ids=tuple(self.private_team_ids),
+            key_team_ids=tuple(self.key_team_ids) if self.key_team_ids is not None else None,
         )
 
     def is_active(self, now: datetime) -> bool:
@@ -306,6 +308,7 @@ def start_export(context: AuthzContext, *, include_emails: bool = True) -> Expor
             requester_role=context.role,
             team_ids=list(context.team_ids),
             private_team_ids=list(context.private_team_ids),
+            key_team_ids=list(context.key_team_ids) if context.key_team_ids is not None else None,
             emails_masked=masks_emails(context.role, include_emails),
             created_at=now,
         )

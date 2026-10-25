@@ -21,6 +21,7 @@ from webbpulse.identity.api_keys import ApiKeyRecord
 from app.common.db.dynamo.api_keys import (
     API_KEY_SCOPES,
     normalise_scopes,
+    restricted_team_ids,
     unknown_scopes,
 )
 
@@ -32,6 +33,8 @@ MIN_EXPIRY_DAYS = 1
 
 MAX_EXPIRY_DAYS = 365
 
+MAX_KEY_TEAMS = 100
+
 
 class ApiKeyCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/api-keys` takes."""
@@ -40,6 +43,17 @@ class ApiKeyCreate(BaseModel):
     scopes: list[str] = Field(min_length=1)
     kind: ApiKeyKindField = "user"
     expires_in_days: Optional[int] = Field(default=None, ge=MIN_EXPIRY_DAYS, le=MAX_EXPIRY_DAYS)
+    team_ids: Optional[list[str]] = Field(
+        default=None,
+        max_length=MAX_KEY_TEAMS,
+        description="The teams the key may reach. Absent or empty means every team the key's holder can see.",
+    )
+
+    @field_validator("team_ids")
+    @classmethod
+    def check_team_ids(cls, value: Optional[list[str]]) -> list[str]:
+        """The requested teams, trimmed and deduplicated in the order sent, empty for every team."""
+        return list(dict.fromkeys(team_id.strip() for team_id in value or () if team_id.strip()))
 
     @field_validator("name")
     @classmethod
@@ -81,6 +95,10 @@ class ApiKeyRead(BaseModel):
     kind: ApiKeyKindField
     prefix: str
     scopes: list[str]
+    team_ids: list[str] = Field(
+        default_factory=list,
+        description="The teams the key is restricted to, empty when it reaches every team.",
+    )
     created_by: str
     created_at: datetime
     expires_at: Optional[datetime] = None
@@ -110,6 +128,7 @@ class ApiKeyRead(BaseModel):
             kind="workspace" if row.kind == "workspace" else "user",
             prefix=row.prefix,
             scopes=list(row.scopes),
+            team_ids=list(restricted_team_ids(row.metadata) or ()),
             created_by=row.created_by or row.user_id,
             created_at=_from_iso(row.created_at) or datetime.now(tz=timezone.utc),
             expires_at=_as_datetime(row.expires_at),

@@ -73,6 +73,7 @@ __all__ = [
     "require_platform_admin",
     "require_scopes_present",
     "insufficient_scope_detail",
+    "key_teams_of",
     "scope_grant_links",
     "resolve_context",
     "sign_in_method_of",
@@ -243,6 +244,16 @@ class AuthzContext:
     sign_in_method: Optional[str] = None
     sso_connection: Optional[str] = None
     auth_time: int = 0
+    key_team_ids: Optional[tuple[str, ...]] = None
+
+    @property
+    def is_team_restricted(self) -> bool:
+        """Whether the credential was minted for a chosen set of teams rather than all of them."""
+        return self.key_team_ids is not None
+
+    def within_key_teams(self, team_id: str) -> bool:
+        """Whether a team is inside the credential's team restriction, which an unrestricted one always is."""
+        return self.key_team_ids is None or team_id in self.key_team_ids
 
     @property
     def is_guest(self) -> bool:
@@ -283,8 +294,11 @@ class AuthzContext:
 
         A guest sees only the teams they hold a membership in, and a private team
         is seen only by its members, whatever their workspace role. Everyone else
-        sees every team in the workspace.
+        sees every team in the workspace. An API key restricted to some teams sees
+        only those, on top of whatever its holder may see.
         """
+        if not self.within_key_teams(team_id):
+            return False
         if self.is_guest or team_id in self.private_team_ids:
             return team_id in self.team_ids
         return True
@@ -294,8 +308,11 @@ class AuthzContext:
 
         A workspace owner or admin finds a private team they are outside, so they
         can administer its settings and members, but its issues stay hidden from
-        them until they are added.
+        them until they are added. A team outside a key's restriction is not found
+        at all, for administration as much as for content.
         """
+        if not self.within_key_teams(team_id):
+            return False
         if self.can_see_team(team_id):
             return True
         return self.is_workspace_admin and team_id in self.private_team_ids
@@ -393,8 +410,36 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
             **claims_for_key(record).raw,
             CREATOR_CLAIM: record.created_by or "",
             ISSUED_AT_CLAIM: epoch_of(record.created_at),
+            **_key_teams_claim(record.metadata),
         }
     )
+
+
+KEY_TEAMS_CLAIM = "api_key_team_ids"
+"""The claim listing the teams a restricted API key may reach, space separated.
+
+Stamped from the stored record in `_api_key_claims` only for a restricted key, so an
+absent claim is an unrestricted key. It only ever narrows: a credential carrying it
+reaches fewer teams, never more.
+"""
+
+
+def _key_teams_claim(metadata: Any) -> dict[str, str]:
+    """The team restriction claim for a stored key, or nothing for a key that reaches every team."""
+    from app.common.db.dynamo.api_keys import restricted_team_ids
+
+    teams = restricted_team_ids(metadata)
+    return {KEY_TEAMS_CLAIM: " ".join(teams)} if teams is not None else {}
+
+
+def key_teams_of(claims: Any) -> Optional[tuple[str, ...]]:
+    """The teams a credential is restricted to, or `None` when it reaches every team its holder can."""
+    raw = claims.get(KEY_TEAMS_CLAIM) if claims is not None else None
+    if raw is None:
+        return None
+    parts = raw.split() if isinstance(raw, str) else [str(part) for part in raw]
+    teams = tuple(dict.fromkeys(part.strip() for part in parts if part.strip()))
+    return teams or None
 
 
 def epoch_of(iso: str) -> int:
@@ -885,14 +930,18 @@ def _check_team(
     team_id: str,
     team_ids: tuple[str, ...],
     private_team_ids: tuple[str, ...] = (),
+    key_team_ids: Optional[tuple[str, ...]] = None,
 ) -> Optional[str]:
     """Decide a team-scoped capability, answering the caller's team role.
 
     A guest with no membership in this team gets the same 404 an absent team
     gets, so a guest cannot enumerate the teams they are outside. A private team
     answers a workspace member outside it the same way; a workspace owner or
-    admin still reaches its settings and members to administer it.
+    admin still reaches its settings and members to administer it. An API key
+    restricted to other teams gets that 404 whatever its holder's role.
     """
+    if key_team_ids is not None and team_id not in key_team_ids:
+        raise team_not_found(team_id)
     if role == "guest" and team_id not in team_ids:
         raise team_not_found(team_id)
     if team_id in private_team_ids and team_id not in team_ids and role not in ("owner", "admin"):
@@ -953,8 +1002,10 @@ def require(
 
         actor = _actor(claims)
         scopes = _scopes(claims)
+        key_team_ids: Optional[tuple[str, ...]] = None
         if actor is not ActorKind.USER:
             scopes = effective_scopes(scopes, live_scopes_for(role, user_id))
+            key_team_ids = key_teams_of(claims)
 
         team_id: Optional[str] = None
         team_role: Optional[str] = None
@@ -968,7 +1019,15 @@ def require(
                 if team is None:
                     raise team_not_found(team_id)
             team_role = _check_team(
-                repositories, capability, workspace_id, user_id, role, team_id, team_ids, private_team_ids
+                repositories,
+                capability,
+                workspace_id,
+                user_id,
+                role,
+                team_id,
+                team_ids,
+                private_team_ids,
+                key_team_ids,
             )
             if not allow_retired and request.method not in SAFE_METHODS:
                 refuse_if_retired(team)
@@ -990,6 +1049,7 @@ def require(
             sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
             sso_connection=sso_connection_of(claims) if actor is ActorKind.USER else None,
             auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
+            key_team_ids=key_team_ids,
         )
         _enforce_route_scopes(request, context, repositories)
         _check_permission_setting(repositories, context, capability)
@@ -1069,6 +1129,7 @@ def check_capability(
         team_id,
         context.team_ids,
         context.private_team_ids,
+        context.key_team_ids,
     )
 
 
@@ -1119,8 +1180,10 @@ def resolve_context(
 
     actor = _actor(claims)
     scopes = _scopes(claims)
+    key_team_ids: Optional[tuple[str, ...]] = None
     if actor is not ActorKind.USER:
         scopes = effective_scopes(scopes, live_scopes_for(role, user_id))
+        key_team_ids = key_teams_of(claims)
 
     return AuthzContext(
         workspace_id=workspace_id,
@@ -1137,6 +1200,7 @@ def resolve_context(
         sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
         sso_connection=sso_connection_of(claims) if actor is ActorKind.USER else None,
         auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
+        key_team_ids=key_team_ids,
     )
 
 

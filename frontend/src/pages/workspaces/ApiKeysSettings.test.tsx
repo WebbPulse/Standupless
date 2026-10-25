@@ -3,10 +3,11 @@
  * comes back from the mint and from nothing else, so the page must surface it
  * exactly once and the list must never carry it. Also covers that the
  * workspace-wide listing and the workspace key kind are offered only to an
- * admin, which is what the server allows, and that a revoke names the key id.
+ * admin, which is what the server allows, that a revoke names the key id, and
+ * that a key can be limited to chosen teams with "All teams" as the default.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,7 @@ import type {
   ApiKeyCreatedRead,
   ApiKeyRead,
   MemberRead,
+  TeamRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -25,6 +27,17 @@ const createApiKey = vi.fn<(body: unknown) => Promise<ApiKeyCreatedRead>>();
 const revokeApiKey = vi.fn<(keyId: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const downloadText = vi.fn<(text: string, name: string) => void>();
+const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+
+vi.mock('../../api/teams', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/teams')>('../../api/teams');
+  return { ...actual, listTeams: () => listTeams() };
+});
+
+/** One team row, with only the fields the key form reads filled in. */
+const team = (id: string, name: string): TeamRead =>
+  ({ id, name, key_prefix: name.slice(0, 3).toUpperCase() }) as TeamRead;
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -132,6 +145,11 @@ beforeEach(() => {
     secret: 'wpk_plaintext',
   });
   revokeApiKey.mockResolvedValue(undefined);
+  listTeams.mockReset();
+  listTeams.mockResolvedValue([
+    team('team-1', 'Platform'),
+    team('team-2', 'Mobile'),
+  ]);
 });
 
 describe('the API key list', () => {
@@ -361,6 +379,80 @@ describe('minting a key', () => {
     expect(
       await screen.findByText('Could not mint the key.')
     ).toBeInTheDocument();
+  });
+});
+
+/** The listed row of the key named `name`, to query inside. */
+const row = (name: string) => {
+  const item = screen.getByText(name).closest('li');
+  if (item === null) throw new Error(`No row for ${name}`);
+  return within(item);
+};
+
+describe('limiting a key to teams', () => {
+  it('defaults to all teams and sends no restriction', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByLabelText('Name'), 'CI');
+    expect(await screen.findByLabelText('All teams')).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Mint key' }));
+
+    await waitFor(() => {
+      expect(createApiKey).toHaveBeenCalledWith({
+        name: 'CI',
+        scopes: ['issues:read'],
+      });
+    });
+  });
+
+  it('sends the checked teams', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByLabelText('Name'), 'CI');
+    await user.click(await screen.findByLabelText('Mobile'));
+    expect(screen.getByLabelText('All teams')).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Mint key' }));
+
+    await waitFor(() => {
+      expect(createApiKey).toHaveBeenCalledWith({
+        name: 'CI',
+        scopes: ['issues:read'],
+        team_ids: ['team-2'],
+      });
+    });
+  });
+
+  it('clears the teams when all teams is picked again', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByLabelText('Platform'));
+    await user.click(screen.getByLabelText('All teams'));
+
+    expect(screen.getByLabelText('All teams')).toBeChecked();
+    expect(screen.getByLabelText('Platform')).not.toBeChecked();
+  });
+
+  it('names the teams a listed key reaches', async () => {
+    listApiKeys.mockResolvedValue([
+      key({ team_ids: ['team-1'] }),
+      key({ key_id: 'key-3', name: 'Unscoped', prefix: 'wpk_open0000' }),
+    ]);
+    renderPage();
+
+    await screen.findByText('Shell');
+    expect(await row('Shell').findByText('Platform')).toBeInTheDocument();
+    expect(row('Unscoped').getByText('All teams')).toBeInTheDocument();
+  });
+
+  it('says so when every team a key named is gone', async () => {
+    listApiKeys.mockResolvedValue([key({ team_ids: ['team-gone'] })]);
+    renderPage();
+
+    await screen.findByText('Shell');
+    expect(row('Shell').getByText('No remaining teams')).toBeInTheDocument();
   });
 });
 

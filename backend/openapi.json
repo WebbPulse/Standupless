@@ -555,6 +555,22 @@
             "minItems": 1,
             "title": "Scopes",
             "type": "array"
+          },
+          "team_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The teams the key may reach. Absent or empty means every team the key's holder can see.",
+            "title": "Team Ids"
           }
         },
         "required": [
@@ -642,6 +658,14 @@
           "secret": {
             "title": "Secret",
             "type": "string"
+          },
+          "team_ids": {
+            "description": "The teams the key is restricted to, empty when it reaches every team.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -747,6 +771,14 @@
               "type": "string"
             },
             "title": "Scopes",
+            "type": "array"
+          },
+          "team_ids": {
+            "description": "The teams the key is restricted to, empty when it reaches every team.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
             "type": "array"
           }
         },
@@ -34265,7 +34297,7 @@
         ]
       },
       "post": {
-        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe key row and the workspace's API key usage row are written in one\ntransaction, the usage row under a conditional increment, so two concurrent\nmints at the limit cannot both land.",
+        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe key row and the workspace's API key usage row are written in one\ntransaction, the usage row under a conditional increment, so two concurrent\nmints at the limit cannot both land.\n\n`team_ids` restricts the key to those teams; each must be a team the creator\ncan see, so a key never names a team its creator could not reach.",
         "operationId": "create_api_key_api_workspaces__workspace_id__api_keys_post",
         "parameters": [
           {

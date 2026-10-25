@@ -32,7 +32,7 @@ from app.common.api.dependencies.authz import (
     require,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.db.dynamo.api_keys import service_subject
+from app.common.db.dynamo.api_keys import TEAM_IDS_METADATA, service_subject
 from app.common.db.dynamo.base import expiry_timestamp
 from app.common.plan_limits import LimitedResource
 from app.domains.workspaces.schemas.api_key import (
@@ -106,6 +106,9 @@ def create_api_key(
     The key row and the workspace's API key usage row are written in one
     transaction, the usage row under a conditional increment, so two concurrent
     mints at the limit cannot both land.
+
+    `team_ids` restricts the key to those teams; each must be a team the creator
+    can see, so a key never names a team its creator could not reach.
     """
     refuse_api_key_actor(context)
 
@@ -113,6 +116,7 @@ def create_api_key(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_ONLY_KIND)
 
     subject = service_subject(context.workspace_id) if payload.kind == "workspace" else context.user_id
+    team_ids = _restricted_teams(repositories, context, payload.team_ids or [])
 
     minted = mint(
         user_id=subject,
@@ -122,6 +126,7 @@ def create_api_key(
         expires_at=expiry_timestamp(payload.expires_in_days),
         kind=payload.kind,
         created_by=context.user_id,
+        metadata={TEAM_IDS_METADATA: team_ids} if team_ids else None,
     )
     plan_usage.commit(
         repositories,
@@ -137,7 +142,12 @@ def create_api_key(
         target_type="api_key",
         target_id=minted.record.key_id,
         target_label=minted.record.name,
-        after={"kind": payload.kind, "scopes": list(payload.scopes), "prefix": minted.record.prefix},
+        after={
+            "kind": payload.kind,
+            "scopes": list(payload.scopes),
+            "prefix": minted.record.prefix,
+            "team_ids": team_ids,
+        },
     )
     return ApiKeyCreated(**ApiKeyRead.from_row(minted.record).model_dump(), secret=minted.plaintext)
 
@@ -191,3 +201,23 @@ def _newest_first(rows: list[ApiKeyRecord]) -> list[ApiKeyRecord]:
     newest first.
     """
     return sorted(rows, key=lambda row: row.created_at, reverse=True)
+
+
+def _restricted_teams(repositories: Repositories, context: AuthzContext, team_ids: list[str]) -> list[str]:
+    """The teams a new key is restricted to, each one a live team the creator can see, or a 422.
+
+    An empty list is a key that reaches every team. A team the creator cannot see is
+    refused with the same message as one that does not exist, so the refusal does not
+    confirm a private team.
+    """
+    unknown = [
+        team_id
+        for team_id in team_ids
+        if not context.can_see_team(team_id) or repositories.teams.get(context.workspace_id, team_id) is None
+    ]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": "VALIDATION_ERROR", "message": f"Unknown team: {', '.join(unknown)}"},
+        )
+    return team_ids
