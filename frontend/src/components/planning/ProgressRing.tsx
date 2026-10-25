@@ -11,6 +11,8 @@ export interface ProgressRingProps {
   percent: number;
   size?: number;
   className?: string;
+  /** The arc's stroke, in place of accent turning success when full. */
+  color?: string;
 }
 
 /** A ring with an accent arc for the done share. */
@@ -18,6 +20,7 @@ export const ProgressRing: React.FC<ProgressRingProps> = ({
   percent,
   size = 14,
   className = '',
+  color,
 }) => {
   const radius = 5;
   const circumference = 2 * Math.PI * radius;
@@ -44,7 +47,7 @@ export const ProgressRing: React.FC<ProgressRingProps> = ({
           cy="7"
           r={radius}
           fill="none"
-          stroke={share >= 1 ? 'var(--success)' : 'var(--accent)'}
+          stroke={color ?? (share >= 1 ? 'var(--success)' : 'var(--accent)')}
           strokeWidth="2"
           strokeLinecap="round"
           strokeDasharray={`${String(share * circumference)} ${String(circumference)}`}

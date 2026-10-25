@@ -10,9 +10,14 @@
  * and the open groups' rows, skipping a folded group, and Enter opens the
  * highlighted cycle. The header menu opens the cycle calendar dialog, which
  * shows the feed URL only once it is minted and can make a new one or turn
- * the feed off.
+ * the feed off. A cycle's menu edits its name, goal and dates in a dialog
+ * that shows the server's refusal inline and offers Undo once saved, and the
+ * current cycle's menu ends it today behind a confirm that it cannot be
+ * undone. Days with no cycle read as a "Cycles paused" row, and an upcoming
+ * row carries a capacity dial against the recent velocity.
  */
 
+import { ApiError } from '@webbpulse/api-client';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -29,6 +34,7 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import { clearToasts, currentToasts } from '../../lib/toast';
 import Cycles from './Cycles';
 
 const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
@@ -37,6 +43,8 @@ const updateCycle = vi.fn<(id: string, body: unknown) => Promise<CycleRead>>();
 const deleteCycle = vi.fn<(id: string) => Promise<void>>();
 const startCycleToday =
   vi.fn<(id: string, teamId: string) => Promise<CycleStartTodayRead>>();
+const endCycleToday =
+  vi.fn<(id: string, teamId: string) => Promise<CycleRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const getVelocity = vi.fn<(teamId: string) => Promise<VelocityRead>>();
 const getCycleCalendarFeed =
@@ -64,6 +72,8 @@ vi.mock('../../api/planning', () => ({
   deleteCycle: (_w: string, id: string) => deleteCycle(id),
   startCycleToday: (_w: string, id: string, teamId: string) =>
     startCycleToday(id, teamId),
+  endCycleToday: (_w: string, id: string, teamId: string) =>
+    endCycleToday(id, teamId),
   getVelocity: (_w: string, teamId: string) => getVelocity(teamId),
   getCycleCalendarFeed: (_w: string, teamId: string) =>
     getCycleCalendarFeed(teamId),
@@ -236,6 +246,9 @@ beforeEach(() => {
     ended: { ...cycle, status: 'completed' },
     moved_issues: 2,
   });
+  endCycleToday.mockReset();
+  endCycleToday.mockResolvedValue({ ...cycle, end_date: '2026-09-10' });
+  clearToasts();
   getVelocity.mockReset();
   getVelocity.mockResolvedValue(velocity);
   getCycleCalendarFeed.mockReset();
@@ -887,5 +900,190 @@ describe('keyboard', () => {
     expect(await screen.findByTestId('detail')).toHaveTextContent(
       '/w/mine/team/ENG/cycles/cyc-0'
     );
+  });
+});
+
+describe('edit cycle', () => {
+  const future: CycleRead = {
+    ...upcoming,
+    cycle_id: 'cyc-9',
+    name: 'Sprint 9',
+    start_date: '2099-01-01',
+    end_date: '2099-01-14',
+    goal: null,
+  };
+
+  it('edits the name from the menu and offers to undo it', async () => {
+    listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
+    renderPage();
+
+    await pickAction('Sprint 2', 'Edit cycle...');
+    const dialog = within(await screen.findByRole('dialog'));
+    const name = dialog.getByLabelText('Name');
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Polish');
+    await userEvent.click(dialog.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateCycle).toHaveBeenCalledWith('cyc-2', {
+        team_id: 'proj-1',
+        name: 'Polish',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    const toast = currentToasts().at(-1);
+    expect(toast?.message).toBe('Polish updated');
+    const action = toast?.action;
+    if (action === undefined || !('run' in action)) throw new Error('no undo');
+    action.run();
+    await waitFor(() => {
+      expect(updateCycle).toHaveBeenLastCalledWith('cyc-2', {
+        team_id: 'proj-1',
+        name: 'Sprint 2',
+      });
+    });
+  });
+
+  it('holds a started cycle to its start date and refuses past days', async () => {
+    renderPage();
+
+    await pickAction('Sprint 1', 'Edit cycle...');
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByLabelText('Start date')).toBeDisabled();
+    expect(dialog.getByLabelText('End date')).toBeDisabled();
+  });
+
+  it('shows the server refusal inline and stays open', async () => {
+    listCycles.mockResolvedValue({ cycles: [future], next_cursor: null });
+    updateCycle.mockRejectedValue(
+      new ApiError({
+        status: 409,
+        statusText: 'Conflict',
+        body: {
+          error_code: 'CONFLICT',
+          message: 'Extending this cycle would leave Sprint 10 with no days',
+        },
+        url: '/api/workspaces/ws-1/cycles/cyc-9',
+        method: 'PATCH',
+      })
+    );
+    renderPage();
+
+    await pickAction('Sprint 9', 'Edit cycle...');
+    const dialog = within(await screen.findByRole('dialog'));
+    const end = dialog.getByLabelText('End date');
+    expect(end).toBeEnabled();
+    await userEvent.clear(end);
+    await userEvent.type(end, '2099-02-01');
+    await userEvent.click(dialog.getByRole('button', { name: 'Save' }));
+
+    expect(
+      await dialog.findByText(
+        'Extending this cycle would leave Sprint 10 with no days'
+      )
+    ).toBeInTheDocument();
+    expect(updateCycle).toHaveBeenCalledWith('cyc-9', {
+      team_id: 'proj-1',
+      end_date: '2099-02-01',
+    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('offers no edit to a guest', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    renderPage();
+
+    await screen.findByRole('region', { name: 'Current cycle' });
+    expect(
+      screen.queryByRole('button', { name: 'Sprint 1 actions' })
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('end cycle today', () => {
+  it('ends the current cycle after a confirm that it cannot be undone', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await pickAction('Sprint 1', 'End cycle today');
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(
+      dialog.getByText(
+        'Sprint 1 will end at the close of today. Its 2 unfinished issues will roll into the next cycle. This cannot be undone.'
+      )
+    ).toBeInTheDocument();
+    await userEvent.click(
+      dialog.getByRole('button', { name: 'End Sprint 1 today' })
+    );
+
+    await waitFor(() => {
+      expect(endCycleToday).toHaveBeenCalledWith('cyc-1', 'proj-1');
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('is offered only on the current cycle', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Sprint 2 actions' })
+    );
+    expect(
+      screen.getByRole('menuitem', { name: 'Edit cycle...' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'End cycle today' })
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('cycles paused and capacity', () => {
+  it('draws a paused row for the days between cycles', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, { ...upcoming, gap_before_days: 3 }],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(await screen.findByTestId('cycles-paused')).toHaveTextContent(
+      'Cycles paused · 3 days'
+    );
+  });
+
+  it('draws no paused row when the cycles follow on', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, { ...upcoming, gap_before_days: 0 }],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Sprint 2' });
+    expect(screen.queryByTestId('cycles-paused')).not.toBeInTheDocument();
+  });
+
+  it('dials an upcoming cycle against the last cycles', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(
+      await screen.findByRole('img', {
+        name: 'Capacity: 4 of 5 issues, based on the last 2 cycles',
+      })
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId('capacity-dial')).toHaveLength(1);
   });
 });
