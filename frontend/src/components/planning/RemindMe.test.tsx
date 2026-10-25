@@ -69,7 +69,7 @@ const labels = (): string[] =>
   (screen.getByTestId('labels').getAttribute('data-labels') ?? '').split('|');
 
 /** A page that binds "Remind me" the way the project, initiative and document pages do. */
-const Host: FC<{ entityType: RemindMeEntity; keys?: string }> = ({
+const Host: FC<{ entityType: RemindMeEntity; keys: string }> = ({
   entityType,
   keys,
 }) => {
@@ -92,7 +92,7 @@ const Host: FC<{ entityType: RemindMeEntity; keys?: string }> = ({
   );
 };
 
-const renderHost = (entityType: RemindMeEntity, keys?: string) =>
+const renderHost = (entityType: RemindMeEntity, keys = '') =>
   render(
     <ShortcutProvider>
       <Host entityType={entityType} keys={keys} />
