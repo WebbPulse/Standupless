@@ -1119,6 +1119,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         rows.length === 0 &&
         team !== undefined &&
         templateList !== undefined &&
+        templateList !== null &&
         templateList.templates.length === 0
       ) {
         return [
