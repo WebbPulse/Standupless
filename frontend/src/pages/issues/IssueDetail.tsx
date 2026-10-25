@@ -29,9 +29,7 @@ export const IssueDetail: React.FC = () => {
   return (
     <PassageThreadsProvider key={key}>
       <IssueView
-        issueRef={
-          keys.length === 1 && key?.includes(',') ? keys[0] : (key ?? '')
-        }
+        issueRef={key?.includes(',') === true ? (keys[0] ?? '') : (key ?? '')}
         frame={({ title, label, titleAccessory, actions, content }) => (
           <WorkspaceShell
             flush

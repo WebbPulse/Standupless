@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderedIssueRead } from '../../api/issues';
+import type { SavedViewDisplayRead } from '../../api/views';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import { PeekProvider } from '../../components/workspace/PeekPane';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -20,7 +21,6 @@ import {
 } from '../../hooks/useCreateIssue';
 import type {
   IssueListRead,
-  SavedViewDisplayRead,
   StatusRead,
   TeamRead,
   WorkspaceRead,
