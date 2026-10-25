@@ -7,6 +7,9 @@
  * It also holds the workspace change socket, since it is mounted exactly as
  * long as a workspace is open, and stretches the triage and inbox polls while
  * that socket's notices keep them current.
+ *
+ * Which teams have triage on is published again on its own, so the status
+ * cell of every list row reads it without rendering for each badge re-read.
  */
 
 import React, { useMemo } from 'react';
@@ -31,6 +34,7 @@ import {
   SidebarDataContext,
   type SidebarDataContextType,
 } from './SidebarDataContextDefinition';
+import TriageTeamsProvider from './TriageTeamsProvider';
 
 /** How often the sidebar's reads are repeated while a workspace page is open. */
 export const SIDEBAR_POLL_MS = 60000;
@@ -113,7 +117,7 @@ export const SidebarDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   return (
     <SidebarDataContext.Provider value={value}>
-      {children}
+      <TriageTeamsProvider triage={triage}>{children}</TriageTeamsProvider>
     </SidebarDataContext.Provider>
   );
 };

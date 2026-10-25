@@ -34,3 +34,15 @@ export interface SidebarDataContextType {
 export const SidebarDataContext = createContext<
   SidebarDataContextType | undefined
 >(undefined);
+
+/** The set every view reads before the triage summary arrives or outside a workspace. */
+export const NO_TRIAGE_TEAMS: ReadonlySet<string> = new Set();
+
+/**
+ * The ids of the teams with triage on, apart from the rest of the sidebar's
+ * reads. The set keeps its identity until a team turns triage on or off, so
+ * the status cell on every list row reads it without rendering again each
+ * time a triage count, the inbox badge or the view list is re-read.
+ */
+export const TriageTeamsContext =
+  createContext<ReadonlySet<string>>(NO_TRIAGE_TEAMS);

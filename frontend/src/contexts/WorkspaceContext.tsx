@@ -8,7 +8,9 @@
  * link shared before a slug change still opens what it pointed at.
  * It also paints the workspace's accent color over every page beneath, and
  * stands the auth policy gate in for the pages when the caller's session does
- * not meet the workspace's two-factor requirement.
+ * not meet the workspace's two-factor requirement. A re-read that answers the
+ * same workspaces hands back the list held, so the rows of a long issue list,
+ * which each read the workspace, do not render again for it.
  */
 
 import React, { useCallback, useMemo } from 'react';
@@ -17,6 +19,7 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { listWorkspaces } from '../api/workspaces';
 import AuthPolicyGate from '../components/workspace/AuthPolicyGate';
+import { useSharedValue } from '../hooks/useSharedValue';
 import { useWorkspaceAccent } from '../hooks/useWorkspaceAccent';
 import { WORKSPACES_KEY } from '../lib/queryKeys';
 import { pathWithSlug, workspaceRetiring } from '../lib/workspaceSlug';
@@ -37,14 +40,18 @@ export const WorkspaceProvider: React.FC = () => {
   const location = useLocation();
   const auth = useQueryAuth();
 
-  const { data, error, isLoading, refetch } = usePolledQuery(
-    ({ signal }) => listWorkspaces(signal),
-    {
-      intervalMs: WORKSPACE_POLL_MS,
-      queryKey: WORKSPACES_KEY,
-      auth,
-    }
-  );
+  const {
+    data: read,
+    error,
+    isLoading,
+    refetch,
+  } = usePolledQuery(({ signal }) => listWorkspaces(signal), {
+    intervalMs: WORKSPACE_POLL_MS,
+    queryKey: WORKSPACES_KEY,
+    auth,
+  });
+
+  const data = useSharedValue(read);
 
   const refresh = useCallback(async () => {
     await refetch();

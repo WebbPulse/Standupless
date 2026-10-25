@@ -1,13 +1,16 @@
 /**
  * Reads the workspace's team list once and shares it with the sidebar, the
  * pages and the dialogs beneath, so a page load asks for it a single time and
- * a refresh anywhere reaches every surface that shows a team.
+ * a refresh anywhere reaches every surface that shows a team. A re-read that
+ * answers the same teams hands back the list held, so nothing reading it
+ * renders again.
  */
 
 import React, { useCallback, useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { listTeams } from '../api/teams';
+import { useSharedValue } from '../hooks/useSharedValue';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { teamsKey } from '../lib/queryKeys';
 import { TeamsContext, type TeamsContextType } from './TeamsContextDefinition';
@@ -32,16 +35,20 @@ export const TeamsProvider: React.FC<{ children: React.ReactNode }> = ({
   const auth = useQueryAuth();
   const workspaceId = workspace?.id ?? '';
 
-  const { data, error, isLoading, refetch } = usePolledQuery(
-    (context) => listTeams(workspaceId, context),
-    {
-      intervalMs: TEAMS_POLL_MS,
-      maxBackoffMs: TEAMS_MAX_BACKOFF_MS,
-      enabled: workspaceId !== '',
-      queryKey: teamsKey(workspaceId),
-      auth,
-    }
-  );
+  const {
+    data: read,
+    error,
+    isLoading,
+    refetch,
+  } = usePolledQuery((context) => listTeams(workspaceId, context), {
+    intervalMs: TEAMS_POLL_MS,
+    maxBackoffMs: TEAMS_MAX_BACKOFF_MS,
+    enabled: workspaceId !== '',
+    queryKey: teamsKey(workspaceId),
+    auth,
+  });
+
+  const data = useSharedValue(read);
 
   const reread = useCallback(async () => {
     await refetch();
