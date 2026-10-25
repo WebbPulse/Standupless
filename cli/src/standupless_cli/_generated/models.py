@@ -2818,6 +2818,7 @@ class SlackIntakeRead(TypedDict):
     emoji: NotRequired[str | None]
     enabled: NotRequired[bool]
     installed: bool
+    message_channel_ids: NotRequired[list[str]]
     reinstall: NotRequired[bool]
     updated_at: NotRequired[str | None]
 
@@ -2825,9 +2826,13 @@ class SlackIntakeRead(TypedDict):
 ChannelId: TypeAlias = str
 
 
+MessageChannelId: TypeAlias = str
+
+
 class SlackIntakeWrite(TypedDict):
     channel_ids: list[ChannelId]
     emoji: str
+    message_channel_ids: NotRequired[list[MessageChannelId]]
 
 
 class SlackLinkRead(TypedDict):
