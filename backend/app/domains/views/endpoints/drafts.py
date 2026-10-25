@@ -205,9 +205,7 @@ def write_document_draft(
 ) -> DraftRead:
     """Save the caller's comment draft on a document they may comment on, or on one of its reply threads."""
     parent = DraftParent(document_id=document_id)
-    return save_draft(
-        repositories, context, None, payload.body, parent_comment_id=parent_comment_id, parent=parent
-    )
+    return save_draft(repositories, context, None, payload.body, parent_comment_id=parent_comment_id, parent=parent)
 
 
 @router.delete("/{workspace_id}/drafts/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -270,9 +268,7 @@ def discard_project_update_reply_draft(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get(
-    "/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}", response_model=DraftRead
-)
+@router.get("/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}", response_model=DraftRead)
 def read_initiative_update_reply_draft(
     workspace_id: str = Path(..., min_length=1),
     initiative_id: str = Path(..., min_length=1, max_length=64),
@@ -284,9 +280,7 @@ def read_initiative_update_reply_draft(
     return get_draft(repositories, context, None, parent=_reply_parent("initiative", initiative_id, update_id))
 
 
-@router.put(
-    "/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}", response_model=DraftRead
-)
+@router.put("/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}", response_model=DraftRead)
 def write_initiative_update_reply_draft(
     payload: DraftWrite,
     workspace_id: str = Path(..., min_length=1),

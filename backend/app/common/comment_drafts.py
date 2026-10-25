@@ -318,9 +318,7 @@ def delete_draft(
     deleted or hidden can still be cleared.
     """
     target = _as_parent(issue_id, parent)
-    repositories.views.delete_draft(
-        context.workspace_id, context.user_id, target.thread_id, _thread(parent_comment_id)
-    )
+    repositories.views.delete_draft(context.workspace_id, context.user_id, target.thread_id, _thread(parent_comment_id))
 
 
 def clear_posted_draft(

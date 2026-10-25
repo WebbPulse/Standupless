@@ -243,9 +243,7 @@ def test_a_guest_cannot_draft_on_an_update_they_cannot_reach(
     assert repositories.views.get_draft(workspace, GUEST, PROJECT_UPDATE) is None
 
 
-def test_an_update_in_another_workspace_is_never_reached(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_an_update_in_another_workspace_is_never_reached(client: TestClient, workspace: str, repositories: Any) -> None:
     """A project update seeded in a foreign workspace cannot be drafted on from home."""
     make_workspace(repositories, FOREIGN_WORKSPACE, "globex", OUTSIDER)
     seed_document(repositories, FOREIGN_WORKSPACE)
