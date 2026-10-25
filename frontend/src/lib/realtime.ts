@@ -59,11 +59,7 @@ import {
 
 /** The kinds of record a notice can name. */
 export type NoticeKind =
-  | 'issue'
-  | 'comment'
-  | 'cycle'
-  | 'project'
-  | 'initiative';
+  'issue' | 'comment' | 'cycle' | 'project' | 'initiative';
 
 /** What happened to the record. */
 export type NoticeAction = 'created' | 'updated' | 'removed';
