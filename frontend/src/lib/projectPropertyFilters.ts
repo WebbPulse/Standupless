@@ -126,7 +126,10 @@ const asList = (value: string | readonly string[] | undefined): string[] =>
   value === undefined ? [] : typeof value === 'string' ? [value] : [...value];
 
 /** A list filter's values with the ones it cannot take dropped, each once. */
-const cleanList = (key: PropertyListKey, values: readonly string[]): string[] => {
+const cleanList = (
+  key: PropertyListKey,
+  values: readonly string[]
+): string[] => {
   const kept = values.filter((value) =>
     key === 'health'
       ? HEALTHS.has(value)

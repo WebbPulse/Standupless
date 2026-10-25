@@ -172,8 +172,7 @@ const ListPicker: React.FC<{
   people: readonly Assignable[];
   onChange: (filters: ProjectPropertyFilters) => void;
 }> = ({ field, filters, people, onChange }) => {
-  const label =
-    FIELD_LABELS[field];
+  const label = FIELD_LABELS[field];
   return (
     <Combobox
       label={label}

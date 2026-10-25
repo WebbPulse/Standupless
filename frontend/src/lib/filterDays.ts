@@ -14,7 +14,10 @@ export const isoDay = (date: Date): string => {
 };
 
 /** The day `days` from today, negative for the past. */
-export const dayFromToday = (days: number, today: Date = new Date()): string => {
+export const dayFromToday = (
+  days: number,
+  today: Date = new Date()
+): string => {
   const date = new Date(today);
   date.setDate(date.getDate() + days);
   return isoDay(date);

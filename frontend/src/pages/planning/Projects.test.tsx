@@ -656,7 +656,9 @@ describe('Projects', () => {
     );
 
     expect(
-      await screen.findByRole('group', { name: 'Last update older than 7 days' })
+      await screen.findByRole('group', {
+        name: 'Last update older than 7 days',
+      })
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();

@@ -247,7 +247,10 @@ describe('sameProjectFilter', () => {
       )
     ).toBe(true);
     expect(
-      sameProjectFilter({ updated_within_days: '7' }, { updated_within_days: '14' })
+      sameProjectFilter(
+        { updated_within_days: '7' },
+        { updated_within_days: '14' }
+      )
     ).toBe(false);
   });
 });

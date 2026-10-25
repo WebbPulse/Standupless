@@ -74,9 +74,9 @@ describe('readPropertyFilters', () => {
   it('falls back to the open view and lets an empty param clear it', () => {
     const base = filters({ health: ['off_track'], updatedWithin: '7' });
     expect(readPropertyFilters(new URLSearchParams(''), base)).toEqual(base);
-    expect(
-      readPropertyFilters(new URLSearchParams('health='), base)
-    ).toEqual(filters({ updatedWithin: '7' }));
+    expect(readPropertyFilters(new URLSearchParams('health='), base)).toEqual(
+      filters({ updatedWithin: '7' })
+    );
   });
 });
 
