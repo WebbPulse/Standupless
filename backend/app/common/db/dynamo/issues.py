@@ -1327,6 +1327,26 @@ class IssueRepository:
             return False
         return True
 
+    def count_open(self, workspace_id: str, team_id: str, open_status_ids: list[str]) -> int:
+        """How many live issues of one team sit in the open statuses named or await triage.
+
+        Each status column and the triage partition is a key read projecting only the
+        id, so the count never loads a row and pays nothing for finished or archived work.
+        """
+        if not workspace_id or not team_id:
+            return 0
+        partitions = [ws_team_status(workspace_id, team_id, status_id) for status_id in open_status_ids]
+        partitions.append(triage_ws_team_status(workspace_id, team_id))
+        return sum(
+            sum(
+                1
+                for _ in self._repository.iter_query(
+                    Key("ws_team_status").eq(partition), index_name=STATUS_UPDATED_INDEX, projection="issue_id"
+                )
+            )
+            for partition in partitions
+        )
+
     def iter_triage(self, workspace_id: str, team_id: str, *, max_items: int = 1000) -> list[Issue]:
         """Every live issue of one team awaiting triage, newest first by `updated_at`."""
         if not workspace_id or not team_id:

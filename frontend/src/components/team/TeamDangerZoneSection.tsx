@@ -12,12 +12,12 @@
 
 import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { deleteTeam, retireTeam, unretireTeam } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
-import { settingsTeamsPath } from '../../lib/paths';
+import { settingsTeamsPath, teamPath } from '../../lib/paths';
 import { teamsKey } from '../../lib/queryKeys';
-import { isRetired } from '../../lib/teamRetirement';
+import { isRetired, openIssueCount } from '../../lib/teamRetirement';
 import type { TeamRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
@@ -38,6 +38,7 @@ export interface TeamDangerZoneSectionProps {
 /** Props for the retire confirmation. */
 interface RetireTeamDialogProps {
   workspaceId: string;
+  slug: string;
   team: TeamRead;
   onClose: () => void;
 }
@@ -45,25 +46,30 @@ interface RetireTeamDialogProps {
 /**
  * Confirms retiring a team, saying what changes: the team leaves the sidebar
  * and the pickers, and its work turns read-only until someone un-retires it.
+ * A team with open issues is refused, and the dialog then links to them.
  */
 const RetireTeamDialog: React.FC<RetireTeamDialogProps> = ({
   workspaceId,
+  slug,
   team,
   onClose,
 }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openCount, setOpenCount] = useState<number | null>(null);
 
   const onConfirm = async (): Promise<void> => {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setOpenCount(null);
     try {
       await retireTeam(workspaceId, team.id);
       invalidateQueries(teamsKey(workspaceId));
       onClose();
     } catch (caught) {
       setError(errorMessage(caught, 'Could not retire the team.'));
+      setOpenCount(openIssueCount(caught));
       setBusy(false);
     }
   };
@@ -78,6 +84,16 @@ const RetireTeamDialog: React.FC<RetireTeamDialogProps> = ({
     >
       <div className="space-y-4">
         {error !== null && <ErrorAlert message={error} />}
+        {openCount !== null && (
+          <p className="text-sm text-text-muted">
+            <Link
+              to={`${teamPath(slug, team.key_prefix)}?done=0`}
+              className="font-medium text-accent hover:underline"
+            >
+              View {openCount} open {openCount === 1 ? 'issue' : 'issues'}
+            </Link>
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
@@ -274,6 +290,7 @@ export const TeamDangerZoneSection: React.FC<TeamDangerZoneSectionProps> = ({
       {retiring && (
         <RetireTeamDialog
           workspaceId={workspaceId}
+          slug={slug}
           team={team}
           onClose={() => {
             setRetiring(false);

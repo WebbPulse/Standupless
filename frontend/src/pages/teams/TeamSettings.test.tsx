@@ -394,6 +394,42 @@ describe('the general section', () => {
     });
   });
 
+  it('names the open issues that hold a retire back and links to them', async () => {
+    retireTeam.mockRejectedValue(
+      new ApiError({
+        status: 409,
+        statusText: 'Conflict',
+        body: {
+          success: false,
+          error_code: 'TEAM_HAS_OPEN_ISSUES',
+          message:
+            'Team ENG still has 2 open issues. Complete, cancel or move them before retiring it.',
+          details: { open_issue_count: 2 },
+        },
+        url: '/api/workspaces/ws-1/teams/proj-1/retire',
+        method: 'POST',
+      })
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Retire team' })
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Retire team' })
+    );
+
+    expect(
+      await within(dialog).findByText(/still has 2 open issues/)
+    ).toBeInTheDocument();
+    const link = within(dialog).getByRole('link', {
+      name: 'View 2 open issues',
+    });
+    expect(link.getAttribute('href')).toMatch(/\/team\/ENG\?done=0$/);
+  });
+
   it('shows a retired team as read-only with an un-retire action', async () => {
     listTeams.mockResolvedValue([
       { ...team, retired_at: '2026-10-25T00:00:00Z' },

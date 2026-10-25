@@ -433,7 +433,9 @@ def retire_team(
     """Retire a team: it leaves the sidebar and pickers, and its issues, projects and cycles turn read-only.
 
     Retiring a team already retired answers it unchanged. A parent team with an
-    active sub-team is a 409 until the sub-team is retired or moved.
+    active sub-team is a 409 until the sub-team is retired or moved, and a team
+    with open issues, any not completed or cancelled, is a 409
+    `TEAM_HAS_OPEN_ISSUES` carrying `details.open_issue_count`.
     """
     team, changed = team_writes.retire_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
     if changed:

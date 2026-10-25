@@ -265,9 +265,12 @@ def list_issues(
     reads that person's index instead of every team; the mode is part of the
     cursor scope, since the keyed and fanned out sets differ. `include_sub_teams`
     rolls the named team's visible sub-teams into the list, and `reverse` turns the
-    sort around, issues lacking the sorted value still last.
+    sort around, issues lacking the sorted value still last. With no team named,
+    retired teams are left out unless the team filter asks for one.
     """
-    teams = listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams)
+    teams = listed_teams(
+        repositories, context, team_id, include_sub_teams=include_sub_teams, named=wanted.named_team_ids
+    )
 
     if not teams:
         return [], None

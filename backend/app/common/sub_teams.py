@@ -81,17 +81,36 @@ def check_parent(
 
 
 def listed_teams(
-    repositories: Repositories, context: AuthzContext, team_id: str | None, *, include_sub_teams: bool = False
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str | None,
+    *,
+    include_sub_teams: bool = False,
+    named: frozenset[str] | None = None,
 ) -> list[str]:
     """The teams an issue list reads: every visible team, or the one named and, rolled up, its visible sub-teams.
 
     Naming a team the caller cannot read is a 404 as before. A sub-team the caller
     cannot see is left out of the roll-up rather than refusing it, as Linear does.
+    With no team named, `named` turns on the default that leaves retired teams
+    out, keeping only those a team filter names explicitly.
     """
     if team_id is None:
-        return visible_team_ids(repositories, context)
+        if named is None:
+            return visible_team_ids(repositories, context)
+        return default_team_ids(repositories, context, named)
     require_team_reader(repositories, context, team_id)
     if not include_sub_teams:
         return [team_id]
     subs = [sub for sub in sub_team_ids(repositories, context.workspace_id, team_id) if context.can_see_team(sub)]
     return [team_id, *subs]
+
+
+def default_team_ids(repositories: Repositories, context: AuthzContext, named: frozenset[str]) -> list[str]:
+    """The visible teams a workspace-wide list spans by default: the active ones and any retired one in `named`."""
+    teams = repositories.teams.list_for_workspace(context.workspace_id)
+    return sorted(
+        team.team_id
+        for team in teams
+        if context.can_see_team(team.team_id) and (team.retired_at is None or team.team_id in named)
+    )
