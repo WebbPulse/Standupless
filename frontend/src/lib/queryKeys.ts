@@ -421,12 +421,16 @@ export const pulseFollowKey = (
   subjectId: string
 ): QueryKey => ['pulse-follow', workspaceId, subject, subjectId];
 
-/** One team's triage inbox, waiting or snoozed. */
+/** One team's triage inbox, waiting or snoozed, under one requester filter when it has one. */
 export const triageKey = (
   workspaceId: string,
   teamId: string,
-  snoozed: boolean
-): QueryKey => ['triage', workspaceId, teamId, snoozed];
+  snoozed: boolean,
+  requester = ''
+): QueryKey =>
+  requester === ''
+    ? ['triage', workspaceId, teamId, snoozed]
+    : ['triage', workspaceId, teamId, snoozed, requester];
 
 /** The per-team triage counts, polled by the sidebar on every page. */
 export const triageSummaryKey = (workspaceId: string): QueryKey => [

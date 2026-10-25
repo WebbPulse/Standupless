@@ -35,6 +35,12 @@ export interface TriageListQuery {
   team_id: string;
   /** True lists only the snoozed issues instead of the waiting ones. */
   snoozed?: boolean;
+  /** Only issues requested by this member, or `me`. */
+  requester_user_id?: string;
+  /** Only issues requested by this Slack user. */
+  requester_slack_user_id?: string;
+  /** Only issues from this intake, or `none` for those with no requester. */
+  requester_source?: 'slack' | 'email' | 'none';
   cursor?: string;
   limit?: number;
 }
