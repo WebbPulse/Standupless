@@ -29,7 +29,6 @@ import type {
   NotificationListRead,
   NotificationRead,
   ProjectsDisplayPreference,
-  ProjectStatus,
   SavedViewCreate,
   SavedViewRead,
   SavedViewUpdate,
@@ -114,7 +113,7 @@ export interface ViewFilterNegations {
  */
 export interface ProjectViewFilter {
   team_id?: string;
-  status?: ProjectStatus | ProjectStatus[];
+  status?: string | string[];
   lead_id?: string | string[];
   sub_teams?: 'true' | 'false';
   is_blocked?: 'true' | 'false';

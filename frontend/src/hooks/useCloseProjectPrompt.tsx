@@ -62,7 +62,8 @@ export interface CloseProjectPromptOptions {
 
 /** What useCloseProjectPrompt answers: the status handler and the dialog to render. */
 export interface CloseProjectPrompt {
-  changeStatus: (status: ProjectStatus) => void;
+  /** Moves the project to a status, named by its category and workspace status id. */
+  changeStatus: (status: ProjectStatus, statusId?: string) => void;
   dialog: React.ReactNode;
 }
 
@@ -73,18 +74,22 @@ export const useCloseProjectPrompt = ({
   update,
 }: CloseProjectPromptOptions): CloseProjectPrompt => {
   const [closing, setClosing] = useState<ClosingStatus | null>(null);
+  const [closingId, setClosingId] = useState<string | undefined>(undefined);
   const { projects } = useWorkspaceProjects(workspaceId, '', closing !== null);
   const targets = useMemo(
     () => (project === null ? [] : moveTargets(project, projects)),
     [project, projects]
   );
 
-  const changeStatus = (status: ProjectStatus) => {
+  const changeStatus = (status: ProjectStatus, statusId?: string) => {
     if (project !== null && asksAboutOpenIssues(project, status)) {
       setClosing(status);
+      setClosingId(statusId);
       return;
     }
-    void update({ status });
+    void update(
+      statusId === undefined ? { status } : { status, status_id: statusId }
+    );
   };
 
   const confirm = (choice: ProjectOpenIssues) => {
@@ -93,7 +98,9 @@ export const useCloseProjectPrompt = ({
     const noun = count === 1 ? 'issue' : 'issues';
     const target = targets.find((row) => row.project_id === choice.project_id);
     setClosing(null);
-    void update({ status: closing, open_issues: choice }).then((done) => {
+    const patch: ProjectUpdate = { status: closing, open_issues: choice };
+    if (closingId !== undefined) patch.status_id = closingId;
+    void update(patch).then((done) => {
       if (!done) return;
       if (choice.action === 'move' && target !== undefined) {
         showToast(`Moved ${String(count)} ${noun} to ${target.name}`);

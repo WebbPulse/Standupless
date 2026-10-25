@@ -152,7 +152,7 @@ def test_closing_through_a_custom_completed_status_stamps_completion(client: Tes
 
 
 def test_the_list_filters_by_status_or_by_category(client: TestClient, workspace: str) -> None:
-    """A status id keeps the projects in it; a category keeps every status of the category."""
+    """A status id keeps the projects in it, a seeded one too; an alias or `category:` keeps the whole category."""
     sign_in(client, ADMIN)
     review = _status(client, workspace)
     seed_project(client, workspace, name="Reviewing", status_id=review["id"])
@@ -166,8 +166,11 @@ def test_the_list_filters_by_status_or_by_category(client: TestClient, workspace
         return {row["name"] for row in response.json()["projects"]}
 
     assert names(review["id"]) == {"Reviewing"}
-    assert names("in_progress") == {"Reviewing", "Building"}
+    assert names("in_progress") == {"Building"}
+    assert names("category:in_progress") == {"Reviewing", "Building"}
+    assert names("started") == {"Reviewing", "Building"}
     assert names("planned") == {"Waiting"}
+    assert client.get(_projects(workspace), params={"status": "category:nope"}).status_code == 422
     assert client.get(_projects(workspace), params={"status": "someday"}).status_code == 422
 
 

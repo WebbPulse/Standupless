@@ -122,6 +122,7 @@ import AuditLogSettings from './pages/workspaces/AuditLogSettings';
 import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
 import ProjectLabelsSettings from './pages/workspaces/ProjectLabelsSettings';
 import CustomEmojiSettings from './pages/workspaces/CustomEmojiSettings';
+import ProjectStatusesSettings from './pages/workspaces/ProjectStatusesSettings';
 import WorkspaceTemplatesSettings from './pages/workspaces/WorkspaceTemplatesSettings';
 import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
@@ -182,6 +183,10 @@ const App: React.FC = () => (
             element={<ProjectLabelsSettings />}
           />
           <Route path="settings/emoji" element={<CustomEmojiSettings />} />
+          <Route
+            path="settings/project-statuses"
+            element={<ProjectStatusesSettings />}
+          />
           <Route
             path="settings/templates"
             element={<WorkspaceTemplatesSettings />}

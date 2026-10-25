@@ -13,10 +13,11 @@ import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
+import { CYCLE_STATUS_LABELS } from '../../../lib/planningDisplay';
 import {
-  CYCLE_STATUS_LABELS,
-  PROJECT_STATUS_LABELS,
-} from '../../../lib/planningDisplay';
+  DEFAULT_PROJECT_STATUSES,
+  projectStatusOf,
+} from '../../../lib/projectStatuses';
 import {
   labelGroupKey,
   milestoneOf,
@@ -42,6 +43,7 @@ import {
 import { estimateChoices, type EstimateOptions } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import type { ComboboxOption } from '../../ui/combobox';
+import type { ProjectStatusRead } from '../../../types/Api';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import MilestoneGlyph from '../../planning/MilestoneGlyph';
@@ -83,6 +85,8 @@ export interface PropertyChoicesInput {
   today: Date;
   /** Called once a single-valued pick has written. */
   onDone: () => void;
+  /** The workspace's project statuses, the seeded defaults when left out. */
+  projectStatuses?: readonly ProjectStatusRead[];
 }
 
 /** The values every target shares, the ones the list marks as chosen. */
@@ -103,6 +107,7 @@ export const propertyChoices = ({
   triageTeams,
   today,
   onDone,
+  projectStatuses = DEFAULT_PROJECT_STATUSES,
 }: PropertyChoicesInput): PropertyChoices => {
   const { context } = env;
   const ids = issues.map((issue) => issue.id);
@@ -419,7 +424,7 @@ export const propertyChoices = ({
           value: project.project_id,
           label: project.name,
           icon: <LuBox className="h-3.5 w-3.5 text-text-muted" />,
-          detail: PROJECT_STATUS_LABELS[project.status],
+          detail: projectStatusOf(project, projectStatuses).name,
         })),
       ];
       selected = shared(issues.map((issue) => [issue.project_id ?? CLEAR]));

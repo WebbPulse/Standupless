@@ -64,6 +64,7 @@ import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import useDocumentTemplates from '../../hooks/useDocumentTemplates';
 import { useInitiativeUpdates } from '../../hooks/useInitiativeUpdates';
@@ -78,7 +79,6 @@ import { descendantIds, parentCandidates } from '../../lib/initiativeTree';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { initiativePath, initiativesPath, projectPath } from '../../lib/paths';
 import {
-  PROJECT_STATUS_LABELS,
   progressMeasureOf,
   progressOf,
   progressPercent,
@@ -284,6 +284,7 @@ export const InitiativeDetail: React.FC = () => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
   const { teams, workspaceId, isLoading: isResolving } = useTeam(undefined);
+  const { statusOf } = useProjectStatuses();
   const initiativeId = id ?? '';
   const tab = tabFrom(params.get('tab'));
   const isMember = workspace !== null && workspace.role !== 'guest';
@@ -1004,7 +1005,8 @@ export const InitiativeDetail: React.FC = () => {
                           <ProjectStatusGlyph
                             status={project.status}
                             percent={percent}
-                            name={PROJECT_STATUS_LABELS[project.status]}
+                            name={statusOf(project).name}
+                            color={statusOf(project).color}
                           />
                           <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
                             {project.target_date === null
@@ -1058,7 +1060,8 @@ export const InitiativeDetail: React.FC = () => {
                           <ProjectStatusGlyph
                             status={project.status}
                             percent={percent}
-                            name={PROJECT_STATUS_LABELS[project.status]}
+                            name={statusOf(project).name}
+                            color={statusOf(project).color}
                           />
                           <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
                             {project.target_date === null

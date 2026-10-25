@@ -199,16 +199,27 @@ def choose_project_status(
     return category, default.status_id
 
 
+CATEGORY_FILTER_PREFIX = "category:"
+"""The prefix that makes a status filter keep a whole category, its seeded default's id notwithstanding."""
+
+
 def status_filter_match(statuses: list[ProjectStatusRow], value: str) -> tuple[str, str]:
     """What a status filter value keeps, as `("id", status_id)` or `("category", category)`, or 422.
 
-    A value naming a workspace status keeps the projects in that status; a
-    category value keeps every project in the category, whatever its status.
+    A value naming a workspace status keeps the projects in that status, a
+    seeded default included; any other category value, such as `started`, `done`
+    or a category whose seeded status is gone, keeps every project in the
+    category, whatever its status, as does a `category:` prefix on any category.
     """
     candidate = value.strip()
+    if candidate.startswith(CATEGORY_FILTER_PREFIX):
+        named = category_of(candidate[len(CATEGORY_FILTER_PREFIX) :])
+        if named is None:
+            raise unprocessable(f"Unknown project status category: {value}")
+        return "category", named
     exact = find_status(statuses, candidate)
     category = category_of(candidate)
-    if exact is not None and (category is None or exact.status_id != category):
+    if exact is not None:
         return "id", exact.status_id
     if category is not None:
         return "category", category

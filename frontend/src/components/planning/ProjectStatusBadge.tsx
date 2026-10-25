@@ -19,14 +19,19 @@ const TONES: Record<ProjectStatus, BadgeTone> = {
   canceled: 'danger',
 };
 
-/** Props for ProjectStatusBadge: the status to show. */
+/** Props for ProjectStatusBadge: the category, and the workspace status's name. */
 export interface ProjectStatusBadgeProps {
   status: ProjectStatus;
+  /** The workspace status's name, in place of the category's. */
+  name?: string;
 }
 
-/** One team's status as a tinted pill. */
+/** One project's status as a pill tinted by its category. */
 export const ProjectStatusBadge: React.FC<ProjectStatusBadgeProps> = ({
   status,
-}) => <Badge tone={TONES[status]}>{PROJECT_STATUS_LABELS[status]}</Badge>;
+  name,
+}) => (
+  <Badge tone={TONES[status]}>{name ?? PROJECT_STATUS_LABELS[status]}</Badge>
+);
 
 export default ProjectStatusBadge;

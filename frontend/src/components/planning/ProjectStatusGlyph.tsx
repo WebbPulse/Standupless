@@ -2,7 +2,8 @@
  * A project's status as a 14px glyph, the way an issue's status leads its
  * row: dashed for backlog, an empty ring once planned, a pie filling with
  * progress while in progress, bars when paused, and a filled check or cross
- * once it is finished.
+ * once it is finished. The shape follows the status's category; a workspace
+ * status with its own color draws in that color.
  */
 
 import React from 'react';
@@ -15,6 +16,8 @@ export interface ProjectStatusGlyphProps {
   /** How far along an in progress project is, as a whole percent. */
   percent?: number;
   name?: string;
+  /** A workspace status's own color, in place of the category's tone. */
+  color?: string | null;
   className?: string;
 }
 
@@ -35,6 +38,7 @@ export const ProjectStatusGlyph: React.FC<ProjectStatusGlyphProps> = ({
   status,
   percent = 50,
   name,
+  color = null,
   className = '',
 }) => {
   const labelled =
@@ -45,7 +49,12 @@ export const ProjectStatusGlyph: React.FC<ProjectStatusGlyphProps> = ({
   return (
     <svg
       viewBox="0 0 14 14"
-      className={cn('h-3.5 w-3.5 shrink-0', TONE[status], className)}
+      className={cn(
+        'h-3.5 w-3.5 shrink-0',
+        color === null ? TONE[status] : '',
+        className
+      )}
+      {...(color === null ? {} : { style: { color } })}
       {...labelled}
     >
       {status === 'backlog' && (

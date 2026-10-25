@@ -14,6 +14,7 @@ from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.project_statuses import ProjectStatusRead
 from app.common.db.dynamo.planning import ProjectStatusRow
 from app.common.project_statuses import (
+    CATEGORY_FILTER_PREFIX,
     category_of,
     find_status,
     list_project_statuses,
@@ -83,10 +84,13 @@ def project_status_fields(call: ToolCall, status: Any, status_id: Any) -> dict[s
 
 
 def status_filter_value(call: ToolCall, value: Any) -> str:
-    """A list filter's status as the filter takes it: a category stays one, a name becomes its id."""
+    """A list filter's status as the filter takes it: a category keeps the whole category, a name becomes its id."""
     reference = str(value).strip()
+    category = category_of(reference)
+    if category is not None:
+        return f"{CATEGORY_FILTER_PREFIX}{category}"
     rows = project_statuses(call)
-    if category_of(reference) is not None or find_status(rows, reference) is not None:
+    if find_status(rows, reference) is not None:
         return reference
     return project_status_ref(call, reference, rows).status_id
 

@@ -404,6 +404,13 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     path: (slug) => `${settingsPath(slug)}/emoji`,
   },
   {
+    id: 'project-statuses',
+    title: 'Project statuses',
+    scope: 'workspace',
+    synonyms: ['project stages', 'project workflow', 'project states'],
+    path: (slug) => `${settingsPath(slug)}/project-statuses`,
+  },
+  {
     id: 'templates',
     title: 'Templates',
     scope: 'workspace',

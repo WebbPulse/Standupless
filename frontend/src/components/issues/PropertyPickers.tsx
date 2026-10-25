@@ -34,10 +34,8 @@ import {
   personLabel,
   type Assignable,
 } from '../../lib/issuePeople';
-import {
-  CYCLE_STATUS_LABELS,
-  PROJECT_STATUS_LABELS,
-} from '../../lib/planningDisplay';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
+import { CYCLE_STATUS_LABELS } from '../../lib/planningDisplay';
 import {
   STATUS_CATEGORY_LABELS,
   dateInRange,
@@ -669,13 +667,14 @@ export const ProjectPicker: React.FC<ProjectPickerProps> = ({
 }) => {
   const variant = base.variant ?? 'rail';
   const current = projects.find((project) => project.project_id === value);
+  const { statusOf } = useProjectStatuses();
   const options: ComboboxOption[] = [
     { value: NONE, label: 'No project' },
     ...projects.map((project) => ({
       value: project.project_id,
       label: project.name,
       icon: <LuBox className="h-3.5 w-3.5" />,
-      detail: PROJECT_STATUS_LABELS[project.status],
+      detail: statusOf(project).name,
     })),
   ];
   return (

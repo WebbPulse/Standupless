@@ -56,11 +56,8 @@ import {
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
-import {
-  milestoneProgress,
-  PROJECT_STATUS_LABELS,
-  progressPercent,
-} from '../../lib/planningDisplay';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
+import { milestoneProgress, progressPercent } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
   dependencyLines,
@@ -237,6 +234,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   );
   const project = value ?? server;
   const [drag, setDrag] = useState<DragState | null>(null);
+  const { statusOf } = useProjectStatuses();
   const editable = canEditProject(workspaceRole, project, teams);
   const percent = progressPercent(project);
   const lead = people.find((person) => person.user_id === project.lead_id);
@@ -416,7 +414,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
               aria-valuenow={bar.start}
               aria-valuetext={dates}
               aria-readonly={!editable}
-              title={`${project.name}\n${PROJECT_STATUS_LABELS[project.status]} · ${healthLabel(project.health)} · ${dates}`}
+              title={`${project.name}\n${statusOf(project).name} · ${healthLabel(project.health)} · ${dates}`}
               onPointerDown={beginDrag('move')}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
