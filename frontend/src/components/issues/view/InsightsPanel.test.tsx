@@ -109,6 +109,73 @@ describe('InsightsPanel', () => {
   });
 });
 
+describe('InsightsPanel time measures', () => {
+  it('offers the time measures and draws a scatterplot for one', async () => {
+    getInsights.mockResolvedValue(read());
+
+    render(
+      <InsightsPanel
+        workspaceId="ws-1"
+        scopeKey="team-1"
+        filters={{ team_id: 'team-1' }}
+        onClose={vi.fn()}
+      />
+    );
+
+    const picker = screen.getByLabelText('Measure');
+    expect(
+      [...picker.querySelectorAll('option')].map((option) => option.textContent)
+    ).toEqual([
+      'Issue count',
+      'Estimate points',
+      'Cycle time',
+      'Lead time',
+      'Triage time',
+      'Issue age',
+    ]);
+
+    getInsights.mockResolvedValue(
+      read({
+        measure: 'cycle_time',
+        issue_count: 1,
+        durations: {
+          count: 1,
+          average: 30,
+          p25: 30,
+          p50: 30,
+          p75: 30,
+          p95: 30,
+          minimum: 30,
+          maximum: 30,
+        },
+        points: [
+          {
+            issue_id: 'i-1',
+            key: 'ABC-1',
+            title: 'Timed',
+            group: 'user-1',
+            segment: null,
+            hours: 30,
+          },
+        ],
+      })
+    );
+    fireEvent.change(picker, { target: { value: 'cycle_time' } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'ABC-1 Timed, 30h' })
+      ).toBeTruthy();
+    });
+    expect(getInsights).toHaveBeenLastCalledWith('ws-1', {
+      team_id: 'team-1',
+      group_by: 'status',
+      measure: 'cycle_time',
+    });
+    expect(screen.getByText('1 issue, average 30h')).toBeTruthy();
+  });
+});
+
 describe('InsightsChart', () => {
   it('narrows the list to a bar, the unset bucket as none', () => {
     const onPick = vi.fn();

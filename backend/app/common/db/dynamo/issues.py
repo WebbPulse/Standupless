@@ -94,6 +94,8 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "started_at",
     "completed_at",
     "cancelled_at",
+    "triage_entered_at",
+    "triaged_at",
     "external_ref",
     "import_batch_id",
 )
@@ -280,6 +282,8 @@ class Issue(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     cancelled_at: datetime | None = None
+    triage_entered_at: datetime | None = None
+    triaged_at: datetime | None = None
     external_ref: str | None = None
     import_batch_id: str | None = None
 
@@ -360,6 +364,8 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "started_at",
         "completed_at",
         "cancelled_at",
+        "triage_entered_at",
+        "triaged_at",
         "external_ref",
         "import_batch_id",
         PULL_REQUEST_SUMMARY,

@@ -9,9 +9,12 @@ import {
   FILTER_FOR,
   INSIGHT_DIMENSIONS,
   UNSET_COLOR,
+  INSIGHT_MEASURES,
   bucketColor,
+  formatHours,
   formatMeasure,
   insightsFilters,
+  isTimeMeasure,
   narrowTo,
 } from './insights';
 import { defaultViewState, type ViewState } from './issueView';
@@ -105,5 +108,29 @@ describe('a bounded completed window', () => {
     const state: ViewState = { ...base, completed: 'past_week' };
 
     expect(insightsFilters(state, {}).status_category_not).toBeUndefined();
+  });
+});
+
+describe('time measures', () => {
+  it('lists every measure and tells the timed ones apart', () => {
+    expect(INSIGHT_MEASURES.map((option) => option.value)).toEqual([
+      'count',
+      'points',
+      'cycle_time',
+      'lead_time',
+      'triage_time',
+      'issue_age',
+    ]);
+    expect(isTimeMeasure('cycle_time')).toBe(true);
+    expect(isTimeMeasure('issue_age')).toBe(true);
+    expect(isTimeMeasure('points')).toBe(false);
+  });
+
+  it('prints durations in hours under two days and in days from there', () => {
+    expect(formatHours(0.25)).toBe('0.3h');
+    expect(formatHours(5.25)).toBe('5.3h');
+    expect(formatHours(30)).toBe('30h');
+    expect(formatHours(72)).toBe('3d');
+    expect(formatHours(36 * 24)).toBe('36d');
   });
 });

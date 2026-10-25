@@ -4,6 +4,7 @@ Held in `common` because the views route and the MCP tool answer the same body,
 and the integrations image may not import another domain's code. A breakdown is
 computed in the handler from the same per-team index reads the issue list uses,
 bounded by `INSIGHTS_ROW_CAP`, so it costs no new index and no precomputed rows.
+Time measures read each issue's own lifecycle stamps, so they cost nothing more.
 Time series need a daily snapshot and are not computed here.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
 from app.common.api.dependencies.authz import AuthzContext
@@ -19,10 +21,14 @@ from app.common.api.schemas.insights import (
     INSIGHT_DIMENSIONS,
     INSIGHT_MEASURES,
     INSIGHTS_ROW_CAP,
+    TIME_MEASURES,
     InsightBucket,
+    InsightDurations,
     InsightGroup,
+    InsightPoint,
     InsightsRead,
 )
+from app.common.db.dynamo.base import utc_now
 from app.common.api.schemas.views import FILTER_FIELDS
 from app.common.customer_index import require_customer_list_reader
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
@@ -296,18 +302,75 @@ def _names(
     return names
 
 
+def issue_hours(issue: Issue, measure: str, now: datetime) -> Optional[float]:
+    """How long one issue took under a time measure, in hours, or `None` when the measure leaves it out.
+
+    Cycle time needs both `started_at` and `completed_at`, lead time `completed_at`,
+    triage time both triage stamps, and issue age keeps every issue. A negative span
+    from clock skew reads as zero.
+    """
+    start: Optional[datetime]
+    end: Optional[datetime]
+    if measure == "cycle_time":
+        start, end = issue.started_at, issue.completed_at
+    elif measure == "lead_time":
+        start, end = issue.created_at, issue.completed_at
+    elif measure == "triage_time":
+        start, end = issue.triage_entered_at, issue.triaged_at
+    elif measure == "issue_age":
+        start, end = issue.created_at, now
+    else:
+        return None
+    if start is None or end is None:
+        return None
+    return max((end - start).total_seconds(), 0.0) / 3600
+
+
+def percentile(ordered: list[float], share: float) -> float:
+    """The `share` percentile of a sorted, non-empty list, interpolating linearly between ranks."""
+    rank = (len(ordered) - 1) * share
+    low = int(rank)
+    high = min(low + 1, len(ordered) - 1)
+    return ordered[low] + (ordered[high] - ordered[low]) * (rank - low)
+
+
+def summarize_hours(hours: Iterable[float]) -> InsightDurations:
+    """The count, average, quartiles, 95th percentile and range of a set of durations, rounded to 0.01 hours."""
+    ordered = sorted(hours)
+    if not ordered:
+        return InsightDurations()
+
+    def rounded(value: float) -> float:
+        """One figure rounded to hundredths of an hour."""
+        return round(value, 2)
+
+    return InsightDurations(
+        count=len(ordered),
+        average=rounded(sum(ordered) / len(ordered)),
+        p25=rounded(percentile(ordered, 0.25)),
+        p50=rounded(percentile(ordered, 0.5)),
+        p75=rounded(percentile(ordered, 0.75)),
+        p95=rounded(percentile(ordered, 0.95)),
+        minimum=rounded(ordered[0]),
+        maximum=rounded(ordered[-1]),
+    )
+
+
 @dataclass
 class _Tally:
-    """A running sum for one bucket: its measured value and its issue count."""
+    """A running sum for one bucket: its measured value, its issue count and any durations."""
 
     value: int = 0
     issue_count: int = 0
+    hours: list[float] = field(default_factory=list)
     segments: dict[Optional[str], "_Tally"] = field(default_factory=dict)
 
-    def add(self, amount: int) -> None:
-        """Count one issue weighing `amount`."""
+    def add(self, amount: int, hours: Optional[float] = None) -> None:
+        """Count one issue weighing `amount`, keeping its duration under a time measure."""
         self.value += amount
         self.issue_count += 1
+        if hours is not None:
+            self.hours.append(hours)
 
 
 def _bucket_label(dimension: str, key: Optional[str], names: Names) -> str:
@@ -351,11 +414,24 @@ def build_insights(
     segment_by: Optional[str],
     measure: str,
 ) -> InsightsRead:
-    """One breakdown: the scope's issues grouped by one dimension and optionally segmented by another."""
+    """One breakdown: the scope's issues grouped by one dimension and optionally segmented by another.
+
+    Under a time measure only the issues the measure covers are counted, each
+    bucket carries its duration statistics, and every issue answers a point.
+    """
     if segment_by == group_by:
         segment_by = None
     issues, truncated = insight_rows(repositories, context, scope)
     workspace_id = context.workspace_id
+    timed = measure in TIME_MEASURES
+    durations: dict[str, float] = {}
+    if timed:
+        now = utc_now()
+        for issue in issues:
+            hours = issue_hours(issue, measure, now)
+            if hours is not None:
+                durations[issue.issue_id] = hours
+        issues = [issue for issue in issues if issue.issue_id in durations]
 
     categories: dict[str, str] = {}
     if "status_category" in (group_by, segment_by):
@@ -370,18 +446,31 @@ def build_insights(
 
     tallies: dict[Optional[str], _Tally] = defaultdict(_Tally)
     segment_keys: set[str] = set()
+    points: list[InsightPoint] = []
     total = 0
     for issue in issues:
         amount = weigh(issue)
+        hours = durations.get(issue.issue_id)
         total += amount
         segments = _values_of(issue, segment_by, categories) if segment_by else []
         for key in _values_of(issue, group_by, categories):
             tally = tallies[key]
-            tally.add(amount)
+            tally.add(amount, hours)
             for segment in segments:
-                tally.segments.setdefault(segment, _Tally()).add(amount)
+                tally.segments.setdefault(segment, _Tally()).add(amount, hours)
                 if segment:
                     segment_keys.add(segment)
+            if hours is not None:
+                points.append(
+                    InsightPoint(
+                        issue_id=issue.issue_id,
+                        key=issue.key,
+                        title=issue.title,
+                        group=key,
+                        segment=segments[0] if segments else None,
+                        hours=round(hours, 2),
+                    )
+                )
 
     group_names = _names(repositories, workspace_id, scope.team_ids, group_by, (k for k in tallies if k))
     segment_names = (
@@ -397,6 +486,7 @@ def build_insights(
                 color=group_names.colors.get(key) if key else None,
                 value=tally.value,
                 issue_count=tally.issue_count,
+                durations=summarize_hours(tally.hours) if timed else None,
                 segments=[
                     InsightBucket(
                         key=segment_key,
@@ -404,6 +494,7 @@ def build_insights(
                         color=segment_names.colors.get(segment_key) if segment_key else None,
                         value=segment.value,
                         issue_count=segment.issue_count,
+                        durations=summarize_hours(segment.hours) if timed else None,
                     )
                     for segment_key, segment in _ordered(segment_by, tally.segments, segment_names)
                 ]
@@ -423,6 +514,8 @@ def build_insights(
         groups=groups,
         truncated=truncated,
         row_cap=INSIGHTS_ROW_CAP,
+        durations=summarize_hours(durations.values()) if timed else None,
+        points=points,
     )
 
 

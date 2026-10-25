@@ -1204,10 +1204,12 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_insights",
         description=(
-            "Issue count or estimate points grouped by one dimension, optionally segmented by a second, "
-            "over a team, every visible team, or a saved view with its filter, plus the list filters. "
-            "Answers groups with label, value, issue_count and segments, the total, and truncated when "
-            "the scope held more issues than row_cap."
+            "Issue count, estimate points, cycle time, lead time, triage time or issue age grouped by one "
+            "dimension, optionally segmented by a second, over a team, every visible team, or a saved view with "
+            "its filter, plus the list filters. Answers groups with label, value, issue_count and segments, the "
+            "total, and truncated when the scope held more issues than row_cap. A time measure also answers "
+            "durations (count, average, p25, p50, p75, p95, minimum, maximum in hours) overall and per group, "
+            "and points with each measured issue's key, title, group, segment and hours."
         ),
         scopes=("issues:read",),
         schema=object_schema(
@@ -1216,7 +1218,12 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "view_id": string("A saved view whose team and filter apply as well"),
                 "group_by": enum(INSIGHT_DIMENSIONS, "What each bar is, defaulting to status"),
                 "segment_by": enum(INSIGHT_DIMENSIONS, "What splits each bar, optional"),
-                "measure": enum(INSIGHT_MEASURES, "count of issues or sum of estimate points, defaulting to count"),
+                "measure": enum(
+                    INSIGHT_MEASURES,
+                    "count of issues or sum of estimate points, defaulting to count; cycle_time is started to "
+                    "completed, lead_time created to completed, triage_time entering to leaving triage, and "
+                    "issue_age created to now, each in hours over the issues it applies to",
+                ),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
                 "include_sub_teams": {
                     "type": "boolean",

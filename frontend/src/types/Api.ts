@@ -4098,8 +4098,42 @@ export type InsightDimension =
   | 'estimate'
   | 'team';
 
-/** What each insights bar measures: issues, or the sum of their estimate points. */
-export type InsightMeasure = 'count' | 'points';
+/**
+ * What an insights breakdown measures: issues, the sum of their estimate
+ * points, or how long each issue took. Cycle time runs from started to
+ * completed, lead time from created to completed, triage time from entering
+ * triage to leaving it, and issue age from created to now.
+ */
+export type InsightMeasure =
+  'count' | 'points' | 'cycle_time' | 'lead_time' | 'triage_time' | 'issue_age';
+
+/** The time measures, which answer durations and points rather than sums. */
+export type InsightTimeMeasure = Exclude<InsightMeasure, 'count' | 'points'>;
+
+/** Summary statistics of a set of durations, in hours; null when the set is empty. */
+export interface InsightDurations {
+  count: number;
+  average: number | null;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  p95: number | null;
+  minimum: number | null;
+  maximum: number | null;
+}
+
+/**
+ * One issue's duration under a time measure. `group` is the bucket key it
+ * falls in and `segment` its first segment value, both null when unset.
+ */
+export interface InsightPoint {
+  issue_id: string;
+  key: string;
+  title: string;
+  group: string | null;
+  segment: string | null;
+  hours: number;
+}
 
 /**
  * One bar or bar segment. `key` is the raw value and null for the unset
@@ -4112,6 +4146,8 @@ export interface InsightBucket {
   color: string | null;
   value: number;
   issue_count: number;
+  /** Duration statistics under a time measure, null otherwise. */
+  durations?: InsightDurations | null;
 }
 
 /** One bar, split by the segment dimension when one was asked for. */
@@ -4135,6 +4171,10 @@ export interface InsightsRead {
   groups: InsightGroup[];
   truncated: boolean;
   row_cap: number;
+  /** Duration statistics over the whole set under a time measure, null otherwise. */
+  durations?: InsightDurations | null;
+  /** One point per measured issue under a time measure, empty otherwise. */
+  points?: InsightPoint[];
 }
 
 /** The events a team channel may post, in the order the settings page lists them. */
