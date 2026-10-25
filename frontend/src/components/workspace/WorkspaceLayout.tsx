@@ -3,7 +3,7 @@
  * `/w/:slug`. Each page renders its own {@link WorkspaceShell}, so anything
  * that must outlive a page change lives here instead: the shortcut registry,
  * the command palette, the peek pane, the one create issue dialog, the create
- * team dialog, the create project and initiative dialogs, the shortcut help overlay, the shared team list, the mention
+ * team dialog, the create project and initiative dialogs, the Leave workspace confirmation, the shortcut help overlay, the shared team list, the mention
  * directory and the one toast stack every page raises notices into.
  *
  * It also records the workspace as the one this browser last opened, which
@@ -78,6 +78,7 @@ import CreatePlanningHost, {
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import CustomizeSidebarDialog from './CustomizeSidebarDialog';
+import LeaveWorkspaceProvider from './LeaveWorkspaceProvider';
 import { PeekProvider } from './PeekPane';
 import WorkspaceShell from './WorkspaceShell';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -459,7 +460,9 @@ const WorkspaceOverlays: React.FC = () => {
 export const WorkspaceLayout: React.FC = () => (
   <TeamsProvider>
     <SidebarDataProvider>
-      <WorkspaceOverlays />
+      <LeaveWorkspaceProvider>
+        <WorkspaceOverlays />
+      </LeaveWorkspaceProvider>
     </SidebarDataProvider>
   </TeamsProvider>
 );

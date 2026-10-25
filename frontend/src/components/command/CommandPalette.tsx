@@ -62,6 +62,7 @@ import {
   LuBuilding2,
   LuChevronLeft,
   LuCircleDot,
+  LuDoorOpen,
   LuFileText,
   LuGitPullRequest,
   LuGoal,
@@ -110,6 +111,7 @@ import {
 } from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
 import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
+import { useLeaveWorkspace } from '../../hooks/useLeaveWorkspace';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
@@ -402,6 +404,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const createTeam = useCreateTeam();
   const createPlanning = useCreatePlanning();
   const customizeSidebar = useCustomizeSidebar();
+  const leaveWorkspace = useLeaveWorkspace();
   const { theme, setTheme } = useTheme();
   const registered = useRegisteredShortcuts();
   const { canUndo, undo } = useUndo(workspace.id);
@@ -678,6 +681,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       icon: <LuSlidersHorizontal className={ICON} />,
       run: customizeSidebar.open,
     });
+    if (leaveWorkspace !== null) {
+      built.push({
+        id: 'action-leave-workspace',
+        label: 'Leave workspace',
+        keywords: 'exit quit remove myself membership',
+        icon: <LuDoorOpen className={ICON} />,
+        run: leaveWorkspace.open,
+      });
+    }
     if (onShowShortcuts !== undefined) {
       built.push({
         id: 'action-shortcuts',
@@ -737,6 +749,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     createTeam,
     createPlanning,
     customizeSidebar,
+    leaveWorkspace,
     slug,
     team,
     teams,
