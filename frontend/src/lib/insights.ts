@@ -21,6 +21,7 @@ import type {
   InsightBucket,
   InsightDimension,
   InsightMeasure,
+  InsightTimeMeasure,
 } from '../types/Api';
 
 /** How often an open panel re-reads, matching the pace of the list beside it. */
@@ -40,6 +41,46 @@ export const INSIGHT_DIMENSIONS: { value: InsightDimension; label: string }[] =
     { value: 'estimate', label: 'Estimate' },
     { value: 'team', label: 'Team' },
   ];
+
+/** Every measure in the order the picker offers them, with its name. */
+export const INSIGHT_MEASURES: { value: InsightMeasure; label: string }[] = [
+  { value: 'count', label: 'Issue count' },
+  { value: 'points', label: 'Estimate points' },
+  { value: 'cycle_time', label: 'Cycle time' },
+  { value: 'lead_time', label: 'Lead time' },
+  { value: 'triage_time', label: 'Triage time' },
+  { value: 'issue_age', label: 'Issue age' },
+];
+
+const TIME_MEASURES: ReadonlySet<InsightMeasure> = new Set<InsightMeasure>([
+  'cycle_time',
+  'lead_time',
+  'triage_time',
+  'issue_age',
+]);
+
+/** Whether a measure answers durations and points rather than bar sums. */
+export const isTimeMeasure = (
+  measure: InsightMeasure
+): measure is InsightTimeMeasure => TIME_MEASURES.has(measure);
+
+/** The percentile markers a time measure draws, in the order the strip lists them. */
+export const PERCENTILES = ['p25', 'p50', 'p75', 'p95'] as const;
+
+/** One percentile marker's name. */
+export type Percentile = (typeof PERCENTILES)[number];
+
+const trim = (value: number): string =>
+  value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
+
+/**
+ * A duration in hours printed in whichever unit reads better: hours under
+ * two days, and days from there.
+ */
+export const formatHours = (hours: number): string => {
+  if (hours < 48) return `${trim(hours)}h`;
+  return `${trim(hours / 24)}d`;
+};
 
 /** The list filter a bar narrows to, for the dimensions the filter bar knows. */
 export const FILTER_FOR: Partial<Record<InsightDimension, FilterField>> = {

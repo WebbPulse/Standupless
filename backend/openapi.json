@@ -7895,6 +7895,16 @@
             ],
             "title": "Color"
           },
+          "durations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightDurations"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "issue_count": {
             "default": 0,
             "title": "Issue Count",
@@ -7927,6 +7937,95 @@
         "title": "InsightBucket",
         "type": "object"
       },
+      "InsightDurations": {
+        "description": "Summary statistics of a set of durations, in hours.\n\nPercentiles interpolate linearly between the two nearest ranks. Every figure\nis null when the set is empty.",
+        "properties": {
+          "average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum"
+          },
+          "p25": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P25"
+          },
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p75": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P75"
+          },
+          "p95": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95"
+          }
+        },
+        "title": "InsightDurations",
+        "type": "object"
+      },
       "InsightGroup": {
         "description": "One bar of a breakdown, split by the segment dimension when one was asked for.",
         "properties": {
@@ -7940,6 +8039,16 @@
               }
             ],
             "title": "Color"
+          },
+          "durations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightDurations"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "issue_count": {
             "default": 0,
@@ -7980,9 +8089,70 @@
         "title": "InsightGroup",
         "type": "object"
       },
-      "InsightsRead": {
-        "description": "A breakdown of the issues one scope and filter select, grouped by one dimension.\n\n`total` and `issue_count` count each issue once. A label breakdown counts an\nissue under every label it carries, so its bars can sum past the total.\n`truncated` is set when the scope held more than `row_cap` issues, and the\nfigures then cover only the issues read.",
+      "InsightPoint": {
+        "description": "One issue's duration under a time measure, placed in its bucket and segment.\n\n`group` is the bucket key the issue falls in, null for the unset bucket. A label\nbreakdown answers one point per label the issue carries. `segment` is the\nissue's first value of the segment dimension, when one was asked for.",
         "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "segment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "key",
+          "title",
+          "hours"
+        ],
+        "title": "InsightPoint",
+        "type": "object"
+      },
+      "InsightsRead": {
+        "description": "A breakdown of the issues one scope and filter select, grouped by one dimension.\n\n`total` and `issue_count` count each issue once. A label breakdown counts an\nissue under every label it carries, so its bars can sum past the total.\n`truncated` is set when the scope held more than `row_cap` issues, and the\nfigures then cover only the issues read. Under a time measure `value` is the\nnumber of issues measured, each bucket carries `durations`, and `durations`\nand `points` cover the whole set; both are null and empty otherwise.",
+        "properties": {
+          "durations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightDurations"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "group_by": {
             "enum": [
               "status",
@@ -8013,10 +8183,21 @@
           "measure": {
             "enum": [
               "count",
-              "points"
+              "points",
+              "cycle_time",
+              "lead_time",
+              "triage_time",
+              "issue_age"
             ],
             "title": "Measure",
             "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/InsightPoint"
+            },
+            "title": "Points",
+            "type": "array"
           },
           "row_cap": {
             "default": 2000,
@@ -55714,7 +55895,7 @@
     },
     "/api/workspaces/{workspace_id}/views/insights": {
       "get": {
-        "description": "Issue count or estimate points grouped by one dimension, optionally segmented by a second.\n\nTakes the issue list's filters with the same meaning. With `view_id` the saved\nview's team and live filter apply as well, ANDed with any filter sent. With\nneither a team nor a view, every team the caller can see is counted. A scope\nholding more than `row_cap` issues answers over the issues read with\n`truncated` set rather than reading without bound.",
+        "description": "Issue count, estimate points or a time measure grouped by one dimension, optionally segmented by a second.\n\nTakes the issue list's filters with the same meaning. With `view_id` the saved\nview's team and live filter apply as well, ANDed with any filter sent. With\nneither a team nor a view, every team the caller can see is counted. A scope\nholding more than `row_cap` issues answers over the issues read with\n`truncated` set rather than reading without bound. A time measure, one of\n`cycle_time`, `lead_time`, `triage_time` or `issue_age`, counts only the issues\nit applies to and answers duration percentiles in hours and one point per issue.",
         "operationId": "get_insights_api_workspaces__workspace_id__views_insights_get",
         "parameters": [
           {
@@ -55827,7 +56008,11 @@
               "default": "count",
               "enum": [
                 "count",
-                "points"
+                "points",
+                "cycle_time",
+                "lead_time",
+                "triage_time",
+                "issue_age"
               ],
               "title": "Measure",
               "type": "string"

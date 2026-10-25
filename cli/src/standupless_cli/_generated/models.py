@@ -1086,50 +1086,24 @@ class InitiativesDisplay(TypedDict):
     order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
 
 
-class InsightBucket(TypedDict):
-    color: NotRequired[str | None]
-    issue_count: NotRequired[int]
-    key: NotRequired[str | None]
-    label: str
-    value: NotRequired[int]
+class InsightDurations(TypedDict):
+    average: NotRequired[float | None]
+    count: NotRequired[int]
+    maximum: NotRequired[float | None]
+    minimum: NotRequired[float | None]
+    p25: NotRequired[float | None]
+    p50: NotRequired[float | None]
+    p75: NotRequired[float | None]
+    p95: NotRequired[float | None]
 
 
-class InsightGroup(TypedDict):
-    color: NotRequired[str | None]
-    issue_count: NotRequired[int]
-    key: NotRequired[str | None]
-    label: str
-    segments: NotRequired[list[InsightBucket]]
-    value: NotRequired[int]
-
-
-class InsightsRead(TypedDict):
-    group_by: Literal[
-        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
-    ]
-    groups: list[InsightGroup]
-    issue_count: int
-    measure: Literal["count", "points"]
-    row_cap: NotRequired[int]
-    segment_by: NotRequired[
-        Literal[
-            "status",
-            "status_category",
-            "assignee",
-            "creator",
-            "priority",
-            "label",
-            "project",
-            "cycle",
-            "estimate",
-            "team",
-        ]
-        | None
-    ]
-    team_ids: list[str]
-    total: int
-    truncated: NotRequired[bool]
-    view_id: NotRequired[str | None]
+class InsightPoint(TypedDict):
+    group: NotRequired[str | None]
+    hours: float
+    issue_id: str
+    key: str
+    segment: NotRequired[str | None]
+    title: str
 
 
 class InstallUrlRead(TypedDict):
@@ -3928,6 +3902,56 @@ class InitiativeRead(TypedDict):
 class InitiativeUpdateListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     updates: list[InitiativeUpdateRead]
+
+
+class InsightBucket(TypedDict):
+    color: NotRequired[str | None]
+    durations: NotRequired[InsightDurations | None]
+    issue_count: NotRequired[int]
+    key: NotRequired[str | None]
+    label: str
+    value: NotRequired[int]
+
+
+class InsightGroup(TypedDict):
+    color: NotRequired[str | None]
+    durations: NotRequired[InsightDurations | None]
+    issue_count: NotRequired[int]
+    key: NotRequired[str | None]
+    label: str
+    segments: NotRequired[list[InsightBucket]]
+    value: NotRequired[int]
+
+
+class InsightsRead(TypedDict):
+    durations: NotRequired[InsightDurations | None]
+    group_by: Literal[
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
+    ]
+    groups: list[InsightGroup]
+    issue_count: int
+    measure: Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"]
+    points: NotRequired[list[InsightPoint]]
+    row_cap: NotRequired[int]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    team_ids: list[str]
+    total: int
+    truncated: NotRequired[bool]
+    view_id: NotRequired[str | None]
 
 
 class InstallationRead(TypedDict):
