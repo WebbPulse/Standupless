@@ -20,7 +20,7 @@ from app.common.db.dynamo.notify_digests import DIGEST_WINDOW, DigestEntry, wind
 from app.common.email import reset_email_sender
 from app.domains.views.consumers import digest as digest_module
 from app.domains.views.consumers import notify as notify_module
-from app.domains.views.consumers.digest import NOTIFY_DIGEST_SOURCE, flush_due, flush_window
+from app.domains.views.consumers.digest import FLUSH_GRACE, NOTIFY_DIGEST_SOURCE, flush_due, flush_window
 from app.domains.views.consumers.notify import MAX_RECIPIENTS_PER_EVENT, cap_recipients, handle_record
 from app.domains.views.email import DIGEST_LINE_LIMIT, render_digest
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, sign_in
@@ -62,7 +62,7 @@ def _hold_at_window_start(repositories: Any, monkeypatch: pytest.MonkeyPatch) ->
     store = repositories.inbox.digests
     add = store.add
     moment = datetime.fromtimestamp(window_start(datetime.now(timezone.utc)), timezone.utc)
-    monkeypatch.setattr(store, "add", lambda entry, now=None: add(entry, now=moment))
+    monkeypatch.setattr(store, "add", lambda entry, now=None, **options: add(entry, now=moment, **options))
 
 
 def test_a_burst_on_one_issue_becomes_one_email(
@@ -251,6 +251,152 @@ def test_a_failed_compose_puts_the_window_back(
 
     assert flush_digests(repositories).sent == 1
     assert [message.subject for message in recorder.sent] == ["[ENG-1] Issue 1"]
+
+
+def test_immediate_email_sends_each_notification_at_once(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """A person on immediate email gets one email per notification, and nothing is left for the flush."""
+    repositories.users.update(MEMBER, email_format="immediate")
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Right now", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    handle_record(repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01C000000000000000000009"))
+
+    assert len(recorder.sent) == 2
+    assert all(message.to == "member@example.com" for message in recorder.sent)
+    assert all(message.subject == f"[{issue['key']}] Right now" for message in recorder.sent)
+    assert flush_digests(repositories).windows == 0
+    assert len(recorder.sent) == 2
+
+
+def test_immediate_email_still_honours_the_kind_switch(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """Immediate changes when an email goes, never whether a kind switched off is mailed."""
+    repositories.users.update(MEMBER, email_format="immediate", notification_preferences={"assigned": {"email": False}})
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Quiet", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+
+    assert len(inbox_of(repositories, workspace, MEMBER)) == 1
+    assert recorder.sent == []
+
+
+def test_a_digest_holds_the_email_by_default(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """The default format sends nothing until the window is flushed."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Later", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    assert recorder.sent == []
+
+    assert flush_digests(repositories).sent == 1
+    assert len(recorder.sent) == 1
+
+
+def test_a_notification_read_before_the_flush_is_not_mailed(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """Reading the only notification in the inbox leaves the window with nothing to send."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Seen", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    [row] = inbox_of(repositories, workspace, MEMBER)
+    repositories.inbox.mark_read(workspace, MEMBER, [row["notification_id"]])
+    summary = flush_digests(repositories)
+
+    assert (summary.windows, summary.sent, summary.skipped) == (1, 0, 1)
+    assert recorder.sent == []
+
+
+def test_only_the_unread_part_of_a_window_is_mailed(
+    issues_client: TestClient,
+    workspace: str,
+    repositories: Any,
+    statuses: Any,
+    recorder: RecordingEmailSender,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A read notification and a deleted one drop out, and the one left goes as its own email."""
+    _hold_at_window_start(repositories, monkeypatch)
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Partly seen", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    handle_record(repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01C000000000000000000009"))
+    handle_record(repositories, status_record(workspace, issue["id"], OWNER, assignee=MEMBER))
+    rows = {row["kind"]: row["notification_id"] for row in inbox_of(repositories, workspace, MEMBER)}
+    repositories.inbox.mark_read(workspace, MEMBER, [rows["assigned"]])
+    repositories.inbox.delete(workspace, MEMBER, rows["commented"])
+
+    assert flush_digests(repositories).sent == 1
+    [message] = recorder.sent
+    assert "You have" not in message.text
+    assert "commented" not in message.text
+
+
+def test_a_notification_stored_read_is_still_mailed(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """With the inbox off the row is written read, which is not the person having read it."""
+    repositories.users.update(MEMBER, notification_preferences={"assigned": {"in_app": False}})
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Email only", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+
+    assert flush_digests(repositories).sent == 1
+
+
+def test_an_urgent_issue_is_mailed_on_the_next_flush(
+    issues_client: TestClient,
+    workspace: str,
+    repositories: Any,
+    statuses: Any,
+    recorder: RecordingEmailSender,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An urgent issue makes the open window due at once, and the window's own close sends nothing more."""
+    _hold_at_window_start(repositories, monkeypatch)
+    opened = datetime.fromtimestamp(window_start(datetime.now(timezone.utc)), timezone.utc)
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="On fire", assignee_id=MEMBER, priority="urgent")
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    summary = flush_due(repositories, now=opened + FLUSH_GRACE + timedelta(seconds=1))
+
+    assert (summary.windows, summary.sent) == (1, 1)
+    assert [message.subject for message in recorder.sent] == [f"[{issue['key']}] On fire"]
+
+    later = flush_due(repositories, now=opened + DIGEST_WINDOW + FLUSH_GRACE + timedelta(seconds=1))
+    assert (later.windows, later.sent) == (1, 0)
+    assert len(recorder.sent) == 1
+
+
+def test_an_ordinary_issue_waits_for_the_window(
+    issues_client: TestClient,
+    workspace: str,
+    repositories: Any,
+    statuses: Any,
+    recorder: RecordingEmailSender,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without urgency the same early flush finds nothing due."""
+    _hold_at_window_start(repositories, monkeypatch)
+    opened = datetime.fromtimestamp(window_start(datetime.now(timezone.utc)), timezone.utc)
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Calm", assignee_id=MEMBER, priority="high")
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+
+    assert flush_due(repositories, now=opened + FLUSH_GRACE + timedelta(seconds=1)).windows == 0
+    assert recorder.sent == []
 
 
 def test_windows_are_fixed_five_minute_buckets() -> None:

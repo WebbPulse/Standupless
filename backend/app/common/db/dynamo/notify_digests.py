@@ -5,7 +5,9 @@ window. Each notification that should be mailed becomes an entry row in a window
 partition, and the first entry of a window also writes a due marker into one
 shared partition, keyed by the moment the window closes. A scheduled flush reads
 the due markers, claims each with a conditional delete, and mails the window's
-entries as one message.
+entries as one message. An urgent entry also writes a marker due at once, so
+its window goes out on the next flush and the window's own marker later finds
+nothing left to send.
 
 The rows live in the `inbox` table under partitions no member's inbox can name,
 because an inbox partition is always `<workspace>#<user>` built from the caller's
@@ -76,6 +78,9 @@ class DigestEntry(BaseModel):
     The fields are captured when the inbox row is written, so the flush renders
     without reading the issue or the project again. `kind` and `team_id` are kept
     so the flush can re-check the recipient's preference and visibility.
+    `unread_when_held` says whether the inbox row was unread when the entry was
+    held, so the flush can drop one the person has since read; `None` marks an
+    entry with no inbox row to check.
     """
 
     workspace_id: str
@@ -95,6 +100,7 @@ class DigestEntry(BaseModel):
     initiative_id: str = ""
     initiative_name: str = ""
     due_state: str = ""
+    unread_when_held: bool | None = None
     created_at: datetime
 
 
@@ -129,19 +135,27 @@ class DigestStore:
         self._due_partition = due_partition
         self._window = window
 
-    def add(self, entry: DigestEntry, now: datetime | None = None) -> int:
+    def add(self, entry: DigestEntry, now: datetime | None = None, *, expedite: bool = False) -> int:
         """Hold one entry in its recipient's open window, answering that window.
 
         The entry is keyed by its notification id, so a second add of the same
         notification overwrites rather than duplicates. The due marker is written
         only when it is not already there, so a busy window costs one marker.
+        `expedite` also marks the window due now, so the next flush mails it
+        without waiting for the window to close.
         """
         moment = now or datetime.now(timezone.utc)
         window = window_start(moment, self._window)
         partition = window_partition(entry.workspace_id, entry.recipient_id, window, self._prefix)
         self._repository.put(as_item(entry, ws_user=partition, expires_at=_expiry(moment)))
 
-        due_at = window + int(self._window.total_seconds())
+        self._mark_due(entry, window, window + int(self._window.total_seconds()), moment)
+        if expedite:
+            self._mark_due(entry, window, int(moment.timestamp()), moment)
+        return window
+
+    def _mark_due(self, entry: DigestEntry, window: int, due_at: int, moment: datetime) -> None:
+        """Write one due marker for a window unless that exact marker is already there."""
         marker = f"{due_at:0{_EPOCH_WIDTH}d}#{entry.workspace_id}#{entry.recipient_id}#{window}"
         try:
             self._repository.put(
@@ -157,7 +171,6 @@ class DigestStore:
             )
         except ConditionFailed:
             pass
-        return window
 
     def due(self, cutoff: datetime, *, limit: int) -> list[DueDigest]:
         """The oldest windows that closed at or before `cutoff`, at most `limit` of them."""

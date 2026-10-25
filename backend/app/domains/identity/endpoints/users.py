@@ -30,12 +30,14 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
     ACTIVITY_FILTERS,
+    EMAIL_FORMATS,
     FONT_SIZES,
     HOME_VIEWS,
     NAME_DISPLAYS,
     PULSE_DIGESTS,
     WEEK_STARTS,
     ActivityFilterField,
+    EmailFormatField,
     FontSizeField,
     HomeViewField,
     NameDisplayField,
@@ -100,6 +102,7 @@ class UserRead(BaseModel):
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
+    email_format: EmailFormatField = "digest"
     avatar_url: Optional[str] = None
     two_factor: bool = False
     timezone: Optional[str] = None
@@ -161,7 +164,8 @@ class UserPreferencesUpdate(BaseModel):
     """The preferences a person may change on their own account.
 
     Every field is optional, so the global email switch, one kind's channels and
-    the timezone can each be changed without restating the others. `timezone` is
+    the timezone can each be changed without restating the others. `email_format`
+    picks a digest or one email per notification. `timezone` is
     the IANA zone due date reminders are judged in, which the browser captures on
     sign in and the person can change. `pulse_digest` is how often the Pulse
     digest email comes, `off` by default. `home_view`, `week_start`,
@@ -182,6 +186,7 @@ class UserPreferencesUpdate(BaseModel):
 
     email_notifications: Optional[bool] = None
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
+    email_format: Optional[EmailFormatField] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     pulse_digest: Optional[PulseDigestField] = None
     home_view: Optional[HomeViewField] = None
@@ -254,6 +259,7 @@ def _as_read(user: "Any") -> UserRead:
             )
             for kind in NOTIFICATION_KINDS
         },
+        email_format=_known(user.email_format, EMAIL_FORMATS, "digest"),
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
         pulse_digest=user.pulse_digest if user.pulse_digest in PULSE_DIGESTS else "off",
@@ -375,6 +381,7 @@ def update_current_user_preferences(
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
     for field in (
+        "email_format",
         "home_view",
         "week_start",
         "name_display",

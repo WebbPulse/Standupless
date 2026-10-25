@@ -19,6 +19,8 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether notification emails are batched into a digest or sent one at a time. */
+  email_format?: EmailFormat;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
   /** The IANA zone due dates are judged in, or null when none is stored yet. */
@@ -112,6 +114,9 @@ export type ActivityFilter = 'all' | 'comments';
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
 
+/** How notification emails arrive: batched into a short digest, or one per notification. */
+export type EmailFormat = 'digest' | 'immediate';
+
 /** One workspace as the account deletion plan names it. */
 export interface WorkspaceSummaryRead {
   id: string;
@@ -155,6 +160,7 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  email_format?: EmailFormat;
   timezone?: string;
   pulse_digest?: PulseDigest;
   home_view?: HomeView;
