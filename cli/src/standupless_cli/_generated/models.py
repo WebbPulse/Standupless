@@ -753,6 +753,7 @@ class DisplayOptionsBody(TypedDict):
         | Literal["none"]
         | None
     ]
+    group_header: NotRequired[Literal["count", "estimate"] | None]
     layout: NotRequired[Literal["list", "board"] | None]
     ordering: NotRequired[
         Literal[
@@ -3282,6 +3283,7 @@ class ViewCreate(TypedDict):
         | str
         | None
     ]
+    group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
@@ -3371,6 +3373,7 @@ class ViewRead(TypedDict):
     favorite: NotRequired[bool]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[str | None]
+    group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
     kind: str
     layout: str
@@ -3406,6 +3409,7 @@ class ViewUpdate(TypedDict):
         | str
         | None
     ]
+    group_header: NotRequired[Literal["count", "estimate"] | None]
     icon: NotRequired[str | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]

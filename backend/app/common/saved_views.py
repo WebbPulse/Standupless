@@ -197,6 +197,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         show_completed=window != "none",
         completed_window=window,
         show_archived=payload.show_archived,
+        group_header=payload.group_header,
         icon=payload.icon,
         color=payload.color,
         description=payload.description,
@@ -266,6 +267,8 @@ def update_saved_view(
         if name in changes and changes[name] is None:
             if name == "completed_window":
                 raise unprocessable("completed_window must be all, past_week, past_month or none")
+            if name == "group_header":
+                raise unprocessable("group_header must be count or estimate")
             raise unprocessable(f"{name} must be true or false")
     if "completed_window" in changes:
         changes["show_completed"] = changes["completed_window"] != "none"

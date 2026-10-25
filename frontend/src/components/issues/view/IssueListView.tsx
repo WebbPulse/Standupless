@@ -160,6 +160,8 @@ export interface IssueListViewProps {
   collection: IssueCollection;
   lists: IssueContextState;
   scaleFor: (teamId: string) => EstimateScale;
+  /** Whether a team counts an unestimated issue as one point in a total estimate. */
+  countsUnestimated?: ((teamId: string) => boolean) | undefined;
   estimateOptionsFor?: (teamId: string) => EstimateOptions;
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
@@ -245,6 +247,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   collection,
   lists,
   scaleFor,
+  countsUnestimated,
   estimateOptionsFor,
   teamNameFor,
   canEdit,
@@ -1140,6 +1143,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       context,
       forTeam,
       scaleFor,
+      countsUnestimated,
       ...(estimateOptionsFor === undefined ? {} : { estimateOptionsFor }),
       ...(teamNameFor === undefined ? {} : { teamNameFor }),
       canEdit,
@@ -1164,6 +1168,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       context,
       forTeam,
       scaleFor,
+      countsUnestimated,
       estimateOptionsFor,
       teamNameFor,
       canEdit,

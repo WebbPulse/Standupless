@@ -550,7 +550,8 @@ class DisplayOptions(BaseModel):
 
     The same fields a saved view carries, so a member reads the team default the
     way they read a view: layout, grouping, ordering, the row properties and the
-    switches for sub-issues, completed issues, empty groups and archived issues.
+    switches for sub-issues, completed issues, empty groups and archived issues,
+    and what group headers read.
     """
 
     layout: str | None = None
@@ -563,6 +564,7 @@ class DisplayOptions(BaseModel):
     completed_window: str | None = None
     show_empty_groups: bool | None = None
     show_archived: bool | None = None
+    group_header: str | None = None
 
 
 class TeamDisplayDefaults(BaseModel):

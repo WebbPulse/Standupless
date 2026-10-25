@@ -37,11 +37,13 @@ from app.common.api.schemas.teams import (
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
     GROUP_BY_PROPERTIES,
+    GROUP_HEADERS,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     LayoutField,
     SortField,
     completed_window_of,
+    group_header_of,
     grouping_pattern,
 )
 from app.common.db.dynamo.memberships import Membership
@@ -695,6 +697,7 @@ def _display_options_schema(page: str) -> dict[str, Any]:
             ),
             "show_empty_groups": {"type": "boolean", "description": "Show groups with no issues"},
             "show_archived": {"type": "boolean", "description": "Show archived issues"},
+            "group_header": enum(GROUP_HEADERS, "What group headers read: count (issues) or estimate (total points)"),
         },
         "additionalProperties": False,
     }
@@ -983,6 +986,7 @@ def _list_views(call: ToolCall) -> Any:
                 "show_completed": row.show_completed is not False,
                 "completed_window": completed_window_of(row.completed_window, row.show_completed),
                 "show_archived": row.show_archived is True,
+                "group_header": group_header_of(row.group_header),
                 "projects_display": (
                     stored_projects_display(row.projects_display).model_dump() if row.lists_projects else None
                 ),

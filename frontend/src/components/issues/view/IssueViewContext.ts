@@ -31,6 +31,8 @@ export interface IssueViewEnv {
   forTeam: (teamId: string) => IssueContext;
   /** The estimate scale of an issue's team. */
   scaleFor: (teamId: string) => EstimateScale;
+  /** Whether an issue's team counts an unestimated issue as one point. Unset counts none. */
+  countsUnestimated?: ((teamId: string) => boolean) | undefined;
   /** The extended and zero toggles of an issue's team. Unset offers neither. */
   estimateOptionsFor?: (teamId: string) => EstimateOptions;
   /** The team name shown on rows of a view that spans teams. */

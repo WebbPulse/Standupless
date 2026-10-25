@@ -18,6 +18,7 @@ from app.common.api.schemas.views import (
     VISIBLE_PROPERTIES,
     CompletedWindowField,
     GroupByField,
+    GroupHeaderField,
     LayoutField,
     SortField,
     VisiblePropertyField,
@@ -886,6 +887,7 @@ class DisplayOptionsBody(BaseModel):
     completed_window: Optional[CompletedWindowField] = None
     show_empty_groups: Optional[StrictBool] = None
     show_archived: Optional[StrictBool] = None
+    group_header: Optional[GroupHeaderField] = None
 
     @field_validator("visible_properties")
     @classmethod

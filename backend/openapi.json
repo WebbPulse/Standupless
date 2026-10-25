@@ -5270,6 +5270,21 @@
             ],
             "title": "Group By"
           },
+          "group_header": {
+            "anyOf": [
+              {
+                "enum": [
+                  "count",
+                  "estimate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Header"
+          },
           "layout": {
             "anyOf": [
               {
@@ -25568,6 +25583,15 @@
             ],
             "title": "Group By"
           },
+          "group_header": {
+            "default": "count",
+            "enum": [
+              "count",
+              "estimate"
+            ],
+            "title": "Group Header",
+            "type": "string"
+          },
           "icon": {
             "anyOf": [
               {
@@ -25859,6 +25883,15 @@
             ],
             "title": "Group By"
           },
+          "group_header": {
+            "default": "count",
+            "enum": [
+              "count",
+              "estimate"
+            ],
+            "title": "Group Header",
+            "type": "string"
+          },
           "icon": {
             "anyOf": [
               {
@@ -26103,6 +26136,21 @@
               }
             ],
             "title": "Group By"
+          },
+          "group_header": {
+            "anyOf": [
+              {
+                "enum": [
+                  "count",
+                  "estimate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Header"
           },
           "icon": {
             "anyOf": [

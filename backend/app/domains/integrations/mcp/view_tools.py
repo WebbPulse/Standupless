@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
     GROUP_BY_PROPERTIES,
+    GROUP_HEADERS,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     InboxClearRequest,
@@ -96,6 +97,7 @@ VIEW_FIELDS: tuple[str, ...] = (
     "show_completed",
     "completed_window",
     "show_archived",
+    "group_header",
     "projects_display",
     "icon",
     "color",
@@ -173,6 +175,9 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
             "Completed and cancelled issues to show: all, past_week, past_month or none; wins over show_completed",
         ),
         "show_archived": _boolean("Show archived issues"),
+        "group_header": enum(
+            GROUP_HEADERS, "What group headers read: count (issues, the default) or estimate (total points)"
+        ),
         "projects_display": projects_display_schema(
             "Project views only: layout (list, board, timeline), group and its direction, rows (a second "
             "grouping inside each group), order, closed (all, fortnight by default, month or none: which "

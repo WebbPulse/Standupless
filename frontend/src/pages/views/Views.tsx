@@ -142,6 +142,9 @@ const copyOf = (view: SavedViewDisplayRead): SavedViewDisplayCreate => {
     ...(view.show_archived === undefined
       ? {}
       : { show_archived: view.show_archived }),
+    ...(view.group_header === undefined
+      ? {}
+      : { group_header: view.group_header }),
     ...look,
   };
 };

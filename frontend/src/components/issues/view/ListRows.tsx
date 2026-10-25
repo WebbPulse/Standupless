@@ -23,6 +23,7 @@ import {
   treeRows,
   type TreeGuide,
 } from '../../../lib/issueTree';
+import { groupFigure } from '../../../lib/groupHeader';
 import { isLabelGroupField, type IssueGroup } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
@@ -48,6 +49,24 @@ export interface IssueSection {
   group: IssueGroup;
   subs: IssueGroup[] | null;
 }
+
+/**
+ * The figure a group header reads beside its name: the issue count, or the
+ * total estimate when the view's group header asks for it.
+ */
+export const GroupFigure: React.FC<{
+  issues: readonly OrderedIssueRead[];
+}> = ({ issues }) => {
+  const env = useIssueViewEnv();
+  return (
+    <span className="text-xs text-text-faint tabular-nums">
+      {groupFigure(issues, env.state.groupHeader, {
+        scaleFor: env.scaleFor,
+        countsUnestimated: env.countsUnestimated,
+      })}
+    </span>
+  );
+};
 
 /** The glyph a group header leads with. */
 export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
@@ -210,9 +229,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
       <TruncatedText className="font-medium text-text">
         {group.label}
       </TruncatedText>
-      <span className="text-xs text-text-faint tabular-nums">
-        {group.issues.length}
-      </span>
+      <GroupFigure issues={group.issues} />
     </button>
     {onCreate !== undefined && (
       <IconButton

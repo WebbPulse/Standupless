@@ -76,6 +76,17 @@ CompletedWindowField = Literal["all", "past_week", "past_month", "none"]
 
 COMPLETED_WINDOWS: tuple[str, ...] = get_args(CompletedWindowField)
 
+GroupHeaderField = Literal["count", "estimate"]
+"""What a view's group headers read beside each group's name: the issue count or the total estimate."""
+
+GROUP_HEADERS: tuple[str, ...] = get_args(GroupHeaderField)
+
+
+def group_header_of(value: Optional[str]) -> GroupHeaderField:
+    """The group header a stored row reads as, the issue count when it predates the choice."""
+    return "estimate" if value == "estimate" else "count"
+
+
 PROJECT_STATUS_ID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
 """The shape of a workspace project status id a view's status filter may name beside a category."""
 
@@ -463,6 +474,7 @@ class ViewCreate(BaseModel):
     show_completed: StrictBool = True
     completed_window: Optional[CompletedWindowField] = None
     show_archived: StrictBool = False
+    group_header: GroupHeaderField = "count"
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -507,6 +519,7 @@ class ViewUpdate(BaseModel):
     show_completed: Optional[StrictBool] = None
     completed_window: Optional[CompletedWindowField] = None
     show_archived: Optional[StrictBool] = None
+    group_header: Optional[GroupHeaderField] = None
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -532,8 +545,9 @@ DISPLAY_SWITCHES: tuple[str, ...] = (
     "show_completed",
     "completed_window",
     "show_archived",
+    "group_header",
 )
-"""The view's display switches, booleans and the completed window, which a patch may set but never clear to null."""
+"""The view's display switches, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):
@@ -565,6 +579,7 @@ class ViewRead(BaseModel):
     show_completed: bool = True
     completed_window: CompletedWindowField = "all"
     show_archived: bool = False
+    group_header: GroupHeaderField = "count"
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = None
     color: Optional[str] = None
@@ -601,6 +616,7 @@ class ViewRead(BaseModel):
             show_completed=view.show_completed is not False,
             completed_window=completed_window_of(view.completed_window, view.show_completed),
             show_archived=view.show_archived is True,
+            group_header=group_header_of(view.group_header),
             projects_display=stored_projects_display(view.projects_display) if view.lists_projects else None,
             icon=view.icon,
             color=view.color,

@@ -52,7 +52,7 @@ import {
   StatusCell,
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
-import { ArchivedMarker, GroupGlyph } from './ListRows';
+import { ArchivedMarker, GroupFigure, GroupGlyph } from './ListRows';
 import { CardParentRef } from './SubIssueCues';
 import { isNoOpDrop } from '../../../lib/boardDrop';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
@@ -505,9 +505,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                   <TruncatedText className="text-sm font-medium text-text">
                     {column.label}
                   </TruncatedText>
-                  <span className="text-xs text-text-faint tabular-nums">
-                    {column.issues.length}
-                  </span>
+                  <GroupFigure issues={column.issues} />
                   <span className="ml-auto flex items-center opacity-0 group-focus-within/col:opacity-100 group-hover/col:opacity-100 pointer-coarse:opacity-100">
                     <Menu
                       label={`${column.label} column`}
@@ -574,9 +572,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                     />
                     <GroupGlyph group={lane} />
                     <span className="font-medium text-text">{lane.label}</span>
-                    <span className="text-xs text-text-faint tabular-nums">
-                      {lane.issues.length}
-                    </span>
+                    <GroupFigure issues={lane.issues} />
                   </button>
                 )}
                 {!folded && (
@@ -620,9 +616,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               <TruncatedText className="min-w-0 flex-1">
                 {column.label}
               </TruncatedText>
-              <span className="text-xs text-text-faint tabular-nums">
-                {column.issues.length}
-              </span>
+              <GroupFigure issues={column.issues} />
             </button>
           ))}
         </aside>

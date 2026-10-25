@@ -12,7 +12,12 @@ import apiClient, { type RequestOptions } from './client';
 import { untilMergeComplete } from '../lib/labelMerge';
 import { conditionalGet, type ReadContext } from './conditional';
 import type { IssueListSort } from './issues';
-import type { CompletedWindow, ViewLayout, ViewVisibleProperty } from './views';
+import type {
+  CompletedWindow,
+  ViewGroupHeader,
+  ViewLayout,
+  ViewVisibleProperty,
+} from './views';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -91,6 +96,7 @@ export interface TeamDisplayOptions {
   completed_window?: CompletedWindow | null;
   show_empty_groups?: boolean | null;
   show_archived?: boolean | null;
+  group_header?: ViewGroupHeader | null;
 }
 
 /**

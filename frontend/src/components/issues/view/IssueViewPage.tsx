@@ -567,6 +567,13 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       teams.find((team) => team.id === teamId)?.estimate_scale ?? 'off',
     [teams]
   );
+  const countsUnestimated = useCallback(
+    (teamId: string) =>
+      teams.find((team) => team.id === teamId)?.estimate_count_unestimated ===
+      true,
+    [teams]
+  );
+  const listEstimates = teams.some((team) => team.estimate_scale !== 'off');
   const estimateOptionsFor = useCallback(
     (teamId: string) =>
       estimateOptionsOf(teams.find((team) => team.id === teamId)),
@@ -803,6 +810,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           context={filterContext}
           teamDefault={teamDefaultActions}
           customerSorts={isMember}
+          estimates={listEstimates}
           onReset={
             !displayChanged
               ? undefined
@@ -940,6 +948,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             collection={collection}
             lists={viewLists}
             scaleFor={scaleFor}
+            countsUnestimated={countsUnestimated}
             estimateOptionsFor={estimateOptionsFor}
             {...(teams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}
