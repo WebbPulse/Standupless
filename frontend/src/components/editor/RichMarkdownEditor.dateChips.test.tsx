@@ -46,7 +46,6 @@ const TYLER: Assignable = {
   email: 'tyler@example.com',
   display_name: 'tyler',
   avatar_url: null,
-  full_name: null,
 };
 
 /** Renders an editable surface and answers its editor and change spy. */
@@ -196,18 +195,16 @@ describe('the |-- table shortcut', () => {
   it('turns |-- on an empty line into a table with a header row', () => {
     const { editor } = renderSurface();
     typeText(editor, '|--');
-    const json = editor.getJSON();
-    expect(json.content?.[0]?.type).toBe('table');
-    expect(json.content?.[0]?.content?.[0]?.content?.[0]?.type).toBe(
-      'tableHeader'
-    );
+    const table = editor.state.doc.firstChild;
+    expect(table?.type.name).toBe('table');
+    expect(table?.firstChild?.firstChild?.type.name).toBe('tableHeader');
     expect(editor.state.selection.$from.node(-1).type.name).toBe('tableHeader');
   });
 
   it('leaves |-- after other text as typed', () => {
     const { editor } = renderSurface();
     typeText(editor, 'a |--');
-    expect(editor.getJSON().content?.[0]?.type).toBe('paragraph');
+    expect(editor.state.doc.firstChild?.type.name).toBe('paragraph');
     expect(editor.getText()).toBe('a |--');
   });
 });

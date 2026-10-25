@@ -46,8 +46,9 @@ export const DateChipPicker: React.FC<DateChipPickerProps> = ({
   onPick,
   onClose,
   onBlur,
-  today = new Date(),
+  today: givenToday,
 }) => {
+  const [today] = useState(() => givenToday ?? new Date());
   const weekStart = weekStartDay();
   const todayValue = isoDate(today);
   const [query, setQuery] = useState('');

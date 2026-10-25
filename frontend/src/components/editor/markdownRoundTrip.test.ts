@@ -349,30 +349,34 @@ describe('callouts in the rich editor', () => {
   });
 });
 
+/** The node types of the editor's first paragraph, in order. */
+const inlineTypes = (): string[] => {
+  const types: string[] = [];
+  editor.state.doc.firstChild?.forEach((node) => {
+    types.push(node.type.name);
+  });
+  return types;
+};
+
 describe('date chips in the rich editor', () => {
   it('read a stored day as one chip node carrying it', () => {
     writeMarkdown(editor, 'Due <2026-10-01>');
-    const inline = editor.getJSON().content?.[0]?.content ?? [];
-    expect(inline.map((node) => node.type)).toEqual(['text', 'dateChip']);
-    expect(inline[1]?.attrs).toEqual({ value: '2026-10-01' });
+    expect(inlineTypes()).toEqual(['text', 'dateChip']);
+    expect(editor.state.doc.firstChild?.child(1).attrs).toEqual({
+      value: '2026-10-01',
+    });
   });
 
   it('leave an impossible day as text', () => {
     writeMarkdown(editor, 'Due <2026-02-30>');
-    const inline = editor.getJSON().content?.[0]?.content ?? [];
-    expect(inline.map((node) => node.type)).toEqual(['text']);
+    expect(inlineTypes()).toEqual(['text']);
   });
 
   it('insert a chip with a space after it from the command', () => {
     writeMarkdown(editor, 'Due @tom');
     editor.commands.insertDateChip('2026-10-26', { from: 5, to: 9 });
     expect(readMarkdown(editor).trimEnd()).toBe('Due <2026-10-26>');
-    const inline = editor.getJSON().content?.[0]?.content ?? [];
-    expect(inline.map((node) => node.type)).toEqual([
-      'text',
-      'dateChip',
-      'text',
-    ]);
+    expect(inlineTypes()).toEqual(['text', 'dateChip', 'text']);
   });
 
   it('refuse a value that is not a day', () => {
