@@ -338,9 +338,12 @@ def test_a_rate_limited_post_is_retried(paired: Issue, repositories: Any, slack:
     slack.errors["chat.postMessage"] = "ratelimited"
     with pytest.raises(SlackError):
         _push(repositories, reply)
+    assert slack.posted == 1
     del slack.errors["chat.postMessage"]
     _push(repositories, reply)
-    assert len(_thread_posts(slack)) == 2
+    assert slack.posted == 2
+    _push(repositories, reply)
+    assert slack.posted == 2
 
 
 def test_an_uninstall_stops_the_sync_and_clears_the_mark(
