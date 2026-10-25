@@ -148,6 +148,7 @@ import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
+import StatusPositionKeys from './StatusPositionKeys';
 import { usePropertyValues } from './propertyValues';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
@@ -1571,6 +1572,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 
   return (
     <IssueViewEnvContext.Provider value={env}>
+      <StatusPositionKeys
+        issues={targets}
+        enabled={canCommand}
+        statusesFor={(teamId) =>
+          forTeam(teamId).statuses.filter(
+            (status) =>
+              status.team_id === undefined || status.team_id === teamId
+          )
+        }
+        write={update}
+      />
       {RELATION_COMMANDS.map((relation) => (
         <PropertyShortcut
           key={relation.type}

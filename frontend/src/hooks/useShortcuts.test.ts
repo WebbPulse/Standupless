@@ -152,6 +152,18 @@ describe('modifiers', () => {
     expect(clear).toHaveBeenCalledTimes(1);
   });
 
+  it('matches an Alt digit by its physical key, as Option types it on a Mac', () => {
+    const registry = createShortcutRegistry();
+    const second = bind(registry, 'mod+alt+2');
+
+    press(registry, '™', { metaKey: true, altKey: true, code: 'Digit2' });
+    press(registry, '2', { ctrlKey: true, altKey: true, code: 'Digit2' });
+    press(registry, '™', { altKey: true, code: 'Digit2' });
+    press(registry, '2', { ctrlKey: true, code: 'Digit2' });
+
+    expect(second).toHaveBeenCalledTimes(2);
+  });
+
   it('matches punctuation that needs Shift to type', () => {
     const registry = createShortcutRegistry();
     const run = bind(registry, '?');
