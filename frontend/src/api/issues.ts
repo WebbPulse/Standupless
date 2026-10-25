@@ -77,6 +77,9 @@ export const ME = 'me';
  */
 export const NONE = 'none';
 
+/** The customer filter value that keeps rows with a request marked important. */
+export const IMPORTANT_CUSTOMER = 'important';
+
 /** The largest batch the bulk patch accepts, matching the server's cap. */
 export const BULK_MAX_ISSUES = 50;
 

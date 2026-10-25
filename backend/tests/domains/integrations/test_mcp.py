@@ -328,6 +328,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_customer",
         "create_customer_request",
         "list_customer_requests",
+        "update_customer_request",
         "delete_customer_request",
         "list_approved_domains",
         "add_approved_domain",
@@ -346,7 +347,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 232
+    assert len(TOOLS) == 233
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

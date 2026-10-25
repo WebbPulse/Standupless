@@ -29,6 +29,9 @@ AMOUNT_MAX = 10**15
 
 CustomerTargetKind = Literal["issue", "project"]
 
+CustomerStatusField = Literal["lead", "trial", "active", "paused", "churned"]
+"""Where a customer stands: a lead, on a trial, active, paused or churned."""
+
 DOMAIN_PATTERN = re.compile(r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 """A bare host name such as `acme.com`, lowercase, without a scheme, port or path."""
 
@@ -99,6 +102,7 @@ class CustomerCreate(BaseModel):
 
     name: str
     domains: list[str] = Field(default_factory=list)
+    status: Optional[CustomerStatusField] = None
     tier: Optional[str] = None
     owner_id: Optional[str] = None
     revenue: Optional[int] = Field(default=None, ge=0, le=AMOUNT_MAX)
@@ -128,6 +132,7 @@ class CustomerPatch(BaseModel):
 
     name: Optional[str] = None
     domains: Optional[list[str]] = None
+    status: Optional[CustomerStatusField] = None
     tier: Optional[str] = None
     owner_id: Optional[str] = None
     revenue: Optional[int] = Field(default=None, ge=0, le=AMOUNT_MAX)
@@ -171,6 +176,7 @@ class CustomerRead(BaseModel):
     workspace_id: str
     name: str
     domains: list[str] = Field(default_factory=list)
+    status: Optional[CustomerStatusField] = None
     tier: Optional[str] = None
     owner_id: Optional[str] = None
     revenue: Optional[int] = None
@@ -179,6 +185,7 @@ class CustomerRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     request_count: int = 0
+    important_count: int = 0
     can_edit: bool = False
     can_delete: bool = False
 
@@ -188,11 +195,32 @@ class CustomerRequestCreate(BaseModel):
 
     customer_id: str
     body: str = ""
+    important: bool = False
 
     @field_validator("body")
     @classmethod
     def check_body(cls, value: str) -> str:
         """Hold the quote under the cap."""
+        return _check_quote(value) or ""
+
+
+class CustomerRequestPatch(BaseModel):
+    """The body a request patch takes; a field left out is kept.
+
+    `customer_id` hands the request to another customer, and `target_kind` with
+    `target_id` moves it to another issue or project; the two go together.
+    """
+
+    customer_id: Optional[str] = None
+    body: Optional[str] = None
+    important: Optional[bool] = None
+    target_kind: Optional[CustomerTargetKind] = None
+    target_id: Optional[str] = None
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: Optional[str]) -> str:
+        """Hold the quote under the cap; `null` clears it."""
         return _check_quote(value) or ""
 
 
@@ -211,9 +239,12 @@ class CustomerRequestRead(BaseModel):
     target_key: str = ""
     target_title: str = ""
     body: str = ""
+    important: bool = False
     author_id: str
     source: Optional[ChangeSource] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
+    can_edit: bool = False
     can_delete: bool = False
 
 

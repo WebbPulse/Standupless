@@ -22,6 +22,7 @@ import {
   LuCalendarCheck,
   LuCalendarClock,
   LuCalendarPlus,
+  LuCircleAlert,
   LuCircleDashed,
   LuClock,
   LuCornerLeftUp,
@@ -41,7 +42,7 @@ import {
   LuUserRound,
   LuX,
 } from 'react-icons/lu';
-import { NONE } from '../../../api/issues';
+import { IMPORTANT_CUSTOMER, NONE } from '../../../api/issues';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
@@ -552,6 +553,14 @@ const filterChoices = (
         {
           option: { value: NONE, label: 'No customer', icon: hollow },
           ids: [NONE],
+        },
+        {
+          option: {
+            value: IMPORTANT_CUSTOMER,
+            label: 'Important request',
+            icon: <LuCircleAlert className="h-3.5 w-3.5 text-warning" />,
+          },
+          ids: [IMPORTANT_CUSTOMER],
         },
         ...(context.customers ?? []).map((customer) => ({
           option: {

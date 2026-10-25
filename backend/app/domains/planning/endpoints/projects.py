@@ -79,10 +79,12 @@ def list_projects(
     `is_blocking` the open projects holding another up, each false for the rest.
 
     `customer_id` keeps the projects any named customer asked for and
-    `customer_id_not` drops them, `none` standing for no customer request.
-    `sort=customer_requests_desc` puts the most requested projects first and
-    `customer_revenue_desc` the highest summed customer revenue, target date
-    breaking ties; both fill `customer_request_count`. Guests may use neither.
+    `customer_id_not` drops them, `none` standing for no customer request and
+    `important` for an important one. `sort=customer_requests_desc` puts the
+    most requested projects first, `customer_important_desc` the most important
+    requests and `customer_revenue_desc` the highest summed customer revenue,
+    target date breaking ties; each fills `customer_request_count`. Guests may
+    use none of them.
     `label_id` keeps the projects carrying any named project label, `none`
     standing for a project with none.
     """

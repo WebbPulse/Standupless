@@ -67,6 +67,7 @@ export interface DisplayMenuProps {
 /** The orderings that read the customers who asked for each issue. */
 const CUSTOMER_ORDERINGS: ReadonlySet<IssueListSort> = new Set([
   'customer_requests_desc',
+  'customer_important_desc',
   'customer_revenue_desc',
 ]);
 

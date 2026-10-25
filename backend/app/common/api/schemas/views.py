@@ -34,6 +34,7 @@ SortField = Literal[
     "start_asc",
     "estimate_desc",
     "customer_requests_desc",
+    "customer_important_desc",
     "customer_revenue_desc",
     "completed_desc",
 ]

@@ -147,6 +147,9 @@ def sort_key(sort: str, ranks: Optional[StatusRanks] = None, customers: Optional
     if sort == "customer_requests_desc":
         held = customers or CustomerIndex()
         return lambda issue: (held.request_count("issue", issue.issue_id), issue.updated_at, issue.issue_id)
+    if sort == "customer_important_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: (held.important_count("issue", issue.issue_id), issue.updated_at, issue.issue_id)
     if sort == "customer_revenue_desc":
         held = customers or CustomerIndex()
         return lambda issue: (held.revenue_of("issue", issue.issue_id), issue.updated_at, issue.issue_id)
@@ -198,6 +201,9 @@ def unset_value(sort: str, customers: Optional[CustomerIndex] = None) -> Optiona
     if sort == "customer_requests_desc":
         held = customers or CustomerIndex()
         return lambda issue: held.request_count("issue", issue.issue_id) == 0
+    if sort == "customer_important_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: held.important_count("issue", issue.issue_id) == 0
     if sort == "customer_revenue_desc":
         held = customers or CustomerIndex()
         return lambda issue: held.revenue_of("issue", issue.issue_id) == 0

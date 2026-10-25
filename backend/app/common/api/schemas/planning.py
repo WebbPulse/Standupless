@@ -56,8 +56,9 @@ ProjectHealthField = Literal["on_track", "at_risk", "off_track"]
 
 ProjectPriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
-ProjectSortField = Literal["target_asc", "customer_requests_desc", "customer_revenue_desc"]
-"""The orders the projects list takes: target date, undated last, or the most customer requests or revenue first."""
+ProjectSortField = Literal["target_asc", "customer_requests_desc", "customer_important_desc", "customer_revenue_desc"]
+"""The orders the projects list takes: target date, undated last, or the most customer requests, important
+requests or revenue first."""
 
 ProgressMeasureField = ProgressMeasure
 """The unit `progress` reads in: estimate points when a team on the work estimates, otherwise issues."""
@@ -976,6 +977,10 @@ class ProjectRead(BaseModel):
     customer_request_count: Optional[int] = Field(
         default=None,
         description="Customer requests naming the project, answered by a list filtered or sorted by customer",
+    )
+    customer_important_count: Optional[int] = Field(
+        default=None,
+        description="Customer requests naming the project marked important, answered with customer_request_count",
     )
     customer_revenue: Optional[int] = Field(
         default=None,

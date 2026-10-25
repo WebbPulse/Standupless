@@ -43,5 +43,6 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "delete_customer": {"customer_id": customer},
         "create_customer_request": {"customer_id": customer, "project_id": project, "body": "Should not land"},
         "list_customer_requests": {"customer_id": customer},
+        "update_customer_request": {"customer_id": customer, "request_id": request, "important": True},
         "delete_customer_request": {"customer_id": customer, "request_id": request},
     }

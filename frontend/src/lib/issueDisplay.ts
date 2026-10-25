@@ -42,6 +42,7 @@ export const SORTS: IssueSort[] = [
   'start_asc',
   'estimate_desc',
   'customer_requests_desc',
+  'customer_important_desc',
   'customer_revenue_desc',
   'completed_desc',
 ];
@@ -58,6 +59,7 @@ export const SORT_LABELS: Record<IssueSort, string> = {
   start_asc: 'Start date',
   estimate_desc: 'Estimate',
   customer_requests_desc: 'Customer requests',
+  customer_important_desc: 'Important customer requests',
   customer_revenue_desc: 'Customer revenue',
   completed_desc: 'Recently completed',
 };

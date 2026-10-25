@@ -1,8 +1,9 @@
 /**
  * The customer requests naming one issue or project: in the issue rail as a
  * folding group, and on a project's overview as a section beside its
- * documents. Each row names the customer and quotes what they said, and a
- * member who can write here adds another from the plus button.
+ * documents. Each row names the customer and quotes what they said, a writer
+ * marks, edits or moves it from its menu, and adds another from the plus
+ * button.
  */
 
 import React, { useState } from 'react';
@@ -11,6 +12,7 @@ import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { LuPlus } from 'react-icons/lu';
 import { deleteCustomerRequest, listTargetRequests } from '../../api/customers';
 import { errorMessage } from '../../lib/errors';
+import { useCustomerRequestActions } from '../../hooks/useCustomerRequestActions';
 import { customerPath } from '../../lib/paths';
 import { customersKey, targetCustomerRequestsKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
@@ -57,6 +59,7 @@ export const CustomerRequestsSection: React.FC<
     { intervalMs: POLL_MS, queryKey, auth }
   );
   const [isAdding, setIsAdding] = useState(false);
+  const actions = useCustomerRequestActions(workspaceId);
 
   const requests = data ?? [];
 
@@ -93,12 +96,15 @@ export const CustomerRequestsSection: React.FC<
           to={customerPath(slug, request.customer_id)}
           heading={request.customer_name}
           onRemove={remove}
+          onToggleImportant={actions.toggleImportant}
+          onEdit={actions.edit}
+          onMove={actions.move}
         />
       ))}
     </ul>
   );
 
-  const dialog = isAdding && (
+  const addDialog = isAdding && (
     <AddCustomerRequestDialog
       workspaceId={workspaceId}
       targetKind={targetKind}
@@ -113,6 +119,13 @@ export const CustomerRequestsSection: React.FC<
         showToast(`Added a request from ${request.customer_name}`);
       }}
     />
+  );
+
+  const dialog = (
+    <>
+      {addDialog}
+      {actions.dialogs}
+    </>
   );
 
   if (variant === 'rail') {

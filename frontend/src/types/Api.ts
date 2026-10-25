@@ -757,6 +757,7 @@ export type IssueSort =
   | 'start_asc'
   | 'estimate_desc'
   | 'customer_requests_desc'
+  | 'customer_important_desc'
   | 'customer_revenue_desc'
   | 'completed_desc';
 
@@ -2416,6 +2417,8 @@ export interface ProjectRead {
   links?: ProjectLinkRead[] | null;
   /** How many customer requests name the project, set when the list was filtered or sorted by customer. */
   customer_request_count?: number | null;
+  /** How many of those requests are marked important, set alongside the request count. */
+  customer_important_count?: number | null;
   /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
   customer_revenue?: number | null;
   /** The project labels it carries, in the order they were set. */
@@ -3000,7 +3003,10 @@ export interface ProjectListQuery {
 
 /** How the projects route orders its rows, target date first by default. */
 export type ProjectSortField =
-  'target_asc' | 'customer_requests_desc' | 'customer_revenue_desc';
+  | 'target_asc'
+  | 'customer_requests_desc'
+  | 'customer_important_desc'
+  | 'customer_revenue_desc';
 
 /**
  * One cycle or project as the roadmap draws it. A projection rather than the
@@ -4998,15 +5004,20 @@ export interface DraftWrite {
 /** The two kinds of record a customer request can name. */
 export type CustomerTargetKind = 'issue' | 'project';
 
+/** Where a customer stands with the workspace, from a fixed set. */
+export type CustomerStatus = 'lead' | 'trial' | 'active' | 'paused' | 'churned';
+
 /**
  * One customer of the workspace, with how many requests this caller can see
- * from it. `can_edit` and `can_delete` say what this caller may do with it.
+ * from it and how many of those are important. `can_edit` and `can_delete` say
+ * what this caller may do with it.
  */
 export interface CustomerRead {
   customer_id: string;
   workspace_id: string;
   name: string;
   domains: string[];
+  status: CustomerStatus | null;
   tier: string | null;
   owner_id: string | null;
   revenue: number | null;
@@ -5015,6 +5026,7 @@ export interface CustomerRead {
   created_at: string;
   updated_at: string;
   request_count: number;
+  important_count: number;
   can_edit: boolean;
   can_delete: boolean;
 }
@@ -5023,6 +5035,7 @@ export interface CustomerRead {
 export interface CustomerCreate {
   name: string;
   domains?: string[];
+  status?: CustomerStatus | null;
   tier?: string | null;
   owner_id?: string | null;
   revenue?: number | null;
@@ -5040,7 +5053,8 @@ export interface CustomerListRead {
 
 /**
  * One customer request: a customer asking for an issue or a project, with an
- * optional quote. `target_key` is the issue key and empty for a project.
+ * optional quote and an important flag. `target_key` is the issue key and empty
+ * for a project. `can_edit` says whether this caller may edit or move it.
  */
 export interface CustomerRequestRead {
   request_id: string;
@@ -5052,9 +5066,12 @@ export interface CustomerRequestRead {
   target_key: string;
   target_title: string;
   body: string;
+  important: boolean;
   author_id: string;
   source?: string | null;
   created_at: string;
+  updated_at?: string | null;
+  can_edit: boolean;
   can_delete: boolean;
 }
 
@@ -5062,6 +5079,19 @@ export interface CustomerRequestRead {
 export interface CustomerRequestCreate {
   customer_id: string;
   body?: string;
+  important?: boolean;
+}
+
+/**
+ * The body a request edit takes; a field left out is kept. `target_kind` and
+ * `target_id` move the request together.
+ */
+export interface CustomerRequestPatch {
+  customer_id?: string;
+  body?: string;
+  important?: boolean;
+  target_kind?: CustomerTargetKind;
+  target_id?: string;
 }
 
 /** A list of customer requests, newest first. */

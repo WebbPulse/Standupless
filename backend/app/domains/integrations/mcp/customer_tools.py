@@ -16,6 +16,7 @@ from app.common.api.schemas.customers import (
     CustomerPatch,
     CustomerRead,
     CustomerRequestCreate,
+    CustomerRequestPatch,
     CustomerRequestRead,
 )
 from app.common.customers import (
@@ -30,12 +31,15 @@ from app.common.customers import (
     list_workspace_requests,
     merge_customers,
     update_customer,
+    update_request,
 )
+from app.common.db.dynamo.customers import CUSTOMER_STATUSES
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
     issue_ref,
     nullable,
+    nullable_enum,
     object_schema,
     project_id_ref,
     string,
@@ -46,7 +50,7 @@ from app.domains.integrations.mcp.transport import ToolError
 
 CUSTOMER_REFERENCE = "The customer: id, exact name or one of its domains"
 
-CUSTOMER_FIELDS = ("name", "domains", "tier", "owner_id", "revenue", "size")
+CUSTOMER_FIELDS = ("name", "domains", "status", "tier", "owner_id", "revenue", "size")
 
 
 def _amount(description: str) -> dict[str, Any]:
@@ -60,11 +64,13 @@ def _customer_json(customer: CustomerRead) -> dict[str, Any]:
         "customer_id": customer.customer_id,
         "name": customer.name,
         "domains": customer.domains,
+        "status": customer.status,
         "tier": customer.tier,
         "owner_id": customer.owner_id,
         "revenue": customer.revenue,
         "size": customer.size,
         "request_count": customer.request_count,
+        "important_count": customer.important_count,
         "created_by": customer.created_by,
         "created_at": customer.created_at.isoformat(),
         "updated_at": customer.updated_at.isoformat(),
@@ -82,6 +88,7 @@ def _request_json(request: CustomerRequestRead) -> dict[str, Any]:
         "target_key": request.target_key,
         "target_title": request.target_title,
         "body": request.body,
+        "important": request.important,
         "author_id": request.author_id,
         "created_at": request.created_at.isoformat(),
     }
@@ -152,9 +159,32 @@ def _create_customer_request(call: ToolCall) -> Any:
     """File a customer's request for an issue or a project."""
     kind, target_id = _target(call)
     payload = CustomerRequestCreate.model_validate(
-        {"customer_id": _customer_id(call), "body": call.optional("body") or ""}
+        {
+            "customer_id": _customer_id(call),
+            "body": call.optional("body") or "",
+            "important": bool(call.optional("important", False)),
+        }
     )
     return _request_json(create_request(call.repositories, call.context, kind, target_id, payload))
+
+
+def _update_customer_request(call: ToolCall) -> Any:
+    """Edit a customer request's quote, customer or important flag, or move it to another issue or project."""
+    customer_id = _customer_id(call)
+    request_id = str(call.require("request_id"))
+    fields: dict[str, Any] = {}
+    if call.present("body"):
+        fields["body"] = call.arguments["body"]
+    if call.optional("important") is not None:
+        fields["important"] = bool(call.arguments["important"])
+    if call.optional("new_customer_id"):
+        fields["customer_id"] = _customer_id(call, "new_customer_id")
+    if call.optional("issue_id") or call.optional("project_id"):
+        kind, target_id = _target(call)
+        fields["target_kind"] = kind
+        fields["target_id"] = target_id
+    payload = CustomerRequestPatch.model_validate(fields)
+    return _request_json(update_request(call.repositories, call.context, customer_id, request_id, payload))
 
 
 def _list_customer_requests(call: ToolCall) -> Any:
@@ -181,6 +211,7 @@ def _delete_customer_request(call: ToolCall) -> Any:
 
 
 CUSTOMER_PROPERTIES: dict[str, Any] = {
+    "status": nullable_enum(CUSTOMER_STATUSES, "Where the customer stands; null clears it"),
     "domains": string_list("Domains such as acme.com; the list replaces the current one"),
     "tier": nullable("A short tier label such as Enterprise; null clears it"),
     "owner_id": nullable("The workspace member who owns the account: me, id or email; null clears it"),
@@ -251,10 +282,30 @@ CUSTOMER_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string("The issue: id or key such as ABC-12. Give this or project_id"),
                 "project_id": string("The project: id or name. Give this or issue_id"),
                 "body": string("What the customer said, quoted"),
+                "important": {"type": "boolean", "description": "Mark the request important, default false"},
             },
             required=("customer_id",),
         ),
         handler=_create_customer_request,
+    ),
+    Tool(
+        name="update_customer_request",
+        description="Edit a customer request: its quote, its customer or its important flag, or move it to "
+        "another issue or project. Only the fields named are written.",
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "customer_id": string(f"{CUSTOMER_REFERENCE}, which made the request now"),
+                "request_id": string("The request id"),
+                "body": nullable("The new quote; null or empty clears it"),
+                "important": {"type": "boolean", "description": "true marks the request important, false unmarks it"},
+                "new_customer_id": string(f"{CUSTOMER_REFERENCE}, to hand the request to"),
+                "issue_id": string("Move the request to this issue: id or key such as ABC-12"),
+                "project_id": string("Move the request to this project: id or name"),
+            },
+            required=("customer_id", "request_id"),
+        ),
+        handler=_update_customer_request,
     ),
     Tool(
         name="list_customer_requests",
