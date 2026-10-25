@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
+from typing import Annotated, Any, Literal, Mapping, Optional, Sequence, Union, get_args
 
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator
 from webbpulse.http import cursor_page
@@ -458,7 +458,7 @@ list holding neither `sla` nor this marker reads back with `sla` on.
 """
 
 
-def stored_visible_properties(value: Optional[list[str]]) -> Optional[list[str]]:
+def stored_visible_properties(value: Optional[Sequence[str]]) -> Optional[list[str]]:
     """The property list as it is stored, marking a list without `sla` as one that hides the badge."""
     if value is None:
         return None
@@ -466,7 +466,7 @@ def stored_visible_properties(value: Optional[list[str]]) -> Optional[list[str]]
     return shown if "sla" in shown else [*shown, SLA_HIDDEN]
 
 
-def read_visible_properties(stored: Optional[list[str]]) -> Optional[list[str]]:
+def read_visible_properties(stored: Optional[Sequence[str]]) -> Optional[list[str]]:
     """The property list a client reads from a stored one, with `sla` on for a list saved before it existed."""
     if stored is None:
         return None
