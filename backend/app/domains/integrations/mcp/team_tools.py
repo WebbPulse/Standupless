@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Mapping, Optional, get_args
 
-from app.common import audit, issue_triage, label_merge, team_members, team_workflow, team_writes
+from app.common import audit, issue_triage, label_merge, member_status, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.api.schemas.member_status import UserStatusRead
 from app.common.api.schemas.projects_display import stored_projects_display
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -299,15 +300,29 @@ def _paused_status_arguments(call: ToolCall, team_id: str) -> dict[str, Any]:
     return {"paused_status_ids": resolved}
 
 
-def _member_json(membership: Membership, user: Optional[User]) -> dict[str, Any]:
-    """One member as the tools answer it: who they are and the role they hold."""
+def _member_json(
+    membership: Membership, user: Optional[User], user_status: Optional[UserStatusRead] = None
+) -> dict[str, Any]:
+    """One member as the tools answer it: who they are, the role they hold and any status in force."""
     return {
         "user_id": membership.user_id,
         "display_name": display_name(user),
         "email": user.email if user is not None else "",
         "avatar_url": icon_url(user.icon_key) if user is not None else None,
         "role": membership.role,
+        "user_status": user_status.model_dump(mode="json") if user_status is not None else None,
     }
+
+
+def _team_statuses(call: ToolCall, memberships: list[Membership]) -> dict[str, UserStatusRead]:
+    """The current statuses of one visible team's members, all of whom share it with the caller."""
+    rows = call.repositories.memberships.get_many(call.context.workspace_id, [row.user_id for row in memberships])
+    answer: dict[str, UserStatusRead] = {}
+    for user_id, row in rows.items():
+        current = member_status.status_for(row, None)
+        if current is not None:
+            answer[user_id] = current
+    return answer
 
 
 def _team_member_json(call: ToolCall, membership: Membership) -> dict[str, Any]:
@@ -736,7 +751,8 @@ def _list_team_members(call: ToolCall) -> Any:
     team = _reader_team(call)
     memberships = call.repositories.memberships.list_team_members(call.context.workspace_id, team.team_id)
     users = call.repositories.users.get_many([row.user_id for row in memberships])
-    members = [_member_json(row, users.get(row.user_id)) for row in memberships]
+    statuses = _team_statuses(call, memberships)
+    members = [_member_json(row, users.get(row.user_id), statuses.get(row.user_id)) for row in memberships]
     return {"members": sorted(members, key=lambda row: (row["display_name"].lower(), row["user_id"]))}
 
 
@@ -953,16 +969,25 @@ def _list_users(call: ToolCall) -> Any:
     The workspace list is what the members route answers to any workspace member,
     guests included, so an agent can resolve an assignee by name or email. With
     `team_id` it narrows to that team's memberships, and the role is the team role.
+    Each carries `user_status` while one is in force, hidden from a guest for
+    anyone outside their teams.
     """
     team = call.optional("team_id")
     if team:
         team_id = team_id_ref(call, team)
         require_team_reader(call.repositories, call.context, team_id)
         memberships = call.repositories.memberships.list_team_members(call.context.workspace_id, team_id)
+        statuses = _team_statuses(call, memberships)
     else:
         memberships = call.repositories.memberships.list_members(call.context.workspace_id)
+        visible = member_status.visible_user_ids(call.repositories, call.context)
+        statuses = {
+            row.user_id: current
+            for row in memberships
+            if (current := member_status.status_for(row, visible)) is not None
+        }
     users = call.repositories.users.get_many([row.user_id for row in memberships])
-    members = [_member_json(row, users.get(row.user_id)) for row in memberships]
+    members = [_member_json(row, users.get(row.user_id), statuses.get(row.user_id)) for row in memberships]
     return {"users": sorted(members, key=lambda row: (row["display_name"].lower(), row["user_id"]))}
 
 

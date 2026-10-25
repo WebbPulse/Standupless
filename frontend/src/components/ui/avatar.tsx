@@ -1,7 +1,8 @@
 /**
  * A person, workspace or team as a small circle of initials, tinted from their
  * name so the same one is always the same colour, or as their uploaded image
- * when one is set. An image that fails to load falls back to the initials.
+ * when one is set. An image that fails to load falls back to the initials. A
+ * person marked away carries a small dot on the lower right edge, as in Linear.
  */
 
 import React, { useState } from 'react';
@@ -15,6 +16,8 @@ export interface AvatarProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
   /** A circle for a person, a rounded square for a workspace or a team. */
   shape?: 'circle' | 'square';
+  /** Draws the away dot, for a person whose status marks them away. */
+  away?: boolean;
   className?: string;
 }
 
@@ -32,6 +35,13 @@ const SQUARE_ROUNDING: Record<NonNullable<AvatarProps['size']>, string> = {
   sm: 'rounded-xs',
   md: 'rounded-sm',
   lg: 'rounded-md',
+};
+
+const DOT_SIZES: Record<NonNullable<AvatarProps['size']>, string> = {
+  xs: 'h-1.5 w-1.5',
+  sm: 'h-2 w-2',
+  md: 'h-2.5 w-2.5',
+  lg: 'h-3.5 w-3.5',
 };
 
 /** The corner rounding for a shape at a size. */
@@ -70,7 +80,7 @@ const AvatarImage: React.FC<{
 );
 
 /** The image when one is set and loads, otherwise a circle of initials with a stable hue. */
-export const Avatar: React.FC<AvatarProps> = ({
+const AvatarFace: React.FC<Omit<AvatarProps, 'away'>> = ({
   name,
   src,
   size = 'sm',
@@ -107,6 +117,31 @@ export const Avatar: React.FC<AvatarProps> = ({
       }}
     >
       {initials(name)}
+    </span>
+  );
+};
+
+/** Whether a class places the avatar among its neighbours rather than drawing it. */
+const PLACEMENT = /^-?m[trblxyse]?-|^(self|order|col|row|absolute|relative)/;
+
+/** The avatar, with the away dot over its corner when the person is away. */
+export const Avatar: React.FC<AvatarProps> = ({ away = false, ...props }) => {
+  if (!away) return <AvatarFace {...props} />;
+  const size = props.size ?? 'sm';
+  const classes = (props.className ?? '').split(/\s+/).filter(Boolean);
+  const placed = classes.filter((name) => PLACEMENT.test(name));
+  const drawn = classes.filter((name) => !PLACEMENT.test(name));
+  return (
+    <span className={cn('relative inline-flex shrink-0', placed.join(' '))}>
+      <AvatarFace {...props} className={drawn.join(' ')} />
+      <span
+        data-testid="avatar-away"
+        aria-hidden="true"
+        className={cn(
+          'absolute -right-px -bottom-px rounded-full border border-surface bg-warning',
+          DOT_SIZES[size]
+        )}
+      />
     </span>
   );
 };

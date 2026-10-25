@@ -1740,31 +1740,6 @@ class MemberCommentRead(TypedDict):
     parent_comment_id: NotRequired[str | None]
 
 
-class MemberProfileRead(TypedDict):
-    avatar_url: NotRequired[str | None]
-    display_name: str
-    full_name: NotRequired[str]
-    joined_at: str
-    role: Literal["owner", "admin", "member", "guest"]
-    team_ids: NotRequired[list[str]]
-    user_id: str
-
-
-class MemberRead(TypedDict):
-    avatar_url: NotRequired[str | None]
-    display_name: str
-    email: str
-    full_name: NotRequired[str]
-    invite_id: NotRequired[str | None]
-    joined_at: str
-    previous_handles: NotRequired[list[str]]
-    role: Literal["owner", "admin", "member", "guest"]
-    status: NotRequired[Literal["active", "suspended", "invited"]]
-    suspended_at: NotRequired[str | None]
-    suspended_by: NotRequired[str | None]
-    user_id: str
-
-
 class MemberUpdate(TypedDict):
     role: Literal["owner", "admin", "member", "guest"]
 
@@ -3188,16 +3163,6 @@ class TeamDisplayDefaultsUpdate(TypedDict):
     projects_display: NotRequired[ProjectsDisplay | None]
 
 
-class TeamMemberRead(TypedDict):
-    added_at: str
-    avatar_url: NotRequired[str | None]
-    display_name: str
-    email: str
-    full_name: NotRequired[str]
-    role: Literal["admin", "member"]
-    user_id: str
-
-
 class TeamMemberUpdate(TypedDict):
     role: Literal["admin", "member"]
 
@@ -3434,6 +3399,21 @@ class UrlAttachmentCreate(TypedDict):
 class UserProfileUpdate(TypedDict):
     display_name: NotRequired[str | None]
     full_name: NotRequired[str | None]
+
+
+class UserStatusRead(TypedDict):
+    away: bool
+    emoji: str
+    set_at: str
+    text: str
+    until: NotRequired[str | None]
+
+
+class UserStatusUpdate(TypedDict):
+    away: NotRequired[bool]
+    emoji: NotRequired[str]
+    text: NotRequired[str]
+    until: NotRequired[str | None]
 
 
 class ValidationErrorDetail(TypedDict):
@@ -4814,16 +4794,31 @@ class MemberActivityRead(TypedDict):
     type: Literal["issue_change", "comment"]
 
 
-class MemberBulkResult(TypedDict):
-    error_code: NotRequired[str | None]
-    member: NotRequired[MemberRead | None]
-    message: NotRequired[str | None]
-    outcome: Literal["changed", "unchanged", "skipped"]
+class MemberProfileRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    full_name: NotRequired[str]
+    joined_at: str
+    role: Literal["owner", "admin", "member", "guest"]
+    team_ids: NotRequired[list[str]]
     user_id: str
+    user_status: NotRequired[UserStatusRead | None]
 
 
-class MemberListRead(TypedDict):
-    members: list[MemberRead]
+class MemberRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    email: str
+    full_name: NotRequired[str]
+    invite_id: NotRequired[str | None]
+    joined_at: str
+    previous_handles: NotRequired[list[str]]
+    role: Literal["owner", "admin", "member", "guest"]
+    status: NotRequired[Literal["active", "suspended", "invited"]]
+    suspended_at: NotRequired[str | None]
+    suspended_by: NotRequired[str | None]
+    user_id: str
+    user_status: NotRequired[UserStatusRead | None]
 
 
 class MilestoneListRead(TypedDict):
@@ -5138,8 +5133,15 @@ class TeamListRead(TypedDict):
     teams: list[TeamRead]
 
 
-class TeamMemberListRead(TypedDict):
-    members: list[TeamMemberRead]
+class TeamMemberRead(TypedDict):
+    added_at: str
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    email: str
+    full_name: NotRequired[str]
+    role: Literal["admin", "member"]
+    user_id: str
+    user_status: NotRequired[UserStatusRead | None]
 
 
 class TemplateCreate(TypedDict):
@@ -5475,11 +5477,16 @@ class MemberActivityListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
-class MemberBulkRead(TypedDict):
-    changed: NotRequired[int]
-    results: list[MemberBulkResult]
-    skipped: NotRequired[int]
-    unchanged: NotRequired[int]
+class MemberBulkResult(TypedDict):
+    error_code: NotRequired[str | None]
+    member: NotRequired[MemberRead | None]
+    message: NotRequired[str | None]
+    outcome: Literal["changed", "unchanged", "skipped"]
+    user_id: str
+
+
+class MemberListRead(TypedDict):
+    members: list[MemberRead]
 
 
 class MilestoneConversionRead(TypedDict):
@@ -5524,7 +5531,18 @@ class StandupDigest(TypedDict):
     window_start: str
 
 
+class TeamMemberListRead(TypedDict):
+    members: list[TeamMemberRead]
+
+
 class TemplateListRead(TypedDict):
     default_template_id: NotRequired[str | None]
     non_member_default_template_id: NotRequired[str | None]
     templates: list[TemplateRead]
+
+
+class MemberBulkRead(TypedDict):
+    changed: NotRequired[int]
+    results: list[MemberBulkResult]
+    skipped: NotRequired[int]
+    unchanged: NotRequired[int]

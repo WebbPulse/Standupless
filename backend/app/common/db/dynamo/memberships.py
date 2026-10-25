@@ -402,8 +402,25 @@ class AppApproval(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class StoredUserStatus(BaseModel):
+    """A member's away status as the workspace membership row stores it.
+
+    Read through `app.common.member_status.current_status`, which ignores one whose
+    `until` has passed, so nothing has to sweep it.
+    """
+
+    emoji: str = ""
+    text: str = ""
+    away: bool = False
+    until: datetime | None = None
+    set_at: datetime = Field(default_factory=utc_now)
+
+
 class Membership(BaseModel):
-    """One person's membership of a workspace, or of a team inside it."""
+    """One person's membership of a workspace, or of a team inside it.
+
+    `user_status` is set only on the workspace row, by the member themselves.
+    """
 
     workspace_id: str
     member_key: str
@@ -414,6 +431,7 @@ class Membership(BaseModel):
     team_order: list[str] = Field(default_factory=list)
     suspended_at: datetime | None = None
     suspended_by: str | None = None
+    user_status: StoredUserStatus | None = None
 
     @property
     def is_team_membership(self) -> bool:
@@ -587,6 +605,47 @@ class MembershipRepository:
         except ConditionFailed:
             return None
         return _as_membership(item) if item is not None else None
+
+    def set_user_status(self, workspace_id: str, user_id: str, value: StoredUserStatus | None) -> Membership | None:
+        """Set or clear a workspace member's own status, or `None` when there is no such member.
+
+        Conditional on the row existing, so setting a status cannot create a
+        membership.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        if value is None:
+            update_expression = "REMOVE #status"
+            expression_values: dict[str, Any] | None = None
+        else:
+            update_expression = "SET #status = :status"
+            expression_values = {":status": value.model_dump(mode="json")}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression=update_expression,
+                expression_names={"#status": "user_status"},
+                expression_values=expression_values,
+                condition=Attr("member_key").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
+
+    def get_many(self, workspace_id: str, user_ids: list[str]) -> dict[str, Membership]:
+        """The named people's workspace memberships keyed by user id, skipping non-members.
+
+        One `BatchGetItem`, for surfaces that hold team rows or users and need the
+        workspace row's status alongside.
+        """
+        wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
+        if not workspace_id or not wanted:
+            return {}
+        items = self._repository.batch_get(
+            [{"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)} for user_id in wanted]
+        )
+        rows = (_as_membership(item) for item in items)
+        return {row.user_id: row for row in rows}
 
     def set_team_role(self, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
         """Grant or change a team role, creating the row when it is absent."""

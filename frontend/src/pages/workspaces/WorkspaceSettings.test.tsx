@@ -118,6 +118,16 @@ vi.mock('@webbpulse/auth/react', async () => {
   };
 });
 
+vi.mock('../../hooks/useMyStatus', () => ({
+  useMyStatus: () => ({
+    status: null,
+    saving: false,
+    error: null,
+    save: () => Promise.resolve(true),
+    clear: () => Promise.resolve(true),
+  }),
+}));
+
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 
 vi.mock('../../hooks/useWorkspace', () => ({

@@ -83,6 +83,7 @@ import type {
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
+import { awayNote, isAway, statusSummary } from '../../lib/userStatus';
 import Badge from '../ui/badge';
 import Button, { IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
@@ -556,9 +557,22 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
                       status === 'active' ? '' : 'opacity-60'
                     )}
                   >
-                    <Avatar name={name} src={member.avatar_url} />
+                    <Avatar
+                      name={name}
+                      src={member.avatar_url}
+                      away={isAway(member.user_status)}
+                    />
                     <span className="truncate text-sm font-medium">{name}</span>
                   </MemberLink>
+                  {statusSummary(member.user_status) !== '' && (
+                    <span
+                      className="min-w-0 truncate text-xs text-text-muted"
+                      title={awayNote(member.user_status) ?? undefined}
+                      data-testid="member-status"
+                    >
+                      {statusSummary(member.user_status)}
+                    </span>
+                  )}
                   {status !== 'active' && (
                     <Badge
                       tone={status === 'suspended' ? 'warning' : 'neutral'}

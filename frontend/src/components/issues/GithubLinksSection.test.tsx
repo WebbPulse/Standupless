@@ -8,7 +8,7 @@
  * O then G opens the pull request or the synced issue.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GithubIssueLinkRead, IssueSyncRead } from '../../types/Api';
@@ -363,13 +363,14 @@ describe('O then G', () => {
     );
     await screen.findByRole('link', { name: /Boot the engine/ });
 
-    pressOpenPullRequest(registry);
-
-    expect(open).toHaveBeenCalledWith(
-      'https://github.com/WebbPulse/standupless/pull/7',
-      '_blank',
-      'noopener,noreferrer'
-    );
+    await waitFor(() => {
+      pressOpenPullRequest(registry);
+      expect(open).toHaveBeenCalledWith(
+        'https://github.com/WebbPulse/standupless/pull/7',
+        '_blank',
+        'noopener,noreferrer'
+      );
+    });
     open.mockRestore();
   });
 

@@ -80,6 +80,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { useNotificationPause } from '../../hooks/useNotificationPause';
 import { reminderLabel } from '../../lib/reminders';
 import PauseNotificationsDialog from './PauseNotificationsDialog';
+import UserStatusDialog from './UserStatusDialog';
+import { useMyStatus } from '../../hooks/useMyStatus';
+import { statusSummary } from '../../lib/userStatus';
 import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
@@ -647,6 +650,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const openPause = useCallback(() => {
     setPauseOpen(true);
   }, []);
+  const myStatus = useMyStatus(workspace.id);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const openStatus = useCallback(() => {
+    setStatusOpen(true);
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const createIssue = useCreateIssue();
@@ -980,6 +988,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
           )}
           <MenuItem onSelect={customize.open}>Customize sidebar</MenuItem>
+          <MenuItem onSelect={openStatus}>
+            {myStatus.status === null ? 'Set status' : 'Edit status'}
+          </MenuItem>
           <MenuItem to={profileSettingsPath(workspace.slug)}>
             Edit profile
           </MenuItem>
@@ -1305,14 +1316,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="flex h-topbar items-center gap-1 border-t border-line px-2">
         {user !== null && (
-          <span className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs text-text-muted">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 text-left text-xs text-text-muted hover:text-text"
+            onClick={openStatus}
+            aria-label={
+              myStatus.status === null
+                ? 'Set status'
+                : `Status: ${statusSummary(myStatus.status)}`
+            }
+            data-testid="my-status"
+          >
             <Avatar
               name={user.display_name ?? user.email}
               src={user.avatar_url}
               size="sm"
+              away={myStatus.status?.away === true}
             />
             <TruncatedText>{user.display_name ?? user.email}</TruncatedText>
-          </span>
+            {myStatus.status !== null && myStatus.status.emoji !== '' && (
+              <span aria-hidden="true">{myStatus.status.emoji}</span>
+            )}
+          </button>
         )}
         {notificationPause.pausedUntil !== null && (
           <IconButton
@@ -1334,6 +1359,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <LuLogOut className="h-3.5 w-3.5" />
         </IconButton>
       </div>
+      <UserStatusDialog
+        open={statusOpen}
+        control={myStatus}
+        onClose={() => {
+          setStatusOpen(false);
+        }}
+      />
       <PauseNotificationsDialog
         open={pauseOpen}
         control={notificationPause}

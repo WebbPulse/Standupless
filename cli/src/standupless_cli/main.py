@@ -1414,6 +1414,44 @@ def workspace_update(
     )
 
 
+@workspace_app.command("status")
+def workspace_status(
+    ctx: typer.Context,
+    text: Annotated[str | None, typer.Argument(help="What you are up to, such as On vacation.")] = None,
+    emoji: Annotated[str, typer.Option("--emoji", help="An emoji shown beside your name.")] = "",
+    away: Annotated[bool, typer.Option("--away", help="Mark yourself away, shown as a dot on your avatar.")] = False,
+    until: Annotated[
+        str | None, typer.Option("--until", help="When the status clears itself, as an ISO 8601 time.")
+    ] = None,
+    clear: Annotated[bool, typer.Option("--clear", help="Clear your status instead.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Set your own status in the workspace, or clear it with --clear."""
+    if clear and (text or emoji or away or until):
+        raise ConfigError("Pass --clear on its own.")
+    if not clear and not (text or emoji):
+        raise ConfigError("Pass the status text or --emoji, or --clear to remove it.")
+    context = _state(ctx).context()
+    if clear:
+        member = context.client.clear_my_status(context.workspace_id)
+    else:
+        payload: dict[str, Any] = {"emoji": emoji, "text": text or "", "away": away}
+        if until:
+            payload["until"] = until
+        member = context.client.set_my_status(context.workspace_id, cast(Any, payload))
+    if as_json:
+        output.print_json(member)
+        return
+    current = member.get("user_status")
+    if not current:
+        output.success("Cleared your status.")
+        return
+    shown = " ".join(part for part in (current["emoji"], current["text"]) if part)
+    ends = current.get("until")
+    ending = f" until {ends}" if ends else ""
+    output.success(f"Your status is {shown}{ending}.")
+
+
 EXPORT_POLL_SECONDS = 3.0
 
 EXPORT_FINISHED = ("ready", "failed")

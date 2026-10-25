@@ -16,6 +16,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from app.common.api.schemas.member_status import UserStatusRead, current_status
 from app.common.db.dynamo.invites import Invite
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.users import User
@@ -319,6 +320,8 @@ class MemberRead(BaseModel):
     `status` is `suspended` for a member who keeps their history but holds no
     access, and `invited` for a pending invite, which then carries `invite_id`,
     answers the invite id as `user_id` and the invite's sent time as `joined_at`.
+    `user_status` is the member's own away status while it is in force, and null
+    when they have none, it has ended, or the caller is a guest outside their teams.
     """
 
     user_id: str
@@ -333,14 +336,19 @@ class MemberRead(BaseModel):
     suspended_at: Optional[datetime] = None
     suspended_by: Optional[str] = None
     invite_id: Optional[str] = None
+    user_status: Optional[UserStatusRead] = None
 
     @classmethod
-    def from_rows(cls, membership: Membership, user: Optional[User]) -> "MemberRead":
+    def from_rows(
+        cls, membership: Membership, user: Optional[User], *, visible: Optional[set[str]] = None
+    ) -> "MemberRead":
         """Build the response from a membership and the user row it points at.
 
         A missing user row still answers a member, because the membership is the
         authorization fact and dropping it would hide someone who holds access.
+        `visible`, when given, names the people whose status the caller may see.
         """
+        shown = visible is None or membership.user_id in visible
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
@@ -353,6 +361,7 @@ class MemberRead(BaseModel):
             status="suspended" if membership.is_suspended else "active",
             suspended_at=membership.suspended_at,
             suspended_by=membership.suspended_by,
+            user_status=current_status(membership.user_status) if shown else None,
         )
 
     @classmethod

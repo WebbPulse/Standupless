@@ -14102,7 +14102,7 @@
         "type": "object"
       },
       "MemberProfileRead": {
-        "description": "One workspace member as their page shows them.\n\n`team_ids` are the teams they belong to that the caller can see, so a private\nteam stays hidden from anyone outside it.",
+        "description": "One workspace member as their page shows them.\n\n`team_ids` are the teams they belong to that the caller can see, so a private\nteam stays hidden from anyone outside it. `user_status` is their away status\nwhile it is in force, hidden from a guest who shares no team with them.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -14149,6 +14149,16 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "user_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -14161,7 +14171,7 @@
         "type": "object"
       },
       "MemberRead": {
-        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.\n`status` is `suspended` for a member who keeps their history but holds no\naccess, and `invited` for a pending invite, which then carries `invite_id`,\nanswers the invite id as `user_id` and the invite's sent time as `joined_at`.",
+        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.\n`status` is `suspended` for a member who keeps their history but holds no\naccess, and `invited` for a pending invite, which then carries `invite_id`,\nanswers the invite id as `user_id` and the invite's sent time as `joined_at`.\n`user_status` is the member's own away status while it is in force, and null\nwhen they have none, it has ended, or the caller is a guest outside their teams.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -14256,6 +14266,16 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "user_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -24688,7 +24708,7 @@
         "type": "object"
       },
       "TeamMemberRead": {
-        "description": "One team member, joined with their user row for display.\n\n`full_name` rides along with the handle so a reader who prefers full names\nsees them in the team's pickers too, the way the workspace member list does.",
+        "description": "One team member, joined with their user row for display.\n\n`full_name` rides along with the handle so a reader who prefers full names\nsees them in the team's pickers too, the way the workspace member list does.\n`user_status` is the member's away status while it is in force, read from\ntheir workspace row, so a picker can say who is away.",
         "properties": {
           "added_at": {
             "format": "date-time",
@@ -24730,6 +24750,16 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "user_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -27725,6 +27755,84 @@
           "notification_preferences"
         ],
         "title": "UserRead",
+        "type": "object"
+      },
+      "UserStatusRead": {
+        "description": "A member's current status, as every read surface answers it.\n\n`until` is when it clears itself, or null for a status that stays until it is\nchanged. `away` marks someone who should not be expected to answer soon.",
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "boolean"
+          },
+          "emoji": {
+            "title": "Emoji",
+            "type": "string"
+          },
+          "set_at": {
+            "format": "date-time",
+            "title": "Set At",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "emoji",
+          "text",
+          "away",
+          "set_at"
+        ],
+        "title": "UserStatusRead",
+        "type": "object"
+      },
+      "UserStatusUpdate": {
+        "description": "The body `PUT /api/workspaces/{workspace_id}/members/me/status` takes.\n\nAt least one of `emoji` and `text` must be set, and `until`, when given, must be\nin the future. A timestamp without a zone is read as UTC.",
+        "properties": {
+          "away": {
+            "default": false,
+            "title": "Away",
+            "type": "boolean"
+          },
+          "emoji": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Emoji",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Text",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "title": "UserStatusUpdate",
         "type": "object"
       },
       "ValidationErrorDetail": {
@@ -51913,6 +52021,112 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/members/me/status": {
+      "delete": {
+        "description": "Clear the caller's status here, answering their member row without one.",
+        "operationId": "clear_my_status_api_workspaces__workspace_id__members_me_status_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear My Status",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "put": {
+        "description": "Set the caller's status here, replacing any status they had.\n\nIt clears itself once `until` passes, with nothing to sweep it.",
+        "operationId": "set_my_status_api_workspaces__workspace_id__members_me_status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set My Status",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/members/{user_id}": {
       "delete": {
         "description": "Remove a member, or leave the workspace yourself.\n\nDeclared at read level because leaving is something any member may do; an\nadmin removing someone else is checked here instead of by the capability.",
@@ -60348,7 +60562,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/members": {
       "get": {
-        "description": "Everyone explicitly added to this team, joined with their user rows.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
+        "description": "Everyone explicitly added to this team, joined with their user rows and current statuses.\n\nEvery row shares this team with the caller, so a guest who can read it may see\neach member's status. The answer carries a weak `ETag`, so an unchanged poll\ngets a 304.",
         "operationId": "list_team_members_api_workspaces__workspace_id__teams__team_id__members_get",
         "parameters": [
           {

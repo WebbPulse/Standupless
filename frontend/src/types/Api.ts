@@ -626,6 +626,24 @@ export type WorkspaceFeatures = Record<WorkspaceFeature, boolean>;
 export type MemberStatus = 'active' | 'suspended' | 'invited';
 
 /** One member of a workspace. */
+/** A member's status in one workspace: an emoji, a line of text, an away flag and when it clears itself. */
+export interface UserStatusRead {
+  emoji: string;
+  text: string;
+  away: boolean;
+  /** When the status clears itself, or null when it stays until changed. */
+  until?: string | null;
+  set_at: string;
+}
+
+/** The body that sets the caller's own status. It needs an emoji or text. */
+export interface UserStatusUpdate {
+  emoji?: string;
+  text?: string;
+  away?: boolean;
+  until?: string | null;
+}
+
 export interface MemberRead {
   user_id: string;
   email: string;
@@ -646,6 +664,8 @@ export interface MemberRead {
   suspended_by?: string | null;
   /** The invite behind an invited row, or null for a member. */
   invite_id?: string | null;
+  /** The member's status while it is in force, or null when none is set or the caller may not see it. */
+  user_status?: UserStatusRead | null;
 }
 
 /** A change to the caller's own name or handle. Fields left out keep their value. */
@@ -825,6 +845,8 @@ export interface TeamMemberRead {
   avatar_url?: string | null;
   /** The person's written name, or an empty string when none is set. */
   full_name?: string;
+  /** The member's status while it is in force, or null when none is set. */
+  user_status?: UserStatusRead | null;
 }
 
 /** The body the team members route answers with. */
@@ -6287,6 +6309,8 @@ export interface MemberProfileRead {
   joined_at: string;
   /** The teams the member belongs to that the viewer can see. */
   team_ids?: string[];
+  /** The member's status while it is in force, or null when none is set or the viewer may not see it. */
+  user_status?: UserStatusRead | null;
 }
 
 /** A comment as a member's activity feed carries it, its body cut to an excerpt. */

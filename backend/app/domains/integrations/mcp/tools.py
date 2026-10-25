@@ -35,6 +35,7 @@ from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_link_tools import ISSUE_LINK_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.jira_import_tools import JIRA_IMPORT_TOOLS
+from app.domains.integrations.mcp.member_status_tools import MEMBER_STATUS_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.project_label_tools import PROJECT_LABEL_TOOLS
 from app.domains.integrations.mcp.project_status_tools import PROJECT_STATUS_TOOLS
@@ -89,6 +90,7 @@ TOOLS: tuple[Tool, ...] = (
     *AGENT_PROFILE_TOOLS,
     *COMMENT_TOOLS,
     *ISSUE_LINK_TOOLS,
+    *MEMBER_STATUS_TOOLS,
 )
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

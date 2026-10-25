@@ -15,7 +15,7 @@ from fastapi import HTTPException, status
 from webbpulse.audit import changed_fields
 from webbpulse.dynamodb import TransactionCanceled
 
-from app.common import audit, plan_usage, team_members
+from app.common import audit, member_status, plan_usage, team_members
 from app.common.api.dependencies.authz import AuthzContext, Capability, check_capability, refuse_api_key_actor
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.workspaces import (
@@ -225,7 +225,8 @@ def list_members(
         if ("suspended" if m.is_suspended else "active") in wanted
     ]
     users = repositories.users.get_many([membership.user_id for membership in memberships])
-    members = [MemberRead.from_rows(m, users.get(m.user_id)) for m in memberships]
+    visible = member_status.visible_user_ids(repositories, context)
+    members = [MemberRead.from_rows(m, users.get(m.user_id), visible=visible) for m in memberships]
     if "invited" in wanted and context.acts_as_workspace_admin:
         invites = repositories.invites.list_for_workspace(context.workspace_id)
         members.extend(MemberRead.from_invite(invite) for invite in invites if not invite.is_expired())
