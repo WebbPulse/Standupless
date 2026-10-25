@@ -6,10 +6,7 @@
  */
 
 import type { AuthClient } from '@webbpulse/auth';
-import {
-  DEFAULT_CURRENT_USER_PATH,
-  createIdentityClientSingleton,
-} from '@webbpulse/auth/browser';
+import { createIdentityClientSingleton } from '@webbpulse/auth/browser';
 import { appConfig, desktopHandoffSchemes } from '../config/app';
 import type { UserRead } from '../types/Api';
 
@@ -31,7 +28,7 @@ export {
  * Where the signed in profile is read from. Carries the `/api` prefix because
  * the configured base URL is stripped back to a bare origin.
  */
-export const CURRENT_USER_PATH = DEFAULT_CURRENT_USER_PATH;
+export const CURRENT_USER_PATH = '/api/users/me';
 
 /** The identity client as the pages take it, with the user type applied. */
 export type IdentityClient = AuthClient<UserRead>;
