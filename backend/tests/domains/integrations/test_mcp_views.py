@@ -487,3 +487,32 @@ def test_a_view_groups_by_a_label_group_through_the_tools(
     assert created["group_by"] == "label_group:grp-area"
     assert updated["sub_group_by"] == "label_group:grp-type"
     assert "group_by" in bad
+
+
+def test_team_notification_subscription_tools(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The member turns team events on by team key and reads them back; a guest cannot reach a team they are outside."""
+    secret = mint_for(repositories, MEMBER, VIEWS)
+
+    before = answer(tool(client, secret, "get_team_notification_subscription", {"team_id": "ABC"}))
+    after = answer(
+        tool(client, secret, "set_team_notification_subscription", {"team_id": "ABC", "issue_created": True})
+    )
+    read = answer(tool(client, secret, "get_team_notification_subscription", {"team_id": TEAM}))
+    cleared = answer(
+        tool(client, secret, "set_team_notification_subscription", {"team_id": "ABC", "issue_created": False})
+    )
+    guest = refusal(
+        tool(
+            client,
+            mint_for(repositories, GUEST, VIEWS),
+            "set_team_notification_subscription",
+            {"team_id": "XYZ", "triage": True},
+        )
+    )
+
+    assert before == {"team_id": TEAM, "issue_created": False, "triage": False, "completed": False, "cancelled": False}
+    assert after["issue_created"] is True and after["triage"] is False
+    assert read == after
+    assert cleared["issue_created"] is False
+    assert repositories.views.team_subscriptions(WORKSPACE, TEAM) == []
+    assert team_not_found_message("XYZ") in guest

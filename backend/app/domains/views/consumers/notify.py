@@ -62,6 +62,7 @@ from app.common.db.dynamo.inbox import (
     PRIORITY_URGENT,
     PROJECT_UPDATE_REPLIED,
     REACTION,
+    TEAM_ISSUE_CREATED,
     TRIAGE_NEW,
     VIEW_ISSUE_ADDED,
     Notification,
@@ -380,7 +381,9 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     An issue newly matching a saved view tells each of the view's subscribers,
     naming the view in `new_value`, unless the record already earned them
     something more specific, and only the first time that issue enters that view
-    for them.
+    for them. Last, each member subscribed to the issue's team hears of the
+    events they turned on, an issue created, entering triage, completed or
+    cancelled, when nothing above already reached them for this record.
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
@@ -427,10 +430,14 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 headline_key="mentioned_in_description",
             )
 
+    team_events: list[tuple[str, str, str, dict[str, Any]]] = []
     if new_image.get("in_triage") and not (old_image and old_image.get("in_triage")):
         entered_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
         for user_id in duty_notified(repositories, workspace_id, issue.team_id):
             plan(user_id, TRIAGE_NEW, f"{issue_id}#triage#{entered_at}")
+        team_events.append(("triage", TRIAGE_NEW, f"{issue_id}#triage#{entered_at}", {}))
+    if not old_image:
+        team_events.append(("issue_created", TEAM_ISSUE_CREATED, f"{issue_id}#team_created", {}))
 
     new_status = _text(new_image, "status_id")
     old_status = _text(old_image, "status_id")
@@ -448,6 +455,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
         followers = issue_followers(repositories, workspace_id, issue_id, new_assignee)
         for recipient_id in followers:
             plan(recipient_id, kind, f"{issue_id}#status#{new_status}", **moved_to)
+        if category in STATUS_KINDS and (previous is None or previous.category != category):
+            team_events.append((category, kind, f"{issue_id}#status#{new_status}", moved_to))
 
     if (
         old_image
@@ -472,6 +481,13 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
             )
             if entry.user_id in planned and planned[entry.user_id][0] == VIEW_ISSUE_ADDED:
                 view_notices.setdefault(entry.user_id, entry.view.view_id)
+
+    if team_events:
+        subscriptions = repositories.views.team_subscriptions(workspace_id, issue.team_id)
+        for event, kind, source_id, extra in team_events:
+            for subscription in subscriptions:
+                if subscription.wants(event):
+                    plan(subscription.user_id, kind, source_id, **extra)
 
     written = 0
     for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):

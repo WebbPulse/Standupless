@@ -41,6 +41,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'review_requested',
   'triage_new',
   'view_issue_added',
+  'team_issue_created',
   'document_comment',
 ];
 

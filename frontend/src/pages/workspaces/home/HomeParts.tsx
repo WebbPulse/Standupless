@@ -455,6 +455,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   priority_urgent: 'marked as urgent',
   blocking_changed: 'changed blocking',
   document_comment: 'commented on a document',
+  team_issue_created: 'created an issue',
 };
 
 /** One unread notification. */

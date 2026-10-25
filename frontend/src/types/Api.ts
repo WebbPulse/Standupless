@@ -2097,7 +2097,28 @@ export type NotificationKind =
   | 'issue_cancelled'
   | 'priority_urgent'
   | 'blocking_changed'
-  | 'document_comment';
+  | 'document_comment'
+  | 'team_issue_created';
+
+/** Which of one team's issue events reach the caller's inbox, every one off by default. */
+export interface TeamNotificationSubscriptionRead {
+  team_id: string;
+  issue_created: boolean;
+  triage: boolean;
+  completed: boolean;
+  cancelled: boolean;
+}
+
+/** One team issue event a person can subscribe to. */
+export type TeamSubscriptionEvent = Exclude<
+  keyof TeamNotificationSubscriptionRead,
+  'team_id'
+>;
+
+/** The team events to turn on or off; any left out keep their current value. */
+export type TeamNotificationSubscriptionUpdate = Partial<
+  Record<TeamSubscriptionEvent, boolean>
+>;
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a

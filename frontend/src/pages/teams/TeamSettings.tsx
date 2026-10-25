@@ -4,8 +4,8 @@
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
- * pipeline its releases move through, the Slack and Discord channels it
- * posts notifications to, its outbound webhooks, and a danger zone for
+ * pipeline its releases move through, the caller's own notifications for its
+ * issues, the Slack and Discord channels it posts notifications to, its outbound webhooks, and a danger zone for
  * retiring or deleting it. These are a route of
  * their own so a link to them survives being sent to someone else.
  *
@@ -27,6 +27,7 @@ import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSec
 import RecurringSection from '../../components/team/RecurringSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
 import SlaSection from '../../components/team/SlaSection';
+import { TeamNotificationsPanel } from '../../components/team/TeamNotifications';
 import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
@@ -413,7 +414,14 @@ const TeamSettings: React.FC = () => {
           )}
           {frame(
             'notifications',
-            <>
+            <div className="space-y-6">
+              <section className="space-y-3">
+                <h3 className="text-base font-semibold">Your notifications</h3>
+                <TeamNotificationsPanel
+                  workspaceId={workspaceId}
+                  teamId={team.id}
+                />
+              </section>
               <TeamChannelsSection
                 workspaceId={workspaceId}
                 teamId={team.id}
@@ -425,7 +433,7 @@ const TeamSettings: React.FC = () => {
               />
               <SlackReturnToast />
               <DiscordReturnToast />
-            </>
+            </div>
           )}
           {frame(
             'webhooks',

@@ -137,6 +137,18 @@ vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
 }));
 
+vi.mock('../../api/teamSubscriptions', () => ({
+  getTeamSubscription: () =>
+    Promise.resolve({
+      team_id: 'proj-1',
+      issue_created: false,
+      triage: false,
+      completed: false,
+      cancelled: false,
+    }),
+  updateTeamSubscription: vi.fn(),
+}));
+
 vi.mock('../../api/releases', () => ({
   getReleasePipeline: () =>
     Promise.resolve({

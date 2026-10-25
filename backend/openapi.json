@@ -23227,6 +23227,92 @@
         "title": "TeamMemberUpdate",
         "type": "object"
       },
+      "TeamNotificationSubscriptionRead": {
+        "description": "Which of one team's issue events reach the caller's inbox, every one off by default.",
+        "properties": {
+          "cancelled": {
+            "default": false,
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "completed": {
+            "default": false,
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "issue_created": {
+            "default": false,
+            "title": "Issue Created",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "triage": {
+            "default": false,
+            "title": "Triage",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "TeamNotificationSubscriptionRead",
+        "type": "object"
+      },
+      "TeamNotificationSubscriptionUpdate": {
+        "additionalProperties": false,
+        "description": "The events to turn on or off; any left out keep their current value.",
+        "properties": {
+          "cancelled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled"
+          },
+          "completed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed"
+          },
+          "issue_created": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Created"
+          },
+          "triage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triage"
+          }
+        },
+        "title": "TeamNotificationSubscriptionUpdate",
+        "type": "object"
+      },
       "TeamOrderUpdate": {
         "description": "The body the team order put takes: the caller's teams, first to last.\n\nTeams left out keep their default place after the named ones, so a client\nthat has not seen a new team yet cannot hide it.",
         "properties": {
@@ -25495,7 +25581,8 @@
                     "issue_cancelled",
                     "priority_urgent",
                     "blocking_changed",
-                    "document_comment"
+                    "document_comment",
+                    "team_issue_created"
                   ]
                 },
                 "type": "object"
@@ -25534,7 +25621,7 @@
                 "items": {
                   "type": "string"
                 },
-                "maxItems": 31,
+                "maxItems": 32,
                 "type": "array"
               },
               {
@@ -40492,7 +40579,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 31,
+              "maxItems": 32,
               "title": "Kind",
               "type": "array"
             }
@@ -62020,6 +62107,134 @@
           }
         ],
         "summary": "List Member Activity",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/teams/{team_id}/subscription": {
+      "get": {
+        "description": "Which of one team's issue events reach the caller, every one off until turned on.\n\nA 404 when the caller cannot see the team.",
+        "operationId": "get_team_subscription_api_workspaces__workspace_id__views_teams__team_id__subscription_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamNotificationSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Team Subscription",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Turn the named team issue events on or off for the caller, keeping the ones left out.\n\nTurning all four off removes the subscription. A 404 when the caller cannot\nsee the team.",
+        "operationId": "update_team_subscription_api_workspaces__workspace_id__views_teams__team_id__subscription_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamNotificationSubscriptionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamNotificationSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Team Subscription",
         "tags": [
           "views"
         ]

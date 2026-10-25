@@ -217,6 +217,8 @@ EXPECTED_TOOLS = frozenset(
         "set_issue_reminder",
         "list_issue_reminders",
         "cancel_issue_reminder",
+        "get_team_notification_subscription",
+        "set_team_notification_subscription",
         "snooze_notification",
         "start_cycle_today",
         "end_cycle_today",

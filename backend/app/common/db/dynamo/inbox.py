@@ -59,6 +59,7 @@ NotificationKind = Literal[
     "priority_urgent",
     "blocking_changed",
     "document_comment",
+    "team_issue_created",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -86,6 +87,7 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "priority_urgent",
     "blocking_changed",
     "document_comment",
+    "team_issue_created",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -111,6 +113,9 @@ ISSUE_COMPLETED = "issue_completed"
 
 ISSUE_CANCELLED = "issue_cancelled"
 """The kind a move into a cancelled status takes for the assignee and subscribers, naming the status in `new_value`."""
+
+TEAM_ISSUE_CREATED = "team_issue_created"
+"""The kind that tells a member subscribed to a team's new issues that one was created in it."""
 
 PRIORITY_URGENT = "priority_urgent"
 """The kind that tells the assignee and subscribers an issue was raised to urgent priority."""

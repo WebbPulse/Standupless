@@ -416,6 +416,12 @@ export const triageSettingsKey = (
   teamId: string
 ): QueryKey => ['triage-settings', workspaceId, teamId];
 
+/** The cache key for the caller's own notification subscription to a team. */
+export const teamSubscriptionKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['team-subscription', workspaceId, teamId];
+
 /** One team's cycle list, which varies on the status filter applied. */
 export const cyclesKey = (
   workspaceId: string,
