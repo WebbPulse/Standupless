@@ -12,6 +12,7 @@ import React, { useState } from 'react';
 import { LuUsers } from 'react-icons/lu';
 import { issueCount, moveIssues } from '../../lib/bulkIssueActions';
 import { useTeamsFor } from '../../hooks/useTeams';
+import { OFFLINE_WRITE_HINT, useOffline } from '../../hooks/useOffline';
 import { canWriteIssues } from '../../lib/capabilities';
 import { activeTeams } from '../../lib/teamRetirement';
 import type { IssueRead, TeamRead, WorkspaceRole } from '../../types/Api';
@@ -58,6 +59,7 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
   onMoved,
 }) => {
   const [busy, setBusy] = useState(false);
+  const offline = useOffline();
   if (!open || issues.length === 0) return null;
   const teamIds = [...new Set(issues.map((issue) => issue.team_id))];
 
@@ -72,7 +74,7 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
         ...(parentName === undefined ? [] : [parentName]),
       ],
       icon: <LuUsers className="h-3.5 w-3.5" />,
-      disabled: busy,
+      disabled: busy || offline,
       indent: nested,
     })
   );
@@ -86,6 +88,7 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
       onClose();
       return;
     }
+    if (offline) return;
     setBusy(true);
     try {
       const moved = await moveIssues(workspaceId, issues, target);
@@ -110,6 +113,7 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
           <span className="rounded-sm bg-raised px-1.5 py-0.5 font-mono text-2xs text-text">
             {subject}
           </span>
+          {offline && <span className="ml-2">{OFFLINE_WRITE_HINT}</span>}
         </p>
         <Combobox
           label={MOVE_ISSUE_LABEL}

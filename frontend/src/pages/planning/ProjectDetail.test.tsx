@@ -16,7 +16,7 @@ import { ApiError } from '@webbpulse/api-client';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   MilestoneRead,
@@ -35,6 +35,18 @@ import { projectPath } from '../../lib/paths';
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
 import ProjectDetail from './ProjectDetail';
+
+const network = vi.hoisted(() => ({ offline: false }));
+
+vi.mock('../../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOffline: () => network.offline,
+  useWritable: (permitted: boolean) => permitted && !network.offline,
+}));
+
+afterEach(() => {
+  network.offline = false;
+});
 
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
 const updateProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
@@ -1245,5 +1257,31 @@ describe('ProjectDetail', () => {
         `${globalThis.location.origin}${projectPath('mine', launch)}`
       );
     });
+  });
+});
+
+describe('ProjectDetail offline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listTeams.mockResolvedValue([engine]);
+    getProject.mockResolvedValue(launch);
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    listIssues.mockResolvedValue({ issues: [], next_cursor: null });
+    listMilestones.mockResolvedValue([]);
+    listProjectUpdates.mockResolvedValue({ updates: [], next_cursor: null });
+    listProjectActivity.mockResolvedValue({ activity: [], next_cursor: null });
+    listTeamMembers.mockResolvedValue([ada]);
+    getFollow.mockResolvedValue({ following: true, explicit: false });
+  });
+
+  it('holds the properties back while offline', async () => {
+    network.offline = true;
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    expect(
+      within(row).getByRole('button', { name: /^Priority: / })
+    ).toBeDisabled();
   });
 });

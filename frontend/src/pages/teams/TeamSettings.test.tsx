@@ -11,7 +11,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@webbpulse/api-client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   LabelRead,
@@ -24,6 +24,18 @@ import type {
   WorkspaceRole,
 } from '../../types/Api';
 import TeamSettings from './TeamSettings';
+
+const network = vi.hoisted(() => ({ offline: false }));
+
+vi.mock('../../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOffline: () => network.offline,
+  useWritable: (permitted: boolean) => permitted && !network.offline,
+}));
+
+afterEach(() => {
+  network.offline = false;
+});
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
@@ -786,5 +798,22 @@ describe('the standup section', () => {
         weekday: 4,
       });
     });
+  });
+});
+
+describe('offline', () => {
+  it('holds the settings back but keeps the sections in place', async () => {
+    network.offline = true;
+    renderPage();
+
+    expect(
+      await screen.findByLabelText('Name', { selector: '#team-general-name' })
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Save changes' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole('link', { name: 'Danger zone' }).length
+    ).toBeGreaterThan(0);
   });
 });
