@@ -72,6 +72,7 @@ import { estimateOptionsOf } from '../../../lib/validation';
 import type { StatusCategory, TeamRead } from '../../../types/Api';
 import Button, { IconButton } from '../../ui/button';
 import FavoriteButton from '../../ui/FavoriteButton';
+import ViewSubscribeButton from './ViewSubscribeButton';
 import Dialog from '../../ui/dialog';
 import { Input, Textarea } from '../../ui/input';
 import { Menu, MenuItem, MenuLabel } from '../../ui/menu';
@@ -875,6 +876,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const viewActions =
     view === undefined ? null : (
       <>
+        <ViewSubscribeButton workspaceId={workspaceId} view={view} />
         <IconButton
           label="Edit view details"
           size="sm"

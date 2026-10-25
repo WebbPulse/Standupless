@@ -399,6 +399,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/views/{view_id}"): VIEWS_WRITE,
     ("PUT", "/{workspace_id}/views/{view_id}/favorite"): VIEWS_WRITE,
     ("DELETE", "/{workspace_id}/views/{view_id}/favorite"): VIEWS_WRITE,
+    ("PUT", "/{workspace_id}/views/{view_id}/subscription"): VIEWS_WRITE,
+    ("DELETE", "/{workspace_id}/views/{view_id}/subscription"): VIEWS_WRITE,
     ("GET", "/{workspace_id}/favorites"): VIEWS_READ,
     ("POST", "/{workspace_id}/favorites"): VIEWS_WRITE,
     ("PUT", "/{workspace_id}/favorites/order"): VIEWS_WRITE,

@@ -2944,6 +2944,7 @@ class UserPreferencesUpdate(TypedDict):
                 "review_requested",
                 "reminder",
                 "triage_new",
+                "view_issue_added",
             ],
             NotificationChannelsUpdate,
         ]
@@ -3174,6 +3175,8 @@ class ViewRead(TypedDict):
     show_sub_issues: NotRequired[bool]
     sort: str
     sub_group_by: NotRequired[str | None]
+    subscribed: NotRequired[bool]
+    subscriber_count: NotRequired[int]
     team_id: NotRequired[str | None]
     updated_at: str
     view_id: str

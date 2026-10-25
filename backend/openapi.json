@@ -22606,7 +22606,8 @@
                     "sla_breached",
                     "review_requested",
                     "reminder",
-                    "triage_new"
+                    "triage_new",
+                    "view_issue_added"
                   ]
                 },
                 "type": "object"
@@ -23470,7 +23471,7 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members. `projects_display` is the arrangement of\na project view and null on an issue view.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view.",
         "properties": {
           "color": {
             "anyOf": [
@@ -23626,6 +23627,16 @@
               }
             ],
             "title": "Sub Group By"
+          },
+          "subscribed": {
+            "default": false,
+            "title": "Subscribed",
+            "type": "boolean"
+          },
+          "subscriber_count": {
+            "default": 0,
+            "title": "Subscriber Count",
+            "type": "integer"
           },
           "team_id": {
             "anyOf": [
@@ -34833,7 +34844,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 22,
+              "maxItems": 23,
               "title": "Kind",
               "type": "array"
             }
@@ -54688,6 +54699,122 @@
           }
         ],
         "summary": "Favorite View",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/{view_id}/subscription": {
+      "delete": {
+        "description": "Stop following a view, a no-op when the caller did not follow it.",
+        "operationId": "unsubscribe_view_api_workspaces__workspace_id__views__view_id__subscription_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unsubscribe View",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Follow an issue view the caller may read, to hear about each issue that newly matches it.\n\nIssues already in the view stay quiet. A project view answers 422.",
+        "operationId": "subscribe_view_api_workspaces__workspace_id__views__view_id__subscription_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "view_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "View Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Subscribe View",
         "tags": [
           "views"
         ]

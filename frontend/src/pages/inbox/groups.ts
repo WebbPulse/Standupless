@@ -32,6 +32,7 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   import_failed: 'Import failed',
   review_requested: 'Review requested',
   triage_new: 'New in triage',
+  view_issue_added: 'Added to view',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -169,6 +170,7 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'sla', label: 'SLA', kinds: ['sla_at_risk', 'sla_breached'] },
   { id: 'reviews', label: 'Reviews', kinds: ['review_requested'] },
   { id: 'triage', label: 'Triage', kinds: ['triage_new'] },
+  { id: 'views', label: 'Views', kinds: ['view_issue_added'] },
   { id: 'standups', label: 'Standups', kinds: ['standup_digest'] },
   {
     id: 'notices',

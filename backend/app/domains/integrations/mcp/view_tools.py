@@ -50,7 +50,9 @@ from app.common.saved_views import (
     delete_saved_view,
     load_visible_view,
     readable_views,
+    set_view_subscription,
     update_saved_view,
+    view_read,
 )
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
@@ -275,6 +277,22 @@ def _delete_view(call: ToolCall) -> Any:
     return {"deleted": True, "view_id": removed.view_id, "name": removed.name}
 
 
+def _subscribe_to_view(call: ToolCall) -> Any:
+    """Follow an issue view, to hear about each issue that newly matches it, as the subscription route does."""
+    _workspace_member(call)
+    view = set_view_subscription(call.repositories, call.context, view_ref(call, call.require("view_id")).view_id, True)
+    return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
+
+
+def _unsubscribe_from_view(call: ToolCall) -> Any:
+    """Stop following a view, a no-op when the caller did not follow it."""
+    _workspace_member(call)
+    view = set_view_subscription(
+        call.repositories, call.context, view_ref(call, call.require("view_id")).view_id, False
+    )
+    return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
+
+
 def _ids(call: ToolCall) -> Optional[list[str]]:
     """The notification ids argument as a list, whichever shape the agent sent."""
     return filter_values(call.require("notification_ids"))
@@ -427,6 +445,26 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
         handler=_delete_view,
         destructive=True,
+    ),
+    Tool(
+        name="subscribe_to_view",
+        description=(
+            "Subscribe to a saved issue view you can read: from now on you get a view_issue_added notification "
+            "each time an issue newly matches its filter. Issues already in the view do not notify, nor do your "
+            "own changes or issues you cannot see. Project views cannot be subscribed to. Repeating is a no-op."
+        ),
+        scopes=("views:write",),
+        schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
+        handler=_subscribe_to_view,
+        idempotent=True,
+    ),
+    Tool(
+        name="unsubscribe_from_view",
+        description="Stop getting notified about issues entering a saved view. A no-op when you were not subscribed.",
+        scopes=("views:write",),
+        schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
+        handler=_unsubscribe_from_view,
+        idempotent=True,
     ),
     Tool(
         name="list_notifications",

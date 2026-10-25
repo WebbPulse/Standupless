@@ -253,6 +253,40 @@ class CommentDraft(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+VIEW_SUBSCRIPTION_PREFIX = "viewsub#"
+"""The sort key prefix every view subscription shares."""
+
+VIEW_SUBSCRIPTIONS_MAX = 1000
+"""The most subscriptions one workspace listing reads, a bound the notify consumer scans per issue write."""
+
+
+def view_subscription_prefix(view_id: str) -> str:
+    """The sort key prefix every subscription to one view shares."""
+    return f"{VIEW_SUBSCRIPTION_PREFIX}{view_id}#"
+
+
+def view_subscription_key(view_id: str, user_id: str) -> str:
+    """The sort key of one member's subscription to one view."""
+    return f"{view_subscription_prefix(view_id)}{user_id}"
+
+
+class ViewSubscription(BaseModel):
+    """One member following one saved view, to hear when an issue newly enters it.
+
+    Stored beside the views so a subscription lives and dies with the view's
+    partition, and keyed view first, so the view's subscribers are one query.
+    `saved_view_key` is the subscribed view's own sort key, which tells the
+    notify consumer where to read it without guessing its scope.
+    """
+
+    workspace_id: str
+    view_key: str
+    view_id: str
+    user_id: str
+    saved_view_key: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class ViewRepository:
     """Reads and writes `views` rows, every method workspace first."""
 
@@ -517,6 +551,83 @@ class ViewRepository:
         ):
             if item.get("team_id") == team_id:
                 self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+                removed += 1
+        return removed
+
+    def subscribe(self, workspace_id: str, view: SavedView, user_id: str) -> ViewSubscription:
+        """Subscribe one member to a view, keeping the first subscription when they already follow it."""
+        existing = self.get_subscription(workspace_id, view.view_id, user_id)
+        if existing is not None:
+            return existing
+        row = ViewSubscription(
+            workspace_id=workspace_id,
+            view_key=view_subscription_key(view.view_id, user_id),
+            view_id=view.view_id,
+            user_id=user_id,
+            saved_view_key=view.view_key,
+        )
+        self._repository.put(as_item(row))
+        return row
+
+    def get_subscription(self, workspace_id: str, view_id: str, user_id: str) -> ViewSubscription | None:
+        """One member's subscription to one view, or `None`."""
+        if not workspace_id or not view_id or not user_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "view_key": view_subscription_key(view_id, user_id)})
+        return ViewSubscription.model_validate(dict(item)) if item is not None else None
+
+    def unsubscribe(self, workspace_id: str, view_id: str, user_id: str) -> None:
+        """Remove one member's subscription to one view, a no-op when there is none."""
+        if not workspace_id or not view_id or not user_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "view_key": view_subscription_key(view_id, user_id)})
+
+    def subscriber_ids(self, workspace_id: str, view_id: str) -> list[str]:
+        """The members subscribed to one view, oldest subscription first."""
+        if not workspace_id or not view_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(view_subscription_prefix(view_id))
+        )
+        rows = [ViewSubscription.model_validate(dict(item)) for item in items]
+        return [row.user_id for row in sorted(rows, key=lambda row: row.created_at)]
+
+    def list_subscriptions(self, workspace_id: str, *, limit: int = VIEW_SUBSCRIPTIONS_MAX) -> list[ViewSubscription]:
+        """Every view subscription in one workspace, for the notify consumer to evaluate an issue write."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(VIEW_SUBSCRIPTION_PREFIX),
+            max_items=limit,
+        )
+        return [ViewSubscription.model_validate(dict(item)) for item in items]
+
+    def delete_view_subscriptions(self, workspace_id: str, view_id: str) -> int:
+        """Delete every subscription to one view, for when the view itself goes."""
+        if not workspace_id or not view_id:
+            return 0
+        removed = 0
+        for item in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(view_subscription_prefix(view_id))
+            )
+        ):
+            self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+            removed += 1
+        return removed
+
+    def delete_subscriptions_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every view subscription one member holds in a workspace, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        removed = 0
+        for row in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(VIEW_SUBSCRIPTION_PREFIX)
+            )
+        ):
+            if row.get("user_id") == user_id:
+                self._repository.delete({"workspace_id": workspace_id, "view_key": row["view_key"]})
                 removed += 1
         return removed
 

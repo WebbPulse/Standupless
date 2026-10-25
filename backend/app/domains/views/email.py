@@ -54,6 +54,7 @@ _HEADLINES: Mapping[str, str] = {
     "sla_breached": "This issue assigned to you has breached its SLA.",
     "reminder": "You asked to be reminded about this issue.",
     "triage_new": "A new issue is waiting in triage for your team.",
+    "view_issue_added": "An issue was added to a view you follow.",
 }
 
 DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
@@ -75,6 +76,10 @@ _TRIAGE_REASON = (
     "You are receiving this because you are on triage duty for this team. "
     "Turn these off in your {product} notification settings."
 )
+_VIEW_REASON = (
+    "You are receiving this because you subscribed to a view this issue now matches. "
+    "Turn these off in your {product} notification settings."
+)
 _PROJECT_REASON = (
     "You are receiving this because you lead or are a member of this project. "
     "Turn these off in your {product} notification settings."
@@ -90,6 +95,8 @@ def _issue_reason(kind: str) -> str:
         return _REMINDER_REASON
     if kind == "triage_new":
         return _TRIAGE_REASON
+    if kind == "view_issue_added":
+        return _VIEW_REASON
     return _ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON
 
 
