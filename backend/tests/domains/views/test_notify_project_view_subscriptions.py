@@ -27,8 +27,8 @@ from webbpulse.identity.email import RecordingEmailSender
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.planning import Project, as_project_item, project_key
-from app.common.email import reset_email_sender
 from app.common.db.dynamo.teams import Team
+from app.common.email import reset_email_sender
 from app.common.inbox_summary import notification_summary
 from app.domains.views.consumers.notify import handle_record
 from app.domains.views.consumers.project_view_watch import view_fields_changed
