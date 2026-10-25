@@ -1004,8 +1004,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="update_team_cycle_settings",
         description=(
             "Turn a team's automatic cycles on or off and set their length, cooldown, start day and "
-            "how many upcoming cycles exist, whether started or completed issues join the current cycle, and whether unfinished issues move to the next cycle when "
-            "one ends. Needs team admin. Turning cycles off keeps existing cycles."
+            "how many upcoming cycles exist, whether started or completed issues join the current cycle, "
+            "and whether unfinished issues move to the next cycle when one ends. Needs team admin. Turning cycles off keeps existing cycles."
         ),
         scopes=("teams:write",),
         schema=object_schema(
