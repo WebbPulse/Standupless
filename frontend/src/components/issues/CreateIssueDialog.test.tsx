@@ -143,10 +143,16 @@ vi.mock('../../api/planning', () => ({
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
-const server = vi.hoisted(() => ({
+interface FakeDraftServer {
+  viewer: string;
+  drafts: Map<string, Map<string, unknown>>;
+  refuse: Error | null;
+}
+
+const server = vi.hoisted((): FakeDraftServer => ({
   viewer: 'user-1',
   drafts: new Map<string, Map<string, unknown>>(),
-  refuse: null as unknown,
+  refuse: null,
 }));
 
 const saveNewIssueDraft =
