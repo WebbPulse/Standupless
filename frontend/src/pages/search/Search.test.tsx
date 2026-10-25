@@ -621,7 +621,9 @@ describe('recent searches', () => {
     await focusTerm(user);
     await screen.findByRole('listbox', { name: 'Recent searches' });
     await user.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}');
-    const options = screen.getAllByRole('option');
+    const options = within(
+      screen.getByRole('listbox', { name: 'Recent searches' })
+    ).getAllByRole('option');
     expect(options[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', options[0]?.id);
     await user.keyboard('{Enter}');
@@ -670,7 +672,11 @@ describe('recent searches', () => {
       })
     );
 
-    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(
+      within(
+        screen.getByRole('listbox', { name: 'Recent searches' })
+      ).getAllByRole('option')
+    ).toHaveLength(1);
     expect(screen.getByLabelText('Search')).toHaveFocus();
     expect(stored()).toEqual([['token', '', '', '']]);
   });
