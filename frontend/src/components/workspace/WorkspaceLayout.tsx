@@ -410,6 +410,7 @@ const WorkspaceOverlays: React.FC = () => {
                           teams={teams}
                           currentUserId={user?.id}
                           onShowHelp={showHelp}
+                          onLogOut={() => void logout()}
                         />
                         <CommandPalette
                           open={palette.open}

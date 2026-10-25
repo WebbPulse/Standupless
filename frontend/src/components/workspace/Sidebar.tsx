@@ -76,6 +76,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { setTeamOrder } from '../../api/teams';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAuth } from '../../hooks/useAuth';
+import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
@@ -148,6 +149,7 @@ import Menu, {
   MenuItem,
   MenuLabel,
   MenuSeparator,
+  MenuShortcut,
 } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
@@ -975,7 +977,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <MenuItem to={NEW_WORKSPACE_PATH}>Create workspace</MenuItem>
           <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuSeparator />
-          <MenuItem onSelect={() => void logout()}>Log out</MenuItem>
+          <MenuItem onSelect={() => void logout()} textValue="Log out">
+            Log out
+            <MenuShortcut keys={LOG_OUT_KEYS} />
+          </MenuItem>
         </Menu>
         <IconButton
           label="Search issues"

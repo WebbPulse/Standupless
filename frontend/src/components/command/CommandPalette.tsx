@@ -123,6 +123,7 @@ import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
 import { useLeaveWorkspace } from '../../hooks/useLeaveWorkspace';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
+import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
@@ -756,6 +757,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-log-out',
         label: 'Log out',
         keywords: 'sign out signout logout leave',
+        hint: shortcutHint(LOG_OUT_KEYS),
         icon: <LuLogOut className={ICON} />,
         run: onLogOut,
       });
