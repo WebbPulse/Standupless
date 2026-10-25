@@ -130,6 +130,7 @@ class UserRead(BaseModel):
     font_size: FontSizeField = "default"
     theme: Optional[ThemeField] = None
     pointer_cursors: bool = False
+    underline_links: bool = False
     convert_emoticons: bool = True
     activity_filter: ActivityFilterField = "all"
     sidebar_items: dict[SidebarItemField, SidebarVisibilityField] = Field(default_factory=dict)
@@ -194,7 +195,8 @@ class UserPreferencesUpdate(BaseModel):
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
     device. `theme` is the interface theme and `pointer_cursors` whether
-    interactive elements show the pointer cursor. `convert_emoticons` is
+    interactive elements show the pointer cursor. `underline_links` underlines
+    links in rich text at rest. `convert_emoticons` is
     whether the editor turns typed emoticons into emoji. `activity_filter` is
     whether issue activity shows every change or only comments.
     `sidebar_items` moves the named sidebar items, leaving the others where
@@ -226,6 +228,7 @@ class UserPreferencesUpdate(BaseModel):
     font_size: Optional[FontSizeField] = None
     theme: Optional[ThemeField] = None
     pointer_cursors: Optional[bool] = None
+    underline_links: Optional[bool] = None
     convert_emoticons: Optional[bool] = None
     activity_filter: Optional[ActivityFilterField] = None
     sidebar_items: Optional[dict[SidebarItemField, SidebarVisibilityField]] = None
@@ -318,6 +321,7 @@ def _as_read(user: "Any") -> UserRead:
         font_size=_known(user.font_size, FONT_SIZES, "default"),
         theme=user.theme if user.theme in THEMES else None,
         pointer_cursors=bool(user.pointer_cursors),
+        underline_links=bool(user.underline_links),
         convert_emoticons=bool(user.convert_emoticons),
         activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
         sidebar_items=_sidebar_read(user.sidebar_items),
@@ -478,6 +482,7 @@ def update_current_user_preferences(
         "font_size",
         "theme",
         "pointer_cursors",
+        "underline_links",
         "convert_emoticons",
         "activity_filter",
         "sidebar_badge_style",
