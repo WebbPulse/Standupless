@@ -114,15 +114,19 @@ export const DocumentHistoryDialog: React.FC<DocumentHistoryDialogProps> = ({
       auth,
     }
   );
+  const current = useMemo<Row>(
+    () => ({
+      id: CURRENT,
+      title: document.title,
+      body: document.body,
+      editedBy: document.updated_by,
+      editedAt: document.updated_at,
+    }),
+    [document]
+  );
   const rows = useMemo<Row[]>(
     () => [
-      {
-        id: CURRENT,
-        title: document.title,
-        body: document.body,
-        editedBy: document.updated_by,
-        editedAt: document.updated_at,
-      },
+      current,
       ...(data ?? []).map((version) => ({
         id: version.version_id,
         title: version.title,
@@ -131,14 +135,14 @@ export const DocumentHistoryDialog: React.FC<DocumentHistoryDialogProps> = ({
         editedAt: version.edited_at,
       })),
     ],
-    [data, document]
+    [data, current]
   );
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('changes');
   const [restoring, setRestoring] = useState(false);
 
   const selected =
-    rows.find((row) => row.id === chosenId) ?? rows[1] ?? rows[0];
+    rows.find((row) => row.id === chosenId) ?? rows[1] ?? current;
   const isCurrent = selected.id === CURRENT;
   const lines = useMemo(
     () => diffLines(document.body, selected.body),
