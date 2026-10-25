@@ -7,7 +7,8 @@
  * before seeing what a view would show. Views of issues and views of
  * projects sit under their own tabs; New view on the projects tab opens the
  * projects page, which saves its arrangement as a view. Under a team's route
- * the list narrows to the views shared with that team.
+ * the list narrows to the views shared with that team. A third tab lists the
+ * dashboards, which put insights from several teams and views on one page.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -24,7 +25,12 @@ import {
   LuStar,
   LuTrash2,
 } from 'react-icons/lu';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { getInsights } from '../../api/insights';
 import {
   createView,
@@ -50,6 +56,7 @@ import EmptyState from '../../components/ui/empty-state';
 import { Menu, MenuItem, MenuSeparator } from '../../components/ui/menu';
 import { Select } from '../../components/ui/select';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import DashboardList from './DashboardList';
 import ViewIcon from '../../components/views/ViewIcon';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -87,10 +94,14 @@ const SCOPES: { value: ViewListScope; label: string }[] = [
   { value: 'workspace', label: 'Workspace views' },
 ];
 
-/** What a view can list, with its tab wording. */
-const ENTITIES: { value: ViewEntity; label: string }[] = [
+/** A tab of the page: the views of one entity, or the dashboards. */
+type ViewsTab = ViewEntity | 'dashboards';
+
+/** The page's tabs, with their wording. */
+const ENTITIES: { value: ViewsTab; label: string }[] = [
   { value: 'issues', label: 'Issues' },
   { value: 'projects', label: 'Projects' },
+  { value: 'dashboards', label: 'Dashboards' },
 ];
 
 /** The body that copies a view, its filter and whichever display it keeps. */
@@ -198,7 +209,13 @@ export const Views: React.FC = () => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
   const [scope, setScope] = useState<ViewListScope>('all');
-  const [entity, setEntity] = useState<ViewEntity>('issues');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<ViewsTab>(
+    searchParams.get('tab') === 'dashboards' ? 'dashboards' : 'issues'
+  );
+  const [creatingDashboard, setCreatingDashboard] = useState(false);
+  const dashboards = tab === 'dashboards';
+  const entity: ViewEntity = tab === 'projects' ? 'projects' : 'issues';
   const [pending, setPending] = useState<Pending>(null);
   const [deleting, setDeleting] = useState(false);
   const workspaceId = workspace?.id ?? '';
@@ -216,7 +233,7 @@ export const Views: React.FC = () => {
       ),
     {
       intervalMs: LOOKUP_POLL_MS,
-      enabled: workspaceId !== '' && (!scoped || teamId !== ''),
+      enabled: workspaceId !== '' && !dashboards && (!scoped || teamId !== ''),
       queryKey: scoped
         ? viewsKey(workspaceId, 'team', teamId)
         : viewsKey(workspaceId, scope, ''),
@@ -353,13 +370,17 @@ export const Views: React.FC = () => {
           variant="primary"
           className="gap-1.5"
           onClick={() => {
+            if (dashboards) {
+              setCreatingDashboard(true);
+              return;
+            }
             void navigate(
               entity === 'projects' ? newProjectsView : newViewPath(slug)
             );
           }}
         >
           <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
-          New view
+          {dashboards ? 'New dashboard' : 'New view'}
         </Button>
       }
       toolbar={
@@ -374,13 +395,17 @@ export const Views: React.FC = () => {
                 key={option.value}
                 type="button"
                 role="tab"
-                aria-selected={entity === option.value}
+                aria-selected={tab === option.value}
                 onClick={() => {
-                  setEntity(option.value);
+                  setTab(option.value);
+                  setSearchParams(
+                    option.value === 'dashboards' ? { tab: 'dashboards' } : {},
+                    { replace: true }
+                  );
                 }}
                 className={cn(
                   'rounded-md px-2 py-1 text-sm transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
-                  entity === option.value
+                  tab === option.value
                     ? 'bg-raised text-text'
                     : 'text-text-muted hover:text-text'
                 )}
@@ -389,7 +414,7 @@ export const Views: React.FC = () => {
               </button>
             ))}
           </div>
-          {!scoped && (
+          {!scoped && !dashboards && (
             <Select
               aria-label="Which views"
               value={scope}
@@ -409,159 +434,194 @@ export const Views: React.FC = () => {
       }
       flush
     >
-      {error !== null && (
-        <div className="px-4 pt-3 lg:px-6">
-          <ErrorAlert message={errorMessage(error, 'Could not load views.')} />
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading || listed === null || (scoped && team === null) ? (
+      {dashboards ? (
+        scoped && team === null ? (
           <SkeletonRows />
-        ) : listed.length === 0 ? (
-          <EmptyState
-            icon={<LuLayers />}
-            message={
-              scoped
-                ? entity === 'projects'
-                  ? 'No project views are shared with this team yet. Arrange its projects and save them as a team view.'
-                  : 'No views are shared with this team yet. Compose one with New view and file it under this team.'
-                : entity === 'projects'
-                  ? 'No saved views of projects yet. Arrange the projects page and save it as a view.'
-                  : 'No saved views yet. Compose one with New view, or save any issue list as a view.'
-            }
-            className="py-16"
-          />
         ) : (
-          <ul aria-label="Saved views">
-            {listed.map((view) => {
-              const owner = memberNames.get(view.owner_id);
-              return (
-                <li
-                  key={view.view_id}
-                  className="group flex h-row items-center gap-3 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6"
-                >
-                  <Link
-                    to={viewPath(slug, view.view_id)}
-                    data-hover="parent"
-                    className="flex min-w-0 flex-1 items-center gap-3 focus-visible:outline-none focus-visible:underline"
-                  >
-                    <ViewIcon
-                      icon={view.icon ?? null}
-                      color={view.color ?? null}
-                      layout={view.layout}
-                      className="h-4 w-4 shrink-0"
-                    />
-                    <span className="truncate font-medium text-text">
-                      {view.name}
-                    </span>
-                    {view.favorite === true && (
-                      <LuStar
-                        aria-label="Favorite"
-                        className="h-3 w-3 shrink-0 fill-current text-warning"
-                      />
-                    )}
-                    {view.subscribed === true && (
-                      <LuBell
-                        aria-label="Subscribed"
-                        className="h-3 w-3 shrink-0 text-text-muted"
-                      />
-                    )}
-                    {view.description !== null &&
-                      view.description !== undefined && (
-                        <span className="hidden min-w-0 truncate text-xs text-text-faint md:inline">
-                          {view.description}
-                        </span>
-                      )}
-                  </Link>
-                  <Badge
-                    tone="neutral"
-                    className="hidden shrink-0 sm:inline-flex"
-                  >
-                    {location(view)}
-                  </Badge>
-                  <span className="hidden w-36 shrink-0 items-center gap-1.5 truncate text-xs text-text-muted md:flex">
-                    {owner !== undefined && (
-                      <>
-                        <Avatar
-                          name={owner.name}
-                          src={owner.avatar}
-                          size="xs"
-                        />
-                        <span className="truncate">{owner.name}</span>
-                      </>
-                    )}
-                  </span>
-                  {listsProjects(view) ? (
-                    <span className="w-16 shrink-0" />
-                  ) : (
-                    <ViewCount workspaceId={workspaceId} view={view} />
-                  )}
-                  <Menu
-                    label={`Actions for ${view.name}`}
-                    align="end"
-                    trigger={(props) => (
-                      <IconButton
-                        {...props}
-                        label={`Actions for ${view.name}`}
-                        size="sm"
-                        className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
-                      >
-                        <LuEllipsis
-                          aria-hidden="true"
-                          className="h-3.5 w-3.5"
-                        />
-                      </IconButton>
-                    )}
-                  >
-                    <MenuItem
-                      onSelect={() => {
-                        setPending({ kind: 'rename', view });
-                      }}
+          <DashboardList
+            workspaceId={workspaceId}
+            slug={slug}
+            teamId={teamId}
+            teams={teams}
+            canShareWorkspace={workspace?.role !== 'guest'}
+            creating={creatingDashboard}
+            onCreated={() => {
+              setCreatingDashboard(false);
+            }}
+          />
+        )
+      ) : (
+        <>
+          {error !== null && (
+            <div className="px-4 pt-3 lg:px-6">
+              <ErrorAlert
+                message={errorMessage(error, 'Could not load views.')}
+              />
+            </div>
+          )}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {isLoading || listed === null || (scoped && team === null) ? (
+              <SkeletonRows />
+            ) : listed.length === 0 ? (
+              <EmptyState
+                icon={<LuLayers />}
+                message={
+                  scoped
+                    ? entity === 'projects'
+                      ? 'No project views are shared with this team yet. Arrange its projects and save them as a team view.'
+                      : 'No views are shared with this team yet. Compose one with New view and file it under this team.'
+                    : entity === 'projects'
+                      ? 'No saved views of projects yet. Arrange the projects page and save it as a view.'
+                      : 'No saved views yet. Compose one with New view, or save any issue list as a view.'
+                }
+                className="py-16"
+              />
+            ) : (
+              <ul aria-label="Saved views">
+                {listed.map((view) => {
+                  const owner = memberNames.get(view.owner_id);
+                  return (
+                    <li
+                      key={view.view_id}
+                      className="group flex h-row items-center gap-3 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6"
                     >
-                      <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
-                      Rename
-                    </MenuItem>
-                    <MenuItem onSelect={() => void duplicate(view)}>
-                      <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
-                      Duplicate
-                    </MenuItem>
-                    <MenuItem onSelect={() => void toggleFavorite(view)}>
-                      <LuStar aria-hidden="true" className="h-3.5 w-3.5" />
-                      {view.favorite === true
-                        ? 'Remove from favorites'
-                        : 'Add to favorites'}
-                    </MenuItem>
-                    {!listsProjects(view) && (
-                      <MenuItem onSelect={() => void toggleSubscription(view)}>
-                        {view.subscribed === true ? (
-                          <LuBellOff
+                      <Link
+                        to={viewPath(slug, view.view_id)}
+                        data-hover="parent"
+                        className="flex min-w-0 flex-1 items-center gap-3 focus-visible:outline-none focus-visible:underline"
+                      >
+                        <ViewIcon
+                          icon={view.icon ?? null}
+                          color={view.color ?? null}
+                          layout={view.layout}
+                          className="h-4 w-4 shrink-0"
+                        />
+                        <span className="truncate font-medium text-text">
+                          {view.name}
+                        </span>
+                        {view.favorite === true && (
+                          <LuStar
+                            aria-label="Favorite"
+                            className="h-3 w-3 shrink-0 fill-current text-warning"
+                          />
+                        )}
+                        {view.subscribed === true && (
+                          <LuBell
+                            aria-label="Subscribed"
+                            className="h-3 w-3 shrink-0 text-text-muted"
+                          />
+                        )}
+                        {view.description !== null &&
+                          view.description !== undefined && (
+                            <span className="hidden min-w-0 truncate text-xs text-text-faint md:inline">
+                              {view.description}
+                            </span>
+                          )}
+                      </Link>
+                      <Badge
+                        tone="neutral"
+                        className="hidden shrink-0 sm:inline-flex"
+                      >
+                        {location(view)}
+                      </Badge>
+                      <span className="hidden w-36 shrink-0 items-center gap-1.5 truncate text-xs text-text-muted md:flex">
+                        {owner !== undefined && (
+                          <>
+                            <Avatar
+                              name={owner.name}
+                              src={owner.avatar}
+                              size="xs"
+                            />
+                            <span className="truncate">{owner.name}</span>
+                          </>
+                        )}
+                      </span>
+                      {listsProjects(view) ? (
+                        <span className="w-16 shrink-0" />
+                      ) : (
+                        <ViewCount workspaceId={workspaceId} view={view} />
+                      )}
+                      <Menu
+                        label={`Actions for ${view.name}`}
+                        align="end"
+                        trigger={(props) => (
+                          <IconButton
+                            {...props}
+                            label={`Actions for ${view.name}`}
+                            size="sm"
+                            className="opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
+                          >
+                            <LuEllipsis
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5"
+                            />
+                          </IconButton>
+                        )}
+                      >
+                        <MenuItem
+                          onSelect={() => {
+                            setPending({ kind: 'rename', view });
+                          }}
+                        >
+                          <LuPencil
                             aria-hidden="true"
                             className="h-3.5 w-3.5"
                           />
-                        ) : (
-                          <LuBell aria-hidden="true" className="h-3.5 w-3.5" />
+                          Rename
+                        </MenuItem>
+                        <MenuItem onSelect={() => void duplicate(view)}>
+                          <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
+                          Duplicate
+                        </MenuItem>
+                        <MenuItem onSelect={() => void toggleFavorite(view)}>
+                          <LuStar aria-hidden="true" className="h-3.5 w-3.5" />
+                          {view.favorite === true
+                            ? 'Remove from favorites'
+                            : 'Add to favorites'}
+                        </MenuItem>
+                        {!listsProjects(view) && (
+                          <MenuItem
+                            onSelect={() => void toggleSubscription(view)}
+                          >
+                            {view.subscribed === true ? (
+                              <LuBellOff
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5"
+                              />
+                            ) : (
+                              <LuBell
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5"
+                              />
+                            )}
+                            {view.subscribed === true
+                              ? 'Unsubscribe'
+                              : 'Subscribe'}
+                            <SubscriberCount count={view.subscriber_count} />
+                          </MenuItem>
                         )}
-                        {view.subscribed === true ? 'Unsubscribe' : 'Subscribe'}
-                        <SubscriberCount count={view.subscriber_count} />
-                      </MenuItem>
-                    )}
-                    <MenuSeparator />
-                    <MenuItem
-                      danger
-                      onSelect={() => {
-                        setPending({ kind: 'delete', view });
-                      }}
-                    >
-                      <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                      Delete
-                    </MenuItem>
-                  </Menu>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+                        <MenuSeparator />
+                        <MenuItem
+                          danger
+                          onSelect={() => {
+                            setPending({ kind: 'delete', view });
+                          }}
+                        >
+                          <LuTrash2
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5"
+                          />
+                          Delete
+                        </MenuItem>
+                      </Menu>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
       {pending?.kind === 'rename' && (
         <SaveViewDialog
           open

@@ -24,6 +24,25 @@ export type InsightsQuery = Omit<IssueListFilters, 'sort'> & {
 export const insightsPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/views/insights`;
 
+/** A breakdown body with the fields an older server might omit filled in. */
+export const normalizeInsights = (
+  body: Partial<InsightsRead> | null | undefined,
+  groupBy: InsightDimension
+): InsightsRead => ({
+  team_ids: Array.isArray(body?.team_ids) ? body.team_ids : [],
+  view_id: body?.view_id ?? null,
+  group_by: body?.group_by ?? groupBy,
+  segment_by: body?.segment_by ?? null,
+  measure: body?.measure ?? 'count',
+  total: body?.total ?? 0,
+  issue_count: body?.issue_count ?? 0,
+  groups: Array.isArray(body?.groups) ? body.groups : [],
+  truncated: body?.truncated === true,
+  row_cap: body?.row_cap ?? 0,
+  durations: body?.durations ?? null,
+  points: Array.isArray(body?.points) ? body.points : [],
+});
+
 /** Reads one breakdown, filling the fields an older server might omit. */
 export const getInsights = async (
   workspaceId: string,
@@ -36,17 +55,5 @@ export const getInsights = async (
       ? { query: { ...query } }
       : { query: { ...query }, signal }
   );
-  const body = response.data;
-  return {
-    team_ids: Array.isArray(body?.team_ids) ? body.team_ids : [],
-    view_id: body?.view_id ?? null,
-    group_by: body?.group_by ?? query.group_by,
-    segment_by: body?.segment_by ?? null,
-    measure: body?.measure ?? 'count',
-    total: body?.total ?? 0,
-    issue_count: body?.issue_count ?? 0,
-    groups: Array.isArray(body?.groups) ? body.groups : [],
-    truncated: body?.truncated === true,
-    row_cap: body?.row_cap ?? 0,
-  };
+  return normalizeInsights(response.data, query.group_by);
 };

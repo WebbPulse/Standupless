@@ -271,6 +271,33 @@ export const viewsKey = (
   teamId: string
 ): QueryKey => ['views', workspaceId, scope, teamId];
 
+/** One workspace's dashboards, as one list scope and team narrow them. */
+export const dashboardsKey = (
+  workspaceId: string,
+  scope: string,
+  teamId: string
+): QueryKey => ['dashboards', workspaceId, scope, teamId];
+
+/** One dashboard read by id. */
+export const dashboardKey = (
+  workspaceId: string,
+  dashboardId: string
+): QueryKey => ['dashboard', workspaceId, dashboardId];
+
+/** One widget's breakdown, read again when the dashboard changes. */
+export const dashboardWidgetKey = (
+  workspaceId: string,
+  dashboardId: string,
+  widgetId: string,
+  updatedAt: string
+): QueryKey => [
+  'dashboard-widget',
+  workspaceId,
+  dashboardId,
+  widgetId,
+  updatedAt,
+];
+
 /** How many issues one saved view selects, read again when the view changes. */
 export const viewCountKey = (
   workspaceId: string,
