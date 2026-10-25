@@ -489,6 +489,7 @@ class CycleSettingsUpdate(BaseModel):
     start_weekday: Optional[int] = Field(default=None, ge=0, le=6)
     upcoming_count: Optional[int] = Field(default=None, ge=1, le=MAX_UPCOMING_CYCLES)
     auto_add_started: Optional[bool] = None
+    auto_add_completed: Optional[bool] = None
     move_unfinished: Optional[bool] = None
 
 
@@ -502,6 +503,7 @@ class CycleSettingsRead(BaseModel):
     start_weekday: int
     upcoming_count: int
     auto_add_started: bool
+    auto_add_completed: bool
     move_unfinished: bool
     updated_at: Optional[datetime] = None
 
@@ -516,6 +518,7 @@ class CycleSettingsRead(BaseModel):
             start_weekday=settings.start_weekday,
             upcoming_count=settings.upcoming_count,
             auto_add_started=settings.auto_add_started,
+            auto_add_completed=settings.auto_add_completed,
             move_unfinished=settings.move_unfinished,
             updated_at=settings.updated_at,
         )

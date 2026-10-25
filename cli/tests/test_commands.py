@@ -627,6 +627,7 @@ CYCLE_SETTINGS = {
     "start_weekday": 0,
     "upcoming_count": 2,
     "auto_add_started": True,
+    "auto_add_completed": False,
     "move_unfinished": True,
 }
 
@@ -649,6 +650,17 @@ def test_cycle_settings_turns_moving_unfinished_issues_off(runner: CliRunner, ap
     assert result.exit_code == 0, result.output
     assert json.loads(patched.calls[0].request.content) == {"move_unfinished": False}
     assert json.loads(result.stdout)["move_unfinished"] is False
+
+
+def test_cycle_settings_turns_auto_adding_completed_issues_on(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The completed auto-add flag patches only that setting."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1/cycle-settings").respond(
+        json={**CYCLE_SETTINGS, "auto_add_completed": True}
+    )
+    result = invoke(runner, "cycle", "settings", "-t", "ENG", "--auto-add-completed", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"auto_add_completed": True}
+    assert json.loads(result.stdout)["auto_add_completed"] is True
 
 
 def test_cycle_list_and_current(runner: CliRunner, api: respx.MockRouter) -> None:

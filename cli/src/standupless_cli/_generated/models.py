@@ -587,6 +587,7 @@ class CycleRead(TypedDict):
 
 
 class CycleSettingsRead(TypedDict):
+    auto_add_completed: bool
     auto_add_started: bool
     cooldown_weeks: int
     duration_weeks: int
@@ -599,6 +600,7 @@ class CycleSettingsRead(TypedDict):
 
 
 class CycleSettingsUpdate(TypedDict):
+    auto_add_completed: NotRequired[bool | None]
     auto_add_started: NotRequired[bool | None]
     cooldown_weeks: NotRequired[int | None]
     duration_weeks: NotRequired[int | None]

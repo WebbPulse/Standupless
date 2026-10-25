@@ -72,6 +72,7 @@ const settings = (
   start_weekday: 0,
   upcoming_count: 2,
   auto_add_started: true,
+  auto_add_completed: false,
   move_unfinished: true,
   updated_at: null,
   ...over,
@@ -210,6 +211,24 @@ describe('the cycles section', () => {
     await waitFor(() => {
       expect(updateCycleSettings).toHaveBeenCalledWith({
         move_unfinished: false,
+      });
+    });
+  });
+
+  it('turns auto-adding completed issues on', async () => {
+    getCycleSettings.mockResolvedValue(settings({ enabled: true }));
+    renderSection();
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Auto-add completed issues',
+    });
+    expect(toggle).not.toBeChecked();
+    await userEvent.click(toggle);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateCycleSettings).toHaveBeenCalledWith({
+        auto_add_completed: true,
       });
     });
   });

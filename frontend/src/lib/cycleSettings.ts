@@ -17,6 +17,7 @@ export const DEFAULT_CYCLE_SCHEDULE: CycleSchedule = {
   start_weekday: 0,
   upcoming_count: 2,
   auto_add_started: true,
+  auto_add_completed: false,
   move_unfinished: true,
 };
 
@@ -48,6 +49,7 @@ export const scheduleOf = (settings: CycleSettingsRead): CycleSchedule => ({
   start_weekday: settings.start_weekday,
   upcoming_count: settings.upcoming_count,
   auto_add_started: settings.auto_add_started,
+  auto_add_completed: settings.auto_add_completed ?? false,
   move_unfinished: settings.move_unfinished,
 });
 
