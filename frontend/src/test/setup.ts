@@ -40,7 +40,7 @@ import { clearUndo } from '../lib/undo';
 configure({ asyncUtilTimeout: 5000 });
 
 vi.mock('../hooks/useOffline', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../hooks/useOffline')>()),
+  ...(await importOriginal<Record<string, unknown>>()),
   useOffline: () => false,
   useWritable: (permitted: boolean) => permitted,
 }));
