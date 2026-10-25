@@ -67,6 +67,7 @@ import {
 import { isTeamKey } from '../../lib/issueDisplay';
 import { isSafeUrl } from '../../lib/markdown';
 import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
+import { answersToSlug } from '../../lib/workspaceSlug';
 import type { CommentAnchor } from '../../types/Api';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
@@ -445,11 +446,11 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           return known !== null && isTeamKey(key, known);
         },
         isReferenceLink: (href) => {
-          const slug = lookup.current.workspace?.slug;
-          if (slug === undefined) return false;
+          const workspace = lookup.current.workspace;
+          if (workspace === null) return false;
           if (linkedPullRequest(href) !== null) return true;
           const target = linkedReference(href, currentOrigin());
-          return target?.slug === slug;
+          return target !== null && answersToSlug(workspace, target.slug);
         },
       }),
     [placeholder]

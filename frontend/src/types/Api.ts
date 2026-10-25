@@ -311,6 +311,8 @@ export interface WorkspaceRead {
   id: string;
   name: string;
   slug: string;
+  /** Earlier slugs that still redirect to this workspace, oldest first. */
+  retired_slugs?: string[];
   plan: string;
   created_at: string;
   /** The caller's role. Present only on a response to a member. */
@@ -587,8 +589,21 @@ export interface WorkspaceCreate {
 }
 
 /** The editable fields on a workspace. */
+/** Why a slug is unavailable to the workspace. */
+export type SlugUnavailableReason =
+  'invalid' | 'reserved' | 'taken' | 'current';
+
+/** Whether a workspace could move to a slug, and why not when it cannot. */
+export interface SlugAvailabilityRead {
+  slug: string;
+  available: boolean;
+  reason?: SlugUnavailableReason | null;
+}
+
 export interface WorkspaceUpdate {
   name?: string;
+  /** A new URL slug; links with the old slug keep redirecting here. */
+  slug?: string;
   /** The accent as #rrggbb, or null to return to the Standupless default. */
   accent_color?: string | null;
   project_update_interval_days?: ProjectUpdateInterval;

@@ -6,6 +6,13 @@ rejects a slug already taken and the condition on `id` rejects the id collision;
 a simultaneous pair of creates on one slug is the residual race, and the loser is
 reported as a conflict rather than silently overwriting.
 
+A workspace's slug can change. The retired slug stays in the same table as an
+alias row (`id = alias#<slug>`) carrying the same indexed `slug`, so the index
+that enforces uniqueness also keeps a retired slug unavailable to every other
+workspace, and a lookup by the old slug still lands on the workspace. Every other
+table is keyed by workspace id, never by slug, so no row elsewhere is rewritten
+when a slug changes. Scans of this table skip alias rows by their `alias_of`.
+
 This is the one repository whose reads are keyed by workspace id rather than
 taking `workspace_id` first, because the id is the partition key.
 """
@@ -19,7 +26,7 @@ from typing import Any, Mapping, Optional
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
-from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
+from webbpulse.dynamodb import ConditionFailed, Repository, TransactionCanceled, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import WORKSPACES
@@ -90,6 +97,58 @@ SLUG_INDEX = "slug-index"
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]{3,40}$")
 
+ALIAS_PREFIX = "alias#"
+"""The id prefix of a row that holds a retired slug for the workspace in its `alias_of`."""
+
+RESERVED_SLUGS = frozenset(
+    {
+        "admin",
+        "api",
+        "app",
+        "apps",
+        "assets",
+        "auth",
+        "billing",
+        "docs",
+        "email",
+        "help",
+        "invite",
+        "invites",
+        "join",
+        "login",
+        "logout",
+        "mail",
+        "new",
+        "null",
+        "oauth",
+        "register",
+        "root",
+        "scim",
+        "settings",
+        "sign-in",
+        "sign-up",
+        "signin",
+        "signup",
+        "sso",
+        "standupless",
+        "static",
+        "status",
+        "support",
+        "system",
+        "undefined",
+        "workspace",
+        "workspaces",
+        "www",
+    }
+)
+"""Slugs no workspace may take, on creation or on a change, because they read as product pages."""
+
+SLUG_CHANGE_LIMIT = 3
+"""How many times a workspace's slug may change within `SLUG_CHANGE_WINDOW`."""
+
+SLUG_CHANGE_WINDOW = timedelta(days=1)
+"""The rolling window `SLUG_CHANGE_LIMIT` counts over."""
+
 ACCENT_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
 
 DELETION_GRACE_DAYS = 14
@@ -113,6 +172,24 @@ def new_workspace_id() -> str:
 def is_valid_slug(slug: str) -> bool:
     """Whether this slug is the lowercase, hyphenated form the contract requires."""
     return bool(SLUG_PATTERN.match(slug))
+
+
+def is_reserved_slug(slug: str) -> bool:
+    """Whether this slug is one the product keeps for itself."""
+    return slug.strip().lower() in RESERVED_SLUGS
+
+
+def slug_alias_id(slug: str) -> str:
+    """The id of the alias row that holds a retired slug."""
+    return f"{ALIAS_PREFIX}{slug}"
+
+
+class SlugTaken(ConditionFailed):
+    """Another workspace holds the slug now or held it before."""
+
+
+class SlugChangeLimited(Exception):
+    """The workspace changed its slug `SLUG_CHANGE_LIMIT` times within the window already."""
 
 
 def normalize_accent_color(value: str) -> Optional[str]:
@@ -186,6 +263,23 @@ class Workspace(BaseModel):
     team_creation_permission: str = DEFAULT_TEAM_CREATION_PERMISSION
     third_party_app_approvals: bool = False
     features: dict[str, bool] = Field(default_factory=dict)
+    retired_slugs: list[str] = Field(default_factory=list)
+    slug_changed_at: list[datetime] = Field(default_factory=list)
+
+    def answers_to(self, slug: str) -> bool:
+        """Whether a link carrying this slug means this workspace, by its current or a retired slug."""
+        normalized = slug.strip().lower()
+        return normalized == self.slug or normalized in self.retired_slugs
+
+    def recent_slug_changes(self, now: datetime | None = None) -> list[datetime]:
+        """The slug changes inside the rate limit's window, oldest first."""
+        cutoff = (now or utc_now()) - SLUG_CHANGE_WINDOW
+        recent = []
+        for moment in self.slug_changed_at:
+            stamped = moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+            if stamped > cutoff:
+                recent.append(stamped)
+        return sorted(recent)
 
     def feature_enabled(self, feature: str) -> bool:
         """Whether the area is on, which it is unless an admin turned it off."""
@@ -227,32 +321,136 @@ class WorkspaceRepository:
         self._repository = build_repository(WORKSPACES, repository)
 
     def get(self, workspace_id: str) -> Workspace | None:
-        """The workspace with this id, or `None`."""
-        if not workspace_id:
+        """The workspace with this id, or `None`, never an alias row."""
+        if not workspace_id or workspace_id.startswith(ALIAS_PREFIX):
             return None
         item = self._repository.get({"id": workspace_id})
         return _as_workspace(item) if item is not None else None
 
-    def get_by_slug(self, slug: str) -> Workspace | None:
-        """The workspace holding this slug, or `None`, through `slug-index`."""
+    def _slug_holders(self, slug: str) -> list[Mapping[str, Any]]:
+        """Every row, workspace or alias, holding this slug, through `slug-index`."""
         normalized = slug.strip().lower()
         if not normalized:
-            return None
-        page = self._repository.query(Key("slug").eq(normalized), index_name=SLUG_INDEX, limit=1)
-        if not page.items:
-            return None
-        return _as_workspace(page.items[0])
+            return []
+        return list(self._repository.iter_query(Key("slug").eq(normalized), index_name=SLUG_INDEX, max_items=10))
+
+    def get_by_slug(self, slug: str) -> Workspace | None:
+        """The workspace holding this slug now or once holding it, or `None`.
+
+        A current holder wins over an alias, so a retired slug only resolves
+        through its alias row when no workspace holds it today.
+        """
+        holders = self._slug_holders(slug)
+        for item in holders:
+            if not str(item.get("id", "")).startswith(ALIAS_PREFIX):
+                return _as_workspace(item)
+        for item in holders:
+            target = item.get("alias_of")
+            if target:
+                return self.get(str(target))
+        return None
+
+    def slug_holder(self, slug: str) -> str | None:
+        """The id of the workspace that holds or once held this slug, or `None` when it is free."""
+        for item in self._slug_holders(slug):
+            if str(item.get("id", "")).startswith(ALIAS_PREFIX):
+                target = item.get("alias_of")
+                if target:
+                    return str(target)
+            else:
+                return str(item["id"])
+        return None
 
     def create(self, workspace: Workspace) -> Workspace:
         """Store a new workspace, raising `ConditionFailed` when the slug is taken.
 
-        The index read rejects a slug already in use and the conditional put rejects
-        an id collision, which together are the uniqueness the contract promises.
+        The index read rejects a slug already in use or retired by another
+        workspace and the conditional put rejects an id collision, which together
+        are the uniqueness the contract promises.
         """
-        if self.get_by_slug(workspace.slug) is not None:
-            raise ConditionFailed(WORKSPACES.suffix, "slug is already taken", {"slug": workspace.slug})
+        if self._slug_holders(workspace.slug):
+            raise SlugTaken(WORKSPACES.suffix, "slug is already taken", {"slug": workspace.slug})
         self._repository.put(_without_unset_lifecycle(as_item(workspace)), condition=Attr("id").not_exists())
         return workspace
+
+    def change_slug(self, workspace_id: str, new_slug: str, *, now: datetime | None = None) -> Workspace | None:
+        """Move a workspace to `new_slug`, keeping the old slug as an alias of it.
+
+        One transaction updates the workspace row, writes the alias for the old
+        slug and, when the workspace is taking back a slug it retired, deletes
+        that alias. The update is conditioned on the slug it read, so two changes
+        racing cannot both land. Returns `None` when the workspace does not exist
+        or is being purged, raises `SlugTaken` when another workspace holds or
+        once held `new_slug`, and `SlugChangeLimited` past the rate limit.
+        """
+        workspace = self.get(workspace_id)
+        if workspace is None or workspace.is_purging:
+            return None
+        new_slug = new_slug.strip().lower()
+        if new_slug == workspace.slug:
+            return workspace
+        moment = now or utc_now()
+        recent = workspace.recent_slug_changes(moment)
+        if len(recent) >= SLUG_CHANGE_LIMIT:
+            raise SlugChangeLimited(workspace_id)
+
+        reclaim = False
+        for item in self._slug_holders(new_slug):
+            if item.get("alias_of") == workspace_id:
+                reclaim = True
+                continue
+            raise SlugTaken(WORKSPACES.suffix, "slug is already taken", {"slug": new_slug})
+
+        retired = [slug for slug in workspace.retired_slugs if slug not in (new_slug, workspace.slug)]
+        retired.append(workspace.slug)
+        changes = [*recent, moment]
+        actions: list[dict[str, Any]] = [
+            self._repository.update_action(
+                {"id": workspace_id},
+                update_expression="SET #slug = :slug, #retired = :retired, #changed = :changed",
+                expression_names={"#slug": "slug", "#retired": "retired_slugs", "#changed": "slug_changed_at"},
+                expression_values={
+                    ":slug": new_slug,
+                    ":retired": retired,
+                    ":changed": [stamp.isoformat() for stamp in changes],
+                },
+                condition=Attr("slug").eq(workspace.slug) & Attr("purging_at").not_exists(),
+            ),
+            self._repository.put_action(
+                {
+                    "id": slug_alias_id(workspace.slug),
+                    "slug": workspace.slug,
+                    "alias_of": workspace_id,
+                    "retired_at": moment.isoformat(),
+                },
+                condition=Attr("id").not_exists() | Attr("alias_of").eq(workspace_id),
+            ),
+        ]
+        if reclaim:
+            actions.append(
+                self._repository.delete_action(
+                    {"id": slug_alias_id(new_slug)},
+                    condition=Attr("alias_of").eq(workspace_id),
+                )
+            )
+        try:
+            self._repository.transact_write(actions)
+        except TransactionCanceled as exc:
+            if not exc.conditional_check_failed:
+                raise
+            raise SlugTaken(WORKSPACES.suffix, "slug is already taken", {"slug": new_slug}) from exc
+        return workspace.model_copy(update={"slug": new_slug, "retired_slugs": retired, "slug_changed_at": changes})
+
+    def delete_aliases(self, workspace: Workspace) -> int:
+        """Remove the alias row of every slug this workspace retired, freeing them, returning how many went."""
+        removed = 0
+        for slug in workspace.retired_slugs:
+            try:
+                self._repository.delete({"id": slug_alias_id(slug)}, condition=Attr("alias_of").eq(workspace.id))
+            except ConditionFailed:
+                continue
+            removed += 1
+        return removed
 
     def rename(self, workspace_id: str, name: str) -> Workspace | None:
         """Change a workspace's display name, or `None` when it does not exist."""
@@ -413,9 +611,11 @@ class WorkspaceRepository:
         return _as_workspace(item) if item is not None else None
 
     def delete(self, workspace_id: str) -> bool:
-        """Hard-delete one workspace row, reporting whether one was there."""
-        if self.get(workspace_id) is None:
+        """Hard-delete one workspace row and its slug aliases, reporting whether one was there."""
+        workspace = self.get(workspace_id)
+        if workspace is None:
             return False
+        self.delete_aliases(workspace)
         self._repository.delete({"id": workspace_id})
         return True
 
@@ -498,7 +698,9 @@ class WorkspaceRepository:
         A scan, run by the hourly sweep alone; only rows carrying `purge_after`
         come back, and the table holds one row per tenant.
         """
-        items = self._repository.iter_scan(filter_expression=Attr("purge_after").exists())
+        items = self._repository.iter_scan(
+            filter_expression=Attr("purge_after").exists() & Attr("alias_of").not_exists()
+        )
         return [_as_workspace(item) for item in items]
 
     def list_active(self) -> list[Workspace]:
@@ -507,7 +709,9 @@ class WorkspaceRepository:
         A scan, run by the project update reminder sweep alone; the table holds
         one row per tenant.
         """
-        items = self._repository.iter_scan(filter_expression=Attr("purge_after").not_exists())
+        items = self._repository.iter_scan(
+            filter_expression=Attr("purge_after").not_exists() & Attr("alias_of").not_exists()
+        )
         return [_as_workspace(item) for item in items]
 
     def begin_purge(self, workspace_id: str, member_ids: list[str], *, now: datetime | None = None) -> bool:
@@ -534,7 +738,14 @@ class WorkspaceRepository:
         return True
 
     def delete_purged(self, workspace_id: str) -> bool:
-        """Remove the row once its purge is finished, only while the purge mark is on it."""
+        """Remove the row once its purge is finished, only while the purge mark is on it.
+
+        The aliases of its retired slugs go first, so every slug it held is free
+        again once the workspace is gone.
+        """
+        workspace = self.get(workspace_id)
+        if workspace is not None and workspace.is_purging:
+            self.delete_aliases(workspace)
         try:
             self._repository.delete({"id": workspace_id}, condition=Attr("purging_at").exists())
         except ConditionFailed:
@@ -547,7 +758,11 @@ class WorkspaceRepository:
         One `BatchGetItem` behind the workspace list, so showing a caller their
         memberships costs one call rather than one per membership.
         """
-        wanted = [workspace_id for workspace_id in dict.fromkeys(workspace_ids) if workspace_id]
+        wanted = [
+            workspace_id
+            for workspace_id in dict.fromkeys(workspace_ids)
+            if workspace_id and not workspace_id.startswith(ALIAS_PREFIX)
+        ]
         if not wanted:
             return {}
         items = self._repository.batch_get([{"id": workspace_id} for workspace_id in wanted])

@@ -1215,6 +1215,31 @@ def test_workspace_update_resets_the_accent(runner: CliRunner, api: respx.MockRo
     assert json.loads(result.stdout)["accent_color"] is None
 
 
+def test_workspace_update_changes_the_slug(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The new slug goes to the workspace PATCH, and the answer names it."""
+    moved = {**WORKSPACE, "slug": "acme-labs", "retired_slugs": ["acme"]}
+    route = api.patch(f"/api/workspaces/{WS}").respond(json=moved)
+    result = invoke(runner, "workspace", "update", "--slug", "acme-labs")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"slug": "acme-labs"}
+    assert "acme-labs" in result.output
+
+
+def test_a_retired_slug_still_names_the_workspace(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config or env naming the slug a workspace gave up still resolves to it."""
+    monkeypatch.setenv("STANDUPLESS_WORKSPACE", "acme")
+    api.get("/api/workspaces").respond(
+        json={"workspaces": [{**WORKSPACE, "slug": "acme-labs", "retired_slugs": ["acme"]}]}
+    )
+    route = api.get(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "slug": "acme-labs"})
+    result = invoke(runner, "workspace", "view")
+    assert result.exit_code == 0, result.output
+    assert route.called
+    assert "acme-labs" in result.stdout
+
+
 @pytest.mark.parametrize(
     "args", [(), ("--accent-color", "#123456", "--reset-accent")], ids=["nothing", "both accent flags"]
 )

@@ -35,6 +35,7 @@ import type {
   MemberUpdate,
   ScimSettingsRead,
   ScimTokenCreated,
+  SlugAvailabilityRead,
   SsoConnectionUpdate,
   SsoDomainRead,
   SsoJoinRead,
@@ -418,6 +419,26 @@ export const updateWorkspace = async (
   const response = await apiClient.patch<WorkspaceRead>(
     workspacePath(workspaceId),
     body
+  );
+  return response.data;
+};
+
+/** The slug availability path the workspace URL field checks as an admin types. */
+export const slugAvailabilityPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/slug-availability`;
+
+/**
+ * Asks whether the workspace could move to `slug`, answering why not when it
+ * cannot, so the URL field can say so before the admin saves.
+ */
+export const checkSlugAvailability = async (
+  workspaceId: string,
+  slug: string,
+  signal?: AbortSignal
+): Promise<SlugAvailabilityRead> => {
+  const response = await apiClient.get<SlugAvailabilityRead>(
+    slugAvailabilityPath(workspaceId),
+    signal === undefined ? { query: { slug } } : { query: { slug }, signal }
   );
   return response.data;
 };

@@ -2841,6 +2841,12 @@ class SlackThread(TypedDict):
     thread_ts: str
 
 
+class SlugAvailabilityRead(TypedDict):
+    available: bool
+    reason: NotRequired[Literal["invalid", "reserved", "taken", "current"] | None]
+    slug: str
+
+
 class SourceTeamMappingRead(TypedDict):
     key: str
     name: str
@@ -4078,6 +4084,7 @@ class WorkspaceRead(TypedDict):
     plan: str
     project_update_interval_days: NotRequired[int]
     purge_after: NotRequired[str | None]
+    retired_slugs: NotRequired[list[str]]
     role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
     slug: str
     team_creation_permission: NotRequired[Literal["admins", "members"]]
@@ -4098,6 +4105,7 @@ class WorkspaceUpdate(TypedDict):
     invite_permission: NotRequired[Literal["admins", "members"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
+    slug: NotRequired[str | None]
     team_creation_permission: NotRequired[Literal["admins", "members"] | None]
     third_party_app_approvals: NotRequired[bool | None]
 
