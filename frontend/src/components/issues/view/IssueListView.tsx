@@ -65,6 +65,7 @@ import {
   filterValuesFor,
   groupIssues,
   hiddenColumnKey,
+  manualEdgeKeys,
   manualMoveKeys,
   narrowFilters,
   parentsIn,
@@ -595,6 +596,38 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     for (const { id, sort_order } of placements) update([id], { sort_order });
   };
 
+  const reorderToEdge = (edge: 'top' | 'bottom'): void => {
+    if (focused === null) return;
+    if (state.ordering !== 'manual') {
+      showToast('Switch ordering to Manual to move issues', 'info');
+      return;
+    }
+    const ids =
+      liveSelected.size > 0 ? targets.map((issue) => issue.id) : [focused];
+    const keys = new Map<string, string>();
+    const handled = new Set<string>();
+    for (const id of ids) {
+      if (handled.has(id)) continue;
+      const siblings = siblingsOf(id);
+      const movers = siblings.filter((issue) => ids.includes(issue.id));
+      for (const issue of movers) handled.add(issue.id);
+      handled.add(id);
+      const placements = manualEdgeKeys(
+        siblings,
+        movers.map((issue) => issue.id),
+        edge,
+        state.reverse
+      );
+      for (const { id: placed, sort_order } of placements ?? [])
+        keys.set(placed, sort_order);
+    }
+    if (keys.size === 0) return;
+    update([...keys.keys()], (issue) => {
+      const sort_order = keys.get(issue.id);
+      return sort_order === undefined ? null : { sort_order };
+    });
+  };
+
   const focusedNode = focused === null ? undefined : tree.get(focused);
   const onTree =
     board === null &&
@@ -693,6 +726,24 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: canReorder,
     handler: () => {
       reorder(1);
+    },
+  });
+  useShortcut({
+    keys: 'alt+shift+arrowup',
+    label: 'Move issue to top',
+    group: 'List',
+    enabled: canReorder,
+    handler: () => {
+      reorderToEdge('top');
+    },
+  });
+  useShortcut({
+    keys: 'alt+shift+arrowdown',
+    label: 'Move issue to bottom',
+    group: 'List',
+    enabled: canReorder,
+    handler: () => {
+      reorderToEdge('bottom');
     },
   });
   const onBoard = board !== null && hasRows;

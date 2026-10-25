@@ -7,7 +7,8 @@
  * it, and its status, priority and assignee chips open the shared pickers,
  * writing through the optimistic layer so each change can be undone.
  *
- * Rows drag into a manual order, or move a step with Alt+Up and Alt+Down; j
+ * Rows drag into a manual order, move a step with Alt+Up and Alt+Down, or go
+ * to the top or bottom with Alt+Shift+Up and Alt+Shift+Down; j
  * and k move focus between rows, and s, p and a open the focused row's
  * pickers rather than the parent's. The Display button sets the ordering and
  * whether completed sub-issues show, remembered for the viewer; hidden ones
@@ -32,7 +33,7 @@ import { useTriageOn } from '../../hooks/useTriageTeams';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
 import { errorMessage } from '../../lib/errors';
-import { manualMoveKeys } from '../../lib/issueView';
+import { manualEdgeKeys, manualMoveKeys } from '../../lib/issueView';
 import type { Assignable } from '../../lib/issuePeople';
 import { issuePath } from '../../lib/paths';
 import { activityKey, childrenKey } from '../../lib/queryKeys';
@@ -509,6 +510,22 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
     if (placements !== null) place(placements);
   };
 
+  const reorderToEdge = (id: string, edge: 'top' | 'bottom'): void => {
+    if (display.ordering !== 'manual') {
+      showToast('Switch ordering to Manual to move sub-issues', 'info');
+      return;
+    }
+    const placements = manualEdgeKeys(visible, [id], edge);
+    if (placements === null) return;
+    const keys = new Map(
+      placements.map((placement) => [placement.id, placement.sort_order])
+    );
+    update([...keys.keys()], (issue) => {
+      const sort_order = keys.get(issue.id);
+      return sort_order === undefined ? null : { sort_order };
+    });
+  };
+
   const endDrag = (): void => {
     setDragId(null);
     setSlot(null);
@@ -546,7 +563,9 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
       event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : null;
     if (event.altKey && arrow !== null) {
       event.preventDefault();
-      if (canEdit) reorder(id, arrow);
+      if (!canEdit) return;
+      if (event.shiftKey) reorderToEdge(id, arrow === -1 ? 'top' : 'bottom');
+      else reorder(id, arrow);
       return;
     }
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)

@@ -2572,6 +2572,57 @@ export const manualMoveKeys = (
 };
 
 /**
+ * The manual positions that send issues to the top or bottom of the rows they
+ * sit among, in display order, keeping their relative order. Moving to the top
+ * keys only the moving issues, just ahead of the first other row. Moving to the
+ * bottom also places every unplaced row left behind, in its shown order, since
+ * unplaced rows always sort last. `reverse` is a manual order read backwards,
+ * where keys fall down the list. Null when nothing would move or no key fits.
+ */
+export const manualEdgeKeys = (
+  rows: readonly OrderedIssueRead[],
+  movingIds: readonly string[],
+  edge: 'top' | 'bottom',
+  reverse = false
+): ManualPlacement[] | null => {
+  const ids = new Set(movingIds);
+  const moving = rows.filter((issue) => ids.has(issue.id));
+  if (moving.length === 0) return null;
+  const others = rows.filter((issue) => !ids.has(issue.id));
+  const moved =
+    edge === 'top' ? [...moving, ...others] : [...others, ...moving];
+  if (moved.every((issue, at) => issue.id === rows[at]?.id)) return null;
+  const down = (bound: string | null): string =>
+    reverse ? orderBetween(null, bound) : orderBetween(bound, undefined);
+  const up = (bound: string | null): string =>
+    reverse ? orderBetween(bound, undefined) : orderBetween(null, bound);
+  try {
+    if (edge === 'top') {
+      let bound = others[0]?.sort_order ?? null;
+      const placements: ManualPlacement[] = [];
+      for (const issue of [...moving].reverse()) {
+        bound = up(bound);
+        placements.unshift({ id: issue.id, sort_order: bound });
+      }
+      return placements;
+    }
+    const firstLoose = others.findIndex(
+      (issue) => (issue.sort_order ?? null) === null
+    );
+    const start = firstLoose < 0 ? others.length : firstLoose;
+    let bound = others[start - 1]?.sort_order ?? null;
+    const placements: ManualPlacement[] = [];
+    for (const issue of moved.slice(start)) {
+      bound = down(bound);
+      placements.push({ id: issue.id, sort_order: bound });
+    }
+    return placements;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Whether a view's visibility can be changed by the caller, and where it starts.
  * Only a view without a team moves, a guest cannot publish one, and only its
  * owner may take a workspace view back to private.

@@ -3,8 +3,9 @@
  * manual order, each with its progress and target date. Names edit in place,
  * a new milestone is typed straight into the list, a row drags to a new
  * place, and a click on a milestone's issue count opens the project's issues
- * narrowed to it. Alt with an arrow key moves the focused row too, so the
- * order is not a pointer-only control.
+ * narrowed to it. Alt with an arrow key moves the focused row a step, and
+ * Alt+Shift with an arrow sends it to the top or bottom, so the order is not a
+ * pointer-only control.
  */
 
 import React, { useState } from 'react';
@@ -108,11 +109,11 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
         if (!canEdit || !event.altKey) return;
         if (event.key === 'ArrowUp' && index > 0) {
           event.preventDefault();
-          onMove(index - 1);
+          onMove(event.shiftKey ? 0 : index - 1);
         }
         if (event.key === 'ArrowDown' && index < count - 1) {
           event.preventDefault();
-          onMove(index + 1);
+          onMove(event.shiftKey ? count - 1 : index + 1);
         }
       }}
       className={cn(
