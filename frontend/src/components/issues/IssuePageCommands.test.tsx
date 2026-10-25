@@ -4,7 +4,8 @@
  * Shift+M picks a milestone of the issue's project, labels arrive as the whole label_ids set, and Cmd or
  * Ctrl+Backspace deletes only after the confirmation, and Cmd or Ctrl+Shift+C,
  * D and L add the issue to the active cycle, clear its due date and clear its
- * labels, and the palette offers Copy issue as Markdown.
+ * labels, Cmd or Ctrl+Alt+1 to 9 set the status at that workflow position,
+ * and the palette offers Copy issue as Markdown.
  */
 
 import {
@@ -93,7 +94,10 @@ let onDelete: ReturnType<typeof vi.fn<() => Promise<void>>>;
 const renderCommands = (
   canEdit = true,
   shown: IssueRead = issue,
-  milestones: MilestoneRead[] = []
+  milestones: MilestoneRead[] = [],
+  statuses: StatusRead[] = [
+    { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
+  ]
 ) => {
   render(
     <MemoryRouter>
@@ -101,9 +105,7 @@ const renderCommands = (
         <IssuePageCommands
           slug="mine"
           issue={shown}
-          statuses={[
-            { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
-          ]}
+          statuses={statuses}
           labels={[
             { id: 'lb-1', name: 'Bug', color: '#f00' },
             { id: 'lb-2', name: 'Infra', color: '#0f0' },
@@ -421,5 +423,46 @@ describe('IssuePageCommands quick actions', () => {
     press('L', modShift);
 
     expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('sets the status at a workflow position on Cmd or Ctrl+Alt and a digit', () => {
+    renderCommands(
+      true,
+      issue,
+      [],
+      [
+        { id: 'st-3', name: 'Done', category: 'completed', position: 0 },
+        { id: 'st-2', name: 'In Progress', category: 'started', position: 0 },
+        { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
+      ]
+    );
+
+    press('2', { ctrlKey: true, altKey: true, code: 'Digit2' });
+    expect(onUpdate).toHaveBeenCalledWith({ status_id: 'st-2' });
+
+    press('∞', { metaKey: true, altKey: true, code: 'Digit5' });
+    press('1', { ctrlKey: true, altKey: true, code: 'Digit1' });
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('names each status position shortcut after its status', () => {
+    renderCommands(
+      true,
+      issue,
+      [],
+      [
+        { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
+        { id: 'st-2', name: 'In Progress', category: 'started', position: 0 },
+      ]
+    );
+
+    const labels = registry
+      .list()
+      .filter((shortcut) => /^mod\+alt\+[12]$/.test(shortcut.keys))
+      .map((shortcut) => [shortcut.keys, shortcut.label, shortcut.group]);
+    expect(labels).toEqual([
+      ['mod+alt+1', 'Set status to Todo', 'Issue'],
+      ['mod+alt+2', 'Set status to In Progress', 'Issue'],
+    ]);
   });
 });

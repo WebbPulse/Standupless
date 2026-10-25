@@ -19,7 +19,16 @@ import {
 import type { ShortcutScope } from '../../hooks/useShortcuts';
 import { IconButton } from '../ui/button';
 import { desktopHasTabs } from '../../lib/desktop';
-import { ctrlKeyLabel, modKeyLabel, shiftKeyLabel } from '../../lib/platform';
+import {
+  altKeyLabel,
+  ctrlKeyLabel,
+  modKeyLabel,
+  shiftKeyLabel,
+} from '../../lib/platform';
+import {
+  isStatusPositionKeys,
+  STATUS_POSITION_LABEL,
+} from '../../lib/statusPosition';
 import { isTeamShortcutKeys } from '../../lib/teamShortcuts';
 
 /** Props for ShortcutHelp. */
@@ -104,6 +113,17 @@ const teamBinding = (): Binding => ({
     'ctrl',
     'control',
     'shift',
+  ],
+});
+
+/** The one binding that stands for every Cmd or Ctrl+Alt+digit status shortcut. */
+const statusPositionBinding = (): Binding => ({
+  ...fromCaps([modKeyLabel(), altKeyLabel(), '1-9']),
+  words: [
+    ...keyWords([modKeyLabel(), altKeyLabel(), '1-9']),
+    'mod',
+    'alt',
+    'option',
   ],
 });
 
@@ -310,13 +330,20 @@ const ShortcutPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         local: !APP_WIDE.includes(shortcut.group),
       };
       const team = isTeamShortcutKeys(shortcut.keys);
-      const binding = team ? teamBinding() : fromKeys(shortcut.keys);
-      const same = group.rows.find((row) => row.label === shortcut.label);
-      if (same !== undefined && team) continue;
+      const position = isStatusPositionKeys(shortcut.keys);
+      const collapsed = team || position;
+      const label = position ? STATUS_POSITION_LABEL : shortcut.label;
+      const binding = team
+        ? teamBinding()
+        : position
+          ? statusPositionBinding()
+          : fromKeys(shortcut.keys);
+      const same = group.rows.find((row) => row.label === label);
+      if (same !== undefined && collapsed) continue;
       if (same === undefined) {
         group.rows.push({
           id: shortcut.id,
-          label: shortcut.label,
+          label,
           scope: shortcut.scope,
           bindings: [binding],
         });

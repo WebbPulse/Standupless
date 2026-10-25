@@ -50,6 +50,7 @@ import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import { CustomDate } from '../PropertyPickers';
 import type { IssueViewEnv } from './IssueViewContext';
 import type { CommandProperty } from './propertyKeys';
+import { STATUS_POSITION_COUNT } from '../../../lib/statusPosition';
 
 /** A dashed ring standing for "none" in a list of values. */
 const NoneMark: React.FC = () => (
@@ -160,12 +161,16 @@ export const propertyChoices = ({
         const key = statusGroupKey(status);
         if (seen.has(key)) return [];
         seen.add(key);
+        const position = seen.size;
         return [
           {
             value: key,
             label: status.name,
             icon: <StatusIcon status={status} statuses={statuses} />,
             group: STATUS_CATEGORY_LABELS[status.category],
+            ...(teamIds.length === 1 && position <= STATUS_POSITION_COUNT
+              ? { shortcut: String(position) }
+              : {}),
           },
         ];
       });

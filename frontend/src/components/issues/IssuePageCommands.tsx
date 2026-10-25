@@ -3,7 +3,8 @@
  * focused row: s, p, a, l and e, Shift+M, Shift+C, Shift+P and Shift+D open the
  * property pickers, i assigns the issue to the viewer or back off them, and
  * Cmd or Ctrl+Delete deletes the issue after a confirmation, and Cmd or
- * Ctrl+Shift+Up and Down open the parent and the first sub-issue. The
+ * Ctrl+Shift+Up and Down open the parent and the first sub-issue, and Cmd or
+ * Ctrl+Alt+1 to 9 set the status at that position of the workflow. The
  * pickers are the list's own, fed the page's lists and writing through the
  * page's optimistic update, so both surfaces behave alike. The confirmation
  * can be held by the page, so its menu's Delete opens the same dialog. The
@@ -49,6 +50,7 @@ import {
   type IssueViewEnv,
 } from './view/IssueViewContext';
 import PropertyCommand from './view/PropertyCommand';
+import StatusPositionKeys from './view/StatusPositionKeys';
 import { usePropertyValues } from './view/propertyValues';
 import { PROPERTY_KEYS, type CommandProperty } from './view/propertyKeys';
 
@@ -270,6 +272,13 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
 
   return (
     <IssueViewEnvContext.Provider value={env}>
+      <StatusPositionKeys
+        issues={targets}
+        enabled={canEdit}
+        statusesFor={() => statuses}
+        write={env.update}
+        group="Issue"
+      />
       {PAGE_PROPERTIES.map(({ property, label }) => (
         <PropertyKey
           key={property}
