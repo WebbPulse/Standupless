@@ -13,7 +13,6 @@ import type {
   CustomerRead,
   InitiativeRead,
   TeamRead,
-  WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
@@ -110,7 +109,7 @@ const renderPalette = (role: WorkspaceRole = 'owner') => {
         <CommandPalette
           open
           onClose={() => undefined}
-          workspace={{ id: 'ws-1', slug: 'mine', role } as WorkspaceRead}
+          workspace={{ id: 'ws-1', slug: 'mine', role }}
           teams={[engine]}
         />
       </ShortcutProvider>
