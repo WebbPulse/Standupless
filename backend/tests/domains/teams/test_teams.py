@@ -220,6 +220,8 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "sync_pr_labels",
         "private",
         "parent_team_id",
+        "retired_at",
+        "retired_by",
     }
     assert "next_issue_number" not in row
 

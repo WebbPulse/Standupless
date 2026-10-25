@@ -761,4 +761,5 @@ def test_a_retired_team_leaves_the_list_and_refuses_writes_until_unretired(
 
     restored = answer(tool(client, secret, "unretire_team", {"team_id": "ABC"}))
     assert restored["retired_at"] is None
-    assert answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "Back"}))["key"].startswith("ABC-")
+    created = answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "Back"}))
+    assert repositories.issues.get(WORKSPACE, created["issue_id"]) is not None

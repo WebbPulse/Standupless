@@ -33,8 +33,8 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import AUTO_CLOSE_PERIODS, STALE_CATEGORIES, AutoCloseSettings
 from app.common.sla import apply_sla
-from app.domains.issues.auto_archive import SYSTEM_ACTOR, months_before
 from app.common.team_retirement import is_active
+from app.domains.issues.auto_archive import SYSTEM_ACTOR, months_before
 
 _log = logging.getLogger(__name__)
 

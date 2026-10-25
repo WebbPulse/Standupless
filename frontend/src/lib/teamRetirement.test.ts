@@ -3,12 +3,16 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { TeamRead } from '../types/Api';
 import { activeTeams, isRetired, retiredTeams } from './teamRetirement';
 
+/** The fields the helpers read, plus an id to tell the samples apart. */
+type Sample = Pick<TeamRead, 'id' | 'retired_at'>;
+
 describe('teamRetirement', () => {
-  const live = { id: 'a', retired_at: null };
-  const legacy = { id: 'b', retired_at: '2026-10-25T00:00:00Z' };
-  const unknown = { id: 'c' };
+  const live: Sample = { id: 'a', retired_at: null };
+  const legacy: Sample = { id: 'b', retired_at: '2026-10-25T00:00:00Z' };
+  const unknown: Sample = { id: 'c' };
 
   it('reads a team with a retired_at as retired', () => {
     expect(isRetired(legacy)).toBe(true);
