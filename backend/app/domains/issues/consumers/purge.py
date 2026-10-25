@@ -41,9 +41,9 @@ def purge_issue(repositories: Repositories, workspace_id: str, team_id: str, iss
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's issues a page at a time."""
+    """Remove the team's issues a page at a time, those waiting in its trash included."""
     while True:
-        issues = repositories.issues.page_after(job.workspace_id, job.team_id, 0, limit=PAGE)
+        issues = repositories.issues.page_with_trash_after(job.workspace_id, job.team_id, 0, limit=PAGE)
         if not issues:
             repositories.activity.delete_tombstones(job.workspace_id, job.team_id)
             repositories.activity.delete_team_events(job.workspace_id, job.team_id)

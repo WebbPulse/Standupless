@@ -15,6 +15,7 @@ import {
 import type {
   ActivityListRead,
   ActivityRead,
+  DeletedIssueListRead,
   IssueConversionRead,
   IssueCreate,
   IssueDescriptionVersionListRead,
@@ -440,12 +441,56 @@ export const bulkUpdateIssues = async (
   };
 };
 
-/** Deletes an issue. The server reparents its children rather than cascading. */
+/**
+ * Moves an issue to its team's trash. It stays restorable for 30 days, and
+ * its sub-issues, links and history wait for a restore.
+ */
 export const deleteIssue = async (
   workspaceId: string,
   issueId: string
 ): Promise<void> => {
   await apiClient.delete<void>(issuePath(workspaceId, issueId));
+};
+
+/**
+ * Brings a deleted issue back from the trash. Restoring a live issue answers
+ * it unchanged, so an Undo that raced another restore is harmless.
+ */
+export const restoreIssue = async (
+  workspaceId: string,
+  issueId: string
+): Promise<IssueRead> => {
+  const response = await apiClient.post<IssueRead>(
+    `${issuePath(workspaceId, issueId)}/restore`
+  );
+  return response.data;
+};
+
+/**
+ * Deletes an issue in the trash for good, which only a team admin may do.
+ * Its sub-issues lose their parent and its links and history are removed.
+ */
+export const deleteIssuePermanently = async (
+  workspaceId: string,
+  issueId: string
+): Promise<void> => {
+  await apiClient.delete<void>(`${issuePath(workspaceId, issueId)}/permanent`);
+};
+
+/** One team's recently deleted issues, the most recently deleted first. */
+export const listDeletedIssues = async (
+  workspaceId: string,
+  teamId: string
+): Promise<DeletedIssueListRead> => {
+  const response = await apiClient.get<DeletedIssueListRead>(
+    `${issuesPath(workspaceId)}/deleted`,
+    { query: { team_id: teamId } }
+  );
+  const data = response.data;
+  return {
+    issues: Array.isArray(data?.issues) ? data.issues : [],
+    retention_days: data?.retention_days ?? 30,
+  };
 };
 
 /**

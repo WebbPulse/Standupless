@@ -7,6 +7,7 @@ too. There is no MCP-shaped write path, which is what keeps the two from driftin
 
 There is no tool that deletes an issue or a comment: an agent that can create and
 update but never destroy history is a different risk from one that can do both.
+It can still list a team's deleted issues and restore one from the trash.
 Removing a relation is offered, marked destructive, because the link is all it loses.
 """
 
@@ -39,7 +40,7 @@ from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.document_comments import create_document_comment, document_comment_page
 from app.common.filter_resolution import resolve_issue_filter
@@ -55,6 +56,7 @@ from app.common.issue_move import move_issue
 from app.common.issue_parents import parents_of
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
+from app.common.issue_trash import list_trash, restore_issue
 from app.common.issue_writes import (
     bulk_update_issues,
     create_issue_tree,
@@ -522,8 +524,12 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 
 
 def _get_issue(call: ToolCall) -> Any:
-    """One issue by its id or its key, with its linked pull requests and the stacks they form."""
-    issue = issue_ref(call, call.require("issue_id"))
+    """One issue by its id or its key, with its linked pull requests and the stacks they form.
+
+    A deleted issue still answers, with `deleted_at` set, so an agent can tell it
+    sits in the trash and restore it.
+    """
+    issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
     answer = _answer(call, issue)
     answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
     return answer
@@ -675,6 +681,19 @@ def _unarchive_issue(call: ToolCall) -> Any:
     """Restore an archived issue through the route's own path, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
     return _answer(call, unarchive_issue(call.repositories, call.context, issue))
+
+
+def _restore_issue(call: ToolCall) -> Any:
+    """Take a deleted issue back out of its team's trash through the route's own path, idempotently."""
+    issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
+    return _answer(call, restore_issue(call.repositories, call.context, issue))
+
+
+def _list_deleted_issues(call: ToolCall) -> Any:
+    """One team's deleted issues, the most recently deleted first, with who deleted each and when."""
+    rows = list_trash(call.repositories, call.context, str(call.require("team_id")))
+    rows.sort(key=lambda row: row.deleted_at.isoformat() if row.deleted_at else "", reverse=True)
+    return {"issues": [_answer(call, row) for row in rows], "retention_days": TRASH_RETENTION_DAYS}
 
 
 def _comment_json(comment: Comment) -> dict[str, Any]:
@@ -1410,6 +1429,27 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         scopes=("issues:write",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
         handler=_unarchive_issue,
+    ),
+    Tool(
+        name="restore_issue",
+        description=(
+            "Restore a deleted issue from its team's trash, with its sub-issues, relations, labels and comments. "
+            "Deleted issues stay restorable for 30 days. Allowed for a team admin, or the creator of an issue "
+            "with no sub-issues. Idempotent."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_restore_issue,
+    ),
+    Tool(
+        name="list_deleted_issues",
+        description=(
+            "A team's recently deleted issues, the most recently deleted first, each with deleted_at and "
+            "deleted_by. They are purged for good 30 days after deletion; restore one with restore_issue."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema({"team_id": string("The team whose trash to list")}, required=("team_id",)),
+        handler=_list_deleted_issues,
     ),
     Tool(
         name="list_comments",

@@ -44,6 +44,7 @@ from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
 from app.common.db.dynamo.team_config import WORKSPACE_LABEL_PREFIX
 from app.common.team_privacy import destination_can_carry
+from app.common.trash_stream import live_view, touches_trash
 from app.domains.integrations.channels import events as channel_events
 from app.domains.integrations.channels.events import DestinationCache
 from app.domains.integrations.outbound import payloads
@@ -357,13 +358,19 @@ def handle_record(
 
     An issue row a bulk import wrote is carried along on a team move but sends
     no webhook, channel message or GitHub sync, and neither does an imported
-    comment or planning row.
+    comment or planning row. A move into the trash sends a remove webhook and a
+    restore a create one, and neither touches GitHub or a channel.
     """
     repositories = _GRANT.narrow(repositories)
     physical = source_table(record)
     prefix = settings.dynamodb_table_prefix
 
     if physical == table_name("issues", prefix):
+        if touches_trash(record):
+            seen = live_view(record)
+            if seen is not None:
+                publish(repositories, payloads.ISSUE, seen, cache)
+            return
         rehome_issue_sync(repositories, record)
         if from_bulk_import(record):
             return

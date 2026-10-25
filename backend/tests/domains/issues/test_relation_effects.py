@@ -193,25 +193,27 @@ def test_creating_a_sub_issue_writes_on_both_sides(client: TestClient, workspace
     assert set_parent["to"] == parent["id"]
 
 
-def test_deleting_a_sub_issue_writes_child_removed(client: TestClient, workspace: str, statuses: Any) -> None:
+def test_purging_a_sub_issue_writes_child_removed(client: TestClient, workspace: str, statuses: Any) -> None:
     """The parent's history keeps the sub-issue's name after it is gone."""
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Parent")
     child = create_issue(client, workspace, title="Child", parent_id=parent["id"])
 
     client.delete(f"/api/workspaces/{workspace}/issues/{child['id']}")
+    client.delete(f"/api/workspaces/{workspace}/issues/{child['id']}/permanent")
 
     removed = next(row for row in _feed(client, workspace, parent) if row["kind"] == "child_removed")
     assert removed["from"]["title"] == "Child"
 
 
-def test_deleting_a_parent_writes_on_its_orphans(client: TestClient, workspace: str, statuses: Any) -> None:
+def test_purging_a_parent_writes_on_its_orphans(client: TestClient, workspace: str, statuses: Any) -> None:
     """Each orphaned child records that its parent was cleared."""
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Parent")
     child = create_issue(client, workspace, title="Child", parent_id=parent["id"])
 
     client.delete(f"/api/workspaces/{workspace}/issues/{parent['id']}")
+    client.delete(f"/api/workspaces/{workspace}/issues/{parent['id']}/permanent")
 
     cleared = [row for row in _feed(client, workspace, child) if row["field"] == "parent_id"]
     assert cleared[0]["from"] == parent["id"]

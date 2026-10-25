@@ -180,6 +180,13 @@ export const issueKey = (workspaceId: string, issueId: string): QueryKey => [
   issueId,
 ];
 
+/** One team's recently deleted issues, the trash a restore takes them out of. */
+export const trashKey = (workspaceId: string, teamId: string): QueryKey => [
+  'issue-trash',
+  workspaceId,
+  teamId,
+];
+
 /** One issue's direct children. */
 export const childrenKey = (issueId: string): QueryKey => ['children', issueId];
 

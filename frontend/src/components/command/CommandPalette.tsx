@@ -91,6 +91,7 @@ import {
   LuSun,
   LuTarget,
   LuTerminal,
+  LuTrash2,
   LuUndo2,
   LuUserRound,
   LuUsers,
@@ -150,6 +151,7 @@ import {
   settingsTeamsPath,
   viewPath,
   teamArchivePath,
+  teamTrashPath,
   teamBoardPath,
   teamCyclesPath,
   teamPath,
@@ -929,6 +931,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then X',
         icon: <LuArchive className={ICON} />,
         to: teamArchivePath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-trash',
+        label: `${team.name} recently deleted`,
+        keywords: 'trash deleted restore recently deleted bin',
+        icon: <LuTrash2 className={ICON} />,
+        to: teamTrashPath(slug, team.key_prefix),
       });
     }
     built.push(

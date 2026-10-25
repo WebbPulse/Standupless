@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from app.common.api.schemas.teams import LabelCreate
 from app.common.db.dynamo.api_keys import API_KEY_SCOPES, LEGACY_SCOPE_ALIASES
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Cycle, Project, ProjectMilestone, cycle_key, milestone_key, project_key
@@ -355,6 +356,40 @@ def test_assign_issue_assigns_and_unassigns(client: TestClient, repositories: An
 
     assert assigned["assignee_id"] == MEMBER
     assert unassigned["assignee_id"] is None
+
+
+def test_list_deleted_issues_and_restore_issue(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """A trashed issue is gone from list_issues, listed in the trash with its deleter, and restorable."""
+    repositories.issues.soft_delete(issue, OWNER, utc_now())
+    secret = mint_for(repositories, OWNER, ("issues:read", "issues:write"))
+
+    hidden = answer(tool(client, secret, "list_issues", {"team_id": TEAM}))
+    trash = answer(tool(client, secret, "list_deleted_issues", {"team_id": TEAM}))
+    fetched = answer(tool(client, secret, "get_issue", {"issue_key": "ABC-1"}))
+    restored = answer(tool(client, secret, "restore_issue", {"issue_id": "ABC-1"}))
+    again = answer(tool(client, secret, "restore_issue", {"issue_id": issue.issue_id}))
+    listed = answer(tool(client, secret, "list_issues", {"team_id": TEAM}))
+    emptied = answer(tool(client, secret, "list_deleted_issues", {"team_id": TEAM}))
+
+    assert issue.issue_id not in {row["issue_id"] for row in hidden["issues"]}
+    assert [(row["issue_id"], row["deleted_by"]) for row in trash["issues"]] == [(issue.issue_id, OWNER)]
+    assert trash["retention_days"] == 30
+    assert fetched["deleted_at"] is not None
+    assert restored["deleted_at"] is None
+    assert again["deleted_at"] is None
+    assert issue.issue_id in {row["issue_id"] for row in listed["issues"]}
+    assert emptied["issues"] == []
+
+
+def test_restore_issue_refuses_someone_who_may_not_delete(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """A member who neither created the issue nor administers the team cannot restore it."""
+    repositories.issues.soft_delete(issue, OWNER, utc_now())
+    secret = mint_for(repositories, MEMBER, ("issues:read", "issues:write"))
+
+    refused = refusal(tool(client, secret, "restore_issue", {"issue_id": "ABC-1"}))
+
+    assert refused
+    assert repositories.issues.get(WORKSPACE, issue.issue_id) is None
 
 
 def test_archive_and_unarchive_issue(client: TestClient, repositories: Any, issue: Issue) -> None:
@@ -719,6 +754,8 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "assign_issue": {"issue_id": issue, "assignee_id": "me"},
         "archive_issue": {"issue_id": issue},
         "unarchive_issue": {"issue_id": issue},
+        "restore_issue": {"issue_id": issue},
+        "list_deleted_issues": {"team_id": team},
         "move_issue": {"issue_id": issue, "team_id": team},
         "duplicate_issue": {"issue_id": issue},
         "convert_issue_to_project": {"issue_id": issue},

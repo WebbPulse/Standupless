@@ -583,3 +583,20 @@ def test_a_fixture_workspace_stays_under_the_index_caps(
     assert prefix_rows <= len(titles) * PREFIX_CAP
     sign_in(client, OWNER)
     assert len(_search(client, workspace, "term0007")) == 1
+
+
+def test_a_deleted_issue_is_not_a_hit(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A trashed issue drops out even before the consumer clears its postings."""
+    sign_in(issues_client, OWNER)
+    doomed = seed_issue(issues_client, workspace, title="Repair the widget pipeline")
+    kept = seed_issue(issues_client, workspace, title="Widget polishing")
+    index_issue(repositories, workspace, TEAM, doomed)
+    index_issue(repositories, workspace, TEAM, kept)
+    assert issues_client.delete(f"/api/workspaces/{workspace}/issues/{doomed['id']}").status_code == 204
+
+    sign_in(client, OWNER)
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "widget"})
+
+    assert [row["issue_id"] for row in response.json()["results"]] == [kept["id"]]

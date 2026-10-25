@@ -34,6 +34,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer
 from app.common.api.dependencies.repositories import Repositories
 from app.common.composition.consumers import CONSUMERS
 from app.common.db.dynamo.search_index import DOCUMENT_COMMENTS, comment_doc, comment_terms, issue_terms, legacy_terms
+from app.common.trash_stream import live_view
 
 _log = logging.getLogger(__name__)
 
@@ -147,10 +148,15 @@ def _handle_comment(
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Bring one issue's postings in line with what the record says it now holds.
 
+    An issue moving into the trash drops its postings and a restore adds them back.
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch.
     """
     repositories = _GRANT.narrow(repositories)
+    seen = live_view(record)
+    if seen is None:
+        return
+    record = seen
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
     if _is_comment(new_image, old_image):

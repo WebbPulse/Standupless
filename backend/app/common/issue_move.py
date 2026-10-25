@@ -49,20 +49,23 @@ MOVED_FIELD = "team_id"
 """The activity field a move is recorded under, beside the fields it changed."""
 
 
-def find_issue_by_number(repositories: Repositories, workspace_id: str, team_id: str, number: int) -> Issue | None:
+def find_issue_by_number(
+    repositories: Repositories, workspace_id: str, team_id: str, number: int, *, include_deleted: bool = False
+) -> Issue | None:
     """The issue one team's number names, following a move, or `None`.
 
     A number the team still holds answers directly. A number whose issue moved
     away answers the issue wherever it now lives, so a key written before the move
     keeps working. The caller decides visibility against the answer's own team.
+    A deleted issue answers only with `include_deleted`.
     """
-    issue = repositories.issues.get_by_number(workspace_id, team_id, number)
+    issue = repositories.issues.get_by_number(workspace_id, team_id, number, include_deleted=include_deleted)
     if issue is not None:
         return issue
     moved = repositories.counters.moved_issue_id(workspace_id, team_id, number)
     if moved is None:
         return None
-    return repositories.issues.get(workspace_id, moved)
+    return repositories.issues.get(workspace_id, moved, include_deleted=include_deleted)
 
 
 def target_status(

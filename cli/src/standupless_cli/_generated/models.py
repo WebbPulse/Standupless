@@ -29,6 +29,8 @@ ActivityRead = TypedDict(
             "child_removed",
             "archived",
             "unarchived",
+            "deleted",
+            "restored",
             "subscriber_added",
             "subscriber_removed",
             "mentioned",
@@ -3572,6 +3574,8 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     created_at: str
     created_by: str
     cycle_id: NotRequired[str | None]
+    deleted_at: NotRequired[str | None]
+    deleted_by: NotRequired[str | None]
     due_date: NotRequired[str | None]
     estimate: NotRequired[str | None]
     external_ref: NotRequired[str | None]
@@ -3763,6 +3767,11 @@ class CustomerRequestListRead(TypedDict):
 class CycleListRead(TypedDict):
     cycles: list[CycleRead]
     next_cursor: NotRequired[str | None]
+
+
+class DeletedIssueListRead(TypedDict):
+    issues: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    retention_days: int
 
 
 class DocumentListRead(TypedDict):

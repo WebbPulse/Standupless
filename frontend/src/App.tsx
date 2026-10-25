@@ -95,6 +95,7 @@ import {
 } from './lib/paths';
 import Team from './pages/teams/Team';
 import TeamArchive from './pages/teams/TeamArchive';
+import TeamTrash from './pages/teams/TeamTrash';
 import TeamDocuments from './pages/teams/TeamDocuments';
 import TeamTriage from './pages/teams/TeamTriage';
 import TeamSettings from './pages/teams/TeamSettings';
@@ -231,6 +232,7 @@ const App: React.FC = () => (
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />
           <Route path="team/:keyPrefix/archive" element={<TeamArchive />} />
+          <Route path="team/:keyPrefix/trash" element={<TeamTrash />} />
           <Route path="team/:keyPrefix/triage" element={<TeamTriage />} />
           <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
           <Route
