@@ -11,7 +11,8 @@
  * or leaves the document and names who follows it, as in Linear: the author
  * and every commenter follow it on their own. Print, from the menu, the
  * palette or Cmd or Ctrl+P, prints the title, the byline and the body, with
- * the comment threads as endnotes.
+ * the comment threads as endnotes. R focuses the title to rename the
+ * document and Cmd or Ctrl+Shift+Comma copies its address, as in Linear.
  */
 
 import React, {
@@ -80,10 +81,13 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
+import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { CONFLICT, errorMessage, hasStatus } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import {
+  documentPath,
   initiativePath,
   issuePath,
   projectPath,
@@ -273,6 +277,7 @@ export const DocumentDetail: React.FC = () => {
   const [liveBody, setLiveBody] = useState<string | null>(null);
   const editor = useRef<RichMarkdownHandle>(null);
   const bodyArea = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLElement>(null);
   const base = useRef<string | null>(null);
   const savedBody = useRef<string | null>(null);
   const pendingBody = useRef<string | null>(null);
@@ -413,6 +418,38 @@ export const DocumentDetail: React.FC = () => {
     enabled: page?.can_edit === true,
     handler: () => {
       setShowMove(true);
+    },
+  });
+
+  useShortcut({
+    keys: RENAME_ISSUE_KEYS,
+    label: 'Rename document',
+    scope: 'page',
+    group: 'Document',
+    enabled: page?.can_edit === true,
+    handler: (event) => {
+      const field = heading.current?.querySelector<HTMLInputElement>(
+        'input[aria-label="Document title"]'
+      );
+      if (field === null || field === undefined) return;
+      event?.preventDefault();
+      field.focus();
+      field.select();
+    },
+  });
+  useShortcut({
+    keys: COPY_ISSUE_URL_KEYS,
+    label: 'Copy document URL',
+    scope: 'page',
+    group: 'Document',
+    enabled: page !== null,
+    handler: (event) => {
+      if (page === null) return;
+      event?.preventDefault();
+      copyText(
+        `${globalThis.location.origin}${documentPath(slug, page.document_id)}`,
+        'Link to the document copied'
+      );
     },
   });
 
@@ -635,7 +672,7 @@ export const DocumentDetail: React.FC = () => {
               message={errorMessage(saveError, 'Could not save that edit.')}
             />
           )}
-          <header className="space-y-2">
+          <header ref={heading} className="space-y-2">
             <div className={page.icon == null ? 'screen-only' : undefined}>
               <DocumentIconPicker
                 icon={page.icon ?? null}

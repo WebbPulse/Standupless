@@ -10,7 +10,9 @@
  * notice. The chip row also names the projects this one is blocked by and
  * the ones it blocks, and links or unlinks them in place. The chips answer
  * the keyboard too: S status, P priority, A lead, M members, H health,
- * Shift+S start date and Shift+D target date open the same pickers.
+ * Shift+S start date and Shift+D target date open the same pickers. R
+ * focuses the name to rename the project and Cmd or Ctrl+Shift+Comma copies
+ * its address, as they do for an issue in Linear.
  *
  * The updates tab is the project's running account of itself: each update is
  * a short write up and a health call, newest first. `?tab=updates` opens it,
@@ -106,6 +108,8 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
+import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
+import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import { cn } from '../../lib/cn';
@@ -385,6 +389,38 @@ export const ProjectDetail: React.FC = () => {
     handler: (event) => {
       event?.preventDefault();
       writeUpdate();
+    },
+  });
+  const heading = useRef<HTMLDivElement>(null);
+  useShortcut({
+    keys: RENAME_ISSUE_KEYS,
+    label: 'Rename project',
+    scope: 'page',
+    group: 'Project',
+    enabled: mayPost && tab === 'overview',
+    handler: (event) => {
+      const field = heading.current?.querySelector<HTMLInputElement>(
+        'input[aria-label="Project name"]'
+      );
+      if (field === null || field === undefined) return;
+      event?.preventDefault();
+      field.focus();
+      field.select();
+    },
+  });
+  useShortcut({
+    keys: COPY_ISSUE_URL_KEYS,
+    label: 'Copy project URL',
+    scope: 'page',
+    group: 'Project',
+    enabled: project !== null,
+    handler: (event) => {
+      if (project === null) return;
+      event?.preventDefault();
+      copyText(
+        `${globalThis.location.origin}${projectPath(slug, project)}`,
+        'Link to the project copied'
+      );
     },
   });
   useCreateDocumentCommand({
@@ -895,7 +931,7 @@ export const ProjectDetail: React.FC = () => {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
-              <div className="space-y-3">
+              <div ref={heading} className="space-y-3">
                 <ProjectLookPicker
                   icon={project.icon}
                   color={project.color}
