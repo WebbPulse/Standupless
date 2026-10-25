@@ -116,6 +116,7 @@ class SavedView(BaseModel):
     show_completed: bool | None = None
     completed_window: str | None = None
     show_archived: bool | None = None
+    group_header: str | None = None
     projects_display: dict[str, str] | None = None
     icon: str | None = None
     color: str | None = None

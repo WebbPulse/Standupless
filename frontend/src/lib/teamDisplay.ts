@@ -33,6 +33,7 @@ export const teamDefaultState = (
     showSubIssues: options.show_sub_issues ?? base.showSubIssues,
     completed: options.completed_window ?? base.completed,
     showArchived: options.show_archived ?? base.showArchived,
+    groupHeader: options.group_header ?? base.groupHeader,
   };
 };
 
@@ -51,4 +52,5 @@ export const stateToTeamDisplay = (state: ViewState): TeamDisplayOptions => ({
   completed_window: state.completed,
   show_empty_groups: state.showEmpty,
   show_archived: state.showArchived,
+  group_header: state.groupHeader,
 });

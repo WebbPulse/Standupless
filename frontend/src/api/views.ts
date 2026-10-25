@@ -50,6 +50,9 @@ export type ViewLayout = 'list' | 'board';
 /** How far back a view reaches for issues in a completed or canceled status. */
 export type CompletedWindow = 'all' | 'past_week' | 'past_month' | 'none';
 
+/** What a group header reads beside its name: the issue count or the total estimate. */
+export type ViewGroupHeader = 'count' | 'estimate';
+
 /** The issue properties a view may show, in the vocabulary the server checks. */
 export type ViewVisibleProperty =
   | 'id'
@@ -158,6 +161,8 @@ export interface SavedViewDisplay {
    */
   completed_window?: CompletedWindow;
   show_archived?: boolean;
+  /** What group headers read; an older server leaves it out, which reads as the count. */
+  group_header?: ViewGroupHeader;
 }
 
 /**
@@ -226,6 +231,7 @@ export interface SavedViewDisplayCreate extends Omit<
   show_completed?: boolean;
   completed_window?: CompletedWindow;
   show_archived?: boolean;
+  group_header?: ViewGroupHeader;
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -253,6 +259,7 @@ export interface SavedViewDisplayUpdate extends Omit<
   show_completed?: boolean;
   completed_window?: CompletedWindow;
   show_archived?: boolean;
+  group_header?: ViewGroupHeader;
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;

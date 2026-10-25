@@ -17,6 +17,7 @@ import type {
   SavedViewDisplayRead,
   SavedViewFilter,
   SavedViewLook,
+  ViewGroupHeader,
   ViewLayout,
   ViewVisibleProperty,
 } from '../api/views';
@@ -181,6 +182,18 @@ export const COMPLETED_WINDOW_LABELS: Record<CompletedWindow, string> = {
   none: 'None',
 };
 
+/** Every group header figure, in the order the display menu offers them. */
+export const GROUP_HEADERS: ViewGroupHeader[] = ['count', 'estimate'];
+
+/** How a group header figure reads in the display menu. */
+export const GROUP_HEADER_LABELS: Record<ViewGroupHeader, string> = {
+  count: 'Issue count',
+  estimate: 'Total estimate',
+};
+
+const isGroupHeader = (value: string | null): value is ViewGroupHeader =>
+  value !== null && (GROUP_HEADERS as string[]).includes(value);
+
 /** The days each bounded completed window reaches back. */
 const WINDOW_DAYS: Partial<Record<CompletedWindow, number>> = {
   past_week: 7,
@@ -225,6 +238,8 @@ export interface ViewState {
   completed: CompletedWindow;
   /** True to list archived issues, which every list and board leaves out by default. */
   showArchived: boolean;
+  /** What each group header reads beside its name: the issue count or the total estimate. */
+  groupHeader: ViewGroupHeader;
 }
 
 /**
@@ -703,6 +718,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   showSubIssues: true,
   completed: 'all',
   showArchived: false,
+  groupHeader: 'count',
 });
 
 const isGroupField = (value: string | null): value is GroupField =>
@@ -812,7 +828,8 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.showEmpty === right.showEmpty &&
   left.showSubIssues === right.showSubIssues &&
   left.completed === right.completed &&
-  left.showArchived === right.showArchived;
+  left.showArchived === right.showArchived &&
+  left.groupHeader === right.groupHeader;
 
 /**
  * Reads the state out of the URL. Every parameter overrides `base`, and one
@@ -851,6 +868,7 @@ export const parseViewState = (
   const subs = params.get('subs');
   const done = params.get('done');
   const archived = params.get('archived');
+  const head = params.get('head');
   const groupBy = isGroupField(group) ? group : base.groupBy;
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
@@ -877,6 +895,7 @@ export const parseViewState = (
     showSubIssues: subs === null ? base.showSubIssues : subs === '1',
     completed: (done === null ? undefined : parseDone(done)) ?? base.completed,
     showArchived: archived === null ? base.showArchived : archived === '1',
+    groupHeader: isGroupHeader(head) ? head : base.groupHeader,
   };
 };
 
@@ -907,6 +926,7 @@ export const writeViewState = (
         'subs',
         'done',
         'archived',
+        'head',
       ].includes(key)
     ) {
       params.append(key, value);
@@ -944,6 +964,9 @@ export const writeViewState = (
   }
   if (state.showArchived !== base.showArchived) {
     params.set('archived', state.showArchived ? '1' : '0');
+  }
+  if (state.groupHeader !== base.groupHeader) {
+    params.set('head', state.groupHeader);
   }
   return params;
 };
@@ -1342,6 +1365,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     completed:
       view.completed_window ?? (view.show_completed === false ? 'none' : 'all'),
     showArchived: view.show_archived === true,
+    groupHeader: view.group_header === 'estimate' ? 'estimate' : 'count',
   };
 };
 
@@ -1407,6 +1431,7 @@ export const stateToViewDisplay = (
   | 'show_completed'
   | 'completed_window'
   | 'show_archived'
+  | 'group_header'
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
@@ -1422,6 +1447,7 @@ export const stateToViewDisplay = (
   show_completed: state.completed !== 'none',
   completed_window: state.completed,
   show_archived: state.showArchived,
+  group_header: state.groupHeader,
 });
 
 /** How a new view is filed and how it looks, beyond its filters and display. */

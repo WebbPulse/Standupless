@@ -567,6 +567,15 @@ export const CycleDetail: React.FC = () => {
       'off',
     [listTeams]
   );
+  const countsUnestimated = useCallback(
+    (memberId: string) =>
+      listTeams.find((member) => member.id === memberId)
+        ?.estimate_count_unestimated === true,
+    [listTeams]
+  );
+  const listEstimates = listTeams.some(
+    (member) => member.estimate_scale !== 'off'
+  );
   const estimateOptionsFor = useCallback(
     (memberId: string) =>
       estimateOptionsOf(listTeams.find((member) => member.id === memberId)),
@@ -743,6 +752,7 @@ export const CycleDetail: React.FC = () => {
                 onChange={setState}
                 groupFields={groupFieldsFor(lists.context)}
                 context={lists.context}
+                estimates={listEstimates}
                 onReset={
                   sameViewState(
                     {
@@ -783,6 +793,7 @@ export const CycleDetail: React.FC = () => {
             collection={collection}
             lists={lists}
             scaleFor={scaleFor}
+            countsUnestimated={countsUnestimated}
             estimateOptionsFor={estimateOptionsFor}
             {...(listTeams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}

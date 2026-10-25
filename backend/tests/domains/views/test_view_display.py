@@ -255,3 +255,21 @@ def test_the_ordering_direction_is_a_strict_boolean(client: TestClient, workspac
     view = _create(client, workspace).json()
     cleared = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"ordering_reversed": None})
     assert cleared.status_code == 422
+
+
+def test_the_group_header_defaults_to_the_count_and_round_trips(client: TestClient, workspace: str) -> None:
+    """A view reads the issue count until it saves the total estimate, and a patch may never clear the choice."""
+    sign_in(client, MEMBER)
+
+    default = _create(client, workspace).json()
+    assert default["group_header"] == "count"
+
+    view = _create(client, workspace, group_header="estimate").json()
+    assert view["group_header"] == "estimate"
+    path = f"/api/workspaces/{workspace}/views/{view['view_id']}"
+    assert client.get(path).json()["group_header"] == "estimate"
+
+    assert client.patch(path, json={"group_header": "count"}).json()["group_header"] == "count"
+    assert client.patch(path, json={"group_header": None}).status_code == 422
+    assert client.patch(path, json={"group_header": "points"}).status_code == 422
+    assert _create(client, workspace, group_header="points").status_code == 422
