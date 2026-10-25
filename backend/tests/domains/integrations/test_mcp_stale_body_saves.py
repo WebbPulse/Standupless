@@ -96,7 +96,7 @@ def test_update_document_refuses_a_stale_body_and_answers_the_current_one(
 
 
 def test_update_project_refuses_a_stale_description_and_answers_the_current_one(
-    client: TestClient, repositories: Any
+    client: TestClient, workspace: str, repositories: Any
 ) -> None:
     """A description sent against the version read before a teammate's edit is refused with that edit."""
     secret = mint_for(repositories, MEMBER, DOCUMENT_SCOPES)
@@ -131,7 +131,9 @@ def test_update_project_refuses_a_stale_description_and_answers_the_current_one(
     assert current["description"] == "Theirs"
 
 
-def test_update_project_without_a_version_writes_as_before(client: TestClient, repositories: Any) -> None:
+def test_update_project_without_a_version_writes_as_before(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
     """An agent that sends no version still writes the description."""
     secret = mint_for(repositories, MEMBER, DOCUMENT_SCOPES)
     created = answer(
