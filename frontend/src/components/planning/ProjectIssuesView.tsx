@@ -15,9 +15,8 @@ import {
   type IssueContextState,
 } from '../../hooks/useIssueContext';
 import {
-  GROUP_FIELDS,
   defaultViewState,
-  fieldsFor,
+  groupFieldsFor,
   parseViewState,
   sameViewState,
   viewStateQuery,
@@ -126,7 +125,8 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
           <DisplayMenu
             state={state}
             onChange={setState}
-            groupFields={fieldsFor(GROUP_FIELDS, lists.context)}
+            groupFields={groupFieldsFor(lists.context)}
+            context={lists.context}
             onReset={
               sameViewState(
                 {

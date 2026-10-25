@@ -4299,6 +4299,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "const": "none",
                 "type": "string"
               },
@@ -4408,6 +4412,10 @@
                   "team",
                   "sla"
                 ],
+                "type": "string"
+              },
+              {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
                 "type": "string"
               },
               {
@@ -22262,6 +22270,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -22406,6 +22418,10 @@
                   "team",
                   "sla"
                 ],
+                "type": "string"
+              },
+              {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
                 "type": "string"
               },
               {
@@ -22777,6 +22793,10 @@
                 "type": "string"
               },
               {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -22955,6 +22975,10 @@
                   "team",
                   "sla"
                 ],
+                "type": "string"
+              },
+              {
+                "pattern": "^label_group:[0-9A-Za-z_-]{1,64}$",
                 "type": "string"
               },
               {

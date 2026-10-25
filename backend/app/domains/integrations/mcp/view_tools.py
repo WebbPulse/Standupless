@@ -18,9 +18,9 @@ from fastapi import HTTPException
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
+    GROUP_BY_PROPERTIES,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
-    GroupByField,
     InboxClearRequest,
     InboxReadRequest,
     InboxSnoozeRequest,
@@ -32,6 +32,7 @@ from app.common.api.schemas.views import (
     ViewCreate,
     ViewRead,
     ViewUpdate,
+    grouping_pattern,
 )
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox import (
@@ -72,7 +73,7 @@ SORTS: tuple[str, ...] = get_args(SortField)
 
 LAYOUTS: tuple[str, ...] = get_args(LayoutField)
 
-GROUPINGS: tuple[str, ...] = get_args(GroupByField)
+GROUPING_PATTERN = grouping_pattern()
 
 VIEW_COLORS: tuple[str, ...] = get_args(ViewColorField)
 
@@ -114,10 +115,13 @@ def _boolean(description: str) -> dict[str, Any]:
 
 
 def _grouping(description: str, *, clearable: bool = False) -> dict[str, Any]:
-    """A grouping property, taking null too where an update may clear it."""
+    """A grouping property, a property name or `label_group:<id>`, taking null too where an update may clear it."""
     kind: Any = ["string", "null"] if clearable else "string"
-    values: list[Any] = [*GROUPINGS, None] if clearable else list(GROUPINGS)
-    return {"type": kind, "enum": values, "description": description}
+    return {
+        "type": kind,
+        "pattern": GROUPING_PATTERN,
+        "description": f"{description}: {', '.join(GROUP_BY_PROPERTIES)}, or label_group:<id> for one label group",
+    }
 
 
 def _view_properties(*, clearable: bool) -> dict[str, Any]:

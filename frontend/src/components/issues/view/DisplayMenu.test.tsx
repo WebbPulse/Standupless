@@ -13,6 +13,7 @@ import {
   defaultViewState,
   fieldsFor,
   GROUP_FIELDS,
+  groupFieldsFor,
   type ViewState,
 } from '../../../lib/issueView';
 import DisplayMenu from './DisplayMenu';
@@ -23,6 +24,42 @@ const optionsOf = (select: HTMLElement): string[] =>
     .map((option) => option.textContent ?? '');
 
 describe('DisplayMenu', () => {
+  it('offers each label group as a grouping and sub-grouping', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn<(state: ViewState) => void>();
+    const context = {
+      labels: [
+        { id: 'grp-area', name: 'Area', color: '#888888', is_group: true },
+        { id: 'lb-api', name: 'API', color: '#888888', parent_id: 'grp-area' },
+      ],
+    };
+    render(
+      <DisplayMenu
+        state={{
+          ...defaultViewState('list'),
+          subGroupBy: 'label_group:grp-gone',
+        }}
+        onChange={onChange}
+        groupFields={groupFieldsFor({ ...context, teams: [] })}
+        context={context}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+
+    const grouping = screen.getByLabelText('Grouping');
+    expect(optionsOf(grouping)).toEqual(
+      expect.arrayContaining(['Label', 'Area'])
+    );
+    expect(optionsOf(screen.getByLabelText('Sub-grouping'))).toEqual(
+      expect.arrayContaining(['Area', 'Label group'])
+    );
+    await user.selectOptions(grouping, 'label_group:grp-area');
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ groupBy: 'label_group:grp-area' })
+    );
+  });
+
   it('offers the planning groupings, and team over several teams', async () => {
     const user = userEvent.setup();
     render(

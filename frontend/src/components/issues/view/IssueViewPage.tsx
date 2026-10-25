@@ -49,9 +49,8 @@ import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
 import {
-  fieldsFor,
+  groupFieldsFor,
   filterFieldsFor,
-  GROUP_FIELDS,
   parseViewState,
   sameViewState,
   sharedChange,
@@ -787,7 +786,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           state={state}
           onChange={setState}
           archive={archive}
-          groupFields={fieldsFor(GROUP_FIELDS, filterContext)}
+          groupFields={groupFieldsFor(filterContext)}
+          context={filterContext}
           teamDefault={teamDefaultActions}
           customerSorts={isMember}
           onReset={

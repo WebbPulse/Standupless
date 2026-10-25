@@ -34,12 +34,13 @@ from app.common.api.schemas.teams import (
 )
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
+    GROUP_BY_PROPERTIES,
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
-    GroupByField,
     LayoutField,
     SortField,
     completed_window_of,
+    grouping_pattern,
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -576,6 +577,15 @@ def _update_display_defaults(call: ToolCall) -> Any:
     return {"team_id": team.team_id, **_display_defaults_json(call, team.team_id)}
 
 
+def _display_grouping(description: str) -> dict[str, Any]:
+    """A team default grouping: a property name, `label_group:<id>` for one label group, or none."""
+    return {
+        "type": "string",
+        "pattern": grouping_pattern("none"),
+        "description": f"{description}. One of {', '.join(GROUP_BY_PROPERTIES)}, none, or label_group:<id>",
+    }
+
+
 def _display_options_schema(page: str) -> dict[str, Any]:
     """The options object one team page takes, null clearing it back to the built-in default."""
     return {
@@ -586,11 +596,8 @@ def _display_options_schema(page: str) -> dict[str, Any]:
         ),
         "properties": {
             "layout": enum(get_args(LayoutField), "list or board"),
-            "group_by": enum((*get_args(GroupByField), "none"), "Group rows by this property, none for no grouping"),
-            "sub_group_by": enum(
-                (*get_args(GroupByField), "none"),
-                "Sub group within each group, needs group_by; none for no sub grouping",
-            ),
+            "group_by": _display_grouping("Group rows by this property, none for no grouping"),
+            "sub_group_by": _display_grouping("Sub group within each group, needs group_by; none for no sub grouping"),
             "ordering": enum(get_args(SortField), "Ordering within groups"),
             "ordering_reversed": {"type": "boolean", "description": "Reverse the ordering"},
             "visible_properties": {
