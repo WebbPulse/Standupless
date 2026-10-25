@@ -32,6 +32,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -144,7 +145,13 @@ import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
 import ConfirmRemoveCustomerRequestDialog from '../ConfirmRemoveCustomerRequestDialog';
 import BoardLayout from './BoardLayout';
 import BulkBar, { type BulkBarMenuItem } from './BulkBar';
-import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
+import {
+  createRowFocusStore,
+  IssueViewEnvContext,
+  RowFocusContext,
+  type IssueViewEnv,
+  type RowFocusStore,
+} from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
@@ -283,6 +290,23 @@ const PropertyShortcut: React.FC<{
 };
 
 /** The view. */
+/**
+ * Hands rows the view environment and the focus store together, so focus
+ * moves reach rows through the store without changing the environment every
+ * row and cell reads.
+ */
+const IssueViewProviders: React.FC<{
+  env: IssueViewEnv;
+  focus: RowFocusStore;
+  children: React.ReactNode;
+}> = ({ env, focus, children }) => (
+  <IssueViewEnvContext.Provider value={env}>
+    <RowFocusContext.Provider value={focus}>
+      {children}
+    </RowFocusContext.Provider>
+  </IssueViewEnvContext.Provider>
+);
+
 export const IssueListView: React.FC<IssueListViewProps> = ({
   slug,
   state,
@@ -503,6 +527,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   };
 
   const focused = focusedId !== null && byId.has(focusedId) ? focusedId : null;
+  const [focusStore] = useState(() => createRowFocusStore(focused, peekedKey));
+  useLayoutEffect(() => {
+    focusStore.publish(focused, peekedKey);
+  }, [focusStore, focused, peekedKey]);
   const liveSelected = useMemo(
     () => new Set([...selected].filter((id) => byId.has(id))),
     [selected, byId]
@@ -1346,9 +1374,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       update,
       ...(byCustomer && workspaceId !== '' ? { moveCustomer } : {}),
       createLabel,
-      focusedId: focused,
       selected: liveSelected,
-      peekedKey,
       focus: setFocusedId,
       toggleSelected,
       selectMany,
@@ -1375,9 +1401,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       workspaceId,
       moveCustomer,
       createLabel,
-      focused,
       liveSelected,
-      peekedKey,
       toggleSelected,
       selectMany,
       peek,
@@ -1656,7 +1680,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   }
 
   return (
-    <IssueViewEnvContext.Provider value={env}>
+    <IssueViewProviders env={env} focus={focusStore}>
       <StatusPositionKeys
         issues={targets}
         enabled={canCommand}
@@ -1978,7 +2002,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           setAnchor(null);
         }}
       />
-    </IssueViewEnvContext.Provider>
+    </IssueViewProviders>
   );
 };
 

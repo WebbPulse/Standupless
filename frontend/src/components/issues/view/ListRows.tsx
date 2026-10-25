@@ -84,7 +84,7 @@ import {
   PriorityCell,
   StatusCell,
 } from './IssueProperties';
-import { useIssueViewEnv } from './IssueViewContext';
+import { useIssueViewEnv, useRowFocus } from './IssueViewContext';
 import {
   canDragIssue,
   landIssueDrop,
@@ -629,9 +629,8 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
   const selectable = env.selectable !== false;
   const shows = (property: (typeof env.state.visible)[number]): boolean =>
     env.state.visible.includes(property);
-  const isFocused = env.focusedId === issue.id;
+  const { focused: isFocused, peeked: isPeeked } = useRowFocus(issue);
   const isSelected = env.selected.has(issue.id);
-  const isPeeked = env.peekedKey === issue.key;
   const selecting = env.selected.size > 0;
   const archived = (issue.archived_at ?? null) !== null;
   const prefetch = useIssuePrefetch(issue.key, isFocused);
@@ -1260,4 +1259,11 @@ export const ListRows: React.FC<ListRowsProps> = ({
   );
 };
 
-export default ListRows;
+/**
+ * The list held still while the view re-renders for something the rows do not
+ * read, such as the keyboard focus or the peek, which each row takes from the
+ * view's focus store instead.
+ */
+const MemoListRows = React.memo(ListRows);
+
+export default MemoListRows;
