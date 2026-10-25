@@ -41,19 +41,22 @@ from app.common.dashboards import (
 from app.common.issue_rules import not_found
 from app.common.plan_features import Feature, enforce_feature
 
-router = APIRouter()
+READER = Depends(require(Capability.WORKSPACE_READ))
 
 
-def dashboard_reader(
-    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+def insights_plan(
+    context: AuthzContext = READER,
     repositories: Repositories = Depends(get_repositories),
-) -> AuthzContext:
-    """A workspace member whose workspace's plan includes Insights, the feature dashboards belong to."""
+) -> None:
+    """Refuse unless the workspace's plan includes Insights, the feature dashboards belong to.
+
+    It takes the route's own member dependency, so a caller outside the workspace
+    meets that refusal before any plan check.
+    """
     enforce_feature(repositories, context.workspace_id, Feature.INSIGHTS)
-    return context
 
 
-READER = Depends(dashboard_reader)
+router = APIRouter(dependencies=[Depends(insights_plan)])
 
 
 @router.get("/{workspace_id}/views/dashboards", response_model=DashboardList)

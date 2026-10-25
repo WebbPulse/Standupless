@@ -100,7 +100,7 @@ def test_a_dashboard_made_on_business_is_refused_after_a_downgrade(
     sign_in(client, MEMBER)
     made = client.post(DASHBOARDS, json={"name": "Delivery"})
     assert made.status_code == 201, made.text
-    path = f"{DASHBOARDS}/{made.json()['dashboard_id']}"
+    path = f"{DASHBOARDS}/{made.json()['id']}"
 
     repositories.workspaces.set_billing(workspace, plan="standard")
     assert_plan_refusal(client.get(path), "standard")
