@@ -10,12 +10,19 @@
  * every team, so there is nothing for a person to join or leave on their own.
  *
  * Retired teams leave the main table for a list of their own below it, where a
- * team admin can un-retire one.
+ * team admin can un-retire one. Export CSV downloads every visible team,
+ * retired ones included, built from the list already loaded.
  */
 
 import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
-import { LuEllipsis, LuLock, LuPlus, LuUsersRound } from 'react-icons/lu';
+import {
+  LuDownload,
+  LuEllipsis,
+  LuLock,
+  LuPlus,
+  LuUsersRound,
+} from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
@@ -31,9 +38,12 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { unretireTeam } from '../../api/teams';
 import { isTeamAdmin, roleLabel } from '../../lib/capabilities';
+import { toCsv } from '../../lib/csv';
+import { downloadText, fileSlug, todayStamp } from '../../lib/download';
 import { errorMessage } from '../../lib/errors';
 import { teamPath, teamSettingsPath } from '../../lib/paths';
 import { teamsKey } from '../../lib/queryKeys';
+import { teamCsvRows } from '../../lib/settingsCsv';
 import { activeTeams, retiredTeams } from '../../lib/teamRetirement';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
@@ -137,6 +147,13 @@ const TeamsSettings: React.FC = () => {
   ) : undefined;
   const limited = workspace?.role === 'member' && !createTeam.canCreate;
 
+  const exportCsv = (): void => {
+    downloadText(
+      toCsv(teamCsvRows(allTeams)),
+      `${fileSlug(`${workspace?.name ?? 'workspace'} teams`)}-${todayStamp()}.csv`
+    );
+  };
+
   return (
     <WorkspaceShell
       title="Settings"
@@ -152,7 +169,19 @@ const TeamsSettings: React.FC = () => {
               Each team has its own key, workflow, labels and members.
             </p>
           </div>
-          {create}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={isLoading || allTeams.length === 0}
+              onClick={exportCsv}
+            >
+              <LuDownload aria-hidden="true" className="h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+            {create}
+          </div>
         </div>
         {limited && (
           <p className="text-sm text-text-muted">
