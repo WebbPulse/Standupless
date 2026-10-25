@@ -69,6 +69,7 @@ const ResolvedIssueChip: React.FC<ResolvedIssueChipProps> = ({
     <Link
       to={issuePath(slug, issue.key)}
       title={`${issue.key} ${issue.title}`}
+      data-md={issueKeyText}
       className="inline-flex max-w-full items-baseline gap-1 rounded-xs bg-raised px-1 align-baseline text-[0.95em] text-text no-underline transition-colors duration-100 hover:bg-line"
     >
       <StatusIcon

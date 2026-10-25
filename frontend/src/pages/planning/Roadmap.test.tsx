@@ -579,6 +579,43 @@ describe('Roadmap', () => {
         deleteProjectRelation.mockReturnValue(new Promise(() => undefined));
       });
 
+      it('hides the lines and link dots from the Display menu', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        await screen.findByRole('slider', { name: /^Ship/ });
+        expect(line('prj-1', 'prj-3')).not.toBeNull();
+
+        await user.click(screen.getByRole('button', { name: 'Display' }));
+        const toggle = screen.getByRole('switch', {
+          name: 'Show dependencies',
+        });
+        expect(toggle).toBeChecked();
+        await user.click(toggle);
+
+        expect(toggle).not.toBeChecked();
+        expect(line('prj-1', 'prj-3')).toBeNull();
+        expect(screen.queryByTestId('timeline-dependencies')).toBeNull();
+        expect(lane('prj-1').querySelector('[data-link-handle]')).toBeNull();
+
+        await user.click(toggle);
+
+        expect(line('prj-1', 'prj-3')).not.toBeNull();
+        expect(handle('prj-1', 'end')).toBeInTheDocument();
+      });
+
+      it('keeps the lines hidden when the URL says so', async () => {
+        const user = userEvent.setup();
+        renderPage('/w/mine/roadmap?dependencies=hide');
+        await screen.findByRole('slider', { name: /^Ship/ });
+
+        expect(line('prj-1', 'prj-3')).toBeNull();
+        expect(lane('prj-3').querySelector('[data-link-handle]')).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Display' }));
+        expect(
+          screen.getByRole('switch', { name: 'Show dependencies' })
+        ).not.toBeChecked();
+      });
+
       it('lights a line on hover and removes it from its menu', async () => {
         const user = userEvent.setup();
         renderPage();
@@ -632,7 +669,7 @@ describe('Roadmap', () => {
     });
   });
 
-  it('marks each dated milestone with a diamond on its lane', async () => {
+  it('marks each dated milestone with a diamond filled by its progress', async () => {
     listProjects.mockResolvedValue({
       projects: [
         {
@@ -643,12 +680,26 @@ describe('Roadmap', () => {
               name: 'Beta',
               target_date: '2026-09-25',
               completed: true,
+              counts: {
+                todo: 0,
+                in_progress: 0,
+                done: 2,
+                cancelled: 0,
+                total: 2,
+              },
             },
             {
               milestone_id: 'ms-2',
               name: 'GA',
               target_date: '2026-09-30',
               completed: false,
+              counts: {
+                todo: 3,
+                in_progress: 0,
+                done: 1,
+                cancelled: 0,
+                total: 4,
+              },
             },
           ],
         },
@@ -660,17 +711,29 @@ describe('Roadmap', () => {
     await screen.findByRole('slider', { name: /^Launch/ });
 
     const beta = screen.getByRole('link', {
-      name: 'Milestone Beta, 2026-09-25',
+      name: 'Beta, 100% of 2 issues complete',
     });
-    expect(beta).toHaveAttribute('title', 'Beta · 2026-09-25');
+    expect(beta).toHaveAttribute(
+      'title',
+      'Beta, 100% of 2 issues complete · 2026-09-25'
+    );
     expect(beta).toHaveAttribute('data-completed', 'true');
+    expect(beta.querySelector('[data-milestone-glyph]')).toHaveAttribute(
+      'data-milestone-glyph',
+      'complete'
+    );
     expect(beta).toHaveAttribute(
       'href',
       '/w/mine/projects/prj-1?tab=issues&f=milestone.is%3Ams-1'
     );
-    expect(
-      screen.getByRole('link', { name: 'Milestone GA, 2026-09-30' })
-    ).toHaveAttribute('data-completed', 'false');
+    const ga = screen.getByRole('link', {
+      name: 'GA, 25% of 4 issues complete',
+    });
+    expect(ga).toHaveAttribute('data-completed', 'false');
+    expect(ga.querySelector('[data-milestone-glyph]')).toHaveAttribute(
+      'data-milestone-glyph',
+      'partial'
+    );
     expect(lane('prj-1').querySelectorAll('[data-milestone]')).toHaveLength(2);
     expect(lane('prj-2').querySelectorAll('[data-milestone]')).toHaveLength(0);
   });

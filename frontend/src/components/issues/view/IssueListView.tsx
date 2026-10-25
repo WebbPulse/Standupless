@@ -3,12 +3,14 @@
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
- * or removes their parent issue, i assigns them to the
+ * or removes their parent issue, r renames the focused issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
  * or convert it into a project, M then B, X, R or D marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
  * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
- * them, and Cmd or Ctrl+Delete deletes them after a confirmation. On a
+ * them, Cmd or Ctrl+Shift+C, D and L add them to the active cycle, clear
+ * their due date and clear their labels without a picker, and Cmd or
+ * Ctrl+Delete deletes them after a confirmation. On a
  * board j and k stay in the focused column, h and l or the side arrows cross to the next column
  * holding a card, and labels move to Shift+L. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
@@ -49,6 +51,7 @@ import {
 } from '../../../hooks/useIssueSubject';
 import type { IssueContextState } from '../../../hooks/useIssueContext';
 import { usePeekIssue } from '../../../hooks/usePeekIssue';
+import { useQuickActions } from '../../../hooks/useQuickActions';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { WorkspaceContext } from '../../../contexts/WorkspaceContextDefinition';
 import { desktopOpenInNewTab } from '../../../lib/desktop';
@@ -67,6 +70,7 @@ import {
   type FilterField,
   type IssueGroup,
   type ViewState,
+  withinStatusCategories,
   withLayout,
 } from '../../../lib/issueView';
 import {
@@ -76,6 +80,7 @@ import {
   copyBranchName,
   copyText,
   issueUrl,
+  type BranchStart,
 } from '../../../lib/copyIssue';
 import { allArchived } from '../../../lib/issueDisplay';
 import { boardStep } from '../../../lib/boardNav';
@@ -91,7 +96,11 @@ import { showToast } from '../../../lib/toast';
 import { foldedParentKey, parentRefOf, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateOptions } from '../../../lib/validation';
-import type { EstimateScale, LinkType } from '../../../types/Api';
+import type {
+  EstimateScale,
+  LinkType,
+  StatusCategory,
+} from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
 import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -106,11 +115,13 @@ import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
+import RenameIssueDialog from '../RenameIssueDialog';
 import { RELATION_COMMANDS } from '../RelationGlyphs';
 import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
+  RENAME_ISSUE_KEYS,
   propertyKeysFor,
   type CommandProperty,
 } from './propertyKeys';
@@ -144,6 +155,11 @@ export interface IssueListViewProps {
    * filter menu offers.
    */
   filterFields?: readonly FilterField[] | undefined;
+  /**
+   * The status categories the view's scope covers. Status groups and board
+   * columns outside them are left out. Left out, every category shows.
+   */
+  statusCategories?: readonly StatusCategory[] | undefined;
 }
 
 /** The palette label of each property command. */
@@ -212,6 +228,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   emptyMessage = 'No issues match this view.',
   collapseKey,
   filterFields,
+  statusCategories,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -242,6 +259,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [command, setCommand] = useState<OpenCommand | null>(null);
   const [parenting, setParenting] = useState<string[] | null>(null);
   const [converting, setConverting] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
@@ -282,18 +300,21 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       state.layout === 'board' && state.groupBy === 'none'
         ? 'status'
         : state.groupBy;
-    return groupIssues(sorted, field, context, state.showEmpty).map(
-      (group) => ({
-        group,
-        subs:
-          state.subGroupBy === 'none' || field === 'none'
-            ? null
-            : groupIssues(group.issues, state.subGroupBy, context, false),
-      })
-    );
+    return withinStatusCategories(
+      groupIssues(sorted, field, context, state.showEmpty),
+      field,
+      statusCategories
+    ).map((group) => ({
+      group,
+      subs:
+        state.subGroupBy === 'none' || field === 'none'
+          ? null
+          : groupIssues(group.issues, state.subGroupBy, context, false),
+    }));
   }, [
     sorted,
     context,
+    statusCategories,
     state.groupBy,
     state.subGroupBy,
     state.showEmpty,
@@ -768,6 +789,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       issues.length === 1 ? 'Issue ID copied' : 'Issue IDs copied'
     );
   };
+  const branchStart = (issue: OrderedIssueRead): BranchStart | undefined =>
+    canEdit
+      ? {
+          issue,
+          statuses: context.statuses.filter(
+            (status) =>
+              status.team_id === undefined || status.team_id === issue.team_id
+          ),
+          currentUserId: context.currentUserId ?? '',
+          apply: (patch) => {
+            update([issue.id], patch);
+          },
+        }
+      : undefined;
   const copyUrls = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issueUrl(slug, issue.key)).join('\n'),
@@ -840,6 +875,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   useShortcut({
+    keys: RENAME_ISSUE_KEYS,
+    label: 'Rename issue…',
+    scope: 'issue',
+    enabled: canEdit && single !== undefined,
+    handler: (event) => {
+      event?.preventDefault();
+      if (single !== undefined) setRenaming(single.id);
+    },
+  });
+  useShortcut({
     keys: COPY_ISSUE_ID_KEYS,
     label: 'Copy issue ID',
     scope: 'issue',
@@ -864,7 +909,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: single !== undefined,
     handler: (event) => {
       event?.preventDefault();
-      if (single !== undefined) copyBranchName(single.key, single.title);
+      if (single !== undefined) {
+        copyBranchName(single.key, single.title, branchStart(single));
+      }
     },
   });
   useShortcut({
@@ -885,6 +932,13 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       event?.preventDefault();
       setDeleting(targets);
     },
+  });
+  useQuickActions({
+    workspaceId,
+    issues: targets,
+    enabled: canCommand,
+    write: update,
+    cyclesFor: (teamId) => forTeam(teamId).cycles,
   });
   usePublishIssueSubject(subjectOf(targets));
   useShortcut({
@@ -1068,6 +1122,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const commandIssues = command === null ? [] : resolve(command.ids);
   const parentIssues = parenting === null ? [] : resolve(parenting);
   const [convertIssue] = converting === null ? [] : resolve([converting]);
+  const [renameIssue] = renaming === null ? [] : resolve([renaming]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
@@ -1138,6 +1193,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         onToggle={onToggle}
         onStateChange={onStateChange}
         createIn={createIn}
+        statusCategories={statusCategories}
       />
     );
   } else {
@@ -1247,6 +1303,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
         />
       )}
+      {renameIssue !== undefined && (
+        <RenameIssueDialog
+          issueKey={renameIssue.key}
+          title={renameIssue.title}
+          onRename={(title) => {
+            update([renameIssue.id], { title });
+          }}
+          onClose={() => {
+            setRenaming(null);
+          }}
+        />
+      )}
       {deleting !== null && remove !== undefined && (
         <ConfirmDeleteIssuesDialog
           issues={deleting}
@@ -1325,7 +1393,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             menuSingle === undefined
               ? undefined
               : () => {
-                  copyBranchName(menuSingle.key, menuSingle.title);
+                  copyBranchName(
+                    menuSingle.key,
+                    menuSingle.title,
+                    branchStart(menuSingle)
+                  );
                 }
           }
           onOpen={

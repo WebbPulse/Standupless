@@ -9,12 +9,10 @@ route, because a schema cannot read.
 
 from __future__ import annotations
 
-import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
 
-import emoji as emoji_data
 from fastapi import Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
@@ -24,6 +22,7 @@ from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
 from app.common.db.dynamo.comments import Comment, GithubThread, ThreadResolution
+from app.common.discussion_reads import AuthorRead, ReactionGroupRead, check_emoji
 
 TargetKindField = Literal["issue", "comment"]
 
@@ -122,43 +121,6 @@ which the picker imports, and `tests/domains/discussion/test_reactions.py` fails
 when the checked-in file has drifted, so the two halves cannot disagree.
 """
 
-VARIATION_SELECTOR = "\N{VARIATION SELECTOR-16}"
-"""U+FE0F, the emoji presentation selector.
-
-Stripped before the emoji is stored because a client may send either presentation
-of the same character, and comparing raw strings would hold them as two reactions.
-"""
-
-
-def normalize_emoji(value: str) -> str:
-    """One emoji in the form the sort key is held in.
-
-    NFC first, so a decomposed sequence compares equal, then the variation selector
-    is dropped, so both presentations of the same character are one reaction rather
-    than two rows a reader sees side by side.
-    """
-    return unicodedata.normalize("NFC", value).replace(VARIATION_SELECTOR, "")
-
-
-EMOJI_MAX_CODE_POINTS = 16
-"""The bound on an emoji, in code points after normalisation.
-
-The longest emoji in Unicode, a couple with two skin tones joined by zero-width
-joiners, is ten, so sixteen admits every one with room for the next release while
-refusing a long string before the emoji table is consulted.
-"""
-
-
-def is_single_emoji(value: str) -> bool:
-    """Whether a value is exactly one emoji, in either presentation form.
-
-    The `emoji` package holds Unicode's emoji list, with every skin tone, flag,
-    keycap and zero-width-joiner sequence as one entry, so a string that is two
-    emoji or an emoji with text beside it is not in it.
-    """
-    return emoji_data.is_emoji(value) or emoji_data.is_emoji(normalize_emoji(value))
-
-
 VIDEO_CONTENT_TYPES: frozenset[str] = frozenset({"video/mp4", "video/webm", "video/quicktime"})
 """The video types an editor may embed inline and a reader plays with native controls.
 
@@ -212,26 +174,6 @@ def _check_body(value: str) -> str:
     return value
 
 
-def _check_emoji(value: str) -> str:
-    """Hold a reaction to exactly one emoji, in either presentation form.
-
-    Any single emoji rather than an allow list, because a reader reaches for the
-    one that says what they mean. Text and runs of emoji are refused, which keeps
-    the sort keys a partition can hold to Unicode's emoji list. The normalised form
-    is what is returned, so the stored sort key is the same whether or not the
-    caller sent the variation selector.
-    """
-    raw = value.strip()
-    candidate = normalize_emoji(raw)
-    if not candidate:
-        raise ValueError("emoji must not be empty")
-    if len(candidate) > EMOJI_MAX_CODE_POINTS:
-        raise ValueError(f"emoji must be at most {EMOJI_MAX_CODE_POINTS} code points")
-    if not is_single_emoji(raw):
-        raise ValueError("emoji must be a single emoji")
-    return candidate
-
-
 def _check_https_url(value: str) -> str:
     """Hold an attachment URL to `https` and to the contract's length cap.
 
@@ -272,32 +214,6 @@ def title_for(url: str, title: str | None) -> str:
     if title and title.strip():
         return title.strip()[:TITLE_MAX]
     return urlparse(url).netloc or url[:TITLE_MAX]
-
-
-class AuthorRead(BaseModel):
-    """Who wrote a comment, denormalised onto the response.
-
-    Rendered from one batched user read per page rather than stored on the row, so
-    a display name change is reflected without rewriting every comment.
-    """
-
-    user_id: str
-    display_name: str = ""
-    email: str = ""
-    avatar_url: Optional[str] = None
-
-
-class ReactionGroupRead(BaseModel):
-    """One emoji's reactions on one target.
-
-    `reacted` is resolved against the calling user, which is what lets the frontend
-    render the caller's own reaction as pressed without a second read.
-    """
-
-    emoji: str
-    count: int
-    user_ids: list[str] = Field(default_factory=list)
-    reacted: bool = False
 
 
 class ReactionListRead(BaseModel):
@@ -481,7 +397,7 @@ class ReactionWrite(BaseModel):
     @classmethod
     def check_emoji(cls, value: str) -> str:
         """Hold the value to exactly one emoji."""
-        return _check_emoji(value)
+        return check_emoji(value)
 
 
 AttachmentListRead = cursor_page(AttachmentRead, "attachments", model_name="AttachmentListRead")

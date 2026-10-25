@@ -43,6 +43,8 @@ interface ResolvedChipProps {
   slug: string;
   target: LinkedReference;
   fallback: React.ReactNode;
+  /** The link as written, which a quoted passage keeps. */
+  href: string;
 }
 
 /** A linked project, with its own mark and current name. */
@@ -51,6 +53,7 @@ const ProjectChip: React.FC<ResolvedChipProps> = ({
   slug,
   target,
   fallback,
+  href,
 }) => {
   const auth = useQueryAuth();
   const { data: project } = usePolledQuery(
@@ -66,6 +69,7 @@ const ProjectChip: React.FC<ResolvedChipProps> = ({
       to={projectPath(slug, target.id)}
       title={project?.name}
       data-reference="project"
+      data-md-href={href}
       className={REFERENCE_CHIP_CLASS}
     >
       <ProjectMark
@@ -83,6 +87,7 @@ const DocumentChip: React.FC<ResolvedChipProps> = ({
   slug,
   target,
   fallback,
+  href,
 }) => {
   const auth = useQueryAuth();
   const { data: document } = usePolledQuery(
@@ -98,6 +103,7 @@ const DocumentChip: React.FC<ResolvedChipProps> = ({
       to={documentPath(slug, target.id)}
       title={document?.title}
       data-reference="document"
+      data-md-href={href}
       className={REFERENCE_CHIP_CLASS}
     >
       <LuFileText
@@ -133,6 +139,7 @@ export const ReferenceChip: React.FC<ReferenceChipProps> = ({
       slug={workspace.slug}
       target={target}
       fallback={children}
+      href={href}
     />
   );
 };

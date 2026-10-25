@@ -659,6 +659,7 @@ class DisplayOptionsBody(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -778,7 +779,18 @@ class DraftWrite(TypedDict):
     body: str
 
 
+class FavoriteFolderRead(TypedDict):
+    folder_id: str
+    name: str
+    position: int
+
+
+class FavoriteFolderWrite(TypedDict):
+    name: str
+
+
 class FavoriteRef(TypedDict):
+    folder_id: NotRequired[str | None]
     kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
     target_id: str
     team_id: NotRequired[str | None]
@@ -904,6 +916,7 @@ class InboxCountRead(TypedDict):
 
 class InboxReadRequest(TypedDict):
     all: NotRequired[bool]
+    kinds: NotRequired[list[str]]
     notification_ids: NotRequired[list[str] | None]
 
 
@@ -1328,6 +1341,22 @@ class MediaTokensRead(TypedDict):
     tokens: dict[str, str]
 
 
+class MemberCommentRead(TypedDict):
+    body: str
+    comment_id: str
+    parent_comment_id: NotRequired[str | None]
+
+
+class MemberProfileRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    full_name: NotRequired[str]
+    joined_at: str
+    role: Literal["owner", "admin", "member", "guest"]
+    team_ids: NotRequired[list[str]]
+    user_id: str
+
+
 class MemberRead(TypedDict):
     avatar_url: NotRequired[str | None]
     display_name: str
@@ -1463,7 +1492,17 @@ ProjectActivityRead = TypedDict(
         "created_at": str,
         "field": NotRequired[str | None],
         "from": NotRequired[Any],
-        "kind": Literal["created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"],
+        "kind": Literal[
+            "created",
+            "field_changed",
+            "milestone_added",
+            "milestone_removed",
+            "milestone_changed",
+            "link_added",
+            "link_removed",
+            "link_changed",
+        ],
+        "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
         "project_id": str,
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
@@ -1548,10 +1587,37 @@ class ProjectLabelUpdate(TypedDict):
     name: NotRequired[str | None]
 
 
+class ProjectLinkCreate(TypedDict):
+    sort_order: NotRequired[str | None]
+    title: NotRequired[str | None]
+    url: str
+
+
+class ProjectLinkRead(TypedDict):
+    created_at: str
+    created_by: str
+    link_id: str
+    project_id: str
+    sort_order: str
+    title: NotRequired[str | None]
+    updated_at: str
+    url: str
+    workspace_id: str
+
+
+class ProjectLinkUpdate(TypedDict):
+    sort_order: NotRequired[str | None]
+    title: NotRequired[str | None]
+    url: NotRequired[str | None]
+
+
 class ProjectMilestoneMarkerRead(TypedDict):
     completed: bool
+    counts: NotRequired[CountsRead]
+    measure: NotRequired[Literal["points", "issues"]]
     milestone_id: str
     name: str
+    progress: NotRequired[CountsRead]
     target_date: str
 
 
@@ -1655,6 +1721,14 @@ class ProjectUpdate(TypedDict):
     update_interval_days: NotRequired[int | None]
 
 
+class ProjectUpdateCommentCreate(TypedDict):
+    body: str
+
+
+class ProjectUpdateCommentPatch(TypedDict):
+    body: str
+
+
 class ProjectUpdateCreate(TypedDict):
     body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
@@ -1666,23 +1740,15 @@ class ProjectUpdatePatch(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
 
 
-class ProjectUpdateRead(TypedDict):
-    author_id: str
-    body: str
-    can_edit: NotRequired[bool]
-    created_at: str
-    edited_at: NotRequired[str | None]
-    health: Literal["on_track", "at_risk", "off_track"]
-    project_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
-    update_id: str
-    updated_at: str
-    workspace_id: str
+class ProjectUpdateReactionWrite(TypedDict):
+    comment_id: NotRequired[str | None]
+    emoji: str
 
 
 class ProjectsDisplay(TypedDict):
     closed: NotRequired[Literal["all", "fortnight", "month", "none"]]
     columns: NotRequired[str]
+    dependencies: NotRequired[Literal["show", "hide"]]
     direction: NotRequired[Literal["asc", "desc"]]
     empty: NotRequired[Literal["show", "hide"]]
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
@@ -2087,6 +2153,7 @@ class ShareLinkCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2694,6 +2761,7 @@ class TransitionUpdate(TypedDict, closed=True):
 
 
 class TriageAccept(TypedDict):
+    comment: NotRequired[str | None]
     status_id: NotRequired[str | None]
 
 
@@ -2755,7 +2823,10 @@ class UrlAttachmentCreate(TypedDict):
 
 
 class UserPreferencesUpdate(TypedDict):
+    auto_assign_to_self: NotRequired[bool | None]
     auto_grant_new_scopes: NotRequired[bool | None]
+    branch_copy_assigns: NotRequired[bool | None]
+    branch_copy_starts: NotRequired[bool | None]
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
@@ -2769,6 +2840,7 @@ class UserPreferencesUpdate(TypedDict):
                 "status_changed",
                 "subscribed",
                 "project_update",
+                "project_update_comment",
                 "project_update_due",
                 "initiative_update_due",
                 "due_soon",
@@ -2795,8 +2867,11 @@ class UserProfileUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
+    auto_assign_to_self: NotRequired[bool]
     auto_grant_new_scopes: NotRequired[bool]
     avatar_url: NotRequired[str | None]
+    branch_copy_assigns: NotRequired[bool]
+    branch_copy_starts: NotRequired[bool]
     display_name: str
     email: str
     email_notifications: bool
@@ -2873,6 +2948,7 @@ class ViewCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2896,6 +2972,7 @@ class ViewCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -2987,6 +3064,7 @@ class ViewUpdate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -3010,6 +3088,7 @@ class ViewUpdate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -3228,6 +3307,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     blocked_by_open_count: NotRequired[int]
     blocking_count: NotRequired[int]
     body: NotRequired[str | None]
+    cancelled_at: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     created_at: str
     created_by: str
@@ -3256,6 +3336,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     snoozed_until: NotRequired[str | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
+    started_at: NotRequired[str | None]
     status_id: str
     team_id: str
     title: str
@@ -3442,11 +3523,13 @@ class ErrorResponse(TypedDict):
 
 
 class FavoriteOrder(TypedDict):
+    folders: NotRequired[list[str] | None]
     items: list[FavoriteRef]
 
 
 class FavoriteRead(TypedDict):
     color: NotRequired[str | None]
+    folder_id: NotRequired[str | None]
     icon: NotRequired[str | None]
     issue_key: NotRequired[str | None]
     kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
@@ -3505,12 +3588,6 @@ class HomeInboxRead(TypedDict):
 class HomePullRequestItem(TypedDict):
     issue: AppCommonApiSchemasIssuesIssueRead
     pull_request: PullRequestSummaryEntryRead
-
-
-class HomePulseItem(TypedDict):
-    project_id: str
-    project_name: str
-    update: ProjectUpdateRead
 
 
 class HomeShippedItem(TypedDict):
@@ -3762,6 +3839,18 @@ class LinkRead(TypedDict):
     type: str
 
 
+class MemberActivityRead(TypedDict):
+    activity: NotRequired[ActivityRead | None]
+    comment: NotRequired[MemberCommentRead | None]
+    created_at: str
+    id: str
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    team_id: str
+    type: Literal["issue_change", "comment"]
+
+
 class MemberListRead(TypedDict):
     members: list[MemberRead]
 
@@ -3791,6 +3880,11 @@ class ProjectLabelListRead(TypedDict):
     labels: list[ProjectLabelRead]
 
 
+class ProjectLinkListRead(TypedDict):
+    links: list[ProjectLinkRead]
+    next_cursor: NotRequired[str | None]
+
+
 class ProjectRead(TypedDict):
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
@@ -3808,6 +3902,7 @@ class ProjectRead(TypedDict):
     label_ids: NotRequired[list[str]]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
+    links: NotRequired[list[ProjectLinkRead] | None]
     measure: NotRequired[Literal["points", "issues"]]
     member_ids: NotRequired[list[str]]
     milestone_markers: NotRequired[list[ProjectMilestoneMarkerRead]]
@@ -3839,9 +3934,36 @@ class ProjectRelationListRead(TypedDict):
     relations: list[ProjectRelationRead]
 
 
-class ProjectUpdateListRead(TypedDict):
-    next_cursor: NotRequired[str | None]
-    updates: list[ProjectUpdateRead]
+class ProjectUpdateCommentRead(TypedDict):
+    author: AuthorRead
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    comment_id: str
+    created_at: str
+    edited_at: NotRequired[str | None]
+    mentions: NotRequired[list[str]]
+    project_id: str
+    reactions: NotRequired[list[ReactionGroupRead]]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    update_id: str
+    workspace_id: str
+
+
+class ProjectUpdateRead(TypedDict):
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    comment_count: NotRequired[int]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    health: Literal["on_track", "at_risk", "off_track"]
+    project_id: str
+    reactions: NotRequired[list[ReactionGroupRead]]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    update_id: str
+    updated_at: str
+    workspace_id: str
 
 
 class RecurringListRead(TypedDict):
@@ -4125,6 +4247,13 @@ class DocumentTemplateListRead(TypedDict):
 
 class FavoriteListRead(TypedDict):
     favorites: list[FavoriteRead]
+    folders: NotRequired[list[FavoriteFolderRead]]
+
+
+class HomePulseItem(TypedDict):
+    project_id: str
+    project_name: str
+    update: ProjectUpdateRead
 
 
 class HomeRead(TypedDict):
@@ -4170,9 +4299,23 @@ class LinkListRead(TypedDict):
     links: list[LinkRead]
 
 
+class MemberActivityListRead(TypedDict):
+    activity: list[MemberActivityRead]
+    next_cursor: NotRequired[str | None]
+
+
 class ProjectListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     projects: list[ProjectRead]
+
+
+class ProjectUpdateCommentListRead(TypedDict):
+    comments: list[ProjectUpdateCommentRead]
+
+
+class ProjectUpdateListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    updates: list[ProjectUpdateRead]
 
 
 class ReleaseListRead(TypedDict):

@@ -4,7 +4,8 @@
  * files placed right in the text by the paperclip, by dropping them on the box
  * or by pasting a screenshot. An image or video shows inline behind a progress
  * bar while it uploads and as itself once it lands, and any other file becomes
- * a link to it. Ctrl or Cmd Enter posts.
+ * a link to it. Ctrl or Cmd Enter posts. The issue's own composer also takes
+ * Ctrl or Cmd+M, which scrolls to it and puts the caret in it.
  *
  * Files upload as soon as they are added and are held out of the issue's rail
  * until the comment posts. Posting links the files the text still names to
@@ -17,9 +18,19 @@
  * synced as it posts. The toggle picks the one target, or opens a picker when
  * there are several, and a public repository carries a warning, because the
  * thread is published there.
+ *
+ * A quoted passage arrives as a request and is added after whatever is
+ * already written, so quoting into a reply in progress keeps the reply.
  */
 
-import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   invalidateQueries,
   useMutationWithRefetch,
@@ -29,6 +40,8 @@ import { createComment } from '../../api/discussion';
 import { syncThread } from '../../api/integrations';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
 import { useCommentDraft } from '../../hooks/useCommentDraft';
+import type { QuoteRequest } from '../../hooks/useQuoteRequest';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -47,6 +60,7 @@ import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
 import type { GithubThreadTargetRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
+import { COMMENT_ISSUE_KEYS } from '../issues/view/propertyKeys';
 import Button, { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 
@@ -70,6 +84,13 @@ export interface CommentComposerProps {
   compact?: boolean;
   /** Where a new thread may be synced on GitHub; empty offers no sync. */
   threadTargets?: GithubThreadTargetRead[];
+  /** Binds Ctrl or Cmd+M to jumping here, for the issue's new thread box. */
+  jumpShortcut?: boolean;
+  /**
+   * A passage to quote, added after what is written with the caret on a new
+   * line under it. Each request is applied once.
+   */
+  quote?: QuoteRequest | null;
 }
 
 /** Props for ThreadSyncToggle. */
@@ -176,6 +197,8 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   placeholder = 'Leave a comment...',
   compact = false,
   threadTargets = [],
+  jumpShortcut = false,
+  quote = null,
 }) => {
   const [draft, setDraft] = useState('');
   const [chosenKey, setChosenKey] = useState<string | null>(null);
@@ -184,6 +207,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   const [focused, setFocused] = useState(false);
   const editor = useRef<RichMarkdownHandle>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const uploads = useAttachmentUploads(workspaceId, issueId);
   const commentDraft = useCommentDraft(
     workspaceId,
@@ -193,6 +217,53 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
+  const pendingQuote = useRef<QuoteRequest | null>(null);
+  const quotedId = useRef<number | null>(null);
+  pendingQuote.current = quote;
+
+  const applyQuote = useCallback((): void => {
+    const request = pendingQuote.current;
+    const handle = editor.current;
+    if (request === null || handle === null) return;
+    if (quotedId.current === request.id) return;
+    quotedId.current = request.id;
+    handle.appendMarkdown(request.markdown);
+    const node = box.current;
+    if (node !== null && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest' });
+    }
+  }, []);
+
+  const [editorReady, setEditorReady] = useState(false);
+
+  useEffect(() => {
+    if (editorReady) applyQuote();
+  }, [quote, editorReady, applyQuote]);
+
+  const { ref: draftRef } = commentDraft;
+  const editorRef = useCallback(
+    (handle: RichMarkdownHandle | null): void => {
+      draftRef(handle);
+      setEditorReady(handle !== null);
+    },
+    [draftRef]
+  );
+
+  useShortcut({
+    keys: COMMENT_ISSUE_KEYS,
+    label: 'Add a comment',
+    scope: 'issue',
+    group: 'Issue',
+    enabled: jumpShortcut,
+    handler: (event) => {
+      event?.preventDefault();
+      const node = box.current;
+      if (node !== null && typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ block: 'center' });
+      }
+      editor.current?.focus();
+    },
+  });
 
   const { mutate: post, isMutating } = useMutationWithRefetch(
     (body: string, attachmentIds: string[]) =>
@@ -281,6 +352,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
 
   return (
     <div
+      ref={box}
       className={cn(
         'relative rounded-lg border bg-surface transition-colors duration-100',
         focused ? 'border-line-strong' : 'border-line',
@@ -313,7 +385,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         }
       >
         <RichMarkdownEditor
-          ref={commentDraft.ref}
+          ref={editorRef}
           value=""
           editable
           ariaLabel={label}

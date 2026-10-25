@@ -19,7 +19,6 @@ import {
   LuCalendarClock,
   LuIterationCw,
   LuLink,
-  LuMilestone,
   LuCircleDashed,
   LuTriangle,
 } from 'react-icons/lu';
@@ -42,6 +41,7 @@ import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
+import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import type { PopoverTriggerProps } from '../../ui/popover';
 import { Tooltip } from '../../ui/tooltip';
 import {
@@ -601,7 +601,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
       {shows('milestone') && milestone !== undefined && (
         <Chip
           label={`Milestone: ${milestone.name}`}
-          icon={<LuMilestone aria-hidden="true" className="h-3 w-3" />}
+          icon={<MilestoneGlyph milestone={milestone} size={12} />}
           className={cn('max-w-40', card ? '' : 'hidden lg:inline-flex')}
         >
           {milestone.name}

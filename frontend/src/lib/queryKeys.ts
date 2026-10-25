@@ -298,6 +298,13 @@ export const favoritesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The caller's favorite folders, read beside the favorites by the sidebar. */
+export const favoriteFoldersKey = (workspaceId: string): QueryKey => [
+  'favorites',
+  workspaceId,
+  'folders',
+];
+
 /** The caller's Reviews list, read by the page and the sidebar badge alike. */
 export const reviewsKey = (workspaceId: string): QueryKey => [
   'reviews',
@@ -374,6 +381,13 @@ export const projectUpdatesKey = (
   workspaceId: string,
   projectId: string
 ): QueryKey => ['projectUpdates', workspaceId, projectId];
+
+/** The key for one project update's replies. */
+export const projectUpdateCommentsKey = (
+  workspaceId: string,
+  projectId: string,
+  updateId: string
+): QueryKey => ['projectUpdateComments', workspaceId, projectId, updateId];
 
 /**
  * One project's activity feed, nested under the project's own key so every
@@ -751,3 +765,15 @@ export const slackLinkKey = (workspaceId: string): QueryKey => [
   'slack-link',
   workspaceId,
 ];
+
+/** One member's profile as the member page reads it. */
+export const memberProfileKey = (
+  workspaceId: string,
+  userId: string
+): QueryKey => ['member', workspaceId, userId, 'profile'];
+
+/** One member's recent activity feed. */
+export const memberActivityKey = (
+  workspaceId: string,
+  userId: string
+): QueryKey => ['member', workspaceId, userId, 'activity'];

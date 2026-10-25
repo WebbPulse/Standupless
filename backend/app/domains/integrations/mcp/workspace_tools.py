@@ -235,8 +235,8 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
             {
                 "projects_display": projects_display_schema(
                     "The projects page arrangement: layout, group and direction, rows, order, closed, lead_team, "
-                    "empty, zoom and columns, replacing the saved default whole; a missing field takes the "
-                    "built-in choice and null clears the workspace default",
+                    "empty, zoom, dependencies and columns, replacing the saved default whole; a missing field "
+                    "takes the built-in choice and null clears the workspace default",
                     clearable=True,
                 ),
             },

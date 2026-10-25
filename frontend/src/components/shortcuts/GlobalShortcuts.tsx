@@ -1,6 +1,8 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
- * `G` then a letter to go somewhere, the team's current cycle among them,
+ * `G` then a letter to go somewhere: the team's active issues, backlog,
+ * board, archive, cycles and, as in Linear, `G` then `V` for its current
+ * cycle among them, with `G` then Shift+V for views,
  * `O` then a letter to open a favorite, project, cycle, team or view from a
  * picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
  * list of every shortcut. Registered through the
@@ -30,11 +32,14 @@ import {
   roadmapPath,
   routeTeamPrefix,
   searchPath,
+  teamArchivePath,
+  teamBoardPath,
   teamCurrentCyclePath,
   teamCyclesPath,
   teamPath,
   teamTriagePath,
 } from '../../lib/paths';
+import { teamScopePath } from '../../lib/teamIssueScope';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
 /** Props for GlobalShortcuts. */
@@ -145,6 +150,40 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   });
   useShortcut({
     keys: 'g a',
+    label: 'Go to active issues',
+    group: NAVIGATION,
+    handler: go(
+      team === undefined ? '' : teamScopePath(slug, team.key_prefix, 'active')
+    ),
+    enabled: team !== undefined,
+  });
+  useShortcut({
+    keys: 'g b',
+    label: 'Go to backlog',
+    group: NAVIGATION,
+    handler: go(
+      team === undefined ? '' : teamScopePath(slug, team.key_prefix, 'backlog')
+    ),
+    enabled: team !== undefined,
+  });
+  useShortcut({
+    keys: 'g d',
+    label: 'Go to board',
+    group: NAVIGATION,
+    handler: go(team === undefined ? '' : teamBoardPath(slug, team.key_prefix)),
+    enabled: team !== undefined,
+  });
+  useShortcut({
+    keys: 'g x',
+    label: 'Go to archived issues',
+    group: NAVIGATION,
+    handler: go(
+      team === undefined ? '' : teamArchivePath(slug, team.key_prefix)
+    ),
+    enabled: team !== undefined,
+  });
+  useShortcut({
+    keys: 'g v',
     label: 'Go to current cycle',
     group: NAVIGATION,
     handler: go(
@@ -165,7 +204,7 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     handler: go(settingsLanding(workspace)),
   });
   useShortcut({
-    keys: 'g v',
+    keys: 'g shift+v',
     label: insideTeam === undefined ? 'Go to views' : 'Go to team views',
     group: NAVIGATION,
     handler: go(viewsLanding(slug, insideTeam)),

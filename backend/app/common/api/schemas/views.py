@@ -35,6 +35,7 @@ SortField = Literal[
     "estimate_desc",
     "customer_requests_desc",
     "customer_revenue_desc",
+    "completed_desc",
 ]
 
 ViewKindField = Literal["list", "board"]
@@ -107,6 +108,7 @@ NotificationKindField = Literal[
     "status_changed",
     "subscribed",
     "project_update",
+    "project_update_comment",
     "project_update_due",
     "initiative_update_due",
     "due_soon",
@@ -599,7 +601,8 @@ class NotificationRead(BaseModel):
     """One inbox row as the API returns it.
 
     A `project_update` notification names its project and update and leaves the
-    issue fields empty. A `standup_digest` carries the team key in `issue_key`,
+    issue fields empty, and a `project_update_comment` one also names the reply in
+    `comment_id`. A `standup_digest` carries the team key in `issue_key`,
     the team name in `issue_title` and the digest date in `standup_date`. A
     `review_requested` notification carries the pull request's `owner/repo#number`
     in `issue_key`, its title in `issue_title` and its GitHub address in `url`.
@@ -682,10 +685,15 @@ class InboxCountRead(BaseModel):
 
 
 class InboxReadRequest(BaseModel):
-    """The body a mark-read takes: either a list of ids or the whole inbox."""
+    """The body a mark-read takes: either a list of ids or the whole inbox.
+
+    `kinds` narrows `all` to those notification kinds, matching the list's filter,
+    so marking everything read under a filter leaves the hidden types alone.
+    """
 
     notification_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=INBOX_READ_MAX_IDS)
     all: bool = False
+    kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
 
 
 class InboxUnreadRequest(BaseModel):

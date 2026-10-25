@@ -2,18 +2,23 @@
  * The issue page's keyboard commands, the same ones a list offers on its
  * focused row: s, p, a, l and e, Shift+M, Shift+C, Shift+P and Shift+D open the
  * property pickers, i assigns the issue to the viewer or back off them, and
- * Cmd or Ctrl+Delete deletes the issue after a confirmation. The
+ * Cmd or Ctrl+Delete deletes the issue after a confirmation, and Cmd or
+ * Ctrl+Shift+Up and Down open the parent and the first sub-issue. The
  * pickers are the list's own, fed the page's lists and writing through the
  * page's optimistic update, so both surfaces behave alike. The confirmation
  * can be held by the page, so its menu's Delete opens the same dialog.
  */
 
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../api/issues';
 import { usePublishIssueSubject } from '../../hooks/useIssueSubject';
+import { useIssueTreeKeys } from '../../hooks/useIssueTreeKeys';
+import { useQuickActions } from '../../hooks/useQuickActions';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { changeToUpdate } from '../../lib/issueChange';
 import { withGroupNames } from '../../lib/labelGroups';
+import { issuePath } from '../../lib/paths';
 import {
   changeIsNoop,
   defaultViewState,
@@ -80,6 +85,10 @@ export interface IssuePageCommandsProps {
   deleting?: boolean;
   /** Opens or closes the delete confirmation the page holds. */
   onDeletingChange?: (open: boolean) => void;
+  /** Issues already held that the parent may be among. */
+  knownIssues?: readonly IssueRead[];
+  /** The sub-issues the page holds. */
+  subIssues?: readonly OrderedIssueRead[];
 }
 
 /** Binds one property key to opening its picker. */
@@ -118,7 +127,10 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
   onDelete,
   deleting: heldDeleting,
   onDeletingChange,
+  knownIssues,
+  subIssues,
 }) => {
+  const navigate = useNavigate();
   const [command, setCommand] = useState<CommandProperty | null>(null);
   const [ownDeleting, setOwnDeleting] = useState(false);
   const deleting = heldDeleting ?? ownDeleting;
@@ -184,6 +196,26 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
   const targets = useMemo<OrderedIssueRead[]>(() => [issue], [issue]);
 
   usePublishIssueSubject({ key: issue.key, title: issue.title });
+
+  useIssueTreeKeys({
+    workspaceId: issue.workspace_id,
+    issue,
+    statuses,
+    ...(knownIssues === undefined ? {} : { known: knownIssues }),
+    ...(subIssues === undefined ? {} : { subIssues }),
+    onOpen: (target) => {
+      void navigate(issuePath(slug, target.key));
+    },
+  });
+
+  useQuickActions({
+    workspaceId: issue.workspace_id,
+    issues: targets,
+    enabled: canEdit,
+    write: env.update,
+    cyclesFor: () => cycles,
+    group: 'Issue',
+  });
 
   const assignable = people.some((person) => person.user_id === currentUserId);
   useShortcut({

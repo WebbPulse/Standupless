@@ -40,6 +40,7 @@ NotificationKind = Literal[
     "status_changed",
     "subscribed",
     "project_update",
+    "project_update_comment",
     "project_update_due",
     "initiative_update_due",
     "due_soon",
@@ -58,6 +59,7 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "status_changed",
     "subscribed",
     "project_update",
+    "project_update_comment",
     "project_update_due",
     "initiative_update_due",
     "due_soon",
@@ -68,6 +70,9 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "review_requested",
     "reminder",
 )
+
+PROJECT_UPDATE_REPLIED = "project_update_comment"
+"""The kind a reply on a project update takes, reaching the update's author, earlier repliers and anyone mentioned."""
 
 ISSUE_REMINDER = "reminder"
 """The kind a reminder a member set on an issue for themselves takes when it comes due."""
@@ -385,18 +390,21 @@ class InboxRepository:
             updated += 1
         return updated
 
-    def mark_all_read(self, workspace_id: str, user_id: str) -> int:
-        """Mark every unread notification of one member read.
+    def mark_all_read(self, workspace_id: str, user_id: str, *, kinds: Iterable[str] = ()) -> int:
+        """Mark every unread notification of one member read, or only those of some kinds.
 
         Walks the sparse index, so the work is proportional to what is unread rather
         than to how much the member has ever been sent. Bounded at now, so a row
         still snoozed keeps its snooze rather than being swept up with the rest.
+        `kinds` keeps to those kinds, matching the list's filter.
         """
         partition = inbox_partition(workspace_id, user_id)
+        wanted = list(kinds)
         unread = list(
             self._repository.iter_query(
                 Key("ws_user").eq(partition) & Key("unread_at").lte(instant(utc_now())),
                 index_name=UNREAD_INDEX,
+                filter_expression=Attr("kind").is_in(wanted) if wanted else None,
             )
         )
         return self.mark_read(

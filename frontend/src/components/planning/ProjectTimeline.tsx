@@ -13,6 +13,8 @@
  * block the second, and dragging from the dot at its start makes it wait on
  * the second. Hovering a line lights it and clicking it offers to remove it,
  * and a focused bar opens the same links from its menu key or Shift+F10.
+ * A page can hide the lines and the dots that draw them, leaving the links
+ * themselves in the bar menu.
  * Each dated milestone draws as a diamond on its project's lane.
  */
 
@@ -38,6 +40,7 @@ import { useTimelineLinks } from '../../hooks/useTimelineLinks';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
 import { TeamKey } from './ProjectPickers';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
+import MilestoneGlyph from './MilestoneGlyph';
 import ProjectIcon from './ProjectIcon';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
@@ -54,6 +57,7 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
 import {
+  milestoneProgress,
   PROJECT_STATUS_LABELS,
   progressPercent,
 } from '../../lib/planningDisplay';
@@ -168,6 +172,8 @@ interface TimelineRowProps {
   onReveal: (day: number) => void;
   /** This project is where the link being dragged would land. */
   linkTarget: boolean;
+  /** Whether the dots that drag out a new link show on the bar. */
+  linkable: boolean;
   onLinkStart: (
     projectId: string,
     side: LinkSide,
@@ -212,6 +218,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   refreshKey,
   onReveal,
   linkTarget,
+  linkable,
   onLinkStart,
   onLinkOver,
   onLinkOut,
@@ -485,6 +492,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
               </span>
             </div>
             {editable &&
+              linkable &&
               (['start', 'end'] as const).map((end) => (
                 <span
                   key={end}
@@ -541,31 +549,38 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
             )}
           </>
         )}
-        {marks.map((mark) => (
-          <Link
-            key={mark.milestoneId}
-            to={projectMilestonePath(
-              slug,
-              project.project_id,
-              mark.milestoneId
-            )}
-            aria-label={`Milestone ${mark.name}, ${mark.date}`}
-            title={`${mark.name} · ${mark.date}`}
-            data-milestone={mark.milestoneId}
-            data-completed={mark.completed ? 'true' : 'false'}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.stopPropagation();
-            }}
-            className={cn(
-              'pointer-events-auto absolute top-5 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px] border border-text-muted transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
-              mark.completed ? 'bg-text-muted' : 'bg-bg'
-            )}
-            style={{ left: mark.x }}
-          />
-        ))}
+        {marks.map((mark) => {
+          const { state, label } = milestoneProgress(mark);
+          return (
+            <Link
+              key={mark.milestoneId}
+              to={projectMilestonePath(
+                slug,
+                project.project_id,
+                mark.milestoneId
+              )}
+              aria-label={label}
+              title={`${label} · ${mark.date}`}
+              data-milestone={mark.milestoneId}
+              data-completed={state === 'complete' ? 'true' : 'false'}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+              className="pointer-events-auto absolute top-5 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-xs bg-bg transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              style={{ left: mark.x }}
+            >
+              <MilestoneGlyph
+                milestone={mark}
+                size={12}
+                decorative
+                title={`${label} · ${mark.date}`}
+              />
+            </Link>
+          );
+        })}
       </div>
     </li>
   );
@@ -643,6 +658,8 @@ export interface ProjectTimelineProps {
   people: Assignable[];
   workspaceRole: WorkspaceRole | undefined;
   zoom: TimelineZoom;
+  /** Whether the lines between blocking and blocked projects draw, true by default. */
+  showDependencies?: boolean;
   folded: string[];
   onToggleGroup: (key: string) => void;
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
@@ -662,6 +679,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   people,
   workspaceRole,
   zoom,
+  showDependencies = true,
   folded,
   onToggleGroup,
   refreshKey,
@@ -772,8 +790,9 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
     [shown]
   );
   const lines = useMemo(
-    () => dependencyLines(shown, folded, range, pxPerDay),
-    [shown, folded, range, pxPerDay]
+    () =>
+      showDependencies ? dependencyLines(shown, folded, range, pxPerDay) : [],
+    [showDependencies, shown, folded, range, pxPerDay]
   );
 
   const lanes = useRef<HTMLDivElement | null>(null);
@@ -1222,6 +1241,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
                       scrollToDay(day, 24);
                     }}
                     linkTarget={linkDrag?.targetId === project.project_id}
+                    linkable={showDependencies}
                     onLinkStart={startLink}
                     onLinkOver={overLink}
                     onLinkOut={outLink}

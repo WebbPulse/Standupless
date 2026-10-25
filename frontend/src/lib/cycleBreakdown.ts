@@ -1,16 +1,26 @@
 /**
- * A cycle's issues broken down by assignee, label and project: how many each
+ * A cycle's issues broken down by assignee, label, project and priority: how many each
  * one holds and how many of those are done. Cancelled issues are left out, as
  * they are from the cycle's scope, so a row's share matches the header's.
  */
 
 import { NONE } from '../api/issues';
-import type { IssueRead, StatusRead } from '../types/Api';
+import type { IssuePriority, IssueRead, StatusRead } from '../types/Api';
+import { PRIORITY_LABELS } from './issueDisplay';
 import { labelGroupKey, type IssueContext } from './issueView';
 import { personLabel } from './issuePeople';
 
 /** The fields a cycle can be broken down by. */
-export type BreakdownField = 'assignee' | 'label' | 'project';
+export type BreakdownField = 'assignee' | 'label' | 'project' | 'priority';
+
+/** The priority rows in the order they show, worst first and unset last. */
+export const PRIORITY_ORDER: readonly IssuePriority[] = [
+  'urgent',
+  'high',
+  'medium',
+  'low',
+  'none',
+];
 
 /** One row of a breakdown: who or what, the issues it holds and those done. */
 export interface BreakdownRow {
@@ -27,17 +37,20 @@ const NONE_LABELS: Record<BreakdownField, string> = {
   assignee: 'No assignee',
   label: 'No label',
   project: 'No project',
+  priority: PRIORITY_LABELS.none,
 };
 
 /** The ids an issue counts under for one field, `none` standing for unset. */
 const idsOf = (issue: IssueRead, field: BreakdownField): string[] => {
   if (field === 'assignee') return [issue.assignee_id ?? NONE];
   if (field === 'project') return [issue.project_id ?? NONE];
+  if (field === 'priority') return [issue.priority];
   return issue.label_ids.length === 0 ? [NONE] : issue.label_ids;
 };
 
 /**
- * The rows of one breakdown, the largest first and the unset row last. Like
+ * The rows of one breakdown, the largest first and the unset row last, or by
+ * priority from urgent down to no priority, with only the priorities held. Like
  * named labels across a rolled up cycle's teams share one row, filed under
  * the first label id met so a click filters by all of them.
  */
@@ -62,6 +75,11 @@ export const cycleBreakdown = (
       return personLabel(
         context.people.find((person) => person.user_id === id)
       );
+    }
+    if (field === 'priority') {
+      return (PRIORITY_ORDER as readonly string[]).includes(id)
+        ? PRIORITY_LABELS[id as IssuePriority]
+        : 'Unknown priority';
     }
     if (field === 'project') {
       return (
@@ -88,6 +106,12 @@ export const cycleBreakdown = (
       if (category === 'completed') row.completed += 1;
       if (category === 'completed' || category === 'started') row.started += 1;
     }
+  }
+  if (field === 'priority') {
+    return PRIORITY_ORDER.flatMap((priority) => {
+      const row = rows.get(priority);
+      return row === undefined ? [] : [row];
+    });
   }
   return [...rows.values()].sort(
     (left, right) =>

@@ -43,7 +43,9 @@ import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
 import { HighlightedCodeBlock } from './codeBlock';
+import { CollapsibleSectionKit } from './CollapsibleSection';
 import { EditorShortcuts } from './editorShortcuts';
+import { EmojiSuggestion } from './EmojiSuggestion';
 import { MediaImage, MediaUpload } from './mediaNodes';
 
 /** What {@link markdownExtensions} can be asked to vary per surface. */
@@ -318,8 +320,10 @@ export const markdownExtensions = (
     TableKit.configure({ table: { resizable: false } }),
     MediaImage.configure({ inline: false, allowBase64: false }),
     MediaUpload,
+    CollapsibleSectionKit,
     EditorShortcuts,
     MentionChips,
+    EmojiSuggestion,
     ReferenceChips.configure({
       ...(options.isIssueKey === undefined
         ? {}

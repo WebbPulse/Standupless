@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 from typing import Any, Literal, Optional
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
@@ -26,12 +27,14 @@ from app.common.db.dynamo.planning import (
     ProgressMeasure,
     Project,
     ProjectActivityRow,
+    ProjectLink,
     ProjectMilestone,
     ProjectUpdateRow,
     PulseEvent,
     RollupCounts,
     normalise_project_status,
 )
+from app.common.discussion_reads import ReactionGroupRead
 from app.common.project_cadence import (
     DEFAULT_INTERVAL_DAYS,
     UpdateDueState,
@@ -746,6 +749,13 @@ class ProjectMilestoneMarkerRead(BaseModel):
     name: str
     target_date: str
     completed: bool = Field(description="Every issue in the milestone is finished, and it holds at least one")
+    counts: CountsRead = Field(default_factory=CountsRead, description="The milestone's issue counts")
+    measure: ProgressMeasureField = Field(
+        default="issues", description="The unit `progress` reads in, points when a team on it estimates"
+    )
+    progress: CountsRead = Field(
+        default_factory=CountsRead, description="The buckets scope and completion are measured by, in `measure`"
+    )
 
     @classmethod
     def from_row(cls, milestone: ProjectMilestone) -> "ProjectMilestoneMarkerRead":
@@ -756,7 +766,144 @@ class ProjectMilestoneMarkerRead(BaseModel):
             name=milestone.name,
             target_date=milestone.target_date or "",
             completed=progress.scope > 0 and progress.done >= progress.scope,
+            counts=CountsRead.from_counts(milestone.counts),
+            measure=milestone.measure,
+            progress=CountsRead.from_counts(milestone.progress),
         )
+
+
+LINK_URL_MAX = 2048
+"""The longest URL a Resources link may hold."""
+
+LINK_TITLE_MAX = 200
+"""The longest title a Resources link may hold."""
+
+
+def _check_link_url(value: str) -> str:
+    """Hold a Resources link to an absolute http or https URL with a host."""
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("url must not be blank")
+    if len(candidate) > LINK_URL_MAX:
+        raise ValueError(f"url must be at most {LINK_URL_MAX} characters")
+    if any(character.isspace() for character in candidate):
+        raise ValueError("url must not contain whitespace")
+    parts = urlsplit(candidate)
+    if parts.scheme.lower() not in ("http", "https"):
+        raise ValueError("url must start with http:// or https://")
+    try:
+        host = parts.hostname
+    except ValueError as exc:
+        raise ValueError("url must name a host") from exc
+    if not host:
+        raise ValueError("url must name a host")
+    return candidate
+
+
+def _check_link_title(value: Optional[str]) -> Optional[str]:
+    """Trim a Resources link title, a blank one read as no title at all."""
+    if value is None:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if len(candidate) > LINK_TITLE_MAX:
+        raise ValueError(f"title must be at most {LINK_TITLE_MAX} characters")
+    return candidate
+
+
+class ProjectLinkCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/links` takes.
+
+    `title` is optional, and a link without one reads as its hostname. `sort_order`
+    is optional too: left out, the link is placed after the last one.
+    """
+
+    url: str = Field(description="An absolute http or https URL")
+    title: Optional[str] = Field(default=None, description="What the link reads as, its hostname when blank")
+    sort_order: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def check_url(cls, value: str) -> str:
+        """Hold the URL to http or https with a host."""
+        return _check_link_url(value)
+
+    @field_validator("title")
+    @classmethod
+    def check_title(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the title and hold it to its cap."""
+        return _check_link_title(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the manual position to the base 62 alphabet."""
+        return _check_sort_order(value)
+
+
+class ProjectLinkUpdate(BaseModel):
+    """The body a Resources link patch takes; a reorder is a patch of `sort_order` alone.
+
+    Setting the title to null or blank clears it, so the link reads as its hostname.
+    """
+
+    url: Optional[str] = None
+    title: Optional[str] = None
+    sort_order: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def check_url(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the URL to http or https with a host."""
+        return None if value is None else _check_link_url(value)
+
+    @field_validator("title")
+    @classmethod
+    def check_title(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the title and hold it to its cap."""
+        return _check_link_title(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the manual position to the base 62 alphabet."""
+        return _check_sort_order(value)
+
+
+class ProjectLinkRead(BaseModel):
+    """One external link in a project's Resources section as the API returns it."""
+
+    link_id: str
+    project_id: str
+    workspace_id: str
+    url: str
+    title: Optional[str] = Field(
+        default=None, description="What the person typed, null when the link reads as its hostname"
+    )
+    sort_order: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, link: ProjectLink) -> "ProjectLinkRead":
+        """Build the response shape from a stored link row."""
+        return cls(
+            link_id=link.link_id,
+            project_id=link.project_id,
+            workspace_id=link.workspace_id,
+            url=link.url,
+            title=link.title,
+            sort_order=link.sort_order,
+            created_by=link.created_by,
+            created_at=link.created_at,
+            updated_at=link.updated_at,
+        )
+
+
+ProjectLinkListRead = cursor_page(ProjectLinkRead, "links", model_name="ProjectLinkListRead")
+"""The body the Resources link list route answers with, items under `links`, in manual order."""
 
 
 class ProjectRead(BaseModel):
@@ -833,6 +980,10 @@ class ProjectRead(BaseModel):
     customer_revenue: Optional[int] = Field(
         default=None,
         description="Summed revenue of the customers asking for the project, answered by the revenue sort",
+    )
+    links: Optional[list[ProjectLinkRead]] = Field(
+        default=None,
+        description="The project's Resources links in manual order, filled on a single project read only",
     )
     created_by: str
     created_at: datetime
@@ -972,7 +1123,9 @@ class ProjectUpdateRead(BaseModel):
 
     `can_edit` says whether this caller may edit or delete it, which is its
     author, a workspace admin or an admin of one of the project's teams, so a
-    client draws the menu without repeating the rule.
+    client draws the menu without repeating the rule. `reactions` and
+    `comment_count` summarise the update's thread so the feed draws the reaction
+    bar and the replies toggle without a read per card.
     """
 
     update_id: str
@@ -986,10 +1139,19 @@ class ProjectUpdateRead(BaseModel):
     updated_at: datetime
     edited_at: Optional[datetime] = None
     can_edit: bool = False
+    reactions: list[ReactionGroupRead] = Field(default_factory=list)
+    comment_count: int = 0
 
     @classmethod
-    def from_row(cls, update: ProjectUpdateRow, *, can_edit: bool) -> "ProjectUpdateRead":
-        """Build the response shape from a stored update row."""
+    def from_row(
+        cls,
+        update: ProjectUpdateRow,
+        *,
+        can_edit: bool,
+        reactions: Optional[list[ReactionGroupRead]] = None,
+        comment_count: int = 0,
+    ) -> "ProjectUpdateRead":
+        """Build the response shape from a stored update row and its thread summary."""
         return cls(
             update_id=update.update_id,
             project_id=update.project_id,
@@ -1002,6 +1164,8 @@ class ProjectUpdateRead(BaseModel):
             updated_at=update.updated_at,
             edited_at=update.edited_at,
             can_edit=can_edit,
+            reactions=reactions or [],
+            comment_count=comment_count,
         )
 
 
@@ -1009,7 +1173,14 @@ ProjectUpdateListRead = cursor_page(ProjectUpdateRead, "updates", model_name="Pr
 """The body the project update feed answers with, items under `updates`, newest first."""
 
 ProjectActivityKindField = Literal[
-    "created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"
+    "created",
+    "field_changed",
+    "milestone_added",
+    "milestone_removed",
+    "milestone_changed",
+    "link_added",
+    "link_removed",
+    "link_changed",
 ]
 
 PROJECT_ACTIVITY_DEFAULT_LIMIT = 50
@@ -1022,7 +1193,8 @@ class ProjectActivityRead(BaseModel):
     `from` and `to` are the wire names the issue activity uses, aliased off the
     stored `from_value` and `to_value` because `from` is a Python keyword. A
     milestone row carries the milestone's id and names it in `to`, or in `from`
-    once removed.
+    once removed. A Resources link row does the same with the link's id and its
+    title or hostname; a `link_changed` row names the moved property in `field`.
     """
 
     activity_id: str
@@ -1033,6 +1205,7 @@ class ProjectActivityRead(BaseModel):
     from_: Any = Field(default=None, alias="from")
     to: Any = None
     milestone_id: Optional[str] = None
+    link_id: Optional[str] = None
     source: Optional[ChangeSource] = None
     created_at: datetime
 
@@ -1050,6 +1223,7 @@ class ProjectActivityRead(BaseModel):
             **{"from": row.from_value},
             to=row.to_value,
             milestone_id=row.milestone_id,
+            link_id=row.link_id,
             source=row.source,  # pyright: ignore[reportArgumentType]
             created_at=row.created_at,
         )

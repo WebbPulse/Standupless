@@ -1,7 +1,8 @@
 /**
  * The star that adds the page's subject to the caller's sidebar Favorites, or
- * takes it out. Mounting it also binds Shift F and lists the toggle in the
- * command palette, so a favorite is one key away wherever there is a star.
+ * takes it out. Mounting it also binds Alt F, Linear's favorite key, and
+ * lists the toggle in the command palette, so a favorite is one key away
+ * wherever there is a star.
  */
 
 import React from 'react';
@@ -15,7 +16,7 @@ import type { FavoriteKind } from '../../types/Api';
 import { IconButton } from './button';
 
 /** The keys the favorite toggle answers to. */
-export const FAVORITE_SHORTCUT = 'shift+f';
+export const FAVORITE_SHORTCUT = 'alt+f';
 
 /** Props for FavoriteButton: what the star stars. */
 export interface FavoriteButtonProps {
@@ -80,7 +81,7 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({
       label={label}
       size="sm"
       aria-pressed={starred}
-      aria-keyshortcuts={bindShortcut ? 'Shift+F' : undefined}
+      aria-keyshortcuts={bindShortcut ? 'Alt+F' : undefined}
       className={className}
       onClick={run}
     >

@@ -37,6 +37,12 @@ export interface UserRead {
   projects_display?: ProjectsDisplayPreference;
   /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
   projects_display_saved?: boolean;
+  /** Whether issues the person creates start assigned to them. */
+  auto_assign_to_self?: boolean;
+  /** Whether copying a git branch name moves a backlog or unstarted issue to the team's first started status. */
+  branch_copy_starts?: boolean;
+  /** Whether copying a git branch name assigns an unassigned, not yet started issue to the person. */
+  branch_copy_assigns?: boolean;
   /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
   auto_grant_new_scopes?: boolean;
 }
@@ -67,6 +73,8 @@ export interface ProjectsDisplayPreference {
   /** Whether the board shows columns that hold no project. */
   empty?: 'show' | 'hide';
   zoom: 'week' | 'month' | 'quarter' | 'year';
+  /** Whether the timeline draws the lines between blocking and blocked projects. */
+  dependencies?: 'show' | 'hide';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
   columns?: string;
 }
@@ -138,6 +146,9 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
+  auto_assign_to_self?: boolean;
+  branch_copy_starts?: boolean;
+  branch_copy_assigns?: boolean;
   auto_grant_new_scopes?: boolean;
 }
 
@@ -732,7 +743,8 @@ export type IssueSort =
   | 'start_asc'
   | 'estimate_desc'
   | 'customer_requests_desc'
-  | 'customer_revenue_desc';
+  | 'customer_revenue_desc'
+  | 'completed_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -879,10 +891,20 @@ export interface IssueRead {
    */
   external_ref?: string | null;
   /**
+   * When the issue first landed in a started status, kept after it moves on.
+   * Optional so a row read before it was stamped reads as none.
+   */
+  started_at?: string | null;
+  /**
    * When the issue last landed in a completed status, null while it is open
    * or cancelled. Optional so a row read before it was stamped reads as none.
    */
   completed_at?: string | null;
+  /**
+   * When the issue landed in a cancelled status, null while it is anywhere
+   * else. Optional so a row read before it was stamped reads as none.
+   */
+  cancelled_at?: string | null;
   /**
    * How many relations the issue carries, every kind counted. Optional so a
    * row read before it was counted reads as none.
@@ -1795,6 +1817,7 @@ export type NotificationKind =
   | 'status_changed'
   | 'subscribed'
   | 'project_update'
+  | 'project_update_comment'
   | 'project_update_due'
   | 'initiative_update_due'
   | 'due_soon'
@@ -1872,7 +1895,8 @@ export interface InboxCountRead {
 }
 
 /** What a mark-read call takes: named rows, or every row. */
-export type InboxReadWrite = { notification_ids: string[] } | { all: true };
+export type InboxReadWrite =
+  { notification_ids: string[] } | { all: true; kinds?: string[] };
 
 /** What a mark-unread call takes: the rows to bring back as unread. */
 export interface InboxUnreadWrite {
@@ -2248,9 +2272,13 @@ export interface TriageSummaryRead {
   teams: TriageTeamCount[];
 }
 
-/** Accepts a triage issue, into the named status or the team's first unstarted one. */
+/**
+ * Accepts a triage issue, into the named status or the team's first unstarted
+ * one. A non-blank `comment` is posted on the issue as the person accepting.
+ */
 export interface TriageAccept {
   status_id?: string | null;
+  comment?: string | null;
 }
 
 /** Declines a triage issue, with an optional reason kept in its history. */
@@ -2354,6 +2382,8 @@ export interface ProjectRead {
   blocking_project_ids?: string[];
   /** The project's dated milestones, earliest first, filled on the project list. */
   milestone_markers?: ProjectMilestoneMarkerRead[];
+  /** The project's Resources links in their manual order, filled on a single project read. */
+  links?: ProjectLinkRead[] | null;
   /** How many customer requests name the project, set when the list was filtered or sorted by customer. */
   customer_request_count?: number | null;
   /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
@@ -2405,6 +2435,12 @@ export interface ProjectMilestoneMarkerRead {
   target_date: string;
   /** Every issue in the milestone is finished, and it holds at least one. */
   completed: boolean;
+  /** The milestone's issue counts. */
+  counts?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
 }
 
 /** One template issue a project created from a template left out, and why. */
@@ -2567,6 +2603,42 @@ export interface MilestoneUpdate {
 }
 
 /**
+ * One external link in a project's Resources: a web URL and an optional title.
+ * Readers show the hostname when there is no title.
+ */
+export interface ProjectLinkRead {
+  link_id: string;
+  project_id: string;
+  workspace_id: string;
+  url: string;
+  title: string | null;
+  sort_order: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the link list answers with: the whole set, never paged. */
+export interface ProjectLinkListRead {
+  links: ProjectLinkRead[];
+  next_cursor: string | null;
+}
+
+/** A new link. Without a `sort_order` it lands after the last one. */
+export interface ProjectLinkCreate {
+  url: string;
+  title?: string | null;
+  sort_order?: string;
+}
+
+/** The editable fields on a link. A null title clears it. */
+export interface ProjectLinkUpdate {
+  url?: string;
+  title?: string | null;
+  sort_order?: string;
+}
+
+/**
  * One written status update on a project or an initiative: a Markdown body and
  * the health it judged the subject at. Posting one sets the subject's health.
  * `can_edit` says whether the caller may edit or delete it.
@@ -2585,9 +2657,46 @@ export interface StatusUpdateRead {
   source?: ChangeSource | null;
 }
 
-/** One written update on a project. */
+/**
+ * One written update on a project. `reactions` and `comment_count` summarise
+ * its thread, so the feed shows the reaction bar and reply toggle without a
+ * read per card.
+ */
 export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
+  reactions?: ReactionGroup[];
+  comment_count?: number;
+}
+
+/**
+ * One reply on a project update. `can_edit` says whether the caller may edit
+ * or delete it: its author, a workspace admin or an admin of a project team.
+ */
+export interface ProjectUpdateCommentRead {
+  comment_id: string;
+  update_id: string;
+  project_id: string;
+  workspace_id: string;
+  body: string;
+  author_id: string;
+  author: AuthorRead;
+  mentions: string[];
+  reactions: ReactionGroup[];
+  source?: ChangeSource | null;
+  created_at: string;
+  edited_at: string | null;
+  can_edit: boolean;
+}
+
+/** An update's whole thread, oldest reply first. */
+export interface ProjectUpdateCommentListRead {
+  comments: ProjectUpdateCommentRead[];
+}
+
+/** A reaction on a project update, or on one of its replies when `comment_id` is set. */
+export interface ProjectUpdateReactionWrite {
+  emoji: string;
+  comment_id?: string;
 }
 
 /** One page of a project's updates, newest first. */
@@ -2602,12 +2711,15 @@ export type ProjectActivityKind =
   | 'field_changed'
   | 'milestone_added'
   | 'milestone_removed'
-  | 'milestone_changed';
+  | 'milestone_changed'
+  | 'link_added'
+  | 'link_removed'
+  | 'link_changed';
 
 /**
  * One recorded change to a project: a property a patch moved, with its old and
- * new value, or a milestone added, renamed, redated or removed, named in `to`
- * or, once removed, in `from`.
+ * new value, or a milestone or Resources link added, changed or removed, named
+ * in `to` or, once removed, in `from`.
  */
 export interface ProjectActivityRead {
   activity_id: string;
@@ -2618,6 +2730,8 @@ export interface ProjectActivityRead {
   from: unknown;
   to: unknown;
   milestone_id: string | null;
+  /** The Resources link a link row is about, null on every other row. */
+  link_id?: string | null;
   source?: ChangeSource | null;
   created_at: string;
 }
@@ -4780,11 +4894,14 @@ export interface FavoriteRef {
   target_id: string;
   /** The cycle's team, needed only for a cycle. */
   team_id?: string | null;
+  /** The folder it goes in, null for the top level, or left out to keep where it is. */
+  folder_id?: string | null;
 }
 
-/** The caller's favorites in their new order. */
+/** The caller's favorites in their new order, and their folders' when `folders` is sent. */
 export interface FavoriteOrder {
   items: FavoriteRef[];
+  folders?: string[] | null;
 }
 
 /** One favorite as the sidebar draws it, resolved against its target at read time. */
@@ -4803,11 +4920,26 @@ export interface FavoriteRead {
   /** For a document, whether it hangs off a project or an initiative. */
   parent_kind?: string | null;
   parent_id?: string | null;
+  /** The folder it sits in, or null at the top level. */
+  folder_id?: string | null;
 }
 
-/** The caller's favorites in their order. */
+/** A named folder the caller groups favorites under. */
+export interface FavoriteFolderRead {
+  folder_id: string;
+  name: string;
+  position: number;
+}
+
+/** A new name for a favorite folder, or the name of a new one. */
+export interface FavoriteFolderWrite {
+  name: string;
+}
+
+/** The caller's favorites and folders in their order. */
 export interface FavoriteListRead {
   favorites: FavoriteRead[];
+  folders?: FavoriteFolderRead[];
 }
 
 /** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
@@ -4906,4 +5038,42 @@ export interface CustomerRequestCreate {
 export interface CustomerRequestListRead {
   requests: CustomerRequestRead[];
   next_cursor: string | null;
+}
+
+/** A workspace member as their member page shows them, without an email. */
+export interface MemberProfileRead {
+  user_id: string;
+  display_name: string;
+  full_name?: string;
+  avatar_url?: string | null;
+  role: 'owner' | 'admin' | 'member' | 'guest';
+  joined_at: string;
+  /** The teams the member belongs to that the viewer can see. */
+  team_ids?: string[];
+}
+
+/** A comment as a member's activity feed carries it, its body cut to an excerpt. */
+export interface MemberCommentRead {
+  comment_id: string;
+  body: string;
+  parent_comment_id?: string | null;
+}
+
+/** One row of a member's activity: an issue change or a comment. */
+export interface MemberActivityRead {
+  type: 'issue_change' | 'comment';
+  id: string;
+  created_at: string;
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  team_id: string;
+  activity?: ActivityRead | null;
+  comment?: MemberCommentRead | null;
+}
+
+/** A page of a member's activity, newest first. */
+export interface MemberActivityListRead {
+  activity: MemberActivityRead[];
+  next_cursor?: string | null;
 }

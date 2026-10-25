@@ -2,12 +2,14 @@
  * The inline issue title. Covers that it is a borderless field with no pencil,
  * that Enter or leaving it saves a changed title once, that Escape puts the
  * saved title back without a request, that a blank or unchanged title saves
- * nothing, that a failed save reverts, and that a reader gets a plain heading.
+ * nothing, that a failed save reverts, that a reader gets a plain heading,
+ * and that R puts the caret in the field with the title selected.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import IssueTitle from './IssueTitle';
 
 /** Renders an editable title with a save that succeeds unless told not to. */
@@ -94,5 +96,67 @@ describe('the inline title', () => {
       screen.getByRole('heading', { name: 'Cache the token' })
     ).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+});
+
+describe('the rename key', () => {
+  /** Renders the title inside the shortcut layer, beside a plain search box. */
+  const renderWithKeys = (canEdit = true) => {
+    const onSave = vi.fn(() => Promise.resolve(true));
+    render(
+      <ShortcutProvider>
+        <input aria-label="Search" />
+        <IssueTitle title="Cache the token" canEdit={canEdit} onSave={onSave} />
+      </ShortcutProvider>
+    );
+    return { onSave, user: userEvent.setup() };
+  };
+
+  it('puts the caret in the title with the text selected on R', async () => {
+    const { user } = renderWithKeys();
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox', {
+      name: 'Issue title',
+    });
+
+    await user.keyboard('r');
+
+    expect(field).toHaveFocus();
+    expect(field).toHaveValue('Cache the token');
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe('Cache the token'.length);
+  });
+
+  it('saves on Enter and puts the title back on Escape after R', async () => {
+    const { user, onSave } = renderWithKeys();
+    const field = screen.getByRole('textbox', { name: 'Issue title' });
+
+    await user.keyboard('r');
+    await user.keyboard('Rotate the token{Escape}');
+    expect(field).toHaveValue('Cache the token');
+    expect(onSave).not.toHaveBeenCalled();
+
+    await user.keyboard('r');
+    await user.keyboard('Rotate the token{Enter}');
+    expect(onSave).toHaveBeenCalledWith('Rotate the token');
+  });
+
+  it('stands down while typing in another field', async () => {
+    const { user } = renderWithKeys();
+    const search = screen.getByRole('textbox', { name: 'Search' });
+
+    await user.click(search);
+    await user.keyboard('r');
+
+    expect(search).toHaveFocus();
+    expect(search).toHaveValue('r');
+  });
+
+  it('does nothing for a reader', async () => {
+    const { user } = renderWithKeys(false);
+
+    await user.keyboard('r');
+
+    expect(screen.queryByRole('textbox', { name: 'Issue title' })).toBeNull();
+    expect(document.body).toHaveFocus();
   });
 });

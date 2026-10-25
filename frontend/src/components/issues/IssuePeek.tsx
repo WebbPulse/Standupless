@@ -5,7 +5,9 @@
  * the same pickers as the detail rail, applied optimistically, and the same
  * activity and comment feed as the page, newest last, with a comment box at
  * its foot, so a thread can be read and answered without leaving the list.
- * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard.
+ * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard, and
+ * Cmd or Ctrl+Shift+Up and Down peek its parent and its first sub-issue in
+ * place.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -16,6 +18,11 @@ import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
+import {
+  useIssueTreeKeys,
+  type IssueTreeTarget,
+} from '../../hooks/useIssueTreeKeys';
+import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -24,6 +31,7 @@ import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { recordPatch } from '../../lib/issueUndo';
+import { useRecordRecentIssue } from '../../lib/recentIssues';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPatch } from '../../lib/milestones';
 import { issuePath, projectMilestonePath, projectPath } from '../../lib/paths';
@@ -48,13 +56,19 @@ import { estimateOptionsOf } from '../../lib/validation';
 export interface IssuePeekProps {
   issueId: string;
   onClose: () => void;
+  /** Shows another issue in the pane in place of this one. */
+  onOpenIssue?: (issue: IssueTreeTarget) => void;
 }
 
 /** How often the issue and its lists are re-read while the pane is open. */
 const POLL_MS = 60000;
 
 /** The side pane showing one issue's title, properties and description. */
-export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
+export const IssuePeek: React.FC<IssuePeekProps> = ({
+  issueId,
+  onClose,
+  onOpenIssue,
+}) => {
   const { workspace } = useWorkspace();
   const { user } = useAuth();
   const auth = useQueryAuth();
@@ -79,6 +93,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     write: (patch) => updateIssue(workspaceId, issueId, patch),
     invalidate: [activityKey(issueId)],
   });
+  useRecordRecentIssue(workspaceId, user?.id, issueId, issue, error);
 
   const { data: teams } = useTeams();
 
@@ -150,7 +165,16 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     });
   };
 
+  useIssueTreeKeys({
+    workspaceId,
+    issue,
+    statuses: options.statuses,
+    known: options.parents,
+    ...(onOpenIssue === undefined ? {} : { onOpen: onOpenIssue }),
+  });
+
   const [parenting, setParenting] = useState(false);
+  const descriptionQuotes = useQuoteRequest(issueId);
   const canParent = canEdit && issue !== null;
   useShortcut({
     keys: SET_PARENT_KEYS,
@@ -236,6 +260,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
               canEdit={canEdit}
               onSaved={receive}
               people={options.people}
+              {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
             />
 
             <div className="space-y-3">
@@ -333,6 +358,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
                 context={context}
                 slug={workspace?.slug ?? ''}
                 teamKeyPrefix={team?.key_prefix ?? ''}
+                quote={descriptionQuotes.request}
               />
             </div>
           </div>

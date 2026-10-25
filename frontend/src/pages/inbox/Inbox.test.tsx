@@ -12,7 +12,11 @@
  * actions menu deletes every read row or every row after a confirmation,
  * sending the current filter along. Removing and snoozing offer Undo: a
  * removal is held until its window lapses or the page goes, and undoing a
- * snooze unsnoozes and keeps read rows read.
+ * snooze unsnoozes and keeps read rows read. Each row's menu, from a right
+ * click or its "more" button, offers the issue-only entries only on issue
+ * rows, and unsubscribing from it, or with Shift S, offers Undo. Ctrl F
+ * opens quick search over the loaded rows, Show unread first reorders them
+ * without a new read, and Shift Backspace offers to delete every read row.
  */
 
 import {
@@ -31,6 +35,7 @@ import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefini
 import type {
   NotificationListRead,
   NotificationRead,
+  SubscribersRead,
   WorkspaceRead,
 } from '../../types/Api';
 import { fromLocalInput, toLocalInput } from '../../lib/reminders';
@@ -41,12 +46,12 @@ import {
   UNDO_TOAST_MS,
 } from '../../lib/undo';
 import BoundKeys from '../../test/BoundKeys';
-import { keysBound } from '../../test/shortcuts';
+import { boundKeys, keysBound } from '../../test/shortcuts';
 import Inbox from './Inbox';
 
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
 const markRead = vi.fn<(body: unknown) => Promise<number>>();
-const markAllRead = vi.fn<() => Promise<number>>();
+const markAllRead = vi.fn<(kinds?: string[]) => Promise<number>>();
 const deleteNotification = vi.fn<(id: string) => Promise<void>>();
 const clearInbox = vi.fn<(body: unknown) => Promise<number>>();
 const markUnread = vi.fn<(body: unknown) => Promise<number>>();
@@ -54,6 +59,22 @@ const snoozeNotifications =
   vi.fn<
     (body: { notification_ids: string[]; until: string }) => Promise<number>
   >();
+
+const listSubscribers = vi.fn<(issueId: string) => Promise<SubscribersRead>>();
+const subscribe = vi.fn<(issueId: string) => Promise<SubscribersRead>>();
+const unsubscribe = vi.fn<(issueId: string) => Promise<SubscribersRead>>();
+
+vi.mock('../../api/notifications', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../api/notifications')
+  >('../../api/notifications');
+  return {
+    ...actual,
+    listSubscribers: (_w: string, issueId: string) => listSubscribers(issueId),
+    subscribe: (_w: string, issueId: string) => subscribe(issueId),
+    unsubscribe: (_w: string, issueId: string) => unsubscribe(issueId),
+  };
+});
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -74,7 +95,7 @@ vi.mock('../../api/views', async () => {
     ...actual,
     listInbox: (_w: string, query: unknown) => listInbox(query),
     markRead: (_w: string, body: unknown) => markRead(body),
-    markAllRead: () => markAllRead(),
+    markAllRead: (_w: string, kinds?: string[]) => markAllRead(kinds),
     deleteNotification: (_w: string, id: string) => deleteNotification(id),
     clearInbox: (_w: string, body: unknown) => clearInbox(body),
     markUnread: (_w: string, body: unknown) => markUnread(body),
@@ -222,6 +243,12 @@ beforeEach(() => {
   clearInbox.mockResolvedValue(2);
   markUnread.mockResolvedValue(1);
   snoozeNotifications.mockResolvedValue(1);
+  listSubscribers.mockReset();
+  subscribe.mockReset();
+  unsubscribe.mockReset();
+  listSubscribers.mockResolvedValue({ subscribers: [], subscribed: true });
+  subscribe.mockResolvedValue({ subscribers: [], subscribed: true });
+  unsubscribe.mockResolvedValue({ subscribers: [], subscribed: false });
 });
 
 describe('inbox', () => {
@@ -295,6 +322,27 @@ describe('inbox', () => {
       expect(markAllRead).toHaveBeenCalled();
     });
     expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it('marks only the filtered types read under a filter', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: /^Filter/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Comments' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Mentions' }));
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    expect(
+      screen.queryByRole('menuitem', { name: 'Mark all read' })
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Mark filtered types read' })
+    );
+
+    await waitFor(() => {
+      expect(markAllRead).toHaveBeenCalledWith(['mentioned', 'commented']);
+    });
   });
 
   it('deletes every read row after a confirmation', async () => {
@@ -987,5 +1035,319 @@ describe('inbox', () => {
     await waitFor(() => {
       expect(markAllRead).toHaveBeenCalled();
     });
+  });
+
+  it('opens a quick search with ctrl f that narrows the rows and clears on escape', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue(twoRows());
+    renderPage();
+
+    await screen.findByText('Retry the upload');
+    await keysBound('mod+f');
+    press('f', { ctrlKey: true });
+    const field = await screen.findByRole('searchbox', {
+      name: 'Search notifications',
+    });
+    await waitFor(() => {
+      expect(field).toHaveFocus();
+    });
+    await user.type(field, 'eng-2');
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(screen.getByText('Retry the upload')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(
+      screen.queryByRole('searchbox', { name: 'Search notifications' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
+    expect(listInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches the type label and the actor in quick search', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue(twoRows());
+    renderPage();
+
+    await screen.findByText('Retry the upload');
+    await user.click(
+      screen.getByRole('button', { name: 'Search notifications' })
+    );
+    const field = screen.getByRole('searchbox', {
+      name: 'Search notifications',
+    });
+    await user.type(field, 'assigned grace');
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(screen.getByText('Retry the upload')).toBeInTheDocument();
+  });
+
+  it('says so when quick search matches nothing', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(
+      screen.getByRole('button', { name: 'Search notifications' })
+    );
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Search notifications' }),
+      'nothing like it'
+    );
+
+    expect(
+      screen.getByText('No notifications match your search.')
+    ).toBeInTheDocument();
+  });
+
+  it('moves through only the matching rows with j', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue(twoRows());
+    renderPage();
+
+    await screen.findByText('Retry the upload');
+    await user.click(
+      screen.getByRole('button', { name: 'Search notifications' })
+    );
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Search notifications' }),
+      'retry'
+    );
+    act(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    await keysBound('j');
+    press('j');
+
+    expect(await screen.findByLabelText('Peek iss-2')).toBeInTheDocument();
+  });
+
+  it('sorts unread rows first when Show unread first is on, and remembers it', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-3',
+          issue_id: 'iss-3',
+          issue_key: 'ENG-3',
+          issue_title: 'Newest and read',
+          unread: false,
+        }),
+        notification({
+          notification_id: 'n-2',
+          issue_id: 'iss-2',
+          issue_key: 'ENG-2',
+          issue_title: 'Older and unread',
+        }),
+        notification({ unread: false }),
+      ],
+      next_cursor: null,
+    });
+    const titles = (): string[] =>
+      within(screen.getByRole('region', { name: 'Notifications' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent ?? '');
+    const first = renderPage();
+
+    await screen.findByText('Older and unread');
+    expect(titles()[0]).toContain('Newest and read');
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Show unread first' })
+    );
+
+    await waitFor(() => {
+      expect(titles()[0]).toContain('Older and unread');
+    });
+    expect(titles()[1]).toContain('Newest and read');
+    expect(titles()[2]).toContain('Cache the token');
+    expect(listInbox).toHaveBeenCalledTimes(1);
+
+    first.unmount();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Display' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Show unread first' })
+    ).toBeChecked();
+  });
+
+  it('offers to delete every read row with shift backspace', async () => {
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await keysBound('shift+backspace');
+    press('Backspace', { shiftKey: true });
+
+    expect(
+      await screen.findByRole('dialog', {
+        name: 'Delete all read notifications',
+      })
+    ).toBeInTheDocument();
+    expect(clearInbox).not.toHaveBeenCalled();
+    expect(deleteNotification).not.toHaveBeenCalled();
+  });
+});
+
+/** A project update row, which is not about an issue. */
+const projectRow = () =>
+  notification({
+    notification_id: 'n-9',
+    kind: 'project_update',
+    issue_id: '',
+    issue_key: '',
+    issue_title: '',
+    project_id: 'prj-1',
+    project_name: 'Public beta',
+    project_update_id: 'upd-1',
+  });
+
+/** Right clicks the row holding `text` and answers the menu it opens. */
+const openRowMenu = async (text: string): Promise<HTMLElement> => {
+  const label = await screen.findByText(text);
+  const row = label.closest('li');
+  if (row === null) throw new Error('no row');
+  fireEvent.contextMenu(row, { clientX: 20, clientY: 20 });
+  return screen.findByRole('menu');
+};
+
+describe('inbox row menu', () => {
+  it('offers every entry on an issue row', async () => {
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+
+    const names = within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(names).toEqual([
+      expect.stringContaining('Mark as read'),
+      expect.stringContaining('Snooze'),
+      expect.stringContaining('Delete notification'),
+      expect.stringContaining('Unsubscribe from issue'),
+      'Copy issue link',
+      'Open in new tab',
+    ]);
+  });
+
+  it('leaves the issue-only entries off a project update row', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [projectRow()],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const menu = await openRowMenu('Public beta');
+
+    expect(
+      within(menu).getByRole('menuitem', { name: /Mark as read/ })
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: /Unsubscribe/ })
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Copy issue link' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Open in new tab' })
+    ).toBeInTheDocument();
+    expect(listSubscribers).not.toHaveBeenCalled();
+  });
+
+  it('offers to subscribe when the caller does not follow the issue', async () => {
+    listSubscribers.mockResolvedValue({ subscribers: [], subscribed: false });
+    const user = userEvent.setup();
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+    await user.click(
+      await within(menu).findByRole('menuitem', { name: /Subscribe to issue/ })
+    );
+
+    await waitFor(() => {
+      expect(subscribe).toHaveBeenCalledWith('iss-1');
+    });
+    expect(unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('opens the same menu from the row more button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'More actions for ENG-1' })
+    );
+
+    expect(
+      await screen.findByRole('menuitem', { name: /Unsubscribe from issue/ })
+    ).toBeInTheDocument();
+  });
+
+  it('unsubscribes from the menu and resubscribes on undo', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+    await user.click(
+      within(menu).getByRole('menuitem', { name: /Unsubscribe from issue/ })
+    );
+
+    await waitFor(() => {
+      expect(unsubscribe).toHaveBeenCalledWith('iss-1');
+    });
+    await waitFor(() => {
+      expect(currentUndo().at(-1)?.message).toBe('Unsubscribed from ENG-1');
+    });
+    await act(async () => {
+      await undoLast('ws-1');
+    });
+
+    expect(subscribe).toHaveBeenCalledWith('iss-1');
+  });
+
+  it('opens a row in a new tab', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Open in new tab' })
+    );
+
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}/w/mine/issues/ENG-1`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    open.mockRestore();
+  });
+
+  it('toggles the subscription on the selected row with shift s', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('shift+s');
+    press('S', { shiftKey: true });
+
+    await waitFor(() => {
+      expect(unsubscribe).toHaveBeenCalledWith('iss-1');
+    });
+    await waitFor(() => {
+      expect(currentUndo().at(-1)?.message).toBe('Unsubscribed from ENG-1');
+    });
+  });
+
+  it('does not bind shift s on a row with no issue', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [projectRow()],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/inbox?n=n-9');
+
+    await screen.findByRole('complementary', { name: 'Project update' });
+    await keysBound('enter');
+
+    expect(boundKeys()).not.toContain('shift+s');
   });
 });

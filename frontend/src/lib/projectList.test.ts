@@ -437,6 +437,27 @@ describe('resolveDisplay', () => {
       DEFAULT_PROJECTS_DISPLAY
     );
   });
+
+  it('shows dependency lines unless the URL or the saved choice hides them', () => {
+    expect(DEFAULT_PROJECTS_DISPLAY.dependencies).toBe('show');
+    expect(
+      resolveDisplay(() => null, {
+        ...DEFAULT_PROJECTS_DISPLAY,
+        dependencies: 'hide',
+      }).dependencies
+    ).toBe('hide');
+    expect(
+      resolveDisplay((field) => (field === 'dependencies' ? 'show' : null), {
+        ...DEFAULT_PROJECTS_DISPLAY,
+        dependencies: 'hide',
+      }).dependencies
+    ).toBe('show');
+    expect(
+      resolveDisplay((field) => (field === 'dependencies' ? 'off' : null), {
+        dependencies: 'hide',
+      }).dependencies
+    ).toBe('hide');
+  });
 });
 
 describe('URL parsing and tones', () => {

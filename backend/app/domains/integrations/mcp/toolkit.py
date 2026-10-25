@@ -427,6 +427,9 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
         "sla_paused_at": issue.sla_paused_at.isoformat() if issue.sla_paused_at else None,
         "sla_status": sla_status(issue),
+        "started_at": issue.started_at.isoformat() if issue.started_at else None,
+        "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
+        "cancelled_at": issue.cancelled_at.isoformat() if issue.cancelled_at else None,
         "external_ref": issue.external_ref,
     }
 
@@ -458,6 +461,9 @@ def summary_json(teams: TeamRepository, issue: Issue, parent: Optional[Issue] = 
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
         "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
         "sla_status": sla_status(issue),
+        "started_at": issue.started_at.isoformat() if issue.started_at else None,
+        "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
+        "cancelled_at": issue.cancelled_at.isoformat() if issue.cancelled_at else None,
     }
 
 

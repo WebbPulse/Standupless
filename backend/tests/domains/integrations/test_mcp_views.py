@@ -33,7 +33,9 @@ FORBIDDEN_TEXT = "may not write there"
 THEIRS = "01N000000000000000000THEIR"
 
 
-def put_notification(repositories: Any, recipient_id: str, notification_id: str, *, minutes: int = 0) -> None:
+def put_notification(
+    repositories: Any, recipient_id: str, notification_id: str, *, minutes: int = 0, kind: str = "assigned"
+) -> None:
     """Write one unread inbox row straight in, so no consumer has to run."""
     created_at = datetime.now(timezone.utc) - timedelta(hours=1) + timedelta(minutes=minutes)
     repositories.inbox.create(
@@ -41,7 +43,7 @@ def put_notification(repositories: Any, recipient_id: str, notification_id: str,
             ws_user=inbox_partition(WORKSPACE, recipient_id),
             notification_id=notification_id,
             workspace_id=WORKSPACE,
-            kind="assigned",
+            kind=kind,
             issue_id="01JB0000000000000000000IS1",
             issue_key="ABC-1",
             issue_title="An issue",
@@ -235,6 +237,21 @@ def test_mark_read_unread_and_all(client: TestClient, repositories: Any, inbox: 
     assert back["updated"] == 1
     assert everything["updated"] == 2
     assert repositories.inbox.get(WORKSPACE, OWNER, THEIRS).unread is True
+
+
+def test_mark_all_read_keeps_to_the_kinds_named(client: TestClient, repositories: Any, workspace: str) -> None:
+    """`kinds` narrows mark all read, so the types left out stay unread."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A001", minutes=0, kind="mentioned")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B002", minutes=5, kind="assigned")
+    secret = mint_for(repositories, MEMBER, INBOX)
+
+    narrowed = answer(tool(client, secret, "mark_all_notifications_read", {"kinds": "mentioned"}))
+    unknown = refusal(tool(client, secret, "mark_all_notifications_read", {"kinds": ["nonsense"]}))
+
+    assert narrowed["updated"] == 1
+    assert repositories.inbox.get(WORKSPACE, MEMBER, "01N0000000000000000000A001").unread is False
+    assert repositories.inbox.get(WORKSPACE, MEMBER, "01N0000000000000000000B002").unread is True
+    assert "Unknown notification kind" in unknown
 
 
 def test_snooze_notification(client: TestClient, repositories: Any, inbox: tuple[str, str]) -> None:

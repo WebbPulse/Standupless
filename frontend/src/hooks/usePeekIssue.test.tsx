@@ -2,8 +2,9 @@
  * Peeking an issue into the workspace pane. Covers that the pane draws the
  * issue pane bare rather than inside a second frame, that the close handed to
  * it is the provider's stable one, that peeking the same issue again closes
- * it, that a different issue replaces the one showing, and that other content
- * keeps the shell's frame.
+ * it, that a different issue replaces the one showing, that the pane's own
+ * tree keys swap it to another issue in place, and that other content keeps
+ * the shell's frame.
  */
 
 import { act, renderHook, screen } from '@testing-library/react';
@@ -18,12 +19,28 @@ import { usePeekIssue } from './usePeekIssue';
 const closes: (() => void)[] = [];
 
 vi.mock('../components/issues/IssuePeek', () => ({
-  default: ({ issueId, onClose }: { issueId: string; onClose: () => void }) => {
+  default: ({
+    issueId,
+    onClose,
+    onOpenIssue,
+  }: {
+    issueId: string;
+    onClose: () => void;
+    onOpenIssue?: (issue: { id: string; key: string }) => void;
+  }) => {
     closes.push(onClose);
     return (
       <aside aria-label={`Issue ${issueId}`}>
         <button type="button" onClick={onClose}>
           Close
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onOpenIssue?.({ id: 'issue-0', key: 'ENG-0' });
+          }}
+        >
+          Open parent
         </button>
       </aside>
     );
@@ -101,6 +118,24 @@ describe('usePeekIssue', () => {
     expect(result.current.peekedKey).toBe('ENG-2');
     expect(
       screen.getByRole('complementary', { name: 'Issue issue-2' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('walking the tree inside the pane', () => {
+  it('swaps the pane to the issue the peek opens', () => {
+    const { result } = renderHook(() => usePeekIssue(), { wrapper });
+
+    act(() => {
+      result.current.peekIssue({ id: 'issue-1', key: 'ENG-1' });
+    });
+    act(() => {
+      screen.getByRole('button', { name: 'Open parent' }).click();
+    });
+
+    expect(result.current.peekedKey).toBe('ENG-0');
+    expect(
+      screen.getByRole('complementary', { name: 'Issue issue-0' })
     ).toBeInTheDocument();
   });
 });

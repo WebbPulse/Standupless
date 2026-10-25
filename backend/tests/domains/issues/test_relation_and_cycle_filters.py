@@ -1,7 +1,7 @@
 """The relation filters and relative cycles through the issue list route.
 
 The unit tests pin the rules; these hold that the route resolves them against the
-real tables: the link index for `is_blocking` and `has_relation`, and each team's
+real tables: the blocking count for `is_blocking`, the link index for `has_relation`, and each team's
 cycles for `current`, with an unknown cycle refused as a 400 naming it. The same
 relative cycles name a cycle on create, update and bulk update.
 """
@@ -15,8 +15,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.planning import Cycle, cycle_key
+from app.domains.issues.consumers.rollup import handle_record
 from tests.domains.helpers import OWNER, sign_in
-from tests.domains.issues.conftest import TEAM, create_issue
+from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 
 
 def _titles(client: TestClient, workspace: str, **params: Any) -> "set[str]":
@@ -33,6 +34,20 @@ def _link(client: TestClient, workspace: str, source: Any, target: Any, kind: st
         json={"type": kind, "target_issue_id": target["id"]},
     )
     assert response.status_code == 201, response.text
+
+
+def _status_record(workspace: str, issue_id: str, old: str, new: str) -> "dict[str, Any]":
+    """A stream MODIFY record moving one issue between two statuses."""
+
+    def image(status_id: str) -> "dict[str, Any]":
+        """One image in DynamoDB's wire encoding."""
+        return {
+            "workspace_id": {"S": workspace},
+            "issue_id": {"S": issue_id},
+            "status_id": {"S": status_id},
+        }
+
+    return {"eventName": "MODIFY", "eventID": "1", "dynamodb": {"NewImage": image(new), "OldImage": image(old)}}
 
 
 def _cycle(repositories: Any, workspace: str, cycle_id: str, start: date, end: date) -> None:
@@ -69,6 +84,35 @@ def test_blocked_blocking_and_has_relation_filter_the_list(client: TestClient, w
     assert "Blocker" not in _titles(client, workspace, is_blocking="false")
     assert _titles(client, workspace, has_relation="blocked_by") == {"Blocked", "Freed"}
     assert _titles(client, workspace, has_relation="relates_to") == {"Related", "Blocker"}
+
+
+def test_is_blocking_skips_a_blocker_whose_blocked_issues_are_finished(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A blocker counts only while an issue it blocks is open, in its team or another."""
+    sign_in(client, OWNER)
+    done = statuses["completed"].status_id
+    holding = create_issue(client, workspace, title="Holding")
+    open_blocked = create_issue(client, workspace, title="Open blocked")
+    released = create_issue(client, workspace, title="Released")
+    finished = create_issue(client, workspace, title="Finished", status_id=done)
+    finished_blocker = create_issue(client, workspace, title="Finished blocker", status_id=done)
+    still_open = create_issue(client, workspace, title="Still open")
+    across = create_issue(client, workspace, title="Across")
+    elsewhere = create_issue(client, workspace, team_id=OTHER_TEAM, title="Elsewhere")
+    _link(client, workspace, holding, open_blocked, "blocks")
+    _link(client, workspace, released, finished, "blocks")
+    _link(client, workspace, finished_blocker, still_open, "blocks")
+    _link(client, workspace, across, elsewhere, "blocks")
+
+    assert _titles(client, workspace, is_blocking="true") == {"Holding", "Across"}
+    assert {"Released", "Finished blocker"} <= _titles(client, workspace, is_blocking="false")
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{open_blocked['id']}", json={"status_id": done})
+    handle_record(repositories, _status_record(workspace, open_blocked["id"], open_blocked["status_id"], done))
+
+    assert _titles(client, workspace, is_blocking="true") == {"Across"}
+    assert "Holding" in _titles(client, workspace, is_blocking="false")
 
 
 def test_an_unknown_relation_type_is_refused(client: TestClient, workspace: str) -> None:

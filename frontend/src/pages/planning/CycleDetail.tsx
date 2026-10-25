@@ -4,7 +4,7 @@
  * goal and dates in place, each save shown at once and undone with a notice
  * should the write fail; a completed or cancelled cycle reads only. A side
  * panel holds scope against what is started and completed, the burn-up over
- * the cycle's days and a breakdown of the issues by assignee, label and
+ * the cycle's days and a breakdown of the issues by assignee, label, priority and
  * project, and the cycle's issues fill the rest as the same dense list a
  * team's issues use, with its filters, display options and inline editing.
  * On a narrow screen the panel stacks above the list.
@@ -113,6 +113,7 @@ const BREAKDOWN_FIELDS: readonly BreakdownField[] = [
   'assignee',
   'label',
   'project',
+  'priority',
 ];
 
 /** Props for CarryOverLine: the cycle whose carry-over is described. */

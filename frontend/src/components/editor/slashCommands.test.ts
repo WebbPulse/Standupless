@@ -66,6 +66,7 @@ describe('filterSlashCommands', () => {
       'taskList',
       'blockquote',
       'codeBlock',
+      'collapsible',
       'divider',
       'table',
     ]);
@@ -100,6 +101,8 @@ describe('filterSlashCommands', () => {
     expect(ids('code')[0]).toBe('codeBlock');
     expect(ids('quote')).toEqual(['blockquote']);
     expect(ids('div')).toEqual(['divider']);
+    expect(ids('toggle')).toEqual(['collapsible']);
+    expect(ids('details')).toEqual(['collapsible']);
   });
 });
 
@@ -112,6 +115,7 @@ const WRITES: [string, string][] = [
   ['taskList', '- [ ] Plan'],
   ['blockquote', '> Plan'],
   ['codeBlock', '```\nPlan\n```'],
+  ['collapsible', '<details>\n<summary>Plan</summary>\n\n</details>'],
   ['divider', '---\n\nPlan'],
 ];
 
@@ -144,6 +148,18 @@ describe('running a command', () => {
     expect(written).not.toContain('/table');
     writeMarkdown(editor, written);
     expect(readMarkdown(editor)).toBe(written);
+  });
+
+  it('makes a collapsible section titled by the rest of the line', () => {
+    const editor = editorTyping('Note /col');
+    command('collapsible').run(editor, { from: 6, to: 10 }, {});
+    editor.commands.insertContent('Plan');
+    expect(readMarkdown(editor)).toBe(
+      '<details>\n<summary>Note Plan</summary>\n\n</details>'
+    );
+    expect(editor.state.selection.$from.parent.type.name).toBe(
+      'collapsibleSummary'
+    );
   });
 
   it('starts a mention in place of the slash', () => {

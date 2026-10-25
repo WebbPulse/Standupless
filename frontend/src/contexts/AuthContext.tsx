@@ -60,15 +60,18 @@ const useTimezoneCapture = (
 };
 
 /**
- * Copies the profile's interface preferences into the shared store whenever
- * they change, so a name, a date shortcut or the text size follows the account
- * rather than the browser. A signed out page keeps what was last in force.
+ * Copies the profile's interface and workflow preferences into the shared
+ * store whenever they change, so a name, a date shortcut, the text size or
+ * what copying a branch does follows the account rather than the browser. A signed out page keeps what was last in force.
  */
 const usePreferenceSync = (user: UserRead | null): void => {
   const homeView = user?.home_view;
   const weekStart = user?.week_start;
   const nameDisplay = user?.name_display;
   const fontSize = user?.font_size;
+  const autoAssign = user?.auto_assign_to_self;
+  const branchStarts = user?.branch_copy_starts;
+  const branchAssigns = user?.branch_copy_assigns;
   const signedIn = user !== null;
 
   useEffect(() => {
@@ -79,9 +82,21 @@ const usePreferenceSync = (user: UserRead | null): void => {
         week_start: weekStart,
         name_display: nameDisplay,
         font_size: fontSize,
+        auto_assign_to_self: autoAssign,
+        branch_copy_starts: branchStarts,
+        branch_copy_assigns: branchAssigns,
       })
     );
-  }, [signedIn, homeView, weekStart, nameDisplay, fontSize]);
+  }, [
+    signedIn,
+    homeView,
+    weekStart,
+    nameDisplay,
+    fontSize,
+    autoAssign,
+    branchStarts,
+    branchAssigns,
+  ]);
 };
 
 /**

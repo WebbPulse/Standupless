@@ -7,13 +7,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import {
-  LuBox,
-  LuCalendar,
-  LuIterationCw,
-  LuMilestone,
-  LuX,
-} from 'react-icons/lu';
+import { LuBox, LuCalendar, LuIterationCw, LuX } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
@@ -36,6 +30,7 @@ import {
   datePresets,
   shortDateLabel,
   sortStatuses,
+  typedDateOption,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
 import {
@@ -50,6 +45,7 @@ import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
+import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import { CustomDate } from '../PropertyPickers';
 import { useIssueViewEnv } from './IssueViewContext';
 import type { CommandProperty } from './propertyKeys';
@@ -139,6 +135,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
   let empty = 'Nothing matches.';
   let pick: (value: string) => void = () => undefined;
   let footer: React.ReactNode = undefined;
+  let leadOption: ((query: string) => ComboboxOption | null) | undefined;
 
   const write = (
     change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null)
@@ -358,7 +355,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
         ...milestones.map((milestone) => ({
           value: milestone.milestone_id,
           label: milestone.name,
-          icon: <LuMilestone className="h-3.5 w-3.5 text-text-muted" />,
+          icon: <MilestoneGlyph milestone={milestone} decorative />,
         })),
       ];
       selected = shared(
@@ -476,6 +473,15 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
         },
       ];
       selected = shared(issues.map((issue) => [issue.due_date ?? CLEAR]));
+      leadOption = (query) => {
+        const typed = typedDateOption(query, today, min);
+        return typed === null
+          ? null
+          : {
+              ...typed,
+              icon: <LuCalendar className="h-3.5 w-3.5 text-text-muted" />,
+            };
+      };
       pick = (value) => {
         setDue(value === CLEAR ? null : value);
       };
@@ -518,6 +524,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           emptyMessage={empty}
           onSelect={pick}
           {...(footer === undefined ? {} : { footer })}
+          {...(leadOption === undefined ? {} : { leadOption })}
         />
       </div>
     </Dialog>

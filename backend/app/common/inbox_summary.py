@@ -33,6 +33,7 @@ _ACTED: dict[str, tuple[str, str]] = {
     "commented": ("{actor} commented", "New comment"),
     "subscribed": ("{actor} subscribed you", "Subscribed you"),
     "project_update": ("{actor} posted an update", "Project update"),
+    "project_update_comment": ("{actor} replied to an update", "Reply on update"),
     "review_requested": ("{actor} requested your review", "Review requested"),
 }
 

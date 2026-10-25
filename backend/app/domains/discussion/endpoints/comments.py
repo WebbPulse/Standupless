@@ -27,6 +27,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.comment_writes import comment_page, edit_comment
 from app.common.comment_writes import create_comment as create_comment_row
 from app.common.db.dynamo.comments import Comment
+from app.common.discussion_reads import authors_for, group_reactions
 from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
@@ -39,9 +40,7 @@ from app.domains.discussion.schemas.discussion import (
     CommentUpdate,
 )
 from app.domains.discussion.service import (
-    authors_for,
     forbidden,
-    group_reactions,
     load_visible_issue,
     may_delete_comment,
     may_edit_comment,

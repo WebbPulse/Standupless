@@ -1,10 +1,10 @@
-"""The MCP tools for team planning: cycles, projects, milestones and project updates.
+"""The MCP tools for team planning: cycles, projects, milestones, Resources links and project updates.
 
 Every tool reads and writes through the same `app.common` paths the planning routes
 run, so a project on a team the credential cannot see is invisible here as it is
 over HTTP, and each write is held to the route's own role: any team member plans a
 cycle, only a team administrator deletes one, a writer on one of a project's teams
-edits it and its milestones, and only an administrator of every one of its teams
+edits it, its milestones and its Resources links, and only an administrator of every one of its teams
 deletes it. A project update posted here moves the project's health exactly as one
 posted in the app.
 
@@ -28,6 +28,9 @@ from app.common.api.schemas.planning import (
     ProjectCreate,
     ProjectHealthField,
     ProjectIconField,
+    ProjectLinkCreate,
+    ProjectLinkRead,
+    ProjectLinkUpdate,
     ProjectOpenIssuesAction,
     ProjectPriorityField,
     ProjectRead,
@@ -55,6 +58,7 @@ from app.common.planning_rules import (
 )
 from app.common.project_activity import activity_page
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
+from app.common.project_link_writes import create_link, delete_link, project_links, update_link
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_updates import (
     create_project_update,
@@ -128,6 +132,8 @@ INITIATIVE_HELP = "The initiative: id or name"
 
 MILESTONE_HELP = "The milestone: id or name within the project"
 
+LINK_HELP = "The Resources link: id, or its exact URL within the project"
+
 
 def _team_id(call: ToolCall, name: str = "team_id") -> str:
     """The id of the visible team one required argument names."""
@@ -183,6 +189,36 @@ def _milestone_id(call: ToolCall, project_id: str, value: Any) -> str:
     if not named:
         raise ToolError(NOT_VISIBLE)
     return named[0].milestone_id
+
+
+def _link_id(call: ToolCall, project_id: str, value: Any) -> str:
+    """A Resources link id of one project from an id or a URL held by exactly one of its links."""
+    reference = str(value).strip()
+    if not reference:
+        raise ToolError("link_id is required")
+    workspace_id = call.context.workspace_id
+    if call.repositories.planning.get_project_link(workspace_id, project_id, reference) is not None:
+        return reference
+    named = [
+        row for row in call.repositories.planning.list_project_links(workspace_id, project_id) if row.url == reference
+    ]
+    if len(named) > 1:
+        raise ambiguous("link", reference)
+    if not named:
+        raise ToolError(NOT_VISIBLE)
+    return named[0].link_id
+
+
+def _link_json(link: ProjectLinkRead) -> dict[str, Any]:
+    """One Resources link as the tools answer it, in its project's manual order."""
+    return {
+        "link_id": link.link_id,
+        "project_id": link.project_id,
+        "url": link.url,
+        "title": link.title,
+        "created_by": link.created_by,
+        "created_at": link.created_at.isoformat(),
+    }
 
 
 def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
@@ -258,7 +294,7 @@ def _milestone_json(milestone: MilestoneRead) -> dict[str, Any]:
 
 
 def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
-    """One project update as the tools answer it, with whether the caller may change it."""
+    """One project update as the tools answer it, with whether the caller may change it and its thread summary."""
     return {
         "update_id": update.update_id,
         "project_id": update.project_id,
@@ -269,6 +305,8 @@ def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
         "created_at": update.created_at.isoformat(),
         "edited_at": update.edited_at.isoformat() if update.edited_at else None,
         "can_edit": update.can_edit,
+        "comment_count": update.comment_count,
+        "reactions": [group.model_dump(mode="json") for group in update.reactions],
     }
 
 
@@ -444,7 +482,7 @@ def _optional_flag(call: ToolCall, name: str) -> Optional[bool]:
 
 
 def _get_project(call: ToolCall) -> Any:
-    """One project with its milestones, when at least one of its teams is visible."""
+    """One project with its milestones and Resources links, when at least one of its teams is visible."""
     project_id = _project_id(call, call.require("project_id"))
     project, visible = load_readable_project(call.repositories, call.context, project_id)
     default_days = workspace_interval(call.repositories.workspaces, call.context.workspace_id)
@@ -454,6 +492,9 @@ def _get_project(call: ToolCall) -> Any:
     body = _project_json(read)
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
+    body["links"] = [
+        _link_json(link) for link in project_links(call.repositories, call.context.workspace_id, project.project_id)
+    ]
     return body
 
 
@@ -651,6 +692,41 @@ def _delete_milestone(call: ToolCall) -> Any:
     milestone_id = _milestone_id(call, project_id, call.require("milestone_id"))
     delete_milestone(call.repositories, call.context, project_id, milestone_id)
     return {"deleted": True, "milestone_id": milestone_id, "project_id": project_id}
+
+
+def _create_project_link(call: ToolCall) -> Any:
+    """Add a Resources link after a project's last one, through the route's own path."""
+    project_id = _project_id(call, call.require("project_id"))
+    payload: dict[str, Any] = {"url": call.require("url")}
+    if call.optional("title") is not None:
+        payload["title"] = call.arguments["title"]
+    created = create_link(call.repositories, call.context, project_id, ProjectLinkCreate.model_validate(payload))
+    return _link_json(created)
+
+
+def _update_project_link(call: ToolCall) -> Any:
+    """Retitle or repoint a Resources link; a null or blank title clears it."""
+    project_id = _project_id(call, call.require("project_id"))
+    load_readable_project(call.repositories, call.context, project_id)
+    link_id = _link_id(call, project_id, call.require("link_id"))
+    payload: dict[str, Any] = {}
+    if call.optional("url") is not None:
+        payload["url"] = call.arguments["url"]
+    if call.present("title"):
+        payload["title"] = call.arguments["title"]
+    updated = update_link(
+        call.repositories, call.context, project_id, link_id, ProjectLinkUpdate.model_validate(payload)
+    )
+    return _link_json(updated)
+
+
+def _delete_project_link(call: ToolCall) -> Any:
+    """Remove a Resources link from a project."""
+    project_id = _project_id(call, call.require("project_id"))
+    load_readable_project(call.repositories, call.context, project_id)
+    link_id = _link_id(call, project_id, call.require("link_id"))
+    delete_link(call.repositories, call.context, project_id, link_id)
+    return {"deleted": True, "link_id": link_id, "project_id": project_id}
 
 
 def _list_project_updates(call: ToolCall) -> Any:
@@ -894,8 +970,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_project",
         description=(
-            "One project with its teams, lead, members, dates, status, health, priority, counts, milestones "
-            "and its update cadence and due state."
+            "One project with its teams, lead, members, dates, status, health, priority, counts, milestones, "
+            "Resources links and its update cadence and due state."
         ),
         scopes=("projects:read",),
         schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
@@ -1057,6 +1133,52 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             required=("project_id", "milestone_id"),
         ),
         handler=_delete_milestone,
+        destructive=True,
+    ),
+    Tool(
+        name="create_project_link",
+        description=(
+            "Add an external link to a project's Resources section, after its last one. "
+            "Without a title the link reads as its hostname; the linked page is never fetched."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                "url": string("An absolute http or https URL"),
+                "title": string("What the link reads as; its hostname when left out"),
+            },
+            required=("project_id", "url"),
+        ),
+        handler=_create_project_link,
+    ),
+    Tool(
+        name="update_project_link",
+        description=(
+            "Change the URL or title of a link in a project's Resources section. "
+            "Only the fields named are written; a null title clears it so the link reads as its hostname."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                "link_id": string(LINK_HELP),
+                "url": string("An absolute http or https URL"),
+                "title": nullable("What the link reads as, or null for its hostname"),
+            },
+            required=("project_id", "link_id"),
+        ),
+        handler=_update_project_link,
+    ),
+    Tool(
+        name="delete_project_link",
+        description="Remove a link from a project's Resources section.",
+        scopes=("projects:write",),
+        schema=object_schema(
+            {"project_id": string(PROJECT_HELP), "link_id": string(LINK_HELP)},
+            required=("project_id", "link_id"),
+        ),
+        handler=_delete_project_link,
         destructive=True,
     ),
     Tool(

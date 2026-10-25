@@ -8,6 +8,7 @@ import React from 'react';
 import ProfileSection from '../../components/account/ProfileSection';
 import AvatarPanel from '../../components/auth/AvatarPanel';
 import SettingsNav from '../../components/workspace/SettingsNav';
+import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -26,11 +27,15 @@ const ProfileSettings: React.FC = () => {
     >
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
-          <ProfileSection
-            workspaceId={workspace.id}
-            teamIds={(teams ?? []).map((team) => team.id)}
-          />
-          <AvatarPanel />
+          <SettingsAnchor id="profile">
+            <ProfileSection
+              workspaceId={workspace.id}
+              teamIds={(teams ?? []).map((team) => team.id)}
+            />
+          </SettingsAnchor>
+          <SettingsAnchor id="avatar">
+            <AvatarPanel />
+          </SettingsAnchor>
         </div>
       )}
     </WorkspaceShell>

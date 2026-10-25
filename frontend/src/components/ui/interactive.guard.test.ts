@@ -82,39 +82,59 @@ const resolveImport = (from: string, specifier: string): string | null => {
   return null;
 };
 
-/** The initialisers of every variable called `name` in a file. */
-const declarationsOf = (file: ts.SourceFile, name: string): ts.Node[] => {
-  const found: ts.Node[] = [];
+interface FileIndex {
+  declarations: Map<string, ts.Node[]>;
+  imports: Map<string, string | null>;
+}
+
+const indexes = new WeakMap<ts.SourceFile, FileIndex>();
+
+/** Every variable initialiser and relative import binding in a file, by name, built once. */
+const indexOf = (file: ts.SourceFile): FileIndex => {
+  const held = indexes.get(file);
+  if (held !== undefined) return held;
+  const declarations = new Map<string, ts.Node[]>();
   const visit = (node: ts.Node): void => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
-      node.name.text === name &&
       node.initializer !== undefined
     ) {
-      found.push(node.initializer);
+      const list = declarations.get(node.name.text) ?? [];
+      list.push(node.initializer);
+      declarations.set(node.name.text, list);
     }
     ts.forEachChild(node, visit);
   };
   visit(file);
-  return found;
-};
-
-/** Where an imported binding called `name` comes from, if it is relative. */
-const importSource = (file: ts.SourceFile, name: string): string | null => {
+  const imports = new Map<string, string | null>();
   for (const statement of file.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     const bindings = statement.importClause?.namedBindings;
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
-    if (!bindings.elements.some((element) => element.name.text === name)) {
-      continue;
-    }
     const specifier = statement.moduleSpecifier;
-    if (!ts.isStringLiteral(specifier)) return null;
-    return resolveImport(file.fileName, specifier.text);
+    for (const element of bindings.elements) {
+      if (imports.has(element.name.text)) continue;
+      imports.set(
+        element.name.text,
+        ts.isStringLiteral(specifier)
+          ? resolveImport(file.fileName, specifier.text)
+          : null
+      );
+    }
   }
-  return null;
+  const index = { declarations, imports };
+  indexes.set(file, index);
+  return index;
 };
+
+/** The initialisers of every variable called `name` in a file. */
+const declarationsOf = (file: ts.SourceFile, name: string): ts.Node[] =>
+  indexOf(file).declarations.get(name) ?? [];
+
+/** Where an imported binding called `name` comes from, if it is relative. */
+const importSource = (file: ts.SourceFile, name: string): string | null =>
+  indexOf(file).imports.get(name) ?? null;
 
 /** All the class text an expression can produce, following named constants. */
 const classText = (
@@ -185,15 +205,20 @@ const literal = (attribute: ts.JsxAttribute | undefined): string | null => {
   return null;
 };
 
-/** Whether an element's class list carries a hover treatment. */
+const hoverResults = new WeakMap<ts.Node, boolean>();
+
+/** Whether an element's class list carries a hover treatment, cached per element. */
 const hovers = (
   element: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
   file: ts.SourceFile
 ): boolean => {
+  const held = hoverResults.get(element);
+  if (held !== undefined) return held;
   const className = attributesOf(element).get('className')?.initializer;
-  return (
-    className !== undefined && HOVER.test(` ${classText(className, file)}`)
-  );
+  const result =
+    className !== undefined && HOVER.test(` ${classText(className, file)}`);
+  hoverResults.set(element, result);
+  return result;
 };
 
 /** Whether an enclosing element in the same file carries a hover treatment. */
@@ -235,13 +260,28 @@ const offenders = (path: string): string[] => {
   return found;
 };
 
+const COMPONENT_FILES = sourceFiles(SRC).filter((path) =>
+  path.endsWith('.tsx')
+);
+
+const AREAS = [
+  ...new Set(COMPONENT_FILES.map((path) => relative(SRC, path).split('/')[0])),
+].sort();
+
 describe('clickable elements', () => {
-  it('all carry a hover state, directly or through the row around them', () => {
-    const found = sourceFiles(SRC)
-      .filter((path) => path.endsWith('.tsx'))
-      .flatMap(offenders);
-    expect(found).toEqual([]);
+  it('cover every area of the source tree', () => {
+    expect(AREAS.length).toBeGreaterThan(0);
   });
+
+  it.each(AREAS)(
+    'in %s all carry a hover state, directly or through the row around them',
+    (area) => {
+      const found = COMPONENT_FILES.filter(
+        (path) => relative(SRC, path).split('/')[0] === area
+      ).flatMap(offenders);
+      expect(found).toEqual([]);
+    }
+  );
 });
 
 describe('the interactive utilities', () => {

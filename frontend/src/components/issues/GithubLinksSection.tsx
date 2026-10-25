@@ -22,7 +22,11 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuGitBranch } from 'react-icons/lu';
 import { listIssueLinks } from '../../api/integrations';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
-import { COPY_BRANCH_KEYS, copyBranchName } from '../../lib/copyIssue';
+import {
+  COPY_BRANCH_KEYS,
+  copyBranchName,
+  type BranchStart,
+} from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { gitBranchName } from '../../lib/gitBranch';
 import { pullRequestStateStyle } from '../../lib/pullRequestState';
@@ -46,6 +50,8 @@ export interface GithubLinksSectionProps {
   /** The issue key, such as GHS-1; with a title, enables the branch action. */
   issueKey?: string;
   title?: string;
+  /** Lets copying the branch start the issue, for a person who may edit it. */
+  branchStart?: BranchStart;
 }
 
 /** How often the links are re-read while the issue is open. */
@@ -219,14 +225,17 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
   issueId,
   issueKey,
   title,
+  branchStart,
 }) => {
   const auth = useQueryAuth();
   const branch =
     issueKey === undefined ? null : gitBranchName(issueKey, title ?? '');
 
   const copyBranch = useCallback((): void => {
-    if (issueKey !== undefined) copyBranchName(issueKey, title ?? '');
-  }, [issueKey, title]);
+    if (issueKey !== undefined) {
+      copyBranchName(issueKey, title ?? '', branchStart);
+    }
+  }, [issueKey, title, branchStart]);
 
   useShortcut({
     keys: COPY_BRANCH_KEYS,

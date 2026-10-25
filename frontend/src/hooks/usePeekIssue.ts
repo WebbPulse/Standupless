@@ -8,7 +8,7 @@
 
 import { createElement, useCallback } from 'react';
 import IssuePeek from '../components/issues/IssuePeek';
-import { usePeek } from './usePeek';
+import { usePeek, type PeekContent } from './usePeek';
 
 /** The fields of an issue the peek needs to open it. */
 export interface PeekableIssue {
@@ -29,6 +29,28 @@ export interface PeekIssueState {
 /** The prefix that marks pane content as an issue, as opposed to anything else. */
 const ISSUE_PREFIX = 'issue:';
 
+/**
+ * The pane content for one issue, whose own tree keys swap the pane to the
+ * parent or a sub-issue in place.
+ */
+const issueContent = (
+  issue: PeekableIssue,
+  openPeek: (content: PeekContent) => void,
+  closePeek: () => void
+): PeekContent => ({
+  key: `${ISSUE_PREFIX}${issue.key}`,
+  label: `Issue ${issue.key}`,
+  framed: false,
+  node: createElement(IssuePeek, {
+    key: issue.id,
+    issueId: issue.id,
+    onClose: closePeek,
+    onOpenIssue: (next) => {
+      openPeek(issueContent(next, openPeek, closePeek));
+    },
+  }),
+});
+
 /** Peeks issues into the workspace pane. */
 export const usePeekIssue = (): PeekIssueState => {
   const { content, openPeek, closePeek } = usePeek();
@@ -43,16 +65,7 @@ export const usePeekIssue = (): PeekIssueState => {
         closePeek();
         return;
       }
-      openPeek({
-        key: `${ISSUE_PREFIX}${issue.key}`,
-        label: `Issue ${issue.key}`,
-        framed: false,
-        node: createElement(IssuePeek, {
-          key: issue.id,
-          issueId: issue.id,
-          onClose: closePeek,
-        }),
-      });
+      openPeek(issueContent(issue, openPeek, closePeek));
     },
     [peekedKey, openPeek, closePeek]
   );

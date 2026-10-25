@@ -17,6 +17,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import type {
+  MemberRead,
   SearchResultRead,
   TeamRead,
   TemplateListRead,
@@ -45,6 +46,12 @@ const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 const navigate = vi.fn();
 const listTeamTemplates =
   vi.fn<(workspaceId: string, teamId: string) => Promise<TemplateListRead>>();
+
+const workspaceMembers = vi.fn<() => MemberRead[]>(() => []);
+
+vi.mock('../../hooks/useWorkspaceMembers', () => ({
+  useWorkspaceMembers: () => workspaceMembers(),
+}));
 
 vi.mock('../../api/documents', () => ({
   listWorkspaceDocuments: () => Promise.resolve([]),
@@ -237,6 +244,7 @@ beforeEach(() => {
     default_template_id: null,
   });
   search.mockResolvedValue([]);
+  workspaceMembers.mockReturnValue([]);
   globalThis.localStorage.removeItem(THEME_STORAGE_KEY);
 });
 
@@ -411,6 +419,18 @@ describe('activating a row', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+  });
+
+  it('opens the Activity tab of My issues', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('my activity');
+    await user.click(
+      await screen.findByRole('option', { name: /My activity/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/issues?tab=activity');
   });
 
   it('navigates on a click', async () => {
@@ -934,5 +954,87 @@ describe('the planning commands', () => {
     expect(
       screen.queryByRole('option', { name: /Create initiative/ })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('the team preset commands', () => {
+  it('opens the current team on its active issues and its backlog', async () => {
+    const user = renderPalette({ path: '/w/mine/team/ENG' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('active issues');
+    await user.click(
+      await screen.findByRole('option', { name: /Go to active issues/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG?scope=active');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('go to backlog');
+    await user.click(
+      await screen.findByRole('option', { name: /Go to backlog/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG?scope=backlog');
+  });
+});
+
+describe('going to a member', () => {
+  it('finds a person by name and opens their member page', async () => {
+    workspaceMembers.mockReturnValue([
+      {
+        user_id: 'user-7',
+        email: 'riley@example.com',
+        display_name: 'riley',
+        full_name: 'Riley Chen',
+        role: 'member',
+        joined_at: '2026-09-17T00:00:00Z',
+      },
+    ]);
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('chen');
+    const row = await screen.findByRole('option', {
+      name: /Go to member riley/,
+    });
+    expect(row).not.toHaveTextContent('example.com');
+
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/members/user-7');
+  });
+});
+
+describe('the team go-to commands', () => {
+  it.each([
+    ['active issues', /Go to active issues/, 'G then A'],
+    ['go to backlog', /Go to backlog/, 'G then B'],
+    ['Engine board', /Engine board/, 'G then D'],
+    ['archived issues', /Engine archived issues/, 'G then X'],
+    ['Engine views', /Engine views/, 'G then Shift V'],
+  ])('shows %s with its keys', async (term, name, keys) => {
+    const user = renderPalette({ path: '/w/mine/team/ENG' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard(term);
+
+    const option = await screen.findByRole('option', { name });
+    expect(option).toHaveTextContent(keys);
+  });
+
+  it('opens the current team board', async () => {
+    const user = renderPalette({ path: '/w/mine/team/ENG' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('Engine board');
+    await user.click(
+      await screen.findByRole('option', { name: /Engine board/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG/board');
   });
 });
