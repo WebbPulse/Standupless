@@ -10,9 +10,9 @@ widens when a field is renamed.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping, Optional, get_args
+from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
 
-from pydantic import BaseModel, Field, StrictBool, field_validator
+from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
@@ -85,7 +85,7 @@ def completed_window_of(window: Optional[str], show_completed: Optional[bool]) -
     return "all"
 
 
-GroupByField = Literal[
+GroupByProperty = Literal[
     "status",
     "assignee",
     "priority",
@@ -98,6 +98,23 @@ GroupByField = Literal[
     "sla",
 ]
 """The properties a view may group or sub-group its rows by."""
+
+GROUP_BY_PROPERTIES: tuple[str, ...] = get_args(GroupByProperty)
+
+LABEL_GROUP_GROUPING_PATTERN = r"^label_group:[0-9A-Za-z_-]{1,64}$"
+"""A grouping by one label group, `label_group:` then the group label's id."""
+
+LabelGroupGrouping = Annotated[str, StringConstraints(pattern=LABEL_GROUP_GROUPING_PATTERN)]
+
+GroupByField = Union[GroupByProperty, LabelGroupGrouping]
+"""What a view may group or sub-group its rows by: a property, or one label group."""
+
+
+def grouping_pattern(*extra: str) -> str:
+    """A regular expression matching every grouping, and any extra choices, for a tool schema."""
+    choices = "|".join((*GROUP_BY_PROPERTIES, *extra))
+    return rf"^(?:{choices}|label_group:[0-9A-Za-z_-]{{1,64}})$"
+
 
 ScopeField = Literal["mine", "team", "workspace", "all"]
 

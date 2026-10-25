@@ -64,9 +64,8 @@ import {
 import { errorMessage } from '../../lib/errors';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import {
-  GROUP_FIELDS,
   defaultViewState,
-  fieldsFor,
+  groupFieldsFor,
   filterValuesFor,
   narrowFilters,
   parseViewState,
@@ -709,7 +708,8 @@ export const CycleDetail: React.FC = () => {
               <DisplayMenu
                 state={state}
                 onChange={setState}
-                groupFields={fieldsFor(GROUP_FIELDS, lists.context)}
+                groupFields={groupFieldsFor(lists.context)}
+                context={lists.context}
                 onReset={
                   sameViewState(
                     {

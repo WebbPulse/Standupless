@@ -94,6 +94,28 @@ def test_a_sub_group_needs_a_distinct_group(client: TestClient, workspace: str) 
     assert cleared.status_code == 422
 
 
+def test_a_view_groups_by_a_label_group(client: TestClient, workspace: str) -> None:
+    """A label group grouping is stored as `label_group:<id>`, and a malformed one is refused."""
+    sign_in(client, MEMBER)
+
+    created = _create(client, workspace, group_by="label_group:01M3NKM0BRRYEXPKVW8BTWV7RB", sub_group_by="status")
+    assert created.status_code == 201, created.text
+    view_id = created.json()["view_id"]
+    patched = client.patch(
+        f"/api/workspaces/{workspace}/views/{view_id}",
+        json={"group_by": "status", "sub_group_by": "label_group:grp-type"},
+    )
+    read = client.get(f"/api/workspaces/{workspace}/views/{view_id}").json()
+
+    assert created.json()["group_by"] == "label_group:01M3NKM0BRRYEXPKVW8BTWV7RB"
+    assert patched.status_code == 200, patched.text
+    assert (read["group_by"], read["sub_group_by"]) == ("status", "label_group:grp-type")
+    for bad in ("label_group:", "label_group:a b", "label_group", "labels:abc"):
+        assert _create(client, workspace, group_by=bad).status_code == 422, bad
+    same = _create(client, workspace, group_by="label_group:grp", sub_group_by="label_group:grp")
+    assert same.status_code == 422
+
+
 def test_an_unknown_property_or_layout_is_a_422(client: TestClient, workspace: str) -> None:
     """Both are fixed vocabularies, so a client never meets a value it cannot render."""
     sign_in(client, MEMBER)

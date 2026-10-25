@@ -641,6 +641,7 @@ class DisplayOptionsBody(TypedDict):
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | Literal["none"]
         | None
     ]
@@ -669,6 +670,7 @@ class DisplayOptionsBody(TypedDict):
     show_sub_issues: NotRequired[bool | None]
     sub_group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | Literal["none"]
         | None
     ]
@@ -2928,6 +2930,7 @@ class ViewCreate(TypedDict):
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     icon: NotRequired[str | None]
@@ -2977,6 +2980,7 @@ class ViewCreate(TypedDict):
     ]
     sub_group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     team_id: NotRequired[str | None]
@@ -3045,6 +3049,7 @@ class ViewUpdate(TypedDict):
     filter: NotRequired[dict[str, Any] | None]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     icon: NotRequired[str | None]
@@ -3094,6 +3099,7 @@ class ViewUpdate(TypedDict):
     ]
     sub_group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | str
         | None
     ]
     visible_properties: NotRequired[

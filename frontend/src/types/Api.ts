@@ -1624,7 +1624,7 @@ export type ViewKind = 'list' | 'board';
 /** Whether a saved view belongs to one person or to a team. */
 export type ViewScope = 'personal' | 'team' | 'workspace';
 
-/** How a saved view groups its rows. */
+/** How a saved view groups its rows: a property, or one label group as `label_group:<id>`. */
 export type ViewGroupBy =
   | 'status'
   | 'assignee'
@@ -1635,7 +1635,8 @@ export type ViewGroupBy =
   | 'cycle'
   | 'parent'
   | 'team'
-  | 'sla';
+  | 'sla'
+  | `label_group:${string}`;
 
 /** Which saved views a list read asks for. */
 export type ViewListScope = 'mine' | 'team' | 'workspace' | 'all';
