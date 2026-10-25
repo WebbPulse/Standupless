@@ -1018,6 +1018,12 @@ export interface IssueRead {
    */
   cancelled_at?: string | null;
   /**
+   * When the issue entered its current status, for time in status. Optional
+   * so a row built on the client before the server stamps it reads its
+   * creation instead.
+   */
+  status_changed_at?: string | null;
+  /**
    * How many relations the issue carries, every kind counted. Optional so a
    * row read before it was counted reads as none.
    */

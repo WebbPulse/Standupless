@@ -121,12 +121,14 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
     `previous` is `None` for a new issue. Reads the team's rules and the status
     only when a watched field moved, so an edit to the title costs nothing. A
     status or team move also restamps `started_at`, `completed_at` and
-    `cancelled_at` through `stamp_completion`, stamps triage entry and exit
+    `cancelled_at` through `stamp_completion`, `status_changed_at` through
+    `stamp_status_change`, stamps triage entry and exit
     through `stamp_triage`, and pauses or resumes the timer through `hold_sla`.
     """
     if previous is not None and all(getattr(previous, name) == getattr(updated, name) for name in WATCHED_FIELDS):
         return
     stamp_triage(previous, updated, now)
+    stamp_status_change(previous, updated, now)
     category: str | None = None
     if previous is None or previous.status_id != updated.status_id or previous.team_id != updated.team_id:
         category = _category(repositories, updated)
@@ -228,6 +230,24 @@ def stamp_completion(issue: Issue, category: str, now: datetime | None = None) -
         issue.cancelled_at = None
     elif issue.cancelled_at is None:
         issue.cancelled_at = moment
+
+
+def stamp_status_change(previous: Issue | None, updated: Issue, now: datetime | None = None) -> None:
+    """Stamp `status_changed_at` when an issue enters a status, so lists can show time in status.
+
+    A new issue enters its status when it is created. A move of status, of team
+    or into or out of triage is a new status, and any other edit keeps the stamp.
+    """
+    if previous is None:
+        updated.status_changed_at = updated.status_changed_at or updated.created_at
+        return
+    if (
+        previous.status_id == updated.status_id
+        and previous.team_id == updated.team_id
+        and previous.in_triage == updated.in_triage
+    ):
+        return
+    updated.status_changed_at = now or utc_now()
 
 
 def stamp_triage(previous: Issue | None, updated: Issue, now: datetime | None = None) -> None:

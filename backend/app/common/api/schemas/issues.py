@@ -398,6 +398,9 @@ class IssueRead(BaseModel):
     cancelled_at: Optional[datetime] = Field(
         default=None, description="When the issue landed in a cancelled status, null while it is anywhere else."
     )
+    status_changed_at: Optional[datetime] = Field(
+        default=None, description="When the issue entered its current status, for time in status."
+    )
     external_ref: Optional[str] = None
 
     @classmethod
@@ -450,6 +453,7 @@ class IssueRead(BaseModel):
             started_at=issue.started_at,
             completed_at=issue.completed_at,
             cancelled_at=issue.cancelled_at,
+            status_changed_at=issue.entered_status_at(),
             external_ref=issue.external_ref,
         )
 

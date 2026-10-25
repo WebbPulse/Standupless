@@ -21,6 +21,8 @@ import { PRIORITY_LABELS } from '../../lib/issueDisplay';
 import { personLabel } from '../../lib/issuePeople';
 import { issuePath } from '../../lib/paths';
 import { issueKey } from '../../lib/queryKeys';
+import { fullTimestamp } from '../../lib/relativeTime';
+import { enteredStatusAt, timeInStatusSentence } from '../../lib/timeInStatus';
 import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import type { IssueRead } from '../../types/Api';
 import Avatar from './avatar';
@@ -193,6 +195,14 @@ const PreviewBody: React.FC<{ workspaceId: string; issue: IssueRead }> = ({
           </Pill>
         )}
       </div>
+      {status !== undefined && (
+        <p
+          className="text-2xs text-text-faint"
+          title={fullTimestamp(enteredStatusAt(issue))}
+        >
+          {timeInStatusSentence(status.name, issue)}
+        </p>
+      )}
     </div>
   );
 };
