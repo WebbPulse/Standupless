@@ -59,6 +59,8 @@ export interface MenuProps {
   label: string;
   children: React.ReactNode;
   className?: string;
+  /** Hears the list open and close, for a page whose own keys must stand down meanwhile. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const ITEM_SELECTOR =
@@ -229,14 +231,34 @@ export const Menu: React.FC<MenuProps> = ({
   label,
   children,
   className = '',
+  onOpenChange,
 }) => {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const heard = useRef(onOpenChange);
+  const announced = useRef(false);
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
   const close = useCallback(() => setOpen(false), []);
   useAnchoredPlacement(open, root, list, align);
   const query = useMenuFilter(list, open);
+
+  useEffect(() => {
+    heard.current = onOpenChange;
+  });
+
+  useEffect(() => {
+    if (announced.current === open) return;
+    announced.current = open;
+    heard.current?.(open);
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      if (announced.current) heard.current?.(false);
+    },
+    []
+  );
 
   useEffect(() => {
     if (!open) return;

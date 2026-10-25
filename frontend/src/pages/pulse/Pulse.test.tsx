@@ -2,17 +2,21 @@
  * Tests for the Pulse page: entries newest first with their unread dot and
  * links, grouped under day headings, moved through with j/k and opened with
  * Enter, the read marker moved on view, the For me, Popular and Recent switch
- * kept in the URL, the empty states and older pages on request.
+ * kept in the URL, the empty states and older pages on request, and each
+ * entry's menu following or unfollowing what it is about.
  */
 
 import type { ReactNode } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PulseQuery } from '../../api/pulse';
+import type { FollowSubject, PulseQuery } from '../../api/pulse';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
+import { clearToasts, currentToasts } from '../../lib/toast';
 import type {
+  PulseFollowRead,
   PulseItemRead,
   PulseListRead,
   PulseReadMarker,
@@ -24,11 +28,36 @@ const listPulse =
   vi.fn<(workspaceId: string, query?: PulseQuery) => Promise<PulseListRead>>();
 const markPulseRead =
   vi.fn<(workspaceId: string) => Promise<PulseReadMarker>>();
+const getFollow =
+  vi.fn<
+    (
+      workspaceId: string,
+      subject: FollowSubject,
+      subjectId: string
+    ) => Promise<PulseFollowRead>
+  >();
+const setFollow =
+  vi.fn<
+    (
+      workspaceId: string,
+      subject: FollowSubject,
+      subjectId: string,
+      following: boolean
+    ) => Promise<PulseFollowRead>
+  >();
 
 vi.mock('../../api/pulse', () => ({
   listPulse: (workspaceId: string, query?: PulseQuery) =>
     listPulse(workspaceId, query),
   markPulseRead: (workspaceId: string) => markPulseRead(workspaceId),
+  getFollow: (workspaceId: string, subject: FollowSubject, subjectId: string) =>
+    getFollow(workspaceId, subject, subjectId),
+  setFollow: (
+    workspaceId: string,
+    subject: FollowSubject,
+    subjectId: string,
+    following: boolean
+  ) => setFollow(workspaceId, subject, subjectId, following),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -122,24 +151,53 @@ const SearchProbe = () => (
   <output data-testid="search">{useLocation().search}</output>
 );
 
+/** The page and its probe, inside the shortcut registry when asked. */
+const page = (withShortcuts: boolean): ReactNode => {
+  const body = (
+    <>
+      <Pulse />
+      <SearchProbe />
+    </>
+  );
+  return withShortcuts ? <ShortcutProvider>{body}</ShortcutProvider> : body;
+};
+
 /** Renders the page on its route. */
-const renderPage = (path = '/w/mine/pulse') =>
+const renderPage = (path = '/w/mine/pulse', withShortcuts = false) =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route
-          path="/w/:slug/pulse"
-          element={
-            <>
-              <Pulse />
-              <SearchProbe />
-            </>
-          }
-        />
+        <Route path="/w/:slug/pulse" element={page(withShortcuts)} />
         <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
       </Routes>
     </MemoryRouter>
   );
+
+/** An initiative update entry. */
+const initiativeEntry = (over: Partial<PulseItemRead> = {}): PulseItemRead =>
+  entry({
+    event_id: 'ev-9',
+    event_type: 'initiative_update',
+    subject_type: 'initiative',
+    project_id: null,
+    project_name: null,
+    initiative_id: 'i-1',
+    initiative_name: 'Growth',
+    body: 'On track overall',
+    health: 'on_track',
+    ...over,
+  });
+
+/** Runs the newest notice's button, as pressing Undo on it would. */
+const runLatestToastAction = (): void => {
+  const action = currentToasts().at(-1)?.action;
+  if (action === undefined || !('run' in action)) {
+    throw new Error('No toast button to run');
+  }
+  act(() => {
+    action.run();
+  });
+};
 
 beforeEach(() => {
   listPulse.mockReset();
@@ -147,6 +205,13 @@ beforeEach(() => {
   markPulseRead.mockResolvedValue({ read_at: '2026-10-15T08:00:00Z' });
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved());
+  getFollow.mockReset();
+  getFollow.mockResolvedValue({ following: true, explicit: true });
+  setFollow.mockReset();
+  setFollow.mockImplementation((_w, _s, _i, following) =>
+    Promise.resolve({ following, explicit: true })
+  );
+  clearToasts();
 });
 
 describe('the Pulse page', () => {
@@ -390,5 +455,155 @@ describe('the Pulse page', () => {
     renderPage();
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+});
+
+describe('the Pulse entry menu', () => {
+  it('unfollows a project, drops its entries at once and follows it again on Undo', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(
+      pageOf([
+        entry({ event_id: 'ev-2', body: 'Second' }),
+        initiativeEntry(),
+        entry({ event_id: 'ev-1', body: 'First' }),
+      ])
+    );
+    renderPage();
+
+    await user.click(
+      (await screen.findAllByRole('button', { name: 'Actions for Launch' }))[0]!
+    );
+    const menu = screen.getByRole('menu', { name: 'Launch actions' });
+    await user.click(
+      await within(menu).findByRole('menuitem', { name: 'Unfollow project' })
+    );
+
+    expect(getFollow).toHaveBeenCalledWith('ws-1', 'project', 'p-1');
+    expect(setFollow).toHaveBeenCalledWith('ws-1', 'project', 'p-1', false);
+    expect(screen.queryByText('Second')).not.toBeInTheDocument();
+    expect(screen.queryByText('First')).not.toBeInTheDocument();
+    expect(screen.getByText('On track overall')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(currentToasts().at(-1)?.message).toBe('Unfollowed Launch');
+    });
+
+    runLatestToastAction();
+
+    expect(setFollow).toHaveBeenLastCalledWith('ws-1', 'project', 'p-1', true);
+    expect(await screen.findByText('Second')).toBeInTheDocument();
+    expect(screen.getByText('First')).toBeInTheDocument();
+  });
+
+  it('brings the entries back when the unfollow fails', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(pageOf([entry()]));
+    setFollow.mockRejectedValue(new Error('boom'));
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Launch' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Unfollow project' })
+    );
+
+    expect(await screen.findByText('Slipping a week')).toBeInTheDocument();
+    expect(currentToasts().at(-1)?.tone).toBe('error');
+  });
+
+  it('offers Unfollow initiative and says when the follow comes from a role', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(pageOf([initiativeEntry()]));
+    getFollow.mockResolvedValue({ following: true, explicit: false });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Growth' })
+    );
+
+    const menu = screen.getByRole('menu', { name: 'Growth actions' });
+    expect(
+      await within(menu).findByRole('menuitem', {
+        name: 'Unfollow initiative',
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByText('You follow this initiative because you own it.')
+    ).toBeInTheDocument();
+    expect(getFollow).toHaveBeenCalledWith('ws-1', 'initiative', 'i-1');
+  });
+
+  it('hides Unfollow and says why when the caller does not follow the source', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(pageOf([entry()]));
+    getFollow.mockResolvedValue({ following: false, explicit: false });
+    renderPage('/w/mine/pulse?tab=recent');
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Launch' })
+    );
+
+    const menu = screen.getByRole('menu', { name: 'Launch actions' });
+    expect(
+      await within(menu).findByText(
+        'You do not follow this project. It shows here because you can see it.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Unfollow project' })
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Follow project' })
+    );
+
+    expect(setFollow).toHaveBeenCalledWith('ws-1', 'project', 'p-1', true);
+    expect(screen.getByText('Slipping a week')).toBeInTheDocument();
+  });
+
+  it('keeps entries on Recent after an unfollow', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(pageOf([entry()]));
+    renderPage('/w/mine/pulse?tab=recent');
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Launch' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Unfollow project' })
+    );
+
+    expect(setFollow).toHaveBeenCalledWith('ws-1', 'project', 'p-1', false);
+    expect(screen.getByText('Slipping a week')).toBeInTheDocument();
+  });
+
+  it('opens the highlighted entry menu from the keyboard', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(
+      pageOf([entry({ event_id: 'ev-2' }), initiativeEntry()])
+    );
+    renderPage('/w/mine/pulse', true);
+
+    await screen.findAllByRole('article');
+    await user.keyboard('j');
+    await user.keyboard('j');
+    await user.keyboard('{Shift>}{F10}{/Shift}');
+
+    const menu = await screen.findByRole('menu', { name: 'Growth actions' });
+    await within(menu).findByRole('menuitem', { name: 'Unfollow initiative' });
+    await user.keyboard('{ArrowDown}{ArrowDown}');
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Unfollow initiative' })
+    ).toHaveFocus();
+    expect(
+      screen.getByRole('article', {
+        name: 'Growth: Adam Admin posted an update',
+      })
+    ).toHaveAttribute('aria-current', 'true');
+
+    await user.keyboard('{Enter}');
+
+    expect(setFollow).toHaveBeenCalledWith('ws-1', 'initiative', 'i-1', false);
+    expect(screen.queryByText('Project page')).not.toBeInTheDocument();
   });
 });
