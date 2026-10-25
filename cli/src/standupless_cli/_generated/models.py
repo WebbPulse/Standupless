@@ -748,7 +748,19 @@ class DiscordLinkUrlRead(TypedDict):
 class DisplayOptionsBody(TypedDict):
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     group_by: NotRequired[
-        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        Literal[
+            "status",
+            "assignee",
+            "priority",
+            "label",
+            "milestone",
+            "project",
+            "cycle",
+            "parent",
+            "team",
+            "sla",
+            "customer",
+        ]
         | str
         | Literal["none"]
         | None
@@ -779,7 +791,19 @@ class DisplayOptionsBody(TypedDict):
     show_empty_groups: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]
     sub_group_by: NotRequired[
-        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        Literal[
+            "status",
+            "assignee",
+            "priority",
+            "label",
+            "milestone",
+            "project",
+            "cycle",
+            "parent",
+            "team",
+            "sla",
+            "customer",
+        ]
         | str
         | Literal["none"]
         | None
@@ -3299,7 +3323,19 @@ class ViewCreate(TypedDict):
     entity: NotRequired[Literal["issues", "projects"]]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[
-        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        Literal[
+            "status",
+            "assignee",
+            "priority",
+            "label",
+            "milestone",
+            "project",
+            "cycle",
+            "parent",
+            "team",
+            "sla",
+            "customer",
+        ]
         | str
         | None
     ]
@@ -3352,7 +3388,19 @@ class ViewCreate(TypedDict):
         ]
     ]
     sub_group_by: NotRequired[
-        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        Literal[
+            "status",
+            "assignee",
+            "priority",
+            "label",
+            "milestone",
+            "project",
+            "cycle",
+            "parent",
+            "team",
+            "sla",
+            "customer",
+        ]
         | str
         | None
     ]
@@ -3425,7 +3473,19 @@ class ViewUpdate(TypedDict):
     description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any] | None]
     group_by: NotRequired[
-        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        Literal[
+            "status",
+            "assignee",
+            "priority",
+            "label",
+            "milestone",
+            "project",
+            "cycle",
+            "parent",
+            "team",
+            "sla",
+            "customer",
+        ]
         | str
         | None
     ]
@@ -3478,7 +3538,19 @@ class ViewUpdate(TypedDict):
         | None
     ]
     sub_group_by: NotRequired[
-        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        Literal[
+            "status",
+            "assignee",
+            "priority",
+            "label",
+            "milestone",
+            "project",
+            "cycle",
+            "parent",
+            "team",
+            "sla",
+            "customer",
+        ]
         | str
         | None
     ]

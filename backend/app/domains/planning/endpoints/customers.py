@@ -34,6 +34,7 @@ from app.common.customers import (
     list_customer_requests,
     list_customers,
     list_target_requests,
+    list_workspace_requests,
     merge_customers,
     update_customer,
     update_request,
@@ -61,6 +62,21 @@ def add_customer(
 ) -> CustomerRead:
     """Add a customer, as a workspace member who is not a guest."""
     return create_customer(repositories, context, payload)
+
+
+@router.get("/{workspace_id}/customers/requests", response_model=CustomerRequestListRead)
+def list_all_requests(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+) -> Any:
+    """Every request whose issue or project the caller can see, newest first.
+
+    A list grouped by customer reads this once to place each issue under every
+    customer that asked for it. Declared before `/customers/{customer_id}` so
+    `requests` is not swallowed as an id.
+    """
+    return CustomerRequestListRead(items=list_workspace_requests(repositories, context), next_cursor=None)
 
 
 @router.get("/{workspace_id}/customers/{customer_id}", response_model=CustomerRead)

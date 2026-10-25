@@ -215,10 +215,16 @@ def test_the_milestone_and_links_properties_round_trip(client: TestClient, works
 
 
 def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: str) -> None:
-    """Project, cycle, parent, team and SLA groupings and the status, start and estimate sorts are kept."""
+    """Project, cycle, parent, team, SLA and customer groupings and the status, start and estimate sorts are kept."""
     sign_in(client, MEMBER)
 
-    for group, sub_group in (("project", "cycle"), ("parent", "sla"), ("team", "milestone"), ("cycle", "project")):
+    for group, sub_group in (
+        ("project", "cycle"),
+        ("parent", "sla"),
+        ("team", "milestone"),
+        ("cycle", "project"),
+        ("customer", "status"),
+    ):
         created = _create(client, workspace, group_by=group, sub_group_by=sub_group)
         assert created.status_code == 201, created.text
         read = client.get(f"/api/workspaces/{workspace}/views/{created.json()['view_id']}").json()

@@ -24,6 +24,7 @@ import { LuChevronRight, LuEllipsis, LuEyeOff, LuPlus } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
+  customerMove,
   GROUP_LABELS,
   groupIssues,
   hiddenColumnKey,
@@ -31,6 +32,7 @@ import {
   isMovableGroupField,
   moveChange,
   orderKeyAt,
+  type CustomerMove,
   type GroupField,
   type IssueChange,
   type IssueGroup,
@@ -323,6 +325,23 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       change = joinChanges(change, moved);
     }
 
+    const customerMoves: CustomerMove[] = [];
+    if (columnField === 'customer' && to.column !== source.column) {
+      customerMoves.push(
+        customerMove(issue, source.column, to.column, context)
+      );
+    }
+    if (laneField === 'customer' && to.lane !== source.lane) {
+      customerMoves.push(customerMove(issue, source.lane, to.lane, context));
+    }
+    if (customerMoves.length > 0 && env.moveCustomer === undefined) {
+      showToast(
+        `${issue.key} stays put, customer requests are not set from here.`,
+        'info'
+      );
+      return;
+    }
+
     const sameCell = to.column === source.column && to.lane === source.lane;
     if (state.ordering === 'manual' || sameCell) {
       const lane = lanes.find((item) => item.lane.key === to.lane);
@@ -336,7 +355,12 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
         onStateChange({ ...state, ordering: 'manual', reverse: false });
       }
     }
-    env.update([issue.id], change);
+    if (Object.keys(change).length > 0) env.update([issue.id], change);
+    for (const move of customerMoves) {
+      if (move.add !== undefined || move.remove !== undefined) {
+        env.moveCustomer?.(issue, move);
+      }
+    }
   };
 
   const overCell =
@@ -505,7 +529,10 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                   <TruncatedText className="text-sm font-medium text-text">
                     {column.label}
                   </TruncatedText>
-                  <GroupFigure issues={column.issues} />
+                  <GroupFigure
+                    issues={column.issues}
+                    requests={column.requests}
+                  />
                   <span className="ml-auto flex items-center opacity-0 group-focus-within/col:opacity-100 group-hover/col:opacity-100 pointer-coarse:opacity-100">
                     <Menu
                       label={`${column.label} column`}
@@ -572,7 +599,10 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                     />
                     <GroupGlyph group={lane} />
                     <span className="font-medium text-text">{lane.label}</span>
-                    <GroupFigure issues={lane.issues} />
+                    <GroupFigure
+                      issues={lane.issues}
+                      requests={lane.requests}
+                    />
                   </button>
                 )}
                 {!folded && (
@@ -616,7 +646,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               <TruncatedText className="min-w-0 flex-1">
                 {column.label}
               </TruncatedText>
-              <GroupFigure issues={column.issues} />
+              <GroupFigure issues={column.issues} requests={column.requests} />
             </button>
           ))}
         </aside>

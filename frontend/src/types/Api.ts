@@ -1862,6 +1862,7 @@ export type ViewGroupBy =
   | 'parent'
   | 'team'
   | 'sla'
+  | 'customer'
   | `label_group:${string}`;
 
 /** Which saved views a list read asks for. */
