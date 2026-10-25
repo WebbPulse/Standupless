@@ -1,5 +1,6 @@
 /**
- * The document routes: Markdown pages under a project or an initiative. A
+ * The document routes: Markdown pages under a project, an initiative or a
+ * team. A
  * document is listed and created through its parent and reached afterwards by
  * its own id, so a link to one survives a rename and a move of the page.
  */
@@ -36,6 +37,24 @@ export const initiativeDocumentsPath = (
   initiativeId: string
 ): string => `/workspaces/${workspaceId}/initiatives/${initiativeId}/documents`;
 
+/** The route one team's documents are listed and created on. */
+export const teamDocumentsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `/workspaces/${workspaceId}/teams/${teamId}/documents`;
+
+/** The route one parent's documents are listed and created on. */
+export const parentDocumentsPath = (
+  workspaceId: string,
+  parentKind: DocumentParentKind,
+  parentId: string
+): string => {
+  if (parentKind === 'project')
+    return projectDocumentsPath(workspaceId, parentId);
+  if (parentKind === 'team') return teamDocumentsPath(workspaceId, parentId);
+  return initiativeDocumentsPath(workspaceId, parentId);
+};
+
 /** The route every readable document is listed on. */
 export const workspaceDocumentsPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/documents`;
@@ -58,22 +77,15 @@ export const issueDocumentsPath = (
   issueId: string
 ): string => `/workspaces/${workspaceId}/issues/${issueId}/documents`;
 
-/** Lists one project's or initiative's documents, most recently edited first. */
+/** Lists one parent's documents, most recently edited first. */
 export const listDocuments = async (
   workspaceId: string,
   parentKind: DocumentParentKind,
   parentId: string,
   signal?: AbortSignal
 ): Promise<DocumentSummaryRead[]> => {
-  if (parentKind === 'project') {
-    const response = await apiClient.get<DocumentListRead>(
-      projectDocumentsPath(workspaceId, parentId),
-      signalOptions(signal)
-    );
-    return rows(response.data);
-  }
   const response = await apiClient.get<DocumentListRead>(
-    initiativeDocumentsPath(workspaceId, parentId),
+    parentDocumentsPath(workspaceId, parentKind, parentId),
     signalOptions(signal)
   );
   return rows(response.data);
@@ -104,22 +116,15 @@ export const listIssueDocuments = async (
   return rows(response.data);
 };
 
-/** Writes a new document under a project or an initiative. */
+/** Writes a new document under a project, an initiative or a team. */
 export const createDocument = async (
   workspaceId: string,
   parentKind: DocumentParentKind,
   parentId: string,
   body: DocumentCreate
 ): Promise<DocumentRead> => {
-  if (parentKind === 'project') {
-    const response = await apiClient.post<DocumentRead>(
-      projectDocumentsPath(workspaceId, parentId),
-      body
-    );
-    return response.data;
-  }
   const response = await apiClient.post<DocumentRead>(
-    initiativeDocumentsPath(workspaceId, parentId),
+    parentDocumentsPath(workspaceId, parentKind, parentId),
     body
   );
   return response.data;
@@ -138,7 +143,7 @@ export const getDocument = async (
   return response.data;
 };
 
-/** Renames or rewrites a document; a stale `base_updated_at` is a 409. */
+/** Renames, rewrites, restyles or moves a document; a stale `base_updated_at` is a 409. */
 export const updateDocument = async (
   workspaceId: string,
   documentId: string,

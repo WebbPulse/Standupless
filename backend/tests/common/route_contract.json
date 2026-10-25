@@ -1536,6 +1536,24 @@
     "path": "/api/workspaces/{workspace_id}/roadmap"
   },
   {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/document-templates"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/documents"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/documents"
+  },
+  {
     "auth": "internal",
     "domain": "planning",
     "method": "POST",

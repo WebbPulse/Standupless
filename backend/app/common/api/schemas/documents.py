@@ -1,4 +1,4 @@
-"""Request and response schemas for documents: Markdown pages under a project or an initiative.
+"""Request and response schemas for documents: Markdown pages under a project, an initiative or a team.
 
 Held in `common` because the planning routes and the MCP tools in the integrations
 image both take and answer them.
@@ -7,11 +7,12 @@ image both take and answer them.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, get_args
 
 from pydantic import BaseModel, Field, field_validator
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.planning import ProjectIconField
 from app.common.change_source import ChangeSource
 
 TITLE_MAX = 200
@@ -19,7 +20,27 @@ TITLE_MAX = 200
 BODY_MAX_BYTES = 100_000
 """The largest Markdown body a document takes, in UTF-8 bytes."""
 
-DocumentParentKind = Literal["project", "initiative"]
+DocumentParentKind = Literal["project", "initiative", "team"]
+
+ICON_MAX = 16
+"""The longest emoji sequence a document icon takes, in characters."""
+
+GLYPHS: frozenset[str] = frozenset(get_args(ProjectIconField))
+"""The named glyphs a document may wear, the same set a project picks from."""
+
+
+def _check_icon(value: Optional[str]) -> Optional[str]:
+    """Hold an icon to one of the named glyphs or a short emoji; blank clears it."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if trimmed in GLYPHS:
+        return trimmed
+    if len(trimmed) > ICON_MAX or any(char.isascii() and (char.isalnum() or char.isspace()) for char in trimmed):
+        raise ValueError("icon must be a glyph name or an emoji")
+    return trimmed
 
 
 def _check_title(value: Optional[str]) -> Optional[str]:
@@ -53,7 +74,14 @@ class DocumentCreate(BaseModel):
 
     title: Optional[str] = None
     body: Optional[str] = None
+    icon: Optional[str] = None
     template_id: Optional[str] = None
+
+    @field_validator("icon")
+    @classmethod
+    def check_icon(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the icon to a glyph name or an emoji."""
+        return _check_icon(value)
 
     @field_validator("title")
     @classmethod
@@ -69,16 +97,27 @@ class DocumentCreate(BaseModel):
 
 
 class DocumentPatch(BaseModel):
-    """The body a document patch takes; either field may be left out, neither cleared.
+    """The body a document patch takes; any field may be left out, and only `icon` cleared.
 
-    `base_updated_at` is the `updated_at` the editor last read. When it is sent
-    and the document has changed since, the patch is a 409 rather than writing
-    over someone else's edit.
+    `parent_kind` and `parent_id` together move the document under another
+    project, initiative or team the caller may write under. `base_updated_at`
+    is the `updated_at` the editor last read. When it is sent and the document
+    has changed since, the patch is a 409 rather than writing over someone
+    else's edit.
     """
 
     title: Optional[str] = None
     body: Optional[str] = None
+    icon: Optional[str] = None
+    parent_kind: Optional[DocumentParentKind] = None
+    parent_id: Optional[str] = None
     base_updated_at: Optional[datetime] = None
+
+    @field_validator("icon")
+    @classmethod
+    def check_icon(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the icon to a glyph name or an emoji; null or blank clears it."""
+        return _check_icon(value)
 
     @field_validator("title")
     @classmethod
@@ -114,6 +153,7 @@ class DocumentSummaryRead(BaseModel):
     parent_id: str
     parent_name: str = ""
     title: str
+    icon: Optional[str] = None
     author_id: str
     updated_by: str
     source: Optional[ChangeSource] = None

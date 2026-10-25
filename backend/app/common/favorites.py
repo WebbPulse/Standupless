@@ -172,13 +172,16 @@ class _Resolver:
         return None
 
     def _document(self, document_id: str) -> FavoriteRead | None:
-        """One document whose project or initiative the caller may read, or `None`."""
+        """One document whose project, initiative or team the caller may read, or `None`."""
         found = self.repositories.documents.get(self.context.workspace_id, document_id)
         if found is None:
             return None
         document, _ = found
         if document.parent_kind == "initiative":
             if self.context.is_guest:
+                return None
+        elif document.parent_kind == "team":
+            if document.parent_id not in self.visible:
                 return None
         else:
             project = self.repositories.planning.get_project(self.context.workspace_id, document.parent_id)
@@ -188,6 +191,7 @@ class _Resolver:
             kind="document",
             target_id=document.document_id,
             title=document.title,
+            icon=document.icon,
             parent_kind=document.parent_kind,
             parent_id=document.parent_id,
         )

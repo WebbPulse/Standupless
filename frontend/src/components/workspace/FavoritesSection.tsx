@@ -12,13 +12,7 @@
  */
 
 import React, { useState } from 'react';
-import {
-  LuEllipsis,
-  LuFileText,
-  LuFolder,
-  LuGoal,
-  LuRefreshCcw,
-} from 'react-icons/lu';
+import { LuEllipsis, LuFolder, LuGoal, LuRefreshCcw } from 'react-icons/lu';
 import { NavLink } from 'react-router-dom';
 import { useFavorites } from '../../hooks/useFavorites';
 import { cn } from '../../lib/cn';
@@ -33,6 +27,7 @@ import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import StatusIcon from '../ui/StatusIcon';
 import { TruncatedText } from '../ui/truncated-text';
 import ViewIcon from '../views/ViewIcon';
+import DocumentIcon from '../planning/DocumentIcon';
 import FavoriteFolders from './FavoriteFolders';
 
 /** Props for FavoritesSection. */
@@ -101,7 +96,7 @@ const FavoriteMark: React.FC<{
     case 'cycle':
       return <LuRefreshCcw className={GLYPH} aria-hidden="true" />;
     case 'document':
-      return <LuFileText className={GLYPH} aria-hidden="true" />;
+      return <DocumentIcon icon={favorite.icon ?? null} className={GLYPH} />;
     case 'initiative':
       return <LuGoal className={GLYPH} aria-hidden="true" />;
     default:

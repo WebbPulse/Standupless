@@ -1,7 +1,8 @@
-"""Document routes: Markdown pages under a project or an initiative, and the issues they mention.
+"""Document routes: Markdown pages under a project, an initiative or a team, and the issues they mention.
 
 A document is listed and created through its parent and reached afterwards by its
-own id, so a link to it survives a rename and the page needs nothing but the id.
+own id, so a link to it survives a rename and a move, and the page needs nothing
+but the id.
 The rules, the version history and the backlinks live in `app.common.documents`,
 which the MCP tools share. A parent also lists the document templates its new
 documents and updates may start from, which `app.common.document_templates` reads.
@@ -32,6 +33,7 @@ from app.common.documents import (
     list_documents,
     list_issue_documents,
     list_workspace_documents,
+    load_parent,
     update_document,
 )
 from app.common.initiative_writes import initiative_template_offer
@@ -68,6 +70,45 @@ def list_initiative_document_templates(
 ) -> DocumentTemplateListRead:
     """The workspace document templates an initiative's new documents and updates may start from."""
     return _offer_read(initiative_template_offer(repositories, context, initiative_id))
+
+
+@router.get("/{workspace_id}/teams/{team_id}/document-templates", response_model=DocumentTemplateListRead)
+def list_team_document_templates(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    team_id: Annotated[str, Path()],
+) -> DocumentTemplateListRead:
+    """The document templates a team's new documents may start from, and its defaults."""
+    parent = load_parent(repositories, context, "team", team_id)
+    return _offer_read(document_templates.offer(repositories, context, parent.teams))
+
+
+@router.get("/{workspace_id}/teams/{team_id}/documents", response_model=DocumentListRead)
+def list_team_documents(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    team_id: Annotated[str, Path()],
+) -> Any:
+    """A team's documents, most recently edited first."""
+    return DocumentListRead(items=list_documents(repositories, context, "team", team_id), next_cursor=None)
+
+
+@router.post(
+    "/{workspace_id}/teams/{team_id}/documents",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_team_document(
+    payload: DocumentCreate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    team_id: Annotated[str, Path()],
+) -> DocumentRead:
+    """Write a new document under a team, as a member of it."""
+    return create_document(repositories, context, "team", team_id, payload)
 
 
 @router.get("/{workspace_id}/projects/{project_id}/documents", response_model=DocumentListRead)
@@ -153,7 +194,7 @@ def edit_document(
     workspace_id: Annotated[str, Path()],
     document_id: Annotated[str, Path()],
 ) -> DocumentRead:
-    """Rename or rewrite a document; a stale `base_updated_at` is a 409."""
+    """Rename, rewrite, restyle or move a document; a stale `base_updated_at` is a 409."""
     return update_document(repositories, context, document_id, payload)
 
 

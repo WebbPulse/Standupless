@@ -4894,8 +4894,8 @@ export interface HomeRead {
   releases: ReleaseRead[];
 }
 
-/** The two kinds of record a document can sit under. */
-export type DocumentParentKind = 'project' | 'initiative';
+/** The three kinds of record a document can sit under. */
+export type DocumentParentKind = 'project' | 'initiative' | 'team';
 
 /**
  * One document without its body, as a listing answers it. `can_edit` and
@@ -4908,6 +4908,8 @@ export interface DocumentSummaryRead {
   parent_id: string;
   parent_name: string;
   title: string;
+  /** An emoji or a project glyph name, null when the document has none. */
+  icon?: string | null;
   author_id: string;
   updated_by: string;
   source?: string | null;
@@ -4935,17 +4937,22 @@ export interface DocumentCreate {
   /** Required unless `template_id` is sent, whose title fills it. */
   title?: string;
   body?: string;
+  icon?: string | null;
   /** A document template the parent offers, filling what was left out. */
   template_id?: string;
 }
 
 /**
  * The body a document edit takes. `base_updated_at` is the `updated_at` the
- * editor last read, so an edit over someone else's newer one is a 409.
+ * editor last read, so an edit over someone else's newer one is a 409. A null
+ * `icon` clears it, and `parent_kind` with `parent_id` moves the document.
  */
 export interface DocumentPatch {
   title?: string;
   body?: string;
+  icon?: string | null;
+  parent_kind?: DocumentParentKind;
+  parent_id?: string;
   base_updated_at?: string;
 }
 

@@ -1,4 +1,4 @@
-"""Document rows in the `planning` table: Markdown pages filed under a project or an initiative.
+"""Document rows in the `planning` table: Markdown pages filed under a project, an initiative or a team.
 
 A document lives in the workspace partition beside its parent, in four row shapes:
 
@@ -38,9 +38,9 @@ DOCUMENT_MENTION = "document_mention"
 
 DOCUMENT_KEY_PREFIX = "document#"
 
-ParentKind = Literal["project", "initiative"]
+ParentKind = Literal["project", "initiative", "team"]
 
-PARENT_KINDS: tuple[str, ...] = ("project", "initiative")
+PARENT_KINDS: tuple[str, ...] = ("project", "initiative", "team")
 
 VERSIONS_KEPT = 20
 """How many earlier versions one document keeps; the oldest goes when another is taken."""
@@ -107,6 +107,7 @@ class Document(BaseModel):
     parent_kind: ParentKind
     parent_id: str
     title: str
+    icon: str | None = None
     author_id: str
     updated_by: str
     source: str | None = None
@@ -279,6 +280,20 @@ class DocumentRepository:
         except ConditionFailed:
             return False
         return True
+
+    def move(self, previous: Document, document: Document, body: DocumentBody) -> Document:
+        """Refile a document under a new parent: a new summary row, the body and backlinks repointed, the old row gone.
+
+        Raises `ConditionFailed` when the document went away under the move or
+        already sits under the new parent.
+        """
+        self._repository.put(body.model_dump(mode="json"), condition=Attr("planning_key").exists())
+        self._repository.put(document.model_dump(mode="json"), condition=Attr("planning_key").not_exists())
+        self._repository.delete_many([_key(previous.workspace_id, previous.planning_key)])
+        before = {mention.issue_id for mention in previous.mentions}
+        after = {mention.issue_id for mention in document.mentions}
+        self._write_links(document, added=sorted(after), removed=sorted(before - after))
+        return document
 
     def add_version(self, version: DocumentVersion, body: DocumentBody) -> DocumentBody:
         """Store one version and answer the body carrying its id, dropping versions past the cap."""

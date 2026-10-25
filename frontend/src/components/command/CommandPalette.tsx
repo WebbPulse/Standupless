@@ -149,6 +149,7 @@ import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { favoriteHref } from '../../lib/favorites';
 import { isFormTemplate } from '../../lib/issueTemplates';
 import ProjectIcon from '../planning/ProjectIcon';
+import DocumentIcon from '../planning/DocumentIcon';
 import {
   matchesTerm,
   settingsDestinations,
@@ -1226,7 +1227,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           id: `document-${row.document_id}`,
           label: row.title,
           hint: row.parent_name,
-          icon: <LuFileText className={ICON} />,
+          icon: <DocumentIcon icon={row.icon ?? null} className={ICON} />,
           to: documentPath(slug, row.document_id),
         }))
         .filter((command) => matches(command, deferred))

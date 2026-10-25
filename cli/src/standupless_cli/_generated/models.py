@@ -728,6 +728,7 @@ class DisplayOptionsBody(TypedDict):
 
 class DocumentCreate(TypedDict):
     body: NotRequired[str | None]
+    icon: NotRequired[str | None]
     template_id: NotRequired[str | None]
     title: NotRequired[str | None]
 
@@ -741,6 +742,9 @@ class DocumentMentionRead(TypedDict):
 class DocumentPatch(TypedDict):
     base_updated_at: NotRequired[str | None]
     body: NotRequired[str | None]
+    icon: NotRequired[str | None]
+    parent_id: NotRequired[str | None]
+    parent_kind: NotRequired[Literal["project", "initiative", "team"] | None]
     title: NotRequired[str | None]
 
 
@@ -751,9 +755,10 @@ class DocumentRead(TypedDict):
     can_edit: NotRequired[bool]
     created_at: str
     document_id: str
+    icon: NotRequired[str | None]
     mentions: NotRequired[list[DocumentMentionRead]]
     parent_id: str
-    parent_kind: Literal["project", "initiative"]
+    parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     title: str
@@ -768,8 +773,9 @@ class DocumentSummaryRead(TypedDict):
     can_edit: NotRequired[bool]
     created_at: str
     document_id: str
+    icon: NotRequired[str | None]
     parent_id: str
-    parent_kind: Literal["project", "initiative"]
+    parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     title: str

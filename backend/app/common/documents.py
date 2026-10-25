@@ -1,14 +1,15 @@
-"""Documents under projects and initiatives, shared by the planning routes, search and the MCP tools.
+"""Documents under projects, initiatives and teams, shared by the planning routes, search and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
 code, and a document an agent writes must pass the same rights, keep the same
 history and leave the same backlinks a person's does.
 
 A document is read by whoever reads its parent. A project's documents are written
-by a writer on any of its visible teams and an initiative's by any workspace
-member who is not a guest, which is who edits the parent itself. Deleting one is
-its author's, a workspace admin's, an admin of one of the project's teams, or the
-initiative's creator or owner.
+by a writer on any of its visible teams, a team's by a member of that team, and
+an initiative's by any workspace member who is not a guest, which is who edits
+the parent itself. Deleting one is its author's, a workspace admin's, an admin of
+the team or one of the project's teams, or the initiative's creator or owner.
+Moving one to another parent takes the right to edit under both.
 
 History is kept per edit session rather than per keystroke: an editor saving as
 they type keeps writing over one version, and the state before the session is
@@ -45,6 +46,7 @@ from app.common.db.dynamo.documents import (
     DocumentMention,
     DocumentVersion,
     ParentKind,
+    document_key,
     new_document_id,
     summary_keys,
 )
@@ -57,7 +59,6 @@ from app.common.planning_rules import (
     team_role,
     unprocessable,
     visible_project_teams,
-    visible_team_ids,
 )
 
 SESSION_GAP = timedelta(minutes=10)
@@ -75,7 +76,7 @@ MENTION_PATTERN = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]{1,5})-(\d{1,9})(?!
 
 @dataclass
 class Parent:
-    """The project or initiative a document sits under, as this caller sees it."""
+    """The project, initiative or team a document sits under, as this caller sees it."""
 
     kind: ParentKind
     parent_id: str
@@ -134,16 +135,26 @@ def load_parent(repositories: Repositories, context: AuthzContext, parent_kind: 
             name=initiative.name,
             owners=(initiative.created_by, initiative.owner_id),
         )
+    if parent_kind == "team":
+        team = repositories.teams.get(context.workspace_id, parent_id)
+        if team is None or not context.can_see_team(team.team_id):
+            raise not_found()
+        return Parent(kind="team", parent_id=team.team_id, name=team.name, teams=[team.team_id])
     raise not_found()
 
 
 def readable_parents(repositories: Repositories, context: AuthzContext) -> dict[tuple[str, str], Parent]:
     """Every parent the caller may read, keyed by kind and id.
 
-    One read of the projects and one of the initiatives, so a workspace listing
+    One read each of the projects, the initiatives and the teams, so a workspace listing
     or a search decides every document's visibility without a read per document.
     """
-    visible = set(visible_team_ids(repositories, context))
+    teams = [
+        team
+        for team in repositories.teams.list_for_workspace(context.workspace_id)
+        if context.can_see_team(team.team_id)
+    ]
+    visible = {team.team_id for team in teams}
     parents: dict[tuple[str, str], Parent] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
         teams = visible_project_teams(project, visible)
@@ -159,6 +170,10 @@ def readable_parents(repositories: Repositories, context: AuthzContext) -> dict[
                 name=initiative.name,
                 owners=(initiative.created_by, initiative.owner_id),
             )
+    for team in teams:
+        parents[("team", team.team_id)] = Parent(
+            kind="team", parent_id=team.team_id, name=team.name, teams=[team.team_id]
+        )
     return parents
 
 
@@ -207,6 +222,7 @@ def _summary(rights: Rights, parent: Parent, document: Document) -> DocumentSumm
         parent_id=document.parent_id,
         parent_name=parent.name,
         title=document.title,
+        icon=document.icon,
         author_id=document.author_id,
         updated_by=document.updated_by,
         source=cast("ChangeSource | None", document.source),
@@ -326,6 +342,7 @@ def create_document(
         parent_kind=parent.kind,
         parent_id=parent.parent_id,
         title=title,
+        icon=payload.icon,
         author_id=context.user_id,
         updated_by=context.user_id,
         source=context.source,
@@ -349,10 +366,31 @@ def create_document(
     return _read(rights, parent, document, body)
 
 
+def _destination(
+    repositories: Repositories, context: AuthzContext, rights: Rights, parent: Parent, fields: dict[str, object]
+) -> Parent:
+    """The parent a patch files the document under: its own, or a new one the caller may write under."""
+    kind = fields.get("parent_kind")
+    parent_id = fields.get("parent_id")
+    if kind is None and parent_id is None:
+        return parent
+    if not isinstance(kind, str) or not isinstance(parent_id, str) or not parent_id:
+        raise unprocessable("parent_kind and parent_id move a document together")
+    if kind == parent.kind and parent_id == parent.parent_id:
+        return parent
+    try:
+        destination = load_parent(repositories, context, kind, parent_id)
+    except HTTPException as exc:
+        raise unprocessable(f"No such {kind}") from exc
+    if not rights.can_edit(destination):
+        raise forbidden()
+    return destination
+
+
 def update_document(
     repositories: Repositories, context: AuthzContext, document_id: str, payload: DocumentPatch
 ) -> DocumentRead:
-    """Rename or rewrite a document, keeping the state before a new edit session as a version."""
+    """Rename, rewrite, restyle or move a document, keeping the state before a new edit session as a version."""
     parent, existing, body = _load(repositories, context, document_id)
     rights = Rights(repositories, context)
     if not rights.can_edit(parent):
@@ -363,12 +401,16 @@ def update_document(
             raise unprocessable(f"{name} must not be null")
     if payload.base_updated_at is not None and payload.base_updated_at != existing.updated_at:
         raise conflict("The document changed since you opened it")
+    destination = _destination(repositories, context, rights, parent, fields)
+    moved = destination is not parent
     title = fields.get("title", existing.title)
     text = fields.get("body", body.body)
-    if title == existing.title and text == body.body:
+    icon = fields.get("icon", existing.icon)
+    rewritten = title != existing.title or text != body.body
+    if not rewritten and icon == existing.icon and not moved:
         return _read(rights, parent, existing, body)
     now = utc_now()
-    if existing.updated_by != context.user_id or now - existing.updated_at > SESSION_GAP:
+    if rewritten and (existing.updated_by != context.user_id or now - existing.updated_at > SESSION_GAP):
         body = repositories.documents.add_version(
             DocumentVersion(
                 workspace_id=context.workspace_id,
@@ -384,7 +426,11 @@ def update_document(
     mentions = existing.mentions if keys == existing.mention_keys else resolve_mentions(repositories, context, keys)
     edited = existing.model_copy(
         update={
+            "planning_key": document_key(destination.kind, destination.parent_id, existing.document_id),
+            "parent_kind": destination.kind,
+            "parent_id": destination.parent_id,
             "title": title,
+            "icon": icon,
             "updated_by": context.user_id,
             "source": context.source,
             "updated_at": now,
@@ -393,12 +439,17 @@ def update_document(
             "mentions": mentions,
         }
     )
-    stored_body = body.model_copy(update={"body": text})
+    stored_body = body.model_copy(
+        update={"body": text, "parent_kind": destination.kind, "parent_id": destination.parent_id}
+    )
     try:
-        repositories.documents.replace(existing, edited, stored_body)
+        if moved:
+            repositories.documents.move(existing, edited, stored_body)
+        else:
+            repositories.documents.replace(existing, edited, stored_body)
     except ConditionFailed as exc:
         raise not_found() from exc
-    return _read(rights, parent, edited, stored_body)
+    return _read(rights, destination, edited, stored_body)
 
 
 def delete_document(repositories: Repositories, context: AuthzContext, document_id: str) -> None:
