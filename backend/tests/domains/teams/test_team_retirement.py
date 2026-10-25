@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 from webbpulse.audit import AuditEvent, AuditQuery
 
 from app.common.composition.domains import DOMAINS
-from app.common.db.dynamo.issues import Issue
 from app.common.composition.wiring import build_domain_app
+from app.common.db.dynamo.issues import Issue
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, add_team_member, make_team, make_workspace, sign_in
 
 WORKSPACE = "01JB00000000000000000000WS"
