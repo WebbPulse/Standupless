@@ -1111,7 +1111,9 @@ describe('ProjectDetail', () => {
 
     it('does not bind R for a viewer who cannot rename', async () => {
       useWorkspaceMock.mockReturnValue(resolved('guest'));
-      listTeams.mockResolvedValue([{ ...engine, role: undefined }]);
+      const outsider: TeamRead = { ...engine };
+      delete outsider.role;
+      listTeams.mockResolvedValue([outsider]);
       renderWithKeys();
       await screen.findByRole('textbox', { name: 'Project name' });
       await keysBound('mod+shift+,');
