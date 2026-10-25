@@ -3208,6 +3208,8 @@ export interface StatusUpdateRead {
   can_edit: boolean;
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** Whether the author hid the progress report for everyone. */
+  hide_details?: boolean;
 }
 
 /**
@@ -3223,8 +3225,6 @@ export interface ProjectUpdateRead extends StatusUpdateRead {
   snapshot?: ProjectUpdateSnapshot | null;
   /** The snapshot the update before this one recorded, or null for a first update. */
   previous_snapshot?: ProjectUpdateSnapshot | null;
-  /** Whether the author hid the progress report for everyone. */
-  hide_details?: boolean;
 }
 
 /** One milestone's progress when a project update was posted. */
@@ -3336,7 +3336,7 @@ export interface ProjectActivityListRead {
 export interface ProjectUpdateCreate {
   body: string;
   health: ProjectHealth;
-  /** Hides the progress report for everyone; project updates only. */
+  /** Hides the progress report for everyone. */
   hide_details?: boolean;
 }
 
@@ -3344,7 +3344,7 @@ export interface ProjectUpdateCreate {
 export interface ProjectUpdateEdit {
   body?: string;
   health?: ProjectHealth;
-  /** Hides or shows the progress report; project updates only. */
+  /** Hides or shows the progress report. */
   hide_details?: boolean;
 }
 
@@ -3496,6 +3496,28 @@ export interface InitiativeUpdate {
 /** One written update on an initiative. */
 export interface InitiativeUpdateRead extends StatusUpdateRead {
   initiative_id: string;
+  /** Where the initiative stood when the update was posted; absent on updates from before snapshots. */
+  snapshot?: InitiativeUpdateSnapshot | null;
+  /** The snapshot the update before this one recorded, or null for a first update. */
+  previous_snapshot?: InitiativeUpdateSnapshot | null;
+  /** What changed since the update before, as plain lines; empty on a first, older or hidden update. */
+  report?: string[];
+}
+
+/**
+ * Where an initiative stood when an update was posted. The project counts
+ * cover the rolled up projects every workspace member can see.
+ */
+export interface InitiativeUpdateSnapshot {
+  owner_id: string | null;
+  owner_name: string | null;
+  status: InitiativeStatus | null;
+  target_date: string | null;
+  target_date_resolution: DateResolution | null;
+  health: ProjectHealth | null;
+  project_count: number;
+  projects_by_status: Partial<Record<ProjectStatus, number>>;
+  projects_by_health: Partial<Record<ProjectHealth, number>>;
 }
 
 /** One page of an initiative's updates, newest first. */

@@ -8638,7 +8638,7 @@
         "type": "object"
       },
       "InitiativeUpdatePatch": {
-        "description": "The body an initiative update patch takes; either field may be left out, neither cleared.",
+        "description": "The body an initiative update patch takes; any field may be left out, none cleared.",
         "properties": {
           "body": {
             "anyOf": [
@@ -8666,13 +8666,25 @@
               }
             ],
             "title": "Health"
+          },
+          "hide_details": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hide or show the update's progress report",
+            "title": "Hide Details"
           }
         },
         "title": "InitiativeUpdatePatch",
         "type": "object"
       },
       "InitiativeUpdateRead": {
-        "description": "One initiative update as the API returns it, with this caller's edit right.",
+        "description": "One initiative update as the API returns it, with this caller's edit right.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\ninitiative when this update was posted, and when the one before it was.\n`report` is that diff as plain lines, empty on a first update, on one\nposted before reports existed, and when `hide_details` says its author hid it.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -8713,9 +8725,41 @@
             "title": "Health",
             "type": "string"
           },
+          "hide_details": {
+            "default": false,
+            "title": "Hide Details",
+            "type": "boolean"
+          },
           "initiative_id": {
             "title": "Initiative Id",
             "type": "string"
+          },
+          "previous_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitiativeUpdateSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "report": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Report",
+            "type": "array"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitiativeUpdateSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "anyOf": [
@@ -8762,6 +8806,115 @@
           "updated_at"
         ],
         "title": "InitiativeUpdateRead",
+        "type": "object"
+      },
+      "InitiativeUpdateSnapshotRead": {
+        "description": "Where an initiative stood when an update was posted, as the API returns it.\n\n`projects_by_status` counts the rolled up projects every member can see by\nstatus category, and `projects_by_health` by health.",
+        "properties": {
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "project_count": {
+            "default": 0,
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "projects_by_health": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Projects By Health",
+            "type": "object"
+          },
+          "projects_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Projects By Status",
+            "type": "object"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "planned",
+                  "active",
+                  "completed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date Resolution"
+          }
+        },
+        "title": "InitiativeUpdateSnapshotRead",
         "type": "object"
       },
       "InitiativesDisplay": {

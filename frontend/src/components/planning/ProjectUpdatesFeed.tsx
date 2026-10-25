@@ -100,11 +100,7 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
     health: ProjectHealth,
     hideDetails: boolean
   ): Promise<boolean> =>
-    create(
-      subject === 'project'
-        ? { body, health, hide_details: hideDetails }
-        : { body, health }
-    ).then(
+    create({ body, health, hide_details: hideDetails }).then(
       () => {
         showToast('Update posted');
         onComposingChange(false);
@@ -149,7 +145,7 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
             ariaLabel={`Write ${articled(subject)} update`}
             autoFocus
             clearOnSubmit
-            withDetailsToggle={subject === 'project'}
+            withDetailsToggle
             onSubmit={post}
             onCancel={() => {
               onComposingChange(false);

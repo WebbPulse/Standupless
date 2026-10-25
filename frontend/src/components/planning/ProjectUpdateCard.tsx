@@ -10,8 +10,9 @@
  *
  * Under a project update's text sits its progress report: what moved since the
  * update before it, or a baseline for the first one, drawn from the snapshots
- * the server stored when it was posted. Its author can hide the report for
- * everyone, and updates from before snapshots show none.
+ * the server stored when it was posted. An initiative update shows the lines
+ * the server diffed for it, and none on a first update. Its author can hide
+ * the report for everyone, and updates from before snapshots show none.
  *
  * The card carries the element id `update-<id>`, so a link from an email, a
  * webhook or the inbox that ends in that hash scrolls straight to it.
@@ -39,6 +40,7 @@ import { replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { toggleReactionGroup } from '../../lib/updateThreads';
 import type {
+  InitiativeUpdateRead,
   ProjectHealth,
   ProjectUpdateEdit,
   ProjectUpdateRead,
@@ -97,6 +99,27 @@ const isProjectUpdate = (
   update: StatusUpdateRead
 ): update is ProjectUpdateRead =>
   typeof (update as Partial<ProjectUpdateRead>).project_id === 'string';
+
+/** The report lines of an update and whether it has a report to hide at all. */
+const reportOf = (
+  update: StatusUpdateRead,
+  people: Assignable[]
+): { lines: string[]; hasReport: boolean } => {
+  if (!isProjectUpdate(update)) {
+    const initiativeUpdate = update as Partial<InitiativeUpdateRead>;
+    return {
+      lines: initiativeUpdate.report ?? [],
+      hasReport: (initiativeUpdate.snapshot ?? null) !== null,
+    };
+  }
+  return {
+    lines: updateReport(update, (userId) => {
+      const person = people.find((each) => each.user_id === userId);
+      return person === undefined ? undefined : personLabel(person);
+    }),
+    hasReport: (update.snapshot ?? null) !== null,
+  };
+};
 
 /** Props for ProgressReport: the lines of one update's report. */
 interface ProgressReportProps {
@@ -219,15 +242,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     ? `${update.author_id.slice(LINEAR_AUTHOR_PREFIX.length)} (Linear)`
     : personLabel(people.find((person) => person.user_id === update.author_id));
 
-  const projectUpdate = isProjectUpdate(update) ? update : null;
-  const hasReport = (projectUpdate?.snapshot ?? null) !== null;
-  const report =
-    projectUpdate === null
-      ? []
-      : updateReport(projectUpdate, (userId) => {
-          const person = people.find((each) => each.user_id === userId);
-          return person === undefined ? undefined : personLabel(person);
-        });
+  const { lines: report, hasReport } = reportOf(update, people);
 
   const save = (
     body: string,
@@ -340,7 +355,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             ariaLabel="Edit update"
             autoFocus
             withDetailsToggle={hasReport}
-            initialHideDetails={projectUpdate?.hide_details === true}
+            initialHideDetails={update.hide_details === true}
             onSubmit={save}
             onCancel={() => {
               setEditing(false);

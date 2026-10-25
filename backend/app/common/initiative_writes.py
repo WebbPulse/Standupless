@@ -54,6 +54,7 @@ from app.common.db.dynamo.planning import (
     new_planning_id,
 )
 from app.common.initiative_tree import InitiativeTree
+from app.common.initiative_update_report import take_snapshot, update_report
 from app.common.order_keys import order_key_first
 from app.common.planning_rules import (
     can_see_initiative,
@@ -118,6 +119,15 @@ def visible_projects_by_initiative(repositories: Repositories, context: AuthzCon
     grouped: dict[str, list[Project]] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
         if project.initiative_id and visible_project_teams(project, visible):
+            grouped.setdefault(project.initiative_id, []).append(project)
+    return grouped
+
+
+def shared_projects_by_initiative(repositories: Repositories, context: AuthzContext) -> dict[str, list[Project]]:
+    """The projects every workspace member can see, on at least one team that is not private, by initiative."""
+    grouped: dict[str, list[Project]] = {}
+    for project in repositories.planning.list_projects(context.workspace_id):
+        if project.initiative_id and any(not context.is_private_team(team) for team in project.team_ids):
             grouped.setdefault(project.initiative_id, []).append(project)
     return grouped
 
@@ -453,7 +463,11 @@ def can_edit_update(context: AuthzContext, initiative: Initiative, update: Initi
 
 def _update_read(context: AuthzContext, initiative: Initiative, update: InitiativeUpdateRow) -> InitiativeUpdateRead:
     """One update in its response shape, with this caller's edit right."""
-    return InitiativeUpdateRead.from_row(update, can_edit=can_edit_update(context, initiative, update))
+    return InitiativeUpdateRead.from_row(
+        update,
+        can_edit=can_edit_update(context, initiative, update),
+        report=update_report(update.snapshot, update.previous_snapshot, update.hide_details),
+    )
 
 
 def list_initiative_updates(
@@ -482,9 +496,19 @@ def list_initiative_updates(
 def create_initiative_update(
     repositories: Repositories, context: AuthzContext, initiative_id: str, payload: InitiativeUpdateCreate
 ) -> InitiativeUpdateRead:
-    """Post an update on an initiative, from a workspace document template when one is named, and mirror its health."""
+    """Post an update on an initiative, from a workspace document template when one is named, and mirror its health.
+
+    The update records where the initiative stands now beside the snapshot the
+    update before it recorded, which is what its progress report diffs.
+    """
     initiative = load_initiative(repositories, context, initiative_id)
     body = document_templates.fill_update_body(repositories, context, [], payload.body, payload.template_id)
+    previous = repositories.planning.latest_initiative_update(context.workspace_id, initiative.initiative_id)
+    projects = rollup_projects(
+        initiative_tree(repositories, context.workspace_id),
+        shared_projects_by_initiative(repositories, context),
+        initiative.initiative_id,
+    )
     update_id = new_planning_id()
     update = InitiativeUpdateRow(
         workspace_id=context.workspace_id,
@@ -495,6 +519,9 @@ def create_initiative_update(
         health=payload.health,
         author_id=context.user_id,
         source=context.source,
+        snapshot=take_snapshot(repositories, initiative, projects, payload.health),
+        previous_snapshot=previous.snapshot if previous is not None else None,
+        hide_details=payload.hide_details,
     )
     try:
         created = repositories.planning.create_initiative_update(update)
@@ -544,16 +571,18 @@ def update_initiative_update(
     update_id: str,
     payload: InitiativeUpdatePatch,
 ) -> InitiativeUpdateRead:
-    """Edit an update's body or health; a health change on the newest one moves the initiative."""
+    """Edit an update's body, health or report visibility; a health change on the newest one moves the initiative."""
     initiative, existing = _load_editable_update(repositories, context, initiative_id, update_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
-    for name in ("body", "health"):
+    for name in ("body", "health", "hide_details"):
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
     if not fields:
         return _update_read(context, initiative, existing)
     now = utc_now()
-    edited = existing.model_copy(update={**fields, "updated_at": now, "edited_at": now})
+    rewritten = bool(fields.keys() - {"hide_details"})
+    stamps = {"updated_at": now, "edited_at": now} if rewritten else {"updated_at": now}
+    edited = existing.model_copy(update={**fields, **stamps})
     try:
         stored = repositories.planning.replace_initiative_update(edited)
     except ConditionFailed as exc:
@@ -562,9 +591,10 @@ def update_initiative_update(
         repositories.planning.record_initiative_health(
             context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
         )
-    pulse.revise_update(
-        repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
-    )
+    if rewritten:
+        pulse.revise_update(
+            repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
+        )
     return _update_read(context, initiative, stored)
 
 
