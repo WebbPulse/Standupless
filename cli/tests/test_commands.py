@@ -411,6 +411,22 @@ def test_issue_branch(runner: CliRunner, api: respx.MockRouter) -> None:
     assert result.stdout == "eng-12-fix-the-login-page\n"
 
 
+@pytest.mark.parametrize(
+    ("branch_format", "expected"),
+    [("user_key_title", "tyler/eng-12-fix-the-login-page\n"), ("key", "eng-12\n")],
+)
+def test_issue_branch_follows_the_workspace_format(
+    runner: CliRunner, api: respx.MockRouter, branch_format: str, expected: str
+) -> None:
+    """The branch format comes from the workspace, and the username one names the key's person."""
+    api.get("/api/workspaces").respond(json={"workspaces": [{**WORKSPACE, "branch_format": branch_format}]})
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    api.get("/api/users/me").respond(json={"id": "u-1", "email": "t@example.com", "display_name": "Tyler"})
+    result = invoke(runner, "issue", "branch", "ENG-12")
+    assert result.exit_code == 0, result.output
+    assert result.stdout == expected
+
+
 def test_bad_issue_key_is_a_clean_error(runner: CliRunner, api: respx.MockRouter) -> None:
     """A malformed key fails before any request, with a message and no traceback."""
     result = invoke(runner, "issue", "view", "login-page")

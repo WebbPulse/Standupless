@@ -107,7 +107,7 @@ def _update_workspace_display_defaults(call: ToolCall) -> Any:
 
 
 def _update_workspace(call: ToolCall) -> Any:
-    """Rename the workspace, set its accent color or its default project update cadence, as the PATCH route does.
+    """Rename the workspace, set its accent color, project update cadence or branch format, as the PATCH route does.
 
     An absent argument is left alone and a null `accent_color` returns the
     accent to the default, so the tool patches exactly what the caller named.
@@ -115,11 +115,11 @@ def _update_workspace(call: ToolCall) -> Any:
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
     body = {
         name: call.arguments[name]
-        for name in ("name", "accent_color", "project_update_interval_days")
+        for name in ("name", "accent_color", "project_update_interval_days", "branch_format")
         if call.present(name)
     }
     if not body:
-        raise ToolError("name, accent_color or project_update_interval_days is required")
+        raise ToolError("name, accent_color, project_update_interval_days or branch_format is required")
     payload = WorkspaceUpdate.model_validate(body)
     return workspace_members.update_workspace(call.repositories, call.context, payload).model_dump(mode="json")
 
@@ -208,9 +208,9 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="update_workspace",
-        description="Rename the workspace, set its accent color, or set the default cadence project leads are "
-        "reminded to post updates at. The slug is fixed. Pass at least one of name, accent_color and "
-        "project_update_interval_days. Needs workspace owner or admin.",
+        description="Rename the workspace, set its accent color, set the default cadence project leads are "
+        "reminded to post updates at, or set the git branch name format. The slug is fixed. Pass at least one "
+        "of name, accent_color, project_update_interval_days and branch_format. Needs workspace owner or admin.",
         scopes=("settings:write", "admin"),
         schema=object_schema(
             {
@@ -220,6 +220,12 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
                     "type": "integer",
                     "enum": list(INTERVAL_OPTIONS),
                     "description": "Default days between project updates: 7, 14 or 30, or 0 for no reminders",
+                },
+                "branch_format": {
+                    "type": "string",
+                    "enum": ["key_title", "user_key_title", "key"],
+                    "description": "How copied git branch names are built: key_title (abc-1-fix-login), "
+                    "user_key_title (handle/abc-1-fix-login) or key (abc-1)",
                 },
             }
         ),

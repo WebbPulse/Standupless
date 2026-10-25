@@ -40,7 +40,17 @@ class BillingInterval(StrEnum):
     YEAR = "year"
 
 
+class BranchFormat(StrEnum):
+    """How the git branch name an issue suggests is built, as Linear's GitHub settings offer it."""
+
+    KEY_TITLE = "key_title"
+    USER_KEY_TITLE = "user_key_title"
+    KEY = "key"
+
+
 DEFAULT_PLAN = Plan.FREE.value
+
+DEFAULT_BRANCH_FORMAT = BranchFormat.KEY_TITLE.value
 
 BILLING_FIELDS = (
     "plan",
@@ -115,6 +125,7 @@ class Workspace(BaseModel):
     with no subscription behind it, written only by the admin script, and
     `effective_plan` is the higher of the two. `project_update_interval_days` is
     the update cadence a project without its own follows, 0 for no reminders.
+    `branch_format` is how every member's copied git branch name is built.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -141,6 +152,7 @@ class Workspace(BaseModel):
     purge_after: Optional[datetime] = None
     purging_at: Optional[datetime] = None
     purge_member_ids: list[str] = Field(default_factory=list)
+    branch_format: str = DEFAULT_BRANCH_FORMAT
 
     def comp_active(self, now: datetime | None = None) -> bool:
         """Whether a comp grant naming a known plan holds right now, its expiry not yet reached."""
@@ -253,6 +265,16 @@ class WorkspaceRepository:
         try:
             item = self._repository.set_attributes(
                 {"id": workspace_id}, {"project_update_interval_days": days}, condition=Attr("id").exists()
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_branch_format(self, workspace_id: str, branch_format: str) -> Workspace | None:
+        """Set how the workspace's git branch names are built, or `None` when it does not exist."""
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id}, {"branch_format": branch_format}, condition=Attr("id").exists()
             )
         except ConditionFailed:
             return None

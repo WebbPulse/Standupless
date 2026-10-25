@@ -28,7 +28,7 @@ import {
   type BranchStart,
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
-import { gitBranchName } from '../../lib/gitBranch';
+import { gitBranchName, type BranchNaming } from '../../lib/gitBranch';
 import { pullRequestStateStyle } from '../../lib/pullRequestState';
 import {
   ciStateStyle,
@@ -52,6 +52,8 @@ export interface GithubLinksSectionProps {
   title?: string;
   /** Lets copying the branch start the issue, for a person who may edit it. */
   branchStart?: BranchStart;
+  /** The workspace's branch format and the copier's handle; the default format when absent. */
+  branchNaming?: BranchNaming;
 }
 
 /** How often the links are re-read while the issue is open. */
@@ -226,16 +228,19 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
   issueKey,
   title,
   branchStart,
+  branchNaming,
 }) => {
   const auth = useQueryAuth();
   const branch =
-    issueKey === undefined ? null : gitBranchName(issueKey, title ?? '');
+    issueKey === undefined
+      ? null
+      : gitBranchName(issueKey, title ?? '', branchNaming);
 
   const copyBranch = useCallback((): void => {
     if (issueKey !== undefined) {
-      copyBranchName(issueKey, title ?? '', branchStart);
+      copyBranchName(issueKey, title ?? '', branchStart, branchNaming);
     }
-  }, [issueKey, title, branchStart]);
+  }, [issueKey, title, branchStart, branchNaming]);
 
   useShortcut({
     keys: COPY_BRANCH_KEYS,
