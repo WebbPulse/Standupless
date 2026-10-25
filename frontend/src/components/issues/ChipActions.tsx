@@ -9,6 +9,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/cn';
+import type { HoverCardTriggerProps } from '../ui/hover-card';
 import { Tooltip } from '../ui/tooltip';
 
 /** Keeps a press on the chip from reaching the row or the list's keys. */
@@ -66,30 +67,41 @@ export interface NavChipLinkProps {
   children: React.ReactNode;
   className?: string;
   wrapperClassName?: string;
+  /** Hover card handlers, which take the tooltip's place when they open a card. */
+  trigger?: Partial<HoverCardTriggerProps>;
 }
 
-/** A chip that opens the page of its value. */
+/** A chip that opens the page of its value, previewing it in a hover card when one is wired. */
 export const NavChipLink: React.FC<NavChipLinkProps> = ({
   tooltip,
   to,
   children,
   className,
   wrapperClassName,
-}) => (
-  <span className={cn('relative z-10 shrink-0', wrapperClassName)}>
-    <Tooltip text={tooltip}>
-      <Link
-        to={to}
-        aria-label={tooltip}
-        draggable={false}
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
-        onKeyDown={holdKeys}
-        className={cn(CHIP_ACTION_CLASS, className)}
-      >
-        {children}
-      </Link>
-    </Tooltip>
-  </span>
-);
+  trigger = {},
+}) => {
+  const link = (
+    <Link
+      {...trigger}
+      to={to}
+      aria-label={tooltip}
+      draggable={false}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onKeyDown={holdKeys}
+      className={cn(CHIP_ACTION_CLASS, className)}
+    >
+      {children}
+    </Link>
+  );
+  return (
+    <span className={cn('relative z-10 shrink-0', wrapperClassName)}>
+      {trigger.onPointerEnter === undefined ? (
+        <Tooltip text={tooltip}>{link}</Tooltip>
+      ) : (
+        link
+      )}
+    </span>
+  );
+};
