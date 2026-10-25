@@ -4,11 +4,14 @@
  * list sits beside the selected issue's peek, so triage runs down the list
  * without leaving it, and the selection lives in the URL.
  *
- * Triage runs from the keyboard: J and K move, 1 accepts into the team's first
- * unstarted status, 2 marks as a duplicate of another issue, 3 declines with an
- * optional reason, and H snoozes until a chosen moment. A snoozed issue leaves
- * the list and the badge and comes back by itself; the Snoozed tab lists what
- * is still waiting and offers to bring one back now.
+ * Triage runs from the keyboard in Linear's order: J and K move, 1 accepts, 2
+ * declines with an optional reason, 3 marks as a duplicate of another issue,
+ * and H snoozes until a chosen moment. Accept opens a small popover with an
+ * optional comment and the status to land in, defaulting to the team's first
+ * unstarted one, and Enter confirms it at once. The buttons, the help sheet
+ * and the command palette list the actions in that same order. A snoozed
+ * issue leaves the list and the badge and comes back by itself; the Snoozed
+ * tab lists what is still waiting and offers to bring one back now.
  *
  * Guests may file into triage but never work it, so a guest sees the list
  * without the actions.
@@ -37,6 +40,7 @@ import {
 } from 'react-icons/lu';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appendIssues, listIssues } from '../../api/issues';
+import { listStatuses } from '../../api/teams';
 import {
   acceptTriage,
   declineTriage,
@@ -47,10 +51,12 @@ import {
 } from '../../api/triage';
 import IssuePeek from '../../components/issues/IssuePeek';
 import { ErrorAlert } from '../../components/ui/alert';
-import Button, { IconButton } from '../../components/ui/button';
+import Button from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
+import Popover from '../../components/ui/popover';
+import Tooltip from '../../components/ui/tooltip';
 import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
@@ -63,15 +69,23 @@ import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage, m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
+import { LOOKUP_POLL_MS } from '../../lib/polling';
 import { teamSettingsPath } from '../../lib/paths';
 import {
+  statusesKey,
   triageKey,
   triageSettingsKey,
   triageSummaryKey,
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
-import type { IssueRead } from '../../types/Api';
+import {
+  TRIAGE_ACTION,
+  TRIAGE_ACTIONS,
+  type TriageActionId,
+} from '../../lib/triageActions';
+import type { IssueRead, TriageAccept } from '../../types/Api';
 import { SNOOZE_PRESETS, snoozeLabel } from '../inbox/snooze';
+import TriageAcceptForm, { type TriageAcceptChoice } from './TriageAcceptForm';
 
 /** How often the list re-reads, matching the sidebar badge so the two agree. */
 const POLL_MS = 60000;
@@ -97,16 +111,31 @@ const FILTERS: { id: TriageFilter; label: string }[] = [
   { id: 'snoozed', label: 'Snoozed' },
 ];
 
+/** The icon each triage action shows. */
+const ACTION_ICONS: Record<TriageActionId, React.ReactNode> = {
+  accept: <LuCheck className="h-3.5 w-3.5" aria-hidden="true" />,
+  decline: <LuX className="h-3.5 w-3.5" aria-hidden="true" />,
+  duplicate: <LuCopy className="h-3.5 w-3.5" aria-hidden="true" />,
+  snooze: <LuClock className="h-3.5 w-3.5" aria-hidden="true" />,
+};
+
+/** The tooltip for one action: its name and the key that runs it. */
+const actionTip = (id: TriageActionId): string =>
+  `${TRIAGE_ACTION[id].label} (${TRIAGE_ACTION[id].keys.toUpperCase()})`;
+
+/** The name a row's action button is announced with. */
+const rowActionLabel = (id: TriageActionId, key: string): string =>
+  id === 'duplicate'
+    ? `Mark ${key} as duplicate`
+    : `${TRIAGE_ACTION[id].label} ${key}`;
+
 /** Props for TriageRow. */
 interface TriageRowProps {
   issue: IssueRead;
   selected: boolean;
   canWork: boolean;
   onSelect: () => void;
-  onAccept: () => void;
-  onDuplicate: () => void;
-  onDecline: () => void;
-  onSnooze: () => void;
+  onAction: (id: TriageActionId) => void;
 }
 
 /** One waiting issue: its key, title and when it was filed, with its actions. */
@@ -115,10 +144,7 @@ const TriageRow: React.FC<TriageRowProps> = ({
   selected,
   canWork,
   onSelect,
-  onAccept,
-  onDuplicate,
-  onDecline,
-  onSnooze,
+  onAction,
 }) => {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -161,34 +187,21 @@ const TriageRow: React.FC<TriageRowProps> = ({
       </button>
       {canWork && (
         <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-          <IconButton
-            label={`Accept ${issue.key}`}
-            size="sm"
-            onClick={onAccept}
-          >
-            <LuCheck className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton
-            label={`Mark ${issue.key} as duplicate`}
-            size="sm"
-            onClick={onDuplicate}
-          >
-            <LuCopy className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton
-            label={`Decline ${issue.key}`}
-            size="sm"
-            onClick={onDecline}
-          >
-            <LuX className="h-3.5 w-3.5" />
-          </IconButton>
-          <IconButton
-            label={`Snooze ${issue.key}`}
-            size="sm"
-            onClick={onSnooze}
-          >
-            <LuClock className="h-3.5 w-3.5" />
-          </IconButton>
+          {TRIAGE_ACTIONS.map((action) => (
+            <Tooltip key={action.id} text={actionTip(action.id)}>
+              <Button
+                aria-label={rowActionLabel(action.id, issue.key)}
+                variant="ghost"
+                size="sm"
+                className="w-7 px-0 pointer-coarse:w-11"
+                onClick={() => {
+                  onAction(action.id);
+                }}
+              >
+                {ACTION_ICONS[action.id]}
+              </Button>
+            </Tooltip>
+          ))}
         </span>
       )}
     </li>
@@ -283,6 +296,7 @@ const DuplicatePicker: React.FC<DuplicatePickerProps> = ({
 
 /** Which dialog is open, and over which issue. */
 type Pending =
+  | { kind: 'accept'; issue: IssueRead }
   | { kind: 'duplicate'; issue: IssueRead }
   | { kind: 'decline'; issue: IssueRead }
   | { kind: 'snooze'; issue: IssueRead }
@@ -352,8 +366,23 @@ export const TeamTriage: React.FC = () => {
     triageSummaryKey(workspaceId),
   ];
 
-  const { mutate: accept, error: acceptError } = useMutationWithRefetch(
-    (issueId: string) => acceptTriage(workspaceId, issueId),
+  const { data: statuses } = usePolledQuery(
+    (context) => listStatuses(workspaceId, teamId, context),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled,
+      queryKey: statusesKey(teamId),
+      auth,
+    }
+  );
+
+  const {
+    mutate: accept,
+    error: acceptError,
+    isMutating: accepting,
+  } = useMutationWithRefetch(
+    ({ issueId, body }: { issueId: string; body: TriageAccept }) =>
+      acceptTriage(workspaceId, issueId, body),
     everyKey
   );
   const {
@@ -410,9 +439,25 @@ export const TeamTriage: React.FC = () => {
     select(rows[selectedIndex + 1] ?? rows[selectedIndex - 1] ?? null);
   };
 
-  const acceptRow = (row: IssueRead): void => {
+  useEffect(() => {
+    if (pending?.kind === 'accept' && selected === null) {
+      setPending(null);
+    }
+  }, [pending, selected]);
+
+  const openAction = (id: TriageActionId, row: IssueRead): void => {
+    if (id === 'accept' && row.id !== selected?.id) select(row);
+    setPending({ kind: id, issue: row });
+  };
+
+  const acceptRow = (row: IssueRead, choice: TriageAcceptChoice): void => {
+    const body: TriageAccept = {
+      ...(choice.statusId === null ? {} : { status_id: choice.statusId }),
+      ...(choice.comment === '' ? {} : { comment: choice.comment }),
+    };
+    setPending(null);
     stepPast(row);
-    void accept(row.id)
+    void accept({ issueId: row.id, body })
       .then(() => {
         showToast(`${row.key} accepted.`);
       })
@@ -480,41 +525,47 @@ export const TeamTriage: React.FC = () => {
     },
   });
   useShortcut({
-    keys: '1',
-    label: 'Accept',
-    group: 'Triage',
-    enabled: canAct,
-    handler: () => {
-      if (selected !== null) acceptRow(selected);
-    },
-  });
-  useShortcut({
-    keys: '2',
-    label: 'Mark as duplicate',
+    keys: TRIAGE_ACTION.accept.keys,
+    label: TRIAGE_ACTION.accept.label,
+    scope: 'page',
     group: 'Triage',
     enabled: canAct,
     handler: (event) => {
       event?.preventDefault();
-      if (selected !== null) setPending({ kind: 'duplicate', issue: selected });
+      if (selected !== null) openAction('accept', selected);
     },
   });
   useShortcut({
-    keys: '3',
-    label: 'Decline',
+    keys: TRIAGE_ACTION.decline.keys,
+    label: TRIAGE_ACTION.decline.label,
+    scope: 'page',
     group: 'Triage',
     enabled: canAct,
     handler: (event) => {
       event?.preventDefault();
-      if (selected !== null) setPending({ kind: 'decline', issue: selected });
+      if (selected !== null) openAction('decline', selected);
     },
   });
   useShortcut({
-    keys: 'h',
-    label: 'Snooze',
+    keys: TRIAGE_ACTION.duplicate.keys,
+    label: TRIAGE_ACTION.duplicate.label,
+    scope: 'page',
     group: 'Triage',
     enabled: canAct,
-    handler: () => {
-      if (selected !== null) setPending({ kind: 'snooze', issue: selected });
+    handler: (event) => {
+      event?.preventDefault();
+      if (selected !== null) openAction('duplicate', selected);
+    },
+  });
+  useShortcut({
+    keys: TRIAGE_ACTION.snooze.keys,
+    label: TRIAGE_ACTION.snooze.label,
+    scope: 'page',
+    group: 'Triage',
+    enabled: canAct,
+    handler: (event) => {
+      event?.preventDefault();
+      if (selected !== null) openAction('snooze', selected);
     },
   });
 
@@ -652,17 +703,8 @@ export const TeamTriage: React.FC = () => {
                   onSelect={() => {
                     select(row);
                   }}
-                  onAccept={() => {
-                    acceptRow(row);
-                  }}
-                  onDuplicate={() => {
-                    setPending({ kind: 'duplicate', issue: row });
-                  }}
-                  onDecline={() => {
-                    setPending({ kind: 'decline', issue: row });
-                  }}
-                  onSnooze={() => {
-                    setPending({ kind: 'snooze', issue: row });
+                  onAction={(id) => {
+                    openAction(id, row);
                   }}
                 />
               ))}
@@ -704,46 +746,54 @@ export const TeamTriage: React.FC = () => {
                   aria-label="Triage actions"
                   className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2"
                 >
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      acceptRow(selected);
+                  <Popover
+                    label={`Accept ${selected.key}`}
+                    open={
+                      pending?.kind === 'accept' &&
+                      pending.issue.id === selected.id
+                    }
+                    onOpenChange={(open) => {
+                      setPending(
+                        open ? { kind: 'accept', issue: selected } : null
+                      );
                     }}
+                    trigger={(props) => (
+                      <Tooltip text={actionTip('accept')}>
+                        <Button variant="primary" size="sm" {...props}>
+                          {ACTION_ICONS.accept}
+                          {TRIAGE_ACTION.accept.short}
+                        </Button>
+                      </Tooltip>
+                    )}
                   >
-                    <LuCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                    Accept
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setPending({ kind: 'duplicate', issue: selected });
-                    }}
-                  >
-                    <LuCopy className="h-3.5 w-3.5" aria-hidden="true" />
-                    Duplicate
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setPending({ kind: 'decline', issue: selected });
-                    }}
-                  >
-                    <LuX className="h-3.5 w-3.5" aria-hidden="true" />
-                    Decline
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setPending({ kind: 'snooze', issue: selected });
-                    }}
-                  >
-                    <LuClock className="h-3.5 w-3.5" aria-hidden="true" />
-                    Snooze
-                  </Button>
+                    {(close) => (
+                      <TriageAcceptForm
+                        issueKey={selected.key}
+                        statuses={statuses ?? []}
+                        saving={accepting}
+                        onSubmit={(choice) => {
+                          acceptRow(selected, choice);
+                        }}
+                        onCancel={close}
+                      />
+                    )}
+                  </Popover>
+                  {TRIAGE_ACTIONS.filter(
+                    (action) => action.id !== 'accept'
+                  ).map((action) => (
+                    <Tooltip key={action.id} text={actionTip(action.id)}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          openAction(action.id, selected);
+                        }}
+                      >
+                        {ACTION_ICONS[action.id]}
+                        {action.short}
+                      </Button>
+                    </Tooltip>
+                  ))}
                 </div>
               )}
               <div className="flex min-h-0 flex-1 [&>aside]:w-full [&>aside]:border-l-0">

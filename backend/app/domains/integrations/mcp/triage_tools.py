@@ -82,7 +82,7 @@ def _triage_issue(call: ToolCall) -> Any:
     action = call.require("action")
     repositories, context = call.repositories, call.context
     if action == "accept":
-        payload = TriageAccept.model_validate(given_arguments(call, ("status_id",)))
+        payload = TriageAccept.model_validate(given_arguments(call, ("status_id", "comment")))
         return _answer(call, issue_triage.accept(repositories, context, issue.issue_id, payload))
     if action == "decline":
         payload_decline = TriageDecline.model_validate(given_arguments(call, ("reason",)))
@@ -138,7 +138,8 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
         name="triage_issue",
         description=(
             "Work one issue in triage. accept moves it into the team, in status_id or the first unstarted "
-            "status. decline moves it to the cancelled status, keeping an optional reason in its history. "
+            "status, posting an optional comment as the caller. decline moves it to the cancelled status, keeping "
+            "an optional reason in its history. "
             "duplicate closes it as a duplicate of duplicate_of_id. snooze hides it until `until` (ISO 8601, "
             "1 minute to 90 days out), or null to bring it back. Needs team membership."
         ),
@@ -148,6 +149,7 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string("The waiting issue: id or key such as ENG-12"),
                 "action": enum(TRIAGE_ACTIONS, "What to do with the issue"),
                 "status_id": string("accept: the status to accept into"),
+                "comment": string("accept: a comment posted on the issue as you, beside the accept"),
                 "reason": string("decline: why, kept in the issue's history"),
                 "duplicate_of_id": string("duplicate: the issue this one duplicates, id or key"),
                 "until": nullable("snooze: when the issue returns to the inbox, or null to bring it back now"),

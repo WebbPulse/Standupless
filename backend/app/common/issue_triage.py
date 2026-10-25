@@ -28,6 +28,7 @@ from app.common.api.schemas.issues import (
     TriageTeamCount,
 )
 from app.common.api.schemas.teams import TriageSettingsUpdate
+from app.common.comment_writes import create_comment
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue, IssueWriteConflict
@@ -158,14 +159,19 @@ def accept(repositories: Repositories, context: AuthzContext, issue_id: str, pay
     """Accept a waiting issue into the team, in the named status or the first unstarted one.
 
     A team with no unstarted status keeps the issue's own status, so accepting
-    never fails for want of a column.
+    never fails for want of a column. A comment rides along as an ordinary
+    comment by the person accepting, posted after the move so the thread reads
+    the accept first, with the same mentions and subscriptions a typed one gets.
     """
     issue = _waiting(repositories, context, issue_id)
     if payload.status_id:
         target = check_status(repositories, context.workspace_id, issue.team_id, payload.status_id).status_id
     else:
         target = first_unstarted(repositories, context.workspace_id, issue.team_id) or issue.status_id
-    return _leave(repositories, context, issue, target, "accepted")
+    stored = _leave(repositories, context, issue, target, "accepted")
+    if payload.comment:
+        create_comment(repositories, context, stored.issue_id, payload.comment)
+    return stored
 
 
 def decline(repositories: Repositories, context: AuthzContext, issue_id: str, payload: TriageDecline) -> Issue:

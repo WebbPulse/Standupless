@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.team_config import default_triage_settings
 from app.common.db.dynamo.team_templates import IssueTemplate, template_key
@@ -203,6 +204,60 @@ def test_accept_takes_a_named_status(client: TestClient, triage: str, statuses: 
     response = client.post(f"{BASE}/{waiting['id']}/triage/accept", json={"status_id": statuses["started"].status_id})
 
     assert response.json()["status_id"] == statuses["started"].status_id
+
+
+def _comments(repositories: Any, issue_id: str) -> "list[Any]":
+    """The comments stored on one issue, oldest first."""
+    return list(repositories.comments.iter_for_issue(WORKSPACE, issue_id))
+
+
+def test_accept_posts_its_comment_as_the_person_accepting(
+    client: TestClient, triage: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A comment on the accept lands in the thread by the acting user, and the history still shows the accept."""
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE)
+    sign_in(client, OWNER)
+
+    response = client.post(
+        f"{BASE}/{waiting['id']}/triage/accept",
+        json={"status_id": statuses["started"].status_id, "comment": "Taking this one this cycle"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status_id"] == statuses["started"].status_id
+    comments = _comments(repositories, waiting["id"])
+    assert [(comment.author_id, comment.body) for comment in comments] == [(OWNER, "Taking this one this cycle")]
+    assert ("triage", "accepted") in _triage_rows(repositories, waiting["id"])
+    subscribers = {row.user_id for row in repositories.subscriptions.list_for_issue(WORKSPACE, waiting["id"])}
+    assert OWNER in subscribers
+
+
+def test_accept_with_a_blank_comment_posts_nothing(client: TestClient, triage: str, repositories: Any) -> None:
+    """Whitespace is no comment, so the accept goes through with an empty thread."""
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE)
+    sign_in(client, OWNER)
+
+    response = client.post(f"{BASE}/{waiting['id']}/triage/accept", json={"comment": "   "})
+
+    assert response.status_code == 200, response.text
+    assert _comments(repositories, waiting["id"]) == []
+
+
+def test_accept_refuses_an_oversized_comment_and_leaves_the_issue_waiting(
+    client: TestClient, triage: str, repositories: Any
+) -> None:
+    """The comment is held to the comment cap before anything is written."""
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE)
+    sign_in(client, OWNER)
+
+    response = client.post(f"{BASE}/{waiting['id']}/triage/accept", json={"comment": "x" * (ISSUE_BODY_MAX_BYTES + 1)})
+
+    assert response.status_code == 422
+    assert _waiting(client) == [waiting["id"]]
+    assert _comments(repositories, waiting["id"]) == []
 
 
 def test_decline_cancels_and_keeps_the_reason(
