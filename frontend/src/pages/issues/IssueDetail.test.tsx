@@ -1031,7 +1031,7 @@ describe('moving to another team', () => {
     listTeams.mockResolvedValue([team, ops]);
     moveIssue.mockResolvedValue(moved);
     const user = userEvent.setup();
-    renderPage();
+    renderWithHistory();
 
     await user.click(
       await screen.findByRole('button', { name: 'Team: Engine' })
@@ -1041,6 +1041,11 @@ describe('moving to another team', () => {
 
     await waitFor(() => {
       expect(moveIssue).toHaveBeenCalledWith(issue.id, 'proj-2');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Path' })).toHaveTextContent(
+        '/w/mine/issues/OPS-4'
+      );
     });
     expect(await screen.findByText('OPS-4')).toBeInTheDocument();
     expect(
