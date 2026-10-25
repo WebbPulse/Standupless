@@ -434,7 +434,7 @@ export const InlineMath = Node.create({
     }),
 
   renderMarkdown: (node) => {
-    const latex = node.attrs?.['latex'];
+    const latex: unknown = node.attrs?.['latex'];
     return typeof latex === 'string' && latex.trim() !== ''
       ? writeInlineMath(latex)
       : '';
@@ -532,7 +532,7 @@ export const BlockMath = Node.create({
     }),
 
   renderMarkdown: (node) => {
-    const latex = node.attrs?.['latex'];
+    const latex: unknown = node.attrs?.['latex'];
     return writeBlockMath(typeof latex === 'string' ? latex : '');
   },
 
