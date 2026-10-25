@@ -57,6 +57,8 @@ import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useStoredSet } from '../../../hooks/useStoredSet';
 import { useCoarsePointer } from '../../../hooks/useCoarsePointer';
+import { useLatestCallback } from '../../../hooks/useLatestCallback';
+import { useSharedValue } from '../../../hooks/useSharedValue';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
 import {
@@ -297,6 +299,28 @@ const PropertyShortcut: React.FC<{
 
 /** The view. */
 /**
+ * The loaded issues some loaded issue names as its parent, cut down to what a
+ * child row shows of its parent and sorted by id. Shared across polls, it
+ * keeps the parent lookup steady unless a parent row itself changed, so an
+ * edit to any other issue leaves every row's environment as it was.
+ */
+const parentRowsIn = (issues: readonly OrderedIssueRead[]) => {
+  const named = new Set<string>();
+  for (const issue of issues) {
+    if (issue.parent_id !== null) named.add(issue.parent_id);
+  }
+  return issues
+    .filter((issue) => named.has(issue.id))
+    .map((issue) => ({
+      id: issue.id,
+      key: issue.key,
+      title: issue.title,
+      progress: issue.progress,
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+};
+
+/**
  * Hands rows the view environment and the focus store together, so focus
  * moves reach rows through the store without changing the environment every
  * row and cell reads.
@@ -340,8 +364,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const workspaceId = workspace?.id ?? '';
   const { peekIssue, peekedKey } = usePeekIssue();
   const creator = useCreateIssue();
-  const { context: listContext, forTeam, createLabel } = lists;
-  const { update, queryKey } = collection;
+  const { forTeam, createLabel } = lists;
+  const listContext = useSharedValue(lists.context);
+  const { queryKey } = collection;
+  const update = useLatestCallback(collection.update);
+  const loaded = useSharedValue(collection.issues);
   const byParent = state.groupBy === 'parent' || state.subGroupBy === 'parent';
   const byCustomer =
     customerRequests !== undefined &&
@@ -349,21 +376,19 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     (state.groupBy === 'customer' ||
       state.subGroupBy === 'customer' ||
       showsCustomerProperties(state.visible));
+  const parents = useMemo(
+    () => (byParent ? parentsIn(loaded) : undefined),
+    [byParent, loaded]
+  );
   const context = useMemo(
     () => ({
       ...listContext,
-      ...(byParent ? { parents: parentsIn(collection.issues) } : {}),
+      ...(parents === undefined ? {} : { parents }),
       ...(byCustomer && customerRequests !== undefined
         ? { customerRequests: customerRequests.byIssue }
         : {}),
     }),
-    [
-      byParent,
-      byCustomer,
-      listContext,
-      collection.issues,
-      customerRequests?.byIssue,
-    ]
+    [parents, byCustomer, listContext, customerRequests?.byIssue]
   );
 
   const [ownFolds, toggleOwnFold] = useStoredSet(undefined);
@@ -399,30 +424,26 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const sorted = useMemo(
     () =>
       sortIssues(
-        shownIssues(collection.issues, { showSubIssues, completed }, context),
+        shownIssues(loaded, { showSubIssues, completed }, context),
         state.ordering,
         { reverse: state.reverse, context }
       ),
-    [
-      collection.issues,
-      state.ordering,
-      state.reverse,
-      showSubIssues,
-      completed,
-      context,
-    ]
+    [loaded, state.ordering, state.reverse, showSubIssues, completed, context]
   );
   const byId = useMemo(
     () => new Map(sorted.map((issue) => [issue.id, issue])),
     [sorted]
   );
-  const loadedById = useMemo(
-    () => new Map(collection.issues.map((issue) => [issue.id, issue])),
-    [collection.issues]
+  const parentRows = useSharedValue(
+    useMemo(() => parentRowsIn(loaded), [loaded])
+  );
+  const parentIndex = useMemo(
+    () => new Map(parentRows.map((row) => [row.id, row])),
+    [parentRows]
   );
   const parentOf = useCallback(
-    (issue: OrderedIssueRead) => parentRefOf(issue, loadedById),
-    [loadedById]
+    (issue: OrderedIssueRead) => parentRefOf(issue, parentIndex),
+    [parentIndex]
   );
 
   const sections = useMemo<IssueSection[]>(() => {
@@ -522,7 +543,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   }, [board, listSections, collapsed, nest]);
 
   const from = `${location.pathname}${location.search}`;
-  const rememberOrder = useCallback(() => {
+  const rememberOrder = useLatestCallback(() => {
     rememberTrail({
       slug,
       keys: order.flatMap((id) => {
@@ -531,7 +552,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       }),
       from,
     });
-  }, [slug, order, byId, from]);
+  });
   const openIssue = (issue: OrderedIssueRead): void => {
     rememberOrder();
     void navigate(issuePath(slug, issue.key));
@@ -543,7 +564,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     focusStore.publish(focused, peekedKey);
   }, [focusStore, focused, peekedKey]);
   const liveSelected = useMemo(
-    () => new Set([...selected].filter((id) => byId.has(id))),
+    () =>
+      [...selected].every((id) => byId.has(id))
+        ? selected
+        : new Set([...selected].filter((id) => byId.has(id))),
     [selected, byId]
   );
   const targets = useMemo(() => {
@@ -586,8 +610,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [peekIssue, rememberOrder]
   );
 
-  const toggleSelected = useCallback(
-    (id: string, range: boolean) => {
+  const toggleSelected = useLatestCallback(
+    (id: string, range: boolean): void => {
       if (range && anchor !== null && order.includes(anchor)) {
         const from = order.indexOf(anchor);
         const to = order.indexOf(id);
@@ -603,8 +627,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         setAnchor(id);
       }
       setFocusedId(id);
-    },
-    [anchor, order]
+    }
   );
 
   const selectMany = useCallback((ids: readonly string[], on: boolean) => {
@@ -1250,15 +1273,14 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [context, createTeamId]
   );
 
-  const openMenu = useCallback(
-    (issue: OrderedIssueRead, x: number, y: number) => {
+  const openMenu = useLatestCallback(
+    (issue: OrderedIssueRead, x: number, y: number): void => {
       const ids = liveSelected.has(issue.id)
         ? order.filter((id) => liveSelected.has(id))
         : [issue.id];
       setFocusedId(issue.id);
       setMenu({ x, y, ids });
-    },
-    [liveSelected, order]
+    }
   );
   const closeMenu = useCallback(() => {
     setMenu(null);
@@ -1564,7 +1586,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   ];
 
   const loading =
-    lists.isLoading || (collection.isLoading && collection.issues.length === 0);
+    lists.isLoading || (collection.isLoading && loaded.length === 0);
   const estimates = targets.some((issue) => scaleFor(issue.team_id) !== 'off');
 
   let body: React.ReactNode;
@@ -1577,7 +1599,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   } else if (
     collection.error !== null &&
     collection.error !== undefined &&
-    collection.issues.length === 0
+    loaded.length === 0
   ) {
     body = (
       <div className="px-4 py-4 lg:px-6">
@@ -1597,14 +1619,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     const hiddenDone =
       state.completed === 'all'
         ? 0
-        : shownIssues(
-            collection.issues,
-            { showSubIssues, completed: 'all' },
-            context
-          ).length;
+        : shownIssues(loaded, { showSubIssues, completed: 'all' }, context)
+            .length;
     const mayCreate =
       !filtered &&
-      collection.issues.length === 0 &&
+      loaded.length === 0 &&
       createTeamId !== undefined &&
       canEdit &&
       creator.canCreate;

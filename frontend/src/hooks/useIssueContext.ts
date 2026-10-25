@@ -17,6 +17,7 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
+import { useSharedValue } from './useSharedValue';
 import { listCycles } from '../api/planning';
 import {
   createLabel as createTeamLabel,
@@ -222,10 +223,12 @@ export const useIssueContext = (
     { intervalMs: POLL_MS, enabled, queryKey, auth }
   );
 
+  const appearanceData = useSharedValue(appearance.data);
+  const planningData = useSharedValue(planning.data);
   const data = useMemo(
     () =>
-      appearance.data === null ? null : combine(appearance.data, planning.data),
-    [appearance.data, planning.data]
+      appearanceData === null ? null : combine(appearanceData, planningData),
+    [appearanceData, planningData]
   );
 
   const context = useMemo(
