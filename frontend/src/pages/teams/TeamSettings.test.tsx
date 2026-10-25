@@ -661,11 +661,11 @@ describe('the team member section', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.selectOptions(
-      await screen.findByLabelText('Add a member'),
-      'user-3'
+    await user.click(
+      await screen.findByRole('button', { name: /Add members: Choose people/ })
     );
-    await user.click(screen.getByRole('button', { name: 'Add to team' }));
+    await user.click(screen.getByRole('option', { name: /Third/ }));
+    await user.click(screen.getByRole('button', { name: 'Add 1 to team' }));
 
     await waitFor(() => {
       expect(setTeamMember).toHaveBeenCalledWith('user-3', {
@@ -687,7 +687,9 @@ describe('the team member section', () => {
     renderPage();
 
     await screen.findByText('Other');
-    expect(screen.queryByLabelText('Add a member')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Add members/ })
+    ).not.toBeInTheDocument();
   });
 });
 
