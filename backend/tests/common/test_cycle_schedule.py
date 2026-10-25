@@ -25,7 +25,10 @@ from app.common.cycle_schedule import (
     plan_cycles,
     reschedule_upcoming,
     schedule_changed,
+    surplus_upcoming,
     trailing_number,
+    trim_upcoming,
+    untouched_automatic,
 )
 from app.common.db.dynamo.planning import Cycle, cycle_key
 from app.common.db.dynamo.team_config import CycleSettings
@@ -291,3 +294,49 @@ def test_an_upcoming_cycle_made_by_hand_keeps_the_chain_as_it_is(repositories: A
 
     assert result.moved == []
     assert _dates(repositories) == before
+
+
+def test_surplus_is_the_latest_live_upcoming_cycles_beyond_the_count() -> None:
+    """The current and cancelled cycles are never surplus; the latest upcoming ones are, latest first."""
+    current = _cycle("2026-03-09", "2026-03-22", cid="now")
+    first = _cycle("2026-03-23", "2026-04-05", cid="a")
+    second = _cycle("2026-04-06", "2026-04-19", cid="b")
+    gone = _cycle("2026-04-20", "2026-05-03", cid="x", cancelled=True)
+
+    surplus = surplus_upcoming(_settings(upcoming_count=1), [current, first, second, gone], TUESDAY)
+
+    assert [c.cycle_id for c in surplus] == ["b"]
+    assert surplus_upcoming(_settings(upcoming_count=2), [current, first, second], TUESDAY) == []
+
+
+def test_only_an_untouched_automatic_cycle_counts_as_removable(repositories: Any) -> None:
+    """A renamed, goal-carrying or hand made cycle is a planner's and stays."""
+    created = ensure_cycles(repositories.planning, _settings(), TUESDAY).created
+    latest = created[-1]
+
+    assert untouched_automatic(latest)
+    assert not untouched_automatic(latest.model_copy(update={"name": "Launch"}))
+    assert not untouched_automatic(latest.model_copy(update={"goal": "Ship"}))
+    assert not untouched_automatic(_cycle("2026-04-06", "2026-04-19", number=3))
+
+
+def test_trimming_removes_the_empty_surplus_and_keeps_the_current_cycle(repositories: Any) -> None:
+    """From four upcoming cycles to one, the latest three go and the current and next stay."""
+    ensure_cycles(repositories.planning, _settings(upcoming_count=4), TUESDAY)
+
+    result = trim_upcoming(repositories.planning, repositories.issues, _settings(upcoming_count=1), TUESDAY)
+
+    assert [c.cycle_id for c in result.removed] == ["auto-20260504", "auto-20260420", "auto-20260406"]
+    assert result.kept == 0
+    stored = repositories.planning.list_for_roadmap(WORKSPACE, TEAM)
+    assert sorted(c.cycle_id for c in stored) == ["auto-20260309", "auto-20260323"]
+
+
+def test_trimming_with_cycles_off_does_nothing(repositories: Any) -> None:
+    """Off means no cycle is removed."""
+    ensure_cycles(repositories.planning, _settings(upcoming_count=3), TUESDAY)
+
+    result = trim_upcoming(repositories.planning, repositories.issues, _settings(enabled=False), TUESDAY)
+
+    assert result.removed == []
+    assert len(repositories.planning.list_for_roadmap(WORKSPACE, TEAM)) == 4

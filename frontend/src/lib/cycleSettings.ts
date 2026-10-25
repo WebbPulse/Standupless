@@ -4,7 +4,11 @@
  * preview of when the next cycle would run under a draft schedule.
  */
 
-import type { CycleSettingsRead, CycleSettingsUpdate } from '../types/Api';
+import type {
+  CycleRead,
+  CycleSettingsRead,
+  CycleSettingsUpdate,
+} from '../types/Api';
 
 /** The editable part of a schedule, every field present. */
 export type CycleSchedule = Required<CycleSettingsUpdate>;
@@ -126,3 +130,66 @@ export const movesUpcoming = (changes: CycleSettingsUpdate): boolean =>
   changes.duration_weeks !== undefined ||
   changes.cooldown_weeks !== undefined ||
   changes.start_weekday !== undefined;
+
+/** The `created_by` of a cycle the automatic schedule made. */
+export const SYSTEM_ACTOR = 'system';
+
+/**
+ * Whether the schedule may remove an upcoming cycle: one it made, still named
+ * as it named it, with no goal, not cancelled and holding no issues.
+ */
+export const removableCycle = (cycle: CycleRead): boolean =>
+  cycle.created_by === SYSTEM_ACTOR &&
+  !cycle.cancelled &&
+  cycle.number !== undefined &&
+  cycle.number !== null &&
+  cycle.name === `Cycle ${String(cycle.number)}` &&
+  !cycle.goal &&
+  cycle.counts.total === 0;
+
+/**
+ * What saving `count` upcoming cycles would do to `upcoming`, as the server
+ * trims: it walks back from the latest live upcoming cycle beyond the count,
+ * removing each removable one, and stops at the first it must keep so the
+ * chain gains no hole. A preview only; the server decides.
+ */
+export const previewTrim = (
+  upcoming: CycleRead[],
+  count: number
+): { removed: number; kept: number } => {
+  const live = upcoming
+    .filter((cycle) => !cycle.cancelled)
+    .sort((a, b) =>
+      a.start_date === b.start_date
+        ? b.cycle_id.localeCompare(a.cycle_id)
+        : b.start_date.localeCompare(a.start_date)
+    );
+  const surplus = live.slice(0, Math.max(0, live.length - count));
+  const stop = surplus.findIndex((cycle) => !removableCycle(cycle));
+  const removed = stop === -1 ? surplus.length : stop;
+  return { removed, kept: surplus.length - removed };
+};
+
+/**
+ * The sentence the preview and the save toast read for a trim, empty when
+ * nothing is removed or kept. `future` phrases it for the preview.
+ */
+export const trimSentence = (
+  removed: number,
+  kept: number,
+  future: boolean
+): string => {
+  const parts: string[] = [];
+  if (removed > 0) {
+    const cycles = `${String(removed)} empty upcoming ${removed === 1 ? 'cycle' : 'cycles'}`;
+    parts.push(future ? `Saving removes ${cycles}.` : `Removed ${cycles}.`);
+  }
+  if (kept > 0) {
+    parts.push(
+      kept === 1
+        ? '1 upcoming cycle beyond the new count stays because it, or a later cycle, holds issues or was changed by hand.'
+        : `${String(kept)} upcoming cycles beyond the new count stay because they, or a later cycle, hold issues or were changed by hand.`
+    );
+  }
+  return parts.join(' ');
+};

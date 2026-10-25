@@ -35,6 +35,7 @@ from app.common.api.schemas.teams import (
     AutoCloseSettingsRead,
     AutoCloseSettingsUpdate,
     CycleSettingsRead,
+    CycleSettingsSaved,
     CycleSettingsUpdate,
     ParentAutoCloseSettingsRead,
     ParentAutoCloseSettingsUpdate,
@@ -235,22 +236,23 @@ def read_cycle_settings(
     return CycleSettingsRead.from_row(team_writes.cycle_settings(repositories, context.workspace_id, team.team_id))
 
 
-@router.patch("/{workspace_id}/teams/{team_id}/cycle-settings", response_model=CycleSettingsRead)
+@router.patch("/{workspace_id}/teams/{team_id}/cycle-settings", response_model=CycleSettingsSaved)
 def update_cycle_settings(
     payload: CycleSettingsUpdate,
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> CycleSettingsRead:
+) -> CycleSettingsSaved:
     """Change a team's automatic cycle settings.
 
     When cycles are on after the change, the team's missing current and upcoming
     cycles are created before the response, so the cycles page shows them at
-    once rather than after the next hourly run. Turning cycles off keeps every
-    cycle already created.
+    once rather than after the next hourly run. A lower upcoming count removes
+    the empty surplus upcoming cycles and says how many it removed and kept.
+    Turning cycles off keeps every cycle already created.
     """
     team = _load(repositories, context)
-    saved = team_writes.update_cycle_settings(repositories, context.workspace_id, team.team_id, payload)
-    return CycleSettingsRead.from_row(saved)
+    saved, trimmed = team_writes.update_cycle_settings(repositories, context.workspace_id, team.team_id, payload)
+    return CycleSettingsSaved.from_save(saved, len(trimmed.removed), trimmed.kept)
 
 
 @router.get("/{workspace_id}/teams/{team_id}/display-defaults", response_model=TeamDisplayDefaultsRead)

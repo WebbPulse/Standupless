@@ -8,7 +8,8 @@
  * cycles, and that should happen once for a finished schedule rather than on
  * every control a person passes through. A preview line shows the dates the
  * draft would give the next cycle, after the current one, before anything is
- * saved, and says when saving moves the upcoming cycles to a new schedule.
+ * saved, and says when saving moves the upcoming cycles to a new schedule or,
+ * with a lower upcoming count, how many empty upcoming cycles it removes.
  */
 
 import React, { useId, useState } from 'react';
@@ -30,8 +31,10 @@ import {
   movesUpcoming,
   parseScheduleDate,
   previewNextCycle,
+  previewTrim,
   scheduleChanges,
   scheduleOf,
+  trimSentence,
   weeksLabel,
   type CycleSchedule,
 } from '../../lib/cycleSettings';
@@ -63,8 +66,8 @@ export interface CyclesSectionProps {
 /** How often the schedule is re-read while the settings tab is open. */
 const POLL_MS = 30000;
 
-/** The page size of the active cycle read, the server's largest. */
-const ACTIVE_LIMIT = 100;
+/** The page size of the cycle reads, the server's largest. */
+const CYCLE_LIMIT = 100;
 
 /** Props for the on and off switch a settings row ends in. */
 interface ToggleProps {
@@ -167,13 +170,29 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     ({ signal }) =>
       listCycles(
         workspaceId,
-        { team_id: teamId, status: 'active', limit: ACTIVE_LIMIT },
+        { team_id: teamId, status: 'active', limit: CYCLE_LIMIT },
         signal
       ),
     {
       intervalMs: POLL_MS,
       enabled: data?.enabled === true,
       queryKey: activeKey,
+      auth,
+    }
+  );
+
+  const upcomingKey = cyclesKey(workspaceId, teamId, 'upcoming');
+  const { data: upcoming } = usePolledQuery(
+    ({ signal }) =>
+      listCycles(
+        workspaceId,
+        { team_id: teamId, status: 'upcoming', limit: CYCLE_LIMIT },
+        signal
+      ),
+    {
+      intervalMs: POLL_MS,
+      enabled: data?.enabled === true,
+      queryKey: upcomingKey,
       auth,
     }
   );
@@ -189,6 +208,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
       queryKey,
       cyclesKey(workspaceId, teamId, ''),
       activeKey,
+      upcomingKey,
       ['cycleVelocity', workspaceId, teamId],
       planningOptionsKey(teamId),
     ]
@@ -210,10 +230,20 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
       const result = await save(changes);
       await refetch();
       setDraft(null);
+      const trimmed = trimSentence(
+        result.removed_cycles ?? 0,
+        result.kept_cycles ?? 0,
+        false
+      );
       showToast(
-        result.enabled
-          ? 'Cycle settings saved. Upcoming cycles are scheduled.'
-          : 'Cycle settings saved.'
+        [
+          result.enabled
+            ? 'Cycle settings saved. Upcoming cycles are scheduled.'
+            : 'Cycle settings saved.',
+          trimmed,
+        ]
+          .filter((part) => part !== '')
+          .join(' ')
       );
     } catch {
       return;
@@ -241,6 +271,19 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     parseScheduleDate(currentCycle?.end_date)
   );
   const moving = saved.enabled && current.enabled && movesUpcoming(changes);
+  const lowering =
+    saved.enabled &&
+    current.enabled &&
+    upcoming !== null &&
+    current.upcoming_count < saved.upcoming_count;
+  const trim =
+    lowering && upcoming !== null
+      ? previewTrim(
+          upcoming.cycles.filter((cycle) => cycle.team_id === teamId),
+          current.upcoming_count
+        )
+      : { removed: 0, kept: 0 };
+  const trimming = trimSentence(trim.removed, trim.kept, true);
 
   return (
     <section className="space-y-4">
@@ -457,6 +500,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
                 : '.'}
               {moving &&
                 ' Upcoming cycles move to the new schedule when you save. The current cycle keeps its dates.'}
+              {trimming !== '' && ` ${trimming}`}
             </p>
           )}
 
