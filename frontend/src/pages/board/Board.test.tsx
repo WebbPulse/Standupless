@@ -1,8 +1,9 @@
 /**
  * The board page. Covers the columns it opens on, dragging a card to another
  * column to change its status, dragging within a column to set a manual
- * order, swimlanes when rows are sub-grouped, and the keyboard walking cards
- * in board order.
+ * order, dragging a selection in one move, dropping on a hidden column,
+ * swimlanes when rows are sub-grouped, and the keyboard walking cards in
+ * board order.
  */
 
 import {
@@ -35,6 +36,7 @@ import type {
 } from '../../types/Api';
 import { BoundKeys } from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
+import { clearToasts, currentToasts } from '../../lib/toast';
 import Board from './Board';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
@@ -285,6 +287,7 @@ beforeEach(() => {
   ]) {
     spy.mockReset();
   }
+  clearToasts();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
   listTeams.mockResolvedValue([team]);
@@ -332,6 +335,188 @@ const dragTo = (card: HTMLElement, onto: HTMLElement, below = false) => {
   fireEvent.dragOver(onto, { dataTransfer: data, clientY: below ? 30 : 5 });
   fireEvent.drop(onto.closest('ul') ?? onto, { dataTransfer: data });
 };
+
+/** Adds a card to the selection the way a shift click on its title does. */
+const select = (title: string) => {
+  fireEvent.click(screen.getByRole('link', { name: title }), {
+    shiftKey: true,
+  });
+};
+
+/** The messages of the notices on screen. */
+const toastMessages = (): string[] =>
+  currentToasts().map((toast) => toast.message);
+
+/** The titles of the cards in a cell, top to bottom. */
+const titlesIn = (name: string): (string | null)[] =>
+  within(screen.getByRole('list', { name }))
+    .getAllByRole('link')
+    .map((link) => link.textContent);
+
+describe('dragging a selection', () => {
+  it('moves every selected card to another column in one write', async () => {
+    renderPage();
+    await screen.findByText('Cache the token');
+    select('Cache the token');
+    select('Write docs');
+
+    dragTo(row('iss-1'), screen.getByRole('list', { name: 'Done' }));
+
+    await waitFor(() => {
+      expect(bulkUpdateIssues).toHaveBeenCalledTimes(1);
+    });
+    expect(bulkUpdateIssues).toHaveBeenCalledWith({
+      issue_ids: ['iss-1', 'iss-3'],
+      patch: { status_id: 'st-done' },
+    });
+    expect(updateIssue).not.toHaveBeenCalled();
+    expect(titlesIn('Done')).toEqual(['Cache the token', 'Write docs']);
+    await waitFor(() => {
+      expect(toastMessages()).toContain('Moved 2 issues to Done');
+    });
+  });
+
+  it('sets the lane property too when the selection lands in another lane', async () => {
+    renderPage('/w/mine/team/ENG/board?sub=priority');
+    await screen.findByRole('list', { name: 'Todo, High' });
+    select('Cache the token');
+    select('Rotate keys');
+
+    dragTo(row('iss-1'), screen.getByRole('list', { name: 'Done, Low' }));
+
+    await waitFor(() => {
+      expect(bulkUpdateIssues).toHaveBeenCalledTimes(1);
+    });
+    const [call] = bulkUpdateIssues.mock.calls[0] ?? [];
+    expect([...(call?.issue_ids ?? [])].sort()).toEqual(['iss-1', 'iss-2']);
+    expect(call?.patch).toEqual({ status_id: 'st-done', priority: 'low' });
+    expect([...titlesIn('Done, Low')].sort()).toEqual([
+      'Cache the token',
+      'Rotate keys',
+    ]);
+    await waitFor(() => {
+      expect(toastMessages()).toContain('Moved 2 issues to Done, Low');
+    });
+  });
+
+  it('places the selection together between two cards in manual order', async () => {
+    const served = new Map<string, object>();
+    bulkUpdateIssues.mockImplementation(({ issue_ids, patch }) => {
+      for (const id of issue_ids) {
+        served.set(id, { ...served.get(id), ...(patch as object) });
+      }
+      return Promise.resolve({
+        issues: issues
+          .filter((item) => issue_ids.includes(item.id))
+          .map((item) => ({ ...item, ...served.get(item.id) })),
+      });
+    });
+    updateIssue.mockImplementation((id, body) =>
+      Promise.resolve({
+        ...issues.find((item) => item.id === id),
+        ...served.get(id),
+        ...(body as object),
+      } as OrderedIssueRead)
+    );
+    renderPage('/w/mine/team/ENG/board?order=manual');
+    await screen.findByText('Cache the token');
+    select('Rotate keys');
+    select('Write docs');
+
+    dragTo(row('iss-2'), row('iss-1'));
+
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledTimes(2);
+    });
+    const keys = new Map(
+      updateIssue.mock.calls.map(([id, body]) => [
+        id,
+        (body as { sort_order?: string }).sort_order,
+      ])
+    );
+    expect(keys.get('iss-2')).toEqual(expect.any(String));
+    expect(keys.get('iss-3')).toEqual(expect.any(String));
+    expect((keys.get('iss-2') ?? '') < (keys.get('iss-3') ?? '')).toBe(true);
+    expect(bulkUpdateIssues).toHaveBeenCalledWith({
+      issue_ids: ['iss-2'],
+      patch: { status_id: 'st-todo' },
+    });
+    expect(titlesIn('Todo')).toEqual([
+      'Rotate keys',
+      'Write docs',
+      'Cache the token',
+    ]);
+  });
+
+  it('moves only an unselected card dragged while others are selected', async () => {
+    renderPage();
+    await screen.findByText('Cache the token');
+    select('Cache the token');
+    select('Write docs');
+
+    dragTo(row('iss-2'), screen.getByRole('list', { name: 'Done' }));
+
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledWith('iss-2', {
+        status_id: 'st-done',
+      });
+    });
+    expect(bulkUpdateIssues).not.toHaveBeenCalled();
+    expect(row('iss-1')).toHaveAttribute('aria-selected', 'true');
+    expect(row('iss-3')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('shows the lead card with a count badge as the drag image', async () => {
+    renderPage();
+    await screen.findByText('Cache the token');
+    select('Cache the token');
+    select('Write docs');
+    const setDragImage = vi.fn();
+
+    fireEvent.dragStart(row('iss-3'), {
+      dataTransfer: { ...transfer(), setDragImage },
+    });
+
+    expect(setDragImage).toHaveBeenCalledTimes(1);
+    const ghost = setDragImage.mock.calls[0]?.[0] as HTMLElement;
+    expect(ghost.textContent).toContain('Write docs');
+    expect(ghost.querySelector('[data-drag-count]')?.textContent).toBe(
+      '2 issues'
+    );
+  });
+
+  it('sets a hidden column by a drop on the rail without showing it', async () => {
+    renderPage();
+    await screen.findByRole('list', { name: 'Done' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Done column options' })
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: 'Hide column' })
+    );
+    select('Cache the token');
+    select('Write docs');
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    const done = within(rail).getByRole('button', { name: /Done/ });
+    const data = transfer();
+
+    fireEvent.dragStart(row('iss-1'), { dataTransfer: data });
+    fireEvent.dragOver(done, { dataTransfer: data });
+    expect(done).toHaveAttribute('data-drop-target');
+    fireEvent.drop(done, { dataTransfer: data });
+
+    await waitFor(() => {
+      expect(bulkUpdateIssues).toHaveBeenCalledWith({
+        issue_ids: ['iss-1', 'iss-3'],
+        patch: { status_id: 'st-done' },
+      });
+    });
+    expect(
+      screen.queryByRole('list', { name: 'Done' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+  });
+});
 
 describe('the board', () => {
   it('opens with a column per status, empty ones included', async () => {

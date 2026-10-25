@@ -6,9 +6,17 @@
  * position between them, and a reorder inside a column switches the view to
  * manual ordering, since any other ordering would put the card straight back.
  *
+ * A drag on a selected card carries the whole selection, with a count badge
+ * on the drag image, and lands it in one write with one undo entry: the same
+ * column and lane for every card, placed together in their shown order at a
+ * manual slot. A drag on a card outside the selection moves that card alone.
+ * Cards the viewer cannot edit stay put, and the notice counts them.
+ *
  * A column can be hidden from its header menu. Hidden columns sit in a rail
  * on the right, or below the board on phones, with their counts, and one
- * click brings a column back. On touch screens the columns snap into place.
+ * click brings a column back. Each one in the rail also takes a drop, which
+ * sets its value without showing it again. On touch screens the columns snap
+ * into place.
  *
  * A quiet New issue row closes each cell the viewer may create in. It shows on
  * hover or focus, and always in an empty cell, and opens the create dialog with
@@ -31,7 +39,6 @@ import {
   isLabelGroupField,
   isMovableGroupField,
   moveChange,
-  orderKeyAt,
   type CustomerMove,
   type GroupField,
   type IssueChange,
@@ -42,6 +49,11 @@ import {
 import type { StatusCategory } from '../../../types/Api';
 import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
+import {
+  issueCount,
+  movedNotice,
+  skippedNotice,
+} from '../../../lib/bulkIssueActions';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
@@ -56,7 +68,12 @@ import {
 import { useIssueViewEnv } from './IssueViewContext';
 import { ArchivedMarker, GroupFigure, GroupGlyph } from './ListRows';
 import { CardParentRef } from './SubIssueCues';
-import { isNoOpDrop } from '../../../lib/boardDrop';
+import {
+  draggedIds,
+  isNoOpDrop,
+  setCountDragImage,
+  slotPlacements,
+} from '../../../lib/boardDrop';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** Where a dragged card would land. */
@@ -66,12 +83,32 @@ interface DropTarget {
   index: number;
 }
 
-/** The card being dragged, where it came from and how tall it stands. */
+/**
+ * Where a drop lands: a slot in a cell, or a hidden column in the rail, which
+ * has no lane and no slot, so each card keeps its own lane and position.
+ */
+interface Landing {
+  lane: string | null;
+  column: string;
+  index: number | null;
+}
+
+/**
+ * The cards being dragged, in display order, the lead card the drag started
+ * on, the cell it came from and how tall it stands.
+ */
 interface DragSource {
-  id: string;
+  ids: string[];
+  lead: string;
   lane: string;
   column: string;
   height: number;
+}
+
+/** A card's cell: its lane and column keys. */
+interface CellRef {
+  lane: string;
+  column: string;
 }
 
 /** The shortest placeholder drawn, for a card that reports no height. */
@@ -242,6 +279,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   const { state, context } = env;
   const [drag, setDrag] = useState<DragSource | null>(null);
   const [target, setTarget] = useState<DropTarget | null>(null);
+  const [railTarget, setRailTarget] = useState<string | null>(null);
 
   const columnField = state.groupBy === 'none' ? 'status' : state.groupBy;
   const laneField = state.subGroupBy;
@@ -293,70 +331,197 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
     [issues]
   );
 
-  const drop = (to: DropTarget): void => {
-    const source = drag;
+  const order = useMemo(() => issues.map((issue) => issue.id), [issues]);
+
+  const cellOf = useMemo(() => {
+    const cells = new Map<string, CellRef>();
+    for (const { lane, cells: laneCells } of lanes) {
+      for (const cell of laneCells) {
+        for (const issue of cell.issues) {
+          if (!cells.has(issue.id)) {
+            cells.set(issue.id, { lane: lane.key, column: cell.key });
+          }
+        }
+      }
+    }
+    return cells;
+  }, [lanes]);
+
+  const cellIssues = (lane: string, column: string): OrderedIssueRead[] =>
+    lanes
+      .find((item) => item.lane.key === lane)
+      ?.cells.find((item) => item.key === column)?.issues ?? [];
+
+  const editable = (issue: OrderedIssueRead): boolean =>
+    env.canEdit && (env.canEditIssue?.(issue) ?? true);
+
+  const endDrag = (): void => {
     setDrag(null);
     setTarget(null);
+    setRailTarget(null);
+  };
+
+  const drop = (to: Landing): void => {
+    const source = drag;
+    endDrag();
     if (source === null || !env.canEdit) return;
-    const issue = byId.get(source.id);
-    if (issue === undefined) return;
+    const movers = source.ids.flatMap((id) => {
+      const issue = byId.get(id);
+      return issue === undefined ? [] : [issue];
+    });
+    if (movers.length === 0) return;
+    const alone = movers.length === 1;
+    const fromOf = (issue: OrderedIssueRead): CellRef =>
+      issue.id === source.lead
+        ? { lane: source.lane, column: source.column }
+        : (cellOf.get(issue.id) ?? {
+            lane: source.lane,
+            column: source.column,
+          });
 
-    let change: IssueChange = {};
-    if (to.column !== source.column) {
-      const moved = moveChange(
-        issue,
-        columnField,
-        source.column,
-        to.column,
-        context
-      );
-      if (moved === null) {
-        showToast(refusedMove(issue.key, columnField), 'info');
-        return;
+    const allowed = movers.filter(editable);
+    const locked = movers.length - allowed.length;
+    const changes = new Map<string, IssueChange>();
+    const customerMoves: { issue: OrderedIssueRead; move: CustomerMove }[] = [];
+    let unmatched = 0;
+    let refusal = '';
+    let columnMoved = false;
+    let laneMoved = false;
+    for (const issue of allowed) {
+      const from = fromOf(issue);
+      const lane = to.lane ?? from.lane;
+      let change: IssueChange = {};
+      let refused = false;
+      if (to.column !== from.column) {
+        const moved = moveChange(
+          issue,
+          columnField,
+          from.column,
+          to.column,
+          context
+        );
+        if (moved === null) {
+          refused = true;
+          refusal = refusedMove(issue.key, columnField);
+        } else {
+          change = joinChanges(change, moved);
+        }
       }
-      change = joinChanges(change, moved);
-    }
-    if (laneField !== 'none' && to.lane !== source.lane) {
-      const moved = moveChange(issue, laneField, source.lane, to.lane, context);
-      if (moved === null) {
-        showToast(refusedMove(issue.key, laneField), 'info');
-        return;
+      if (!refused && laneField !== 'none' && lane !== from.lane) {
+        const moved = moveChange(issue, laneField, from.lane, lane, context);
+        if (moved === null) {
+          refused = true;
+          refusal = refusedMove(issue.key, laneField);
+        } else {
+          change = joinChanges(change, moved);
+        }
       }
-      change = joinChanges(change, moved);
+      if (refused) {
+        unmatched += 1;
+        continue;
+      }
+      if (to.column !== from.column) columnMoved = true;
+      if (laneField !== 'none' && lane !== from.lane) laneMoved = true;
+      if (columnField === 'customer' && to.column !== from.column) {
+        customerMoves.push({
+          issue,
+          move: customerMove(issue, from.column, to.column, context),
+        });
+      }
+      if (laneField === 'customer' && lane !== from.lane) {
+        customerMoves.push({
+          issue,
+          move: customerMove(issue, from.lane, lane, context),
+        });
+      }
+      changes.set(issue.id, change);
     }
 
-    const customerMoves: CustomerMove[] = [];
-    if (columnField === 'customer' && to.column !== source.column) {
-      customerMoves.push(
-        customerMove(issue, source.column, to.column, context)
-      );
+    if (alone && unmatched === 1) {
+      showToast(refusal, 'info');
+      return;
     }
-    if (laneField === 'customer' && to.lane !== source.lane) {
-      customerMoves.push(customerMove(issue, source.lane, to.lane, context));
+    const moving = allowed.filter((issue) => changes.has(issue.id));
+    const skipped = skippedNotice({ locked, unmatched });
+    if (moving.length === 0) {
+      if (skipped !== '') showToast(`Nothing moved. ${skipped}`, 'info');
+      return;
     }
     if (customerMoves.length > 0 && env.moveCustomer === undefined) {
       showToast(
-        `${issue.key} stays put, customer requests are not set from here.`,
+        alone
+          ? `${issueCount(moving)} stays put, customer requests are not set from here.`
+          : `${issueCount(moving)} stay put, customer requests are not set from here.`,
         'info'
       );
       return;
     }
 
-    const sameCell = to.column === source.column && to.lane === source.lane;
-    if (state.ordering === 'manual' || sameCell) {
-      const lane = lanes.find((item) => item.lane.key === to.lane);
-      const cell = lane?.cells.find((item) => item.key === to.column);
-      const placed = cell?.issues ?? [];
-      const from = placed.findIndex((item) => item.id === issue.id);
-      const index = from >= 0 && from < to.index ? to.index - 1 : to.index;
-      if (sameCell && index === from) return;
-      change.sort_order = orderKeyAt(placed, index, issue.id);
-      if (state.ordering !== 'manual' || state.reverse) {
-        onStateChange({ ...state, ordering: 'manual', reverse: false });
+    if (to.lane !== null && to.index !== null) {
+      const slotLane = to.lane;
+      const sameCell = moving.every((issue) => {
+        const from = fromOf(issue);
+        return from.column === to.column && from.lane === slotLane;
+      });
+      if (state.ordering === 'manual' || sameCell) {
+        const placements = slotPlacements(
+          cellIssues(slotLane, to.column),
+          to.index,
+          moving.map((issue) => issue.id)
+        );
+        if (sameCell && placements === null) {
+          if (skipped !== '') showToast(skipped, 'info');
+          return;
+        }
+        for (const placement of placements ?? []) {
+          const change = changes.get(placement.id);
+          if (change !== undefined) change.sort_order = placement.sort_order;
+        }
+        if (
+          placements !== null &&
+          (state.ordering !== 'manual' || state.reverse)
+        ) {
+          onStateChange({ ...state, ordering: 'manual', reverse: false });
+        }
       }
     }
-    if (Object.keys(change).length > 0) env.update([issue.id], change);
-    for (const move of customerMoves) {
+
+    const written = moving.filter(
+      (issue) => Object.keys(changes.get(issue.id) ?? {}).length > 0
+    );
+    if (written.length > 0) {
+      const destinations = [
+        ...(columnMoved
+          ? [
+              [...columns, ...hidden].find((column) => column.key === to.column)
+                ?.label ?? to.column,
+            ]
+          : []),
+        ...(laneMoved && to.lane !== null
+          ? [
+              lanes.find((item) => item.lane.key === to.lane)?.lane.label ??
+                to.lane,
+            ]
+          : []),
+      ];
+      const fieldsMoved = columnMoved || laneMoved;
+      env.update(
+        written.map((issue) => issue.id),
+        (issue) => changes.get(issue.id) ?? null,
+        fieldsMoved && (!alone || skipped !== '')
+          ? {
+              message: movedNotice(written, destinations, {
+                locked,
+                unmatched,
+              }),
+            }
+          : undefined
+      );
+      if (!fieldsMoved && skipped !== '') showToast(skipped, 'info');
+    } else if (skipped !== '') {
+      showToast(skipped, 'info');
+    }
+    for (const { issue, move } of customerMoves) {
       if (move.add !== undefined || move.remove !== undefined) {
         env.moveCustomer?.(issue, move);
       }
@@ -423,14 +588,15 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
     const showsPlaceholder =
       isTarget &&
       drag !== null &&
-      !isNoOpDrop(
-        {
-          lane: drag.lane,
-          column: drag.column,
-          from: cell.issues.findIndex((issue) => issue.id === drag.id),
-        },
-        target
-      );
+      (drag.ids.length > 1 ||
+        !isNoOpDrop(
+          {
+            lane: drag.lane,
+            column: drag.column,
+            from: cell.issues.findIndex((issue) => issue.id === drag.lead),
+          },
+          target
+        ));
     const cellLabel =
       laneField === 'none' ? column.label : `${column.label}, ${lane.label}`;
     const onCreate = createIn?.(
@@ -465,24 +631,32 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
             {showsPlaceholder && target.index === index && placeholder}
             <BoardCard
               issue={issue}
-              draggable={env.canEdit}
-              dimmed={drag?.id === issue.id}
+              draggable={editable(issue)}
+              dimmed={drag?.ids.includes(issue.id) ?? false}
               onDragStart={(event) => {
+                const card = event.currentTarget as HTMLElement;
+                const ids = draggedIds(issue.id, env.selected, order);
                 event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', issue.key);
+                event.dataTransfer.setData(
+                  'text/plain',
+                  ids.map((id) => byId.get(id)?.key ?? id).join('\n')
+                );
+                setCountDragImage(
+                  event.dataTransfer,
+                  card,
+                  ids.length,
+                  `${String(ids.length)} issues`,
+                  { x: event.clientX, y: event.clientY }
+                );
                 setDrag({
-                  id: issue.id,
+                  ids,
+                  lead: issue.id,
                   lane: lane.key,
                   column: column.key,
-                  height: (
-                    event.currentTarget as HTMLElement
-                  ).getBoundingClientRect().height,
+                  height: card.getBoundingClientRect().height,
                 });
               }}
-              onDragEnd={() => {
-                setDrag(null);
-                setTarget(null);
-              }}
+              onDragEnd={endDrag}
               onDragOver={overCard(lane.key, column.key, index)}
             />
           </React.Fragment>
@@ -637,10 +811,32 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               key={column.key}
               type="button"
               title={`Show ${column.label}`}
+              data-drop-target={railTarget === column.key ? '' : undefined}
               onClick={() => {
                 onToggle(hiddenColumnKey(column.key));
               }}
-              className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-text-muted pointer-coarse:h-11 hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+              onDragOver={(event) => {
+                if (drag === null) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                if (target !== null) setTarget(null);
+                if (railTarget !== column.key) setRailTarget(column.key);
+              }}
+              onDragLeave={() => {
+                if (railTarget === column.key) setRailTarget(null);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                drop({ lane: null, column: column.key, index: null });
+              }}
+              className={cn(
+                'flex h-8 items-center gap-2 rounded-md border px-2 text-left text-sm pointer-coarse:h-11 transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
+                railTarget === column.key
+                  ? 'border-accent bg-accent-soft text-text'
+                  : drag !== null
+                    ? 'border-dashed border-line text-text-muted'
+                    : 'border-transparent text-text-muted hover:bg-raised hover:text-text'
+              )}
             >
               <GroupGlyph group={column} />
               <TruncatedText className="min-w-0 flex-1">

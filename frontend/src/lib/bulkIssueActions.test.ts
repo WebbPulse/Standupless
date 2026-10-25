@@ -9,9 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IssueRead, IssueUpdate, SubscribersRead } from '../types/Api';
 import {
   issueCount,
+  movedNotice,
   moveIssues,
   moveOrder,
   setSubscriptions,
+  skippedNotice,
 } from './bulkIssueActions';
 import { clearToasts, currentToasts } from './toast';
 import { canUndo, clearUndo, undoLast } from './undo';
@@ -109,6 +111,35 @@ describe('issueCount', () => {
   it('names one issue by its key and more by their count', () => {
     expect(issueCount([issue('a')])).toBe('ENG-a');
     expect(issueCount([issue('a'), issue('b')])).toBe('2 issues');
+  });
+});
+
+describe('skippedNotice', () => {
+  it('names what was left out and why, or nothing', () => {
+    expect(skippedNotice({})).toBe('');
+    expect(skippedNotice({ locked: 1 })).toBe('Skipped 1 you cannot edit.');
+    expect(skippedNotice({ locked: 1, unmatched: 2 })).toBe(
+      'Skipped 1 you cannot edit and 2 with no matching value in their team.'
+    );
+  });
+});
+
+describe('movedNotice', () => {
+  it('names the count and where the issues landed', () => {
+    const moved = [issue('a'), issue('b'), issue('c')];
+    expect(movedNotice(moved, ['In Review'])).toBe(
+      'Moved 3 issues to In Review'
+    );
+    expect(movedNotice(moved, ['Done', 'Low'])).toBe(
+      'Moved 3 issues to Done, Low'
+    );
+    expect(movedNotice(moved, [])).toBe('Moved 3 issues');
+  });
+
+  it('adds what the move skipped', () => {
+    expect(movedNotice([issue('a'), issue('b')], ['Done'], { locked: 1 })).toBe(
+      'Moved 2 issues to Done. Skipped 1 you cannot edit.'
+    );
   });
 });
 

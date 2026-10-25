@@ -23,10 +23,20 @@ import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
 import { showErrorToast } from '../lib/toast';
 import type { IssueRead } from '../types/Api';
 
-/** Writes a change to issues: one for all, or each issue's own, or null. */
+/** Options for one {@link IssueWrite}. */
+export interface IssueWriteOptions {
+  /** The undo notice, overriding the one built from the change. */
+  message?: string;
+}
+
+/**
+ * Writes a change to issues: one for all, or each issue's own, or null. The
+ * landed change is one undo entry with one notice.
+ */
 export type IssueWrite = (
   ids: readonly string[],
-  change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null)
+  change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null),
+  options?: IssueWriteOptions
 ) => void;
 
 /** What {@link useOptimisticIssues} hands back. */
@@ -44,7 +54,10 @@ interface Overlay {
   since: string;
 }
 
-/** The bulk patch a change becomes. A manual position is never bulk written. */
+/**
+ * The bulk patch a change becomes. A manual position is never bulk written:
+ * each issue's own key follows on the single route once the bulk write lands.
+ */
 const bulkPatch = (change: IssueChange): IssueBulkPatch => {
   const {
     title: _title,
@@ -119,7 +132,7 @@ export const useOptimisticIssues = (
   );
 
   const update = useCallback<IssueWrite>(
-    (ids, change) => {
+    (ids, change, options = {}) => {
       const byId = new Map(issues.map((issue) => [issue.id, issue]));
       const baseById = new Map((read ?? []).map((issue) => [issue.id, issue]));
       const planned: { issue: OrderedIssueRead; change: IssueChange }[] = [];
@@ -166,13 +179,20 @@ export const useOptimisticIssues = (
       const landed: OrderedIssueRead[] = [];
       const record = (): void => {
         const before = new Map(planned.map(({ issue }) => [issue.id, issue]));
+        const latest = new Map(landed.map((after) => [after.id, after]));
         recordIssueChange(
           workspaceId,
-          landed.flatMap((after) => {
+          [...latest.values()].flatMap((after) => {
             const prior = before.get(after.id);
             return prior === undefined ? [] : [{ before: prior, after }];
           }),
-          { invalidate: [queryKey], onReverted: layOver }
+          {
+            invalidate: [queryKey],
+            onReverted: layOver,
+            ...(options.message === undefined
+              ? {}
+              : { message: options.message }),
+          }
         );
       };
 
@@ -227,8 +247,10 @@ export const useOptimisticIssues = (
         string,
         { patch: IssueBulkPatch; ids: string[] }
       >();
+      const failed = new Set<string>();
       for (const { issue, change: own } of planned) {
         const patch = bulkPatch(own);
+        if (Object.keys(patch).length === 0) continue;
         const slot = JSON.stringify(patch);
         const batch = batches.get(slot) ?? { patch, ids: [] };
         batch.ids.push(issue.id);
@@ -244,15 +266,37 @@ export const useOptimisticIssues = (
               confirm(answer.issues);
             },
             (cause: unknown) => {
+              for (const id of part) failed.add(id);
               rollback(part, cause);
             }
           )
         )
       );
-      void Promise.all(writes).then(() => {
-        record();
-        invalidateQueries(queryKey);
-      });
+      const placing = (): Promise<void[]> =>
+        Promise.all(
+          planned.flatMap(({ issue, change: own }) =>
+            own.sort_order === undefined || failed.has(issue.id)
+              ? []
+              : [
+                  updateIssue(workspaceId, issue.id, {
+                    sort_order: own.sort_order,
+                  }).then(
+                    (written) => {
+                      confirm([written]);
+                    },
+                    (cause: unknown) => {
+                      rollback([issue.id], cause);
+                    }
+                  ),
+                ]
+          )
+        );
+      void Promise.all(writes)
+        .then(placing)
+        .then(() => {
+          record();
+          invalidateQueries(queryKey);
+        });
     },
     [issues, read, workspaceId, queryKey, layOver]
   );

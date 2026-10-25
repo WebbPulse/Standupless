@@ -39,6 +39,11 @@ export interface IssueViewEnv {
   /** The team name shown on rows of a view that spans teams. */
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
+  /**
+   * Whether the viewer may edit one issue, read from its team's role. Unset
+   * leaves every issue to `canEdit`.
+   */
+  canEditIssue?: ((issue: OrderedIssueRead) => boolean) | undefined;
   update: IssueWrite;
   /**
    * Files and withdraws customer requests for a drop between customer

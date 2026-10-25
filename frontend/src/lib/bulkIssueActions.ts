@@ -3,6 +3,7 @@
  * team and subscribing the caller to it or off it. Each runs the single
  * issue route once per issue, so a bulk move leaves exactly the rows the
  * same moves made one at a time would, and raises one notice with the count.
+ * Also the wording of the one notice a drag of several issues raises.
  */
 
 import { invalidateQueries, type QueryKey } from '@webbpulse/api-client/react';
@@ -22,6 +23,49 @@ export const issueCount = (
   return issues.length === 1 && first !== undefined
     ? first.key
     : `${String(issues.length)} issues`;
+};
+
+/** The issues a drop or bulk write left out, and why. */
+export interface SkippedIssues {
+  /** Issues the viewer cannot edit. */
+  locked?: number;
+  /** Issues whose team has no value matching the destination. */
+  unmatched?: number;
+}
+
+/**
+ * The sentence naming what a write left out, such as "Skipped 1 you cannot
+ * edit.", or an empty string when nothing was.
+ */
+export const skippedNotice = ({
+  locked = 0,
+  unmatched = 0,
+}: SkippedIssues): string => {
+  const parts = [
+    ...(locked > 0 ? [`${String(locked)} you cannot edit`] : []),
+    ...(unmatched > 0
+      ? [`${String(unmatched)} with no matching value in their team`]
+      : []),
+  ];
+  return parts.length === 0 ? '' : `Skipped ${parts.join(' and ')}.`;
+};
+
+/**
+ * The one notice a drag of several issues raises, such as "Moved 3 issues to
+ * In Review", with what it skipped after. `destinations` names the column and
+ * the lane the issues landed in, left empty for a reorder in place.
+ */
+export const movedNotice = (
+  issues: readonly Pick<IssueRead, 'key'>[],
+  destinations: readonly string[],
+  skipped: SkippedIssues = {}
+): string => {
+  const moved =
+    destinations.length === 0
+      ? `Moved ${issueCount(issues)}`
+      : `Moved ${issueCount(issues)} to ${destinations.join(', ')}`;
+  const note = skippedNotice(skipped);
+  return note === '' ? moved : `${moved}. ${note}`;
 };
 
 /**
