@@ -6,7 +6,7 @@
  * and Shift+Tab in a summary nest and lift sections, one undo step each.
  */
 
-import { Editor, type JSONContent } from '@tiptap/core';
+import { Editor } from '@tiptap/core';
 import { fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SUMMARY_PLACEHOLDER } from './CollapsibleSection';
@@ -251,10 +251,8 @@ const SIBLINGS =
   '<details>\n<summary>A</summary>\n\none\n\n</details>\n\n<details>\n<summary>B</summary>\n\ntwo\n\n</details>';
 
 /** The number of items in the first list inside the first section's body. */
-const bodyListItems = (editor: Editor): JSONContent[] => {
-  const body = editor.getJSON().content?.[0]?.content?.[1];
-  return body?.content?.[0]?.content ?? [];
-};
+const bodyListItems = (editor: Editor): number =>
+  editor.state.doc.firstChild?.lastChild?.firstChild?.childCount ?? 0;
 
 describe('nesting sections with Tab and Shift+Tab', () => {
   it('reads and writes nested sections unchanged', () => {
@@ -333,10 +331,10 @@ describe('nesting sections with Tab and Shift+Tab', () => {
     editor.commands.setTextSelection(16);
     expect(editor.state.selection.$from.parent.textContent).toBe('two');
     press(editor, 'Tab');
-    expect(bodyListItems(editor)).toHaveLength(1);
+    expect(bodyListItems(editor)).toBe(1);
     expect(topLevel(editor)).toEqual(['collapsibleSection']);
     press(editor, 'Tab', true);
-    expect(bodyListItems(editor)).toHaveLength(2);
+    expect(bodyListItems(editor)).toBe(2);
     expect(topLevel(editor)).toEqual(['collapsibleSection']);
   });
 });
