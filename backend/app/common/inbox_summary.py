@@ -13,7 +13,6 @@ from typing import Callable, Optional
 from app.common.db.dynamo.inbox import Notification
 
 _FIXED: dict[str, str] = {
-    "project_update_due": "Update due",
     "due_soon": "Due soon",
     "overdue": "Overdue",
     "standup_digest": "Standup ready",
@@ -52,6 +51,11 @@ def _status_changed(actor: str, value: Optional[str]) -> str:
 def _initiative_update_due(notification: Notification) -> str:
     """Say whether the initiative update is due or already overdue."""
     return "Initiative update overdue" if notification.due_state == "overdue" else "Initiative update due"
+
+
+def _project_update_due(notification: Notification) -> str:
+    """Say whether the project update is due or already overdue."""
+    return "Update overdue" if notification.due_state == "overdue" else "Update due"
 
 
 def _view_issue_added(view_name: Optional[str]) -> str:
@@ -115,6 +119,7 @@ _SPECIAL: dict[str, Callable[[Notification, str], str]] = {
     "blocking_changed": lambda row, actor: _blocking_changed(row.new_value),
     "status_changed": lambda row, actor: _status_changed(actor, row.new_value),
     "initiative_update_due": lambda row, actor: _initiative_update_due(row),
+    "project_update_due": lambda row, actor: _project_update_due(row),
     "view_issue_added": lambda row, actor: _view_issue_added(row.new_value),
     "view_project_added": lambda row, actor: _view_project_added(row.new_value),
 }
