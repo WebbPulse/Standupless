@@ -755,8 +755,13 @@ describe('InitiativeDetail', () => {
         await screen.findByRole('tab', { name: 'Updates' })
       ).toHaveAttribute('aria-selected', 'true');
       expect(
-        await screen.findByRole('button', { name: 'Post update' })
+        await screen.findByText(
+          'No updates yet. Share how the initiative is going and whether it is on track.'
+        )
       ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Write an initiative update/ })
+      ).not.toBeInTheDocument();
     });
   });
 });
