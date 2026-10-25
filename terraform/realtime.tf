@@ -5,7 +5,9 @@ locals {
 
   realtime_management_url = local.realtime_enabled ? "https://${aws_apigatewayv2_api.realtime[0].id}.execute-api.${var.aws_region}.amazonaws.com/${local.realtime_stage}" : ""
 
-  realtime_routes = local.realtime_enabled ? toset(["$connect", "$disconnect", "heartbeat"]) : toset([])
+  realtime_two_way_routes = ["heartbeat", "presence"]
+
+  realtime_routes = local.realtime_enabled ? toset(["$connect", "$disconnect", "heartbeat", "presence", "presence_leave"]) : toset([])
 }
 
 resource "aws_apigatewayv2_api" "realtime" {
@@ -35,7 +37,7 @@ resource "aws_apigatewayv2_route" "realtime" {
   api_id                              = aws_apigatewayv2_api.realtime[0].id
   route_key                           = each.key
   target                              = "integrations/${aws_apigatewayv2_integration.realtime[0].id}"
-  route_response_selection_expression = each.key == "heartbeat" ? "$default" : null
+  route_response_selection_expression = contains(local.realtime_two_way_routes, each.key) ? "$default" : null
 }
 
 resource "aws_apigatewayv2_route_response" "realtime_heartbeat" {
@@ -43,6 +45,14 @@ resource "aws_apigatewayv2_route_response" "realtime_heartbeat" {
 
   api_id             = aws_apigatewayv2_api.realtime[0].id
   route_id           = aws_apigatewayv2_route.realtime["heartbeat"].id
+  route_response_key = "$default"
+}
+
+resource "aws_apigatewayv2_route_response" "realtime_presence" {
+  count = local.realtime_enabled ? 1 : 0
+
+  api_id             = aws_apigatewayv2_api.realtime[0].id
+  route_id           = aws_apigatewayv2_route.realtime["presence"].id
   route_response_key = "$default"
 }
 

@@ -28,6 +28,10 @@
  * proves the server still holds the connection, and a reconnect after a drop
  * re-reads every registered key, since notices sent while it was down are
  * lost.
+ *
+ * The same socket carries presence, who else has an issue or a document open,
+ * which lives in `presence.ts`; the connection only hands it the socket and
+ * the viewer lists that arrive.
  */
 
 import { useEffect, useSyncExternalStore } from 'react';
@@ -40,6 +44,11 @@ import {
 import { getIdentityClient } from '../api/identityClient';
 import { realtimeUrl } from '../config/app';
 import { issueRefs } from './issueRefs';
+import {
+  attachPresenceTransport,
+  detachPresenceTransport,
+  receivePresence,
+} from './presence';
 import {
   activityKey,
   cycleKey,
@@ -451,6 +460,7 @@ export class RealtimeConnection {
       socket.onerror = null;
       closeQuietly(socket, 1000, 'closed');
     }
+    detachPresenceTransport(this);
     setHealthy(false);
   }
 
@@ -498,6 +508,11 @@ export class RealtimeConnection {
       this.awaitingPong = false;
       setHealthy(true);
       this.startHeartbeat();
+      attachPresenceTransport(this, this.options.workspaceId, (data) => {
+        if (socket.readyState !== OPEN) return false;
+        socket.send(data);
+        return true;
+      });
       if (this.everOpened) this.resync();
       this.everOpened = true;
     };
@@ -509,6 +524,7 @@ export class RealtimeConnection {
       if (this.socket !== socket) return;
       this.socket = null;
       this.stopHeartbeat();
+      detachPresenceTransport(this);
       setHealthy(false);
       if (!opened) this.refreshNext = true;
       this.scheduleReconnect();
@@ -539,6 +555,7 @@ export class RealtimeConnection {
     this.socket = null;
     socket.onclose = null;
     this.stopHeartbeat();
+    detachPresenceTransport(this);
     setHealthy(false);
     closeQuietly(socket, 4000, 'stale');
     this.scheduleReconnect();
@@ -569,7 +586,7 @@ export class RealtimeConnection {
     this.heartbeatTimer = null;
   }
 
-  /** Handles one message: a pong, a notice for this workspace, or nothing. */
+  /** Handles one message: a pong, a viewer list, a notice for this workspace, or nothing. */
   private receive(data: unknown): void {
     let value: unknown = data;
     if (typeof data === 'string') {
@@ -586,6 +603,7 @@ export class RealtimeConnection {
         if (message['connected'] === false) this.restart();
         return;
       }
+      if (receivePresence(value)) return;
     }
     const notice = parseNotice(value);
     if (notice === null || notice.workspaceId !== this.options.workspaceId) {

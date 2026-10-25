@@ -43,6 +43,7 @@ COMPOSITE_PARTITIONS = {
     "attachments": "ws_issue",
     "subscriptions": "ws_issue",
     "reactions": "ws_target",
+    "realtime_presence": "ws_entity",
 }
 """Tables whose partition key is the workspace joined to something narrower.
 
@@ -55,7 +56,8 @@ reactions and a comment's are read the same way and neither needs the other's id
 `inbox` partitions per recipient, which is also what keeps one member's
 notifications unreachable from another member's key. `search_index` partitions per
 team, which is what stops a search crossing a team boundary at the storage
-layer rather than in a filter.
+layer rather than in a filter. `realtime_presence` partitions per issue or
+document, so the people viewing one entity are one query.
 
 The workspace is still the first segment of every composite, so the tenancy
 invariant holds; it is the key's shape that differs, which is why the check below

@@ -148,8 +148,8 @@ CONSUMERS: Dict[str, ConsumerScope] = {
         ConsumerScope(
             name="integrations-realtime-consumer",
             domain="integrations",
-            repositories=("realtime_connections",),
-            read_repositories=("memberships",),
+            repositories=("realtime_connections", "realtime_presence"),
+            read_repositories=("memberships", "issues", "planning", "documents"),
         ),
     )
 }

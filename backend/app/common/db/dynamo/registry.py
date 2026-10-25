@@ -81,6 +81,7 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
             "RealtimeConnectionRepository",
             "realtime_connections",
         ),
+        _spec("realtime_presence", "realtime_presence", "RealtimePresenceRepository", "realtime_presence"),
     ]
 )
 

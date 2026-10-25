@@ -1,4 +1,4 @@
-"""The WebSocket API's routes: `$connect`, `$disconnect` and `heartbeat`.
+"""The WebSocket API's routes: `$connect`, `$disconnect`, `heartbeat` and presence.
 
 API Gateway invokes the function with the WebSocket event, which the Lambda Web
 Adapter has no mapping for and so posts as is to the pass-through path, the same
@@ -16,6 +16,9 @@ that a runaway client cannot grow one partition without bound.
 The token is checked once, at connect. What a connection may hear is decided per
 notice from the member's current rows, so an expired token costs nothing and a
 removed member hears nothing more.
+
+`presence` and `presence_leave` report which issue or document a page has open,
+and are handled in `presence`.
 """
 
 from __future__ import annotations
@@ -29,6 +32,9 @@ from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories
+from app.domains.integrations.realtime import presence as presence_routes
+from app.domains.integrations.realtime.fanout import default_sender
+from app.domains.integrations.realtime.presence import SenderFactory
 
 _log = logging.getLogger(__name__)
 
@@ -113,9 +119,12 @@ def connect(
     return _status(200)
 
 
-def disconnect(repositories: Repositories, connection_id: str) -> dict[str, Any]:
-    """Forget a closed socket. A row already gone is not an error."""
+def disconnect(
+    repositories: Repositories, connection_id: str, sender_factory: SenderFactory = default_sender
+) -> dict[str, Any]:
+    """Forget a closed socket and anything it had open. A row already gone is not an error."""
     repositories.realtime_connections.remove_by_id(connection_id)
+    presence_routes.disconnect(repositories, connection_id, sender_factory=sender_factory)
     return _status(200)
 
 
@@ -138,6 +147,7 @@ def handle_event(
     repositories: Repositories,
     event: Mapping[str, Any],
     verifier: TokenVerifier | None,
+    sender_factory: SenderFactory = default_sender,
 ) -> dict[str, Any]:
     """Route one WebSocket event by its route key."""
     context = event.get("requestContext")
@@ -150,9 +160,13 @@ def handle_event(
     if route == "$connect":
         return connect(repositories, event, connection_id, verifier)
     if route == "$disconnect":
-        return disconnect(repositories, connection_id)
+        return disconnect(repositories, connection_id, sender_factory)
     if route == HEARTBEAT_ROUTE:
         return heartbeat(repositories, connection_id)
+    if route == presence_routes.PRESENCE_ROUTE:
+        return presence_routes.presence(repositories, event, connection_id, sender_factory=sender_factory)
+    if route == presence_routes.LEAVE_ROUTE:
+        return presence_routes.leave(repositories, event, connection_id, sender_factory=sender_factory)
     return _status(404)
 
 
