@@ -171,6 +171,19 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         anchor: settingsAnchorId('preferences'),
         under: 'Workflow',
       },
+      {
+        id: 'coding-tool',
+        title: 'Default coding tool',
+        synonyms: [
+          'open in coding tool',
+          'cursor',
+          'claude code',
+          'vs code',
+          'codex',
+        ],
+        anchor: settingsAnchorId('preferences'),
+        under: 'Workflow',
+      },
     ],
   },
   {

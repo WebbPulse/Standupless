@@ -62,6 +62,7 @@ import {
   LuPanelRight,
   LuPrinter,
   LuSquarePen,
+  LuTerminal,
   LuTrash2,
   LuUnlink,
   LuUsers,
@@ -116,6 +117,10 @@ import {
   copyText,
   issueUrl,
 } from '../../lib/copyIssue';
+import {
+  OPEN_IN_CODING_TOOL_KEYS,
+  OPEN_IN_CODING_TOOL_LABEL,
+} from '../../lib/codingTools';
 import { errorMessage } from '../../lib/errors';
 import { useRecordRecentIssue } from '../../lib/recentIssues';
 import {
@@ -169,6 +174,7 @@ import DescriptionHistoryDialog, {
 } from './DescriptionHistoryDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
+import OpenInCodingTool from './OpenInCodingTool';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
 import { RelationMarkers } from './BlockedMarker';
 import { RELATION_COMMANDS } from './RelationGlyphs';
@@ -400,6 +406,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [duplicating, setDuplicating] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [history, setHistory] = useState(false);
+  const [coding, setCoding] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -846,6 +853,15 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
             {COPY_ISSUE_MARKDOWN_LABEL}
           </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setCoding(true);
+            }}
+          >
+            <LuTerminal aria-hidden="true" className="h-3.5 w-3.5" />
+            {`${OPEN_IN_CODING_TOOL_LABEL}…`}
+            <MenuShortcut keys={OPEN_IN_CODING_TOOL_KEYS} />
+          </MenuItem>
           {canAct && (
             <>
               <MenuSeparator />
@@ -1003,6 +1019,15 @@ export const IssueView: React.FC<IssueViewProps> = ({
           }}
         />
       ))}
+      {issue !== null && (
+        <OpenInCodingTool
+          slug={slug}
+          issue={issue}
+          branchNaming={branchNaming}
+          picking={coding}
+          onPickingChange={setCoding}
+        />
+      )}
       {issue !== null && team !== undefined && (
         <IssuePageCommands
           slug={slug}

@@ -32,6 +32,7 @@ import type {
   WeekStart,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import CodingToolPreference from './CodingToolPreference';
 import { Select } from '../ui/select';
 
 /** One choice in a preference picker. */
@@ -300,6 +301,7 @@ export const PreferencesSection: React.FC = () => {
               save({ branch_copy_assigns: on });
             }}
           />
+          <CodingToolPreference />
         </div>
       </div>
 
