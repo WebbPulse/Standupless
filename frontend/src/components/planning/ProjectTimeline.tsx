@@ -398,13 +398,14 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
         {has('status') && (
           <span
             data-timeline-property="status"
-            title={PROJECT_STATUS_LABELS[project.status]}
+            title={statusOf(project).name}
             className="flex shrink-0"
           >
             <ProjectStatusGlyph
               status={project.status}
+              color={statusOf(project).color}
               percent={percent}
-              name={PROJECT_STATUS_LABELS[project.status]}
+              name={statusOf(project).name}
             />
           </span>
         )}
