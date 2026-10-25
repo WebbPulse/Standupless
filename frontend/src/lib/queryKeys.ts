@@ -845,6 +845,12 @@ export const customersKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The workspace's customer statuses or tiers, by position. */
+export const customerFieldsKey = (
+  workspaceId: string,
+  kind: 'statuses' | 'tiers'
+): QueryKey => ['customerFields', workspaceId, kind];
+
 /** One customer. */
 export const customerKey = (
   workspaceId: string,

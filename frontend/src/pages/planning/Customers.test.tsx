@@ -23,6 +23,7 @@ import type {
   WorkspaceRole,
 } from '../../types/Api';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import { DEFAULT_CUSTOMER_STATUSES } from '../../lib/customerDisplay';
 import Customers from './Customers';
 
 const listCustomers = vi.fn<() => Promise<CustomerRead[]>>();
@@ -38,6 +39,8 @@ vi.mock('../../api/customers', () => ({
   updateCustomer: (_w: string, id: string, body: CustomerPatch) =>
     updateCustomer(id, body),
   deleteCustomer: (_w: string, id: string) => deleteCustomer(id),
+  listCustomerFields: (_w: string, kind: string) =>
+    Promise.resolve(kind === 'statuses' ? DEFAULT_CUSTOMER_STATUSES : []),
 }));
 
 vi.mock('../../api/workspaces', async () => {
@@ -92,7 +95,10 @@ const customer = (
   name,
   domains: [],
   status: null,
+  status_id: null,
+  status_name: null,
   tier: null,
+  tier_id: null,
   owner_id: null,
   revenue: null,
   size: null,
@@ -150,6 +156,7 @@ describe('Customers', () => {
       customer('cus-1', 'Acme', {
         domains: ['acme.com'],
         tier: 'Enterprise',
+        tier_id: 'tier-enterprise',
         size: 1200,
         revenue: 2500000,
         request_count: 3,
@@ -225,8 +232,8 @@ describe('Customers', () => {
       expect(createCustomer).toHaveBeenCalledWith({
         name: 'Initech',
         domains: ['initech.com', 'initech.io'],
-        status: null,
-        tier: null,
+        status_id: null,
+        tier_id: null,
         owner_id: null,
         revenue: null,
         size: null,
@@ -337,7 +344,7 @@ describe('Customers from the keyboard', () => {
 
     await waitFor(() => {
       expect(updateCustomer).toHaveBeenCalledWith('cus-1', {
-        status: 'active',
+        status_id: 'active',
       });
     });
   });

@@ -8,6 +8,9 @@
 import apiClient from './client';
 import type {
   CustomerCreate,
+  CustomerFieldCreate,
+  CustomerFieldRead,
+  CustomerFieldUpdate,
   CustomerListRead,
   CustomerPatch,
   CustomerRead,
@@ -15,7 +18,9 @@ import type {
   CustomerRequestListRead,
   CustomerRequestPatch,
   CustomerRequestRead,
+  CustomerStatusListRead,
   CustomerTargetKind,
+  CustomerTierListRead,
 } from '../types/Api';
 
 const signalOptions = (
@@ -232,5 +237,75 @@ export const deleteCustomerRequest = async (
 ): Promise<void> => {
   await apiClient.delete<void>(
     customerRequestPath(workspaceId, customerId, requestId)
+  );
+};
+
+/** The two lists a workspace admin sets up for its customers. */
+export type CustomerFieldKind = 'statuses' | 'tiers';
+
+/** The route one of the customer lists is read and added to on. */
+export const customerFieldsPath = (
+  workspaceId: string,
+  kind: CustomerFieldKind
+): string => `/workspaces/${workspaceId}/customers/${kind}`;
+
+/** Lists the workspace's customer statuses or tiers, by position. */
+export const listCustomerFields = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  signal?: AbortSignal
+): Promise<CustomerFieldRead[]> => {
+  const response = await apiClient.get<
+    CustomerStatusListRead | CustomerTierListRead
+  >(customerFieldsPath(workspaceId, kind), signalOptions(signal));
+  const body = response.data as Partial<
+    CustomerStatusListRead & CustomerTierListRead
+  >;
+  const rows = kind === 'statuses' ? body?.statuses : body?.tiers;
+  return Array.isArray(rows) ? rows : [];
+};
+
+/** Adds a customer status or tier; an admin only. */
+export const createCustomerField = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  body: CustomerFieldCreate
+): Promise<CustomerFieldRead> => {
+  const response = await apiClient.post<CustomerFieldRead>(
+    customerFieldsPath(workspaceId, kind),
+    body
+  );
+  return response.data;
+};
+
+/** Renames, recolours or moves a customer status or tier; an admin only. */
+export const updateCustomerField = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  fieldId: string,
+  body: CustomerFieldUpdate
+): Promise<CustomerFieldRead> => {
+  const response = await apiClient.patch<CustomerFieldRead>(
+    `${customerFieldsPath(workspaceId, kind)}/${fieldId}`,
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Deletes a customer status or tier, moving the customers that hold it to
+ * `replacementId`. One customers hold is refused without a replacement.
+ */
+export const deleteCustomerField = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  fieldId: string,
+  replacementId?: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    `${customerFieldsPath(workspaceId, kind)}/${fieldId}`,
+    replacementId === undefined
+      ? undefined
+      : { query: { replacement_id: replacementId } }
   );
 };

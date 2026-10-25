@@ -37,10 +37,7 @@ import {
   CustomerStatusDot,
   CustomerStatusPicker,
 } from '../../components/customers/CustomerStatusPicker';
-import {
-  CustomerTierPicker,
-  tiersInUse,
-} from '../../components/customers/CustomerTierPicker';
+import { CustomerTierPicker } from '../../components/customers/CustomerTierPicker';
 import { LeadPicker } from '../../components/planning/ProjectPickers';
 import { openPropertyChip } from '../../components/planning/ProjectPropertyKeys';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -54,28 +51,29 @@ import Menu, {
 } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useCustomerFields } from '../../hooks/useCustomerFields';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { useProjectSelection } from '../../hooks/useProjectSelection';
 import { useShortcut, type ShortcutDefinition } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { canManageMembers } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import {
-  CUSTOMER_STATUSES,
-  CUSTOMER_STATUS_LABELS,
-  customerStatusLabel,
+  customerFieldLabel,
+  customerFieldOf,
   revenueLabel,
   sizeLabel,
 } from '../../lib/customerDisplay';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import { customerPath } from '../../lib/paths';
+import { customerPath, settingsPath } from '../../lib/paths';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type {
+  CustomerFieldRead,
   CustomerPatch,
   CustomerRead,
-  CustomerStatus,
 } from '../../types/Api';
 
 /** The grid every header and row lines up on. */
@@ -143,24 +141,33 @@ const openRowPicker = (customerId: string, field: string): void => {
   }, 0);
 };
 
-/** The status filter: one status, customers with none, or every customer. */
-type StatusFilter = CustomerStatus | 'none' | 'all';
+/** The status filter: one status id, customers with none, or every customer. */
+type StatusFilter = string;
 
 /** Whether a customer passes the status filter. */
 const statusMatches = (row: CustomerRead, filter: StatusFilter): boolean =>
   filter === 'all' ||
-  (filter === 'none' ? row.status === null : row.status === filter);
+  (filter === 'none' ? row.status_id === null : row.status_id === filter);
 
 /** How the status filter reads on its button. */
-const statusFilterLabel = (filter: StatusFilter): string =>
+const statusFilterLabel = (
+  filter: StatusFilter,
+  statuses: readonly CustomerFieldRead[]
+): string =>
   filter === 'all'
     ? 'All statuses'
     : filter === 'none'
       ? 'No status'
-      : CUSTOMER_STATUS_LABELS[filter];
+      : customerFieldLabel(customerFieldOf(statuses, filter), 'No status');
 
-/** The groups a status grouping draws, in lifecycle order with no status last. */
-const STATUS_GROUPS: (CustomerStatus | null)[] = [...CUSTOMER_STATUSES, null];
+/** The status a filter option draws its dot from, none for every customer. */
+const filterStatus = (
+  filter: StatusFilter,
+  statuses: readonly CustomerFieldRead[]
+): CustomerFieldRead | null =>
+  filter === 'all' || filter === 'none'
+    ? null
+    : customerFieldOf(statuses, filter);
 
 /** The columns the list sorts by. */
 type SortKey = 'name' | 'size' | 'revenue' | 'requests';
@@ -238,8 +245,10 @@ interface CustomerRowProps {
   customer: CustomerRead;
   slug: string;
   people: Assignable[];
+  /** The statuses the status picker offers. */
+  statuses: CustomerFieldRead[];
   /** The tiers the tier picker offers. */
-  tiers: string[];
+  tiers: CustomerFieldRead[];
   isActive: boolean;
   selected: boolean;
   /** Whether any customer is selected, which keeps every checkbox showing. */
@@ -249,8 +258,8 @@ interface CustomerRowProps {
   /** Picks or drops the customer, or takes the run to it with `range`. */
   onSelect: (range: boolean) => void;
   onChange: (patch: CustomerPatch) => void;
-  /** Opens the customer dialog to type a tier no customer has yet. */
-  onNewTier: () => void;
+  /** Opens the settings page where tiers are added, for an admin. */
+  onManageTiers?: () => void;
   onDelete: () => void;
 }
 
@@ -263,6 +272,7 @@ const CustomerRow: React.FC<CustomerRowProps> = ({
   customer,
   slug,
   people,
+  statuses,
   tiers,
   isActive,
   selected,
@@ -271,7 +281,7 @@ const CustomerRow: React.FC<CustomerRowProps> = ({
   onPointerEnter,
   onSelect,
   onChange,
-  onNewTier,
+  onManageTiers,
   onDelete,
 }) => {
   const revenue = revenueLabel(customer.revenue);
@@ -344,9 +354,11 @@ const CustomerRow: React.FC<CustomerRowProps> = ({
       </div>
       <span className="relative z-10 hidden min-w-0 -translate-x-1 md:flex">
         <CustomerStatusPicker
-          value={customer.status}
-          onChange={(status) => {
-            onChange({ status });
+          value={customer.status_id}
+          valueName={customer.status_name}
+          statuses={statuses}
+          onChange={(statusId) => {
+            onChange({ status_id: statusId });
           }}
           disabled={!customer.can_edit}
           variant="cell"
@@ -354,12 +366,13 @@ const CustomerRow: React.FC<CustomerRowProps> = ({
       </span>
       <span className="relative z-10 hidden min-w-0 -translate-x-1 md:flex">
         <CustomerTierPicker
-          value={customer.tier}
+          value={customer.tier_id}
+          valueName={customer.tier}
           tiers={tiers}
-          onChange={(tier) => {
-            onChange({ tier });
+          onChange={(tierId) => {
+            onChange({ tier_id: tierId });
           }}
-          onNewTier={onNewTier}
+          {...(onManageTiers === undefined ? {} : { onManage: onManageTiers })}
           disabled={!customer.can_edit}
         />
       </span>
@@ -468,6 +481,8 @@ export const Customers: React.FC = () => {
     isMember
   );
   const members = useWorkspaceMembers(workspaceId, isMember);
+  const { statuses, tiers } = useCustomerFields(workspaceId, isMember);
+  const isAdmin = canManageMembers(workspace?.role);
   const [isCreating, setIsCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>({ key: 'name', descending: false });
@@ -496,14 +511,14 @@ export const Customers: React.FC = () => {
 
   const groups = useMemo(
     () =>
-      STATUS_GROUPS.map((status) => ({
-        status,
-        rows: rows.filter((row) => row.status === status),
-      })).filter((group) => group.rows.length > 0),
-    [rows]
+      [...statuses, null]
+        .map((status) => ({
+          status,
+          rows: rows.filter((row) => row.status_id === (status?.id ?? null)),
+        }))
+        .filter((group) => group.rows.length > 0),
+    [rows, statuses]
   );
-
-  const tiers = useMemo(() => tiersInUse(customers), [customers]);
 
   const ordered = useMemo(
     () => (grouped ? groups.flatMap((group) => group.rows) : rows),
@@ -634,6 +649,7 @@ export const Customers: React.FC = () => {
           customer={customer}
           slug={slug}
           people={members}
+          statuses={statuses}
           tiers={tiers}
           isActive={position === activeIndex}
           selected={selected.has(customer.customer_id)}
@@ -648,9 +664,13 @@ export const Customers: React.FC = () => {
           onChange={(patch) => {
             change(customer, patch);
           }}
-          onNewTier={() => {
-            setEditing(customer);
-          }}
+          {...(isAdmin
+            ? {
+                onManageTiers: () => {
+                  void navigate(`${settingsPath(slug)}/customers`);
+                },
+              }
+            : {})}
           onDelete={() => {
             setDeleting([customer]);
           }}
@@ -710,19 +730,19 @@ export const Customers: React.FC = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={`Status filter: ${statusFilterLabel(statusFilter)}`}
+                aria-label={`Status filter: ${statusFilterLabel(statusFilter, statuses)}`}
                 {...trigger}
               >
                 {statusFilter !== 'all' && (
                   <CustomerStatusDot
-                    status={statusFilter === 'none' ? null : statusFilter}
+                    status={filterStatus(statusFilter, statuses)}
                   />
                 )}
-                {statusFilterLabel(statusFilter)}
+                {statusFilterLabel(statusFilter, statuses)}
               </Button>
             )}
           >
-            {(['all', ...CUSTOMER_STATUSES, 'none'] as StatusFilter[]).map(
+            {['all', ...statuses.map((status) => status.id), 'none'].map(
               (option) => (
                 <MenuItem
                   key={option}
@@ -734,10 +754,12 @@ export const Customers: React.FC = () => {
                     <span aria-hidden="true" className="w-2" />
                   ) : (
                     <CustomerStatusDot
-                      status={option === 'none' ? null : option}
+                      status={filterStatus(option, statuses)}
                     />
                   )}
-                  <span className="flex-1">{statusFilterLabel(option)}</span>
+                  <span className="flex-1">
+                    {statusFilterLabel(option, statuses)}
+                  </span>
                   {statusFilter === option && (
                     <LuCheck
                       aria-hidden="true"
@@ -823,9 +845,9 @@ export const Customers: React.FC = () => {
         ) : grouped ? (
           <div aria-label="Customers by status" role="group">
             {groups.map((group) => {
-              const label = customerStatusLabel(group.status);
+              const label = customerFieldLabel(group.status, 'No status');
               return (
-                <section key={group.status ?? 'none'} aria-label={label}>
+                <section key={group.status?.id ?? 'none'} aria-label={label}>
                   <h2 className="sticky top-8 z-10 flex h-8 items-center gap-2 border-b border-line bg-surface px-4 text-xs font-medium text-text lg:px-6">
                     <CustomerStatusDot status={group.status} />
                     {label}

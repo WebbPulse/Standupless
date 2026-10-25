@@ -1,21 +1,23 @@
 /**
  * The customer dialog, for adding a customer or editing one: a large name
- * field, then domains, tier, revenue and size, with the status and the
- * account owner as chips. Cmd or Ctrl and Enter saves it from anywhere in the dialog.
+ * field, then domains, revenue and size, with the status, the tier and the
+ * account owner as chips picking from the workspace's lists. Cmd or Ctrl and Enter saves it from anywhere in the dialog.
  */
 
 import React, { useState } from 'react';
 import { createCustomer, updateCustomer } from '../../api/customers';
+import useCustomerFields from '../../hooks/useCustomerFields';
 import { parseAmount, parseDomains } from '../../lib/customerDisplay';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import type { CustomerRead, CustomerStatus } from '../../types/Api';
+import type { CustomerRead } from '../../types/Api';
 import { LeadPicker } from '../planning/ProjectPickers';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import CustomerStatusPicker from './CustomerStatusPicker';
+import CustomerTierPicker from './CustomerTierPicker';
 
 /** Props for CustomerDialog: the customer to edit, or none to add one. */
 export interface CustomerDialogProps {
@@ -45,10 +47,13 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
 }) => {
   const [name, setName] = useState(customer?.name ?? initialName);
   const [domains, setDomains] = useState(customer?.domains.join(', ') ?? '');
-  const [status, setStatus] = useState<CustomerStatus | null>(
-    customer?.status ?? null
+  const { statuses, tiers } = useCustomerFields(workspaceId);
+  const [statusId, setStatusId] = useState<string | null>(
+    customer?.status_id ?? null
   );
-  const [tier, setTier] = useState(customer?.tier ?? '');
+  const [tierId, setTierId] = useState<string | null>(
+    customer?.tier_id ?? null
+  );
   const [ownerId, setOwnerId] = useState<string | null>(
     customer?.owner_id ?? null
   );
@@ -69,8 +74,8 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
     const body = {
       name: name.trim(),
       domains: parseDomains(domains),
-      status,
-      tier: tier.trim() === '' ? null : tier.trim(),
+      status_id: statusId,
+      tier_id: tierId,
       owner_id: ownerId,
       revenue: parseAmount(revenue),
       size: parseAmount(size),
@@ -136,17 +141,7 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
             setDomains(event.target.value);
           }}
         />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Field
-            id="customer-tier"
-            label="Tier"
-            placeholder="Enterprise"
-            maxLength={40}
-            value={tier}
-            onChange={(event) => {
-              setTier(event.target.value);
-            }}
-          />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
             id="customer-revenue"
             label="Annual revenue"
@@ -173,7 +168,19 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
           />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <CustomerStatusPicker value={status} onChange={setStatus} />
+          <CustomerStatusPicker
+            value={statusId}
+            valueName={customer?.status_name ?? null}
+            statuses={statuses}
+            onChange={setStatusId}
+          />
+          <CustomerTierPicker
+            variant="chip"
+            value={tierId}
+            valueName={customer?.tier ?? null}
+            tiers={tiers}
+            onChange={setTierId}
+          />
           <LeadPicker
             variant="chip"
             field="Owner"

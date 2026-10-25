@@ -30,6 +30,7 @@ import {
 import CustomerDialog from '../../components/customers/CustomerDialog';
 import CustomerRequestRow from '../../components/customers/CustomerRequestRow';
 import { CustomerStatusPicker } from '../../components/customers/CustomerStatusPicker';
+import { CustomerTierPicker } from '../../components/customers/CustomerTierPicker';
 import MergeCustomerDialog from '../../components/customers/MergeCustomerDialog';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
@@ -40,6 +41,7 @@ import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCustomerRequestActions } from '../../hooks/useCustomerRequestActions';
+import { useCustomerFields } from '../../hooks/useCustomerFields';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
@@ -60,8 +62,8 @@ import {
 import { showToast } from '../../lib/toast';
 import type {
   CustomerRead,
+  CustomerPatch,
   CustomerRequestRead,
-  CustomerStatus,
 } from '../../types/Api';
 
 /** How often the customer and its requests re-read. */
@@ -105,6 +107,7 @@ export const CustomerDetail: React.FC = () => {
     { intervalMs: POLL_MS, enabled, queryKey: requestsKey, auth }
   );
   const { customers } = useCustomers(workspaceId, isMember);
+  const { statuses, tiers } = useCustomerFields(workspaceId, isMember);
   const members = useWorkspaceMembers(workspaceId, isMember);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -190,16 +193,13 @@ export const CustomerDetail: React.FC = () => {
     );
   };
 
-  const setStatus = (status: CustomerStatus | null): void => {
-    updateCustomer(workspaceId, customer.customer_id, { status }).then(
+  const change = (patch: CustomerPatch, failed: string): void => {
+    updateCustomer(workspaceId, customer.customer_id, patch).then(
       () => {
         refresh();
       },
       (failure: unknown) => {
-        showToast(
-          errorMessage(failure, 'Could not change the status.'),
-          'error'
-        );
+        showToast(errorMessage(failure, failed), 'error');
       }
     );
   };
@@ -345,8 +345,15 @@ export const CustomerDetail: React.FC = () => {
           <dl>
             <Property label="Status">
               <CustomerStatusPicker
-                value={customer.status}
-                onChange={setStatus}
+                value={customer.status_id}
+                valueName={customer.status_name}
+                statuses={statuses}
+                onChange={(statusId) => {
+                  change(
+                    { status_id: statusId },
+                    'Could not change the status.'
+                  );
+                }}
                 disabled={!customer.can_edit}
                 variant="rail"
                 className="-my-1 -ml-2"
@@ -366,7 +373,17 @@ export const CustomerDetail: React.FC = () => {
               )}
             </Property>
             <Property label="Tier">
-              {customer.tier ?? <Unset label="No tier" />}
+              <CustomerTierPicker
+                value={customer.tier_id}
+                valueName={customer.tier}
+                tiers={tiers}
+                onChange={(tierId) => {
+                  change({ tier_id: tierId }, 'Could not change the tier.');
+                }}
+                disabled={!customer.can_edit}
+                variant="rail"
+                className="-my-1 -ml-2"
+              />
             </Property>
             <Property label="Owner">
               {owner === undefined ? (

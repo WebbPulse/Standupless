@@ -110,6 +110,12 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
         Project statuses
       </NavLink>
       <NavLink
+        to={`/w/${workspace.slug}/settings/customers`}
+        className={tabClass}
+      >
+        Customers
+      </NavLink>
+      <NavLink
         to={`/w/${workspace.slug}/settings/templates`}
         className={tabClass}
       >

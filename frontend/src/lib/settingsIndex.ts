@@ -448,6 +448,14 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     path: (slug) => `${settingsPath(slug)}/project-statuses`,
   },
   {
+    id: 'customers',
+    title: 'Customers',
+    scope: 'workspace',
+    paletteLabel: 'Customer statuses and tiers',
+    synonyms: ['customer statuses', 'customer tiers', 'account tiers'],
+    path: (slug) => `${settingsPath(slug)}/customers`,
+  },
+  {
     id: 'templates',
     title: 'Templates',
     scope: 'workspace',
