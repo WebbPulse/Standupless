@@ -470,7 +470,7 @@ export class RealtimeConnection {
     if (this.stopped) return;
     const refresh = this.refreshNext;
     this.refreshNext = false;
-    let token: string | null = null;
+    let token: string | null;
     try {
       token = await this.options.getToken(refresh);
     } catch {
