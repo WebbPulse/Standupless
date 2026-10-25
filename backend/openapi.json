@@ -11969,7 +11969,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Each requested key, uppercased, to the id of the issue it names, which a moved or renamed key needs.",
+            "description": "Each requested key, uppercased, to the id of the issue it names, even under a retired prefix.",
             "title": "Resolved",
             "type": "object"
           }

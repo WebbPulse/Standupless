@@ -508,7 +508,7 @@ class IssueLookupRead(BaseModel):
     issues: list[IssueRead] = Field(default_factory=list)
     resolved: dict[str, str] = Field(
         default_factory=dict,
-        description="Each requested key, uppercased, to the id of the issue it names, which a moved or renamed key needs.",
+        description="Each requested key, uppercased, to the id of the issue it names, even under a retired prefix.",
     )
 
 

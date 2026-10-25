@@ -21,7 +21,6 @@ import { setMentionLookup } from '../../lib/issueMentions';
 import type {
   IssueLookupRead,
   IssueRead,
-  StatusRead,
   TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
@@ -36,7 +35,7 @@ vi.mock('../../api/teams', async (importOriginal) => ({
         name: 'In Progress',
         category: 'started',
         position: 1,
-      } as StatusRead,
+      },
     ]),
 }));
 
