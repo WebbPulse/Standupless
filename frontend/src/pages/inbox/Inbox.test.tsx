@@ -19,6 +19,9 @@
  * without a new read, and Shift Backspace offers to delete every read row.
  * With the split inbox on, the Priority and Other tabs each read their own
  * bucket and show their unread counts, and Mark all read keeps to the open tab.
+ * On a touch screen a long swipe left removes a row and a long swipe right
+ * marks it read, each with Undo, and a short swipe holds the row open on the
+ * action's button.
  */
 
 import {
@@ -52,9 +55,17 @@ import {
 } from '../../lib/undo';
 import BoundKeys from '../../test/BoundKeys';
 import { boundKeys, keysBound } from '../../test/shortcuts';
+import { swipe } from '../../test/touch';
 import Inbox from './Inbox';
 
 const auth = vi.hoisted(() => ({ user: null as UserRead | null }));
+const pointer = vi.hoisted(() => ({ coarse: false }));
+
+vi.mock('../../hooks/useCoarsePointer', () => ({
+  useCoarsePointer: () => pointer.coarse,
+}));
+
+vi.mock('../../lib/haptics', () => ({ buzz: () => undefined }));
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
 const getInboxCounts = vi.fn<() => Promise<Required<InboxCountRead>>>();
 const updatePreferences =
@@ -253,6 +264,7 @@ afterEach(() => {
 
 beforeEach(() => {
   clearUndo();
+  pointer.coarse = false;
   auth.user = null;
   globalThis.localStorage.removeItem('standupless.inbox.tab');
   getInboxCounts.mockReset();
@@ -1706,5 +1718,49 @@ describe('split inbox', () => {
     const [query] = listInbox.mock.calls[0] ?? [];
     expect(query).not.toHaveProperty('bucket');
     expect(getInboxCounts).not.toHaveBeenCalled();
+  });
+});
+
+describe('inbox touch gestures', () => {
+  beforeEach(() => {
+    pointer.coarse = true;
+  });
+
+  it('removes a row on a long swipe left, with undo', async () => {
+    renderPage();
+
+    swipe(await screen.findByText('Cache the token'), -300);
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
+  });
+
+  it('marks a row read on a long swipe right, with undo', async () => {
+    renderPage();
+
+    swipe(await screen.findByText('Cache the token'), 300);
+
+    await waitFor(() => {
+      expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+    expect(currentUndo().at(-1)?.message).toBe('Marked ENG-1 read');
+    await act(async () => {
+      await undoLast('ws-1');
+    });
+    expect(markUnread).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+  });
+
+  it('holds a short swipe open on the delete button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    swipe(await screen.findByText('Cache the token'), -80);
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Delete notification', hidden: true })
+    );
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
   });
 });

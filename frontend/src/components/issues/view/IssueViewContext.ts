@@ -75,6 +75,14 @@ export interface IssueViewEnv {
   peek: (issue: OrderedIssueRead) => void;
   /** Opens the row menu for an issue at the pointer, where the view has one. */
   openMenu?: (issue: OrderedIssueRead, x: number, y: number) => void;
+  /** Opens the status picker for one issue, as a swipe right on a touch row does. */
+  openStatus?: ((issue: OrderedIssueRead) => void) | undefined;
+  /**
+   * Opens the quick menu of assign to me, priority and a reminder for one
+   * issue at a point, as a swipe left on a touch row does.
+   */
+  openQuickMenu?:
+    ((issue: OrderedIssueRead, x: number, y: number) => void) | undefined;
   /** Remembers the view's order as an issue opens, where the view tracks it. */
   onOpen?: () => void;
   /**

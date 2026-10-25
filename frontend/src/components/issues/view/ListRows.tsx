@@ -24,6 +24,11 @@
  * refuse the drop. A drag on a selected row carries the selection, with a
  * count badge, in one write with one undo entry. Nested sub-issues move as
  * their own issues and keep their parent.
+ *
+ * On a touch screen a row takes gestures instead of a drag: a swipe right
+ * opens its status picker, a swipe left its quick menu of assign to me,
+ * priority and a reminder, and a long press the same menu a right click
+ * opens. A mouse still drags rows exactly as above.
  */
 
 import React from 'react';
@@ -94,6 +99,8 @@ import {
 } from './issueDrop';
 import { ParentPrefix, SubIssueProgressChip, TreeGuides } from './SubIssueCues';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
+import { useCoarsePointer } from '../../../hooks/useCoarsePointer';
+import { useSwipeActions } from '../../../hooks/useSwipeActions';
 
 /** One group with its sub-groups, when the view is sub-grouped. */
 export interface IssueSection {
@@ -639,22 +646,66 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
     depth === 0 ? (env.parentOf?.(issue) ?? parentRefOf(issue)) : undefined;
   const showsProgress = shows('sub_issues') && issue.progress.total > 0;
   const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
+  const coarse = useCoarsePointer();
+  const own = React.useRef<HTMLLIElement | null>(null);
+  const setRow = React.useCallback(
+    (node: HTMLLIElement | null) => {
+      own.current = node;
+      rowRef?.(node);
+    },
+    [rowRef]
+  );
+  const editable =
+    env.canEdit && (env.canEditIssue === undefined || env.canEditIssue(issue));
+  const { openStatus, openQuickMenu, openMenu } = env;
+  const swipe = useSwipeActions({
+    enabled: coarse,
+    right:
+      editable && openStatus !== undefined
+        ? {
+            onCommit: () => {
+              openStatus(issue);
+            },
+          }
+        : undefined,
+    left:
+      openQuickMenu === undefined
+        ? undefined
+        : {
+            onCommit: () => {
+              const box = own.current?.getBoundingClientRect();
+              openQuickMenu(issue, box?.right ?? 0, box?.bottom ?? 0);
+            },
+          },
+    onLongPress:
+      openMenu === undefined
+        ? undefined
+        : (x, y) => {
+            openMenu(issue, x, y);
+          },
+  });
+  const rowPointerDown = drag?.onPointerDown;
 
   return (
     <li
-      ref={rowRef}
+      ref={setRow}
       data-row-id={issue.id}
       aria-selected={isSelected}
       {...(tree === undefined ? {} : { 'aria-level': tree.depth + 1 })}
+      {...swipe.handlers}
       {...(drag === undefined
         ? {}
         : {
-            draggable: drag.draggable,
-            onPointerDown: drag.onPointerDown,
+            draggable: drag.draggable && !coarse,
             onDragStart: drag.onDragStart,
             onDragEnd: drag.onDragEnd,
             onDragOver: drag.onDragOver,
           })}
+      onPointerDown={(event) => {
+        rowPointerDown?.(event);
+        swipe.handlers.onPointerDown(event);
+      }}
+      style={swipe.style}
       onMouseMove={() => {
         if (!isFocused) env.focus(issue.id);
       }}
@@ -672,7 +723,11 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
             : 'hover:bg-surface',
         isFocused &&
           'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent',
-        drag?.dimmed === true && 'opacity-40'
+        drag?.dimmed === true && 'opacity-40',
+        coarse && 'touch-pan-y select-none [-webkit-touch-callout:none]',
+        coarse &&
+          !swipe.dragging &&
+          'motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-out'
       )}
     >
       <span
@@ -745,7 +800,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
         to={issuePath(env.slug, issue.key)}
         {...prefetch}
         {...titleTip.handlers}
-        {...(drag?.draggable === true ? { draggable: false } : {})}
+        {...(drag?.draggable === true && !coarse ? { draggable: false } : {})}
         data-hover="parent"
         onClick={(event) => {
           if (event.shiftKey && selectable) {
