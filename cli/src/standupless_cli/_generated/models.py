@@ -1173,20 +1173,19 @@ class InitiativeUpdateCreate(TypedDict):
 class InitiativeUpdatePatch(TypedDict):
     body: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    hide_details: NotRequired[bool | None]
 
 
-class InitiativeUpdateRead(TypedDict):
-    author_id: str
-    body: str
-    can_edit: NotRequired[bool]
-    created_at: str
-    edited_at: NotRequired[str | None]
-    health: Literal["on_track", "at_risk", "off_track"]
-    initiative_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
-    update_id: str
-    updated_at: str
-    workspace_id: str
+class InitiativeUpdateSnapshotRead(TypedDict):
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    owner_id: NotRequired[str | None]
+    owner_name: NotRequired[str | None]
+    project_count: NotRequired[int]
+    projects_by_health: NotRequired[dict[str, int]]
+    projects_by_status: NotRequired[dict[str, int]]
+    status: NotRequired[Literal["planned", "active", "completed"] | None]
+    target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
 
 
 class InitiativesDisplay(TypedDict):
@@ -4442,9 +4441,22 @@ class InitiativeRead(TypedDict):
     workspace_id: str
 
 
-class InitiativeUpdateListRead(TypedDict):
-    next_cursor: NotRequired[str | None]
-    updates: list[InitiativeUpdateRead]
+class InitiativeUpdateRead(TypedDict):
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
+    initiative_id: str
+    previous_snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
+    report: NotRequired[list[str]]
+    snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    update_id: str
+    updated_at: str
+    workspace_id: str
 
 
 class InsightBucket(TypedDict):
@@ -5189,6 +5201,11 @@ class HomeRead(TypedDict):
 class InitiativeListRead(TypedDict):
     initiatives: list[InitiativeRead]
     next_cursor: NotRequired[str | None]
+
+
+class InitiativeUpdateListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    updates: list[InitiativeUpdateRead]
 
 
 class IssueConversionRead(TypedDict):

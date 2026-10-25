@@ -127,6 +127,26 @@ def test_the_update_feed_moves_the_initiatives_health(client: TestClient, reposi
     assert left.last_update_at is None
 
 
+def test_the_update_feed_answers_each_updates_report(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The second update's report names what moved since the first, and hide_details empties it."""
+    writer = mint_for(repositories, MEMBER, PROJECTS)
+    initiative_id = answer(tool(client, writer, "create_initiative", {"name": "Grow"}))["initiative_id"]
+    base = {"initiative_id": initiative_id, "body": "Note"}
+    first = answer(tool(client, writer, "create_initiative_update", {**base, "health": "on_track"}))
+    second = answer(tool(client, writer, "create_initiative_update", {**base, "health": "at_risk"}))
+    listed = answer(tool(client, writer, "list_initiative_updates", {"initiative_id": initiative_id}))
+
+    assert first["report"] == []
+    assert second["report"] == ["Health changed from On track to At risk"]
+    assert [row["report"] for row in listed["updates"]] == [second["report"], []]
+    assert listed["updates"][0]["hide_details"] is False
+
+    ref = {"initiative_id": initiative_id, "update_id": second["update_id"]}
+    hidden = answer(tool(client, writer, "update_initiative_update", {**ref, "hide_details": True}))
+    assert hidden["hide_details"] is True
+    assert hidden["report"] == []
+
+
 def test_a_guest_is_refused_initiatives(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest neither lists, creates nor finds an initiative by name."""
     answer(tool(client, mint_for(repositories, MEMBER, PROJECTS), "create_initiative", {"name": "Grow"}))

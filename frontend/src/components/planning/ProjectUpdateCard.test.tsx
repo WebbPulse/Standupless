@@ -3,7 +3,8 @@
  * update's groups with the reader's own pressed and toggles through the update
  * thread routes, that the reply toggle names the count and opens the replies
  * only when asked, that a reply posts through the shared editor and reacts on
- * itself by comment id, and that an initiative update carries no thread.
+ * itself by comment id, that an initiative update carries no thread, and that
+ * each kind of update draws its progress report.
  *
  * The emoji dataset is loaded once before the tests, so its cold import is not
  * paid inside a wait.
@@ -306,6 +307,69 @@ describe('ProjectUpdateCard progress report', () => {
 
   it('shows no report on an update from before snapshots', () => {
     renderCard(update());
+    expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+});
+
+describe('ProjectUpdateCard initiative report', () => {
+  const initiativeSnapshot = {
+    owner_id: null,
+    owner_name: null,
+    status: 'active' as const,
+    target_date: null,
+    target_date_resolution: null,
+    health: 'on_track' as const,
+    project_count: 2,
+    projects_by_status: { in_progress: 2 },
+    projects_by_health: { on_track: 2 },
+  };
+
+  /** An initiative update carrying the report lines the server diffed. */
+  const initiativeUpdate = (
+    over: Partial<InitiativeUpdateRead> = {}
+  ): InitiativeUpdateRead => ({
+    update_id: 'upd-3',
+    initiative_id: 'ini-1',
+    workspace_id: 'ws-1',
+    body: 'Initiative moving',
+    health: 'at_risk',
+    author_id: 'user-1',
+    created_at: '2026-10-20T00:00:00Z',
+    updated_at: '2026-10-20T00:00:00Z',
+    edited_at: null,
+    can_edit: false,
+    ...over,
+  });
+
+  it('shows what changed since the last initiative update', () => {
+    renderCard(
+      initiativeUpdate({
+        snapshot: { ...initiativeSnapshot, health: 'at_risk' },
+        previous_snapshot: initiativeSnapshot,
+        report: ['Health changed from On track to At risk', 'Projects 2 to 3'],
+      })
+    );
+
+    const report = screen.getByRole('list', { name: 'Progress report' });
+    expect(
+      within(report).getByText('Health changed from On track to At risk')
+    ).toBeTruthy();
+    expect(within(report).getByText('Projects 2 to 3')).toBeTruthy();
+  });
+
+  it('shows no report on a first update', () => {
+    renderCard(
+      initiativeUpdate({
+        snapshot: initiativeSnapshot,
+        previous_snapshot: null,
+        report: [],
+      })
+    );
+    expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+
+  it('shows no report on an update from before snapshots', () => {
+    renderCard(initiativeUpdate());
     expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
   });
 });

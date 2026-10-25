@@ -25,6 +25,7 @@ from app.common.db.dynamo.planning import (
     Cycle,
     Initiative,
     InitiativeUpdateRow,
+    InitiativeUpdateSnapshot,
     ProgressMeasure,
     Project,
     ProjectActivityRow,
@@ -1946,10 +1947,11 @@ class InitiativeUpdateCreate(BaseModel):
 
 
 class InitiativeUpdatePatch(BaseModel):
-    """The body an initiative update patch takes; either field may be left out, neither cleared."""
+    """The body an initiative update patch takes; any field may be left out, none cleared."""
 
     body: Optional[str] = None
     health: Optional[ProjectHealthField] = None
+    hide_details: Optional[bool] = Field(default=None, description="Hide or show the update's progress report")
 
     @field_validator("body")
     @classmethod
@@ -1958,8 +1960,41 @@ class InitiativeUpdatePatch(BaseModel):
         return _check_update_body(value)
 
 
+class InitiativeUpdateSnapshotRead(BaseModel):
+    """Where an initiative stood when an update was posted, as the API returns it.
+
+    `projects_by_status` counts the rolled up projects every member can see by
+    status category, and `projects_by_health` by health.
+    """
+
+    owner_id: Optional[str] = None
+    owner_name: Optional[str] = None
+    status: Optional[InitiativeStatusField] = None
+    target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = None
+    health: Optional[ProjectHealthField] = None
+    project_count: int = 0
+    projects_by_status: dict[str, int] = Field(default_factory=dict)
+    projects_by_health: dict[str, int] = Field(default_factory=dict)
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Optional[InitiativeUpdateSnapshot]) -> Optional["InitiativeUpdateSnapshotRead"]:
+        """The response shape of a stored snapshot, or None without one."""
+        if snapshot is None:
+            return None
+        fields = snapshot.model_dump()
+        fields["target_date_resolution"] = read_resolution(snapshot.target_date, snapshot.target_date_resolution)
+        return cls.model_validate(fields)
+
+
 class InitiativeUpdateRead(BaseModel):
-    """One initiative update as the API returns it, with this caller's edit right."""
+    """One initiative update as the API returns it, with this caller's edit right.
+
+    `snapshot` and `previous_snapshot` are what the progress report diffs: the
+    initiative when this update was posted, and when the one before it was.
+    `report` is that diff as plain lines, empty on a first update, on one
+    posted before reports existed, and when `hide_details` says its author hid it.
+    """
 
     update_id: str
     initiative_id: str
@@ -1972,10 +2007,16 @@ class InitiativeUpdateRead(BaseModel):
     updated_at: datetime
     edited_at: Optional[datetime] = None
     can_edit: bool = False
+    snapshot: Optional[InitiativeUpdateSnapshotRead] = None
+    previous_snapshot: Optional[InitiativeUpdateSnapshotRead] = None
+    hide_details: bool = False
+    report: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_row(cls, update: InitiativeUpdateRow, *, can_edit: bool) -> "InitiativeUpdateRead":
-        """Build the response shape from a stored update row."""
+    def from_row(
+        cls, update: InitiativeUpdateRow, *, can_edit: bool, report: Optional[list[str]] = None
+    ) -> "InitiativeUpdateRead":
+        """Build the response shape from a stored update row and the report its snapshots give."""
         return cls(
             update_id=update.update_id,
             initiative_id=update.initiative_id,
@@ -1988,6 +2029,10 @@ class InitiativeUpdateRead(BaseModel):
             updated_at=update.updated_at,
             edited_at=update.edited_at,
             can_edit=can_edit,
+            snapshot=InitiativeUpdateSnapshotRead.from_snapshot(update.snapshot),
+            previous_snapshot=InitiativeUpdateSnapshotRead.from_snapshot(update.previous_snapshot),
+            hide_details=update.hide_details,
+            report=report or [],
         )
 
 

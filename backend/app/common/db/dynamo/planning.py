@@ -717,8 +717,34 @@ class Initiative(BaseModel):
     import_batch_id: str | None = None
 
 
+class InitiativeUpdateSnapshot(BaseModel):
+    """Where an initiative stood when an update was posted, for the report of what changed since the last one.
+
+    `health` is the health the update called. `projects_by_status` counts the
+    rolled up projects by status category and `projects_by_health` by health,
+    a project with no health counted under neither. The owner's name is copied
+    so the report reads the same after a rename.
+    """
+
+    owner_id: str | None = None
+    owner_name: str | None = None
+    status: str | None = None
+    target_date: str | None = None
+    target_date_resolution: str | None = None
+    health: str | None = None
+    project_count: int = 0
+    projects_by_status: dict[str, int] = Field(default_factory=dict)
+    projects_by_health: dict[str, int] = Field(default_factory=dict)
+
+
 class InitiativeUpdateRow(BaseModel):
-    """One written status update on an initiative, with the health it reported."""
+    """One written status update on an initiative, with the health it reported.
+
+    `snapshot` is where the initiative stood when the update was posted and
+    `previous_snapshot` the one the update before it recorded, so the report of
+    what changed reads off one row. Both are None on an update posted before
+    snapshots existed, and `hide_details` is the author's choice to hide it.
+    """
 
     workspace_id: str
     planning_key: str
@@ -732,6 +758,9 @@ class InitiativeUpdateRow(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
+    snapshot: InitiativeUpdateSnapshot | None = None
+    previous_snapshot: InitiativeUpdateSnapshot | None = None
+    hide_details: bool = False
 
 
 class MilestoneSnapshot(BaseModel):
@@ -1150,10 +1179,13 @@ def is_initiative(item: Mapping[str, Any]) -> bool:
 
 
 def as_initiative_update_item(update: InitiativeUpdateRow) -> dict[str, Any]:
-    """One initiative update as the stored item, an unedited one carrying no `edited_at`."""
+    """One initiative update as the stored item, with no empty optional field and no `hide_details` left off."""
     item = update.model_dump(mode="json")
-    if item.get("edited_at") is None:
-        item.pop("edited_at", None)
+    for name in ("edited_at", "snapshot", "previous_snapshot"):
+        if item.get(name) is None:
+            item.pop(name, None)
+    if not item.get("hide_details"):
+        item.pop("hide_details", None)
     return item
 
 
