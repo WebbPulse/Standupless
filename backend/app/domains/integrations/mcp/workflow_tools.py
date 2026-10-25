@@ -293,8 +293,8 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_workspace_status",
         description=(
-            "Rename a workspace status, change its category, color, icon or description, or move it, in every team at once. "
-            "Needs workspace admin."
+            "Rename a workspace status, change its category, color, icon or description, or move it, "
+            "in every team at once. Needs workspace admin."
         ),
         scopes=("statuses:write", "admin"),
         schema=object_schema(
@@ -410,9 +410,10 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="override_team_status",
         description=(
-            "Hide an inherited workspace status in one team, show it again, or give it a team-only name or description. "
-            "Needs team admin; the team's last visible status of a category cannot be hidden, and neither can "
-            "one that unarchived issues are still in, so move them first."
+            "Hide an inherited workspace status in one team, show it again, "
+            "or give it a team-only name or description. Needs team admin; the team's last visible status "
+            "of a category cannot be hidden, and neither can one that unarchived issues are still in, "
+            "so move them first."
         ),
         scopes=("statuses:write",),
         schema=object_schema(
