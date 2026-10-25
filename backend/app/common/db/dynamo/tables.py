@@ -526,7 +526,7 @@ after API Gateway's two hour connection limit, so a missed disconnect cleans its
 
 REALTIME_PRESENCE = TableSpec(
     suffix="realtime_presence",
-    partition_key=KeyAttribute("entity_key"),
+    partition_key=KeyAttribute("ws_entity"),
     sort_key=KeyAttribute("connection_id"),
     indexes=(
         IndexSpec(

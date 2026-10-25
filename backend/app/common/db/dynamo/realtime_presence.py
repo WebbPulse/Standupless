@@ -70,7 +70,7 @@ class Presence:
     def key(self) -> dict[str, str]:
         """The row's primary key."""
         return {
-            "entity_key": entity_key(self.workspace_id, self.kind, self.entity_id),
+            "ws_entity": entity_key(self.workspace_id, self.kind, self.entity_id),
             "connection_id": self.connection_id,
         }
 
@@ -125,7 +125,7 @@ class RealtimePresenceRepository:
     def get(self, workspace_id: str, kind: str, entity_id: str, connection_id: str) -> Presence | None:
         """One connection's row on one entity, or `None`, expired rows included."""
         item = self._repository.get(
-            {"entity_key": entity_key(workspace_id, kind, entity_id), "connection_id": connection_id}
+            {"ws_entity": entity_key(workspace_id, kind, entity_id), "connection_id": connection_id}
         )
         return Presence.from_item(item) if item is not None else None
 
@@ -163,7 +163,7 @@ class RealtimePresenceRepository:
     ) -> list[Presence]:
         """Every live row on one entity, oldest open first."""
         rows = self._repository.iter_query(
-            Key("entity_key").eq(entity_key(workspace_id, kind, entity_id)), max_items=ENTITY_VIEWERS_MAX
+            Key("ws_entity").eq(entity_key(workspace_id, kind, entity_id)), max_items=ENTITY_VIEWERS_MAX
         )
         live = [presence for presence in (Presence.from_item(row) for row in rows) if not presence.expired(now)]
         return sorted(live, key=lambda presence: (presence.opened_at, presence.connection_id))

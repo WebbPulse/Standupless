@@ -483,7 +483,7 @@
   "realtime_presence": {
     "attributes": [
       {
-        "name": "entity_key",
+        "name": "ws_entity",
         "type": "S"
       },
       {
@@ -499,7 +499,7 @@
         "range_key": null
       }
     ],
-    "hash_key": "entity_key",
+    "hash_key": "ws_entity",
     "range_key": "connection_id",
     "stream_view_type": null,
     "ttl_attribute": "expires_at"
