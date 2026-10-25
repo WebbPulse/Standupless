@@ -96,7 +96,7 @@ describe('label group grouping', () => {
     const fields = groupFieldsFor(context);
     const at = fields.indexOf('label');
 
-    expect(fields.slice(at, at + 3)).toEqual([
+    expect(fields.slice(at, at + 4)).toEqual([
       'label',
       'label_group:grp-area',
       'label_group:grp-os',
