@@ -37,6 +37,7 @@ from app.common.db.dynamo.team_config import (
     Label,
     ParentAutoCloseSettings,
     SlaSettings,
+    SlaStartMode,
     Status,
     TeamDisplayDefaults,
     TriageRule,
@@ -654,6 +655,10 @@ class SlaSettingsUpdate(BaseModel):
     breaches, from one hour to ninety days; `null` removes that priority's rule.
     `paused_status_ids` replaces the set of open statuses whose time does not
     count toward a breach; `null` or an empty list pauses in none.
+    `start_mode` picks when a timer starts: `on_triage_exit` once an issue
+    leaves triage, `on_creation` from when it was filed, triage included. A
+    change applies from each issue's next priority, status or triage move and
+    leaves timers already running alone.
     """
 
     enabled: Optional[StrictBool] = None
@@ -662,6 +667,7 @@ class SlaSettingsUpdate(BaseModel):
     medium_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
     low_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
     paused_status_ids: Optional[list[str]] = Field(default=None, max_length=MAX_SLA_PAUSED_STATUSES)
+    start_mode: Optional[SlaStartMode] = None
 
 
 class SlaSettingsRead(BaseModel):
@@ -674,6 +680,7 @@ class SlaSettingsRead(BaseModel):
     medium_hours: Optional[int] = None
     low_hours: Optional[int] = None
     paused_status_ids: list[str] = Field(default_factory=list)
+    start_mode: SlaStartMode = "on_triage_exit"
     updated_at: Optional[datetime] = None
 
     @classmethod
@@ -687,6 +694,7 @@ class SlaSettingsRead(BaseModel):
             medium_hours=settings.medium_hours,
             low_hours=settings.low_hours,
             paused_status_ids=list(settings.paused_status_ids),
+            start_mode=settings.start_mode,
             updated_at=settings.updated_at,
         )
 

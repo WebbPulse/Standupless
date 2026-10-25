@@ -4,7 +4,7 @@
  * hours choice each save at once and confirm, that a stored value off the
  * list still shows, that a reader sees the rules without changing them, and
  * that ticking an open status adds it to the paused set while finished
- * statuses are not offered.
+ * statuses are not offered, and that the start timer select saves the mode.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -152,6 +152,34 @@ describe('the SLA section', () => {
     await userEvent.selectOptions(screen.getByLabelText('Urgent'), 'off');
     await waitFor(() => {
       expect(updateSlaSettings).toHaveBeenCalledWith({ urgent_hours: null });
+    });
+  });
+
+  it('saves the start mode as soon as it is picked', async () => {
+    renderSection();
+
+    const start =
+      await screen.findByLabelText<HTMLSelectElement>('Start timer');
+    expect(start).toHaveValue('on_triage_exit');
+    expect(
+      Array.from(start.options).map((option) => option.textContent)
+    ).toEqual(['When the issue leaves triage', 'When the issue is created']);
+
+    getSlaSettings.mockResolvedValue(settings({ start_mode: 'on_creation' }));
+    await userEvent.selectOptions(start, 'on_creation');
+
+    await waitFor(() => {
+      expect(updateSlaSettings).toHaveBeenCalledWith({
+        start_mode: 'on_creation',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Start timer')).toHaveValue('on_creation');
+    });
+    await waitFor(() => {
+      expect(currentToasts().map((toast) => toast.message)).toEqual([
+        'SLA timers count from creation.',
+      ]);
     });
   });
 

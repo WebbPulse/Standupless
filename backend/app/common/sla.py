@@ -4,8 +4,15 @@ Follows Linear. A team's rules give each priority a number of hours. An open
 issue with a ruled priority gets a timer when it is created, leaves triage, or
 reopens; changing its priority keeps the start and moves the deadline to the new
 priority's hours, or drops the timer when the new priority has no rule. Finishing
-the issue, or sending it back to triage, drops the timer. A timer is never
-restarted while it runs, so moving between open statuses leaves it alone.
+or archiving the issue drops the timer, and so, by default, does sending it back
+to triage. A timer is never restarted while it runs, so moving between open
+statuses leaves it alone.
+
+A team may instead start its timers at creation, triage included, the way
+Linear's start mode does. Then an issue in triage keeps or starts a timer like
+any open issue, and a timer that starts late, because the priority was set
+afterwards, still counts from `created_at`. A reopened issue starts a fresh
+window from the reopen in either mode.
 
 A team may also pick open statuses that pause the timer, the way Linear leaves
 time in chosen statuses out of an SLA. Entering one stamps `sla_paused_at`, and
@@ -133,13 +140,19 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
     if previous is None or previous.status_id != updated.status_id or previous.team_id != updated.team_id:
         category = _category(repositories, updated)
         stamp_completion(updated, category, now)
-    if updated.in_triage or updated.archived_at is not None:
+    if updated.archived_at is not None:
         _clear(updated)
         return
+    settings: SlaSettings | None = None
+    if updated.in_triage:
+        settings = team_sla_settings(repositories, updated.workspace_id, updated.team_id)
+        if settings.start_mode != "on_creation":
+            _clear(updated)
+            return
     if (category if category is not None else _category(repositories, updated)) in FINISHED_CATEGORIES:
         _clear(updated)
         return
-    settings = team_sla_settings(repositories, updated.workspace_id, updated.team_id)
+    settings = settings or team_sla_settings(repositories, updated.workspace_id, updated.team_id)
     hours = settings.hours_for(updated.priority)
     priority_moved = previous is not None and previous.priority != updated.priority
     team_moved = previous is not None and previous.team_id != updated.team_id
@@ -149,12 +162,27 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
             _clear(updated)
             return
     elif updated.sla_started_at is None or updated.sla_breaches_at is None:
-        updated.sla_started_at = moment
-        updated.sla_breaches_at = moment + timedelta(hours=hours)
+        start = _timer_start(previous, updated, settings, moment)
+        updated.sla_started_at = start
+        updated.sla_breaches_at = start + timedelta(hours=hours)
         updated.sla_paused_at = None
     elif priority_moved or team_moved:
         updated.sla_breaches_at = updated.sla_started_at + timedelta(hours=hours)
     hold_sla(updated, settings.pauses_in(updated.status_id), moment)
+
+
+def _reopened(previous: Issue | None) -> bool:
+    """Whether the row an issue replaces was finished or archived, so its next timer is a new window."""
+    if previous is None:
+        return False
+    return previous.completed_at is not None or previous.cancelled_at is not None or previous.archived_at is not None
+
+
+def _timer_start(previous: Issue | None, updated: Issue, settings: SlaSettings, moment: datetime) -> datetime:
+    """The moment a new timer counts from: `created_at` in creation mode, unless the issue reopened, else `moment`."""
+    if settings.start_mode == "on_creation" and not _reopened(previous):
+        return min(updated.created_at, moment)
+    return moment
 
 
 def hold_sla(issue: Issue, paused: bool, now: datetime | None = None) -> bool:

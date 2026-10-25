@@ -64,6 +64,7 @@ def test_unsaved_settings_read_as_off_with_the_defaults(client: TestClient, team
         "medium_hours": None,
         "low_hours": None,
         "paused_status_ids": [],
+        "start_mode": "on_triage_exit",
         "updated_at": None,
     }
 
@@ -91,6 +92,19 @@ def test_enabled_must_be_a_boolean(client: TestClient, team: str) -> None:
     """A string is not read as a switch."""
     sign_in(client, ADMIN)
     assert client.patch(URL, json={"enabled": "yes"}).status_code == 422
+
+
+def test_the_start_mode_saves_on_its_own(client: TestClient, team: str) -> None:
+    """A team may count from creation, an unknown mode is refused, and a patch without it keeps it."""
+    sign_in(client, ADMIN)
+    saved = client.patch(URL, json={"start_mode": "on_creation"})
+    refused = client.patch(URL, json={"start_mode": "on_accept"})
+    kept = client.patch(URL, json={"urgent_hours": 4})
+
+    assert saved.status_code == 200 and saved.json()["start_mode"] == "on_creation"
+    assert refused.status_code == 422
+    assert kept.json()["start_mode"] == "on_creation"
+    assert client.patch(URL, json={"start_mode": "on_triage_exit"}).json()["start_mode"] == "on_triage_exit"
 
 
 def test_an_admin_turns_them_on_and_sets_each_priority(client: TestClient, team: str) -> None:

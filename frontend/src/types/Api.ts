@@ -2540,6 +2540,9 @@ export interface ArchiveSettingsUpdate {
  * priority, and the open statuses whose time does not count toward a breach.
  * `updated_at` is null until first saved.
  */
+/** When a team's SLA timers start: once an issue leaves triage, or from when it was created. */
+export type SlaStartMode = 'on_triage_exit' | 'on_creation';
+
 export interface SlaSettingsRead {
   team_id: string;
   enabled: boolean;
@@ -2549,12 +2552,15 @@ export interface SlaSettingsRead {
   low_hours: number | null;
   /** Open statuses that pause the timer. Optional so an older answer reads as none. */
   paused_status_ids?: string[];
+  /** When timers start. Optional so an older answer reads as on_triage_exit. */
+  start_mode?: SlaStartMode;
   updated_at: string | null;
 }
 
 /**
  * The editable fields of a team's SLA rules. Hours are whole, 1 to 2160.
  * `paused_status_ids` replaces the paused set, at most 50 open statuses.
+ * `start_mode` applies from each issue's next move, leaving running timers alone.
  */
 export interface SlaSettingsUpdate {
   enabled?: boolean;
@@ -2563,6 +2569,7 @@ export interface SlaSettingsUpdate {
   medium_hours?: number | null;
   low_hours?: number | null;
   paused_status_ids?: string[] | null;
+  start_mode?: SlaStartMode;
 }
 
 /** What triage duty does as an issue enters the inbox: tell everyone on duty, or assign one of them. */

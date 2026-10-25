@@ -52,6 +52,7 @@ from app.common.db.dynamo.team_config import (
     MAX_SLA_PAUSED_STATUSES,
     MAX_UPCOMING_CYCLES,
     SLA_PRIORITIES,
+    SLA_START_MODES,
     TEAM_SCOPE,
     ArchiveSettings,
     AutoCloseSettings,
@@ -267,6 +268,7 @@ def _sla_settings_json(settings: SlaSettings) -> dict[str, Any]:
         "enabled": settings.enabled,
         **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS},
         "paused_status_ids": list(settings.paused_status_ids),
+        "start_mode": settings.start_mode,
     }
 
 
@@ -716,7 +718,10 @@ def _update_sla_settings(call: ToolCall) -> Any:
     """Turn a team's SLAs on or off, change the hours each priority gets, and pick the paused statuses."""
     team = admin_team(call)
     payload = SlaSettingsUpdate.model_validate(
-        {**given_arguments(call, ("enabled", *SLA_HOUR_FIELDS)), **_paused_status_arguments(call, team.team_id)}
+        {
+            **given_arguments(call, ("enabled", "start_mode", *SLA_HOUR_FIELDS)),
+            **_paused_status_arguments(call, team.team_id),
+        }
     )
     saved = team_writes.update_sla_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_sla_settings_json(saved)}
@@ -1256,7 +1261,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Turn a team's SLAs on or off, set how many hours an open issue of each priority may go "
             "before it breaches (null removes a priority's rule), and pick the open statuses that pause the "
-            "timer, such as On Staging. Needs team admin."
+            "timer, such as On Staging. start_mode picks whether timers start when an issue leaves triage "
+            "or count from when it was created, triage included. Needs team admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1279,6 +1285,14 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                     "description": (
                         "The whole set of open statuses, by id or name, whose time does not count toward a "
                         "breach; the timer resumes with the time it had left. [] or null pauses in none"
+                    ),
+                },
+                "start_mode": {
+                    "type": "string",
+                    "enum": list(SLA_START_MODES),
+                    "description": (
+                        "on_triage_exit starts a timer when the issue leaves triage; on_creation counts from when "
+                        "it was created, triage included. Running timers keep their start until the issue next moves"
                     ),
                 },
             },

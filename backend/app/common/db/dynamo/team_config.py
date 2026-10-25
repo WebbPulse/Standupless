@@ -152,6 +152,11 @@ MAX_SLA_HOURS = 2160
 MAX_SLA_PAUSED_STATUSES = 50
 """The most statuses a team may pause its SLA timers in."""
 
+SLA_START_MODES: tuple[str, ...] = ("on_triage_exit", "on_creation")
+"""When a team's SLA timers start: once an issue leaves triage, or at the moment it was filed."""
+
+SlaStartMode = Literal["on_triage_exit", "on_creation"]
+
 DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": None, "low": None}
 """The rules a team that never saved its SLA settings reads as, ready to switch on."""
 
@@ -467,7 +472,9 @@ class SlaSettings(BaseModel):
     Off until a team turns it on. A priority whose hours are `None` has no rule,
     so an issue of that priority carries no SLA. `paused_status_ids` are the
     open statuses whose time does not count toward a breach, the way Linear lets
-    a team leave statuses out of its SLAs.
+    a team leave statuses out of its SLAs. `start_mode` picks whether a timer
+    starts when an issue leaves triage or counts from when it was created,
+    triage included.
     """
 
     workspace_id: str
@@ -480,6 +487,7 @@ class SlaSettings(BaseModel):
     medium_hours: int | None = DEFAULT_SLA_HOURS["medium"]
     low_hours: int | None = DEFAULT_SLA_HOURS["low"]
     paused_status_ids: list[str] = Field(default_factory=list)
+    start_mode: SlaStartMode = "on_triage_exit"
     updated_at: datetime | None = None
 
     def pauses_in(self, status_id: str) -> bool:
