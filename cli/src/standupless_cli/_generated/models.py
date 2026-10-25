@@ -348,6 +348,9 @@ class ChannelCreate(TypedDict, closed=True):
             "project_update_posted",
             "project_update_due",
             "standup_digest",
+            "initiative_update_posted",
+            "cycle_started",
+            "cycle_completed",
         ]
     ]
     label: NotRequired[str]
@@ -374,6 +377,9 @@ class ChannelRead(TypedDict):
             "project_update_posted",
             "project_update_due",
             "standup_digest",
+            "initiative_update_posted",
+            "cycle_started",
+            "cycle_completed",
         ]
     ]
     label: str
@@ -408,6 +414,9 @@ class ChannelUpdate(TypedDict, closed=True):
                 "project_update_posted",
                 "project_update_due",
                 "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed",
             ]
         ]
         | None
@@ -3879,6 +3888,9 @@ class WorkspaceChannelCreate(TypedDict, closed=True):
             "project_update_posted",
             "project_update_due",
             "standup_digest",
+            "initiative_update_posted",
+            "cycle_started",
+            "cycle_completed",
         ]
     ]
     label: NotRequired[str]
@@ -3901,6 +3913,9 @@ class WorkspaceChannelUpdate(TypedDict, closed=True):
                 "project_update_posted",
                 "project_update_due",
                 "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed",
             ]
         ]
         | None

@@ -2382,7 +2382,10 @@
                 "comment_created",
                 "project_update_posted",
                 "project_update_due",
-                "standup_digest"
+                "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed"
               ],
               "type": "string"
             },
@@ -2494,7 +2497,10 @@
                 "comment_created",
                 "project_update_posted",
                 "project_update_due",
-                "standup_digest"
+                "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed"
               ],
               "type": "string"
             },
@@ -2653,7 +2659,10 @@
                     "comment_created",
                     "project_update_posted",
                     "project_update_due",
-                    "standup_digest"
+                    "standup_digest",
+                    "initiative_update_posted",
+                    "cycle_started",
+                    "cycle_completed"
                   ],
                   "type": "string"
                 },
@@ -29220,7 +29229,10 @@
                 "comment_created",
                 "project_update_posted",
                 "project_update_due",
-                "standup_digest"
+                "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed"
               ],
               "type": "string"
             },
@@ -29309,7 +29321,10 @@
                     "comment_created",
                     "project_update_posted",
                     "project_update_due",
-                    "standup_digest"
+                    "standup_digest",
+                    "initiative_update_posted",
+                    "cycle_started",
+                    "cycle_completed"
                   ],
                   "type": "string"
                 },

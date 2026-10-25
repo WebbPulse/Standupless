@@ -30,6 +30,9 @@ EVENT_COLORS: dict[str, int] = {
     "project_update_posted": 0x5E6AD2,
     "project_update_due": 0xD29922,
     "standup_digest": 0x5E6AD2,
+    "initiative_update_posted": 0x5E6AD2,
+    "cycle_started": 0x5E6AD2,
+    "cycle_completed": 0x2DA44E,
     "test": 0x5E6AD2,
 }
 
