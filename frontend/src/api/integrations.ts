@@ -40,6 +40,8 @@ import type {
   IssueSyncRead,
   SlackChannelRead,
   SlackConnectionRead,
+  SlackIntakeRead,
+  SlackIntakeWrite,
   SlackLinkRead,
   TeamSyncRead,
   TeamSyncWrite,
@@ -147,6 +149,10 @@ export const slackChannelsPath = (
   teamId === null
     ? `${slackConnectionPath(workspaceId)}/channels`
     : `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-channels`;
+
+/** The route a team's Slack emoji reaction intake is read and changed through. */
+export const slackIntakePath = (workspaceId: string, teamId: string): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-intake`;
 
 /** The route a workspace's Discord App connection is read and removed on. */
 export const discordConnectionPath = (workspaceId: string): string =>
@@ -880,6 +886,44 @@ export const listSlackChannels = async (
     signalOptions(signal)
   );
   return Array.isArray(response.data) ? response.data : [];
+};
+
+/** Reads the emoji and channels that file Slack messages into a team. */
+export const getSlackIntake = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<SlackIntakeRead> => {
+  const response = await apiClient.get<SlackIntakeRead>(
+    slackIntakePath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Turns emoji reaction intake on for a team, or changes its emoji or channels.
+ * Answers 409 while Slack is not connected or another team already files the
+ * same emoji in one of the channels.
+ */
+export const saveSlackIntake = async (
+  workspaceId: string,
+  teamId: string,
+  payload: SlackIntakeWrite
+): Promise<SlackIntakeRead> => {
+  const response = await apiClient.put<SlackIntakeRead>(
+    slackIntakePath(workspaceId, teamId),
+    payload
+  );
+  return response.data;
+};
+
+/** Turns a team's emoji reaction intake off. */
+export const disableSlackIntake = async (
+  workspaceId: string,
+  teamId: string
+): Promise<void> => {
+  await apiClient.delete(slackIntakePath(workspaceId, teamId));
 };
 
 /** Whether this environment offers the Discord App and whether the workspace installed it. */

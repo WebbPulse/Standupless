@@ -5,8 +5,8 @@
   },
   "display_information": {
     "name": "Standupless",
-    "description": "Issue notifications, personal direct messages, link previews, issue creation from Slack and synced threads.",
-    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, send each member who links their account their own notifications as direct messages, preview pasted issue links, look up an issue with a slash command and file any message as an issue whose comments stay in step with the message's thread. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
+    "description": "Issue notifications, personal direct messages, link previews, issue creation from Slack, emoji reaction intake and synced threads.",
+    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, send each member who links their account their own notifications as direct messages, preview pasted issue links, look up an issue with a slash command and file any message as an issue whose comments stay in step with the message's thread, either from the shortcut or by reacting with a team's chosen emoji. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
     "background_color": "#141518"
   },
   "features": {
@@ -56,6 +56,7 @@
         "commands",
         "links:read",
         "links:write",
+        "reactions:read",
         "users:read",
         "users:read.email"
       ]
@@ -69,6 +70,7 @@
         "link_shared",
         "message.channels",
         "message.groups",
+        "reaction_added",
         "tokens_revoked"
       ]
     },

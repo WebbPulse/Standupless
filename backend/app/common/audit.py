@@ -134,6 +134,8 @@ EVENTS: dict[str, str] = {
     "email_intake.enabled": "Create by email turned on",
     "email_intake.disabled": "Create by email turned off",
     "email_intake.regenerated": "Create by email address regenerated",
+    "slack_intake.updated": "Slack emoji intake changed",
+    "slack_intake.disabled": "Slack emoji intake turned off",
     "label.merged": "Labels merged",
     "customer_status.created": "Customer status added",
     "customer_status.updated": "Customer status changed",

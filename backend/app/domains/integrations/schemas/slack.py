@@ -8,8 +8,13 @@ which Slack workspace.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+EMOJI_INPUT_MAX = 110
+
+MAX_INTAKE_CHANNELS = 20
 
 
 class SlackConnectionRead(BaseModel):
@@ -54,3 +59,33 @@ class SlackLinkRead(BaseModel):
     slack_team_name: str | None = None
     linked_at: datetime | None = None
     problem: str | None = None
+
+
+class SlackIntakeRead(BaseModel):
+    """A team's emoji reaction intake: whether Slack is ready for it and what files a message.
+
+    `enabled` is false until a team admin picks an emoji and channels. `reinstall`
+    says the workspace's Slack App was added before it could read reactions, so it
+    has to be connected again before a reaction files anything.
+    """
+
+    configured: bool
+    installed: bool
+    enabled: bool = False
+    reinstall: bool = False
+    emoji: str | None = None
+    channel_ids: list[str] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
+class SlackIntakeWrite(BaseModel):
+    """The emoji a team files messages with and the channels it listens in.
+
+    The emoji is taken with or without its colons and any skin tone, and is stored
+    the way Slack names it in a reaction.
+    """
+
+    emoji: str = Field(min_length=1, max_length=EMOJI_INPUT_MAX)
+    channel_ids: list[Annotated[str, Field(pattern=r"^[CG][A-Z0-9]{2,30}$")]] = Field(
+        min_length=1, max_length=MAX_INTAKE_CHANNELS
+    )

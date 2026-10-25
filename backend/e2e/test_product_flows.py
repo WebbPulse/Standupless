@@ -2644,6 +2644,16 @@ class TestSlackApp:
         channels = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/slack-channels")
         assert channels.status_code == 404, channels.text[:400]
 
+        intake = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/slack-intake"
+        intake_read = api.get(intake)
+        assert intake_read.status_code == 200, intake_read.text[:400]
+        assert intake_read.json()["installed"] is False, intake_read.json()
+        assert intake_read.json()["enabled"] is False, intake_read.json()
+        intake_on = api.put(intake, json={"emoji": "ticket", "channel_ids": ["C0E2E"]})
+        assert intake_on.status_code == 409, intake_on.text[:400]
+        intake_off = api.delete(intake)
+        assert intake_off.status_code == 404, intake_off.text[:400]
+
         removed = api.delete(base)
         assert removed.status_code == 404, removed.text[:400]
 
