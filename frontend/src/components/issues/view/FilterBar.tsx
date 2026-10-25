@@ -9,7 +9,8 @@
  * one choice that matches in every team. A date field takes one day instead,
  * picked from a few relative presets or a calendar, and its verb flips
  * between "before" and "after". Content takes free text matched against the
- * title and description.
+ * title and description. As in Linear, Shift F drops the filter added last and
+ * Alt Shift F clears every filter, the same as the chips' Clear button.
  */
 
 import React, { useState } from 'react';
@@ -909,6 +910,63 @@ export interface FilterBarProps {
 
 const ADD_GROUP = '__add_group__';
 
+/** The heading the filter keys are listed under in the shortcuts panel. */
+export const FILTER_SHORTCUT_GROUP = 'Filters';
+
+/** The keys that drop the filter added last. */
+export const REMOVE_LAST_FILTER_KEYS = 'shift+f';
+
+/** The keys that clear every filter. */
+export const CLEAR_FILTERS_KEYS = 'alt+shift+f';
+
+/** The filter logic without its newest filter: the last flat filter, else the last group. */
+export const withoutLastFilter = (logic: FilterLogic): FilterLogic => {
+  if (logic.filters.length > 0) {
+    return { ...logic, filters: logic.filters.slice(0, -1) };
+  }
+  return { ...logic, groups: logic.groups.slice(0, -1) };
+};
+
+/** Binds the keys that drop the newest filter and clear them all. */
+const useFilterRemovalKeys = ({
+  filters,
+  match,
+  groups,
+  onChange,
+  onLogicChange,
+}: {
+  filters: FilterClause[];
+  match: FilterMatch;
+  groups: FilterGroup[];
+  onChange: (filters: FilterClause[]) => void;
+  onLogicChange: ((logic: FilterLogic) => void) | undefined;
+}): void => {
+  const grouped = onLogicChange === undefined ? [] : groups;
+  const any = filters.length > 0 || grouped.length > 0;
+  useShortcut({
+    keys: REMOVE_LAST_FILTER_KEYS,
+    label: 'Remove last filter',
+    group: FILTER_SHORTCUT_GROUP,
+    enabled: any,
+    handler: (event) => {
+      event?.preventDefault();
+      if (onLogicChange === undefined) onChange(filters.slice(0, -1));
+      else onLogicChange(withoutLastFilter({ filters, match, groups }));
+    },
+  });
+  useShortcut({
+    keys: CLEAR_FILTERS_KEYS,
+    label: 'Clear all filters',
+    group: FILTER_SHORTCUT_GROUP,
+    enabled: any,
+    handler: (event) => {
+      event?.preventDefault();
+      if (onLogicChange === undefined) onChange([]);
+      else onLogicChange({ filters: [], match: 'all', groups: [] });
+    },
+  });
+};
+
 /** The field picker that walks from a field to its values, optionally offering a new group. */
 const FieldPicker: React.FC<{
   offered: FilterField[];
@@ -955,7 +1013,10 @@ const FieldPicker: React.FC<{
     />
   );
 
-/** The Filter button that adds a filter, walking from a field to its values; F opens it. */
+/**
+ * The Filter button that adds a filter, walking from a field to its values; F
+ * opens it, Shift F drops the newest filter and Alt Shift F clears them all.
+ */
 export const FilterButton: React.FC<FilterBarProps> = ({
   filters,
   context,
@@ -971,13 +1032,14 @@ export const FilterButton: React.FC<FilterBarProps> = ({
   useShortcut({
     keys: 'f',
     label: 'Add filter',
-    group: 'List',
+    group: FILTER_SHORTCUT_GROUP,
     enabled: !open,
     handler: () => {
       setField(null);
       setOpen(true);
     },
   });
+  useFilterRemovalKeys({ filters, match, groups, onChange, onLogicChange });
   const apply = (logic: FilterLogic): void => {
     onLogicChange?.(logic);
   };
