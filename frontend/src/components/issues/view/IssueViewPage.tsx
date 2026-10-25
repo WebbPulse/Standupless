@@ -534,6 +534,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             customers: customers.map((customer) => ({
               id: customer.customer_id,
               name: customer.name,
+              revenue: customer.revenue,
+              requestCount: customer.request_count,
             })),
           }
         : {}),

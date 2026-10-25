@@ -10,6 +10,7 @@ import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueWrite } from '../../../hooks/useOptimisticIssues';
 import type { ParentRef } from '../../../lib/issueTree';
 import type {
+  CustomerMove,
   FilterField,
   IssueContext,
   ViewState,
@@ -39,6 +40,11 @@ export interface IssueViewEnv {
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
   update: IssueWrite;
+  /**
+   * Files and withdraws customer requests for a drop between customer
+   * columns. Unset where the list cannot write requests, which refuses it.
+   */
+  moveCustomer?: (issue: OrderedIssueRead, move: CustomerMove) => void;
   createLabel: (teamId: string, name: string) => Promise<LabelRead | null>;
   /** The row the keyboard sits on, or null. */
   focusedId: string | null;

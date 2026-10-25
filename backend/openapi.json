@@ -5255,7 +5255,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -5387,7 +5388,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -25712,7 +25714,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -25874,7 +25877,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -26266,7 +26270,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -26468,7 +26473,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -34169,6 +34175,55 @@
           }
         ],
         "summary": "Add Customer",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/requests": {
+      "get": {
+        "description": "Every request whose issue or project the caller can see, newest first.\n\nA list grouped by customer reads this once to place each issue under every\ncustomer that asked for it. Declared before `/customers/{customer_id}` so\n`requests` is not swallowed as an id.",
+        "operationId": "list_all_requests_api_workspaces__workspace_id__customers_requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List All Requests",
         "tags": [
           "planning"
         ]

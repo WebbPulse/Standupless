@@ -14,7 +14,7 @@
 import React from 'react';
 import { LuArchive, LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
-import type { OrderedIssueRead } from '../../../api/issues';
+import { NONE, type OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
   foldedParentKey,
@@ -52,19 +52,28 @@ export interface IssueSection {
 
 /**
  * The figure a group header reads beside its name: the issue count, or the
- * total estimate when the view's group header asks for it.
+ * total estimate when the view's group header asks for it, and a customer's
+ * request count when the group carries one.
  */
 export const GroupFigure: React.FC<{
   issues: readonly OrderedIssueRead[];
-}> = ({ issues }) => {
+  requests?: number | undefined;
+}> = ({ issues, requests }) => {
   const env = useIssueViewEnv();
   return (
-    <span className="text-xs text-text-faint tabular-nums">
-      {groupFigure(issues, env.state.groupHeader, {
-        scaleFor: env.scaleFor,
-        countsUnestimated: env.countsUnestimated,
-      })}
-    </span>
+    <>
+      <span className="text-xs text-text-faint tabular-nums">
+        {groupFigure(issues, env.state.groupHeader, {
+          scaleFor: env.scaleFor,
+          countsUnestimated: env.countsUnestimated,
+        })}
+      </span>
+      {requests !== undefined && (
+        <span className="shrink-0 text-xs text-text-faint tabular-nums">
+          {requests === 1 ? '1 request' : `${requests} requests`}
+        </span>
+      )}
+    </>
   );
 };
 
@@ -108,6 +117,16 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
             : { backgroundColor: group.color }
         }
       />
+    );
+  }
+  if (group.field === 'customer') {
+    return group.key === NONE ? (
+      <span
+        aria-hidden="true"
+        className="h-4 w-4 rounded-sm border border-dashed border-text-faint"
+      />
+    ) : (
+      <Avatar name={group.label} size="xs" shape="square" />
     );
   }
   if (group.field === 'milestone' && group.milestone !== undefined) {
@@ -229,7 +248,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
       <TruncatedText className="font-medium text-text">
         {group.label}
       </TruncatedText>
-      <GroupFigure issues={group.issues} />
+      <GroupFigure issues={group.issues} requests={group.requests} />
     </button>
     {onCreate !== undefined && (
       <IconButton

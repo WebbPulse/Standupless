@@ -825,6 +825,12 @@ export const customerRequestsKey = (
   customerId: string
 ): QueryKey => ['customerRequests', workspaceId, customerId];
 
+/** Every visible customer request of the workspace, newest first. */
+export const workspaceCustomerRequestsKey = (workspaceId: string): QueryKey => [
+  'workspaceCustomerRequests',
+  workspaceId,
+];
+
 /** The customer requests naming one issue or project, newest first. */
 export const targetCustomerRequestsKey = (
   workspaceId: string,

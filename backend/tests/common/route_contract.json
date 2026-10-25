@@ -1184,6 +1184,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/customers/requests"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/customers/{customer_id}"
   },
