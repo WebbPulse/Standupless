@@ -32,6 +32,9 @@
  * a scope, such as an initiative's projects, the page renders as a tab
  * inside another page: it keeps only the scope's projects, files new ones
  * into it, keeps its arrangement in the URL alone, and offers no saved view.
+ * An empty list or timeline offers Clear filters when filters hide every
+ * project, and New project with its shortcut when there is none yet and the
+ * viewer may create one.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -115,7 +118,7 @@ import LoadError from '../../components/ui/load-error';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import type { ComboboxOption } from '../../components/ui/combobox';
-import EmptyState from '../../components/ui/empty-state';
+import EmptyState, { EmptyStateButton } from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
@@ -1519,6 +1522,49 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     customerFilter !== '' ||
     hasPropertyFilters(properties);
 
+  const clearFilters = (): void => {
+    const next = new URLSearchParams(params);
+    writeParam(next, 'team', '');
+    writeParam(next, 'status', '');
+    writeParam(next, 'lead', '');
+    writeParam(next, 'label', '');
+    writeParam(next, 'blocked', '');
+    writeParam(next, 'blocking', '');
+    writeParam(next, 'customer', '');
+    writeProperties(next, EMPTY_PROPERTY_FILTERS);
+    next.delete(ROLL_UP_PARAM);
+    setParams(next, { replace: true });
+  };
+
+  const emptyProjects = (
+    <EmptyState
+      icon={<LuTarget />}
+      message={
+        hasFilters
+          ? 'No results'
+          : (scope?.emptyMessage ??
+            'No projects yet. A project is a dated body of work that one or more teams share.')
+      }
+      action={
+        hasFilters ? (
+          <EmptyStateButton
+            label="Clear filters"
+            variant="secondary"
+            onClick={clearFilters}
+          />
+        ) : canCreate ? (
+          <EmptyStateButton
+            label="New project"
+            keys="shift+p"
+            onClick={() => {
+              setCreating({ preset: { status: 'planned' } });
+            }}
+          />
+        ) : undefined
+      }
+    />
+  );
+
   useShortcut({
     keys: 'shift+p',
     label: 'New project',
@@ -1829,23 +1875,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
           )}
           {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                const next = new URLSearchParams(params);
-                writeParam(next, 'team', '');
-                writeParam(next, 'status', '');
-                writeParam(next, 'lead', '');
-                writeParam(next, 'label', '');
-                writeParam(next, 'blocked', '');
-                writeParam(next, 'blocking', '');
-                writeParam(next, 'customer', '');
-                writeProperties(next, EMPTY_PROPERTY_FILTERS);
-                next.delete(ROLL_UP_PARAM);
-                setParams(next, { replace: true });
-              }}
-            >
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
               <LuX aria-hidden="true" />
               Clear
             </Button>
@@ -1990,15 +2020,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           {showSkeleton ? (
             <SkeletonRows label="Loading projects" />
           ) : rows.length === 0 && error == null && teamsError === null ? (
-            <EmptyState
-              icon={<LuTarget />}
-              message={
-                hasFilters
-                  ? 'No projects match these filters.'
-                  : (scope?.emptyMessage ??
-                    'No projects yet. A project is a dated body of work that one or more teams share.')
-              }
-            />
+            emptyProjects
           ) : (
             sections.map(({ group, subs }) => {
               const open = isOpen(group);
@@ -2231,15 +2253,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           }}
         />
       ) : rows.length === 0 && error == null && teamsError === null ? (
-        <EmptyState
-          icon={<LuTarget />}
-          message={
-            hasFilters
-              ? 'No projects match these filters.'
-              : (scope?.emptyMessage ??
-                'No projects yet. A project is a dated body of work that one or more teams share.')
-          }
-        />
+        emptyProjects
       ) : (
         <ProjectTimeline
           ref={timeline}

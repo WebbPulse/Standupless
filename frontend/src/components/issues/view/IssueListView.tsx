@@ -137,9 +137,8 @@ import {
   LuUsers,
 } from 'react-icons/lu';
 import { ErrorAlert } from '../../ui/alert';
-import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
-import EmptyState from '../../ui/empty-state';
+import EmptyState, { EmptyStateButton } from '../../ui/empty-state';
 import { SkeletonRows } from '../../ui/skeleton';
 import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
 import ConfirmRemoveCustomerRequestDialog from '../ConfirmRemoveCustomerRequestDialog';
@@ -1532,35 +1531,96 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       </div>
     );
   } else if (sorted.length === 0 && state.layout === 'list') {
-    const firstIssue =
+    const filtered =
+      state.filters.length > 0 ||
+      state.groups.length > 0 ||
+      state.q.trim() !== '';
+    const hiddenDone =
+      state.completed === 'all'
+        ? 0
+        : shownIssues(
+            collection.issues,
+            { showSubIssues, completed: 'all' },
+            context
+          ).length;
+    const mayCreate =
+      !filtered &&
+      collection.issues.length === 0 &&
       createTeamId !== undefined &&
-      createProjectId === undefined &&
-      createCycleId === undefined &&
       canEdit &&
-      creator.canCreate &&
-      state.filters.length === 0 &&
-      state.q.trim() === '';
-    body = firstIssue ? (
+      creator.canCreate;
+    const firstIssue =
+      mayCreate && createProjectId === undefined && createCycleId === undefined;
+    const showDone =
+      hiddenDone > 0 ? (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-text-faint">
+            {hiddenDone === 1
+              ? '1 completed issue is hidden by the display options.'
+              : `${String(hiddenDone)} completed issues are hidden by the display options.`}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onStateChange({ ...state, completed: 'all' });
+            }}
+          >
+            Show completed issues
+          </Button>
+        </div>
+      ) : null;
+    const primary = filtered ? (
+      <EmptyStateButton
+        label="Clear filters"
+        variant="secondary"
+        onClick={() => {
+          onStateChange({
+            ...state,
+            filters: [],
+            match: 'all',
+            groups: [],
+            q: '',
+          });
+        }}
+      />
+    ) : mayCreate ? (
+      <EmptyStateButton
+        label="Create issue"
+        keys="c"
+        onClick={() => {
+          creator.open({
+            teamId: createTeamId,
+            ...(createProjectId === undefined
+              ? {}
+              : { projectId: createProjectId }),
+            ...(createCycleId === undefined ? {} : { cycleId: createCycleId }),
+            onCreated: () => {
+              invalidateQueries(queryKey);
+            },
+          });
+        }}
+      />
+    ) : null;
+    body = (
       <EmptyState
-        message="No issues in this team yet. Create the first one to get started."
+        message={
+          filtered
+            ? 'No results'
+            : firstIssue
+              ? 'No issues in this team yet. Create the first one to get started.'
+              : emptyMessage
+        }
         className="m-6"
         action={
-          <div className="flex flex-col items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => creator.open({ teamId: createTeamId })}
-            >
-              Create issue
-            </Button>
-            <span className="text-xs text-text-faint">
-              or press <Kbd>C</Kbd>
-            </span>
-          </div>
+          showDone === null && primary === null ? undefined : (
+            <div className="flex flex-col items-center gap-4">
+              {showDone}
+              {primary}
+            </div>
+          )
         }
       />
-    ) : (
-      <EmptyState message={emptyMessage} className="m-6" />
     );
   } else if (state.layout === 'board') {
     body = (

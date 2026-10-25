@@ -23,7 +23,9 @@
  * clears from the Display menu. Columns join the list in priority order as it
  * widens, and a row whose name is cut off reveals it in a tooltip. Rows
  * select by checkbox, and the bar that rises sets a property on every
- * selected project or deletes them after asking.
+ * selected project or deletes them after asking. An empty list offers Clear
+ * filters when filters hide everything, and New project with its shortcut
+ * when there is nothing yet and the viewer may create.
  */
 
 import {
@@ -842,19 +844,58 @@ describe('Projects', () => {
     expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
   });
 
-  it('says so when nothing matches the filters', async () => {
+  it('offers clearing the filters when nothing matches them', async () => {
+    const user = userEvent.setup();
     renderPage('/w/mine/projects?status=canceled');
 
+    const empty = (await screen.findByText('No results')).closest('div');
+    if (empty === null) throw new Error('no empty state');
     expect(
-      await screen.findByText('No projects match these filters.')
+      within(empty).queryByRole('button', { name: 'New project' })
+    ).toBeNull();
+    await user.click(
+      within(empty).getByRole('button', { name: 'Clear filters' })
+    );
+
+    expect(
+      await screen.findByRole('link', { name: 'Launch' })
     ).toBeInTheDocument();
+    expect(screen.queryByText('No results')).toBeNull();
   });
 
-  it('explains projects when there are none yet', async () => {
+  it('offers the first project with its shortcut when there are none yet', async () => {
+    const user = userEvent.setup();
     listProjects.mockResolvedValue({ projects: [], next_cursor: null });
     renderPage();
 
-    expect(await screen.findByText(/No projects yet/)).toBeInTheDocument();
+    const empty = (await screen.findByText(/No projects yet/)).closest('div');
+    if (empty === null) throw new Error('no empty state');
+    expect(within(empty).getByText('P')).toBeInTheDocument();
+    await user.click(
+      within(empty).getByRole('button', { name: 'New project' })
+    );
+
+    expect(screen.getByLabelText('Project name')).toBeInTheDocument();
+  });
+
+  it('shows a guest the empty message alone', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    listTeams.mockResolvedValue([roleless(engine)]);
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    renderPage();
+
+    const empty = (await screen.findByText(/No projects yet/)).closest('div');
+    if (empty === null) throw new Error('no empty state');
+    expect(within(empty).queryByRole('button')).toBeNull();
+  });
+
+  it('offers clearing the filters on an empty timeline', async () => {
+    renderPage('/w/mine/projects?layout=timeline&status=canceled');
+
+    expect(await screen.findByText('No results')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Clear filters' })
+    ).toBeInTheDocument();
   });
 
   it('shows a failed read', async () => {
