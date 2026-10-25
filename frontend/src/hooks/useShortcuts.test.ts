@@ -358,7 +358,10 @@ describe('choosing between bindings', () => {
 describe('parsing and display', () => {
   it('parses modifiers off each token', () => {
     expect(parseKeys('mod+k')).toEqual([
-      { key: 'k', shift: false, alt: false, mod: true },
+      { key: 'k', shift: false, alt: false, mod: true, ctrl: false },
+    ]);
+    expect(parseKeys('ctrl+shift+1')).toEqual([
+      { key: '1', shift: true, alt: false, mod: false, ctrl: true },
     ]);
     expect(parseKeys('g i')).toHaveLength(2);
   });
