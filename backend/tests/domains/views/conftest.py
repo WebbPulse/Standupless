@@ -102,6 +102,13 @@ def statuses(repositories: Any, workspace: str) -> "dict[str, Any]":
     return {row.category: row for row in rows}
 
 
+@pytest.fixture
+def standard_plan(repositories: Any, workspace: str) -> str:
+    """The workspace on the Standard plan, which includes public view and filter links."""
+    repositories.workspaces.set_billing(workspace, plan="standard")
+    return workspace
+
+
 def seed_issue(issues_client: TestClient, workspace_id: str, **payload: Any) -> "dict[str, Any]":
     """Create one issue through the issues route, failing loudly on a refusal."""
     body: "dict[str, Any]" = {"team_id": TEAM, "title": "An issue"}

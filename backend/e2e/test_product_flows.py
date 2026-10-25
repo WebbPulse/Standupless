@@ -2316,17 +2316,19 @@ class TestShareLinks:
         assert anon.get(f"/api/shared/{token}").status_code == 404
 
     @WRITES
-    def test_a_view_share_lists_its_issues_anonymously(
+    def test_a_view_share_needs_the_standard_plan(
         self,
         api: Any,
-        anon: Any,
         run_scope: RunScope,
         workspace: "dict[str, Any]",
         share_team: "dict[str, Any]",
-        share_issue: "dict[str, Any]",
         track: Any,
     ) -> None:
-        """A team view link lists the view's issues as summaries and refuses the issue route."""
+        """On the run's Free workspace a team view link answers the public roadmap plan refusal.
+
+        The anonymous view read itself runs in `e2e/test_view_share.py`, on the local
+        stack alone, where the comp grant script can lift a workspace to Standard.
+        """
         views = f"/api/workspaces/{workspace['id']}/views"
         body = {
             "name": run_scope.name("shared-view"),
@@ -2338,23 +2340,12 @@ class TestShareLinks:
         view = _created(api.post(views, json=body), "team view")
         track(f"{views}/{view['id']}")
 
-        path = f"/api/workspaces/{workspace['id']}/share-links"
-        link = _created(api.post(path, json={"target_type": "view", "target_id": view["id"]}), "share token")
-        track(f"{path}/{link['token_hash']}")
-        token = link["token"]
-
-        heading = anon.get(f"/api/shared/{token}")
-        assert heading.status_code == 200, heading.text[:400]
-        assert heading.json()["target_type"] == "view"
-        assert heading.json()["team_name"] == share_team["name"]
-
-        page = anon.get(f"/api/shared/{token}/view")
-        assert page.status_code == 200, page.text[:400]
-        rows = _items(page.json(), "issues")
-        assert share_issue["title"] in [row["title"] for row in rows]
-        assert all(not {"id", "issue_id", "team_id"} & set(row) for row in rows)
-
-        assert anon.get(f"/api/shared/{token}/issue").status_code == 404
+        refused = api.post(
+            f"/api/workspaces/{workspace['id']}/share-links", json={"target_type": "view", "target_id": view["id"]}
+        )
+        assert refused.status_code == 403, refused.text[:400]
+        assert refused.json()["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
+        assert refused.json()["details"]["required_plan"] == "standard"
 
 
 IMPORT_TIMEOUT_SECONDS = 180.0

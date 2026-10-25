@@ -34,6 +34,7 @@ from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_i
 from app.common.issue_keys import current_all
 from app.common.issue_rules import unprocessable
 from app.common.media_tokens import mint_media_token, referenced_attachments
+from app.common.plan_features import Feature, has_feature
 from app.common.saved_views import invalid_filter
 from app.common.sla import sla_breach_key
 from app.domains.views.schemas.share import (
@@ -90,6 +91,10 @@ def resolve_link(repositories: Repositories, token: str) -> ShareLinkView:
     team also needs their membership in that team. A link made by someone since
     removed, or made while the team was open, stops working without anyone having
     to revoke it.
+
+    A view or filter link also opens only while the workspace's plan includes the
+    public roadmap, so a downgrade closes it as a revoke would and an upgrade
+    opens it again. Issue links open on every plan.
     """
     record = verify_share_token(token, repositories.share_links)
     if record is None:
@@ -97,7 +102,16 @@ def resolve_link(repositories: Repositories, token: str) -> ShareLinkView:
     link = ShareLinkView(record)
     if not _creator_can_see_team(repositories, link):
         raise share_not_found()
+    if not _plan_serves(repositories, link):
+        raise share_not_found()
     return link
+
+
+def _plan_serves(repositories: Repositories, link: ShareLinkView) -> bool:
+    """Whether the workspace's plan lets this link open: always for an issue, with the public roadmap otherwise."""
+    if link.target_type == "issue":
+        return True
+    return has_feature(repositories.workspaces.get(link.workspace_id), Feature.PUBLIC_ROADMAP)
 
 
 def _creator_can_see_team(repositories: Repositories, link: ShareLinkView) -> bool:

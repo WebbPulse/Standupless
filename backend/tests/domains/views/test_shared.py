@@ -14,10 +14,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import GUEST, MEMBER, add_team_member, sign_in, sign_out
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
+
+pytestmark = pytest.mark.usefixtures("standard_plan")
 
 
 def mint(client: TestClient, workspace_id: str, **payload: Any) -> dict[str, Any]:

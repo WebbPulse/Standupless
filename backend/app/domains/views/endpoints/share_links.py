@@ -33,6 +33,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.base import expiry_timestamp
 from app.common.db.dynamo.share_links import ShareLinkView, share_capability
 from app.common.issue_rules import not_found, require_team_member, visible_team_ids
+from app.common.plan_features import Feature, enforce_feature
 from app.domains.views.schemas.share import (
     MAX_LINKS_PER_WORKSPACE,
     ShareLinkCreate,
@@ -122,7 +123,10 @@ def create_share_link(
     onto the link, so a settings listing needs no second read and the anonymous
     read is bounded by a team id that was decided at create time rather than
     re-derived later against whatever the row says then. Guests may read what is
-    shared with them but never publish, so their creates answer a 403.
+    shared with them but never publish, so their creates answer a 403. A view or
+    filter link is the public roadmap, a Standard feature, so below Standard it
+    answers the plan refusal once the target and team checks pass; issue links
+    stay free.
     """
     refuse_api_key_actor(context)
     if context.is_guest:
@@ -140,6 +144,8 @@ def create_share_link(
         sort = payload.sort or DEFAULT_SORT
 
     require_team_member(repositories, context, team_id)
+    if payload.target_type != "issue":
+        enforce_feature(repositories, context.workspace_id, Feature.PUBLIC_ROADMAP)
 
     if _live_link_count(repositories, context) >= MAX_LINKS_PER_WORKSPACE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=AT_LIMIT)
