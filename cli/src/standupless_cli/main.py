@@ -782,6 +782,8 @@ def issue_create(
     else:
         output.success(f"Created {created['key']}: {created['title']}")
         typer.echo(context.issue_url(created["key"]))
+    for message in output.priority_hints(created):
+        output.hint(message)
     if web:
         _open(context.issue_url(created["key"]))
 
@@ -1558,18 +1560,25 @@ def triage_accept(
     status: Annotated[
         str | None, typer.Option("--status", "-s", help="Status name or id; defaults to the first unstarted one.")
     ] = None,
+    priority: Annotated[
+        Priority | None, typer.Option("--priority", "-p", help="The priority the issue takes as it is accepted.")
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Accept a waiting issue into its team."""
+    """Accept a waiting issue into its team, hinting when it is left with no priority."""
     context = _state(ctx).context()
     issue = context.issue(key)
     body: TriageAccept = {"status_id": context.status_id(issue["team_id"], status)} if status else {}
+    if priority is not None:
+        body["priority"] = priority.value
     accepted = context.client.triage_accept(context.workspace_id, issue["id"], body)
     if as_json:
         output.print_json(accepted)
-        return
-    name = context.status_names(accepted["team_id"]).get(accepted["status_id"], accepted["status_id"])
-    output.success(f"Accepted {accepted['key']} into {name}.")
+    else:
+        name = context.status_names(accepted["team_id"]).get(accepted["status_id"], accepted["status_id"])
+        output.success(f"Accepted {accepted['key']} into {name}.")
+    for message in output.priority_hints(accepted):
+        output.hint(message)
 
 
 @triage_app.command("decline")

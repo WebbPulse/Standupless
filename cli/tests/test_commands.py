@@ -1346,6 +1346,28 @@ def test_triage_accept_resolves_the_status(runner: CliRunner, api: respx.MockRou
     assert "Accepted ENG-12 into Todo" in result.output
 
 
+def test_triage_accept_sends_a_priority_and_hints_when_none(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--priority rides on the accept, and an issue left with no priority gets a hint beside the answer."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue(priority="none"))
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/accept")
+    route.side_effect = [
+        httpx.Response(200, json=make_issue(priority="low")),
+        httpx.Response(200, json=make_issue(priority="none")),
+        httpx.Response(200, json=make_issue(priority="none")),
+    ]
+    ranked = invoke(runner, "triage", "accept", "ENG-12", "--priority", "low")
+    assert ranked.exit_code == 0, ranked.output
+    assert _json(route) == {"priority": "low"}
+    assert "hint:" not in ranked.output
+    bare = invoke(runner, "triage", "accept", "ENG-12")
+    assert bare.exit_code == 0, bare.output
+    assert "hint:" in bare.output and "ENG-12 has no priority" in bare.output
+    scripted = invoke(runner, "triage", "accept", "ENG-12", "--json")
+    assert scripted.exit_code == 0, scripted.output
+    assert json.loads(scripted.stdout)["priority"] == "none"
+    assert "hint:" in scripted.stderr
+
+
 def test_triage_decline_and_duplicate(runner: CliRunner, api: respx.MockRouter) -> None:
     """Decline sends the reason, and duplicate sends the other issue's id."""
     api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())

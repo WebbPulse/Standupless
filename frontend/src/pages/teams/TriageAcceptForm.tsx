@@ -5,9 +5,15 @@
  * Enter confirms straight away, so the fast path stays one key plus Enter;
  * Shift+Enter breaks a line.
  *
+ * A row of priority choices sits under the comment, preselected to the
+ * issue's current priority, so it can be set in the same step. Digits pick
+ * one in Linear's order (0 none, 1 urgent, 2 high, 3 medium, 4 low) from
+ * anywhere in the form while the comment is empty, and with Alt at any time.
+ * An issue with no priority gets a short nudge under the row, never a block.
+ *
  * When the team requires a priority before an issue leaves triage and the
- * issue has none, the form also asks for one and holds the accept until it is
- * picked, so the server's refusal is never the first the person hears of it.
+ * issue has none, No priority is unavailable and the accept waits until one
+ * is picked, so the server's refusal is never the first the person hears of it.
  *
  * The choice is one object so later fields, such as an assignee, join it
  * without changing how the page submits it.
@@ -18,6 +24,8 @@ import Button from '../../components/ui/button';
 import { Textarea } from '../../components/ui/input';
 import Label from '../../components/ui/label';
 import { SelectField } from '../../components/ui/select';
+import { PriorityGlyph } from '../../components/ui/glyphs';
+import { cn } from '../../lib/cn';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import { defaultAcceptStatus } from '../../lib/triageActions';
 import type { IssuePriority, StatusRead } from '../../types/Api';
@@ -32,8 +40,25 @@ export interface TriageAcceptChoice {
   priority: IssuePriority | null;
 }
 
-/** The priorities an accept may set, every one but none. */
-const PICKABLE = PRIORITIES.filter((priority) => priority !== 'none');
+/** The digit that picks each priority, matching Linear's priority keys. */
+export const PRIORITY_DIGITS: Record<IssuePriority, string> = {
+  none: '0',
+  urgent: '1',
+  high: '2',
+  medium: '3',
+  low: '4',
+};
+
+/** The priority a digit key picks, or null when the key picks none. */
+export const priorityForDigit = (digit: string): IssuePriority | null =>
+  PRIORITIES.find((option) => PRIORITY_DIGITS[option] === digit) ?? null;
+
+/** The digit a key event carries, read from its code so Alt still yields it. */
+const eventDigit = (event: React.KeyboardEvent): string | null => {
+  const match = /^(?:Digit|Numpad)([0-9])$/.exec(event.code);
+  if (match !== null) return match[1] ?? null;
+  return /^[0-9]$/.test(event.key) ? event.key : null;
+};
 
 /** Props for TriageAcceptForm. */
 export interface TriageAcceptFormProps {
@@ -63,24 +88,48 @@ export const TriageAcceptForm: React.FC<TriageAcceptFormProps> = ({
   const fallback = defaultAcceptStatus(statuses);
   const [comment, setComment] = useState('');
   const [statusId, setStatusId] = useState<string | null>(null);
-  const [picked, setPicked] = useState<IssuePriority | ''>('');
+  const [picked, setPicked] = useState<IssuePriority>(priority);
   const chosen = statusId ?? fallback?.id ?? '';
-  const asksPriority = requirePriority && priority === 'none';
-  const blocked = asksPriority && picked === '';
+  const required = requirePriority && priority === 'none';
+  const blocked = required && picked === 'none';
+
+  const pick = (next: IssuePriority): void => {
+    if (required && next === 'none') return;
+    setPicked(next);
+  };
 
   const submit = (): void => {
     if (saving || blocked) return;
     onSubmit({
       statusId: chosen === '' ? null : chosen,
       comment: comment.trim(),
-      priority: picked === '' ? null : picked,
+      priority: picked === priority ? null : picked,
     });
+  };
+
+  const onFormKeyDown = (event: React.KeyboardEvent<HTMLFormElement>): void => {
+    if (event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+    const digit = eventDigit(event);
+    if (digit === null) return;
+    const next = priorityForDigit(digit);
+    if (next === null) return;
+    const target = event.target as HTMLElement;
+    const editable =
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLInputElement;
+    const typing = editable && target.value !== '';
+    if (typing && !event.altKey) return;
+    if (target instanceof HTMLSelectElement && !event.altKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pick(next);
   };
 
   return (
     <form
       aria-label={`Accept ${issueKey}`}
       className="w-72 max-w-full space-y-3 p-3"
+      onKeyDown={onFormKeyDown}
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -110,31 +159,63 @@ export const TriageAcceptForm: React.FC<TriageAcceptFormProps> = ({
           }}
         />
       </div>
-      {asksPriority && (
-        <SelectField
-          id="triage-accept-priority"
-          label="Priority"
-          aria-describedby="triage-accept-priority-hint"
-          value={picked}
-          onChange={(event) => {
-            setPicked(event.target.value as IssuePriority | '');
-          }}
+      <div className="space-y-1">
+        <span
+          id="triage-accept-priority-label"
+          className="block text-xs font-medium text-text-muted"
         >
-          <option value="" disabled>
-            Choose a priority
-          </option>
-          {PICKABLE.map((option) => (
-            <option key={option} value={option}>
-              {PRIORITY_LABELS[option]}
-            </option>
-          ))}
-        </SelectField>
-      )}
-      {asksPriority && (
-        <p id="triage-accept-priority-hint" className="text-xs text-text-muted">
-          This team needs a priority before an issue leaves triage.
-        </p>
-      )}
+          Priority
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby="triage-accept-priority-label"
+          aria-describedby={
+            picked === 'none' ? 'triage-accept-priority-hint' : undefined
+          }
+          className="flex gap-1"
+        >
+          {PRIORITIES.map((option) => {
+            const unavailable = required && option === 'none';
+            const checked = picked === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                aria-label={PRIORITY_LABELS[option]}
+                aria-keyshortcuts={PRIORITY_DIGITS[option]}
+                title={`${PRIORITY_LABELS[option]} (${PRIORITY_DIGITS[option]})`}
+                disabled={unavailable}
+                onClick={() => {
+                  pick(option);
+                }}
+                className={cn(
+                  'inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-sm border text-xs text-text-muted transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40',
+                  checked
+                    ? 'border-accent bg-raised text-text'
+                    : 'border-line enabled:hover:bg-raised'
+                )}
+              >
+                <PriorityGlyph priority={option} />
+                <span className="font-mono text-[10px] opacity-70">
+                  {PRIORITY_DIGITS[option]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {picked === 'none' && (
+          <p
+            id="triage-accept-priority-hint"
+            className="text-xs text-text-muted"
+          >
+            {required
+              ? 'This team needs a priority before an issue leaves triage.'
+              : 'No priority yet. Press 1 to 4 to set one.'}
+          </p>
+        )}
+      </div>
       {statuses.length > 0 && (
         <SelectField
           id="triage-accept-status"

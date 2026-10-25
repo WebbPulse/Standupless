@@ -409,6 +409,17 @@ def issue_id_ref(call: ToolCall, value: Any) -> Optional[str]:
     return reference
 
 
+PRIORITY_HINT = (
+    "Priority is unset. Set one with update_issue priority (urgent, high, medium or low) so the issue "
+    "sorts and is triaged with the rest."
+)
+
+
+def priority_hints(issue: Issue) -> list[str]:
+    """The nudges an answer carries for an issue left with no priority, empty when it has one."""
+    return [PRIORITY_HINT] if issue.priority == "none" else []
+
+
 def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") -> dict[str, Any]:
     """One issue as a tool answers it, under its team's current key.
 
