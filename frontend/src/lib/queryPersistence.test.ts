@@ -44,8 +44,8 @@ describe('queryPersistence', () => {
   });
 
   it('lists only workspace scoped list and sidebar keys', () => {
-    const heads = persistedQueryPrefixes('ws-1').map((prefix) =>
-      Array.isArray(prefix) ? prefix[0] : prefix
+    const heads = persistedQueryPrefixes('ws-1').map((prefix): unknown =>
+      typeof prefix === 'string' ? prefix : prefix[0]
     );
     expect(heads).toContain('issue-collection');
     expect(heads).toContain('favorites');
@@ -53,7 +53,7 @@ describe('queryPersistence', () => {
     expect(heads).not.toContain('api-keys');
     expect(heads).not.toContain('members');
     for (const prefix of persistedQueryPrefixes('ws-1')) {
-      if (Array.isArray(prefix) && prefix.length > 1) {
+      if (typeof prefix !== 'string' && prefix.length > 1) {
         expect(prefix[1]).toBe('ws-1');
       }
     }
