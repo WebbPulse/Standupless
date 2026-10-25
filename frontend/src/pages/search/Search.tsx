@@ -14,10 +14,28 @@
  * Escape in the term follows Linear: the first press clears a non-empty term
  * and keeps focus, and a press on an empty term leaves search for the page
  * before it, or the workspace home when search was the first page opened.
+ *
+ * Pressing Enter on a term, or opening one of its hits, remembers the search
+ * with its filters. With the term focused and empty, those recent searches
+ * are offered newest first: the arrow keys move through them and Enter runs
+ * one again, filters and all.
  */
 
-import React, { useCallback, useDeferredValue, useMemo } from 'react';
-import { LuFileText, LuGoal, LuMessageSquare, LuSearch } from 'react-icons/lu';
+import React, {
+  useCallback,
+  useDeferredValue,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
+import {
+  LuClock,
+  LuFileText,
+  LuGoal,
+  LuMessageSquare,
+  LuSearch,
+  LuX,
+} from 'react-icons/lu';
 import {
   Link,
   useLocation,
@@ -55,6 +73,14 @@ import {
   STATUS_CATEGORY_ORDER,
 } from '../../lib/propertyOptions';
 import { searchKey } from '../../lib/queryKeys';
+import {
+  clearRecentSearches,
+  forgetRecentSearch,
+  readRecentSearches,
+  recentSearchIdentity,
+  recordRecentSearch,
+  type RecentSearch,
+} from '../../lib/recentSearches';
 import {
   hasIndexableTerm,
   isIssueKey,
@@ -134,6 +160,23 @@ const SectionHeading: React.FC<{
   </div>
 );
 
+/** The filters a recent search ran under, in words, or nothing when it had none. */
+const recentFilterSummary = (
+  entry: RecentSearch,
+  teamNames: Map<string, string>
+): string =>
+  [
+    entry.team === '' ? '' : (teamNames.get(entry.team) ?? ''),
+    entry.type === ''
+      ? ''
+      : (TABS.find((option) => option.value === entry.type)?.label ?? ''),
+    CATEGORIES.has(entry.status)
+      ? STATUS_CATEGORY_LABELS[entry.status as StatusCategory]
+      : '',
+  ]
+    .filter((part) => part !== '')
+    .join(' · ');
+
 /** Searches issues, projects, initiatives, documents and comments across the visible teams. */
 export const Search: React.FC = () => {
   const { workspace } = useWorkspace();
@@ -153,6 +196,64 @@ export const Search: React.FC = () => {
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
+
+  const recentListId = useId();
+  const [recentState, setRecentState] = useState(() => ({
+    workspaceId,
+    rows: readRecentSearches(workspaceId),
+  }));
+  if (recentState.workspaceId !== workspaceId) {
+    setRecentState({ workspaceId, rows: readRecentSearches(workspaceId) });
+  }
+  const recent = recentState.rows;
+  const [termFocused, setTermFocused] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const showsRecent = termFocused && term === '' && recent.length > 0;
+  const active = showsRecent && highlight < recent.length ? highlight : -1;
+
+  /** Replaces the list on screen with the one storage now holds. */
+  const showRecent = useCallback(
+    (rows: RecentSearch[]) => {
+      setRecentState({ workspaceId, rows });
+    },
+    [workspaceId]
+  );
+
+  /** Remembers the search on screen, when its term is one the index can run. */
+  const rememberSearch = useCallback(() => {
+    const trimmed = term.trim();
+    if (
+      trimmed === '' ||
+      !hasIndexableTerm(trimmed) ||
+      isIssueKey(trimmed) ||
+      isPartialIssueKey(trimmed)
+    ) {
+      return;
+    }
+    showRecent(
+      recordRecentSearch(workspaceId, {
+        q: trimmed,
+        team: teamId,
+        type: tab,
+        status: statusCategory,
+      })
+    );
+  }, [term, workspaceId, teamId, tab, statusCategory, showRecent]);
+
+  /** Runs a recent search again, putting its term and filters in the address. */
+  const rerunSearch = useCallback(
+    (entry: RecentSearch) => {
+      const next = new URLSearchParams();
+      next.set('q', entry.q);
+      if (entry.team !== '') next.set('team', entry.team);
+      if (entry.type !== '') next.set('type', entry.type);
+      if (entry.status !== '') next.set('status', entry.status);
+      setParams(next, { replace: false });
+      setHighlight(-1);
+      showRecent(recordRecentSearch(workspaceId, entry));
+    },
+    [setParams, showRecent, workspaceId]
+  );
 
   const setParam = useCallback(
     (name: string, value: string, replace: boolean) => {
@@ -217,10 +318,30 @@ export const Search: React.FC = () => {
     void navigate(issuePath(slug, deferred.toUpperCase()));
   }, [isKey, navigate, slug, deferred]);
 
-  /** Clears a non-empty term, or leaves search when the term is already empty. */
+  /**
+   * Moves through and reruns the recent searches while they show, clears a
+   * non-empty term on Escape, or leaves search when the term is already empty.
+   */
   const onTermKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
+      if (event.nativeEvent.isComposing) return;
+      if (showsRecent && event.key === 'ArrowDown') {
+        event.preventDefault();
+        setHighlight(active + 1 >= recent.length ? 0 : active + 1);
+        return;
+      }
+      if (showsRecent && event.key === 'ArrowUp') {
+        event.preventDefault();
+        setHighlight(active <= 0 ? recent.length - 1 : active - 1);
+        return;
+      }
+      if (showsRecent && event.key === 'Enter' && active >= 0) {
+        event.preventDefault();
+        const entry = recent[active];
+        if (entry !== undefined) rerunSearch(entry);
+        return;
+      }
+      if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
       if (term !== '') {
@@ -234,7 +355,17 @@ export const Search: React.FC = () => {
         void navigate(-1);
       }
     },
-    [term, setParam, location.key, navigate, slug]
+    [
+      showsRecent,
+      active,
+      recent,
+      rerunSearch,
+      term,
+      setParam,
+      location.key,
+      navigate,
+      slug,
+    ]
   );
 
   const results = data?.results ?? [];
@@ -290,10 +421,26 @@ export const Search: React.FC = () => {
           className="flex flex-wrap items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
+            rememberSearch();
             goToKey();
           }}
         >
-          <div className="relative w-72">
+          <div
+            className="relative w-72"
+            onFocus={() => {
+              setTermFocused(true);
+            }}
+            onBlur={(event) => {
+              if (
+                event.relatedTarget instanceof Node &&
+                event.currentTarget.contains(event.relatedTarget)
+              ) {
+                return;
+              }
+              setTermFocused(false);
+              setHighlight(-1);
+            }}
+          >
             <Label htmlFor="search-term" hidden>
               Search
             </Label>
@@ -309,11 +456,99 @@ export const Search: React.FC = () => {
               autoComplete="off"
               value={term}
               autoFocus
+              {...(showsRecent ? { 'aria-controls': recentListId } : {})}
+              {...(active >= 0
+                ? { 'aria-activedescendant': `${recentListId}-${active}` }
+                : {})}
               onChange={(event) => {
                 setParam('q', event.target.value, true);
+                setHighlight(-1);
               }}
               onKeyDown={onTermKeyDown}
             />
+            {showsRecent && (
+              <div className="absolute top-full left-0 z-20 mt-1 w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-overlay">
+                <div className="flex items-center justify-between px-2 py-1">
+                  <span className="text-xs font-medium text-text-faint">
+                    Recent
+                  </span>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                    }}
+                    onClick={() => {
+                      clearRecentSearches(workspaceId);
+                      showRecent([]);
+                      setHighlight(-1);
+                    }}
+                    className="rounded-xs text-xs text-text-faint hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                  >
+                    Clear recent
+                  </button>
+                </div>
+                <ul
+                  id={recentListId}
+                  role="listbox"
+                  aria-label="Recent searches"
+                >
+                  {recent.map((entry, index) => {
+                    const summary = recentFilterSummary(entry, teamNames);
+                    return (
+                      <li
+                        key={recentSearchIdentity(entry)}
+                        id={`${recentListId}-${index}`}
+                        role="option"
+                        aria-selected={index === active}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text',
+                          index === active
+                            ? 'bg-raised text-text'
+                            : 'text-text-muted'
+                        )}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                        }}
+                        onClick={() => {
+                          rerunSearch(entry);
+                        }}
+                        onMouseEnter={() => {
+                          setHighlight(index);
+                        }}
+                      >
+                        <LuClock
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {entry.q}
+                        </span>
+                        {summary !== '' && (
+                          <span className="shrink-0 truncate text-xs text-text-faint">
+                            {summary}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${entry.q} from recent searches`}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                          }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            showRecent(forgetRecentSearch(workspaceId, entry));
+                            setHighlight(-1);
+                          }}
+                          className="shrink-0 rounded-xs p-0.5 text-text-faint hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                        >
+                          <LuX aria-hidden="true" className="h-3 w-3" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
           <SelectField
             id="search-team"
@@ -389,7 +624,17 @@ export const Search: React.FC = () => {
           );
         })}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        onClickCapture={(event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest('a[href]') !== null
+          ) {
+            rememberSearch();
+          }
+        }}
+      >
         {error !== null && (
           <div className="px-4 pt-3 lg:px-6">
             <ErrorAlert
