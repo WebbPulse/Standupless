@@ -3,8 +3,9 @@
  * caller with `assignee_id=me` and spans teams, that rows group by status and
  * name their team, that the assignee filter is left out because the page
  * fixes it, that the display options hide sub-issues and completed issues,
- * that the Created and Subscribed tabs read by creator and subscriber, and the
- * empty and failed states.
+ * that the Created and Subscribed tabs read by creator and subscriber, that the
+ * Activity tab lists each issue once under the caller's latest action, newest
+ * first, that the number keys switch tabs, and the empty and failed states.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -21,11 +22,22 @@ import {
 } from '../../hooks/useCreateIssue';
 import type {
   IssueListRead,
+  MemberActivityListRead,
+  MemberActivityRead,
   StatusRead,
   TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
-import MyIssues from './MyIssues';
+import MyIssues, { ACTIVITY_EMPTY, latestPerIssue } from './MyIssues';
+
+const listMemberActivity =
+  vi.fn<(userId: string) => Promise<MemberActivityListRead>>();
+
+vi.mock('../../api/members', () => ({
+  getMemberProfile: vi.fn(),
+  listMemberActivity: (_w: string, userId: string) =>
+    listMemberActivity(userId),
+}));
 
 const listIssues =
   vi.fn<(query: Record<string, unknown>) => Promise<IssueListRead>>();
@@ -210,7 +222,74 @@ const renderPage = (path = '/w/mine/issues') =>
     </MemoryRouter>
   );
 
+/** A status change the caller made on an issue. */
+const statusChange = (
+  id: string,
+  createdAt: string,
+  fields: Partial<MemberActivityRead>,
+  from: string,
+  to: string
+): MemberActivityRead => ({
+  type: 'issue_change',
+  id,
+  created_at: createdAt,
+  issue_id: 'iss-1',
+  issue_key: 'ENG-1',
+  issue_title: 'Cache the token',
+  team_id: 'team-1',
+  comment: null,
+  ...fields,
+  activity: {
+    activity_id: id,
+    issue_id: fields.issue_id ?? 'iss-1',
+    actor_id: 'user-1',
+    actor_kind: 'user',
+    kind: 'field_changed',
+    field: 'status_id',
+    from,
+    to,
+    created_at: createdAt,
+  },
+});
+
+const myActivity: MemberActivityListRead = {
+  activity: [
+    statusChange(
+      'a-3',
+      '2026-10-21T10:00:00Z',
+      {},
+      'team-1-todo',
+      'team-1-done'
+    ),
+    {
+      type: 'comment',
+      id: 'c-1',
+      created_at: '2026-10-20T10:00:00Z',
+      issue_id: 'iss-2',
+      issue_key: 'WEB-4',
+      issue_title: 'Ship the pricing page',
+      team_id: 'team-2',
+      activity: null,
+      comment: {
+        comment_id: 'c-1',
+        body: 'Pricing copy is ready',
+        parent_comment_id: null,
+      },
+    },
+    statusChange(
+      'a-1',
+      '2026-10-19T10:00:00Z',
+      {},
+      'team-1-done',
+      'team-1-todo'
+    ),
+  ],
+  next_cursor: null,
+};
+
 beforeEach(() => {
+  listMemberActivity.mockReset();
+  listMemberActivity.mockResolvedValue(myActivity);
   listIssues.mockReset();
   listTeams.mockReset();
   listStatuses.mockReset();
@@ -359,5 +438,80 @@ describe('my issues', () => {
         expect.objectContaining({ assignee_id: 'me' })
       );
     });
+  });
+
+  it('lists the issues the caller acted on, latest action first, once each', async () => {
+    renderPage('/w/mine/issues?tab=activity');
+
+    const feed = await screen.findByRole('list', { name: 'Activity' });
+    await waitFor(() => {
+      expect(within(feed).getAllByRole('listitem')[0]).toHaveTextContent(
+        'You changed the status'
+      );
+    });
+    const rows = within(feed).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('ENG-1');
+    expect(rows[1]).toHaveTextContent('You commented on');
+    expect(rows[1]).toHaveTextContent('Pricing copy is ready');
+    expect(
+      within(feed).getByRole('link', { name: /Ship the pricing page/ })
+    ).toHaveAttribute('href', '/w/mine/issues/WEB-4');
+    expect(listMemberActivity).toHaveBeenCalledWith('me');
+    expect(listIssues).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+  });
+
+  it('says so when the caller has no activity yet', async () => {
+    listMemberActivity.mockResolvedValue({ activity: [], next_cursor: null });
+    renderPage('/w/mine/issues?tab=activity');
+
+    expect(await screen.findByText(ACTIVITY_EMPTY)).toBeInTheDocument();
+  });
+
+  it('surfaces a failed activity read', async () => {
+    listMemberActivity.mockRejectedValue(new Error('boom'));
+    renderPage('/w/mine/issues?tab=activity');
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+
+  it('does not read activity on the issue tabs', async () => {
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    expect(listMemberActivity).not.toHaveBeenCalled();
+  });
+
+  it('switches to the Activity tab with 4 and back to Assigned with 1', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.keyboard('4');
+
+    expect(
+      await screen.findByRole('list', { name: 'Activity' })
+    ).toBeInTheDocument();
+
+    await user.keyboard('1');
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Assigned' })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+    });
+  });
+});
+
+describe('latestPerIssue', () => {
+  it('keeps the newest row for each issue and the order of the rest', () => {
+    const rows = myActivity.activity;
+
+    expect(latestPerIssue(rows).map((row) => row.id)).toEqual(['a-3', 'c-1']);
+    expect(latestPerIssue([])).toEqual([]);
   });
 });
