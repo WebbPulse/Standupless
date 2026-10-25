@@ -10,7 +10,10 @@
  * Where the frame is too narrow for the panel beside the column, the panel
  * drops between the description and the timeline. The layout follows the
  * frame's own width through a container query rather than the window's, so
- * the same view fits a full page and a pane beside a list.
+ * the same view fits a full page and a pane beside a list. Cmd or Ctrl+I, or
+ * the panel button in the bar, hides the panel so the column reads at full
+ * width, and the viewer's choice holds on every issue and in the pane. The
+ * property keys still open their pickers while it is hidden.
  *
  * Adding a link, a sub-issue, a relation or a parent opens a dialog from the issue
  * menu, the panel's "+" menu, the command palette or a shortcut. Duplicate
@@ -52,6 +55,7 @@ import {
   LuLink2,
   LuListTree,
   LuMaximize2,
+  LuPanelRight,
   LuTrash2,
   LuUnlink,
   LuUsers,
@@ -74,6 +78,12 @@ import { useAttachFiles } from '../../hooks/useAttachFiles';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import {
+  DETAILS_PANEL_KEYS,
+  detailsPanelLabel,
+  detailsPanelTitle,
+  useDetailsPanel,
+} from '../../hooks/useDetailsPanel';
 import {
   REMIND_ME_KEYS,
   REMIND_ME_LABEL,
@@ -124,7 +134,8 @@ import ShareButton from '../access/ShareButton';
 import ReactionBar from '../discussion/ReactionBar';
 import IssueMediaProvider from '../media/IssueMediaProvider';
 import { ErrorAlert } from '../ui/alert';
-import { IconButton } from '../ui/button';
+import { Button, IconButton } from '../ui/button';
+import Tooltip from '../ui/tooltip';
 import { LINK_CLASS } from '../ui/link';
 import Menu, { MenuItem, MenuSeparator, MenuShortcut } from '../ui/menu';
 import Spinner from '../ui/spinner';
@@ -371,6 +382,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const attachFiles = useAttachFiles(workspaceId, issueId);
   const subscription = useIssueSubscription(workspaceId, issueId);
+  const detailsPanel = useDetailsPanel();
   const reminder = useIssueReminder(workspaceId, issueId);
   const teamTip = useTruncationTooltip<HTMLAnchorElement>();
   const remindKeys = embedded ? '' : REMIND_ME_KEYS;
@@ -575,6 +587,18 @@ export const IssueView: React.FC<IssueViewProps> = ({
         )}
         {embedded && favorite}
         <IssueSubscribeButton subscription={subscription} />
+        <Tooltip text={detailsPanelTitle(detailsPanel.shown)}>
+          <Button
+            aria-label={detailsPanelLabel(detailsPanel.shown)}
+            aria-pressed={detailsPanel.shown}
+            size="sm"
+            variant="ghost"
+            className="w-7 px-0 pointer-coarse:w-11"
+            onClick={detailsPanel.toggle}
+          >
+            <LuPanelRight aria-hidden="true" className="h-4 w-4" />
+          </Button>
+        </Tooltip>
         {canEdit && (
           <ShareButton
             workspaceId={workspaceId}
@@ -762,6 +786,12 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const content = (
     <>
       <Toaster />
+      <IssueCommand
+        keys={DETAILS_PANEL_KEYS}
+        label={detailsPanelLabel(detailsPanel.shown)}
+        enabled={issue !== null}
+        onRun={detailsPanel.toggle}
+      />
       <IssueCommand
         keys={KEYS.addLink}
         label="Add link"
@@ -1001,7 +1031,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 </div>
               </div>
 
-              {team !== undefined && (
+              {team !== undefined && detailsPanel.shown && (
                 <IssuePropertiesPanel
                   className="order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto"
                   workspaceId={workspaceId}
