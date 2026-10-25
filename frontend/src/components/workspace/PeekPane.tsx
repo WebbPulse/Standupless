@@ -69,7 +69,7 @@ export const PeekPane: React.FC = () => {
     return (
       <div
         data-testid="peek-pane"
-        className="hidden max-w-[45vw] min-h-0 shrink-0 md:flex"
+        className="screen-only hidden max-w-[45vw] min-h-0 shrink-0 md:flex"
       >
         {content.node}
       </div>
@@ -79,7 +79,7 @@ export const PeekPane: React.FC = () => {
     <aside
       aria-label={content.label}
       data-testid="peek-pane"
-      className="hidden w-peek max-w-[45vw] shrink-0 flex-col border-l border-line bg-bg md:flex"
+      className="screen-only hidden w-peek max-w-[45vw] shrink-0 flex-col border-l border-line bg-bg md:flex"
     >
       <div className="flex h-topbar shrink-0 items-center gap-2 border-b border-line px-3">
         <span className="min-w-0 flex-1 truncate text-sm font-medium">

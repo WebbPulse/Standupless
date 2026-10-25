@@ -15,6 +15,8 @@
  * absolutely positioned element anywhere inside, such as a visually hidden
  * live region below the fold of the sidebar, can never stretch the app shell
  * into a second scroller. Only the sidebar nav and the page body scroll.
+ * The sidebar, the page bar and the peek pane are screen only, so a printed
+ * page is the page body alone.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -188,13 +190,13 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         <div
           data-testid="sidebar-hover-zone"
           aria-hidden="true"
-          className="absolute inset-y-0 left-0 z-40 hidden w-2 lg:block"
+          className="screen-only absolute inset-y-0 left-0 z-40 hidden w-2 lg:block"
           onMouseEnter={() => setPeeking(true)}
         />
       ) : (
         <aside
           data-testid="sidebar-frame"
-          className="relative hidden min-h-0 shrink-0 overflow-hidden lg:block"
+          className="screen-only relative hidden min-h-0 shrink-0 overflow-hidden lg:block"
           style={{ width: layout.width }}
         >
           <Sidebar
@@ -213,7 +215,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         <aside
           data-testid="sidebar-peek"
           aria-label="Sidebar"
-          className="absolute inset-y-2 left-0 z-40 hidden min-h-0 animate-[drawer-in_140ms_ease-out] overflow-hidden rounded-r-lg border border-l-0 border-line shadow-overlay lg:block"
+          className="screen-only absolute inset-y-2 left-0 z-40 hidden min-h-0 animate-[drawer-in_140ms_ease-out] overflow-hidden rounded-r-lg border border-l-0 border-line shadow-overlay lg:block"
           style={{ width: layout.width }}
           onMouseLeave={() => setPeeking(false)}
         >
@@ -261,6 +263,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
       >
         <main className="flex min-w-0 flex-1 flex-col">
           <PageHeader
+            className="screen-only"
             title={title ?? workspace.name}
             titleAccessory={titleAccessory}
             actions={actions}

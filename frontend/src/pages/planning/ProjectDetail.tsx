@@ -18,6 +18,9 @@
  * update cadence, its own or the workspace default; once an update is due the
  * header, the overview and the updates tab say so, with a way straight to the
  * composer, and the command palette offers the same.
+ *
+ * Print, on the overview from the menu, the palette or Cmd or Ctrl+P, prints
+ * the name, the property chips, the description and the sections under it.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -33,6 +36,7 @@ import {
   LuEllipsis,
   LuPencilLine,
   LuPlus,
+  LuPrinter,
   LuTrash2,
 } from 'react-icons/lu';
 import {
@@ -86,7 +90,7 @@ import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import LoadError from '../../components/ui/load-error';
-import Menu, { MenuItem } from '../../components/ui/menu';
+import Menu, { MenuItem, MenuShortcut } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
@@ -101,11 +105,13 @@ import { useProjectDependencies } from '../../hooks/useProjectDependencies';
 import { useProjectHistory } from '../../hooks/useProjectHistory';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useProjectUpdates } from '../../hooks/useProjectUpdates';
+import { usePrintCommand } from '../../hooks/usePrintCommand';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
+import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import { cn } from '../../lib/cn';
 import { errorMessage, hasStatus, NOT_FOUND } from '../../lib/errors';
 import type { BreakdownField } from '../../lib/cycleBreakdown';
@@ -328,6 +334,10 @@ export const ProjectDetail: React.FC = () => {
       event?.preventDefault();
       createIssue();
     },
+  });
+  usePrintCommand({
+    group: 'Project',
+    enabled: project !== null && tab === 'overview',
   });
 
   const setTab = useCallback(
@@ -749,7 +759,7 @@ export const ProjectDetail: React.FC = () => {
               New issue
             </Button>
           )}
-          {(canEdit || canDelete) && (
+          {(tab === 'overview' || canEdit || canDelete) && (
             <Menu
               label="Project actions"
               align="end"
@@ -759,6 +769,13 @@ export const ProjectDetail: React.FC = () => {
                 </IconButton>
               )}
             >
+              {tab === 'overview' && (
+                <MenuItem onSelect={printPage}>
+                  <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
+                  {PRINT_LABEL}
+                  <MenuShortcut keys={PRINT_KEYS} />
+                </MenuItem>
+              )}
               {canEdit && (
                 <MenuItem onSelect={toggleArchived}>
                   {archived ? (
@@ -842,7 +859,7 @@ export const ProjectDetail: React.FC = () => {
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
+          <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
               <div className="space-y-3">
                 <ProjectLookPicker
