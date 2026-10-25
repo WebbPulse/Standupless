@@ -28,6 +28,10 @@
  * workspace picker leaves out the workspace in view and ends on Create
  * workspace, and Log out sits among the actions.
  *
+ * Every list ranks its rows by the deterministic fuzzy scorer in
+ * {@link rankRows}, so abbreviations and small typos still land, the closest
+ * match leads its section, and the matched characters are drawn brighter.
+ *
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
  * anyone types here.
@@ -168,8 +172,8 @@ import { homeViewPath } from '../../lib/preferences';
 import { isFormTemplate } from '../../lib/issueTemplates';
 import ProjectIcon from '../planning/ProjectIcon';
 import DocumentIcon from '../planning/DocumentIcon';
+import { fuzzyMatch, rankRows, type MatchRange } from '../../lib/fuzzyMatch';
 import {
-  matchesTerm,
   settingsDestinations,
   teamSettingsDestinations,
 } from '../../lib/paletteDestinations';
@@ -261,6 +265,8 @@ interface Command {
   page?: Page;
   /** Draws the row one step in, as a sub-team under its parent. */
   indent?: boolean;
+  /** The label characters the typed term matched, for highlighting. */
+  ranges?: readonly MatchRange[];
 }
 
 /** A run of commands under one heading. */
@@ -393,14 +399,41 @@ const shortcutHint = (keys: string): string =>
   displayKeys(keys).join(keys.includes(' ') ? ' then ' : ' ');
 
 /**
- * Matches a command against the typed term: every word of the term must
- * appear in its label, hint or keywords.
+ * Ranks commands against the typed term, best first, dropping those that do
+ * not match. The label is scored first, then the hint and keywords, and each
+ * kept command carries the label characters that matched for highlighting.
  */
-const matches = (command: Command, term: string): boolean =>
-  matchesTerm(
-    [command.label, command.hint ?? '', command.keywords ?? ''],
-    term
+const rank = (commands: readonly Command[], term: string): Command[] =>
+  rankRows(
+    commands,
+    term,
+    (command) => command.label,
+    (command) => [command.hint ?? '', command.keywords ?? '']
+  ).map(({ row, match }) =>
+    match.ranges.length === 0 ? row : { ...row, ranges: match.ranges }
   );
+
+/** A label with the characters the term matched drawn brighter. */
+const HighlightedLabel: React.FC<{
+  label: string;
+  ranges: readonly MatchRange[] | undefined;
+}> = ({ label, ranges }) => {
+  if (ranges === undefined || ranges.length === 0) return <>{label}</>;
+  const parts: React.ReactNode[] = [];
+  let at = 0;
+  for (const [start, end] of ranges) {
+    if (start >= label.length) break;
+    if (start > at) parts.push(label.slice(at, start));
+    parts.push(
+      <span key={start} className="font-medium text-text">
+        {label.slice(start, Math.min(end, label.length))}
+      </span>
+    );
+    at = Math.min(end, label.length);
+  }
+  if (at < label.length) parts.push(label.slice(at));
+  return <>{parts}</>;
+};
 
 /**
  * The same page under another team: a team route keeps its tab, anything else
@@ -1133,8 +1166,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const groups = useMemo<CommandGroup[]>(() => {
     if (page === 'teams') {
-      const rows = teamTree(teams)
-        .map(({ team: row, nested, parentName }) => ({
+      const rows = rank(
+        teamTree(teams).map(({ team: row, nested, parentName }) => ({
           id: `switch-${row.id}`,
           label: row.name,
           keywords: parentName ?? '',
@@ -1147,33 +1180,39 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             routePrefix,
             row.key_prefix
           ),
-        }))
-        .filter((command) => matches(command, deferred));
+        })),
+        deferred
+      );
       return rows.length === 0
         ? []
         : [{ heading: 'Switch team', commands: rows }];
     }
 
     if (page === 'workspaces') {
-      const rows = (workspaces ?? [])
-        .filter((row) => row.id !== workspaceId)
-        .map((row) => ({
-          id: `workspace-${row.id}`,
-          label: row.name,
-          keywords: row.slug,
-          icon: <LuBuilding2 className={ICON} />,
-          to: homeViewPath(row.slug),
-        }))
-        .filter((command) => matches(command, deferred));
-      const create = [
-        {
-          id: 'workspace-create',
-          label: 'Create workspace',
-          keywords: 'new add join',
-          icon: <LuPlus className={ICON} />,
-          to: NEW_WORKSPACE_PATH,
-        },
-      ].filter((command) => matches(command, deferred));
+      const rows = rank(
+        (workspaces ?? [])
+          .filter((row) => row.id !== workspaceId)
+          .map((row) => ({
+            id: `workspace-${row.id}`,
+            label: row.name,
+            keywords: row.slug,
+            icon: <LuBuilding2 className={ICON} />,
+            to: homeViewPath(row.slug),
+          })),
+        deferred
+      );
+      const create = rank(
+        [
+          {
+            id: 'workspace-create',
+            label: 'Create workspace',
+            keywords: 'new add join',
+            icon: <LuPlus className={ICON} />,
+            to: NEW_WORKSPACE_PATH,
+          },
+        ],
+        deferred
+      );
       return [
         ...(rows.length === 0
           ? []
@@ -1185,8 +1224,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
 
     if (page === 'favorites') {
-      const rows = (favorites ?? [])
-        .flatMap((favorite) => {
+      const rows = rank(
+        (favorites ?? []).flatMap((favorite) => {
           const href = favoriteHref(slug, favorite);
           return href === null
             ? []
@@ -1200,16 +1239,17 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                   to: href,
                 },
               ];
-        })
-        .filter((command) => matches(command, deferred));
+        }),
+        deferred
+      );
       return rows.length === 0
         ? []
         : [{ heading: 'Favorites', commands: rows }];
     }
 
     if (page === 'projects') {
-      const rows = (projectList?.projects ?? [])
-        .map((project) => ({
+      const rows = rank(
+        (projectList?.projects ?? []).map((project) => ({
           id: `project-${project.project_id}`,
           label: project.name,
           icon: (
@@ -1220,49 +1260,52 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             />
           ),
           to: projectPath(slug, project.project_id),
-        }))
-        .filter((command) => matches(command, deferred));
+        })),
+        deferred
+      );
       return rows.length === 0 ? [] : [{ heading: 'Projects', commands: rows }];
     }
 
     if (page === 'cycles') {
-      const rows = (
-        team === undefined ? [] : pickerCycles(cycleList?.cycles ?? [])
-      )
-        .map((cycle) => ({
-          id: `cycle-${cycle.cycle_id}`,
-          label: cycle.name,
-          hint: CYCLE_HINT[cycle.status],
-          icon: <LuRefreshCcw className={ICON} />,
-          to: cyclePath(slug, team?.key_prefix ?? '', cycle.cycle_id),
-        }))
-        .filter((command) => matches(command, deferred));
+      const rows = rank(
+        (team === undefined ? [] : pickerCycles(cycleList?.cycles ?? [])).map(
+          (cycle) => ({
+            id: `cycle-${cycle.cycle_id}`,
+            label: cycle.name,
+            hint: CYCLE_HINT[cycle.status],
+            icon: <LuRefreshCcw className={ICON} />,
+            to: cyclePath(slug, team?.key_prefix ?? '', cycle.cycle_id),
+          })
+        ),
+        deferred
+      );
       return rows.length === 0
         ? []
         : [{ heading: team?.name ?? 'Cycles', commands: rows }];
     }
 
     if (page === 'members') {
-      const rows = [...members]
-        .sort((left, right) =>
-          memberName(left).localeCompare(memberName(right))
-        )
-        .map((member) => ({
-          id: `open-member-${member.user_id}`,
-          label: memberName(member),
-          keywords: `${member.full_name ?? ''} ${member.display_name ?? ''}`,
-          ...(member.user_id === currentUserId ? { hint: 'You' } : {}),
-          icon: <LuUserRound className={ICON} />,
-          to: memberPath(slug, member.user_id),
-        }))
-        .filter((command) => matches(command, deferred));
+      const rows = rank(
+        [...members]
+          .sort((left, right) =>
+            memberName(left).localeCompare(memberName(right))
+          )
+          .map((member) => ({
+            id: `open-member-${member.user_id}`,
+            label: memberName(member),
+            keywords: `${member.full_name ?? ''} ${member.display_name ?? ''}`,
+            ...(member.user_id === currentUserId ? { hint: 'You' } : {}),
+            icon: <LuUserRound className={ICON} />,
+            to: memberPath(slug, member.user_id),
+          })),
+        deferred
+      );
       return rows.length === 0 ? [] : [{ heading: 'Members', commands: rows }];
     }
 
     if (page === 'sub-team') {
-      const rows = teams
-        .filter(isTopLevel)
-        .map((row) => ({
+      const rows = rank(
+        teams.filter(isTopLevel).map((row) => ({
           id: `sub-team-of-${row.id}`,
           label: row.name,
           hint: row.key_prefix,
@@ -1270,33 +1313,37 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           run: () => {
             createTeam.openSubTeam(row.id);
           },
-        }))
-        .filter((command) => matches(command, deferred));
+        })),
+        deferred
+      );
       return rows.length === 0
         ? []
         : [{ heading: 'Parent team', commands: rows }];
     }
 
     if (page === 'template') {
-      const rows = (team === undefined ? [] : (templateList?.templates ?? []))
-        .map((template) => ({
-          id: `template-${template.id}`,
-          label: template.name,
-          keywords: template.title ?? '',
-          ...(template.id === templateList?.default_template_id
-            ? { hint: 'Default' }
-            : isFormTemplate(template)
-              ? { hint: 'Form' }
-              : {}),
-          icon: <LuFileText className={ICON} />,
-          run: () => {
-            createIssue.open({
-              ...(team === undefined ? {} : { teamId: team.id }),
-              templateId: template.id,
-            });
-          },
-        }))
-        .filter((command) => matches(command, deferred));
+      const rows = rank(
+        (team === undefined ? [] : (templateList?.templates ?? [])).map(
+          (template) => ({
+            id: `template-${template.id}`,
+            label: template.name,
+            keywords: template.title ?? '',
+            ...(template.id === templateList?.default_template_id
+              ? { hint: 'Default' }
+              : isFormTemplate(template)
+                ? { hint: 'Form' }
+                : {}),
+            icon: <LuFileText className={ICON} />,
+            run: () => {
+              createIssue.open({
+                ...(team === undefined ? {} : { teamId: team.id }),
+                templateId: template.id,
+              });
+            },
+          })
+        ),
+        deferred
+      );
       if (
         rows.length === 0 &&
         team !== undefined &&
@@ -1324,8 +1371,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
 
     if (page === 'views') {
-      const rows = (savedViews ?? [])
-        .map((view) => ({
+      const rows = rank(
+        (savedViews ?? []).map((view) => ({
           id: `view-${view.view_id}`,
           label: view.name,
           keywords: view.description ?? '',
@@ -1338,8 +1385,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             />
           ),
           to: viewPath(slug, view.view_id),
-        }))
-        .filter((command) => matches(command, deferred));
+        })),
+        deferred
+      );
       return rows.length === 0 ? [] : [{ heading: 'Views', commands: rows }];
     }
 
@@ -1360,9 +1408,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       });
     }
 
-    const current = issueActions.filter((command) =>
-      matches(command, deferred)
-    );
+    const current = rank(issueActions, deferred);
     const currentGroup: CommandGroup | null =
       current.length === 0
         ? null
@@ -1373,16 +1419,18 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     if (currentGroup !== null && issueKey !== null) built.push(currentGroup);
 
     const viewing = issueKey?.toUpperCase() ?? null;
-    const recent = recents
-      .filter((row) => row.key.toUpperCase() !== viewing)
-      .map((row) => ({
-        id: `recent-${row.id}`,
-        label: row.title,
-        hint: row.key,
-        icon: <RecentIssueIcon workspaceId={workspaceId} issue={row} />,
-        to: issuePath(slug, row.key),
-      }))
-      .filter((command) => matches(command, deferred));
+    const recent = rank(
+      recents
+        .filter((row) => row.key.toUpperCase() !== viewing)
+        .map((row) => ({
+          id: `recent-${row.id}`,
+          label: row.title,
+          hint: row.key,
+          icon: <RecentIssueIcon workspaceId={workspaceId} issue={row} />,
+          to: issuePath(slug, row.key),
+        })),
+      deferred
+    );
     if (recent.length > 0) {
       built.push({ heading: 'Recent issues', commands: recent });
     }
@@ -1390,9 +1438,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     if (currentGroup !== null && issueKey === null) built.push(currentGroup);
 
     for (const group of pageActions) {
-      const here = group.commands.filter((command) =>
-        matches(command, deferred)
-      );
+      const here = rank(group.commands, deferred);
       if (here.length > 0)
         built.push({ heading: group.heading, commands: here });
     }
@@ -1400,19 +1446,25 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     const offered = subject?.values;
     if (!isKey && deferred !== '' && offered !== undefined) {
       const lowered = deferred.toLowerCase();
-      const values = offered()
-        .filter((value) => matchesTerm([value.label, value.keywords], deferred))
-        .map((value, at) => ({
+      const values = rankRows(
+        offered(),
+        deferred,
+        (value) => value.label,
+        (value) => [value.keywords]
+      )
+        .map(({ row: value, match }, at) => ({
           value,
+          match,
           at,
           lead: value.name.toLowerCase().startsWith(lowered) ? 0 : 1,
         }))
         .sort((left, right) => left.lead - right.lead || left.at - right.at)
         .slice(0, VALUE_LIMIT)
-        .map(({ value }) => ({
+        .map(({ value, match }) => ({
           id: `value-${value.id}`,
           label: value.label,
           keywords: value.keywords,
+          ranges: match.ranges,
           icon: (
             <span className="inline-flex h-4 w-4 items-center justify-center">
               {value.icon}
@@ -1434,6 +1486,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         commands: results.map((result) => ({
           id: `issue-${result.issue_id}`,
           label: result.title,
+          ranges: fuzzyMatch(result.title, [], deferred).ranges,
           hint: result.key,
           icon: <LuCircleDot className={ICON} />,
           to: issuePath(slug, result.key),
@@ -1442,38 +1495,38 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
 
     if (!isKey && deferred !== '') {
-      const found = (documents ?? [])
-        .map((row) => ({
+      const found = rank(
+        (documents ?? []).map((row) => ({
           id: `document-${row.document_id}`,
           label: row.title,
           hint: row.parent_name,
           icon: <DocumentIcon icon={row.icon ?? null} className={ICON} />,
           to: documentPath(slug, row.document_id),
-        }))
-        .filter((command) => matches(command, deferred))
-        .slice(0, DOCUMENT_LIMIT);
+        })),
+        deferred
+      ).slice(0, DOCUMENT_LIMIT);
       if (found.length > 0) {
         built.push({ heading: 'Documents', commands: found });
       }
     }
 
     if (!isKey && deferred !== '') {
-      const people = members
-        .map((member) => ({
+      const people = rank(
+        members.map((member) => ({
           id: `member-${member.user_id}`,
           label: `Go to member ${memberName(member)}`,
           keywords: `people person member ${member.full_name ?? ''}`,
           icon: <LuUserRound className={ICON} />,
           to: memberPath(slug, member.user_id),
-        }))
-        .filter((command) => matches(command, deferred))
-        .slice(0, DOCUMENT_LIMIT);
+        })),
+        deferred
+      ).slice(0, DOCUMENT_LIMIT);
       if (people.length > 0) {
         built.push({ heading: 'People', commands: people });
       }
     }
 
-    const doable = actions.filter((command) => matches(command, deferred));
+    const doable = rank(actions, deferred);
     if (deferred === '' && routePrefix !== null) {
       const here = teams.find((row) => row.key_prefix === routePrefix);
       if (here !== undefined) {
@@ -1488,25 +1541,19 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
     if (doable.length > 0) built.push({ heading: 'Actions', commands: doable });
 
-    const going = places.filter((command) => matches(command, deferred));
+    const going = rank(places, deferred);
     if (going.length > 0) built.push({ heading: 'Go to', commands: going });
 
     if (deferred !== '') {
-      const settings = teamSettings.filter((command) =>
-        matches(command, deferred)
-      );
+      const settings = rank(teamSettings, deferred);
       if (settings.length > 0) {
         built.push({ heading: 'Team settings', commands: settings });
       }
-      const pages = settingsPages.filter((command) =>
-        matches(command, deferred)
-      );
+      const pages = rank(settingsPages, deferred);
       if (pages.length > 0) {
         built.push({ heading: 'Settings', commands: pages });
       }
-      const sections = teamSections.filter((command) =>
-        matches(command, deferred)
-      );
+      const sections = rank(teamSections, deferred);
       if (team !== undefined && sections.length > 0) {
         built.push({ heading: `${team.name} settings`, commands: sections });
       }
@@ -1787,7 +1834,10 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                             {command.icon}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
-                            {command.label}
+                            <HighlightedLabel
+                              label={command.label}
+                              ranges={command.ranges}
+                            />
                           </span>
                           {command.hint !== undefined && (
                             <span className="shrink-0 font-mono text-xs text-text-faint">

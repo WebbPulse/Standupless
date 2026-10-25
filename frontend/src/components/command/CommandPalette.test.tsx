@@ -10,7 +10,7 @@
  * synonyms, and the create project and create initiative dialogs.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -335,6 +335,34 @@ describe('the navigation commands', () => {
     expect(
       screen.queryByRole('option', { name: /Inbox/ })
     ).not.toBeInTheDocument();
+  });
+
+  it('finds a place by an abbreviation or a typo and highlights the match', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('rdmp');
+
+    const row = await screen.findByRole('option', { name: /Roadmap/ });
+    expect(row.querySelector('span.font-medium')?.textContent).toBe('R');
+
+    await user.clear(screen.getByRole('combobox'));
+    await user.keyboard('raodmap');
+
+    expect(
+      await screen.findByRole('option', { name: /Roadmap/ })
+    ).toBeInTheDocument();
+  });
+
+  it('puts the closest match first within its section', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('views');
+
+    const group = await screen.findByRole('group', { name: 'Go to' });
+    const rows = within(group).getAllByRole('option');
+    expect(rows[0]).toHaveAccessibleName(/^Views/);
   });
 
   it('finds Pulse by name and by what it holds', async () => {
