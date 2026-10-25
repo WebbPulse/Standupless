@@ -18,21 +18,31 @@ the way new ones are.
 Idempotent: a posting is a row whose whole content is its key, so a second run
 finds nothing to change. An edit that lands while the run is reading its team can
 be overtaken; running again converges. It also clears postings left by older
-indexers and by deleted issues and comments.
+indexers and by deleted issues and comments. An issue in the trash keeps no
+postings of its own but its comments keep theirs, the state the consumer leaves.
+
+The terms come from this checkout's code, so a checkout whose indexing code
+differs from the deployed branch would count every posting the live consumer
+writes under the newer rules as stray, and a real run would delete them. The run
+therefore refuses unless the indexing modules match `origin/main` for production
+or `origin/staging` otherwise; `--skip-deploy-check` overrides that.
 
 Usage, from backend/:
     python scripts/reindex_issue_search.py --stage staging --dry-run
     python scripts/reindex_issue_search.py --stage staging
 
-`--workspace <id>` limits the run. It prints counts only, never ids or text.
+`--workspace <id>` limits the run. `--explain` adds the added and removed postings
+counted by doc and term kind. It prints counts only, never ids or text.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
@@ -51,6 +61,7 @@ class Tally:
     removed: int = 0
     documents: int = 0
     documents_changed: int = 0
+    reasons: Counter[str] = field(default_factory=Counter)
 
 
 def workspace_issues(workspace_id: str) -> Iterable[Mapping[str, Any]]:
@@ -77,11 +88,31 @@ def wanted_postings(
             continue
         tally.issues += 1
         docs = wanted.setdefault(team_id, {})
-        docs[issue_id] = issue_terms(item)
+        docs[issue_id] = set() if item.get("deleted_at") not in (None, "") else issue_terms(item)
         for comment in repositories.comments.iter_for_issue(workspace_id, issue_id):
             tally.comments += 1
             docs[comment_doc(comment.comment_id, issue_id)] = comment_terms({"body": comment.body})
     return wanted
+
+
+def term_kind(term: str) -> str:
+    """The kind of one posting term: comment, prefix, ref or word."""
+    from app.common.db.dynamo.search_index import COMMENT_PREFIX, PREFIX_MARK, REF_PREFIX
+
+    if term.startswith(COMMENT_PREFIX):
+        return "comment"
+    if term.startswith(PREFIX_MARK):
+        return "prefix"
+    if term.startswith(REF_PREFIX):
+        return "ref"
+    return "word"
+
+
+def change_reason(direction: str, term: str, doc: str, want: set[str]) -> str:
+    """One added or removed posting's bucket for `--explain`: doc kind, whether the doc is wanted at all, term kind."""
+    doc_kind = "comment" if "#" in doc else "issue"
+    wanted = "wanted" if want else "unwanted"
+    return f"{direction} {doc_kind}:{wanted}:{term_kind(term)}"
 
 
 def reconcile_team(
@@ -101,6 +132,10 @@ def reconcile_team(
         tally.docs_changed += 1
         tally.added += len(appeared)
         tally.removed += len(departed)
+        for term in appeared:
+            tally.reasons[change_reason("added", term, doc, want)] += 1
+        for term in departed:
+            tally.reasons[change_reason("removed", term, doc, want)] += 1
         if not dry_run:
             repositories.search_index.apply(workspace_id, team_id, doc, appeared=appeared, departed=departed)
 
@@ -132,6 +167,42 @@ def reindex_workspace(
     reterm_documents(repositories, workspace_id, tally, dry_run=dry_run)
 
 
+INDEXING_MODULES = (
+    "app/common/db/dynamo/search_index.py",
+    "app/domains/views/consumers/search.py",
+    "app/common/documents.py",
+)
+"""The files, relative to backend/, whose code decides what a posting or a document term is."""
+
+
+def deployed_branch(stage: str) -> str:
+    """The branch a stage deploys from: `main` for production, `staging` for every other stage."""
+    return "main" if stage == "production" else "staging"
+
+
+def deploy_drift(stage: str) -> str | None:
+    """Why this checkout's indexing code may not match what the stage runs, or `None` when it matches."""
+    backend = Path(__file__).resolve().parents[1]
+    branch = deployed_branch(stage)
+    fetch = subprocess.run(
+        ["git", "fetch", "--quiet", "origin", branch], cwd=backend, capture_output=True, text=True, check=False
+    )
+    if fetch.returncode != 0:
+        return f"could not fetch origin/{branch} to compare the indexing code"
+    diff = subprocess.run(
+        ["git", "diff", "--quiet", f"origin/{branch}", "--", *INDEXING_MODULES],
+        cwd=backend,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if diff.returncode == 0:
+        return None
+    if diff.returncode == 1:
+        return f"the indexing code differs from origin/{branch}, which {stage} runs"
+    return f"could not compare the indexing code with origin/{branch}"
+
+
 def workspace_ids() -> list[str]:
     """Every workspace in this environment, read by a scan of the workspaces table."""
     from app.common.db.dynamo import tables
@@ -154,7 +225,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--stage", required=True, help="The environment whose tables to read, such as staging")
     parser.add_argument("--workspace", action="append", default=[], help="Limit the run to this workspace id")
     parser.add_argument("--dry-run", action="store_true", help="Count what would change and write nothing")
+    parser.add_argument("--explain", action="store_true", help="Also print the changed postings counted by kind")
+    parser.add_argument(
+        "--skip-deploy-check",
+        action="store_true",
+        help="Run even when the indexing code differs from the branch the stage deploys from",
+    )
     arguments = parser.parse_args(argv)
+    if not arguments.skip_deploy_check:
+        drift = deploy_drift(arguments.stage)
+        if drift is not None:
+            print(f"refusing to reindex: {drift}; check out that branch or pass --skip-deploy-check", file=sys.stderr)
+            return 2
     os.environ["DYNAMODB_TABLE_PREFIX"] = f"standupless-{arguments.stage}"
     from app.common.api.dependencies.repositories import ALL_REPOSITORY_NAMES, build_bundle
 
@@ -167,6 +249,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         + f" docs_changed={tally.docs_changed} postings_added={tally.added} postings_removed={tally.removed}"
         + f" documents={tally.documents} documents_changed={tally.documents_changed}"
     )
+    if arguments.explain:
+        for reason, count in sorted(tally.reasons.items()):
+            print(f"{reason}={count}")
     return 0
 
 
