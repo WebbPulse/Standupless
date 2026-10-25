@@ -7,7 +7,10 @@ applies its actions, and later rules run only while each applied rule asks to
 continue. A rule that moves the issue to another team ends the run there, so the
 target team's own rules never bounce it back. Every applied rule writes one
 activity row naming it, recorded as Standupless rather than whoever filed the
-issue, followed by a row for each field it changed.
+issue, followed by a row for each field it changed. Rules are evaluated in the
+order of the team's saved list, and the rows of one run get ascending activity
+ids in that same order, so the issue history replays the rules as they ran even
+when every row is minted inside one millisecond.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ from webbpulse.dynamodb import ConditionFailed, new_ulid
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import TriageRuleBody
-from app.common.db.dynamo.activity import Activity, build_activity
+from app.common.db.dynamo.activity import Activity, build_activity, new_activity_id
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue, IssueWriteConflict
 from app.common.db.dynamo.team_config import (
@@ -182,8 +185,18 @@ def _applied(repositories: Repositories, issue: Issue, actions: TriageRuleAction
     return issue.model_copy(deep=True, update=update) if update else issue
 
 
+def _in_order(rows: list[Activity]) -> list[Activity]:
+    """The rows with ascending activity ids in list order.
+
+    A ULID's random tail decides the order of ids minted in the same millisecond,
+    so the ids are minted together and handed out sorted.
+    """
+    ids = sorted(new_activity_id() for _ in rows)
+    return [row.model_copy(update={"activity_id": activity_id}) for row, activity_id in zip(rows, ids, strict=True)]
+
+
 def _rule_rows(issue: Issue, rules: Sequence[TriageRule], before: Issue, after: Issue) -> list[Activity]:
-    """One row per applied rule naming it, then one per field the rules changed."""
+    """One row per applied rule naming it, then one per field the rules changed, ids ascending in that order."""
     rows = [
         build_activity(
             issue.workspace_id,
@@ -213,7 +226,7 @@ def _rule_rows(issue: Issue, rules: Sequence[TriageRule], before: Issue, after: 
         )
         for field, old, new in changed_fields(before, after, RULE_FIELDS)
     )
-    return rows
+    return _in_order(rows)
 
 
 def run_triage_rules(
