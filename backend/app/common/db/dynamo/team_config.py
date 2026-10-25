@@ -418,6 +418,7 @@ class CycleSettings(BaseModel):
     start_weekday: int = DEFAULT_CYCLE_START_WEEKDAY
     upcoming_count: int = DEFAULT_UPCOMING_CYCLES
     auto_add_started: bool = True
+    auto_add_completed: bool = False
     move_unfinished: bool = True
     updated_at: datetime | None = None
 

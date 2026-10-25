@@ -203,6 +203,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     weekday: `${prefix}-weekday`,
     upcoming: `${prefix}-upcoming`,
     autoAdd: `${prefix}-auto-add`,
+    autoAddCompleted: `${prefix}-auto-add-completed`,
     moveUnfinished: `${prefix}-move-unfinished`,
   };
 
@@ -374,6 +375,22 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
                     disabled={locked}
                     onChange={(autoAdd) => {
                       edit({ auto_add_started: autoAdd });
+                    }}
+                  />
+                </Row>
+                <Row
+                  labelId={`${ids.autoAddCompleted}-label`}
+                  controlId={ids.autoAddCompleted}
+                  label="Auto-add completed issues"
+                  hint="Issues completed outside a cycle join the current cycle."
+                >
+                  <Toggle
+                    id={ids.autoAddCompleted}
+                    labelledBy={`${ids.autoAddCompleted}-label`}
+                    checked={current.auto_add_completed}
+                    disabled={locked}
+                    onChange={(autoAddCompleted) => {
+                      edit({ auto_add_completed: autoAddCompleted });
                     }}
                   />
                 </Row>

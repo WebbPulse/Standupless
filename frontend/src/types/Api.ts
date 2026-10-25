@@ -2224,6 +2224,7 @@ export interface CycleSettingsRead {
   start_weekday: number;
   upcoming_count: number;
   auto_add_started: boolean;
+  auto_add_completed?: boolean;
   move_unfinished: boolean;
   updated_at: string | null;
 }
@@ -2236,6 +2237,7 @@ export interface CycleSettingsUpdate {
   start_weekday?: number;
   upcoming_count?: number;
   auto_add_started?: boolean;
+  auto_add_completed?: boolean;
   move_unfinished?: boolean;
 }
 

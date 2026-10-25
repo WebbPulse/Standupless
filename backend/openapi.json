@@ -3996,6 +3996,10 @@
       "CycleSettingsRead": {
         "description": "A team's automatic cycle settings as the API returns them.",
         "properties": {
+          "auto_add_completed": {
+            "title": "Auto Add Completed",
+            "type": "boolean"
+          },
           "auto_add_started": {
             "title": "Auto Add Started",
             "type": "boolean"
@@ -4049,6 +4053,7 @@
           "start_weekday",
           "upcoming_count",
           "auto_add_started",
+          "auto_add_completed",
           "move_unfinished"
         ],
         "title": "CycleSettingsRead",
@@ -4057,6 +4062,17 @@
       "CycleSettingsUpdate": {
         "description": "The body a team's cycle settings patch takes, every field optional.\n\n`start_weekday` counts from Monday as 0 to Sunday as 6.",
         "properties": {
+          "auto_add_completed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Add Completed"
+          },
           "auto_add_started": {
             "anyOf": [
               {
