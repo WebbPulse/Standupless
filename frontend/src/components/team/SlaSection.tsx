@@ -1,7 +1,9 @@
 /**
  * A team's SLA rules: a switch that turns them on, and per priority how long
- * an issue may stay open before it breaches. The timer starts when an issue
- * is created, or when it is accepted from triage.
+ * an issue may stay open before it breaches. A "Start timer" select picks
+ * whether the timer starts when an issue leaves triage or counts from when it
+ * was created, triage included; a new choice applies from each issue's next
+ * move and leaves running timers alone.
  *
  * Every control is one choice, so each saves as soon as it is picked rather
  * than through a draft. A rule is stamped onto an issue when its SLA starts,
@@ -29,6 +31,7 @@ import {
 import type {
   SlaSettingsRead,
   SlaSettingsUpdate,
+  SlaStartMode,
   StatusCategory,
 } from '../../types/Api';
 import { cn } from '../../lib/cn';
@@ -77,7 +80,14 @@ const DEFAULT_SLA: Omit<SlaSettingsRead, 'team_id' | 'updated_at'> = {
   medium_hours: null,
   low_hours: null,
   paused_status_ids: [],
+  start_mode: 'on_triage_exit',
 };
+
+/** The start modes the "Start timer" select offers, in order. */
+const START_MODES: { value: SlaStartMode; label: string }[] = [
+  { value: 'on_triage_exit', label: 'When the issue leaves triage' },
+  { value: 'on_creation', label: 'When the issue is created' },
+];
 
 /** The status categories an SLA counts time in, so the ones it can pause. */
 const OPEN_CATEGORIES = new Set<StatusCategory>([
@@ -112,6 +122,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
   const baseId = useId();
   const switchLabelId = `${baseId}-enabled`;
   const pausedLabelId = `${baseId}-paused`;
+  const startModeId = `${baseId}-start-mode`;
   const queryKey: QueryKey = ['sla-settings', workspaceId, teamId];
 
   const { data, error, isLoading, refetch } = usePolledQuery(
@@ -140,6 +151,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
   const current = data ?? DEFAULT_SLA;
   const enabled = current.enabled;
   const paused = current.paused_status_ids ?? [];
+  const startMode: SlaStartMode = current.start_mode ?? 'on_triage_exit';
   const pausable = (statuses ?? [])
     .filter(
       (status) =>
@@ -173,6 +185,17 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
     void apply(body, 'SLA saved.');
   };
 
+  const onStartMode = (raw: string): void => {
+    const next = START_MODES.find((mode) => mode.value === raw)?.value;
+    if (next === undefined || next === startMode) return;
+    void apply(
+      { start_mode: next },
+      next === 'on_creation'
+        ? 'SLA timers count from creation.'
+        : 'SLA timers start when issues leave triage.'
+    );
+  };
+
   const onPause = (statusId: string, checked: boolean): void => {
     const next = checked
       ? [...paused.filter((id) => id !== statusId), statusId]
@@ -191,8 +214,8 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
         <h3 className="text-base font-semibold">SLAs</h3>
         <p className="text-sm text-text-muted">
           Set how long an issue of each priority may stay open before it
-          breaches. The timer starts when the issue is created or accepted from
-          triage.
+          breaches. Pick whether the timer starts when the issue leaves triage
+          or when it is created.
         </p>
       </div>
 
@@ -254,6 +277,41 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
                 )}
               />
             </button>
+          </li>
+          <li className="flex min-h-row items-center justify-between gap-4 px-3 py-2">
+            <div className="min-w-0">
+              <label
+                htmlFor={startModeId}
+                className={cn(
+                  'block text-sm font-medium',
+                  enabled ? 'text-text' : 'text-text-muted'
+                )}
+              >
+                Start timer
+              </label>
+              <p className="text-xs text-text-muted">
+                A new choice applies from each issue&apos;s next priority,
+                status or triage change. Timers already running keep their
+                start.
+              </p>
+            </div>
+            <div className="shrink-0">
+              <Select
+                id={startModeId}
+                className="w-60"
+                value={startMode}
+                disabled={!canEdit || saving || !planIncluded}
+                onChange={(event) => {
+                  onStartMode(event.target.value);
+                }}
+              >
+                {START_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </li>
           {SLA_PRIORITIES.map((priority) => {
             const controlId = `${baseId}-${priority}`;

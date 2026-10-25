@@ -6,6 +6,7 @@ the start and moves the deadline, or drops it for a priority with no rule;
 moving between open statuses keeps it; finishing the issue drops it. The list
 answers each issue's SLA status and filters on it. Time in a status the team
 pauses does not count, and leaving it resumes with the time that was left.
+A team counting from creation keeps the timer through triage, from `created_at`.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
@@ -463,3 +465,176 @@ def test_the_route_answers_the_pause(
     breaches, first = _at(resumed["sla_breaches_at"]), _at(issue["sla_breaches_at"])
     assert resumed["sla_paused_at"] is None
     assert breaches is not None and first is not None and breaches >= first
+
+
+MODES = ("on_triage_exit", "on_creation")
+
+
+def _triaged(status_id: str, priority: str = "urgent") -> Issue:
+    """A bare issue of `TEAM` waiting in triage, filed at `START`, with no timer yet."""
+    return _in(status_id, priority).model_copy(update={"in_triage": True, "created_at": START})
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_an_issue_filed_into_triage(workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str) -> None:
+    """Waiting in triage holds the timer by default; creation mode starts it at filing."""
+    _enable(repositories, start_mode=mode)
+    issue = _triaged(statuses["unstarted"].status_id)
+
+    apply_sla(repositories, None, issue, START)
+
+    if mode == "on_creation":
+        assert (issue.sla_started_at, issue.sla_breaches_at) == (START, START + timedelta(hours=24))
+    else:
+        assert (issue.sla_started_at, issue.sla_breaches_at) == (None, None)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_accepting_from_triage(workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str) -> None:
+    """Accepting starts the timer by default; creation mode keeps the one running since filing."""
+    todo = statuses["unstarted"].status_id
+    _enable(repositories, start_mode=mode)
+    issue = _triaged(todo)
+    apply_sla(repositories, None, issue, START)
+
+    accepted = _move(repositories, issue, START + timedelta(hours=5), in_triage=False, status_id=todo)
+
+    expected = START if mode == "on_creation" else START + timedelta(hours=5)
+    assert accepted.sla_started_at == expected
+    assert accepted.sla_breaches_at == expected + timedelta(hours=24)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_declining_from_triage_drops_the_timer(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str
+) -> None:
+    """A declined issue lands cancelled and carries no timer in either mode."""
+    _enable(repositories, start_mode=mode)
+    issue = _triaged(statuses["unstarted"].status_id)
+    apply_sla(repositories, None, issue, START)
+
+    declined = _move(
+        repositories, issue, START + timedelta(hours=1), in_triage=False, status_id=statuses["cancelled"].status_id
+    )
+
+    assert (declined.sla_started_at, declined.sla_breaches_at, declined.sla_paused_at) == (None, None, None)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_reopening_starts_a_fresh_window(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str
+) -> None:
+    """A reopened issue counts from the reopen, not from when it was filed, in either mode."""
+    todo = statuses["unstarted"].status_id
+    _enable(repositories, start_mode=mode)
+    issue = _in(todo).model_copy(update={"created_at": START})
+    apply_sla(repositories, None, issue, START)
+    done = _move(repositories, issue, START + timedelta(hours=2), status_id=statuses["completed"].status_id)
+
+    reopened = _move(repositories, done, START + timedelta(hours=10), status_id=todo)
+
+    assert done.sla_breaches_at is None
+    assert reopened.sla_started_at == START + timedelta(hours=10)
+    assert reopened.sla_breaches_at == START + timedelta(hours=34)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_setting_a_priority_in_triage(workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str) -> None:
+    """Creation mode counts a late priority from filing; the default waits for the accept."""
+    todo = statuses["unstarted"].status_id
+    _enable(repositories, start_mode=mode)
+    issue = _triaged(todo, priority="none")
+    apply_sla(repositories, None, issue, START)
+
+    ruled = _move(repositories, issue, START + timedelta(hours=3), priority="urgent")
+    accepted = _move(repositories, ruled, START + timedelta(hours=5), in_triage=False)
+
+    if mode == "on_creation":
+        assert (ruled.sla_started_at, ruled.sla_breaches_at) == (START, START + timedelta(hours=24))
+        assert accepted.sla_started_at == START
+    else:
+        assert ruled.sla_breaches_at is None
+        assert accepted.sla_started_at == START + timedelta(hours=5)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_sending_back_to_triage(workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str) -> None:
+    """Re-triaging drops the timer by default and keeps it in creation mode."""
+    _enable(repositories, start_mode=mode)
+    issue = _in(statuses["unstarted"].status_id).model_copy(update={"created_at": START})
+    apply_sla(repositories, None, issue, START)
+
+    waiting = _move(repositories, issue, START + timedelta(hours=2), in_triage=True)
+
+    if mode == "on_creation":
+        assert (waiting.sla_started_at, waiting.sla_breaches_at) == (START, START + timedelta(hours=24))
+    else:
+        assert waiting.sla_breaches_at is None
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_a_paused_status_after_triage(workspace: str, repositories: Any, statuses: "dict[str, Any]", mode: str) -> None:
+    """Accepted into a paused status, the clock stands still and resumes with the time it had left."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories, start_mode=mode, paused_status_ids=[staging])
+    issue = _triaged(todo)
+    apply_sla(repositories, None, issue, START)
+
+    paused = _move(repositories, issue, START + timedelta(hours=6), in_triage=False, status_id=staging)
+    resumed = _move(repositories, paused, START + timedelta(hours=10), status_id=todo)
+
+    assert paused.sla_paused_at == START + timedelta(hours=6)
+    assert resumed.sla_paused_at is None
+    expected = START + timedelta(hours=28) if mode == "on_creation" else START + timedelta(hours=34)
+    assert resumed.sla_breaches_at == expected
+
+
+def test_archiving_drops_a_timer_started_in_triage(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Creation mode still drops the timer of an archived issue."""
+    _enable(repositories, start_mode="on_creation")
+    issue = _triaged(statuses["unstarted"].status_id)
+    apply_sla(repositories, None, issue, START)
+
+    archived = _move(repositories, issue, START + timedelta(hours=1), archived_at=START + timedelta(hours=1))
+
+    assert (archived.sla_started_at, archived.sla_breaches_at) == (None, None)
+
+
+def test_changing_the_mode_leaves_a_running_timer_alone(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A timer started at the accept keeps that start after the team switches to creation mode."""
+    todo = statuses["unstarted"].status_id
+    _enable(repositories)
+    issue = _triaged(todo)
+    apply_sla(repositories, None, issue, START)
+    accepted = _move(repositories, issue, START + timedelta(hours=5), in_triage=False, status_id=todo)
+
+    _enable(repositories, start_mode="on_creation")
+    raised = _move(repositories, accepted, START + timedelta(hours=7), priority="high")
+
+    assert raised.sla_started_at == START + timedelta(hours=5)
+    assert raised.sla_breaches_at == START + timedelta(hours=77)
+
+
+def test_creation_mode_times_a_waiting_issue_through_the_routes(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """An issue filed into triage answers a running timer, and accepting it keeps the start."""
+    _enable(repositories, start_mode="on_creation")
+    repositories.team_config.put_triage_settings(
+        default_triage_settings(WORKSPACE, TEAM).model_copy(update={"enabled": True})
+    )
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    sign_in(client, MEMBER)
+    waiting = create_issue(client, WORKSPACE, priority="urgent")
+    assert waiting["in_triage"] is True
+    assert waiting["sla_status"] == "on_track"
+
+    sign_in(client, OWNER)
+    response = client.post(f"{BASE}/{waiting['id']}/triage/accept")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["sla_started_at"] == waiting["sla_started_at"]

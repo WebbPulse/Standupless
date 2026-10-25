@@ -2551,6 +2551,7 @@ class SlaSettingsRead(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     paused_status_ids: NotRequired[list[str]]
+    start_mode: NotRequired[Literal["on_triage_exit", "on_creation"]]
     team_id: str
     updated_at: NotRequired[str | None]
     urgent_hours: NotRequired[int | None]
@@ -2562,6 +2563,7 @@ class SlaSettingsUpdate(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     paused_status_ids: NotRequired[list[str] | None]
+    start_mode: NotRequired[Literal["on_triage_exit", "on_creation"] | None]
     urgent_hours: NotRequired[int | None]
 
 

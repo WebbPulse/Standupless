@@ -20821,6 +20821,15 @@
             "title": "Paused Status Ids",
             "type": "array"
           },
+          "start_mode": {
+            "default": "on_triage_exit",
+            "enum": [
+              "on_triage_exit",
+              "on_creation"
+            ],
+            "title": "Start Mode",
+            "type": "string"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -20857,7 +20866,7 @@
         "type": "object"
       },
       "SlaSettingsUpdate": {
-        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.",
+        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.\n`start_mode` picks when a timer starts: `on_triage_exit` once an issue\nleaves triage, `on_creation` from when it was filed, triage included. A\nchange applies from each issue's next priority, status or triage move and\nleaves timers already running alone.",
         "properties": {
           "enabled": {
             "anyOf": [
@@ -20923,6 +20932,21 @@
               }
             ],
             "title": "Paused Status Ids"
+          },
+          "start_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_triage_exit",
+                  "on_creation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Mode"
           },
           "urgent_hours": {
             "anyOf": [
