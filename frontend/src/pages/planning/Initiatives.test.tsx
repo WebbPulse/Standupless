@@ -738,8 +738,9 @@ describe('Initiatives', () => {
       });
     };
     await screen.findByText('Alpha');
-    await keysBound('j', 's');
+    await keysBound('j');
     press('j');
+    await keysBound('s');
     press('s');
     expect(
       await screen.findByRole('option', { name: /Active/ })
