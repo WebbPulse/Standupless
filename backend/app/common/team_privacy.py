@@ -20,11 +20,11 @@ def needs_team_membership(repositories: Repositories, workspace_id: str, team_id
 
 
 def person_can_see_team(repositories: Repositories, workspace_id: str, team_id: str, user_id: str) -> bool:
-    """Whether one person of the workspace may read one team and its content."""
+    """Whether one person of the workspace may read one team and its content. A suspended member reads none."""
     if not workspace_id or not team_id or not user_id:
         return False
     membership = repositories.memberships.get(workspace_id, user_id)
-    if membership is None:
+    if membership is None or membership.is_suspended:
         return False
     if not needs_team_membership(repositories, workspace_id, team_id, membership.role):
         return True
@@ -34,7 +34,7 @@ def person_can_see_team(repositories: Repositories, workspace_id: str, team_id: 
 def person_can_see_initiative(repositories: Repositories, initiative: Initiative, user_id: str) -> bool:
     """Whether one person may read an initiative: a member but not a guest, and inside its lead team when it has one."""
     membership = repositories.memberships.get(initiative.workspace_id, user_id) if user_id else None
-    if membership is None or membership.role == "guest":
+    if membership is None or membership.role == "guest" or membership.is_suspended:
         return False
     if initiative.team_id is None:
         return True

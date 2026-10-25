@@ -12703,7 +12703,7 @@
         "type": "object"
       },
       "MemberRead": {
-        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.",
+        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.\n`status` is `suspended` for a member who keeps their history but holds no\naccess, and `invited` for a pending invite, which then carries `invite_id`,\nanswers the invite id as `user_id` and the invite's sent time as `joined_at`.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -12729,6 +12729,17 @@
             "title": "Full Name",
             "type": "string"
           },
+          "invite_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite Id"
+          },
           "joined_at": {
             "format": "date-time",
             "title": "Joined At",
@@ -12750,6 +12761,39 @@
             ],
             "title": "Role",
             "type": "string"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "suspended",
+              "invited"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suspended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspended At"
+          },
+          "suspended_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspended By"
           },
           "user_id": {
             "title": "User Id",
@@ -31031,7 +31075,7 @@
     },
     "/api/workspaces": {
       "get": {
-        "description": "Every workspace the caller is a member of, with their role on each.\n\nRead through the memberships user index rather than an owner field, so a\nmember who does not own the workspace still sees it. A workspace whose\nauthentication policy refuses the caller's session is still listed, flagged,\nso the client can say why instead of failing every call inside it.",
+        "description": "Every workspace the caller is a member of, with their role on each.\n\nRead through the memberships user index rather than an owner field, so a\nmember who does not own the workspace still sees it. A workspace whose\nauthentication policy refuses the caller's session is still listed, flagged,\nso the client can say why instead of failing every call inside it. A\nworkspace that suspended the caller is left out, since it grants them nothing.",
         "operationId": "list_workspaces_api_workspaces_get",
         "responses": {
           "200": {
@@ -46737,7 +46781,7 @@
     },
     "/api/workspaces/{workspace_id}/members": {
       "get": {
-        "description": "Everyone in the workspace, joined with their user rows for display.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
+        "description": "Everyone in the workspace, joined with their user rows for display.\n\n`status` repeats to filter by active, suspended or invited. Without it the\nanswer holds active and suspended members, and invited rows answer only an\nadmin. The answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_members_api_workspaces__workspace_id__members_get",
         "parameters": [
           {
@@ -46748,6 +46792,30 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "active",
+                      "suspended",
+                      "invited"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -46898,6 +46966,124 @@
           }
         ],
         "summary": "Update Member",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/members/{user_id}/reactivate": {
+      "post": {
+        "description": "Reactivate a suspended member with the role and teams they held.",
+        "operationId": "reactivate_member_api_workspaces__workspace_id__members__user_id__reactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Reactivate Member",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/members/{user_id}/suspend": {
+      "post": {
+        "description": "Suspend a member, keeping their role, teams and history while every credential they hold stops working here.\n\nAn admin cannot suspend themselves, only an owner may suspend an owner, and\nthe last active owner stays.",
+        "operationId": "suspend_member_api_workspaces__workspace_id__members__user_id__suspend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Suspend Member",
         "tags": [
           "workspaces"
         ]

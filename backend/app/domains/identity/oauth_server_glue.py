@@ -192,7 +192,7 @@ def resolve_tenants(
         claims[SSO_CONNECTION_CLAIM] = connection
     choices: list[TenantChoice] = []
     for membership in memberships:
-        if not allowed_scopes(user_id, membership.workspace_id):
+        if membership.is_suspended or not allowed_scopes(user_id, membership.workspace_id):
             continue
         policy = repository.get_auth_policy(membership.workspace_id)
         if policy.require_two_factor and TWO_FACTOR_CLAIM not in claims:

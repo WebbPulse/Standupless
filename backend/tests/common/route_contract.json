@@ -2978,6 +2978,18 @@
   {
     "auth": "workspace:admin",
     "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/members/{user_id}/reactivate"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/members/{user_id}/suspend"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/sso"
   },

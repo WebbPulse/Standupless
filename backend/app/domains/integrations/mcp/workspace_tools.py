@@ -28,8 +28,10 @@ from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
     enum,
+    filter_values,
     nullable,
     object_schema,
+    one_or_many,
     projects_display_schema,
     string,
     user_ref,
@@ -37,6 +39,8 @@ from app.domains.integrations.mcp.toolkit import (
 from app.domains.integrations.mcp.transport import ToolError
 
 ASSIGNABLE_ROLES: tuple[str, ...] = ("admin", "member", "guest")
+
+MEMBER_STATUSES: tuple[str, ...] = ("active", "suspended", "invited")
 
 USER_ARGUMENT = "The member: 'me', an email address or a user id"
 
@@ -131,9 +135,13 @@ def _update_workspace(call: ToolCall) -> Any:
 
 
 def _list_members(call: ToolCall) -> Any:
-    """Everyone in the workspace with their workspace role."""
+    """Everyone in the workspace with their workspace role and status, filtered by `status` when given."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_READ)
-    return workspace_members.list_members(call.repositories, call.context).model_dump(mode="json")
+    statuses = filter_values(call.arguments.get("status"))
+    unknown = sorted(set(statuses or ()) - set(MEMBER_STATUSES))
+    if unknown:
+        raise ToolError(f"status must be one of {', '.join(MEMBER_STATUSES)}")
+    return workspace_members.list_members(call.repositories, call.context, statuses).model_dump(mode="json")
 
 
 def _update_member_role(call: ToolCall) -> Any:
@@ -152,6 +160,20 @@ def _remove_member(call: ToolCall) -> Any:
     user_id = user_ref(call, call.require("user"))
     workspace_members.remove_member(call.repositories, call.context, user_id)
     return {"removed": True, "user_id": user_id}
+
+
+def _suspend_member(call: ToolCall) -> Any:
+    """Suspend a member under the suspend route's admin, self and last owner rules."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    user_id = user_ref(call, call.require("user"))
+    return workspace_members.suspend_member(call.repositories, call.context, user_id).model_dump(mode="json")
+
+
+def _reactivate_member(call: ToolCall) -> Any:
+    """Reactivate a suspended member with the role and teams they held."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    user_id = user_ref(call, call.require("user"))
+    return workspace_members.reactivate_member(call.repositories, call.context, user_id).model_dump(mode="json")
 
 
 def _list_invites(call: ToolCall) -> Any:
@@ -269,9 +291,11 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_workspace_members",
-        description="Every workspace member with user id, email, display name, workspace role and join date.",
+        description="Every workspace member with user id, email, display name, workspace role, join date and "
+        "status. Active and suspended members by default; pass status to filter, and invited to include pending "
+        "invites, which only an admin sees.",
         scopes=("members:read",),
-        schema=object_schema({}),
+        schema=object_schema({"status": one_or_many("active, suspended or invited; one or a list")}),
         handler=_list_members,
     ),
     Tool(
@@ -293,6 +317,25 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
         schema=object_schema({"user": string(USER_ARGUMENT)}, required=("user",)),
         handler=_remove_member,
         destructive=True,
+    ),
+    Tool(
+        name="suspend_member",
+        description="Suspend a member. They keep their role, teams and history, but every session, key and token "
+        "they hold stops working in this workspace and they leave billable seats, pickers and notifications until "
+        "reactivated. Needs owner or admin; nobody can suspend themselves, only an owner may suspend an owner, and "
+        "the last active owner cannot be suspended.",
+        scopes=("members:write", "admin"),
+        schema=object_schema({"user": string(USER_ARGUMENT)}, required=("user",)),
+        handler=_suspend_member,
+        destructive=True,
+    ),
+    Tool(
+        name="reactivate_member",
+        description="Reactivate a suspended member with the same role and teams. Needs owner or admin; only an "
+        "owner may reactivate an owner.",
+        scopes=("members:write", "admin"),
+        schema=object_schema({"user": string(USER_ARGUMENT)}, required=("user",)),
+        handler=_reactivate_member,
     ),
     Tool(
         name="list_invites",

@@ -30,6 +30,7 @@ import { cn } from '../../lib/cn';
 import { labelPath, labelSections, toggleLabel } from '../../lib/labelGroups';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import {
+  isPickable,
   personAvatar,
   personLabel,
   type Assignable,
@@ -357,8 +358,11 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
   ...base
 }) => {
   const variant = base.variant ?? 'rail';
-  const me = people.find((person) => person.user_id === currentUserId);
-  const others = people.filter((person) => person.user_id !== currentUserId);
+  const pickable = people.filter(
+    (person) => isPickable(person) || person.user_id === value
+  );
+  const me = pickable.find((person) => person.user_id === currentUserId);
+  const others = pickable.filter((person) => person.user_id !== currentUserId);
   const ordered = me === undefined ? others : [me, ...others];
   const current =
     value === null

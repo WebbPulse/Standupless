@@ -186,16 +186,18 @@ def _note(repositories: Repositories, destination: ChannelDestination, response:
 
 
 def notice_recipients(repositories: Repositories, workspace_id: str, team_id: str) -> list[str]:
-    """Everybody who administers the team, its own admins and the workspace's owners and admins.
+    """Everybody active who administers the team, its own admins and the workspace's owners and admins.
 
     An empty `team_id` names a workspace destination, which only workspace owners and admins manage.
     """
     recipients: dict[str, None] = {}
+    members = repositories.memberships.list_members(workspace_id)
+    suspended = {membership.user_id for membership in members if membership.is_suspended}
     for membership in repositories.memberships.list_team_members(workspace_id, team_id) if team_id else []:
-        if membership.role == "admin":
+        if membership.role == "admin" and membership.user_id not in suspended:
             recipients[membership.user_id] = None
-    for membership in repositories.memberships.list_members(workspace_id):
-        if membership.role in ADMIN_ROLES:
+    for membership in members:
+        if membership.role in ADMIN_ROLES and not membership.is_suspended:
             recipients[membership.user_id] = None
     return list(recipients)[:MAX_NOTICE_RECIPIENTS]
 

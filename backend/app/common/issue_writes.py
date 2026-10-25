@@ -723,9 +723,9 @@ def apply_patch(
     if "label_ids" in attributes and attributes["label_ids"] is not None:
         updated.label_ids = check_labels(repositories, context.workspace_id, issue.team_id, attributes["label_ids"])
     if "assignee_id" in attributes:
-        updated.assignee_id = check_assignee(
-            repositories, context.workspace_id, issue.team_id, resolve_me(context, attributes["assignee_id"])
-        )
+        requested_assignee = resolve_me(context, attributes["assignee_id"])
+        if requested_assignee != issue.assignee_id:
+            updated.assignee_id = check_assignee(repositories, context.workspace_id, issue.team_id, requested_assignee)
     if "start_date" in attributes:
         updated.start_date = attributes["start_date"]
     if "due_date" in attributes:

@@ -109,9 +109,9 @@ def get_gateway_factory() -> GatewayFactory:
 
 
 def seat_count(repositories: Repositories, workspace_id: str) -> int:
-    """How many billable seats a workspace has: every member but guests, and at least one."""
+    """How many billable seats a workspace has: every active member but guests, and at least one."""
     members = repositories.memberships.list_members(workspace_id, limit=5000)
-    return max(1, sum(1 for member in members if member.role != "guest"))
+    return max(1, sum(1 for member in members if member.role != "guest" and not member.is_suspended))
 
 
 def billing_page_url(workspace: Workspace) -> str:

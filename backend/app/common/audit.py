@@ -51,6 +51,8 @@ EVENTS: dict[str, str] = {
     "member.removed": "Member removed",
     "member.left": "Member left",
     "member.role_changed": "Member role changed",
+    "member.suspended": "Member suspended",
+    "member.reactivated": "Member reactivated",
     "invite.created": "Invite sent",
     "invite.revoked": "Invite revoked",
     "auth_policy.updated": "Authentication policy changed",

@@ -328,7 +328,7 @@ def _notify_admins(repositories: Repositories, context: AuthzContext, row: AppAp
     admins = [
         membership.user_id
         for membership in repositories.memberships.list_members(context.workspace_id)
-        if membership.role in ADMIN_ROLES and membership.user_id != context.user_id
+        if membership.role in ADMIN_ROLES and membership.user_id != context.user_id and not membership.is_suspended
     ]
     if not admins:
         return

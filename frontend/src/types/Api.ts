@@ -540,6 +540,9 @@ export interface WorkspaceUpdate {
   third_party_app_approvals?: boolean;
 }
 
+/** Where a member stands: active, suspended by an admin, or invited and not yet joined. */
+export type MemberStatus = 'active' | 'suspended' | 'invited';
+
 /** One member of a workspace. */
 export interface MemberRead {
   user_id: string;
@@ -553,6 +556,14 @@ export interface MemberRead {
   full_name?: string;
   /** Handles the person gave up in a rename, which old mentions still use. */
   previous_handles?: string[];
+  /** Whether the member is active, suspended or only invited. */
+  status?: MemberStatus;
+  /** When the member was suspended, or null while active. */
+  suspended_at?: string | null;
+  /** Who suspended the member, or null while active. */
+  suspended_by?: string | null;
+  /** The invite behind an invited row, or null for a member. */
+  invite_id?: string | null;
 }
 
 /** A change to the caller's own name or handle. Fields left out keep their value. */

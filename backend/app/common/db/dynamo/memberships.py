@@ -385,11 +385,18 @@ class Membership(BaseModel):
     team_id: str | None = None
     joined_at: datetime = Field(default_factory=utc_now)
     team_order: list[str] = Field(default_factory=list)
+    suspended_at: datetime | None = None
+    suspended_by: str | None = None
 
     @property
     def is_team_membership(self) -> bool:
         """Whether this row grants a team rather than the workspace."""
         return self.team_id is not None
+
+    @property
+    def is_suspended(self) -> bool:
+        """Whether this workspace membership is suspended, keeping its role and teams but granting nothing."""
+        return self.suspended_at is not None
 
 
 class MembershipRepository:
@@ -514,6 +521,46 @@ class MembershipRepository:
             return None
         return _as_membership(item) if item is not None else None
 
+    def set_suspended(self, workspace_id: str, user_id: str, *, suspended_by: str) -> Membership | None:
+        """Suspend a workspace member, or `None` when there is no such member or they are already suspended.
+
+        Conditional on the row existing unsuspended, so two racing suspensions
+        record one actor and suspending cannot create a membership.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="SET #at = :at, #by = :by",
+                expression_names={"#at": "suspended_at", "#by": "suspended_by"},
+                expression_values={":at": utc_now().isoformat(), ":by": suspended_by},
+                condition=Attr("member_key").exists()
+                & (Attr("suspended_at").not_exists() | Attr("suspended_at").attribute_type("NULL")),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
+
+    def clear_suspended(self, workspace_id: str, user_id: str) -> Membership | None:
+        """Reactivate a suspended workspace member, or `None` when there is no such member.
+
+        Leaves the role, team rows and team order alone, so access returns exactly
+        as it was.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="REMOVE #at, #by",
+                expression_names={"#at": "suspended_at", "#by": "suspended_by"},
+                condition=Attr("member_key").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
+
     def set_team_role(self, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
         """Grant or change a team role, creating the row when it is absent."""
         membership = Membership(
@@ -575,6 +622,10 @@ class MembershipRepository:
             max_items=limit,
         )
         return sorted((_as_membership(item) for item in items), key=lambda row: row.joined_at)
+
+    def suspended_user_ids(self, workspace_id: str) -> frozenset[str]:
+        """Everyone whose workspace membership is suspended, for a fan-out over team rows that carry no suspension."""
+        return frozenset(row.user_id for row in self.list_members(workspace_id) if row.is_suspended)
 
     def list_team_members(
         self, workspace_id: str, team_id: str, *, limit: int = MEMBERSHIP_SCAN_LIMIT
@@ -1003,11 +1054,12 @@ class MembershipRepository:
         return sorted({str(item["workspace_id"]) for item in items})
 
     def count_owners(self, workspace_id: str) -> int:
-        """How many workspace owners this tenant has.
+        """How many active workspace owners this tenant has.
 
-        Read before a role change or a removal, because the last owner must not be
-        able to leave a workspace nobody can then administer. Exact rather than
-        capped: every page is read, filtered to owners server side.
+        Read before a role change, a removal or a suspension, because the last
+        owner must not be able to leave a workspace nobody can then administer.
+        A suspended owner administers nothing, so is not counted. Exact rather
+        than capped: every page is read, filtered to owners server side.
         """
         if not workspace_id:
             return 0
@@ -1016,7 +1068,7 @@ class MembershipRepository:
             filter_expression=Attr("role").eq("owner"),
             consistent=True,
         )
-        return sum(1 for _ in items)
+        return sum(1 for item in items if not item.get("suspended_at"))
 
     def get_scim_user(self, workspace_id: str, scim_id: str) -> ScimUserRow | None:
         """One provisioned directory user, or `None`."""

@@ -5,13 +5,17 @@
  */
 
 import { prefersFullNames } from './preferences';
-import type { MemberRead, TeamMemberRead } from '../types/Api';
+import type { MemberRead, MemberStatus, TeamMemberRead } from '../types/Api';
 
 /** Anyone an issue may be assigned to, from either membership list. */
 export type Assignable = Pick<
   MemberRead | TeamMemberRead,
   'user_id' | 'email' | 'display_name' | 'avatar_url' | 'full_name'
->;
+> & { status?: MemberStatus };
+
+/** Whether a person may be offered for new work: anyone not suspended. */
+export const isPickable = (person: Assignable): boolean =>
+  person.status !== 'suspended';
 
 /**
  * How a person reads: their full name when the viewer asked for full names and

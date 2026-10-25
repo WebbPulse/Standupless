@@ -1541,9 +1541,13 @@ class MemberRead(TypedDict):
     display_name: str
     email: str
     full_name: NotRequired[str]
+    invite_id: NotRequired[str | None]
     joined_at: str
     previous_handles: NotRequired[list[str]]
     role: Literal["owner", "admin", "member", "guest"]
+    status: NotRequired[Literal["active", "suspended", "invited"]]
+    suspended_at: NotRequired[str | None]
+    suspended_by: NotRequired[str | None]
     user_id: str
 
 
