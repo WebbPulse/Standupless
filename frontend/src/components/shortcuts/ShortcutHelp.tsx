@@ -131,6 +131,17 @@ const fixedGroups = (): HelpGroup[] => {
       ],
     },
     {
+      name: 'Search',
+      local: false,
+      rows: [
+        fixedRow(
+          'fixed-search-escape',
+          'Clear the search, then leave search',
+          [fromKeys('escape')]
+        ),
+      ],
+    },
+    {
       name: PANEL_GROUP,
       local: false,
       rows: [
@@ -164,7 +175,14 @@ const fixedGroups = (): HelpGroup[] => {
 };
 
 /** The headings every workspace page has; any other comes from the page in view. */
-const APP_WIDE = ['General', 'Navigation', 'Open', 'Tabs', PANEL_GROUP];
+const APP_WIDE = [
+  'General',
+  'Navigation',
+  'Open',
+  'Search',
+  'Tabs',
+  PANEL_GROUP,
+];
 
 /** The order page headings appear in; anything else follows alphabetically. */
 const PAGE_ORDER = ['Issue', 'List', 'Filters', 'Board'];

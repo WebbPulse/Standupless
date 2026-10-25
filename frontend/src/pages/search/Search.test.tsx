@@ -3,7 +3,8 @@
  * rather than sent, that an issue key short circuits instead of searching, that
  * the read carries no cursor because the contract caps rather than pages, that
  * the team and status filters narrow the call, that the term and filters live
- * in the address, and that each kind of hit is grouped and linked.
+ * in the address, that each kind of hit is grouped and linked, and that
+ * Escape clears the term before it leaves search.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -131,10 +132,15 @@ const Address = () => {
   return <output aria-label="Address">{location.search}</output>;
 };
 
-const renderPage = (entry = '/w/mine/search') =>
+const renderPage = (entry = '/w/mine/search', before: string[] = []) =>
   render(
-    <MemoryRouter initialEntries={[entry]}>
+    <MemoryRouter
+      initialEntries={[...before, entry]}
+      initialIndex={before.length}
+    >
       <Routes>
+        <Route path="/w/:slug" element={<p>Workspace home</p>} />
+        <Route path="/w/:slug/inbox" element={<p>Inbox page</p>} />
         <Route
           path="/w/:slug/search"
           element={
@@ -458,5 +464,48 @@ describe('search page', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Address')).toHaveTextContent('type=comments');
+  });
+
+  it('clears the term on the first Escape and keeps focus in the input', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/search?q=cache&team=proj-1');
+
+    await screen.findByText('Cache the token');
+    const input = screen.getByRole('searchbox');
+    input.focus();
+    await user.keyboard('{Escape}');
+
+    expect(input).toHaveValue('');
+    expect(input).toHaveFocus();
+    expect(screen.getByLabelText('Address')).not.toHaveTextContent('q=');
+    expect(screen.getByLabelText('Address')).toHaveTextContent('team=proj-1');
+    expect(
+      await screen.findByText('Type a word to search the teams you can see.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+  });
+
+  it('goes back on Escape once the term is empty', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/search?q=cache', ['/w/mine/inbox']);
+
+    await screen.findByText('Cache the token');
+    screen.getByRole('searchbox').focus();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+
+    await user.keyboard('{Escape}');
+
+    expect(await screen.findByText('Inbox page')).toBeInTheDocument();
+  });
+
+  it('goes to the workspace home on Escape when search has no history', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    screen.getByRole('searchbox').focus();
+    await user.keyboard('{Escape}');
+
+    expect(await screen.findByText('Workspace home')).toBeInTheDocument();
   });
 });
