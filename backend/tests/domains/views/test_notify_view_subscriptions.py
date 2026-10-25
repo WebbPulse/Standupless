@@ -4,6 +4,9 @@ These pin the transition rule, that a follower hears of an issue only when a
 write makes it match a view it did not match before, and the guards around it:
 the follower's own change says nothing, an issue they cannot see says nothing, a
 view they can no longer read says nothing, and unfollowing stops the notices.
+A follower hears of one issue entering one view once, a filter naming `me`
+means the follower, and deleting the view stops the notices and drops what
+they remembered.
 """
 
 from __future__ import annotations
@@ -60,15 +63,22 @@ def _follow(client: TestClient, workspace: str, user_id: str, **payload: Any) ->
     return view
 
 
+def _set_priority(
+    issues_client: TestClient, repositories: Any, workspace: str, issue_id: str, actor: str, priority: str
+) -> "dict[str, Any]":
+    """Set one issue's priority as `actor`, answering the modify record the write streams."""
+    before = _image(repositories, workspace, issue_id)
+    sign_in(issues_client, actor)
+    response = issues_client.patch(f"/api/workspaces/{workspace}/issues/{issue_id}", json={"priority": priority})
+    assert response.status_code == 200, response.text
+    return _record(_image(repositories, workspace, issue_id), before)
+
+
 def _raise_priority(
     issues_client: TestClient, repositories: Any, workspace: str, issue_id: str, actor: str
 ) -> "dict[str, Any]":
     """Raise one issue to high priority as `actor`, answering the modify record the write streams."""
-    before = _image(repositories, workspace, issue_id)
-    sign_in(issues_client, actor)
-    response = issues_client.patch(f"/api/workspaces/{workspace}/issues/{issue_id}", json={"priority": "high"})
-    assert response.status_code == 200, response.text
-    return _record(_image(repositories, workspace, issue_id), before)
+    return _set_priority(issues_client, repositories, workspace, issue_id, actor, "high")
 
 
 def test_an_issue_changed_into_a_followed_view_notifies_once_naming_the_view(
@@ -185,3 +195,59 @@ def test_unfollowing_stops_the_notices(
     handle_record(repositories, _raise_priority(issues_client, repositories, workspace, issue["id"], OWNER))
 
     assert _view_rows(repositories, workspace, MEMBER) == []
+
+
+def test_an_issue_entering_the_view_again_stays_quiet(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """An issue that leaves the view and comes back was already heard of, so the follower hears once."""
+    _follow(client, workspace, MEMBER, name="Hot", shared=True, filter={"priority": "high"})
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, priority="low")
+
+    handle_record(repositories, _set_priority(issues_client, repositories, workspace, issue["id"], OWNER, "high"))
+    handle_record(repositories, _set_priority(issues_client, repositories, workspace, issue["id"], OWNER, "low"))
+    handle_record(repositories, _set_priority(issues_client, repositories, workspace, issue["id"], OWNER, "high"))
+
+    assert len(_view_rows(repositories, workspace, MEMBER)) == 1
+
+
+def test_a_filter_naming_me_means_the_follower(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A shared view of "my" issues tells only the follower it is theirs, not every follower of the view."""
+    view = _follow(
+        client, workspace, OWNER, name="Mine and hot", shared=True, filter={"assignee_id": "me", "priority": "high"}
+    )
+    for follower in (MEMBER, ADMIN):
+        sign_in(client, follower)
+        response = client.put(f"/api/workspaces/{workspace}/views/{view['view_id']}/subscription")
+        assert response.status_code == 200, response.text
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, priority="low", assignee_id=MEMBER)
+
+    handle_record(repositories, _raise_priority(issues_client, repositories, workspace, issue["id"], OWNER))
+
+    assert len(_view_rows(repositories, workspace, MEMBER)) == 1
+    assert _view_rows(repositories, workspace, ADMIN) == []
+
+
+def test_deleting_a_followed_view_stops_its_notices(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Once the view is gone its followers hear nothing more, and the notices it remembered go with it."""
+    view = _follow(client, workspace, MEMBER, name="Hot", shared=True, filter={"priority": "high"})
+    sign_in(issues_client, OWNER)
+    first = seed_issue(issues_client, workspace, priority="low")
+    second = seed_issue(issues_client, workspace, priority="low")
+    handle_record(repositories, _raise_priority(issues_client, repositories, workspace, first["id"], OWNER))
+    assert repositories.views.notice_sent(workspace, view["view_id"], MEMBER, first["id"])
+
+    sign_in(client, MEMBER)
+    response = client.delete(f"/api/workspaces/{workspace}/views/{view['view_id']}")
+    assert response.status_code == 204, response.text
+    handle_record(repositories, _raise_priority(issues_client, repositories, workspace, second["id"], OWNER))
+
+    assert len(_view_rows(repositories, workspace, MEMBER)) == 1
+    assert repositories.views.subscriber_ids(workspace, view["view_id"]) == []
+    assert not repositories.views.notice_sent(workspace, view["view_id"], MEMBER, first["id"])

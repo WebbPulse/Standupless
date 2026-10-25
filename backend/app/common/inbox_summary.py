@@ -55,7 +55,7 @@ def _initiative_update_due(notification: Notification) -> str:
 
 def _view_issue_added(view_name: Optional[str]) -> str:
     """Name the followed view an issue entered, or only that it entered one when the row has no name."""
-    return f"Added to {view_name}" if view_name else "Added to a view you follow"
+    return f"New issue in {view_name}" if view_name else "New issue in a view you follow"
 
 
 def _reaction(actor: str, emoji: Optional[str]) -> str:
