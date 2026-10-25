@@ -202,6 +202,16 @@ export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
   'progress',
 ];
 
+/** The properties the timeline can show beside each name and on each bar, in chip order. */
+export const TIMELINE_PROJECT_COLUMNS: ProjectColumn[] = [
+  'priority',
+  'status',
+  'health',
+  'teams',
+  'lead',
+  'progress',
+];
+
 /** The properties drawn inline after the name rather than in a column of their own. */
 export const INLINE_PROJECT_COLUMNS: ReadonlySet<ProjectColumn> = new Set([
   'summary',

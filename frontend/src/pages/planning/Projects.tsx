@@ -8,7 +8,8 @@
  * and both dates edit from the row without opening it. The board puts
  * projects in columns by the grouping and moves them between columns by
  * dragging, and can drop columns that hold nothing; the timeline draws them
- * as bars from start to target date. Rows group by status, health, priority,
+ * as bars from start to target date with the chosen properties beside each
+ * name, stepping earlier or later a screen at a time. Rows group by status, health, priority,
  * initiative, lead or team in either direction, the list can group again
  * inside each group, rows order by date, name, priority or progress, and
  * closed projects show for all time, a recent window or not at all. Filters
@@ -161,6 +162,7 @@ import {
   DEFAULT_PROJECTS_DISPLAY,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
+  TIMELINE_PROJECT_COLUMNS,
   columnList,
   columnValue,
   directedGroups,
@@ -1513,6 +1515,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     onToday: () => {
       timeline.current?.scrollToToday();
     },
+    onStep: (step: -1 | 1) => {
+      timeline.current?.step(step);
+    },
   };
   useTimelineShortcuts({
     ...timelineControls,
@@ -1826,19 +1831,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
                 : {})}
               {...(layout === 'timeline'
                 ? {
+                    zoom,
+                    onZoomChange: timelineControls.onZoomChange,
                     dependencies: display.dependencies,
                     onDependenciesChange: (value: DependencyLinesChoice) => {
                       changeDisplay({ dependencies: value });
                     },
                   }
                 : {})}
-              {...(layout !== 'timeline'
-                ? {
-                    columns: shownColumns,
-                    onColumnsChange: (value: ProjectColumn[]) => {
-                      changeDisplay({ columns: columnValue(value) });
-                    },
-                  }
+              columns={shownColumns}
+              onColumnsChange={(value: ProjectColumn[]) => {
+                changeDisplay({ columns: columnValue(value) });
+              }}
+              {...(layout === 'timeline'
+                ? { chips: TIMELINE_PROJECT_COLUMNS }
                 : {})}
               onReset={reset}
               defaultActions={
@@ -2172,6 +2178,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           workspaceRole={workspace?.role}
           zoom={zoom}
           showDependencies={display.dependencies === 'show'}
+          columns={shownColumns}
           folded={folded}
           onToggleGroup={toggleFolded}
           refreshKey={queryKey}
