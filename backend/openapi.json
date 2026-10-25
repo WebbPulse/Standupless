@@ -24360,7 +24360,7 @@
         "type": "object"
       },
       "TemplateListRead": {
-        "description": "The body a template list answers with, and the template a new issue starts from.\n\n`default_template_id` is the team's own default, else its parent's, and is\nalways one of `templates`; a workspace list carries none.",
+        "description": "The body a template list answers with, and the template a new issue starts from.\n\n`default_template_id` is the team's own default, else its parent's, and is\nalways one of `templates`; a workspace list carries none.\n`non_member_default_template_id` is what the dialog opens with for someone\noutside the team: the non-member default when one is set, else\n`default_template_id`.",
         "properties": {
           "default_template_id": {
             "anyOf": [
@@ -24372,6 +24372,17 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "non_member_default_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Member Default Template Id"
           },
           "templates": {
             "items": {
@@ -24603,7 +24614,7 @@
         "type": "object"
       },
       "TemplateSettingsRead": {
-        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe project fields are the same for the new project dialog, the document\nfields for a new document of a project the team is on, and the update fields\nfor the project update composer.",
+        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe non-member fields are the issue template people outside the team open\nthe dialog with; its effective value falls back to the members' default.\nThe project fields are the same for the new project dialog, the document\nfields for a new document of a project the team is on, and the update fields\nfor the project update composer.",
         "properties": {
           "default_document_template_id": {
             "anyOf": [
@@ -24693,6 +24704,28 @@
             ],
             "title": "Effective Default Update Template Id"
           },
+          "effective_non_member_default_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Non Member Default Template Id"
+          },
+          "non_member_default_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Member Default Template Id"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -24705,7 +24738,7 @@
         "type": "object"
       },
       "TemplateSettingsUpdate": {
-        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.\n\nThe document and update defaults both name a document template.",
+        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.\n\nThe document and update defaults both name a document template, and the\nnon-member default an issue template.",
         "properties": {
           "default_document_template_id": {
             "anyOf": [
@@ -24750,6 +24783,17 @@
               }
             ],
             "title": "Default Update Template Id"
+          },
+          "non_member_default_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Member Default Template Id"
           }
         },
         "title": "TemplateSettingsUpdate",

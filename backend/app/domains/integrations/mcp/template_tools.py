@@ -181,10 +181,19 @@ def _list_templates(call: ToolCall) -> Any:
         raise ToolError("kind must be issue, project or document")
     if team_id:
         rows, default = issue_templates.list_team_templates(call.repositories, call.context, team_id, kind)
-        return {"templates": [_json(row, team_id) for row in rows], "default_template_id": default}
+        outside = issue_templates.non_member_default(call.repositories, call.context, team_id, rows, default, kind)
+        return {
+            "templates": [_json(row, team_id) for row in rows],
+            "default_template_id": default,
+            "non_member_default_template_id": outside,
+        }
     check_capability(call.repositories, call.context, Capability.WORKSPACE_READ)
     rows = issue_templates.list_workspace_templates(call.repositories, call.context, kind)
-    return {"templates": [_json(row, None) for row in rows], "default_template_id": None}
+    return {
+        "templates": [_json(row, None) for row in rows],
+        "default_template_id": None,
+        "non_member_default_template_id": None,
+    }
 
 
 def _create_template(call: ToolCall) -> Any:
@@ -379,7 +388,8 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
         name="list_templates",
         description=(
             "The issue, project or document templates a team offers, its own, its parent team's and the "
-            "workspace's, each tagged with its scope, and the default its create dialog opens with. Without "
+            "workspace's, each tagged with its scope, the default its create dialog opens with for members, and "
+            "non_member_default_template_id, the one people outside the team open it with. Without "
             "team_id, the workspace templates. kind picks issue templates, the default, project or document "
             "templates."
         ),

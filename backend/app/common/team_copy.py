@@ -355,6 +355,7 @@ def _copy_settings(
                     **own,
                     "config_key": template_settings_key(team_id),
                     "default_template_id": _remap(templates.default_template_id, template_ids),
+                    "non_member_default_template_id": _remap(templates.non_member_default_template_id, template_ids),
                     "default_project_template_id": _remap(templates.default_project_template_id, template_ids),
                     "default_document_template_id": _remap(templates.default_document_template_id, template_ids),
                     "default_update_template_id": _remap(templates.default_update_template_id, template_ids),

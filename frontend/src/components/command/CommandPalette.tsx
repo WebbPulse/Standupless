@@ -115,6 +115,7 @@ import { listFavorites } from '../../api/favorites';
 import { listCycles } from '../../api/planning';
 import { listStatuses } from '../../api/teams';
 import { listTeamTemplates } from '../../api/templates';
+import { openingTemplateId } from '../../lib/templateDefaults';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { StatusIcon } from '../ui/StatusIcon';
@@ -1441,13 +1442,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
 
     if (page === 'template') {
+      const openingId = openingTemplateId(templateList, team?.is_member);
       const rows = rank(
         (team === undefined ? [] : (templateList?.templates ?? [])).map(
           (template) => ({
             id: `template-${template.id}`,
             label: template.name,
             keywords: template.title ?? '',
-            ...(template.id === templateList?.default_template_id
+            ...(template.id === openingId
               ? { hint: 'Default' }
               : isFormTemplate(template)
                 ? { hint: 'Form' }

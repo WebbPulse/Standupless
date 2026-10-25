@@ -1350,10 +1350,13 @@ export interface TemplateRead {
   updated_at: string;
 }
 
-/** The templates a team offers, and the one its create dialog opens with. */
+/** The templates a team offers, and the ones its create dialog opens with. */
 export interface TemplateListRead {
   templates: TemplateRead[];
+  /** The template the dialog opens with for the team's members. */
   default_template_id: string | null;
+  /** The template it opens with for someone outside the team, falling back to the members' one; absent on an older answer. */
+  non_member_default_template_id?: string | null;
 }
 
 /** A team's saved default template and the one it falls back to from its parent. */
@@ -1361,6 +1364,8 @@ export interface TemplateSettingsRead {
   team_id: string;
   default_template_id: string | null;
   effective_default_template_id: string | null;
+  non_member_default_template_id?: string | null;
+  effective_non_member_default_template_id?: string | null;
   default_project_template_id?: string | null;
   effective_default_project_template_id?: string | null;
   default_document_template_id?: string | null;
@@ -1372,6 +1377,7 @@ export interface TemplateSettingsRead {
 /** The body that sets or clears a team's defaults; only the fields sent change. */
 export interface TemplateSettingsUpdate {
   default_template_id?: string | null;
+  non_member_default_template_id?: string | null;
   default_project_template_id?: string | null;
   default_document_template_id?: string | null;
   default_update_template_id?: string | null;

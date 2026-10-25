@@ -203,6 +203,72 @@ def test_the_default_template_is_a_team_admins_call_and_reaches_sub_teams(teams:
     assert settings["effective_default_template_id"] == saved["id"]
 
 
+def test_a_non_member_default_is_set_validated_and_cleared(teams: TestClient, workspace: str) -> None:
+    """An admin sets a non-member default the team offers, it is held to issue templates, and null clears it."""
+    sign_in(teams, WRITER)
+    bug = _template(teams, f"{BASE}/teams/{TEAM}/templates", name="Bug")
+    request = _template(teams, f"{BASE}/teams/{TEAM}/templates", name="Request", title="Request: ")
+    project = _template(
+        teams, f"{BASE}/teams/{TEAM}/templates", name="Launch", kind="project", project={"description": "Ship"}
+    )
+    path = f"{BASE}/teams/{TEAM}/template-settings"
+    refused = teams.patch(path, json={"non_member_default_template_id": request["id"]})
+    assert refused.status_code == 403, refused.text
+
+    sign_in(teams, TEAM_ADMIN)
+    assert teams.patch(path, json={"non_member_default_template_id": "nope"}).status_code == 422
+    wrong_kind = teams.patch(path, json={"non_member_default_template_id": project["id"]})
+    assert wrong_kind.status_code == 422, wrong_kind.text
+    assert teams.patch(path, json={"default_template_id": bug["id"]}).status_code == 200
+    stored = teams.patch(path, json={"non_member_default_template_id": request["id"]})
+    assert stored.status_code == 200, stored.text
+    body = stored.json()
+    assert body["default_template_id"] == bug["id"]
+    assert body["non_member_default_template_id"] == request["id"]
+    assert body["effective_non_member_default_template_id"] == request["id"]
+
+    cleared = teams.patch(path, json={"non_member_default_template_id": None})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["non_member_default_template_id"] is None
+    assert cleared.json()["effective_non_member_default_template_id"] == bug["id"]
+    assert cleared.json()["default_template_id"] == bug["id"]
+
+
+def test_members_and_non_members_each_get_their_own_default(teams: TestClient, workspace: str) -> None:
+    """The list answers the members' default and the non-members', which falls back once its template is gone."""
+    sign_in(teams, WRITER)
+    bug = _template(teams, f"{BASE}/teams/{TEAM}/templates", name="Bug")
+    request = _template(teams, f"{BASE}/teams/{TEAM}/templates", name="Request")
+    sign_in(teams, TEAM_ADMIN)
+    path = f"{BASE}/teams/{TEAM}/template-settings"
+    patched = teams.patch(
+        path, json={"default_template_id": bug["id"], "non_member_default_template_id": request["id"]}
+    )
+    assert patched.status_code == 200, patched.text
+
+    for user in (WRITER, STRANGER):
+        sign_in(teams, user)
+        listed = _listed(teams, TEAM)
+        assert listed["default_template_id"] == bug["id"]
+        assert listed["non_member_default_template_id"] == request["id"]
+    projects = teams.get(f"{BASE}/teams/{TEAM}/templates", params={"kind": "project"}).json()
+    assert projects["non_member_default_template_id"] is None
+
+    sign_in(teams, SUB_ONLY)
+    inherited = _listed(teams, SUB)
+    assert inherited["default_template_id"] == bug["id"]
+    assert inherited["non_member_default_template_id"] == bug["id"]
+
+    sign_in(teams, WRITER)
+    assert teams.delete(f"{BASE}/teams/{TEAM}/templates/{request['id']}").status_code == 204
+    after = _listed(teams, TEAM)
+    assert after["non_member_default_template_id"] == bug["id"]
+    sign_in(teams, TEAM_ADMIN)
+    settings = teams.get(path).json()
+    assert settings["non_member_default_template_id"] == request["id"]
+    assert settings["effective_non_member_default_template_id"] == bug["id"]
+
+
 def test_creating_from_a_template_fills_only_the_fields_left_out(
     teams: TestClient, issues: TestClient, workspace: str
 ) -> None:
