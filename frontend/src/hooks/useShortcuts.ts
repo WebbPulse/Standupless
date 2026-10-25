@@ -44,7 +44,9 @@
  * and `l` for moving between columns, so labels are `shift+l` there. When more than one
  * mounted component binds the same keys, the most recently registered one
  * wins, so a peek opened over the issue page takes the keys while it is open
- * and hands them back when it closes.
+ * and hands them back when it closes. Within one scope, a binding that names
+ * Shift exactly as the event holds it beats one that only tolerates Shift, so
+ * `shift+backspace` and `backspace` can be bound side by side.
  *
  * ## When shortcuts stand down
  *
@@ -302,16 +304,23 @@ export const createShortcutRegistry = (
 
   const attempt = (event: KeyboardEvent, prefix: KeyToken[]): boolean => {
     let full: RegisteredShortcut | null = null;
+    let fullExact = false;
     let partial = false;
     for (const shortcut of list()) {
-      const outcome = sequenceMatches(event, prefix, parseKeys(shortcut.keys));
+      const tokens = parseKeys(shortcut.keys);
+      const outcome = sequenceMatches(event, prefix, tokens);
       if (outcome === 'full') {
+        const exact = tokens[prefix.length]?.shift === event.shiftKey;
         if (
           full === null ||
           SCOPE_RANK[shortcut.scope] > SCOPE_RANK[full.scope] ||
-          (shortcut.scope === full.scope && shortcut.order > full.order)
+          (shortcut.scope === full.scope && exact && !fullExact) ||
+          (shortcut.scope === full.scope &&
+            exact === fullExact &&
+            shortcut.order > full.order)
         ) {
           full = shortcut;
+          fullExact = exact;
         }
       } else if (outcome === 'prefix') {
         partial = true;

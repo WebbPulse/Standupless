@@ -193,6 +193,18 @@ describe('modifiers', () => {
 
     expect(run).toHaveBeenCalledTimes(2);
   });
+
+  it('gives Shift Backspace to the binding that names Shift, whichever registered last', () => {
+    const registry = createShortcutRegistry();
+    const deleteRead = bind(registry, 'shift+backspace');
+    const remove = bind(registry, 'backspace');
+
+    press(registry, 'Backspace', { shiftKey: true });
+    press(registry, 'Backspace');
+
+    expect(deleteRead).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('sequences', () => {

@@ -12,7 +12,11 @@ import {
   groupKey,
   groupNotifications,
   groupSnoozedUntil,
+  matchesSearch,
+  orderGroups,
   parseView,
+  searchGroups,
+  teamKeyOf,
   snoozedIds,
   unreadIds,
   viewQuery,
@@ -165,7 +169,163 @@ describe('parseView', () => {
       categories: ['mentions'],
       showRead: false,
       showSnoozed: false,
+      unreadFirst: false,
     });
+  });
+
+  it('reads back Show unread first', () => {
+    expect(parseView(JSON.stringify({ unreadFirst: true })).unreadFirst).toBe(
+      true
+    );
+    expect(parseView(JSON.stringify({ unreadFirst: 1 })).unreadFirst).toBe(
+      false
+    );
+  });
+});
+
+describe('viewSlice', () => {
+  it('leaves unread first out of the cache key, since it only reorders', () => {
+    expect(viewSlice({ ...DEFAULT_VIEW, unreadFirst: true })).toBe(
+      viewSlice(DEFAULT_VIEW)
+    );
+  });
+});
+
+describe('teamKeyOf', () => {
+  it('reads the team key off an issue key', () => {
+    expect(teamKeyOf(row({ issue_key: 'ENG-12' }))).toBe('ENG');
+  });
+
+  it('reads the whole key on a channel or standup notice', () => {
+    expect(teamKeyOf(row({ kind: 'standup_digest', issue_key: 'OPS' }))).toBe(
+      'OPS'
+    );
+    expect(teamKeyOf(row({ kind: 'channel_disabled', issue_key: 'OPS' }))).toBe(
+      'OPS'
+    );
+  });
+
+  it('names no team for a pull request or a job id', () => {
+    expect(
+      teamKeyOf(row({ kind: 'review_requested', issue_key: 'acme/api#4' }))
+    ).toBe('');
+  });
+});
+
+describe('matchesSearch', () => {
+  const group = (over: Partial<NotificationRead> = {}): InboxGroup =>
+    at(fold([row(over)], 1), 0);
+
+  it('matches everything on an empty search', () => {
+    expect(matchesSearch(group(), '')).toBe(true);
+    expect(matchesSearch(group(), '   ')).toBe(true);
+  });
+
+  it('matches the issue key and title without regard to case', () => {
+    expect(matchesSearch(group(), 'eng-1')).toBe(true);
+    expect(matchesSearch(group(), 'CACHE')).toBe(true);
+    expect(matchesSearch(group(), 'deploy')).toBe(false);
+  });
+
+  it('matches the type label, the actor and the team key', () => {
+    expect(matchesSearch(group(), 'new comment')).toBe(true);
+    expect(matchesSearch(group(), 'grace')).toBe(true);
+    expect(matchesSearch(group({ issue_key: 'OPS-7' }), 'ops')).toBe(true);
+  });
+
+  it('matches a project or initiative name', () => {
+    expect(
+      matchesSearch(
+        group({
+          kind: 'project_update',
+          project_id: 'p-1',
+          project_name: 'Billing revamp',
+        }),
+        'billing'
+      )
+    ).toBe(true);
+    expect(
+      matchesSearch(
+        group({
+          kind: 'initiative_update_due',
+          initiative_id: 'i-1',
+          initiative_name: 'Launch',
+        }),
+        'launch'
+      )
+    ).toBe(true);
+  });
+
+  it('needs every word, each found anywhere in the group', () => {
+    const folded = at(
+      fold(
+        [
+          row({ notification_id: 'n-2', actor_name: 'Ada' }),
+          row({ notification_id: 'n-1' }),
+        ],
+        1
+      ),
+      0
+    );
+    expect(matchesSearch(folded, 'ada grace')).toBe(true);
+    expect(matchesSearch(folded, 'ada linus')).toBe(false);
+  });
+
+  it('keeps only matching groups, in order', () => {
+    const groups = fold(
+      [
+        row({
+          notification_id: 'n-3',
+          issue_id: 'iss-3',
+          issue_title: 'Fix login',
+        }),
+        row({
+          notification_id: 'n-2',
+          issue_id: 'iss-2',
+          issue_title: 'Cache keys',
+        }),
+        row({ notification_id: 'n-1' }),
+      ],
+      3
+    );
+    expect(searchGroups(groups, 'cache').map((one) => one.key)).toEqual([
+      'issue:iss-2',
+      'issue:iss-1',
+    ]);
+    expect(searchGroups(groups, '')).toBe(groups);
+  });
+});
+
+describe('orderGroups', () => {
+  const groups = (): InboxGroup[] =>
+    fold(
+      [
+        row({ notification_id: 'n-4', issue_id: 'iss-4', unread: false }),
+        row({ notification_id: 'n-3', issue_id: 'iss-3' }),
+        row({ notification_id: 'n-2', issue_id: 'iss-2', unread: false }),
+        row({ notification_id: 'n-1', issue_id: 'iss-1' }),
+      ],
+      4
+    );
+
+  it('leaves newest first alone when the option is off', () => {
+    const list = groups();
+    expect(orderGroups(list, false)).toBe(list);
+  });
+
+  it('puts unread above read, each part still newest first', () => {
+    expect(orderGroups(groups(), true).map((one) => one.key)).toEqual([
+      'issue:iss-3',
+      'issue:iss-1',
+      'issue:iss-4',
+      'issue:iss-2',
+    ]);
+  });
+
+  it('holds a just opened row among the unread ones', () => {
+    expect(
+      orderGroups(groups(), true, 'issue:iss-4').map((one) => one.key)
+    ).toEqual(['issue:iss-4', 'issue:iss-3', 'issue:iss-1', 'issue:iss-2']);
   });
 });
 

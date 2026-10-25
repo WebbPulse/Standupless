@@ -1,7 +1,7 @@
 /**
  * The inbox header's Filter and Display buttons. Filter narrows the list to
  * chosen notification types, and Display decides whether read and snoozed
- * rows stay in it. Both only report a new view; the page owns the state.
+ * rows stay in it and whether unread rows sort first. Both only report a new view; the page owns the state.
  */
 
 import React from 'react';
@@ -81,14 +81,15 @@ export const InboxFilterMenu: React.FC<InboxViewMenuProps> = ({
   );
 };
 
-/** The Display button and its read and snoozed toggles. */
+/** The Display button and its read, snoozed and unread first toggles. */
 export const InboxDisplayMenu: React.FC<InboxViewMenuProps> = ({
   view,
   onChange,
 }) => {
   const changed =
     view.showRead !== DEFAULT_VIEW.showRead ||
-    view.showSnoozed !== DEFAULT_VIEW.showSnoozed;
+    view.showSnoozed !== DEFAULT_VIEW.showSnoozed ||
+    view.unreadFirst !== DEFAULT_VIEW.unreadFirst;
   return (
     <Popover
       label="Display options"
@@ -116,6 +117,13 @@ export const InboxDisplayMenu: React.FC<InboxViewMenuProps> = ({
             onChange({ ...view, showSnoozed: event.target.checked });
           }}
         />
+        <Checkbox
+          label="Show unread first"
+          checked={view.unreadFirst}
+          onChange={(event) => {
+            onChange({ ...view, unreadFirst: event.target.checked });
+          }}
+        />
       </div>
       {changed && (
         <div className="flex justify-end border-t border-line px-3 py-2">
@@ -127,6 +135,7 @@ export const InboxDisplayMenu: React.FC<InboxViewMenuProps> = ({
                 ...view,
                 showRead: DEFAULT_VIEW.showRead,
                 showSnoozed: DEFAULT_VIEW.showSnoozed,
+                unreadFirst: DEFAULT_VIEW.unreadFirst,
               });
             }}
           >
