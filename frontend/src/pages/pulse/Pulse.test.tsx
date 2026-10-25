@@ -118,7 +118,9 @@ const pageOf = (
 ): PulseListRead => ({ items, next_cursor });
 
 /** Shows the current query string, so a test can read the tab from the URL. */
-const SearchProbe = () => <output data-testid="search">{useLocation().search}</output>;
+const SearchProbe = () => (
+  <output data-testid="search">{useLocation().search}</output>
+);
 
 /** Renders the page on its route. */
 const renderPage = (path = '/w/mine/pulse') =>
