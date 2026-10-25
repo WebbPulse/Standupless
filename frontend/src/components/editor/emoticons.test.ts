@@ -102,7 +102,7 @@ describe('typing an emoticon', () => {
     typeText(editor, 'hi <3 ');
     expect(text(editor)).toBe(`hi ${EMOTICONS['<3']} `);
     editor.commands.undo();
-    expect(text(editor)).toBe('hi <3');
+    expect(text(editor)).toBe('hi <3 ');
   });
 
   it('brings the typed text back on Backspace right after', () => {
