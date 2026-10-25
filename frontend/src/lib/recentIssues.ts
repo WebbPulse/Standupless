@@ -8,6 +8,7 @@
 
 import { useEffect } from 'react';
 import { hasStatus, NOT_FOUND } from './errors';
+import { recordOpenedIssue } from './queryPersistence';
 
 /** One remembered issue, enough to draw its row and open it. */
 export interface RecentIssue {
@@ -132,7 +133,9 @@ export const isUnreadableIssue = (error: unknown): boolean =>
 
 /**
  * Remembers the issue a view shows once it loads, and forgets the one it
- * names when reading it fails because it is gone or no longer readable.
+ * names when reading it fails because it is gone or no longer readable. A
+ * loaded issue is also marked opened, so this device keeps its read for
+ * offline use.
  */
 export const useRecordRecentIssue = (
   workspaceId: string,
@@ -151,6 +154,7 @@ export const useRecordRecentIssue = (
 
   useEffect(() => {
     if (id === '') return;
+    recordOpenedIssue(workspaceId, issueRef);
     recordRecentIssue(workspaceId, viewerId, {
       id,
       key,
@@ -159,7 +163,17 @@ export const useRecordRecentIssue = (
       status_id: statusId,
       in_triage: inTriage,
     });
-  }, [workspaceId, viewerId, id, key, title, teamId, statusId, inTriage]);
+  }, [
+    workspaceId,
+    viewerId,
+    issueRef,
+    id,
+    key,
+    title,
+    teamId,
+    statusId,
+    inTriage,
+  ]);
 
   useEffect(() => {
     if (unreadable) forgetRecentIssue(workspaceId, viewerId, issueRef);
