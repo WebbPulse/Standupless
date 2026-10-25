@@ -771,6 +771,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       },
       appendMarkdown: (markdown: string) => {
         const current = readMarkdown(editor);
+        baseline.current ??= current;
         writeMarkdown(
           editor,
           current.trim() === '' ? markdown : `${current}\n\n${markdown}`
@@ -781,6 +782,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           .insertContentAt(editor.state.doc.content.size, { type: 'paragraph' })
           .focus('end')
           .run();
+        latest.current = readMarkdown(editor);
       },
     }),
     [editor, adopt]
