@@ -14,6 +14,16 @@
  * that folds or unfolds every group beside it or hides the group. Alt+click on
  * a header folds or unfolds every group to match. Hidden groups drop out of
  * the list and wait in a quiet row at its foot, one click from coming back.
+ *
+ * Rows drag by their body, not by a checkbox or a picker, with a line marking
+ * where they land. A drop inside a group writes a manual position between its
+ * neighbours and switches the view to manual ordering; a drop in another group
+ * or sub-group sets that grouped property, the way the board lands a card.
+ * A drop on a group header, folded or not, moves the rows into that group, at
+ * its end in manual ordering. Groups a drag cannot set, such as computed ones,
+ * refuse the drop. A drag on a selected row carries the selection, with a
+ * count badge, in one write with one undo entry. Nested sub-issues move as
+ * their own issues and keep their parent.
  */
 
 import React from 'react';
@@ -39,7 +49,13 @@ import {
   treeGuides,
   treeRows,
   type TreeGuide,
+  type TreeRow,
 } from '../../../lib/issueTree';
+import {
+  draggedIds,
+  isNoOpDrop,
+  setCountDragImage,
+} from '../../../lib/boardDrop';
 import { groupFigure } from '../../../lib/groupHeader';
 import { FOCUS_FIELD } from '../../../lib/focusGrouping';
 import {
@@ -47,8 +63,10 @@ import {
   hiddenSubGroupKey,
   isLabelGroupField,
   splitHiddenSections,
+  type GroupField,
   type HiddenGroup,
   type IssueGroup,
+  type ViewState,
 } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
@@ -67,6 +85,13 @@ import {
   StatusCell,
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
+import {
+  canDragIssue,
+  landIssueDrop,
+  takesDrop,
+  type DropCell,
+  type DropLanding,
+} from './issueDrop';
 import { ParentPrefix, SubIssueProgressChip, TreeGuides } from './SubIssueCues';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
@@ -229,6 +254,17 @@ export interface GroupHeaderProps {
   onFoldAll?: ((folded: boolean) => void) | undefined;
   /** Hides the group from the list. */
   onHide?: (() => void) | undefined;
+  /** Takes a drop of dragged rows, where the list drags. */
+  drop?: HeaderDrop | undefined;
+}
+
+/** What a group header reads to take a drop of dragged rows. */
+export interface HeaderDrop {
+  /** True while the drag hovers this header. */
+  active: boolean;
+  onDragOver: (event: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (event: React.DragEvent) => void;
 }
 
 /** Keeps Space on a checkbox a native toggle rather than the list's peek. */
@@ -332,6 +368,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
   nested = false,
   onFoldAll,
   onHide,
+  drop,
 }) => {
   const [pointer, setPointer] = React.useState<{ x: number; y: number } | null>(
     null
@@ -345,9 +382,18 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
         event.preventDefault();
         setPointer({ x: event.clientX, y: event.clientY });
       }}
+      {...(drop === undefined
+        ? {}
+        : {
+            onDragOver: drop.onDragOver,
+            onDragLeave: drop.onDragLeave,
+            onDrop: drop.onDrop,
+            'data-drop-target': drop.active ? '' : undefined,
+          })}
       className={cn(
         'group/header flex h-9 items-center pointer-coarse:h-11 gap-2 border-b border-line pr-3 pl-2 transition-colors duration-100 hover:bg-raised has-[button[aria-expanded]:active]:bg-line lg:pr-5',
-        nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface'
+        nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface',
+        drop?.active === true && 'bg-accent-soft ring-1 ring-accent ring-inset'
       )}
     >
       <SectionCheckbox group={group} />
@@ -557,6 +603,19 @@ export interface IssueListRowProps {
   tree?: IssueTreePlace | undefined;
   /** Hands the row element up, for a list that scrolls its highlight. */
   rowRef?: ((node: HTMLLIElement | null) => void) | undefined;
+  /** The row's part in a drag, where the list drags. */
+  drag?: RowDrag | undefined;
+}
+
+/** What a row reads to take part in a drag. */
+export interface RowDrag {
+  draggable: boolean;
+  /** True while the row rides along in a drag. */
+  dimmed: boolean;
+  onPointerDown: (event: React.PointerEvent) => void;
+  onDragStart: (event: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onDragOver: (event: React.DragEvent) => void;
 }
 
 /** One dense row. */
@@ -564,6 +623,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
   issue,
   tree,
   rowRef,
+  drag,
 }) => {
   const env = useIssueViewEnv();
   const selectable = env.selectable !== false;
@@ -587,6 +647,15 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
       data-row-id={issue.id}
       aria-selected={isSelected}
       {...(tree === undefined ? {} : { 'aria-level': tree.depth + 1 })}
+      {...(drag === undefined
+        ? {}
+        : {
+            draggable: drag.draggable,
+            onPointerDown: drag.onPointerDown,
+            onDragStart: drag.onDragStart,
+            onDragEnd: drag.onDragEnd,
+            onDragOver: drag.onDragOver,
+          })}
       onMouseMove={() => {
         if (!isFocused) env.focus(issue.id);
       }}
@@ -603,7 +672,8 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
             ? 'bg-surface'
             : 'hover:bg-surface',
         isFocused &&
-          'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
+          'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent',
+        drag?.dimmed === true && 'opacity-40'
       )}
     >
       <span
@@ -676,6 +746,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
         to={issuePath(env.slug, issue.key)}
         {...prefetch}
         {...titleTip.handlers}
+        {...(drag?.draggable === true ? { draggable: false } : {})}
         data-hover="parent"
         onClick={(event) => {
           if (event.shiftKey && selectable) {
@@ -726,41 +797,95 @@ export interface ListRowsProps {
   createIn?:
     | ((group: IssueGroup, sub?: IssueGroup) => (() => void) | undefined)
     | undefined;
+  /**
+   * Changes the view state, used to switch to manual ordering on a reorder.
+   * Left out, rows do not drag.
+   */
+  onStateChange?: ((state: ViewState) => void) | undefined;
 }
+
+/** The lane key of a group that has no sub-groups. */
+const ONE_LANE = 'all';
+
+/** What a press on a row lands on when it should not start a drag. */
+const GRAB_CONTROLS =
+  'button, input, select, textarea, [role="button"], [role="combobox"], [contenteditable="true"]';
+
+/** The rows being dragged, in display order, the lead row and the cell it left. */
+interface ListDragSource extends DropCell {
+  ids: string[];
+  lead: string;
+}
+
+/** A slot between two rows of one cell. */
+interface ListSlot extends DropCell {
+  index: number;
+}
+
+/** The map key of one cell's rows. */
+const cellKey = (lane: string, column: string): string =>
+  `${column}\u0000${lane}`;
+
+/** The line drawn where dragged rows would land. */
+const DropLine: React.FC = () => (
+  <li
+    aria-hidden="true"
+    data-drop-indicator=""
+    className="pointer-events-none relative z-30 h-0"
+  >
+    <span className="absolute inset-x-0 -top-px h-0.5 bg-accent" />
+  </li>
+);
 
 /** The rows of a group, as a list, nested under their parents with `nest`. */
 const Rows: React.FC<{
-  issues: OrderedIssueRead[];
+  rows: TreeRow<OrderedIssueRead>[];
   label: string;
   nest: boolean;
   collapsed: ReadonlySet<string>;
   onToggle: (key: string) => void;
-}> = ({ issues, label, nest, collapsed, onToggle }) => {
-  const rows = treeRows(issues, nest, (id) =>
-    collapsed.has(foldedParentKey(id))
-  );
+  /** The index the drop line sits before, or null for none. */
+  line: number | null;
+  rowDrag?: ((issue: OrderedIssueRead, index: number) => RowDrag) | undefined;
+  onDragOver?: ((event: React.DragEvent) => void) | undefined;
+  onDrop?: ((event: React.DragEvent) => void) | undefined;
+}> = ({
+  rows,
+  label,
+  nest,
+  collapsed,
+  onToggle,
+  line,
+  rowDrag,
+  onDragOver,
+  onDrop,
+}) => {
   const guides = nest ? treeGuides(rows) : [];
   return (
-    <ul aria-label={label}>
+    <ul aria-label={label} onDragOver={onDragOver} onDrop={onDrop}>
       {rows.map((row, index) => (
-        <IssueListRow
-          key={row.issue.id}
-          issue={row.issue}
-          tree={
-            nest
-              ? {
-                  depth: row.depth,
-                  childCount: row.childCount,
-                  expanded: !collapsed.has(foldedParentKey(row.issue.id)),
-                  onToggle: () => {
-                    onToggle(foldedParentKey(row.issue.id));
-                  },
-                  guide: guides[index],
-                }
-              : undefined
-          }
-        />
+        <React.Fragment key={row.issue.id}>
+          {line === index && <DropLine />}
+          <IssueListRow
+            issue={row.issue}
+            drag={rowDrag?.(row.issue, index)}
+            tree={
+              nest
+                ? {
+                    depth: row.depth,
+                    childCount: row.childCount,
+                    expanded: !collapsed.has(foldedParentKey(row.issue.id)),
+                    onToggle: () => {
+                      onToggle(foldedParentKey(row.issue.id));
+                    },
+                    guide: guides[index],
+                  }
+                : undefined
+            }
+          />
+        </React.Fragment>
       ))}
+      {line !== null && line >= rows.length && <DropLine />}
     </ul>
   );
 };
@@ -777,8 +902,15 @@ export const ListRows: React.FC<ListRowsProps> = ({
   nest = false,
   onFoldMany,
   createIn,
+  onStateChange,
 }) => {
+  const env = useIssueViewEnv();
+  const [drag, setDrag] = React.useState<ListDragSource | null>(null);
+  const [slot, setSlot] = React.useState<ListSlot | null>(null);
+  const [headerTarget, setHeaderTarget] = React.useState<string | null>(null);
+  const grabbed = React.useRef(false);
   const { shown, hidden } = splitHiddenSections(sections, collapsed);
+  const drags = onStateChange !== undefined && env.canEdit;
   const foldMany = (keys: readonly string[], folded: boolean): void => {
     if (onFoldMany !== undefined) {
       onFoldMany(keys, folded);
@@ -791,6 +923,234 @@ export const ListRows: React.FC<ListRowsProps> = ({
   const groupKeys = shown
     .filter(({ group }) => group.field !== 'none')
     .map(({ group }) => group.key);
+
+  const columnField: GroupField = shown[0]?.group.field ?? env.state.groupBy;
+  const laneField: GroupField = shown.some(({ subs }) => subs !== null)
+    ? env.state.subGroupBy
+    : 'none';
+  const isFolded = (id: string): boolean => collapsed.has(foldedParentKey(id));
+  const cells = new Map<string, TreeRow<OrderedIssueRead>[]>();
+  const order: string[] = [];
+  const cellOf = new Map<string, DropCell>();
+  const byId = new Map<string, OrderedIssueRead>();
+  for (const { group, subs } of shown) {
+    const parts =
+      subs === null
+        ? [{ lane: ONE_LANE, issues: group.issues, folded: false }]
+        : subs.map((sub) => ({
+            lane: sub.key,
+            issues: sub.issues,
+            folded: collapsed.has(`${group.key}/${sub.key}`),
+          }));
+    for (const part of parts) {
+      const rows = treeRows(part.issues, nest, isFolded);
+      cells.set(cellKey(part.lane, group.key), rows);
+      if (collapsed.has(group.key) || part.folded) continue;
+      for (const { issue } of rows) {
+        if (byId.has(issue.id)) continue;
+        byId.set(issue.id, issue);
+        order.push(issue.id);
+        cellOf.set(issue.id, { lane: part.lane, column: group.key });
+      }
+    }
+  }
+  const rowsIn = (lane: string, column: string): TreeRow<OrderedIssueRead>[] =>
+    cells.get(cellKey(lane, column)) ?? [];
+
+  const takes = (
+    source: DropCell,
+    column: string,
+    lane: string | null
+  ): boolean =>
+    (column === source.column || takesDrop(columnField, env)) &&
+    (lane === null ||
+      laneField === 'none' ||
+      lane === source.lane ||
+      takesDrop(laneField, env));
+
+  const endDrag = (): void => {
+    setDrag(null);
+    setSlot(null);
+    setHeaderTarget(null);
+  };
+
+  const drop = (to: DropLanding): void => {
+    const source = drag;
+    endDrag();
+    if (source === null || onStateChange === undefined) return;
+    if (!takes(source, to.column, to.lane)) return;
+    landIssueDrop({
+      env,
+      onStateChange,
+      movers: source.ids.flatMap((id) => {
+        const issue = byId.get(id);
+        return issue === undefined ? [] : [issue];
+      }),
+      lead: source.lead,
+      source: { lane: source.lane, column: source.column },
+      cellOf: (id) => cellOf.get(id),
+      to,
+      columnField,
+      laneField,
+      cellIssues: (lane, column) =>
+        rowsIn(lane, column).map((row) => row.issue),
+      columnLabel: (key) =>
+        shown.find(({ group }) => group.key === key)?.group.label ?? key,
+      laneLabel: (key) =>
+        shown.flatMap(({ subs }) => subs ?? []).find((sub) => sub.key === key)
+          ?.label ?? key,
+    });
+  };
+
+  const refuse = (event: React.DragEvent): void => {
+    event.dataTransfer.dropEffect = 'none';
+    if (slot !== null) setSlot(null);
+    if (headerTarget !== null) setHeaderTarget(null);
+  };
+
+  const rowDrag =
+    (cell: DropCell) =>
+    (issue: OrderedIssueRead, index: number): RowDrag => ({
+      draggable: canDragIssue(env, issue),
+      dimmed: drag?.ids.includes(issue.id) ?? false,
+      onPointerDown: (event) => {
+        grabbed.current =
+          (event.target as HTMLElement).closest(GRAB_CONTROLS) !== null;
+      },
+      onDragStart: (event) => {
+        if (grabbed.current) {
+          grabbed.current = false;
+          event.preventDefault();
+          return;
+        }
+        const row = event.currentTarget as HTMLElement;
+        const ids = draggedIds(issue.id, env.selected, order);
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(
+          'text/plain',
+          ids.map((id) => byId.get(id)?.key ?? id).join('\n')
+        );
+        setCountDragImage(
+          event.dataTransfer,
+          row,
+          ids.length,
+          `${String(ids.length)} issues`,
+          { x: event.clientX, y: event.clientY }
+        );
+        setDrag({ ids, lead: issue.id, ...cell });
+      },
+      onDragEnd: endDrag,
+      onDragOver: (event) => {
+        if (drag === null) return;
+        if (!takes(drag, cell.column, cell.lane)) {
+          refuse(event);
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const box = (
+          event.currentTarget as HTMLElement
+        ).getBoundingClientRect();
+        const at = event.clientY > box.top + box.height / 2 ? index + 1 : index;
+        if (headerTarget !== null) setHeaderTarget(null);
+        if (
+          slot?.lane !== cell.lane ||
+          slot.column !== cell.column ||
+          slot.index !== at
+        ) {
+          setSlot({ ...cell, index: at });
+        }
+      },
+    });
+
+  const cellDrops = (cell: DropCell) => ({
+    rowDrag: rowDrag(cell),
+    onDragOver: (event: React.DragEvent): void => {
+      if (drag === null) return;
+      if ((event.target as HTMLElement).closest('[data-row-id]') !== null) {
+        return;
+      }
+      if (!takes(drag, cell.column, cell.lane)) {
+        refuse(event);
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const end = rowsIn(cell.lane, cell.column).length;
+      if (
+        slot?.lane !== cell.lane ||
+        slot.column !== cell.column ||
+        slot.index !== end
+      ) {
+        setSlot({ ...cell, index: end });
+      }
+    },
+    onDrop: (event: React.DragEvent): void => {
+      event.preventDefault();
+      drop(
+        slot !== null && slot.lane === cell.lane && slot.column === cell.column
+          ? slot
+          : {
+              ...cell,
+              index: rowsIn(cell.lane, cell.column).length,
+            }
+      );
+    },
+  });
+
+  const lineIn = (cell: DropCell): number | null => {
+    if (
+      drag === null ||
+      slot === null ||
+      slot.lane !== cell.lane ||
+      slot.column !== cell.column
+    ) {
+      return null;
+    }
+    const from = rowsIn(cell.lane, cell.column).findIndex(
+      (row) => row.issue.id === drag.lead
+    );
+    return drag.ids.length > 1 ||
+      !isNoOpDrop(
+        { lane: drag.lane, column: drag.column, from },
+        { lane: slot.lane, column: slot.column, index: slot.index }
+      )
+      ? slot.index
+      : null;
+  };
+
+  const headerDrop = (
+    key: string,
+    landing: () => DropLanding
+  ): HeaderDrop | undefined =>
+    drags
+      ? {
+          active: headerTarget === key,
+          onDragOver: (event) => {
+            if (drag === null) return;
+            const to = landing();
+            if (!takes(drag, to.column, to.lane)) {
+              refuse(event);
+              return;
+            }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (slot !== null) setSlot(null);
+            if (headerTarget !== key) setHeaderTarget(key);
+          },
+          onDragLeave: () => {
+            if (headerTarget === key) setHeaderTarget(null);
+          },
+          onDrop: (event) => {
+            event.preventDefault();
+            drop(landing());
+          },
+        }
+      : undefined;
+
+  const endIndex = (lane: string, column: string): number | null =>
+    env.state.ordering === 'manual' ? rowsIn(lane, column).length : null;
+
   return (
     <div
       style={
@@ -804,6 +1164,8 @@ export const ListRows: React.FC<ListRowsProps> = ({
         const folded = collapsed.has(group.key);
         const subKeys =
           subs === null ? [] : subs.map((sub) => `${group.key}/${sub.key}`);
+        const cell = { lane: ONE_LANE, column: group.key };
+        const drops = drags ? cellDrops(cell) : undefined;
         return (
           <section
             key={group.key}
@@ -823,21 +1185,35 @@ export const ListRows: React.FC<ListRowsProps> = ({
                 onHide={() => {
                   onToggle(hiddenColumnKey(group.key));
                 }}
+                drop={headerDrop(group.key, () =>
+                  subs === null
+                    ? {
+                        ...cell,
+                        index: endIndex(ONE_LANE, group.key),
+                      }
+                    : { lane: null, column: group.key, index: null }
+                )}
               />
             )}
             {!folded &&
               (subs === null ? (
                 <Rows
-                  issues={group.issues}
+                  rows={rowsIn(ONE_LANE, group.key)}
                   label={group.label}
                   nest={nest}
                   collapsed={collapsed}
                   onToggle={onToggle}
+                  line={lineIn(cell)}
+                  rowDrag={drops?.rowDrag}
+                  onDragOver={drops?.onDragOver}
+                  onDrop={drops?.onDrop}
                 />
               ) : (
                 subs.map((sub) => {
                   const subKey = `${group.key}/${sub.key}`;
                   const subFolded = collapsed.has(subKey);
+                  const subCell = { lane: sub.key, column: group.key };
+                  const subDrops = drags ? cellDrops(subCell) : undefined;
                   return (
                     <div key={subKey}>
                       <GroupHeader
@@ -854,14 +1230,22 @@ export const ListRows: React.FC<ListRowsProps> = ({
                         onHide={() => {
                           onToggle(hiddenSubGroupKey(group.key, sub.key));
                         }}
+                        drop={headerDrop(subKey, () => ({
+                          ...subCell,
+                          index: endIndex(sub.key, group.key),
+                        }))}
                       />
                       {!subFolded && (
                         <Rows
-                          issues={sub.issues}
+                          rows={rowsIn(sub.key, group.key)}
                           label={`${group.label}, ${sub.label}`}
                           nest={nest}
                           collapsed={collapsed}
                           onToggle={onToggle}
+                          line={lineIn(subCell)}
+                          rowDrag={subDrops?.rowDrag}
+                          onDragOver={subDrops?.onDragOver}
+                          onDrop={subDrops?.onDrop}
                         />
                       )}
                     </div>
