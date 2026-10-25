@@ -279,6 +279,8 @@ export interface WorkspaceRead {
   invite_permission?: PermissionLevel;
   /** Who may create teams, every member by default. */
   team_creation_permission?: PermissionLevel;
+  /** Whether members need an admin's approval before connecting a third-party app. */
+  third_party_app_approvals?: boolean;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -533,6 +535,7 @@ export interface WorkspaceUpdate {
   branch_format?: BranchFormat;
   invite_permission?: PermissionLevel;
   team_creation_permission?: PermissionLevel;
+  third_party_app_approvals?: boolean;
 }
 
 /** One member of a workspace. */
@@ -2040,7 +2043,8 @@ export type NotificationKind =
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
  * team admin gets when a Slack or Discord channel was turned off, and the
  * notices an admin gets when a workspace export or an issue import finishes or
- * fails.
+ * fails, and the notices a third-party app approval sends to admins and to the
+ * member who asked.
  */
 export type InboxKind =
   | NotificationKind
@@ -2048,7 +2052,9 @@ export type InboxKind =
   | 'export_ready'
   | 'export_failed'
   | 'import_ready'
-  | 'import_failed';
+  | 'import_failed'
+  | 'app_approval_requested'
+  | 'app_approval_decided';
 
 /**
  * One inbox row. The issue key and title are denormalised at write, so a
@@ -4073,6 +4079,46 @@ export interface WorkspaceConnectedAppRead {
   scopes: string[];
   authorized_at: string | null;
   last_used_at: string | null;
+}
+
+/** Where a third-party app stands with a workspace's admins. */
+export type AppApprovalStatus = 'pending' | 'approved' | 'denied';
+
+/** Who requested or decided an app approval. */
+export interface AppApprovalPersonRead {
+  id: string;
+  display_name: string;
+}
+
+/** One third-party app's approval record in a workspace. */
+export interface AppApprovalRead {
+  client_id: string;
+  client_name: string;
+  status: AppApprovalStatus;
+  requested_by?: AppApprovalPersonRead | null;
+  request_reason?: string;
+  requested_at?: string | null;
+  decided_by?: AppApprovalPersonRead | null;
+  decision_reason?: string;
+  decided_at?: string | null;
+  updated_at: string;
+}
+
+/** Every approval record in a workspace, and whether approvals are required. */
+export interface AppApprovalListRead {
+  enabled: boolean;
+  approvals: AppApprovalRead[];
+}
+
+/** What the request access page shows for the app a member was stopped on. */
+export interface AppAccessRequestRead {
+  workspace_id: string;
+  workspace_name: string;
+  client_id: string;
+  client_name: string;
+  return_to: string;
+  enabled: boolean;
+  approval?: AppApprovalRead | null;
 }
 
 /** Which local folder an agent profile file belongs under. */

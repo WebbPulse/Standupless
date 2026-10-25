@@ -65,7 +65,8 @@ class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
     The name, the accent color, the default project update cadence, the git
-    branch name format and who may invite people or create teams are editable.
+    branch name format, who may invite people or create teams and whether
+    third-party apps need an admin's approval are editable.
     The slug is not: it is the tenant's public handle and changing one
     would break every link that carries it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
@@ -85,6 +86,10 @@ class WorkspaceUpdate(BaseModel):
     team_creation_permission: Optional[PermissionLevelField] = Field(
         default=None,
         description="Who may create teams: admins, or every member",
+    )
+    third_party_app_approvals: Optional[bool] = Field(
+        default=None,
+        description="Whether members need an admin's approval before authorizing a third-party app",
     )
 
     @field_validator("accent_color")
@@ -156,6 +161,10 @@ class WorkspaceRead(BaseModel):
         default="members",
         description="Who may create teams: admins, or every member",
     )
+    third_party_app_approvals: bool = Field(
+        default=False,
+        description="Whether members need an admin's approval before authorizing a third-party app",
+    )
 
     @classmethod
     def from_row(
@@ -191,6 +200,7 @@ class WorkspaceRead(BaseModel):
             branch_format=workspace.branch_format,  # pyright: ignore[reportArgumentType]
             invite_permission=workspace.invite_permission,  # pyright: ignore[reportArgumentType]
             team_creation_permission=workspace.team_creation_permission,  # pyright: ignore[reportArgumentType]
+            third_party_app_approvals=bool(workspace.third_party_app_approvals),
         )
 
 

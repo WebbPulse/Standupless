@@ -49,6 +49,7 @@ import Login from './pages/authentication/Login';
 import Register from './pages/authentication/Register';
 import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
+import AppAccess from './pages/apps/AppAccess';
 import VerifyEmail from './pages/authentication/VerifyEmail';
 import VerifyEmailChange from './pages/authentication/VerifyEmailChange';
 import GithubApp from './pages/admin/GithubApp';
@@ -165,6 +166,7 @@ const App: React.FC = () => (
       <Route path="/workspaces" element={<Workspaces />} />
       <Route path="/workspaces/new" element={<CreateWorkspace />} />
       <Route path="/security" element={<Security />} />
+      <Route path="/app-access" element={<AppAccess />} />
       <Route path="/admin/github-app" element={<GithubApp />} />
       <Route path="/admin/github-app/created" element={<GithubAppCreated />} />
 

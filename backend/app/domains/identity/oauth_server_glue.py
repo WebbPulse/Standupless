@@ -82,7 +82,10 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
         """The package's consent store, recording each first grant in the workspace audit log."""
 
         def put(self, record: ConsentRecord) -> None:
-            """Write the grant, then audit it when it is new rather than a re-authorization."""
+            """Hold an app the workspace must approve, write the grant, then audit it when it is new."""
+            from app.domains.identity.app_approval_gate import gate_consent
+
+            gate_consent(clients, self, record)
             super().put(record)
             if record.tenant_id and (not record.granted_at or record.granted_at == record.updated_at):
                 client = clients.get(record.client_id)
@@ -228,7 +231,8 @@ def refresh_allowed(consent: ConsentRecord) -> bool:
 def build_refresh_guard(stores: "OAuthServerStores") -> Callable[["ConsentRecord"], bool]:
     """The guard the package asks before each MCP refresh, over the server's own stores.
 
-    It refuses what `refresh_allowed` refuses. A grant it lets through is then widened
+    It refuses what `refresh_allowed` refuses, and a grant to an app the workspace's
+    admins denied while approvals are on. A grant it lets through is then widened
     by `auto_grant_new_scopes` when its holder opted in, before the package reads the
     consent again to mint the token, so this refresh already carries the new scopes. A
     failed widening is logged and the refresh goes ahead on the grant as it stood.
@@ -237,6 +241,10 @@ def build_refresh_guard(stores: "OAuthServerStores") -> Callable[["ConsentRecord
     def guard(consent: "ConsentRecord") -> bool:
         """Hold the policy, then widen an opted-in grant that took every scope."""
         if not refresh_allowed(consent):
+            return False
+        from app.domains.identity.app_approval_gate import refresh_refused_for
+
+        if refresh_refused_for(stores, consent):
             return False
         from app.domains.identity.connected_apps import auto_grant_new_scopes
 

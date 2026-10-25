@@ -1,7 +1,7 @@
 /**
  * The workspace security settings page. Only an owner or admin may change the
- * authentication policy, who may invite and create teams, the approved email
- * domains or single sign-on, the
+ * authentication policy, who may invite and create teams, whether third-party
+ * apps need approval, the approved email domains or single sign-on, the
  * same as the server allows, so anyone else is told so rather than shown controls that would
  * answer 403.
  */
@@ -12,14 +12,15 @@ import PermissionsSection from '../../components/workspace/PermissionsSection';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import SsoSection from '../../components/workspace/SsoSection';
+import ThirdPartyAppsSection from '../../components/workspace/ThirdPartyAppsSection';
 import WorkspaceSecuritySection from '../../components/workspace/WorkspaceSecuritySection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canManageMembers } from '../../lib/capabilities';
 
 /**
- * Renders the workspace authentication policy, permissions, approved domains
- * and single sign-on for an admin.
+ * Renders the workspace authentication policy, permissions, third-party app
+ * approval, approved domains and single sign-on for an admin.
  */
 const SecuritySettings: React.FC = () => {
   const { workspace } = useWorkspace();
@@ -40,6 +41,9 @@ const SecuritySettings: React.FC = () => {
               </SettingsAnchor>
               <SettingsAnchor id="permissions">
                 <PermissionsSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="third-party-apps">
+                <ThirdPartyAppsSection workspace={workspace} />
               </SettingsAnchor>
               <SettingsAnchor id="approved-domains">
                 <ApprovedDomainsSection workspace={workspace} />

@@ -30,6 +30,8 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   export_failed: 'Export failed',
   import_ready: 'Import finished',
   import_failed: 'Import failed',
+  app_approval_requested: 'App approval requested',
+  app_approval_decided: 'App approval decided',
   review_requested: 'Review requested',
   triage_new: 'New in triage',
   view_issue_added: 'Added to view',
@@ -66,6 +68,8 @@ const STANDALONE_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
   'export_failed',
   'import_ready',
   'import_failed',
+  'app_approval_requested',
+  'app_approval_decided',
 ]);
 
 /** Kinds about a project rather than an issue. */
@@ -197,6 +201,8 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
       'export_failed',
       'import_ready',
       'import_failed',
+      'app_approval_requested',
+      'app_approval_decided',
     ],
   },
 ];
