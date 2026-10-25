@@ -402,6 +402,17 @@ locals {
 
   integrations_stream_enabled = local.domain_functions_enabled && var.integrations_stream_enabled
 
+  integrations_planning_kinds = [
+    "cycle",
+    "project",
+    "project_update",
+    "document",
+    "initiative",
+    "initiative_update",
+    "customer",
+    "customer_target",
+  ]
+
   lambda_domain_sqs_sources = {
     for name in keys(local.lambda_domains) : name => (
       name == "integrations-events-consumer" && local.github_queues_enabled ? {
@@ -533,8 +544,8 @@ locals {
         planning = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["planning"]
           filter_patterns = [
-            jsonencode({ dynamodb = { NewImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
-            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
+            jsonencode({ dynamodb = { NewImage = { kind = { S = local.integrations_planning_kinds } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = local.integrations_planning_kinds } } } }),
           ]
         })
         team-config = merge(local.lambda_domain_stream_defaults, {

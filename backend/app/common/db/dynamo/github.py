@@ -54,7 +54,17 @@ TOMBSTONE_RETENTION_SECONDS = 30 * 24 * 3600
 """How long a deleted GitHub issue or comment is remembered, longer than SQS keeps
 any message, so a late or redriven delivery about it finds the tombstone."""
 
-RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "project_updates", "cycles", "labels")
+ORIGINAL_RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "project_updates", "cycles", "labels")
+"""The resource types a stored endpoint row without its own list reads as, so a new type is never a silent backfill."""
+
+RESOURCE_TYPES: tuple[str, ...] = (
+    *ORIGINAL_RESOURCE_TYPES,
+    "documents",
+    "initiatives",
+    "initiative_updates",
+    "customers",
+    "customer_requests",
+)
 """What an outbound endpoint may subscribe to, one entry per kind of row it describes."""
 
 LEGACY_EVENT_RESOURCES: dict[str, str] = {
@@ -519,7 +529,7 @@ class WebhookEndpoint(BaseModel):
     url: str
     label: str = ""
     team_id: str | None = None
-    resource_types: list[str] = Field(default_factory=lambda: list(RESOURCE_TYPES))
+    resource_types: list[str] = Field(default_factory=lambda: list(ORIGINAL_RESOURCE_TYPES))
     active: bool = True
     secret_hash: str = ""
     secret_salt: str = ""

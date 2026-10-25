@@ -13,7 +13,8 @@ A document lives in the workspace partition beside its parent, in four row shape
 - `document_mention#<issue>#<document>` is the backlink from one mentioned issue,
   so an issue's documents are one query.
 
-None of these kinds pass the planning stream filters, so no consumer reads them.
+Only the summary passes the planning stream filters, which the integrations
+stream consumer reads to send document webhooks.
 """
 
 from __future__ import annotations

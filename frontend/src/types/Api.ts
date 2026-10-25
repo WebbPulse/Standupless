@@ -3948,6 +3948,11 @@ export const WEBHOOK_RESOURCE_TYPES = [
   'project_updates',
   'cycles',
   'labels',
+  'documents',
+  'initiatives',
+  'initiative_updates',
+  'customers',
+  'customer_requests',
 ] as const;
 
 /** One resource type a webhook may subscribe to. */
