@@ -12,6 +12,10 @@ forced, and team visibility stays a filter over a bounded set.
 
 Creating and revoking a link are recorded in the workspace audit log, keyed by the
 token hash so the entry never carries the token itself.
+
+A view or filter link is the public roadmap, a Standard feature, so below Standard
+its create answers the plan refusal once the target and team checks pass. Issue
+links stay free on every plan.
 """
 
 from __future__ import annotations
@@ -123,10 +127,7 @@ def create_share_link(
     onto the link, so a settings listing needs no second read and the anonymous
     read is bounded by a team id that was decided at create time rather than
     re-derived later against whatever the row says then. Guests may read what is
-    shared with them but never publish, so their creates answer a 403. A view or
-    filter link is the public roadmap, a Standard feature, so below Standard it
-    answers the plan refusal once the target and team checks pass; issue links
-    stay free.
+    shared with them but never publish, so their creates answer a 403.
     """
     refuse_api_key_actor(context)
     if context.is_guest:
