@@ -37,18 +37,20 @@ def _identity_routers() -> "Sequence[RouterSpec]":
 
 
 def _identity_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
-    """The shared package's identity router, which carries the issuer's own path.
+    """The shared package's identity router and the email unsubscribe route, which carry their own paths.
 
     It mounts with no prefix; a prefix would double every path to
     `/api/auth/api/auth/...`. Empty when `IDENTITY_ISSUER` is unset, so a
     deployment without an issuer builds none of the glue's AWS clients.
     """
+    from app.domains.identity.endpoints import email_unsubscribe
+
     if not settings.IDENTITY_ISSUER:
-        return []
+        return [email_unsubscribe.router]
 
     from app.domains.identity.package_glue import build_router as build_identity_router
 
-    return [build_identity_router(settings)]
+    return [build_identity_router(settings), email_unsubscribe.router]
 
 
 def _workspaces_routers() -> "Sequence[RouterSpec]":
@@ -216,7 +218,15 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit", "agent_profiles", "idempotency")
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = (
+    "users",
+    "api_keys",
+    "audit",
+    "agent_profiles",
+    "idempotency",
+    "subscriptions",
+    "planning",
+)
 """The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
 
 `idempotency` holds the SAML assertion ids single sign-on has accepted, each until
@@ -228,6 +238,10 @@ page and the CLI restore, and deleting an account empties it.
 
 `api_keys` is also read so the current user route can verify a personal key and
 answer the key's person.
+
+`subscriptions` and `planning` are for the email unsubscribe links: one stops
+following an issue, the other records an explicit project unfollow, each put back
+by the link's Undo.
 """
 
 _IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces")
@@ -593,6 +607,7 @@ DOMAINS: Dict[str, Domain] = {
         title="Standupless identity",
         load_routers=_identity_routers,
         load_unprefixed_routers=_identity_unprefixed_routers,
+        requires_secrets=("SECRET_KEY",),
         repositories=_IDENTITY_REPOSITORIES,
         read_repositories=_IDENTITY_READ_REPOSITORIES,
     ),

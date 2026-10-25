@@ -31550,6 +31550,104 @@
         ]
       }
     },
+    "/api/email/unsubscribe": {
+      "get": {
+        "description": "The confirmation page for one footer link, which changes nothing until its button is pressed.",
+        "operationId": "confirm_unsubscribe_api_email_unsubscribe_get",
+        "parameters": [
+          {
+            "description": "The signed token the email link carries.",
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "The signed token the email link carries.",
+              "maxLength": 4096,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The link is expired, tampered with or no longer valid."
+          },
+          "422": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Confirm an email unsubscribe",
+        "tags": [
+          "email"
+        ]
+      },
+      "post": {
+        "description": "Apply one footer link at once, as an RFC 8058 one-click request or the confirmation button does.\n\nThe request body is ignored, so a mail client's `List-Unsubscribe=One-Click`\nform and the page's own empty form behave the same. Applying a stop twice is\nnot an error, and the second answer simply offers no Undo.",
+        "operationId": "apply_unsubscribe_api_email_unsubscribe_post",
+        "parameters": [
+          {
+            "description": "The signed token the email link carries.",
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "The signed token the email link carries.",
+              "maxLength": 4096,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The link is expired, tampered with or no longer valid."
+          },
+          "422": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Apply an email unsubscribe",
+        "tags": [
+          "email"
+        ]
+      }
+    },
     "/api/github/callback": {
       "get": {
         "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. Whenever user\nauthorization is configured, a `code` is required and exchanged to ask GitHub\nwhether the person who came back can reach the installation: yes binds it even\nwhen it predates the state, while no, no code or no answer refuses it. Only an\nenvironment without user authorization falls back to the freshness check, which\nreads the installation's `created_at` and never the caller's `setup_action`.\nAn `update` that GitHub sends with no state, because the change started on\nGitHub, only refreshes an installation that is already bound, and an install\nwith no state, as when an organization owner approves a member's request, binds\nnothing.",

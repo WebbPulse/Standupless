@@ -832,7 +832,9 @@ def write_project_update_notification(
     The recipient must still see at least one of the project's teams, and that
     team is the one the row carries, so the inbox's visibility checks read it as
     they read an issue's team. `report` is the update's progress report, which
-    the email lists under the excerpt.
+    the email lists under the excerpt. A recipient who unfollowed the project,
+    from Pulse or from an email's unsubscribe link, still gets the inbox row but
+    no email.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -841,7 +843,12 @@ def write_project_update_notification(
         return False
     recipient = repositories.users.get(recipient_id)
     in_app = recipient.wants_notification(PROJECT_UPDATED, "in_app") if recipient is not None else True
-    email = recipient is not None and recipient.wants_notification(PROJECT_UPDATED, "email")
+    email = (
+        recipient is not None
+        and recipient.wants_notification(PROJECT_UPDATED, "email")
+        and repositories.planning.get_pulse_follow(project.workspace_id, recipient_id, "project", project.project_id)
+        is not False
+    )
     chat = wants_chat(repositories, recipient, PROJECT_UPDATED, project.workspace_id)
     if not in_app and not email and not chat:
         return False

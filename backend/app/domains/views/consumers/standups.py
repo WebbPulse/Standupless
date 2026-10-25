@@ -29,6 +29,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.team_config import StandupSettings
 from app.common.email import deliver
+from app.common.email_unsubscribe import unsubscribe_links
 from app.common.standup import (
     StandupDigest,
     StandupWindowError,
@@ -141,7 +142,14 @@ def write_standup(
         return False
     if email and recipient.email:
         deliver(
-            render_standup_digest(digest, to=str(recipient.email), workspace_slug=workspace_slug),
+            render_standup_digest(
+                digest,
+                to=str(recipient.email),
+                workspace_slug=workspace_slug,
+                unsubscribe_links=unsubscribe_links(
+                    user_id=recipient_id, workspace_id=workspace_id, kinds=[STANDUP_DIGEST]
+                ),
+            ),
             event=f"views.notify.email.{STANDUP_DIGEST}",
         )
     return True

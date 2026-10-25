@@ -186,6 +186,18 @@
     "path": "/api/workspaces/{workspace_id}/reactions"
   },
   {
+    "auth": "public",
+    "domain": "identity",
+    "method": "GET",
+    "path": "/api/email/unsubscribe"
+  },
+  {
+    "auth": "public",
+    "domain": "identity",
+    "method": "POST",
+    "path": "/api/email/unsubscribe"
+  },
+  {
     "auth": "authenticated",
     "domain": "identity",
     "method": "GET",
