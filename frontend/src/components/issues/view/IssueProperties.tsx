@@ -548,7 +548,7 @@ export const ReleaseChip: React.FC<{
       onFilter={() => {
         filterRelease(lead.id);
       }}
-      wrapperClassName={className}
+      wrapperClassName={cn(className)}
       className={cn(CHIP_CLASS, 'max-w-40')}
     >
       {body}
