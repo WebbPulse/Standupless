@@ -2,7 +2,7 @@
  * The display options of a list or board: the layout, the grouping and
  * sub-grouping, the ordering and its direction, whether empty groups,
  * sub-issues and completed issues show, what group headers read, and which
- * properties the rows carry.
+ * properties the rows carry. A project's list also offers its triage issues.
  * Every change lands in the URL at once, so the menu is a live control rather
  * than a form with a save button. On a team's own issues an admin may also
  * keep the current display as the team default every member opens with.
@@ -71,6 +71,17 @@ export interface DisplayMenuProps {
    * the total estimate instead of the issue count.
    */
   estimates?: boolean;
+  /**
+   * The triage switch of a list that hides triage issues by default, such as
+   * a project's, or undefined where the list offers none.
+   */
+  triage?: TriageToggle | undefined;
+}
+
+/** Whether a list shows issues still waiting in their team's triage. */
+export interface TriageToggle {
+  shown: boolean;
+  onChange: (shown: boolean) => void;
 }
 
 /** The orderings that read the customers who asked for each issue. */
@@ -163,6 +174,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   teamDefault,
   customerSorts = false,
   estimates = false,
+  triage,
 }) => {
   const teamSave = teamDefault?.onSave;
   const teamClear = teamDefault?.onClear;
@@ -354,6 +366,14 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             onChange={(showArchived) => {
               set({ showArchived });
             }}
+          />
+        )}
+        {triage !== undefined && (
+          <Toggle
+            id="display-triage"
+            label="Show triage issues"
+            checked={triage.shown}
+            onChange={triage.onChange}
           />
         )}
         <Toggle
