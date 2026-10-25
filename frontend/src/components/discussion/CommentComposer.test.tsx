@@ -334,7 +334,6 @@ describe('the comment composer', () => {
         issueId="iss-1"
         people={[]}
         quote={{ ...quote }}
-        placeholder="Still here"
       />
     );
 
