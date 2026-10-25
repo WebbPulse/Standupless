@@ -454,12 +454,12 @@ export const projectUpdatesKey = (
   projectId: string
 ): QueryKey => ['projectUpdates', workspaceId, projectId];
 
-/** The key for one project update's replies. */
+/** The key for one project or initiative update's replies, by its parent's id. */
 export const projectUpdateCommentsKey = (
   workspaceId: string,
-  projectId: string,
+  parentId: string,
   updateId: string
-): QueryKey => ['projectUpdateComments', workspaceId, projectId, updateId];
+): QueryKey => ['projectUpdateComments', workspaceId, parentId, updateId];
 
 /**
  * One project's activity feed, nested under the project's own key so every
@@ -502,6 +502,16 @@ export const initiativeUpdatesKey = (
   workspaceId: string,
   initiativeId: string
 ): QueryKey => ['initiativeUpdates', workspaceId, initiativeId];
+
+/** The feed one project's or initiative's updates are read through, whichever it is. */
+export const statusUpdatesKey = (
+  workspaceId: string,
+  parentKind: 'project' | 'initiative',
+  parentId: string
+): QueryKey =>
+  parentKind === 'initiative'
+    ? initiativeUpdatesKey(workspaceId, parentId)
+    : projectUpdatesKey(workspaceId, parentId);
 
 /** One project's or initiative's documents, most recently edited first. */
 export const documentsKey = (

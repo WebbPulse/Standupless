@@ -1,8 +1,8 @@
 /**
- * The replies under one project update, as Linear shows them: each reply with
+ * The replies under one project or initiative update, as Linear shows them: each reply with
  * its author, a relative time, the body as Markdown and its own reactions, and
  * a reply box at the foot on the same rich editor updates are written on, with
- * @mentions from the project's people.
+ * @mentions from the people the card is given.
  *
  * The thread is read only while it is open, so a feed of closed cards costs no
  * request per card. A reply's author or an admin edits or deletes it from its
@@ -14,6 +14,7 @@ import {
   invalidateQueries,
   useMutationWithRefetch,
   usePolledQuery,
+  type QueryKey,
 } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { LuEllipsis, LuPencil, LuTrash2 } from 'react-icons/lu';
@@ -24,12 +25,13 @@ import {
   listProjectUpdateComments,
   removeProjectUpdateReaction,
   updateProjectUpdateComment,
+  type UpdateParent,
 } from '../../api/projectUpdateThreads';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import {
   projectUpdateCommentsKey,
-  projectUpdatesKey,
+  statusUpdatesKey,
 } from '../../lib/queryKeys';
 import { showErrorToast } from '../../lib/toast';
 import type { ProjectUpdateCommentRead } from '../../types/Api';
@@ -50,9 +52,19 @@ const POLL_MS = 30000;
 /** Which update a thread hangs off. */
 export interface UpdateThreadTarget {
   workspaceId: string;
-  projectId: string;
+  parent: UpdateParent;
   updateId: string;
 }
+
+/** The keys a write to one thread re-reads: the thread itself and its parent's feed. */
+const threadKeys = ({
+  workspaceId,
+  parent,
+  updateId,
+}: UpdateThreadTarget): QueryKey[] => [
+  projectUpdateCommentsKey(workspaceId, parent.id, updateId),
+  statusUpdatesKey(workspaceId, parent.kind, parent.id),
+];
 
 /** Props for one reply in the thread. */
 interface ReplyItemProps extends UpdateThreadTarget {
@@ -63,16 +75,13 @@ interface ReplyItemProps extends UpdateThreadTarget {
 /** One reply: header, body, reactions, and edit or delete when allowed. */
 const ReplyItem: React.FC<ReplyItemProps> = ({
   workspaceId,
-  projectId,
+  parent,
   updateId,
   reply,
   people,
 }) => {
   const [editing, setEditing] = useState(false);
-  const keys = [
-    projectUpdateCommentsKey(workspaceId, projectId, updateId),
-    projectUpdatesKey(workspaceId, projectId),
-  ];
+  const keys = threadKeys({ workspaceId, parent, updateId });
   const author = personLabel({
     user_id: reply.author.user_id,
     email: reply.author.email,
@@ -83,7 +92,7 @@ const ReplyItem: React.FC<ReplyItemProps> = ({
     (body: string) =>
       updateProjectUpdateComment(
         workspaceId,
-        projectId,
+        parent,
         updateId,
         reply.comment_id,
         body
@@ -95,7 +104,7 @@ const ReplyItem: React.FC<ReplyItemProps> = ({
     () =>
       deleteProjectUpdateComment(
         workspaceId,
-        projectId,
+        parent,
         updateId,
         reply.comment_id
       ),
@@ -108,13 +117,13 @@ const ReplyItem: React.FC<ReplyItemProps> = ({
       if (reacted) {
         await removeProjectUpdateReaction(
           workspaceId,
-          projectId,
+          parent,
           updateId,
           target
         );
         return;
       }
-      await addProjectUpdateReaction(workspaceId, projectId, updateId, target);
+      await addProjectUpdateReaction(workspaceId, parent, updateId, target);
     },
     keys
   );
@@ -217,25 +226,25 @@ export interface ProjectUpdateThreadProps extends UpdateThreadTarget {
 /** An open update's replies, oldest first, and the box that adds one. */
 export const ProjectUpdateThread: React.FC<ProjectUpdateThreadProps> = ({
   workspaceId,
-  projectId,
+  parent,
   updateId,
   people,
   autoFocus = false,
 }) => {
   const auth = useQueryAuth();
-  const key = projectUpdateCommentsKey(workspaceId, projectId, updateId);
+  const key = projectUpdateCommentsKey(workspaceId, parent.id, updateId);
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) =>
-      listProjectUpdateComments(workspaceId, projectId, updateId, signal),
+      listProjectUpdateComments(workspaceId, parent, updateId, signal),
     { intervalMs: POLL_MS, queryKey: key, auth }
   );
   const replies = data ?? [];
 
   const post = (body: string): Promise<boolean> =>
-    createProjectUpdateComment(workspaceId, projectId, updateId, body).then(
+    createProjectUpdateComment(workspaceId, parent, updateId, body).then(
       () => {
-        invalidateQueries([key, projectUpdatesKey(workspaceId, projectId)]);
+        invalidateQueries(threadKeys({ workspaceId, parent, updateId }));
         return true;
       },
       (failure: unknown) => {
@@ -258,7 +267,7 @@ export const ProjectUpdateThread: React.FC<ProjectUpdateThreadProps> = ({
               <ReplyItem
                 key={reply.comment_id}
                 workspaceId={workspaceId}
-                projectId={projectId}
+                parent={parent}
                 updateId={updateId}
                 reply={reply}
                 people={people}

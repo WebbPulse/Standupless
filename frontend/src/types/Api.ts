@@ -3224,17 +3224,19 @@ export interface StatusUpdateRead {
   source?: ChangeSource | null;
   /** Whether the author hid the progress report for everyone. */
   hide_details?: boolean;
+  /** The update's own reaction groups, the reader's pressed. */
+  reactions?: ReactionGroup[];
+  /** How many replies the update's thread holds. */
+  comment_count?: number;
 }
 
 /**
  * One written update on a project. `reactions` and `comment_count` summarise
  * its thread, so the feed shows the reaction bar and reply toggle without a
- * read per card.
+ * read per card, as they do on an initiative update.
  */
 export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
-  reactions?: ReactionGroup[];
-  comment_count?: number;
   /** Where the project stood when the update was posted; absent on updates from before snapshots. */
   snapshot?: ProjectUpdateSnapshot | null;
   /** The snapshot the update before this one recorded, or null for a first update. */
@@ -3269,13 +3271,15 @@ export interface ProjectUpdateSnapshot {
 }
 
 /**
- * One reply on a project update. `can_edit` says whether the caller may edit
- * or delete it: its author, a workspace admin or an admin of a project team.
+ * One reply on a project or initiative update, naming whichever it hangs off.
+ * `can_edit` says whether the caller may edit or delete it: its author, a
+ * workspace admin, or an admin of a project team or the initiative's owner.
  */
 export interface ProjectUpdateCommentRead {
   comment_id: string;
   update_id: string;
-  project_id: string;
+  project_id?: string | null;
+  initiative_id?: string | null;
   workspace_id: string;
   body: string;
   author_id: string;

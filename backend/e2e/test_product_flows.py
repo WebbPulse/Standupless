@@ -1117,7 +1117,7 @@ class TestPlanningDomain:
     def test_an_initiative_rolls_up_its_projects(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """An initiative holds a project, rolls it up, carries an update and deletes, leaving the project."""
+        """An initiative holds a project, rolls it up, carries a threaded update and deletes, leaving the project."""
         base = f"/api/workspaces/{workspace['id']}"
         path = f"{base}/initiatives"
         project = _created(
@@ -1165,6 +1165,28 @@ class TestPlanningDomain:
 
             edited = api.patch(update_path, json={"health": "on_track"})
             assert edited.status_code == 200, edited.text[:400]
+
+            replies_path = f"{update_path}/comments"
+            reply = api.post(replies_path, json={"body": run_scope.name("init-reply")})
+            assert reply.status_code == 201, reply.text[:400]
+            assert reply.json()["initiative_id"] == initiative["id"]
+            reply_path = f"{replies_path}/{reply.json()['comment_id']}"
+            assert api.patch(reply_path, json={"body": run_scope.name("init-reply-edited")}).status_code == 200
+            thread = api.get(replies_path)
+            assert thread.status_code == 200, thread.text[:400]
+            assert [row["comment_id"] for row in thread.json()["comments"]] == [reply.json()["comment_id"]]
+
+            reactions_path = f"{update_path}/reactions"
+            reacted = api.put(reactions_path, json={"emoji": "👍"})
+            assert reacted.status_code == 200, reacted.text[:400]
+            assert reacted.json()["reacted"] is True
+            summarised = api.get(updates_path, params={"limit": 5}).json()["updates"][0]
+            assert summarised["comment_count"] == 1
+            assert [group["emoji"] for group in summarised["reactions"]] == ["👍"]
+            unreacted = api.delete(reactions_path, params={"emoji": "👍"})
+            assert unreacted.status_code in (200, 204), unreacted.text[:400]
+            dropped = api.delete(reply_path)
+            assert dropped.status_code in (200, 204), dropped.text[:400]
 
             removed_update = api.delete(update_path)
             assert removed_update.status_code in (200, 204), removed_update.text[:400]

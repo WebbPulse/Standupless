@@ -1,4 +1,4 @@
-"""Request and response schemas for replies and reactions on project updates."""
+"""Request and response schemas for replies and reactions on project and initiative updates."""
 
 from __future__ import annotations
 
@@ -47,15 +47,18 @@ class ProjectUpdateCommentPatch(BaseModel):
 
 
 class ProjectUpdateCommentRead(BaseModel):
-    """One reply on a project update as the API returns it.
+    """One reply on a project or initiative update as the API returns it.
 
-    `can_edit` says whether this caller may edit or delete it, which is its
-    author, a workspace admin or an admin of one of the project's teams.
+    Exactly one of `project_id` and `initiative_id` is set, naming what the
+    update is about. `can_edit` says whether this caller may edit or delete it:
+    its author, a workspace admin, or on a project an admin of one of its teams
+    and on an initiative its owner.
     """
 
     comment_id: str
     update_id: str
-    project_id: str
+    project_id: Optional[str] = None
+    initiative_id: Optional[str] = None
     workspace_id: str
     body: str
     author_id: str
@@ -81,6 +84,7 @@ class ProjectUpdateCommentRead(BaseModel):
             comment_id=comment.comment_id,
             update_id=comment.update_id,
             project_id=comment.project_id,
+            initiative_id=comment.initiative_id,
             workspace_id=comment.workspace_id,
             body=comment.body,
             author_id=comment.author_id,

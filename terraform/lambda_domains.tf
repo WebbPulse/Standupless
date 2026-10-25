@@ -485,7 +485,7 @@ locals {
           filter_patterns = [
             jsonencode({
               eventName = ["INSERT"]
-              dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment"] } } }
+              dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment", "initiative_update_comment"] } } }
             }),
             jsonencode({ eventName = ["INSERT", "MODIFY"], dynamodb = { NewImage = { kind = { S = ["project"] } } } }),
           ]

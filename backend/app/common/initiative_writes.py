@@ -69,6 +69,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.update_thread_rules import summarise_threads
 
 NOT_NULLABLE = ("name", "status")
 """Patch fields that may be omitted but never cleared, because every initiative has one."""
@@ -470,6 +471,19 @@ def _update_read(context: AuthzContext, initiative: Initiative, update: Initiati
     )
 
 
+def _summarised(
+    repositories: Repositories, context: AuthzContext, initiative: Initiative, rows: list[InitiativeUpdateRead]
+) -> list[InitiativeUpdateRead]:
+    """Updates with each one's reaction groups and reply count filled in from its thread."""
+    return summarise_threads(
+        context,
+        repositories.planning.initiative_update_threads,
+        initiative.initiative_id,
+        rows,
+        lambda row: row.update_id,
+    )
+
+
 def list_initiative_updates(
     repositories: Repositories,
     context: AuthzContext,
@@ -488,7 +502,7 @@ def list_initiative_updates(
         start_key=_start_key(cursor, context.workspace_id, initiative.initiative_id),
     )
     return (
-        [_update_read(context, initiative, row) for row in rows],
+        _summarised(repositories, context, initiative, [_update_read(context, initiative, row) for row in rows]),
         encode_start_key(last_key, scope=update_cursor_scope(context.workspace_id, initiative.initiative_id)),
     )
 
@@ -578,7 +592,7 @@ def update_initiative_update(
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
     if not fields:
-        return _update_read(context, initiative, existing)
+        return _summarised(repositories, context, initiative, [_update_read(context, initiative, existing)])[0]
     now = utc_now()
     rewritten = bool(fields.keys() - {"hide_details"})
     stamps = {"updated_at": now, "edited_at": now} if rewritten else {"updated_at": now}
@@ -595,17 +609,20 @@ def update_initiative_update(
         pulse.revise_update(
             repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
         )
-    return _update_read(context, initiative, stored)
+    return _summarised(repositories, context, initiative, [_update_read(context, initiative, stored)])[0]
 
 
 def delete_initiative_update(
     repositories: Repositories, context: AuthzContext, initiative_id: str, update_id: str
 ) -> None:
-    """Delete an update; removing the newest one falls the initiative back to the one before it."""
+    """Delete an update and its thread; removing the newest one falls the initiative back to the one before it."""
     _, existing = _load_editable_update(repositories, context, initiative_id, update_id)
     was_latest = _is_latest(repositories, existing)
     if not repositories.planning.delete(context.workspace_id, existing.planning_key):
         raise not_found()
+    repositories.planning.initiative_update_threads.delete_thread(
+        context.workspace_id, existing.initiative_id, existing.update_id
+    )
     pulse.remove_update(repositories, context.workspace_id, existing.update_id)
     if not was_latest:
         return

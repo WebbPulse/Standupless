@@ -1994,6 +1994,8 @@ class InitiativeUpdateRead(BaseModel):
     initiative when this update was posted, and when the one before it was.
     `report` is that diff as plain lines, empty on a first update, on one
     posted before reports existed, and when `hide_details` says its author hid it.
+    `reactions` and `comment_count` summarise the update's thread, as on a
+    project update.
     """
 
     update_id: str
@@ -2011,6 +2013,8 @@ class InitiativeUpdateRead(BaseModel):
     previous_snapshot: Optional[InitiativeUpdateSnapshotRead] = None
     hide_details: bool = False
     report: list[str] = Field(default_factory=list)
+    reactions: list[ReactionGroupRead] = Field(default_factory=list)
+    comment_count: int = 0
 
     @classmethod
     def from_row(
