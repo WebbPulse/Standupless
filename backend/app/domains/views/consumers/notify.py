@@ -1026,7 +1026,10 @@ BLOCKING_CHANGES: Mapping[tuple[bool, bool], str] = {
     (False, True): "unblocked_by",
     (False, False): "no_longer_blocking",
 }
-"""The change a `blocking_changed` row names, keyed by whether the link was added and whether its reader's issue is the blocked side."""
+"""The change a `blocking_changed` row names.
+
+Keyed by whether the link was added and whether the reader's issue is the blocked side.
+"""
 
 
 def handle_relation_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
