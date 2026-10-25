@@ -1,6 +1,7 @@
 /**
  * The shortcut panel: that bindings sharing a heading and a label share one
- * row, that arrow keys read as arrows, that the search filters by label,
+ * row, that arrow keys read as arrows, that the rename and comment keys are
+ * listed under Issue, that the search filters by label,
  * heading and key, that the page's own headings come first, and that `?` and
  * Escape open and close it.
  */
@@ -26,6 +27,8 @@ const BINDINGS: [string, string, string, ShortcutScope][] = [
   ['shift+d', 'Change due date', 'Issue', 'issue'],
   ['d', 'Duplicate issue', 'Issue', 'issue'],
   ['shift+b', 'Copy git branch name', 'Issue', 'issue'],
+  ['r', 'Rename issue', 'Issue', 'issue'],
+  ['mod+m', 'Add a comment', 'Issue', 'issue'],
   ['g i', 'Go to inbox', 'Navigation', 'global'],
 ];
 
@@ -174,6 +177,19 @@ describe('ShortcutHelp', () => {
     expect(screen.queryByText('Duplicate issue')).toBeNull();
     expect(screen.queryByText('Copy git branch name')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Navigation' })).toBeNull();
+  });
+
+  it('lists the rename and comment keys under Issue', async () => {
+    const user = renderHelp();
+    const issue = screen.getByRole('region', { name: 'Issue' });
+    const rename = within(issue).getByText('Rename issue').closest('li');
+    if (rename === null) throw new Error('no row');
+    expect(within(rename).getByText('R')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox'), 'cmd m');
+
+    expect(screen.getByText('Add a comment')).toBeInTheDocument();
+    expect(screen.queryByText('Rename issue')).toBeNull();
   });
 
   it('filters by label and by heading', async () => {

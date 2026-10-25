@@ -291,6 +291,9 @@ def test_every_email_is_dark_first_and_keeps_a_plain_text_part(name: str) -> Non
     assert "@media (prefers-color-scheme:dark)" in html
     assert f"[data-ogsc] .wp-text{{color:{EMAIL_THEME.dark.text} !important;}}" in html
     assert f"[data-ogsb] .wp-bg{{background-color:{page} !important;}}" in html
+    assert "u + .body .wp-gmail-keep{mix-blend-mode:difference;}" in html
+    assert 'class="wp-link wp-gmail-keep"' in html
+    assert 'class="wp-link"' not in html
     for light in (EMAIL_THEME.light.page, EMAIL_THEME.light.card, EMAIL_THEME.light.muted, BRAND_ACCENT):
         assert light not in html
     assert message.text.strip()

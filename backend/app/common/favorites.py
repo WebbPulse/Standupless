@@ -5,7 +5,8 @@ tools in the integrations image both run it, and that image may not import
 another domain's code.
 
 Favorites are one ordered row per member per workspace, stored beside saved
-views. Nothing is copied from the target: each read resolves every favorite
+views, with the member's named folders on the same row so a move between
+folders is one write. Nothing is copied from the target: each read resolves every favorite
 against what the caller may see right now, so a favorite on a team they have
 since left, or on something deleted, quietly drops out of the listing rather
 than leaking a stale title. The row itself keeps it, so regaining access brings
@@ -21,10 +22,22 @@ from fastapi import HTTPException
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.schemas.favorites import FavoriteOrder, FavoriteRead, FavoriteRef
+from app.common.api.schemas.favorites import (
+    FavoriteFolderRead,
+    FavoriteListRead,
+    FavoriteOrder,
+    FavoriteRead,
+    FavoriteRef,
+)
 from app.common.api.schemas.teams import StatusRead
 from app.common.db.dynamo.teams import Team
-from app.common.db.dynamo.views import FAVORITES_MAX, FavoriteItem
+from app.common.db.dynamo.views import (
+    FAVORITE_FOLDERS_MAX,
+    FAVORITES_MAX,
+    FavoriteFolder,
+    FavoriteItem,
+    new_favorite_folder_id,
+)
 from app.common.issue_keys import current
 from app.common.issue_rules import not_found, unprocessable
 from app.common.planning_rules import visible_project_teams
@@ -33,7 +46,26 @@ from app.common.saved_views import load_visible_view
 
 def _item(ref: FavoriteRef) -> FavoriteItem:
     """The stored shape of one reference, keeping a team only where a cycle needs it."""
-    return FavoriteItem(kind=ref.kind, target_id=ref.target_id, team_id=ref.team_id if ref.kind == "cycle" else None)
+    return FavoriteItem(
+        kind=ref.kind,
+        target_id=ref.target_id,
+        team_id=ref.team_id if ref.kind == "cycle" else None,
+        folder_id=ref.folder_id,
+    )
+
+
+def _folders_read(folders: list[FavoriteFolder]) -> list[FavoriteFolderRead]:
+    """The caller's folders as the sidebar draws them, numbered in their order."""
+    return [
+        FavoriteFolderRead(folder_id=folder.folder_id, name=folder.name, position=index)
+        for index, folder in enumerate(folders)
+    ]
+
+
+def _require_folder(folders: list[FavoriteFolder], folder_id: str | None) -> None:
+    """Refuse a folder the caller does not have, the same 404 as any other missing row."""
+    if folder_id is not None and not any(folder.folder_id == folder_id for folder in folders):
+        raise not_found()
 
 
 class _Resolver:
@@ -61,7 +93,7 @@ class _Resolver:
         for row in rows:
             found = issues.get(row.target_id) if row.kind == "issue" else self._one(row)
             if found is not None:
-                resolved.append(found)
+                resolved.append(found.model_copy(update={"folder_id": row.folder_id}))
         return resolved
 
     def _issues(self, issue_ids: list[str]) -> dict[str, FavoriteRead]:
@@ -177,31 +209,42 @@ class _Resolver:
         )
 
 
-def list_favorites(repositories: Repositories, context: AuthzContext) -> list[FavoriteRead]:
-    """The caller's favorites in their order, each one they may still read."""
+def list_favorites(repositories: Repositories, context: AuthzContext) -> FavoriteListRead:
+    """The caller's favorites in their order, each one they may still read, and their folders."""
     items = repositories.views.favorite_items(context.workspace_id, context.user_id)
-    return _Resolver(repositories, context).resolve(items)
+    folders = repositories.views.favorite_folders(context.workspace_id, context.user_id)
+    return FavoriteListRead(favorites=_Resolver(repositories, context).resolve(items), folders=_folders_read(folders))
 
 
 def add_favorite(repositories: Repositories, context: AuthzContext, ref: FavoriteRef) -> FavoriteRead:
     """Star something the caller may read, answering it as the sidebar draws it.
 
     Starring what is already starred keeps its place and answers it again, so a
-    double press is never an error. A new favorite goes last, as in Linear. A
-    target the caller cannot read is a 404, the same as one that never existed.
+    double press is never an error; naming a folder on it moves it there. A new
+    favorite goes last, as in Linear. A target or a folder the caller cannot
+    read is a 404, the same as one that never existed.
     """
     if ref.kind == "cycle" and not ref.team_id:
         raise unprocessable("team_id is required to favorite a cycle")
+    folders = repositories.views.favorite_folders(context.workspace_id, context.user_id)
+    _require_folder(folders, ref.folder_id)
     item = _item(ref)
     resolved = _Resolver(repositories, context).resolve([item])
     if not resolved:
         raise not_found()
     current_items = repositories.views.favorite_items(context.workspace_id, context.user_id)
-    if any(row.kind == item.kind and row.target_id == item.target_id for row in current_items):
+    existing = next((row for row in current_items if row.kind == item.kind and row.target_id == item.target_id), None)
+    if existing is not None:
+        if "folder_id" not in ref.model_fields_set or existing.folder_id == ref.folder_id:
+            return resolved[0].model_copy(update={"folder_id": existing.folder_id})
+        moved = [
+            row.model_copy(update={"folder_id": ref.folder_id}) if row is existing else row for row in current_items
+        ]
+        repositories.views.set_favorites(context.workspace_id, context.user_id, moved, folders)
         return resolved[0]
     if len(current_items) >= FAVORITES_MAX:
         raise unprocessable(f"A member keeps at most {FAVORITES_MAX} favorites")
-    repositories.views.set_favorite_items(context.workspace_id, context.user_id, [*current_items, item])
+    repositories.views.set_favorites(context.workspace_id, context.user_id, [*current_items, item], folders)
     return resolved[0]
 
 
@@ -219,19 +262,78 @@ def remove_favorite(repositories: Repositories, context: AuthzContext, kind: str
     return True
 
 
-def reorder_favorites(repositories: Repositories, context: AuthzContext, order: FavoriteOrder) -> list[FavoriteRead]:
-    """Put the caller's favorites in a new order, answering the resolved listing.
+def reorder_favorites(repositories: Repositories, context: AuthzContext, order: FavoriteOrder) -> FavoriteListRead:
+    """Put the caller's favorites and folders in a new order, answering the resolved listing.
 
     The named favorites come first in the order sent, and any the order leaves
     out follow in their old order, so nothing starred in another tab is lost.
+    A favorite whose entry names a folder moves into it, and one naming a
+    folder deleted meanwhile lands at the top level rather than failing the
+    whole reorder. Folders are ordered the same way when `folders` is sent.
     """
     current_items = repositories.views.favorite_items(context.workspace_id, context.user_id)
+    folders = repositories.views.favorite_folders(context.workspace_id, context.user_id)
     by_identity = {(row.kind, row.target_id): row for row in current_items}
     named: list[FavoriteItem] = []
     for ref in order.items:
         row = by_identity.pop((ref.kind, ref.target_id), None)
-        if row is not None:
-            named.append(row)
+        if row is None:
+            continue
+        if "folder_id" in ref.model_fields_set:
+            row = row.model_copy(update={"folder_id": ref.folder_id})
+        named.append(row)
     rest = [row for row in current_items if (row.kind, row.target_id) in by_identity]
-    stored = repositories.views.set_favorite_items(context.workspace_id, context.user_id, [*named, *rest])
-    return _Resolver(repositories, context).resolve(stored)
+    if order.folders is not None:
+        by_id = {folder.folder_id: folder for folder in folders}
+        named_folders = [by_id.pop(folder_id) for folder_id in order.folders if folder_id in by_id]
+        folders = [*named_folders, *[folder for folder in folders if folder.folder_id in by_id]]
+    stored, kept = repositories.views.set_favorites(context.workspace_id, context.user_id, [*named, *rest], folders)
+    return FavoriteListRead(favorites=_Resolver(repositories, context).resolve(stored), folders=_folders_read(kept))
+
+
+def _clean_name(name: str) -> str:
+    """A folder name without its surrounding whitespace, refusing one that is only whitespace."""
+    cleaned = " ".join(name.split())
+    if not cleaned:
+        raise unprocessable("A folder needs a name")
+    return cleaned
+
+
+def create_folder(repositories: Repositories, context: AuthzContext, name: str) -> FavoriteFolderRead:
+    """Add a favorite folder at the end of the caller's folders, empty until a favorite moves in."""
+    items = repositories.views.favorite_items(context.workspace_id, context.user_id)
+    folders = repositories.views.favorite_folders(context.workspace_id, context.user_id)
+    if len(folders) >= FAVORITE_FOLDERS_MAX:
+        raise unprocessable(f"A member keeps at most {FAVORITE_FOLDERS_MAX} favorite folders")
+    folder = FavoriteFolder(folder_id=new_favorite_folder_id(), name=_clean_name(name))
+    repositories.views.set_favorites(context.workspace_id, context.user_id, items, [*folders, folder])
+    return FavoriteFolderRead(folder_id=folder.folder_id, name=folder.name, position=len(folders))
+
+
+def rename_folder(repositories: Repositories, context: AuthzContext, folder_id: str, name: str) -> FavoriteFolderRead:
+    """Rename one of the caller's favorite folders, a 404 when they have no such folder."""
+    items = repositories.views.favorite_items(context.workspace_id, context.user_id)
+    folders = repositories.views.favorite_folders(context.workspace_id, context.user_id)
+    index = next((at for at, folder in enumerate(folders) if folder.folder_id == folder_id), None)
+    if index is None:
+        raise not_found()
+    renamed = folders[index].model_copy(update={"name": _clean_name(name)})
+    folders[index] = renamed
+    repositories.views.set_favorites(context.workspace_id, context.user_id, items, folders)
+    return FavoriteFolderRead(folder_id=renamed.folder_id, name=renamed.name, position=index)
+
+
+def delete_folder(repositories: Repositories, context: AuthzContext, folder_id: str) -> bool:
+    """Delete one of the caller's favorite folders, reporting whether it existed.
+
+    Nothing in it is unstarred: its favorites move to the top level and keep
+    their order there.
+    """
+    items = repositories.views.favorite_items(context.workspace_id, context.user_id)
+    folders = repositories.views.favorite_folders(context.workspace_id, context.user_id)
+    kept = [folder for folder in folders if folder.folder_id != folder_id]
+    if len(kept) == len(folders):
+        return False
+    released = [row.model_copy(update={"folder_id": None}) if row.folder_id == folder_id else row for row in items]
+    repositories.views.set_favorites(context.workspace_id, context.user_id, released, kept)
+    return True

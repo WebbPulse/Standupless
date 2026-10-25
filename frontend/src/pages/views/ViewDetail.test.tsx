@@ -62,6 +62,7 @@ const addFavorite =
 
 vi.mock('../../api/favorites', () => ({
   listFavorites: () => Promise.resolve([...starred]),
+  listFavoriteFolders: () => Promise.resolve([]),
   addFavorite: (_w: string, ref: { kind: string; target_id: string }) =>
     addFavorite(ref),
   removeFavorite: () => Promise.resolve(),

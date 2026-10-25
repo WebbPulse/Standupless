@@ -5071,14 +5071,61 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "FavoriteFolderRead": {
+        "description": "One of the caller's favorite folders, `position` counting from 0 at the top.",
+        "properties": {
+          "folder_id": {
+            "title": "Folder Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "folder_id",
+          "name",
+          "position"
+        ],
+        "title": "FavoriteFolderRead",
+        "type": "object"
+      },
+      "FavoriteFolderWrite": {
+        "description": "A favorite folder's name, as creating or renaming one sends it.",
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FavoriteFolderWrite",
+        "type": "object"
+      },
       "FavoriteListRead": {
-        "description": "The caller's favorites in their order, each one they can still read.",
+        "description": "The caller's favorites in their order, each one they can still read, and their folders in theirs.",
         "properties": {
           "favorites": {
             "items": {
               "$ref": "#/components/schemas/FavoriteRead"
             },
             "title": "Favorites",
+            "type": "array"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FavoriteFolderRead"
+            },
+            "title": "Folders",
             "type": "array"
           }
         },
@@ -5089,8 +5136,23 @@
         "type": "object"
       },
       "FavoriteOrder": {
-        "description": "The caller's favorites in their new order.\n\nFavorites the list leaves out keep their relative order after the named\nones, and names that are not favorites are ignored, so a reorder racing an\nadd or a removal in another tab never drops or resurrects anything.",
+        "description": "The caller's favorites in their new order.\n\nFavorites the list leaves out keep their relative order after the named\nones, and names that are not favorites are ignored, so a reorder racing an\nadd or a removal in another tab never drops or resurrects anything.\n`folders` orders the caller's folders by id the same way, and leaving it\nout keeps the folders where they are.",
         "properties": {
+          "folders": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folders"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/FavoriteRef"
@@ -5107,7 +5169,7 @@
         "type": "object"
       },
       "FavoriteRead": {
-        "description": "One favorite as the sidebar draws it.\n\n`title` is the issue title, or the name of the project, cycle, view, team,\ndocument or initiative. `issue_key` and `status` are set for an issue, and\n`team_key_prefix` wherever the target belongs to one team, which is what a\nclient builds a team or cycle link from. `icon` and `color` are the target's\nown, where it has them.",
+        "description": "One favorite as the sidebar draws it.\n\n`title` is the issue title, or the name of the project, cycle, view, team,\ndocument or initiative. `issue_key` and `status` are set for an issue, and\n`team_key_prefix` wherever the target belongs to one team, which is what a\nclient builds a team or cycle link from. `icon` and `color` are the target's\nown, where it has them. `folder_id` is the folder it sits in, or null at\nthe top level.",
         "properties": {
           "color": {
             "anyOf": [
@@ -5119,6 +5181,17 @@
               }
             ],
             "title": "Color"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
           },
           "icon": {
             "anyOf": [
@@ -5227,8 +5300,20 @@
         "type": "object"
       },
       "FavoriteRef": {
-        "description": "One favorite named by its kind and id, as an add or a reorder sends it.\n\n`team_id` is needed only for a cycle, whose key carries its team.",
+        "description": "One favorite named by its kind and id, as an add or a reorder sends it.\n\n`team_id` is needed only for a cycle, whose key carries its team.\n`folder_id` places the favorite in one of the caller's folders, and null\nputs it at the top level. Left out, an add files a new favorite at the top\nlevel and a reorder leaves the favorite in whatever folder it is in.",
         "properties": {
+          "folder_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
+          },
           "kind": {
             "enum": [
               "issue",
@@ -30968,7 +31053,7 @@
     },
     "/api/workspaces/{workspace_id}/favorites": {
       "get": {
-        "description": "The caller's favorites in their order, each resolved to what the sidebar draws.",
+        "description": "The caller's favorites in their order, each resolved to what the sidebar draws, and their folders.",
         "operationId": "read_favorites_api_workspaces__workspace_id__favorites_get",
         "parameters": [
           {
@@ -31072,9 +31157,189 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/favorites/folders": {
+      "post": {
+        "description": "Add an empty favorite folder below the caller's others.",
+        "operationId": "create_favorite_folder_api_workspaces__workspace_id__favorites_folders_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteFolderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteFolderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Favorite Folder",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/favorites/folders/{folder_id}": {
+      "delete": {
+        "description": "Delete one of the caller's favorite folders, its favorites moving to the top level; a no-op when absent.",
+        "operationId": "delete_favorite_folder_api_workspaces__workspace_id__favorites_folders__folder_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Folder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Favorite Folder",
+        "tags": [
+          "views"
+        ]
+      },
+      "patch": {
+        "description": "Rename one of the caller's favorite folders.",
+        "operationId": "update_favorite_folder_api_workspaces__workspace_id__favorites_folders__folder_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Folder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteFolderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteFolderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Favorite Folder",
+        "tags": [
+          "views"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/favorites/order": {
       "put": {
-        "description": "Put the caller's favorites in a new order, answering the reordered listing.",
+        "description": "Put the caller's favorites and folders in a new order, answering the reordered listing.",
         "operationId": "order_favorites_api_workspaces__workspace_id__favorites_order_put",
         "parameters": [
           {
