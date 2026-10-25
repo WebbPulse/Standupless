@@ -50383,7 +50383,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none. Archived projects are left out unless\n`include_archived` is set.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none. Archived projects are left out unless\n`include_archived` is set.\n\n`health` keeps the projects in any named health, `none` standing for no\nhealth, `priority` the ones at any named priority, and `member_id` the ones\nwith any named member, `none` standing for no members. The date bounds are\nexclusive days, `YYYY-MM-DD`, and a project without the date meets none.\n`updated_within_days` keeps the projects whose newest project update is at\nmost that many days old and `not_updated_within_days` the rest, a project\nnever updated among them.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -50601,6 +50601,163 @@
               "default": false,
               "title": "Include Archived",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "health",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Health"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Member Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_date_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_date_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_date_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Date Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_date_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Date After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_within_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Within Days"
+            }
+          },
+          {
+            "in": "query",
+            "name": "not_updated_within_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Not Updated Within Days"
             }
           }
         ],

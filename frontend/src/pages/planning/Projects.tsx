@@ -14,8 +14,10 @@
  * direction, the list can group again
  * inside each group, rows order by date, name, priority or progress, and
  * closed projects show for all time, a recent window or not at all. Filters
- * narrow by status, lead, team, and whether an open blocker holds a project
- * up or it holds another up, and on a team the page can keep only the
+ * narrow by status, lead, label, customer, team, and whether an open blocker
+ * holds a project up or it holds another up, and the Filter menu adds health,
+ * priority, members, start and target date bounds and last update age as
+ * chips removed one at a time; on a team the page can keep only the
  * projects that team leads. Ctrl or Cmd and B flips between list and board.
  * The arrangement is saved to the account and carried in the URL so an
  * arranged page can be shared. Filtered to a parent team, the page
@@ -140,6 +142,17 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
+import ProjectPropertyFilterBar from '../../components/planning/ProjectPropertyFilterBar';
+import {
+  EMPTY_PROPERTY_FILTERS,
+  PROPERTY_FILTER_KEYS,
+  PROPERTY_PARAMS,
+  hasPropertyFilters,
+  matchesPropertyFilters,
+  propertyParamText,
+  readPropertyFilters,
+  type ProjectPropertyFilters,
+} from '../../lib/projectPropertyFilters';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
@@ -867,6 +880,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   const customerFilter = isMember
     ? (params.get('customer') ?? baseOf('customer'))
     : '';
+  const properties = useMemo(
+    () => readPropertyFilters(params, base?.properties),
+    [params, base]
+  );
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
   const { fallback: displayDefault, actionsFor: defaultActionsFor } =
     useProjectsDisplayDefault({
@@ -924,6 +941,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
     customer: isMember ? customerFilter : (base?.customer ?? ''),
     label: labelFilter,
+    properties,
   });
   const changed =
     base !== undefined &&
@@ -1040,6 +1058,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               openBlockers(project, projectsById).length > 0
             ) && flagMatches(blockingFilter, heldProjects(project).length > 0)
         )
+        .filter((project) => matchesPropertyFilters(project, properties, now))
         .filter((project) => withinClosedWindow(project, closed, now))
         .filter((project) =>
           withinLeadTeams(project, display.lead_team, leadTeamIds)
@@ -1055,6 +1074,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       labelFilter,
       blockedFilter,
       blockingFilter,
+      properties,
       closed,
       now,
       display.lead_team,
@@ -1382,6 +1402,27 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     else next.set(field, value);
   };
 
+  const writeProperties = (
+    next: URLSearchParams,
+    filters: ProjectPropertyFilters
+  ): void => {
+    for (const key of PROPERTY_FILTER_KEYS) {
+      const value = propertyParamText(filters, key);
+      const held = propertyParamText(
+        base?.properties ?? EMPTY_PROPERTY_FILTERS,
+        key
+      );
+      if (value === held) next.delete(PROPERTY_PARAMS[key]);
+      else next.set(PROPERTY_PARAMS[key], value);
+    }
+  };
+
+  const setProperties = (filters: ProjectPropertyFilters): void => {
+    const next = new URLSearchParams(params);
+    writeProperties(next, filters);
+    setParams(next, { replace: true });
+  };
+
   const setParam = (field: FilterField, value: string): void => {
     const next = new URLSearchParams(params);
     writeParam(next, field, value);
@@ -1468,7 +1509,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     labelFilter !== '' ||
     blockedFilter !== '' ||
     blockingFilter !== '' ||
-    customerFilter !== '';
+    customerFilter !== '' ||
+    hasPropertyFilters(properties);
 
   useShortcut({
     keys: 'shift+p',
@@ -1771,6 +1813,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               setParam('blocking', value === blockingFilter ? '' : value);
             }}
           />
+          <ProjectPropertyFilterBar
+            filters={properties}
+            people={people}
+            onChange={setProperties}
+          />
           {filteredTeam !== undefined && subTeams.length > 0 && (
             <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
           )}
@@ -1787,6 +1834,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
                 writeParam(next, 'blocked', '');
                 writeParam(next, 'blocking', '');
                 writeParam(next, 'customer', '');
+                writeProperties(next, EMPTY_PROPERTY_FILTERS);
                 next.delete(ROLL_UP_PARAM);
                 setParams(next, { replace: true });
               }}

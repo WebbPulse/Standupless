@@ -56,6 +56,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_filters import ProjectPropertyFilter
 from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
 from app.common.project_link_writes import with_links
 from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
@@ -158,6 +159,7 @@ def list_projects(
     sort: Optional[str] = None,
     label_id: Optional[list[str]] = None,
     include_archived: bool = False,
+    properties: Optional[ProjectPropertyFilter] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -183,7 +185,9 @@ def list_projects(
     Archived projects are left out unless `include_archived` is set, as Linear
     hides them from its lists, though they still count as blockers.
     `status_filter` names a project status, a team's included, or a category to keep
-    every status in it, the legacy `done` included.
+    every status in it, the legacy `done` included. `properties` holds the
+    health, priority, member, date and update age filters, update age measured
+    back from now.
     """
     statuses = workspace_project_statuses(repositories, context.workspace_id) if status_filter is not None else []
     wanted_status = None if status_filter is None else status_filter_match(statuses, status_filter)
@@ -204,6 +208,8 @@ def list_projects(
     if filtered or sort in CUSTOMER_SORTS:
         index = load_customer_index(repositories, context.workspace_id, with_revenue=sort == REVENUE_SORT)
 
+    wanted_properties = properties if properties is not None and properties.active else None
+    now = utc_now()
     visible = set(visible_team_ids(repositories, context))
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     bodies: list[ProjectRead] = []
@@ -225,6 +231,8 @@ def list_projects(
         if initiative_id is not None and row.initiative_id != initiative_id:
             continue
         if not label_match(wanted_labels, row.label_ids):
+            continue
+        if wanted_properties is not None and not wanted_properties.matches(row, now):
             continue
         if index is not None and not customer_match(
             wanted_customers,
@@ -263,6 +271,8 @@ def list_projects(
     )
     if wanted_labels:
         scope = f"{scope}:labels={label_scope(wanted_labels)}"
+    if wanted_properties is not None:
+        scope = f"{scope}:{wanted_properties.scope()}"
     if include_archived:
         scope = f"{scope}:archived"
     if is_blocked is not None or is_blocking is not None:

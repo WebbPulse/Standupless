@@ -148,6 +148,31 @@ def test_a_project_changed_into_a_followed_view_notifies(client: TestClient, wor
     assert len(_view_rows(repositories, workspace, MEMBER)) == 1
 
 
+def test_a_project_turning_at_risk_enters_a_health_and_priority_view(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """The property filters judge the watch as the list does, and a health change is a watched field."""
+    _follow(
+        client,
+        workspace,
+        MEMBER,
+        name="At risk",
+        shared=True,
+        filter={"health": "at_risk", "priority": "high", "target_date_before": "2027-01-01"},
+    )
+    before = _project(workspace, health="on_track", priority="high", target_date="2026-12-01")
+    repositories.planning.create_project(before)
+    low = _project(workspace, 1, health="at_risk", priority="low", target_date="2026-12-01", updated_by=OWNER)
+
+    _write(repositories, low, before)
+    assert _view_rows(repositories, workspace, MEMBER) == []
+    assert view_fields_changed(before, before.model_copy(update={"health": "at_risk"}))
+
+    risky = _project(workspace, 2, health="at_risk", priority="high", target_date="2026-12-01", updated_by=OWNER)
+    _write(repositories, risky, low)
+    assert len(_view_rows(repositories, workspace, MEMBER)) == 1
+
+
 def test_a_project_already_in_the_view_stays_quiet(client: TestClient, workspace: str, repositories: Any) -> None:
     """A change to a project that matched before and after is no transition."""
     _follow(client, workspace, MEMBER, name="In flight", shared=True, filter={"status": ["in_progress"]})

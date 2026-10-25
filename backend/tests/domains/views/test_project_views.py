@@ -132,6 +132,44 @@ def test_a_project_view_refuses_issue_filter_keys_and_unknown_statuses(client: T
         assert response.json()["error_code"] == "INVALID_FILTER"
 
 
+def test_a_project_view_keeps_the_property_filters(client: TestClient, workspace: str) -> None:
+    """Health, priority, members, date bounds and update age round trip, an age sent as a number stored as text."""
+    sign_in(client, MEMBER)
+    sent = {
+        "health": ["at_risk", "none"],
+        "priority": "high",
+        "member_id": ["me", "none"],
+        "start_date_after": "2026-01-01",
+        "start_date_before": "2026-04-01",
+        "target_date_after": "2026-05-01",
+        "target_date_before": "2026-12-31",
+        "updated_within_days": 30,
+        "not_updated_within_days": "7",
+    }
+
+    response = _create(client, workspace, entity="projects", filter=sent)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["filter"] == {**sent, "updated_within_days": "30"}
+
+
+def test_a_project_view_refuses_malformed_property_filters(client: TestClient, workspace: str) -> None:
+    """An unknown health or priority, a non day bound or an out of range age is `INVALID_FILTER`."""
+    sign_in(client, MEMBER)
+
+    for bad in (
+        {"health": ["sunny"]},
+        {"priority": "p0"},
+        {"start_date_before": "soon"},
+        {"target_date_after": ["2026-01-01"]},
+        {"updated_within_days": "0"},
+        {"not_updated_within_days": "forever"},
+    ):
+        response = _create(client, workspace, entity="projects", filter=bad)
+        assert response.status_code == 422, bad
+        assert response.json()["error_code"] == "INVALID_FILTER"
+
+
 def test_an_issue_view_refuses_a_projects_arrangement_and_project_keys(client: TestClient, workspace: str) -> None:
     """An issue view takes neither a projects arrangement nor the projects page's filter keys."""
     sign_in(client, MEMBER)
@@ -153,7 +191,7 @@ def test_a_project_view_patch_moves_the_arrangement_and_filter(client: TestClien
     moved = client.patch(
         url, json={"projects_display": {"layout": "board", "group": "health"}, "filter": {"status": "paused"}}
     )
-    bad = client.patch(url, json={"filter": {"priority": "high"}})
+    bad = client.patch(url, json={"filter": {"assignee_id": "user-1"}})
     cleared = client.patch(url, json={"projects_display": None})
 
     assert moved.status_code == 200, moved.text
