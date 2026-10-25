@@ -46,6 +46,10 @@ import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useCustomers } from '../../../hooks/useCustomers';
+import {
+  releaseContext,
+  useReleaseIndex,
+} from '../../../hooks/useReleaseIndex';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { FOCUS_SAVE_REFUSED } from '../../../lib/focusGrouping';
@@ -530,6 +534,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     isMember &&
       (state.groupBy === 'customer' || state.subGroupBy === 'customer')
   );
+  const releaseIndex = useReleaseIndex(workspaceId, teamIds.length > 0);
   const namedTeams = useMemo(() => namedTeamIds(state), [state]);
   const filterContext = useMemo(
     () => ({
@@ -550,8 +555,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             })),
           }
         : {}),
+      ...releaseContext(releaseIndex),
     }),
-    [lists.context, teams, namedTeams, isMember, customers]
+    [lists.context, teams, namedTeams, isMember, customers, releaseIndex]
   );
   const viewLists = useMemo(
     () => ({ ...lists, context: filterContext }),

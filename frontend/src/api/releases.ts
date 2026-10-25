@@ -10,6 +10,7 @@ import type {
   IssueReleaseListRead,
   ReleaseCreate,
   ReleaseDetailRead,
+  ReleaseIndexRead,
   ReleaseListQuery,
   ReleaseListRead,
   ReleasePipelineRead,
@@ -65,6 +66,10 @@ export const issueReleasesPath = (
   workspaceId: string,
   issueId: string
 ): string => `/workspaces/${workspaceId}/issues/${issueId}/releases`;
+
+/** The route every visible release is listed on with the issues it carries. */
+export const releaseIndexPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/issues/releases`;
 
 type QueryBag = Record<string, string | number | boolean | undefined>;
 
@@ -251,6 +256,19 @@ export const listIssueReleases = async (
 ): Promise<IssueReleaseListRead> => {
   const response = await apiClient.get<IssueReleaseListRead>(
     issueReleasesPath(workspaceId, issueId),
+    signalOptions(signal)
+  );
+  const body = response.data;
+  return { releases: Array.isArray(body?.releases) ? body.releases : [] };
+};
+
+/** Lists every release of the teams the caller can see, each with its issues. */
+export const listReleaseIndex = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<ReleaseIndexRead> => {
+  const response = await apiClient.get<ReleaseIndexRead>(
+    releaseIndexPath(workspaceId),
     signalOptions(signal)
   );
   const body = response.data;

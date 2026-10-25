@@ -138,11 +138,11 @@ def _issues_routers() -> "Sequence[RouterSpec]":
     return [
         (export.router, "/workspaces", ("issues",)),
         (triage.router, "/workspaces", ("issues",)),
+        (releases.router, "/workspaces", ("issues",)),
         (issues.router, "/workspaces", ("issues",)),
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),
         (subscribers.router, "/workspaces", ("issues",)),
-        (releases.router, "/workspaces", ("issues",)),
     ]
 
 

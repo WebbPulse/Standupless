@@ -760,6 +760,7 @@ class DisplayOptionsBody(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | Literal["none"]
@@ -804,6 +805,7 @@ class DisplayOptionsBody(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | Literal["none"]
@@ -830,6 +832,7 @@ class DisplayOptionsBody(TypedDict):
                 "created_at",
                 "updated_at",
                 "time_in_status",
+                "release",
             ]
         ]
         | None
@@ -3422,6 +3425,7 @@ class ViewCreate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3489,6 +3493,7 @@ class ViewCreate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3515,6 +3520,7 @@ class ViewCreate(TypedDict):
                 "created_at",
                 "updated_at",
                 "time_in_status",
+                "release",
             ]
         ]
         | None
@@ -3574,6 +3580,7 @@ class ViewUpdate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3641,6 +3648,7 @@ class ViewUpdate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3666,6 +3674,7 @@ class ViewUpdate(TypedDict):
                 "created_at",
                 "updated_at",
                 "time_in_status",
+                "release",
             ]
         ]
         | None
@@ -4815,6 +4824,21 @@ class ReleaseDetailRead(TypedDict):
     url: NotRequired[str | None]
     version: NotRequired[str | None]
     workspace_id: str
+
+
+class ReleaseIndexEntryRead(TypedDict):
+    created_at: str
+    current_stage: NotRequired[ReleaseStageRead | None]
+    included_in: NotRequired[str | None]
+    issue_ids: NotRequired[list[str]]
+    name: str
+    release_id: str
+    stage_position: NotRequired[int]
+    team_id: str
+
+
+class ReleaseIndexRead(TypedDict):
+    releases: list[ReleaseIndexEntryRead]
 
 
 class ReleaseRead(TypedDict):

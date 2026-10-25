@@ -222,8 +222,23 @@ def test_the_milestone_and_links_properties_round_trip(client: TestClient, works
     assert created.json()["visible_properties"] == ["id", "milestone", "links"]
 
 
+def test_the_release_property_and_filter_round_trip(client: TestClient, workspace: str) -> None:
+    """A view may show each row's releases and keep or drop issues by release."""
+    sign_in(client, MEMBER)
+
+    created = _create(
+        client,
+        workspace,
+        visible_properties=["id", "release"],
+        filter={"release_id": ["none"], "release_id_not": ["01JB000000000000000000REL1"]},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["visible_properties"] == ["id", "release"]
+    assert created.json()["filter"]["release_id"] == ["none"]
+
+
 def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: str) -> None:
-    """Project, cycle, parent, team, SLA and customer groupings and the status, start and estimate sorts are kept."""
+    """Project, cycle, parent, team, SLA, customer and release groupings and the newer sorts are kept."""
     sign_in(client, MEMBER)
 
     for group, sub_group in (
@@ -232,6 +247,8 @@ def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: s
         ("team", "milestone"),
         ("cycle", "project"),
         ("customer", "status"),
+        ("release", "assignee"),
+        ("status", "release"),
     ):
         created = _create(client, workspace, group_by=group, sub_group_by=sub_group)
         assert created.status_code == 201, created.text

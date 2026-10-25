@@ -142,6 +142,7 @@ export interface IssueListFilters {
   estimate?: FilterValues;
   estimate_not?: FilterValues;
   customer_id_not?: FilterValues;
+  release_id_not?: FilterValues;
   due_before?: string;
   due_after?: string;
   /** Issues completed on or after this day. */
@@ -166,6 +167,8 @@ export interface IssueListFilters {
   has_relation?: FilterValues<LinkType>;
   /** Issues these customers asked for; `none` is issues no customer asked for. */
   customer_id?: FilterValues;
+  /** Issues these releases carry; `none` is issues in no release. */
+  release_id?: FilterValues;
   q?: string;
   /** True to list archived issues too, which the list leaves out by default. */
   include_archived?: boolean;

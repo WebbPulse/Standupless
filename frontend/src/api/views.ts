@@ -72,7 +72,8 @@ export type ViewVisibleProperty =
   | 'links'
   | 'created_at'
   | 'updated_at'
-  | 'time_in_status';
+  | 'time_in_status'
+  | 'release';
 
 /** One stored group of conditions, combined under its own `match`, holding groups of its own at most one level down. */
 export interface SavedViewFilterGroup {
@@ -99,6 +100,7 @@ export interface ViewFilterNegations {
   team_id_not?: string | string[];
   creator_id_not?: string | string[];
   customer_id_not?: string | string[];
+  release_id_not?: string | string[];
   status_id_not?: string | string[];
   status_category_not?: string | string[];
   assignee_id_not?: string | string[];

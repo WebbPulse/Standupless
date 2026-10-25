@@ -104,7 +104,10 @@ def resolve_issue_filter(
     today: Optional[date] = None,
     sort: Optional[str] = None,
 ) -> IssueFilter:
-    """The filter with relative cycles and `my_teams` named and the link, subscription and customer indexes attached.
+    """The filter with relative cycles and `my_teams` named and every index it needs attached.
+
+    The link, subscription, customer and release indexes are each read only when
+    the filter or its groups ask for them.
 
     The customer index is read when the filter names a customer or `sort` orders
     by customer requests, so a list sorting that way finds the counts on the
@@ -122,7 +125,15 @@ def resolve_issue_filter(
     people = wanted.subscribers
     needs_customers = wanted.needs_customers or sort in CUSTOMER_SORTS
     needs_memberships = wanted.needs_memberships
-    if not (wanted.needs_cycles or wanted.needs_relations or people or needs_customers or needs_memberships):
+    needs_releases = wanted.needs_releases
+    if not (
+        wanted.needs_cycles
+        or wanted.needs_relations
+        or people
+        or needs_customers
+        or needs_memberships
+        or needs_releases
+    ):
         return wanted
     mine = viewer_team_ids(repositories, workspace_id, wanted.viewer_id) if needs_memberships else None
     by_team: Optional[dict[str, list[Cycle]]] = None
@@ -147,7 +158,8 @@ def resolve_issue_filter(
     customers: Optional[CustomerIndex] = None
     if needs_customers:
         customers = load_customer_index(repositories, workspace_id, with_revenue=sort == REVENUE_SORT)
-    return _attach(wanted, by_team, days, relation_ids, subscribed, customers, mine)
+    releases = repositories.releases.release_ids_by_issue(workspace_id) if needs_releases else None
+    return _attach(wanted, by_team, days, relation_ids, subscribed, customers, mine, releases)
 
 
 def _attach(
@@ -158,6 +170,7 @@ def _attach(
     subscribed: Optional[Mapping[str, frozenset[str]]],
     customers: Optional[CustomerIndex] = None,
     mine: Optional[frozenset[str]] = None,
+    releases: Optional[Mapping[str, frozenset[str]]] = None,
 ) -> IssueFilter:
     """One filter and each of its groups with the reads `resolve_issue_filter` took applied."""
     cycle_ids, cycle_ids_not = wanted.cycle_ids, wanted.cycle_ids_not
@@ -177,7 +190,9 @@ def _attach(
         relation_ids=relation_ids if relation_ids is not None else wanted.relation_ids,
         subscribed_issue_ids=subscribed if subscribed is not None else wanted.subscribed_issue_ids,
         customer_index=customers if customers is not None else wanted.customer_index,
+        release_index=releases if releases is not None else wanted.release_index,
         groups=tuple(
-            _attach(group, by_team, days, relation_ids, subscribed, customers, mine) for group in wanted.groups
+            _attach(group, by_team, days, relation_ids, subscribed, customers, mine, releases)
+            for group in wanted.groups
         ),
     )

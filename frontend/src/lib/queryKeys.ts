@@ -843,6 +843,12 @@ export const workspaceCustomerRequestsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** Every visible release of the workspace with the issues it carries. */
+export const releaseIndexKey = (workspaceId: string): QueryKey => [
+  'releaseIndex',
+  workspaceId,
+];
+
 /** The customer requests naming one issue or project, newest first. */
 export const targetCustomerRequestsKey = (
   workspaceId: string,

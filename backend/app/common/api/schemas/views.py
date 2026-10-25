@@ -69,6 +69,7 @@ VisiblePropertyField = Literal[
     "created_at",
     "updated_at",
     "time_in_status",
+    "release",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
@@ -115,6 +116,7 @@ GroupByProperty = Literal[
     "team",
     "sla",
     "customer",
+    "release",
 ]
 """The properties a view may group or sub-group its rows by."""
 
@@ -212,6 +214,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "completed_before",
         "customer_id",
         "customer_id_not",
+        "release_id",
+        "release_id_not",
         "match",
         "groups",
     }

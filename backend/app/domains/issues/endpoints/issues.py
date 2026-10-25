@@ -117,6 +117,8 @@ def list_issues(
     has_relation: Values = None,
     customer_id: Values = None,
     customer_id_not: Values = None,
+    release_id: Values = None,
+    release_id_not: Values = None,
     match: Annotated[Optional[str], Query()] = None,
     groups: Annotated[Optional[str], Query(max_length=8000)] = None,
     include_archived: Annotated[bool, Query()] = False,
@@ -157,6 +159,8 @@ def list_issues(
     `important` for an important one, and the `customer_requests_desc`,
     `customer_important_desc` and `customer_revenue_desc` sorts put the most
     requested, most importantly requested or highest revenue issues first.
+    `release_id` keeps the issues that shipped in one of the named releases and
+    `release_id_not` drops them, `none` standing for an issue in no release.
     Guests may use neither.
 
     Archived issues are left out unless `include_archived` is set, and
@@ -236,6 +240,8 @@ def list_issues(
             has_relation=has_relation,
             customer_id=customer_id,
             customer_id_not=customer_id_not,
+            release_id=release_id,
+            release_id_not=release_id_not,
             include_triage=include_triage,
             triage_only=triage_only,
             match=match,

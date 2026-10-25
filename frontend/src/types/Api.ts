@@ -1888,6 +1888,7 @@ export type ViewGroupBy =
   | 'team'
   | 'sla'
   | 'customer'
+  | 'release'
   | `label_group:${string}`;
 
 /** Which saved views a list read asks for. */
@@ -1923,6 +1924,7 @@ export interface ViewFilter {
   is_blocking?: 'true' | 'false';
   has_relation?: string | string[];
   customer_id?: string | string[];
+  release_id?: string | string[];
   q?: string;
 }
 
@@ -4931,6 +4933,27 @@ export interface IssueReleaseRead {
 /** The releases one issue shipped in, newest first. */
 export interface IssueReleaseListRead {
   releases: IssueReleaseRead[];
+}
+
+/**
+ * One release with the issues it carries, as an issue list groups and labels
+ * its rows by it. `stage_position` is where `current_stage` sits in the
+ * team's pipeline, `-1` when the release reached no stage.
+ */
+export interface ReleaseIndexEntryRead {
+  release_id: string;
+  team_id: string;
+  name: string;
+  current_stage?: ReleaseStageRead | null;
+  stage_position: number;
+  included_in?: string | null;
+  created_at: string;
+  issue_ids: string[];
+}
+
+/** Every release of the teams the caller can see, newest first, each with its issues. */
+export interface ReleaseIndexRead {
+  releases: ReleaseIndexEntryRead[];
 }
 
 /** How often a team's standup digest is cut, or `off` for never. */
