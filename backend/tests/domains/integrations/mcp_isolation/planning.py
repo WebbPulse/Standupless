@@ -63,6 +63,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "update_milestone": {"project_id": project, "milestone_id": milestone, "name": "Should not land"},
         "delete_milestone": {"project_id": project, "milestone_id": milestone},
         "delete_project": {"project_id": project},
+        "archive_project": {"project_id": project},
+        "unarchive_project": {"project_id": project},
         "create_project_link": {"project_id": project, "url": "https://example.com/should-not-land"},
         "update_project_link": {"project_id": project, "link_id": foreign["link_id"], "title": "Should not land"},
         "delete_project_link": {"project_id": project, "link_id": foreign["link_id"]},

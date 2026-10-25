@@ -50,7 +50,13 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { deleteProject, updateProject } from '../../api/planning';
+import {
+  archiveProject,
+  deleteProject,
+  unarchiveProject,
+  updateProject,
+} from '../../api/planning';
+import { ARCHIVE_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
 import {
   createView,
   updateView,
@@ -319,6 +325,8 @@ const flagParam = (value: string): FlagFilter =>
   value === 'true' || value === 'false' ? value : '';
 /** The customer filter value for projects no customer asked for. */
 const NO_CUSTOMER = 'none';
+/** The URL parameter that lists archived projects too. */
+const ARCHIVED_PARAM = 'archived';
 
 /** Props for ProjectRow: one project and what the row needs to edit it. */
 interface ProjectRowProps {
@@ -473,6 +481,11 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         >
           {project.name}
         </span>
+        {project.archived_at != null && (
+          <span className="shrink-0 rounded border border-line px-1 text-[11px] text-text-muted">
+            Archived
+          </span>
+        )}
         {has('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
@@ -883,12 +896,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       ));
 
   const customerOrdering = isMember && ordering === 'customers';
+  const showArchived = params.get(ARCHIVED_PARAM) === '1';
   const narrowing = useMemo(
     () => ({
       ...(customerFilter === '' ? {} : { customer_id: [customerFilter] }),
       ...(customerOrdering ? { sort: 'customer_requests_desc' as const } : {}),
+      ...(showArchived ? { include_archived: true } : {}),
     }),
-    [customerFilter, customerOrdering]
+    [customerFilter, customerOrdering, showArchived]
   );
   const { projects, error, isLoading, queryKey, refetch } =
     useWorkspaceProjects(
@@ -1213,6 +1228,42 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       showErrorToast(`Could not delete ${plural(targets.length - done)}.`);
   };
   const deletable = selectedProjects.filter(canDelete);
+  const archivable = selectedProjects.filter((project) =>
+    canEditProject(workspace?.role, project, teams)
+  );
+  const allArchived =
+    archivable.length > 0 &&
+    archivable.every((project) => project.archived_at != null);
+  const toggleArchived = async (targets: ProjectRead[]): Promise<void> => {
+    const restore = targets.every((project) => project.archived_at != null);
+    const write = restore ? unarchiveProject : archiveProject;
+    const results = await Promise.allSettled(
+      targets.map((project) => write(workspaceId, project.project_id))
+    );
+    const done = results.filter(
+      (result) => result.status === 'fulfilled'
+    ).length;
+    invalidateQueries(queryKey);
+    clearSelection();
+    if (done > 0)
+      showToast(`${restore ? 'Restored' : 'Archived'} ${plural(done)}.`);
+    if (done < targets.length)
+      showErrorToast(
+        `Could not ${restore ? 'restore' : 'archive'} ${plural(targets.length - done)}.`
+      );
+  };
+  useShortcut({
+    keys: ARCHIVE_ISSUE_KEYS,
+    label: allArchived
+      ? 'Restore selected projects'
+      : 'Archive selected projects',
+    group: 'List',
+    enabled: archivable.length > 0 && deleting === null && bulk === null,
+    handler: (event) => {
+      event?.preventDefault();
+      void toggleArchived(archivable);
+    },
+  });
   useShortcut({
     keys: 'mod+backspace',
     label: 'Delete selected projects',
@@ -1685,6 +1736,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               onClosedChange={(value) => {
                 changeDisplay({ closed: value });
               }}
+              archived={showArchived}
+              onArchivedChange={(value) => {
+                const next = new URLSearchParams(params);
+                if (value) next.set(ARCHIVED_PARAM, '1');
+                else next.delete(ARCHIVED_PARAM);
+                setParams(next, { replace: true });
+              }}
               {...(filteredTeam === undefined
                 ? {}
                 : {
@@ -2147,6 +2205,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           count={selectedProjects.length}
           label="Selected projects"
           actions={bulkActions}
+          archived={allArchived}
+          onArchive={
+            archivable.length > 0
+              ? () => {
+                  void toggleArchived(archivable);
+                }
+              : undefined
+          }
           onDelete={
             deletable.length > 0
               ? () => {

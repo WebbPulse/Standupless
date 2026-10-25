@@ -89,6 +89,8 @@ EXPECTED_TOOLS = frozenset(
         "delete_notification",
         "delete_all_notifications",
         "delete_project",
+        "archive_project",
+        "unarchive_project",
         "delete_project_relation",
         "delete_project_update",
         "delete_status",

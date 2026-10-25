@@ -11866,7 +11866,9 @@
               "milestone_changed",
               "link_added",
               "link_removed",
-              "link_changed"
+              "link_changed",
+              "archived",
+              "unarchived"
             ],
             "title": "Kind",
             "type": "string"
@@ -12804,6 +12806,19 @@
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the project was archived, null while it is live",
+            "title": "Archived At"
+          },
           "blocked_by_project_ids": {
             "description": "The visible projects that block this one, oldest link first",
             "items": {
@@ -41403,7 +41418,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none. Archived projects are left out unless\n`include_archived` is set.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -41611,6 +41626,16 @@
                 }
               ],
               "title": "Label Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
             }
           }
         ],
@@ -41990,6 +42015,64 @@
           }
         ],
         "summary": "List Activity",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/archive": {
+      "post": {
+        "description": "Archive a project, hiding it from the projects list while keeping it readable and restorable.\n\nIdempotent: archiving an archived project answers with it unchanged.",
+        "operationId": "archive_project_api_workspaces__workspace_id__projects__project_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Archive Project",
         "tags": [
           "planning"
         ]
@@ -43242,6 +43325,64 @@
           }
         ],
         "summary": "Delete Project Relation",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/unarchive": {
+      "post": {
+        "description": "Restore an archived project to the projects list.\n\nIdempotent: restoring a live project answers with it unchanged.",
+        "operationId": "unarchive_project_api_workspaces__workspace_id__projects__project_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unarchive Project",
         "tags": [
           "planning"
         ]

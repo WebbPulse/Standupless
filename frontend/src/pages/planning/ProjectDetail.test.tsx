@@ -33,6 +33,7 @@ import ProjectDetail from './ProjectDetail';
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
 const updateProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
 const deleteProject = vi.fn<(id: string) => Promise<void>>();
+const archiveProject = vi.fn<(id: string) => Promise<unknown>>();
 const listProjects =
   vi.fn<() => Promise<{ projects: ProjectRead[]; next_cursor: null }>>();
 const createProjectRelation = vi.fn<(body: unknown) => Promise<unknown>>();
@@ -111,6 +112,7 @@ vi.mock('../../api/planning', () => ({
   updateProject: (_w: string, _id: string, body: unknown) =>
     updateProject(body),
   deleteProject: (_w: string, id: string) => deleteProject(id),
+  archiveProject: (_w: string, id: string) => archiveProject(id),
   listProjects: () => listProjects(),
   createProjectRelation: (_w: string, _p: string, body: unknown) =>
     createProjectRelation(body),
@@ -745,14 +747,35 @@ describe('ProjectDetail', () => {
   });
 
   it('does not offer deleting to a role that is not an admin', async () => {
+    const user = userEvent.setup();
     useWorkspaceMock.mockReturnValue(resolved('member'));
     listTeams.mockResolvedValue([{ ...engine, role: 'member' }]);
     renderPage();
 
     await screen.findByText('Getting it out');
+    await user.click(screen.getByRole('button', { name: 'Project actions' }));
     expect(
-      screen.queryByRole('button', { name: 'Project actions' })
+      await screen.findByRole('menuitem', { name: 'Archive project' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'Delete project' })
     ).toBeNull();
+  });
+
+  it('archives the project from its actions menu', async () => {
+    const user = userEvent.setup();
+    archiveProject.mockResolvedValue({});
+    renderPage();
+
+    await screen.findByText('Getting it out');
+    await user.click(screen.getByRole('button', { name: 'Project actions' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Archive project' })
+    );
+
+    await waitFor(() => {
+      expect(archiveProject).toHaveBeenCalledWith('prj-1');
+    });
   });
 
   it('opens the updates tab from the address and lists each update', async () => {

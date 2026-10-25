@@ -1534,6 +1534,8 @@ ProjectActivityRead = TypedDict(
             "link_added",
             "link_removed",
             "link_changed",
+            "archived",
+            "unarchived",
         ],
         "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
@@ -3942,6 +3944,7 @@ class ProjectLinkListRead(TypedDict):
 
 
 class ProjectRead(TypedDict):
+    archived_at: NotRequired[str | None]
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
     color: NotRequired[str | None]

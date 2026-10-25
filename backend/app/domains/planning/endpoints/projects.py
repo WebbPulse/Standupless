@@ -1,4 +1,4 @@
-"""Project routes: list, create, read, patch and delete, plus progress history.
+"""Project routes: list, create, read, patch, archive, restore and delete, plus progress history.
 
 A project is workspace level and belongs to one or more teams, as in Linear, so
 every route reaches it by its own id and decides visibility against its whole team
@@ -42,6 +42,7 @@ from app.common.project_relations import create_relation, delete_relation, fill_
 from app.common.project_writes import create_project as create_project_row
 from app.common.project_writes import delete_project as delete_project_row
 from app.common.project_writes import list_projects as list_project_page
+from app.common.project_writes import set_project_archived
 from app.common.project_writes import update_project as update_project_row
 from app.domains.planning.project_history import project_burn_up, project_projection
 
@@ -65,6 +66,7 @@ def list_projects(
     customer_id_not: Annotated[Optional[list[str]], Query()] = None,
     sort: Annotated[Optional[ProjectSortField], Query()] = None,
     label_id: Annotated[Optional[list[str]], Query()] = None,
+    include_archived: Annotated[bool, Query()] = False,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
@@ -86,7 +88,8 @@ def list_projects(
     target date breaking ties; each fills `customer_request_count`. Guests may
     use none of them.
     `label_id` keeps the projects carrying any named project label, `none`
-    standing for a project with none.
+    standing for a project with none. Archived projects are left out unless
+    `include_archived` is set.
     """
     window, next_cursor = list_project_page(
         repositories,
@@ -103,6 +106,7 @@ def list_projects(
         customer_id_not=customer_id_not,
         sort=sort,
         label_id=label_id,
+        include_archived=include_archived,
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 
@@ -190,6 +194,34 @@ def update_project(
     written whole, so the counters the consumer maintains ride along untouched.
     """
     return update_project_row(repositories, context, project_id, payload)
+
+
+@router.post("/{workspace_id}/projects/{project_id}/archive", response_model=ProjectRead)
+def archive_project(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+) -> ProjectRead:
+    """Archive a project, hiding it from the projects list while keeping it readable and restorable.
+
+    Idempotent: archiving an archived project answers with it unchanged.
+    """
+    return set_project_archived(repositories, context, project_id, True)
+
+
+@router.post("/{workspace_id}/projects/{project_id}/unarchive", response_model=ProjectRead)
+def unarchive_project(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+) -> ProjectRead:
+    """Restore an archived project to the projects list.
+
+    Idempotent: restoring a live project answers with it unchanged.
+    """
+    return set_project_archived(repositories, context, project_id, False)
 
 
 @router.delete("/{workspace_id}/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
