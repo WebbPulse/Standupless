@@ -11,7 +11,9 @@ preflights carry no data and are never counted at all.
 A signed-in person, an API key and an MCP grant are counted on the plan-tier
 limits `rate_limit_tiers` defines, by token, person and workspace, instead of the
 GET and default classes. Anonymous callers and the `auth` class stay per IP. The
-API Gateway stage throttle stays as the backstop above both.
+`invite_link` class holds the invite link routes to the `auth` cap per caller, so
+nobody can spend a generous tier allowance guessing at link tokens. The API Gateway
+stage throttle stays as the backstop above both.
 
 Staging is never rate limited, by the shared `webbpulse` convention that
 `settings.rate_limiting_enabled` carries.
@@ -48,6 +50,10 @@ AUTH_CLASS = "auth"
 
 DEFAULT_CLASS = "default"
 
+INVITE_LINK_CLASS = "invite_link"
+
+INVITE_LINK_PATH_PREFIX = "/api/invites/link"
+
 AUTH_PATH_PREFIX = "/api/auth"
 
 AUTH_CLASS_EXEMPT_PATHS: frozenset[str] = frozenset(
@@ -59,12 +65,18 @@ AUTH_CLASS_EXEMPT_PATHS: frozenset[str] = frozenset(
 
 
 def limit_classes() -> list[LimitClass]:
-    """The three classes, narrowest first, since `classify` takes the first match.
+    """The classes, narrowest first, since `classify` takes the first match.
 
     Each name doubles as the counter namespace and as the policy name on the
     `RateLimit` headers, so it stays a plain word rather than a storage key.
     """
     return [
+        LimitClass(
+            name=INVITE_LINK_CLASS,
+            limit=settings.RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE,
+            window_seconds=WINDOW_SECONDS,
+            path_prefixes=(INVITE_LINK_PATH_PREFIX,),
+        ),
         LimitClass(
             name=GET_CLASS,
             limit=settings.RATE_LIMIT_GET_REQUESTS_PER_MINUTE,
@@ -160,7 +172,7 @@ def is_event_source_batch(request: Request) -> bool:
 
 
 def build_rate_limit_middleware(**kwargs: Any) -> Any:
-    """The configured shared middleware: plan tiers first, then three per-IP classes.
+    """The configured shared middleware: plan tiers first, then the per-IP classes.
 
     `tiers` defaults to the product's plan-tier limits; pass `tiers=None` to count only
     the classes. An event source batch skips the limiter entirely.

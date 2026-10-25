@@ -1241,6 +1241,30 @@ class InviteCreated(TypedDict):
     token: str
 
 
+class InviteLinkCreated(TypedDict):
+    created_at: NotRequired[str | None]
+    created_by: NotRequired[str | None]
+    enabled: bool
+    token: str
+
+
+class InviteLinkPreview(TypedDict):
+    already_member: bool
+    name: str
+    slug: str
+    workspace_id: str
+
+
+class InviteLinkRead(TypedDict):
+    created_at: NotRequired[str | None]
+    created_by: NotRequired[str | None]
+    enabled: bool
+
+
+class InviteLinkToken(TypedDict):
+    token: str
+
+
 class InviteRead(TypedDict):
     created_at: str
     email: str

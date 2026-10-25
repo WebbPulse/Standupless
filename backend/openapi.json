@@ -9554,6 +9554,130 @@
         "title": "InviteCreated",
         "type": "object"
       },
+      "InviteLinkCreated": {
+        "description": "The 201 body of an enabled or reset invite link, carrying its token exactly once.",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "token"
+        ],
+        "title": "InviteLinkCreated",
+        "type": "object"
+      },
+      "InviteLinkPreview": {
+        "description": "What a signed-in visitor sees before joining through an invite link.",
+        "properties": {
+          "already_member": {
+            "title": "Already Member",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "name",
+          "slug",
+          "already_member"
+        ],
+        "title": "InviteLinkPreview",
+        "type": "object"
+      },
+      "InviteLinkRead": {
+        "description": "Whether the workspace's reusable invite link is on, and who minted the current one.\n\nThe token is stored only as a hash, so this shape never carries it. It is\nshown once, in `InviteLinkCreated`, when the link is enabled or reset.",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "InviteLinkRead",
+        "type": "object"
+      },
+      "InviteLinkToken": {
+        "description": "The body the invite link preview and join routes take.",
+        "properties": {
+          "token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "InviteLinkToken",
+        "type": "object"
+      },
       "InviteListRead": {
         "description": "The body the invites list route answers with.",
         "properties": {
@@ -30775,6 +30899,100 @@
         ]
       }
     },
+    "/api/invites/link/join": {
+      "post": {
+        "description": "Join a workspace as a member through its invite link.\n\nAnswers 201 for a new membership and 200 for one that already existed. A\nsuspended member is refused, and so is a session the workspace's\nauthentication policy would refuse a member, so the link is never a way past\nrequired single sign-on. The membership takes its plan slot in the same\ntransaction as its row, so racing joins at the last slot land one member.",
+        "operationId": "join_invite_link_api_invites_link_join_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteLinkToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Join Invite Link",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/invites/link/preview": {
+      "post": {
+        "description": "The workspace an invite link joins, for the join page to name before the caller joins.",
+        "operationId": "preview_invite_link_api_invites_link_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteLinkToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteLinkPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Invite Link",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
     "/api/mcp": {
       "delete": {
         "description": "End a session. Stateless here, so this only confirms the bearer.\n\nAnswered rather than refused because the specification has clients call it on\nshutdown, and a 404 would make a clean disconnect look like a failure. There is\nno server-side session to discard: every request carries its own bearer.",
@@ -43626,6 +43844,142 @@
         "summary": "Add Update Reaction Route",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/invite-link": {
+      "delete": {
+        "description": "Disable the invite link. People who already joined through it stay members.",
+        "operationId": "disable_invite_link_api_workspaces__workspace_id__invite_link_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Disable Invite Link",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "get": {
+        "description": "Whether the workspace's invite link is on. The token itself is never read back.",
+        "operationId": "get_invite_link_api_workspaces__workspace_id__invite_link_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteLinkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Invite Link",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "post": {
+        "description": "Enable the invite link, or reset it to a new token so the old link stops working.\n\nThe response carries the token once; afterwards only a reset can show a link again.",
+        "operationId": "reset_invite_link_api_workspaces__workspace_id__invite_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteLinkCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Reset Invite Link",
+        "tags": [
+          "workspaces"
         ]
       }
     },

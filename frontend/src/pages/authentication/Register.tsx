@@ -3,7 +3,8 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { safeReturnPath } from '@webbpulse/auth';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
@@ -19,6 +20,8 @@ import { getIdentityClient } from '../../api/identityClient';
  * Creates an account, then sends the new user to the sign in page. The line
  * above the button links the terms and privacy policy the account is made under,
  * and the provider buttons below offer sign up through GitHub or Google instead.
+ * A `returnTo`, such as an invite link's join page, is carried through to sign
+ * in so the new account lands back where it started.
  */
 const Register: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -28,6 +31,14 @@ const Register: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requested = searchParams.get('returnTo');
+  const returnTo =
+    requested === null ? undefined : safeReturnPath(requested, '/workspaces');
+  const loginPath =
+    returnTo === undefined
+      ? '/login'
+      : `/login?returnTo=${encodeURIComponent(returnTo)}`;
   const client = getIdentityClient();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -58,7 +69,7 @@ const Register: React.FC = () => {
         password,
         display_name: displayName.trim() === '' ? null : displayName.trim(),
       });
-      void navigate('/login');
+      void navigate(loginPath);
     } catch {
       setError('That account could not be created. Try again.');
     } finally {
@@ -135,13 +146,16 @@ const Register: React.FC = () => {
           or
           <span className="h-px flex-1 bg-line" />
         </div>
-        <OAuthProviderButtons disabled={isSubmitting} />
+        <OAuthProviderButtons
+          {...(returnTo === undefined ? {} : { returnTo })}
+          disabled={isSubmitting}
+        />
       </div>
 
       <AuthRedirectLink
         text="Already have an account?"
         linkText="Sign in"
-        to="/login"
+        to={loginPath}
       />
     </AuthLayout>
   );
