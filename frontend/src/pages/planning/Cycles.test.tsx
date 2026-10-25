@@ -8,7 +8,9 @@
  * rolls up its sub-teams' cycles on the same dates until the toggle narrows
  * it to the team alone. J and K move a highlight through the current cycle
  * and the open groups' rows, skipping a folded group, and Enter opens the
- * highlighted cycle.
+ * highlighted cycle. The header menu opens the cycle calendar dialog, which
+ * shows the feed URL only once it is minted and can make a new one or turn
+ * the feed off.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -17,6 +19,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  CycleCalendarFeedRead,
   CycleCreate,
   CycleListRead,
   CycleRead,
@@ -36,6 +39,11 @@ const startCycleToday =
   vi.fn<(id: string, teamId: string) => Promise<CycleStartTodayRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const getVelocity = vi.fn<(teamId: string) => Promise<VelocityRead>>();
+const getCycleCalendarFeed =
+  vi.fn<(teamId: string) => Promise<CycleCalendarFeedRead>>();
+const createCycleCalendarFeed =
+  vi.fn<(teamId: string) => Promise<CycleCalendarFeedRead>>();
+const revokeCycleCalendarFeed = vi.fn<(teamId: string) => Promise<void>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -57,6 +65,12 @@ vi.mock('../../api/planning', () => ({
   startCycleToday: (_w: string, id: string, teamId: string) =>
     startCycleToday(id, teamId),
   getVelocity: (_w: string, teamId: string) => getVelocity(teamId),
+  getCycleCalendarFeed: (_w: string, teamId: string) =>
+    getCycleCalendarFeed(teamId),
+  createCycleCalendarFeed: (_w: string, teamId: string) =>
+    createCycleCalendarFeed(teamId),
+  revokeCycleCalendarFeed: (_w: string, teamId: string) =>
+    revokeCycleCalendarFeed(teamId),
 }));
 
 /** Two closed cycles and the running one to plan against. */
@@ -224,6 +238,17 @@ beforeEach(() => {
   });
   getVelocity.mockReset();
   getVelocity.mockResolvedValue(velocity);
+  getCycleCalendarFeed.mockReset();
+  getCycleCalendarFeed.mockResolvedValue({ team_id: 'proj-1', active: false });
+  createCycleCalendarFeed.mockReset();
+  createCycleCalendarFeed.mockResolvedValue({
+    team_id: 'proj-1',
+    active: true,
+    created_at: '2026-10-25T00:00:00Z',
+    url: 'https://api.example.test/api/workspaces/ws-1/teams/proj-1/cycles.ics?token=user-1.secret',
+  });
+  revokeCycleCalendarFeed.mockReset();
+  revokeCycleCalendarFeed.mockResolvedValue(undefined);
 });
 
 describe('velocity', () => {
@@ -571,6 +596,96 @@ describe('writing', () => {
 
     expect(await dialog.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+/** Opens the header menu and the cycle calendar dialog from it. */
+const openCalendar = async () => {
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Cycles options' })
+  );
+  await userEvent.click(
+    screen.getByRole('menuitem', { name: 'Subscribe to cycle calendar' })
+  );
+  return within(await screen.findByRole('dialog'));
+};
+
+describe('cycle calendar', () => {
+  it('mints a feed URL for the team and copies it', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>(() =>
+      Promise.resolve()
+    );
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderPage();
+    const dialog = await openCalendar();
+
+    expect(getCycleCalendarFeed).toHaveBeenCalledWith('proj-1');
+    expect(dialog.getByText('How to subscribe')).toBeInTheDocument();
+    expect(dialog.queryByLabelText('Calendar URL')).not.toBeInTheDocument();
+
+    await userEvent.click(
+      await dialog.findByRole('button', { name: 'Create calendar URL' })
+    );
+
+    expect(createCycleCalendarFeed).toHaveBeenCalledWith('proj-1');
+    const url =
+      'https://api.example.test/api/workspaces/ws-1/teams/proj-1/cycles.ics?token=user-1.secret';
+    expect(await dialog.findByLabelText('Calendar URL')).toHaveValue(url);
+    expect(
+      dialog.getByRole('link', { name: 'Open in calendar app' })
+    ).toHaveAttribute('href', url.replace('https:', 'webcal:'));
+
+    await userEvent.click(dialog.getByRole('button', { name: 'Copy' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(url);
+    });
+    expect(
+      await dialog.findByRole('button', { name: 'Copied' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers a new URL or turning off an active feed without showing its URL', async () => {
+    getCycleCalendarFeed.mockResolvedValue({
+      team_id: 'proj-1',
+      active: true,
+      created_at: '2026-10-20T00:00:00Z',
+    });
+
+    renderPage();
+    const dialog = await openCalendar();
+
+    expect(
+      await dialog.findByRole('button', { name: 'Make a new URL' })
+    ).toBeInTheDocument();
+    expect(dialog.queryByLabelText('Calendar URL')).not.toBeInTheDocument();
+
+    await userEvent.click(
+      dialog.getByRole('button', { name: 'Turn off feed' })
+    );
+
+    await waitFor(() => {
+      expect(revokeCycleCalendarFeed).toHaveBeenCalledWith('proj-1');
+    });
+    expect(
+      await dialog.findByRole('button', { name: 'Create calendar URL' })
+    ).toBeInTheDocument();
+    expect(
+      dialog.queryByRole('button', { name: 'Turn off feed' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('is offered to a guest, who can read the cycles', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('button', { name: 'Cycles options' })
+    ).toBeInTheDocument();
   });
 });
 

@@ -133,6 +133,7 @@ PUBLIC_ROUTES = {
     ("GET", "/api/shared/{token}/issue"),
     ("GET", "/api/shared/{token}/view"),
     ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/content"),
+    ("GET", "/api/workspaces/{workspace_id}/teams/{team_id}/cycles.ics"),
     ("GET", "/api/icons/team/{workspace_id}/{team_id}/{icon_id}"),
     ("GET", "/api/icons/{kind}/{owner_id}/{icon_id}"),
     ("DELETE", "/api/mcp"),
@@ -179,6 +180,12 @@ The attachment content route is loaded by `<img>` and `<video>` elements, which
 send no identity header. A signed media token in the query is its credential: it
 names one attachment on one issue, is minted only after a visibility check or a
 share link resolved, and every mismatch is the same 404.
+
+The cycle calendar feed is fetched by calendar apps, which send no identity
+header. A feed token in the query is its credential: it names the one person it
+was minted for, only its hash is stored, minting again or revoking retires it,
+and the person's access to the team is decided again on every fetch, with every
+refusal the same 404.
 
 The icon route is loaded by `<img>` elements too. It accepts only an exact icon
 key, whose last segment is a random id minted at upload, so the URL a read model

@@ -526,6 +526,17 @@ class CustomerRequestRead(TypedDict):
     workspace_id: str
 
 
+class CycleCalendarFeedCreate(TypedDict):
+    team_id: str
+
+
+class CycleCalendarFeedRead(TypedDict):
+    active: bool
+    created_at: NotRequired[str | None]
+    team_id: str
+    url: NotRequired[str | None]
+
+
 class CycleCapacityRead(TypedDict):
     carried_in: int
     carried_in_points: int

@@ -2293,6 +2293,18 @@ export interface CycleStartTodayRead {
 }
 
 /**
+ * The caller's cycle calendar feed for one team. `url` is present only on the
+ * answer to minting, the one time the secret URL is shown; a read says only
+ * whether a feed is active.
+ */
+export interface CycleCalendarFeedRead {
+  team_id: string;
+  active: boolean;
+  created_at?: string | null;
+  url?: string | null;
+}
+
+/**
  * A team's automatic cycle schedule. `start_weekday` counts from 0 for Monday
  * to 6 for Sunday, and `updated_at` is null until the schedule is first saved.
  */

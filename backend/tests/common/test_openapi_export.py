@@ -39,6 +39,7 @@ def test_the_document_carries_every_public_route() -> None:
 
 PUBLIC_OPERATIONS = {
     ("GET", "/api/workspaces/{workspace_id}/attachments/{attachment_id}/content"),
+    ("GET", "/api/workspaces/{workspace_id}/teams/{team_id}/cycles.ics"),
     ("GET", "/api/icons/team/{workspace_id}/{team_id}/{icon_id}"),
     ("GET", "/api/icons/{kind}/{owner_id}/{icon_id}"),
     ("GET", "/api/shared/{token}"),

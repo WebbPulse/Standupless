@@ -1100,6 +1100,24 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/cycles/calendar-feed"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/cycles/calendar-feed"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/cycles/calendar-feed"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/cycles/velocity"
   },
@@ -1564,6 +1582,12 @@
     "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/roadmap"
+  },
+  {
+    "auth": "public",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/cycles.ics"
   },
   {
     "auth": "workspace:read",

@@ -447,6 +447,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.planning.endpoints import (
         customers,
+        cycle_calendar,
         cycles,
         documents,
         initiatives,
@@ -460,6 +461,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     )
 
     return [
+        (cycle_calendar.router, "/workspaces", ("planning",)),
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
         (project_labels.router, "/workspaces", ("planning",)),
