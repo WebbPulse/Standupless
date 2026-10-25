@@ -104,7 +104,7 @@ def test_a_move_needs_a_writable_destination(client: TestClient, repositories: A
 
     assert client.patch(path, json={"parent_kind": "team", "parent_id": OTHER_TEAM}).status_code == 422
     assert client.patch(path, json={"parent_kind": "project"}).status_code == 422
-    assert client.patch(path, json={"parent_kind": "initiative", "parent_id": initiative}).status_code == 403
+    assert client.patch(path, json={"parent_kind": "initiative", "parent_id": initiative}).status_code == 422
     found = repositories.documents.get(WORKSPACE, created["document_id"])
     assert found is not None
     assert (found[0].parent_kind, found[0].parent_id) == ("team", TEAM)
