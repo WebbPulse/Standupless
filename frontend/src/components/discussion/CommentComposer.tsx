@@ -18,9 +18,19 @@
  * synced as it posts. The toggle picks the one target, or opens a picker when
  * there are several, and a public repository carries a warning, because the
  * thread is published there.
+ *
+ * A quoted passage arrives as a request and is added after whatever is
+ * already written, so quoting into a reply in progress keeps the reply.
  */
 
-import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   invalidateQueries,
   useMutationWithRefetch,
@@ -30,6 +40,7 @@ import { createComment } from '../../api/discussion';
 import { syncThread } from '../../api/integrations';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
 import { useCommentDraft } from '../../hooks/useCommentDraft';
+import type { QuoteRequest } from '../../hooks/useQuoteRequest';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
@@ -75,6 +86,11 @@ export interface CommentComposerProps {
   threadTargets?: GithubThreadTargetRead[];
   /** Binds Ctrl or Cmd+M to jumping here, for the issue's new thread box. */
   jumpShortcut?: boolean;
+  /**
+   * A passage to quote, added after what is written with the caret on a new
+   * line under it. Each request is applied once.
+   */
+  quote?: QuoteRequest | null;
 }
 
 /** Props for ThreadSyncToggle. */
@@ -182,6 +198,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   compact = false,
   threadTargets = [],
   jumpShortcut = false,
+  quote = null,
 }) => {
   const [draft, setDraft] = useState('');
   const [chosenKey, setChosenKey] = useState<string | null>(null);
@@ -200,6 +217,35 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
+  const pendingQuote = useRef<QuoteRequest | null>(null);
+  const quotedId = useRef<number | null>(null);
+  pendingQuote.current = quote;
+
+  const applyQuote = useCallback((): void => {
+    const request = pendingQuote.current;
+    const handle = editor.current;
+    if (request === null || handle === null) return;
+    if (quotedId.current === request.id) return;
+    quotedId.current = request.id;
+    handle.appendMarkdown(request.markdown);
+    const node = box.current;
+    if (node !== null && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest' });
+    }
+  }, []);
+
+  useEffect(() => {
+    applyQuote();
+  }, [quote, applyQuote]);
+
+  const { ref: draftRef } = commentDraft;
+  const editorRef = useCallback(
+    (handle: RichMarkdownHandle | null): void => {
+      draftRef(handle);
+      applyQuote();
+    },
+    [draftRef, applyQuote]
+  );
 
   useShortcut({
     keys: COMMENT_ISSUE_KEYS,
@@ -337,7 +383,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         }
       >
         <RichMarkdownEditor
-          ref={commentDraft.ref}
+          ref={editorRef}
           value=""
           editable
           ariaLabel={label}

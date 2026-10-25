@@ -3,6 +3,8 @@
  * embed of its stored content path, and that posting links only the uploads
  * the text still embeds while deleting the rest, and that a new thread can be
  * synced to a linked pull request as it posts, with a warning for a public one.
+ * Also covers a quote request: it lands after what is written, each request
+ * once, and a quote made before the editor arrived lands when it does.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -19,6 +21,7 @@ import type {
   CommentRead,
   GithubThreadTargetRead,
 } from '../../types/Api';
+import { readMarkdown } from '../editor/markdownCodec';
 import CommentComposer from './CommentComposer';
 
 const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
@@ -282,5 +285,87 @@ describe('the comment composer', () => {
     );
 
     expect(screen.queryByRole('button', { name: /Sync to GitHub/ })).toBeNull();
+  });
+
+  it('adds a quote after what is already written', async () => {
+    const { rerender } = render(
+      <CommentComposer workspaceId="ws-1" issueId="iss-1" people={[]} />
+    );
+    const surface = await findSurface();
+    act(() => {
+      editorOf(surface).commands.setContent('My thoughts');
+    });
+
+    rerender(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        quote={{ markdown: '> The plan', id: 1 }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(readMarkdown(editorOf(surface))).toBe('My thoughts\n\n> The plan');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Comment' })).toBeEnabled();
+    });
+  });
+
+  it('applies each quote request once', async () => {
+    const quote = { markdown: '> Once', id: 1 };
+    const { rerender } = render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        quote={quote}
+      />
+    );
+    const surface = await findSurface();
+    await waitFor(() => {
+      expect(readMarkdown(editorOf(surface))).toBe('> Once');
+    });
+
+    rerender(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        quote={{ ...quote }}
+        placeholder="Still here"
+      />
+    );
+
+    expect(readMarkdown(editorOf(surface))).toBe('> Once');
+  });
+
+  it('quotes the same passage again on a new request', async () => {
+    const { rerender } = render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        quote={{ markdown: '> Again', id: 1 }}
+      />
+    );
+    const surface = await findSurface();
+    await waitFor(() => {
+      expect(readMarkdown(editorOf(surface))).toBe('> Again');
+    });
+
+    rerender(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        quote={{ markdown: '> Again', id: 2 }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(readMarkdown(editorOf(surface))).toBe('> Again\n\n> Again');
+    });
   });
 });

@@ -95,6 +95,11 @@ export interface RichMarkdownHandle {
   setMarkdown: (markdown: string) => void;
   /** Uploads files in at the caret, when the surface has an uploader. */
   insertFiles: (files: File[]) => void;
+  /**
+   * Adds a Markdown passage, such as a quote, after what is written, then an
+   * empty paragraph with the caret in it, as an edit still to be committed.
+   */
+  appendMarkdown: (markdown: string) => void;
 }
 
 /** Props for RichMarkdownEditor. */
@@ -763,6 +768,19 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         const upload = handlers.current.uploadFile;
         if (upload === undefined) return;
         insertUploads(editor, files, upload);
+      },
+      appendMarkdown: (markdown: string) => {
+        const current = readMarkdown(editor);
+        writeMarkdown(
+          editor,
+          current.trim() === '' ? markdown : `${current}\n\n${markdown}`
+        );
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(editor.state.doc.content.size, { type: 'paragraph' })
+          .focus('end')
+          .run();
       },
     }),
     [editor, adopt]

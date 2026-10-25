@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
+import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -153,6 +154,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
   };
 
   const [parenting, setParenting] = useState(false);
+  const descriptionQuotes = useQuoteRequest(issueId);
   const canParent = canEdit && issue !== null;
   useShortcut({
     keys: SET_PARENT_KEYS,
@@ -238,6 +240,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
               canEdit={canEdit}
               onSaved={receive}
               people={options.people}
+              {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
             />
 
             <div className="space-y-3">
@@ -335,6 +338,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
                 context={context}
                 slug={workspace?.slug ?? ''}
                 teamKeyPrefix={team?.key_prefix ?? ''}
+                quote={descriptionQuotes.request}
               />
             </div>
           </div>

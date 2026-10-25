@@ -24,6 +24,11 @@
  * collapses to one line naming who resolved it, which expands on click to the
  * whole thread with a way to unresolve it. Replying reopens a thread, which the
  * server does, so the card only follows what the thread list says.
+ *
+ * Any comment can be quoted into the thread's reply, whole from its menu or a
+ * selected passage of it from the Quote button that floats under the
+ * selection. The quote lands as a blockquote after whatever the reply already
+ * says, with the caret on a new line under it.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
@@ -42,6 +47,7 @@ import {
   LuGithub,
   LuPencil,
   LuReply,
+  LuTextQuote,
   LuTrash2,
   LuUnlink,
 } from 'react-icons/lu';
@@ -52,6 +58,7 @@ import {
   updateComment,
 } from '../../api/discussion';
 import { syncThread, unsyncThread } from '../../api/integrations';
+import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { errorMessage } from '../../lib/errors';
 import {
   actorLabel,
@@ -60,6 +67,7 @@ import {
 } from '../../lib/issuePeople';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { submitKeysLabel } from '../../lib/platform';
+import { quoteMarkdown } from '../../lib/quote';
 import { activityKey, commentsKey } from '../../lib/queryKeys';
 import {
   PUBLIC_THREAD_WARNING,
@@ -80,6 +88,7 @@ import ViaSource from '../ui/via-source';
 import AttachmentList from './AttachmentChips';
 import CommentComposer from './CommentComposer';
 import ReactionBar from './ReactionBar';
+import SelectionQuote from './SelectionQuote';
 
 const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
 
@@ -103,6 +112,8 @@ interface CommentItemProps extends ReaderProps {
   onReply?: () => void;
   /** Resolves or reopens the thread, on its root alone. */
   onToggleResolved?: () => void;
+  /** Quotes a passage, as a Markdown blockquote, into the thread's reply. */
+  onQuote?: (markdown: string) => void;
 }
 
 /** The anchor a comment is linked to, so a copied link scrolls to it. */
@@ -120,6 +131,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
   threadTargets = [],
   onReply,
   onToggleResolved,
+  onQuote,
 }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
@@ -219,6 +231,8 @@ const CommentItem: React.FC<CommentItemProps> = ({
   const thread = isRoot ? (comment.github_thread ?? null) : null;
   const canSync = isRoot && canComment && thread === null;
   const isResolved = isRoot && (comment.resolution ?? null) !== null;
+  const quote = canComment ? onQuote : undefined;
+  const quoted = quoteMarkdown(comment.body);
 
   return (
     <article
@@ -277,6 +291,16 @@ const CommentItem: React.FC<CommentItemProps> = ({
               <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
               Copy link
             </MenuItem>
+            {quote !== undefined && quoted !== '' && (
+              <MenuItem
+                onSelect={() => {
+                  quote(quoted);
+                }}
+              >
+                <LuTextQuote aria-hidden="true" className="h-3.5 w-3.5" />
+                Quote in reply
+              </MenuItem>
+            )}
             {isAuthor && (
               <MenuItem
                 onSelect={() => {
@@ -418,7 +442,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         ) : (
           comment.body !== '' && (
-            <Markdown source={comment.body} density="compact" />
+            <SelectionQuote onQuote={quote}>
+              <Markdown source={comment.body} density="compact" />
+            </SelectionQuote>
           )
         )}
 
@@ -464,6 +490,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
 }) => {
   const [replying, setReplying] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const quotes = useQuoteRequest();
   const queryKey = commentsKey(reader.issueId);
   const resolution = comment.resolution ?? null;
 
@@ -482,11 +509,17 @@ export const CommentCard: React.FC<CommentCardProps> = ({
     setReplying(true);
   };
 
+  const quoteInReply = (markdown: string): void => {
+    setReplying(true);
+    quotes.ask(markdown);
+  };
+
   const markResolved = (): void => {
     void resolve()
       .then(() => {
         setExpanded(false);
         setReplying(false);
+        quotes.clear();
         invalidateQueries([activityKey(reader.issueId)]);
         showToast('Thread resolved');
       })
@@ -588,6 +621,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
         comment={comment}
         people={people}
         onReply={openReply}
+        onQuote={quoteInReply}
         onToggleResolved={resolution !== null ? markOpen : markResolved}
         {...reader}
       />
@@ -597,6 +631,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
             comment={reply}
             people={people}
             onReply={openReply}
+            onQuote={quoteInReply}
             {...reader}
           />
         </div>
@@ -612,14 +647,17 @@ export const CommentCard: React.FC<CommentCardProps> = ({
               placeholder="Leave a reply..."
               autoFocus
               compact
+              quote={quotes.request}
               onPosted={() => {
                 setReplying(false);
+                quotes.clear();
                 if (resolution !== null) {
                   invalidateQueries([activityKey(reader.issueId)]);
                 }
               }}
               onCancel={() => {
                 setReplying(false);
+                quotes.clear();
               }}
             />
           </div>
