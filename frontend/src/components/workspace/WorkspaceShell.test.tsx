@@ -20,6 +20,10 @@ vi.mock('../../hooks/useWorkspace', () => ({
   }),
 }));
 
+vi.mock('../../hooks/useDesktopNotifications', () => ({
+  useDesktopNotifications: () => undefined,
+}));
+
 vi.mock('./Sidebar', () => ({
   default: () => <nav data-testid="sidebar" />,
 }));
