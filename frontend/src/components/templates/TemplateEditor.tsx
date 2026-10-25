@@ -211,7 +211,8 @@ const createBodyOf = (form: FormState, kind: EditorKind): TemplateCreate => {
       ? { name: form.name.trim(), kind: 'document' }
       : { name: form.name.trim() };
   const fields = kind === 'document' ? documentFieldsOf(form) : fieldsOf(form);
-  for (const [name, value] of Object.entries(fields)) {
+  const entries: [string, unknown][] = Object.entries(fields);
+  for (const [name, value] of entries) {
     if (value === null || value === false) continue;
     if (Array.isArray(value) && value.length === 0) continue;
     Object.assign(body, { [name]: value });
