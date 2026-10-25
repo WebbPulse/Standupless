@@ -564,7 +564,7 @@ export const getListFolds = async (
 ): Promise<ListFoldsRead> => {
   const response = await apiClient.get<ListFoldsRead>(
     listFoldsPath(workspaceId),
-    { params: { list_key: listKey }, ...signalOptions(signal) }
+    { query: { list_key: listKey }, ...signalOptions(signal) }
   );
   return response.data;
 };
