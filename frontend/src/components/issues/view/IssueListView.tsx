@@ -48,7 +48,7 @@ import {
   useCreateIssue,
   type CreateIssueOptions,
 } from '../../../hooks/useCreateIssue';
-import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
+import type { CustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useBranchNaming } from '../../../hooks/useBranchNaming';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
@@ -113,6 +113,7 @@ import { issuePath } from '../../../lib/paths';
 import {
   customersKey,
   targetCustomerRequestsKey,
+  workspaceCustomerRequestsKey,
 } from '../../../lib/queryKeys';
 import type { EstimateOptions } from '../../../lib/validation';
 import type {
@@ -200,6 +201,11 @@ export interface IssueListViewProps {
    * columns outside them are left out. Left out, every category shows.
    */
   statusCategories?: readonly StatusCategory[] | undefined;
+  /**
+   * Which customers requested each issue, read by the page while the view
+   * groups by customer. Left out, customer groups hold no issue.
+   */
+  customerRequests?: CustomerRequestMap | undefined;
 }
 
 /** The palette label of each property command. */
@@ -270,6 +276,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   collapseKey,
   filterFields,
   statusCategories,
+  customerRequests,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -281,21 +288,23 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const { update, queryKey } = collection;
   const byParent = state.groupBy === 'parent' || state.subGroupBy === 'parent';
   const byCustomer =
+    customerRequests !== undefined &&
     listContext.customers !== undefined &&
     (state.groupBy === 'customer' || state.subGroupBy === 'customer');
-  const customerRequests = useCustomerRequestMap(workspaceId, byCustomer);
   const context = useMemo(
     () => ({
       ...listContext,
       ...(byParent ? { parents: parentsIn(collection.issues) } : {}),
-      ...(byCustomer ? { customerRequests: customerRequests.byIssue } : {}),
+      ...(byCustomer && customerRequests !== undefined
+        ? { customerRequests: customerRequests.byIssue }
+        : {}),
     }),
     [
       byParent,
       byCustomer,
       listContext,
       collection.issues,
-      customerRequests.byIssue,
+      customerRequests?.byIssue,
     ]
   );
 
@@ -1215,13 +1224,13 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const milestones = named.milestones;
   const refreshCustomers = useCallback(
     (issueId: string): void => {
-      invalidateQueries(customerRequests.queryKey);
+      invalidateQueries(workspaceCustomerRequestsKey(workspaceId));
       invalidateQueries(customersKey(workspaceId));
       invalidateQueries(
         targetCustomerRequestsKey(workspaceId, 'issue', issueId)
       );
     },
-    [customerRequests.queryKey, workspaceId]
+    [workspaceId]
   );
 
   const moveCustomer = useCallback(
@@ -1251,7 +1260,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     issue: OrderedIssueRead,
     customerId: string
   ): Promise<void> => {
-    const held = customerRequests.requests.filter(
+    const held = (customerRequests?.requests ?? []).filter(
       (request) =>
         request.target_id === issue.id && request.customer_id === customerId
     );
