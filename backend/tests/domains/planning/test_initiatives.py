@@ -331,6 +331,42 @@ def test_an_initiative_target_may_be_a_month_quarter_half_or_year(client: TestCl
     assert (cleared["target_date"], cleared["target_date_resolution"]) == (None, None)
 
 
+def test_an_initiative_start_date_opens_its_period_and_never_follows_the_target(
+    client: TestClient, workspace: str
+) -> None:
+    """A coarse start opens its period, a start after the target is refused either way round, and null clears it."""
+    sign_in(client, MEMBER)
+    created = _create(
+        client,
+        workspace,
+        name="Span",
+        start_date="2027-02-10",
+        start_date_resolution="quarter",
+        target_date="2027-09-15",
+    )
+    path = f"{_base(workspace)}/{created['initiative_id']}"
+
+    backwards = client.post(
+        _base(workspace), json={"name": "Backwards", "start_date": "2027-05-01", "target_date": "2027-04-01"}
+    )
+    late_start = client.patch(path, json={"start_date": "2027-10-01"})
+    early_target = client.patch(path, json={"target_date": "2026-12-31"})
+    moved = client.patch(path, json={"start_date": "2027-03-03", "start_date_resolution": "day"}).json()
+    halved = client.patch(path, json={"start_date_resolution": "half"}).json()
+    unanchored = client.post(_base(workspace), json={"name": "None", "start_date_resolution": "month"})
+    cleared = client.patch(path, json={"start_date": None}).json()
+
+    assert (created["start_date"], created["start_date_resolution"]) == ("2027-01-01", "quarter")
+    assert backwards.status_code == 422
+    assert late_start.status_code == 422
+    assert early_target.status_code == 422
+    assert (moved["start_date"], moved["start_date_resolution"]) == ("2027-03-03", "day")
+    assert (halved["start_date"], halved["start_date_resolution"]) == ("2027-01-01", "half")
+    assert unanchored.status_code == 422
+    assert (cleared["start_date"], cleared["start_date_resolution"]) == (None, None)
+    assert client.get(path).json()["target_date"] == "2027-09-15"
+
+
 def test_a_new_initiative_is_placed_first_and_a_patch_moves_it_in_the_manual_order(
     client: TestClient, workspace: str, peer: str
 ) -> None:

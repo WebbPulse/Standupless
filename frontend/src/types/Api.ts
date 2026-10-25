@@ -73,6 +73,10 @@ export interface UserRead {
 
 /** The initiatives page arrangement an account saves, every field filled. */
 export interface InitiativesDisplayPreference {
+  /** Whether the page draws the list or bars on a timeline from start to target date. */
+  layout: 'list' | 'timeline';
+  /** The timeline's scale, the same scales the projects timeline offers. */
+  zoom: 'week' | 'month' | 'quarter' | 'year';
   /** What the list groups rows by: status, lead team, owner, health or the target date's period. */
   grouping: 'status' | 'team' | 'owner' | 'health' | 'target_date';
   /** How rows run inside each group; `manual` follows the shared manual position. */
@@ -3345,6 +3349,9 @@ export interface InitiativeRead {
   team_id?: string | null;
   status: InitiativeStatus;
   health: ProjectHealth | null;
+  /** When the initiative opens; a coarse start is its period's first day. */
+  start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date: string | null;
   target_date_resolution?: DateResolution | null;
   /** The initiative this one sits under, or null at the top level. */
@@ -3423,6 +3430,8 @@ export interface InitiativeCreate {
   team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
+  start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
   target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
@@ -3437,6 +3446,8 @@ export interface InitiativeUpdate {
   team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
+  start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
   target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;

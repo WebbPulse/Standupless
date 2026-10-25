@@ -2429,6 +2429,7 @@ def initiative_view(
         ("Status", found["status"]),
         ("Health", found.get("health") or ""),
         ("Owner", people.get(owner, owner)),
+        ("Start", _date_label(found.get("start_date"), found.get("start_date_resolution"))),
         ("Target", _date_label(found.get("target_date"), found.get("target_date_resolution"))),
         ("Projects", _health_mix(found)),
         ("Progress", _progress(found.get("counts") or {}, " of ") + " done"),
@@ -2461,6 +2462,7 @@ def initiative_create(
     description: Annotated[str | None, typer.Option("--description", "-d", help="Markdown description.")] = None,
     owner: Annotated[str | None, typer.Option("--owner", help="`me`, an email, a name or a user id.")] = None,
     status: Annotated[InitiativeStatus | None, typer.Option("--status", help="Defaults to planned.")] = None,
+    start: Annotated[str | None, typer.Option("--start", help="Start date, YYYY-MM-DD.")] = None,
     target: Annotated[str | None, typer.Option("--target", help="Target date, YYYY-MM-DD.")] = None,
     as_json: JsonFlag = False,
 ) -> None:
@@ -2473,6 +2475,8 @@ def initiative_create(
         body["owner_id"] = context.user_id(owner)
     if status:
         body["status"] = status.value
+    if start:
+        body["start_date"] = start
     if target:
         body["target_date"] = target
     created = context.client.create_initiative(context.workspace_id, body)
@@ -2493,6 +2497,7 @@ def initiative_edit(
         str | None, typer.Option("--owner", help="`me`, an email, a name, a user id, or `none` to clear.")
     ] = None,
     status: Annotated[InitiativeStatus | None, typer.Option("--status", help="New status.")] = None,
+    start: Annotated[str | None, typer.Option("--start", help="Start date, YYYY-MM-DD, or `none`.")] = None,
     target: Annotated[str | None, typer.Option("--target", help="Target date, YYYY-MM-DD, or `none`.")] = None,
     as_json: JsonFlag = False,
 ) -> None:
@@ -2507,6 +2512,8 @@ def initiative_edit(
         body["owner_id"] = None if owner.strip().lower() == "none" else context.user_id(owner)
     if status:
         body["status"] = status.value
+    if start is not None:
+        body["start_date"] = None if start.strip().lower() == "none" else start
     if target is not None:
         body["target_date"] = None if target.strip().lower() == "none" else target
     if not body:

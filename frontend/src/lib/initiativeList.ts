@@ -47,7 +47,7 @@ export type CompletedChoice = InitiativesDisplay['completed'];
 
 /** A property the list can show beside the name. */
 export type InitiativeColumn =
-  'health' | 'team' | 'owner' | 'projects' | 'target' | 'progress';
+  'health' | 'team' | 'owner' | 'projects' | 'start' | 'target' | 'progress';
 
 /** Every property, in the order the row draws them. */
 export const INITIATIVE_COLUMNS: InitiativeColumn[] = [
@@ -55,6 +55,7 @@ export const INITIATIVE_COLUMNS: InitiativeColumn[] = [
   'team',
   'owner',
   'projects',
+  'start',
   'target',
   'progress',
 ];
@@ -65,9 +66,24 @@ export const INITIATIVE_COLUMN_LABELS: Record<InitiativeColumn, string> = {
   team: 'Team',
   owner: 'Owner',
   projects: 'Projects',
+  start: 'Start date',
   target: 'Target date',
   progress: 'Progress',
 };
+
+/** Whether the page draws the list or the timeline. */
+export type InitiativeLayout = InitiativesDisplay['layout'];
+
+/** The layouts, in the order the Display menu offers them. */
+export const INITIATIVE_LAYOUTS: InitiativeLayout[] = ['list', 'timeline'];
+
+/** The timeline scales, the same ones the projects timeline offers. */
+export const INITIATIVE_ZOOMS: InitiativesDisplay['zoom'][] = [
+  'week',
+  'month',
+  'quarter',
+  'year',
+];
 
 /** The orderings, in the order the Display menu offers them. */
 export const INITIATIVE_ORDERINGS: InitiativeOrdering[] = [
@@ -91,6 +107,8 @@ export const INITIATIVE_ORDERING_LABELS: Record<InitiativeOrdering, string> = {
 
 /** The arrangement a list that was never arranged opens with. */
 export const DEFAULT_INITIATIVES_DISPLAY: InitiativesDisplay = {
+  layout: 'list',
+  zoom: 'month',
   grouping: 'status',
   order: 'target',
   completed: 'show',
@@ -99,6 +117,8 @@ export const DEFAULT_INITIATIVES_DISPLAY: InitiativesDisplay = {
 
 /** The arrangement fields, each one URL parameter. */
 export const INITIATIVES_DISPLAY_FIELDS: (keyof InitiativesDisplay)[] = [
+  'layout',
+  'zoom',
   'grouping',
   'order',
   'completed',
@@ -132,7 +152,11 @@ const parseField = <K extends keyof InitiativesDisplay>(
       ? INITIATIVE_ORDERINGS
       : field === 'grouping'
         ? INITIATIVE_GROUPINGS
-        : ['show', 'hide'];
+        : field === 'layout'
+          ? INITIATIVE_LAYOUTS
+          : field === 'zoom'
+            ? INITIATIVE_ZOOMS
+            : ['show', 'hide'];
   return choices.includes(value) ? (value as InitiativesDisplay[K]) : undefined;
 };
 
@@ -148,6 +172,8 @@ export const resolveInitiativesDisplay = (
     parseField(field, saved?.[field]) ??
     DEFAULT_INITIATIVES_DISPLAY[field];
   return {
+    layout: pick('layout'),
+    zoom: pick('zoom'),
     grouping: pick('grouping'),
     order: pick('order'),
     completed: pick('completed'),

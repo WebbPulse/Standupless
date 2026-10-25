@@ -12,7 +12,11 @@ InitiativesCompletedField = Literal["show", "hide"]
 
 InitiativesGroupingField = Literal["status", "team", "owner", "health", "target_date"]
 
-INITIATIVES_COLUMNS: tuple[str, ...] = ("health", "team", "owner", "projects", "target", "progress")
+InitiativesLayoutField = Literal["list", "timeline"]
+
+InitiativesZoomField = Literal["week", "month", "quarter", "year"]
+
+INITIATIVES_COLUMNS: tuple[str, ...] = ("health", "team", "owner", "projects", "start", "target", "progress")
 """Every property the initiatives list can show beside the name, in the order it draws them."""
 
 DEFAULT_INITIATIVES_COLUMNS = ",".join(INITIATIVES_COLUMNS)
@@ -43,9 +47,14 @@ class InitiativesDisplay(BaseModel):
     parent; `manual` runs them by the shared manual position. `completed` shows or hides the
     completed initiatives.
     `columns` names the properties shown beside the name, comma separated in the
-    list's own order, and empty shows the name alone.
+    list's own order, and empty shows the name alone. `layout` draws the
+    initiatives as the list or as bars on a timeline from start to target
+    date, and `zoom` is that timeline's scale, the same scales the projects
+    timeline offers.
     """
 
+    layout: InitiativesLayoutField = "list"
+    zoom: InitiativesZoomField = "month"
     grouping: InitiativesGroupingField = "status"
     order: InitiativesOrderField = "target"
     completed: InitiativesCompletedField = "show"
@@ -59,6 +68,8 @@ class InitiativesDisplay(BaseModel):
 
 
 INITIATIVES_DISPLAY_FIELDS: dict[str, tuple[str, ...]] = {
+    "layout": get_args(InitiativesLayoutField),
+    "zoom": get_args(InitiativesZoomField),
     "grouping": get_args(InitiativesGroupingField),
     "order": get_args(InitiativesOrderField),
     "completed": get_args(InitiativesCompletedField),

@@ -84,10 +84,12 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         },
         "projects_display_saved": False,
         "initiatives_display": {
+            "layout": "list",
+            "zoom": "month",
             "grouping": "status",
             "order": "target",
             "completed": "show",
-            "columns": "health,team,owner,projects,target,progress",
+            "columns": "health,team,owner,projects,start,target,progress",
         },
         "initiatives_display_saved": False,
         "auto_assign_to_self": False,
@@ -460,6 +462,8 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["initiatives_display"] == {
+        "layout": "list",
+        "zoom": "month",
         "grouping": "status",
         "order": "name",
         "completed": "hide",
@@ -473,6 +477,8 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
         ("order", "priority"),
         ("grouping", "lead"),
         ("completed", "yes"),
+        ("layout", "board"),
+        ("zoom", "decade"),
         ("columns", "owner,budget"),
     ):
         refused = client.patch("/api/users/me/preferences", json={"initiatives_display": {field: value}})
@@ -510,7 +516,31 @@ def test_a_retired_initiatives_display_choice_reads_as_the_default(client: TestC
 
     display = client.get("/api/users/me").json()["initiatives_display"]
 
-    assert display == {"grouping": "status", "order": "target", "completed": "show", "columns": "health"}
+    assert display == {
+        "layout": "list",
+        "zoom": "month",
+        "grouping": "status",
+        "order": "target",
+        "completed": "show",
+        "columns": "health",
+    }
+
+
+def test_the_initiatives_display_saves_the_timeline_layout_and_its_zoom(client: TestClient, repositories: Any) -> None:
+    """The timeline layout, its zoom and the start column round trip through the account."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    saved = client.patch(
+        "/api/users/me/preferences",
+        json={"initiatives_display": {"layout": "timeline", "zoom": "quarter", "columns": "target,start"}},
+    )
+
+    assert saved.status_code == 200, saved.text
+    display = client.get("/api/users/me").json()["initiatives_display"]
+    assert display["layout"] == "timeline"
+    assert display["zoom"] == "quarter"
+    assert display["columns"] == "start,target"
 
 
 def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:

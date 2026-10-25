@@ -67,9 +67,18 @@ INITIATIVE_HELP = "The initiative: id or name"
 
 PROJECT_HELP = "The project: id or name"
 
-TEXT_FIELDS: tuple[str, ...] = ("name", "description", "status", "health", "target_date", "target_date_resolution")
+TEXT_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "status",
+    "health",
+    "start_date",
+    "start_date_resolution",
+    "target_date",
+    "target_date_resolution",
+)
 
-CLEARABLE_FIELDS: tuple[str, ...] = ("description", "health", "target_date")
+CLEARABLE_FIELDS: tuple[str, ...] = ("description", "health", "start_date", "target_date")
 """The initiative fields a tool call clears by passing null."""
 
 
@@ -83,6 +92,9 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
         "team_id": initiative.team_id,
         "status": initiative.status,
         "health": initiative.health,
+        "start_date": initiative.start_date,
+        "start_date_resolution": initiative.start_date_resolution,
+        "start_date_label": date_label(initiative.start_date, initiative.start_date_resolution),
         "target_date": initiative.target_date,
         "target_date_resolution": initiative.target_date_resolution,
         "target_date_label": date_label(initiative.target_date, initiative.target_date_resolution),
@@ -291,6 +303,14 @@ INITIATIVE_PROPERTIES: dict[str, Any] = {
     ),
     "status": enum(INITIATIVE_STATUSES, "The initiative status"),
     "health": nullable_enum(HEALTHS, "The initiative health, or null for none"),
+    "start_date": nullable(
+        "Start date, YYYY-MM-DD, never after target_date; any day in the period when start_date_resolution is coarse"
+    ),
+    "start_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide start_date is: day (the default), or the month, quarter, half or year it opens; "
+        "the date moves to that period's first day",
+    ),
     "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
     "target_date_resolution": enum(
         DATE_RESOLUTIONS,

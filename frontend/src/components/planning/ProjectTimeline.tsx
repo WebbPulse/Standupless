@@ -25,8 +25,6 @@
 import React, {
   useCallback,
   useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -43,6 +41,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
 import { useTimelineLinks } from '../../hooks/useTimelineLinks';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
+import {
+  NAME_WIDTH,
+  TimelineDateHeader,
+  TimelineGrid,
+  useTimelineView,
+  type TimelineHandle,
+  type ViewWindow,
+} from './TimelineFrame';
 import { TeamKey } from './ProjectPickers';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import MilestoneGlyph from './MilestoneGlyph';
@@ -105,17 +111,8 @@ import type {
   WorkspaceRole,
 } from '../../types/Api';
 
-/** The width of the pinned name column, in pixels. */
-const NAME_WIDTH = 280;
-
 /** How long a project scheduled from an empty lane runs, in days. */
 const DEFAULT_SPAN = 14;
-
-/** How far from the left edge today sits when the view jumps to it. */
-const TODAY_INSET = 160;
-
-/** The share of the view one step earlier or later moves it by. */
-const STEP_SHARE = 0.8;
 
 /** The properties a timeline shows when its page does not choose. */
 const DEFAULT_TIMELINE_COLUMNS: readonly ProjectColumn[] = [
@@ -128,12 +125,6 @@ const DEFAULT_TIMELINE_COLUMNS: readonly ProjectColumn[] = [
 /** Roughly how wide a bar label is, so it can be kept in view. */
 const labelWidth = (name: string): number =>
   Math.min(290, 50 + name.length * 7);
-
-/** The part of the timeline in view, in lane pixels. */
-interface ViewWindow {
-  left: number;
-  right: number;
-}
 
 /** A drag in progress. */
 interface DragState {
@@ -704,13 +695,8 @@ const TimelineGroup: React.FC<TimelineGroupProps> = ({
   );
 };
 
-/** What a page holding a timeline can ask of it. */
-export interface ProjectTimelineHandle {
-  /** Scrolls the view so today sits near its left edge. */
-  scrollToToday: () => void;
-  /** Moves the view most of a screen earlier, or later. */
-  step: (direction: -1 | 1) => void;
-}
+/** What a page holding a projects timeline can ask of it. */
+export type ProjectTimelineHandle = TimelineHandle;
 
 /** Props for ProjectTimeline: the grouped rows and how to draw them. */
 export interface ProjectTimelineProps {
@@ -774,79 +760,15 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   const header = useMemo(() => timelineHeader(range, zoom), [range, zoom]);
   const laneWidth = (range.end - range.start) * pxPerDay;
 
-  const scroller = useRef<HTMLDivElement | null>(null);
-  const [view, setView] = useState<ViewWindow>({ left: 0, right: 0 });
-  const centre = useRef<number | null>(null);
-
-  const readView = useCallback((): void => {
-    const node = scroller.current;
-    if (node === null) return;
-    const left = node.scrollLeft;
-    const right = left + Math.max(0, node.clientWidth - NAME_WIDTH);
-    centre.current = range.start + (left + (right - left) / 2) / pxPerDay;
-    setView((held) =>
-      held.left === left && held.right === right ? held : { left, right }
-    );
-  }, [range.start, pxPerDay]);
-
-  const scrollToDay = useCallback(
-    (day: number, inset = TODAY_INSET): void => {
-      const node = scroller.current;
-      if (node === null) return;
-      node.scrollLeft = Math.max(0, (day - range.start) * pxPerDay - inset);
-      readView();
-    },
-    [range.start, pxPerDay, readView]
-  );
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      scrollToToday: () => {
-        scrollToDay(today);
-      },
-      step: (direction) => {
-        const node = scroller.current;
-        if (node === null) return;
-        const width = Math.max(0, node.clientWidth - NAME_WIDTH);
-        node.scrollLeft = Math.max(
-          0,
-          node.scrollLeft + direction * Math.round(width * STEP_SHARE)
-        );
-        readView();
-      },
-    }),
-    [scrollToDay, today, readView]
-  );
-
   const hasRows = projects.length > 0;
-  const placed = useRef(false);
-  useLayoutEffect(() => {
-    if (!hasRows) return;
-    const node = scroller.current;
-    if (node === null) return;
-    if (!placed.current) {
-      placed.current = true;
-      scrollToDay(today);
-      return;
-    }
-    if (centre.current !== null) {
-      const half = Math.max(0, node.clientWidth - NAME_WIDTH) / 2;
-      scrollToDay(centre.current, half);
-    }
-  }, [zoom, hasRows, today, scrollToDay]);
-
-  useEffect(() => {
-    const node = scroller.current;
-    if (node === null || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      readView();
-    });
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-    };
-  }, [readView, hasRows]);
+  const { scroller, view, readView, scrollToDay } = useTimelineView({
+    range,
+    pxPerDay,
+    zoom,
+    today,
+    hasRows,
+    ref,
+  });
 
   const todayLeft = (today - range.start + 0.5) * pxPerDay;
   const { pending, link, unlink } = useTimelineLinks(
@@ -1142,75 +1064,25 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
         data-testid={testId}
       >
         <div className="relative" style={{ width: NAME_WIDTH + laneWidth }}>
-          <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
-            <div
-              className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
-              style={{ width: NAME_WIDTH }}
-            >
-              {`${String(projects.length)} ${projects.length === 1 ? 'project' : 'projects'}`}
-            </div>
-            <div
-              className="relative h-12 shrink-0"
-              style={{ width: laneWidth }}
-              aria-hidden="true"
-            >
-              {header.major.map((tick) => (
-                <span
-                  key={`major-${String(tick.day)}`}
-                  className="absolute top-0 flex h-6 items-center border-l border-line px-2 text-xs font-medium text-text"
-                  style={{
-                    left: (tick.day - range.start) * pxPerDay,
-                    width: tick.span * pxPerDay,
-                  }}
-                >
-                  <span
-                    className="sticky truncate"
-                    style={{ left: NAME_WIDTH + 8 }}
-                  >
-                    {tick.label}
-                  </span>
-                </span>
-              ))}
-              {header.minor.map((tick) => (
-                <span
-                  key={`minor-${String(tick.day)}`}
-                  className="absolute top-6 flex h-6 items-center overflow-hidden border-l border-line/60 pl-1 text-2xs text-text-faint"
-                  style={{
-                    left: (tick.day - range.start) * pxPerDay,
-                    width: tick.span * pxPerDay,
-                  }}
-                >
-                  {tick.span * pxPerDay >= 18 ? tick.label : ''}
-                </span>
-              ))}
-              <span
-                className="absolute top-6 z-10 -translate-x-1/2 rounded-xs bg-accent px-1 text-2xs font-medium text-bg"
-                style={{ left: todayLeft }}
-              >
-                Today
-              </span>
-            </div>
-          </div>
+          <TimelineDateHeader
+            range={range}
+            header={header}
+            pxPerDay={pxPerDay}
+            laneWidth={laneWidth}
+            todayLeft={todayLeft}
+            countLabel={`${String(projects.length)} ${projects.length === 1 ? 'project' : 'projects'}`}
+          />
           <div
             ref={lanes}
             className={cn('relative', linking && 'cursor-crosshair')}
           >
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0"
-              style={{ left: NAME_WIDTH, width: laneWidth }}
+            <TimelineGrid
+              range={range}
+              header={header}
+              pxPerDay={pxPerDay}
+              laneWidth={laneWidth}
+              todayLeft={todayLeft}
             >
-              {header.major.map((tick) => (
-                <span
-                  key={`grid-${String(tick.day)}`}
-                  className="absolute inset-y-0 border-l border-line"
-                  style={{ left: (tick.day - range.start) * pxPerDay }}
-                />
-              ))}
-              <span
-                className="absolute inset-y-0 z-10 w-px bg-accent"
-                style={{ left: todayLeft }}
-              />
               {(lines.length > 0 || linkDrag !== null) && (
                 <svg
                   className="absolute inset-0 h-full overflow-visible"
@@ -1290,7 +1162,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
                   )}
                 </svg>
               )}
-            </div>
+            </TimelineGrid>
             {groups.map((group) => (
               <TimelineGroup
                 key={group.key}

@@ -43,11 +43,22 @@ describe('resolveInitiativesDisplay', () => {
         completed: 'hide',
       })
     ).toEqual({
+      layout: 'list',
+      zoom: 'month',
       grouping: 'status',
       order: 'name',
       completed: 'hide',
       columns: 'owner,progress',
     });
+  });
+
+  it('reads the timeline layout and zoom, and drops an unknown zoom', () => {
+    const params = new URLSearchParams('layout=timeline&zoom=decade');
+    const display = resolveInitiativesDisplay((field) => params.get(field), {
+      zoom: 'quarter',
+    });
+    expect(display.layout).toBe('timeline');
+    expect(display.zoom).toBe('quarter');
   });
 
   it('reads the team grouping from the URL', () => {

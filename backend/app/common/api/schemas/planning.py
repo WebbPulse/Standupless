@@ -1651,6 +1651,8 @@ class InitiativeCreate(BaseModel):
     team_id: Optional[str] = Field(default=None, min_length=1, description=INITIATIVE_TEAM_HELP)
     status: InitiativeStatusField = "planned"
     health: Optional[ProjectHealthField] = None
+    start_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(default=None, description=START_RESOLUTION_HELP)
     target_date: Optional[str] = None
     target_date_resolution: Optional[DateResolution] = Field(default=None, description=TARGET_RESOLUTION_HELP)
     update_interval_days: Optional[int] = None
@@ -1676,18 +1678,22 @@ class InitiativeCreate(BaseModel):
         """Hold the description to the shared byte cap."""
         return _check_description(value)
 
-    @field_validator("target_date")
+    @field_validator("start_date", "target_date")
     @classmethod
-    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
-        """Hold the target date to the contract's format."""
+    def check_dates(cls, value: Optional[str]) -> Optional[str]:
+        """Hold both dates to the contract's format."""
         return _check_date(value)
 
     @model_validator(mode="after")
-    def widen_target_date(self) -> "InitiativeCreate":
-        """Move a coarse target date to the last day of its period."""
+    def widen_dates(self) -> "InitiativeCreate":
+        """Move each coarse date to the edge of its period and hold the start no later than the target."""
+        start = _settle_resolution(self.start_date, self.start_date_resolution, "start", "start_date")
+        if start != self.start_date:
+            self.start_date = start
         target = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
         if target != self.target_date:
             self.target_date = target
+        _check_order(self.start_date, self.target_date, "target_date")
         return self
 
 
@@ -1706,6 +1712,10 @@ class InitiativeUpdate(BaseModel):
     )
     status: Optional[InitiativeStatusField] = None
     health: Optional[ProjectHealthField] = None
+    start_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None, description=f"{START_RESOLUTION_HELP}; set alone it widens the stored date"
+    )
     target_date: Optional[str] = None
     target_date_resolution: Optional[DateResolution] = Field(
         default=None, description=f"{TARGET_RESOLUTION_HELP}; set alone it widens the stored date"
@@ -1742,10 +1752,10 @@ class InitiativeUpdate(BaseModel):
         """Hold the description to the shared byte cap."""
         return _check_description(value)
 
-    @field_validator("target_date")
+    @field_validator("start_date", "target_date")
     @classmethod
-    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
-        """Hold the target date to the contract's format."""
+    def check_dates(cls, value: Optional[str]) -> Optional[str]:
+        """Hold both dates to the contract's format."""
         return _check_date(value)
 
 
@@ -1774,6 +1784,11 @@ class InitiativeRead(BaseModel):
     team_id: Optional[str] = Field(default=None, description="The lead team, null for a workspace level initiative")
     status: InitiativeStatusField
     health: Optional[ProjectHealthField] = None
+    start_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None,
+        description="How wide the start date is, null without one; a coarse start is its period's first day",
+    )
     target_date: Optional[str] = None
     target_date_resolution: Optional[DateResolution] = Field(
         default=None,
@@ -1852,6 +1867,8 @@ class InitiativeRead(BaseModel):
             team_id=initiative.team_id,
             status=initiative.status,  # pyright: ignore[reportArgumentType]
             health=initiative.health,  # pyright: ignore[reportArgumentType]
+            start_date=initiative.start_date,
+            start_date_resolution=read_resolution(initiative.start_date, initiative.start_date_resolution),
             target_date=initiative.target_date,
             target_date_resolution=read_resolution(initiative.target_date, initiative.target_date_resolution),
             parent_initiative_id=initiative.parent_initiative_id,

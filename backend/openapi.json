@@ -7860,6 +7860,36 @@
             "description": "The initiative this one sits under as a sub-initiative",
             "title": "Parent Initiative Id"
           },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the start date is: an exact day, or the month, quarter, half or year it opens",
+            "title": "Start Date Resolution"
+          },
           "status": {
             "default": "planned",
             "enum": [
@@ -8185,6 +8215,36 @@
             "description": "The manual position, null when the initiative was never placed",
             "title": "Sort Order"
           },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the start date is, null without one; a coarse start is its period's first day",
+            "title": "Start Date Resolution"
+          },
           "status": {
             "enum": [
               "planned",
@@ -8398,6 +8458,36 @@
             ],
             "description": "The manual position, a base 62 fractional key shared by every viewer",
             "title": "Sort Order"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the start date is: an exact day, or the month, quarter, half or year it opens; set alone it widens the stored date",
+            "title": "Start Date Resolution"
           },
           "status": {
             "anyOf": [
@@ -8675,10 +8765,10 @@
         "type": "object"
       },
       "InitiativesDisplay": {
-        "description": "How the person arranges the workspace initiatives list.\n\n`grouping` groups the list by status, by lead team with a group for the\nworkspace level ones, by owner, by health, or by the month or coarser\nperiod of the target date, the empty group last in each. `order` sorts\nthe initiatives inside each group, sub-initiatives staying under their\nparent; `manual` runs them by the shared manual position. `completed` shows or hides the\ncompleted initiatives.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
+        "description": "How the person arranges the workspace initiatives list.\n\n`grouping` groups the list by status, by lead team with a group for the\nworkspace level ones, by owner, by health, or by the month or coarser\nperiod of the target date, the empty group last in each. `order` sorts\nthe initiatives inside each group, sub-initiatives staying under their\nparent; `manual` runs them by the shared manual position. `completed` shows or hides the\ncompleted initiatives.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone. `layout` draws the\ninitiatives as the list or as bars on a timeline from start to target\ndate, and `zoom` is that timeline's scale, the same scales the projects\ntimeline offers.",
         "properties": {
           "columns": {
-            "default": "health,team,owner,projects,target,progress",
+            "default": "health,team,owner,projects,start,target,progress",
             "title": "Columns",
             "type": "string"
           },
@@ -8703,6 +8793,15 @@
             "title": "Grouping",
             "type": "string"
           },
+          "layout": {
+            "default": "list",
+            "enum": [
+              "list",
+              "timeline"
+            ],
+            "title": "Layout",
+            "type": "string"
+          },
           "order": {
             "default": "target",
             "enum": [
@@ -8714,6 +8813,17 @@
               "updated"
             ],
             "title": "Order",
+            "type": "string"
+          },
+          "zoom": {
+            "default": "month",
+            "enum": [
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "title": "Zoom",
             "type": "string"
           }
         },

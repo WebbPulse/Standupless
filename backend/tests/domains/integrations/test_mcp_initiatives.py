@@ -196,6 +196,34 @@ def test_an_initiative_target_round_trips_its_resolution(
     assert (updated["target_date"], updated["target_date_label"]) == ("2027-12-31", "2027")
 
 
+def test_an_initiative_start_date_is_set_labelled_refused_after_the_target_and_cleared(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """The initiative tools take a start date with its resolution, refuse one after the target and clear it on null."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_initiative",
+            {
+                "name": "Launch",
+                "start_date": "2027-05-20",
+                "start_date_resolution": "month",
+                "target_date": "2027-12-01",
+            },
+        )
+    )
+    late = refusal(tool(client, secret, "update_initiative", {"initiative_id": "Launch", "start_date": "2028-01-01"}))
+    cleared = answer(tool(client, secret, "update_initiative", {"initiative_id": "Launch", "start_date": None}))
+
+    assert (created["start_date"], created["start_date_resolution"]) == ("2027-05-01", "month")
+    assert created["start_date_label"] == "May 2027"
+    assert "start_date" in late
+    assert (cleared["start_date"], cleared["start_date_resolution"], cleared["start_date_label"]) == (None, None, None)
+
+
 def test_a_lead_team_is_named_by_key_filtered_on_and_cleared(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
