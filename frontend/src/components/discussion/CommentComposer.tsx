@@ -234,17 +234,19 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     }
   }, []);
 
+  const [editorReady, setEditorReady] = useState(false);
+
   useEffect(() => {
-    applyQuote();
-  }, [quote, applyQuote]);
+    if (editorReady) applyQuote();
+  }, [quote, editorReady, applyQuote]);
 
   const { ref: draftRef } = commentDraft;
   const editorRef = useCallback(
     (handle: RichMarkdownHandle | null): void => {
       draftRef(handle);
-      applyQuote();
+      setEditorReady(handle !== null);
     },
-    [draftRef, applyQuote]
+    [draftRef]
   );
 
   useShortcut({
