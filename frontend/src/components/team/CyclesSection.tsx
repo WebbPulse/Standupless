@@ -7,7 +7,8 @@
  * or changing the length makes the server lay out the current and upcoming
  * cycles, and that should happen once for a finished schedule rather than on
  * every control a person passes through. A preview line shows the dates the
- * draft would give before anything is saved.
+ * draft would give the next cycle, after the current one, before anything is
+ * saved, and says when saving moves the upcoming cycles to a new schedule.
  */
 
 import React, { useId, useState } from 'react';
@@ -17,6 +18,7 @@ import {
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import { Link } from 'react-router-dom';
+import { listCycles } from '../../api/planning';
 import { getCycleSettings, updateCycleSettings } from '../../api/teams';
 import {
   COOLDOWN_WEEKS,
@@ -25,6 +27,8 @@ import {
   UPCOMING_COUNTS,
   WEEKDAYS,
   formatPreviewDate,
+  movesUpcoming,
+  parseScheduleDate,
   previewNextCycle,
   scheduleChanges,
   scheduleOf,
@@ -58,6 +62,9 @@ export interface CyclesSectionProps {
 
 /** How often the schedule is re-read while the settings tab is open. */
 const POLL_MS = 30000;
+
+/** The page size of the active cycle read, the server's largest. */
+const ACTIVE_LIMIT = 100;
 
 /** Props for the on and off switch a settings row ends in. */
 interface ToggleProps {
@@ -155,6 +162,22 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     { intervalMs: POLL_MS, queryKey, auth }
   );
 
+  const activeKey = cyclesKey(workspaceId, teamId, 'active');
+  const { data: active } = usePolledQuery(
+    ({ signal }) =>
+      listCycles(
+        workspaceId,
+        { team_id: teamId, status: 'active', limit: ACTIVE_LIMIT },
+        signal
+      ),
+    {
+      intervalMs: POLL_MS,
+      enabled: data?.enabled === true,
+      queryKey: activeKey,
+      auth,
+    }
+  );
+
   const {
     mutate: save,
     error: saveError,
@@ -165,6 +188,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     [
       queryKey,
       cyclesKey(workspaceId, teamId, ''),
+      activeKey,
       ['cycleVelocity', workspaceId, teamId],
       planningOptionsKey(teamId),
     ]
@@ -207,7 +231,16 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
     moveUnfinished: `${prefix}-move-unfinished`,
   };
 
-  const preview = previewNextCycle(current, today);
+  const currentCycle =
+    saved.enabled && active !== null
+      ? active.cycles.find((cycle) => cycle.team_id === teamId)
+      : undefined;
+  const preview = previewNextCycle(
+    current,
+    today,
+    parseScheduleDate(currentCycle?.end_date)
+  );
+  const moving = saved.enabled && current.enabled && movesUpcoming(changes);
 
   return (
     <section className="space-y-4">
@@ -422,6 +455,8 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
               {current.cooldown_weeks > 0
                 ? `, then a ${weeksLabel(current.cooldown_weeks)} cooldown.`
                 : '.'}
+              {moving &&
+                ' Upcoming cycles move to the new schedule when you save. The current cycle keeps its dates.'}
             </p>
           )}
 

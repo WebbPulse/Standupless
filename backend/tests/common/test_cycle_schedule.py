@@ -3,7 +3,9 @@
 The properties worth holding are that cycles land on the start weekday with the
 chosen length and cooldown, that a team always ends up with a current cycle and
 `upcoming_count` cycles ahead, that the chain never overlaps a cycle the team
-already has, and that a second run creates nothing.
+already has, and that a second run creates nothing. A changed length,
+cooldown or start day moves the upcoming automatic cycles while the current
+one keeps its dates.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from app.common.cycle_schedule import (
     gaps_before,
     next_number,
     plan_cycles,
+    reschedule_upcoming,
+    schedule_changed,
     trailing_number,
 )
 from app.common.db.dynamo.planning import Cycle, cycle_key
@@ -221,3 +225,69 @@ def test_disabled_settings_create_nothing(repositories: Any) -> None:
     """Cycles off means the generator is a no-op."""
     assert ensure_cycles(repositories.planning, _settings(enabled=False), TUESDAY).created == []
     assert repositories.planning.list_for_roadmap(WORKSPACE, TEAM) == []
+
+
+def _dates(repositories: Any) -> "list[tuple[str, str, str, str]]":
+    """Every stored cycle of TEAM as id, name, start and end, in start order."""
+    stored = repositories.planning.list_for_roadmap(WORKSPACE, TEAM)
+    return [(c.cycle_id, c.name, c.start_date, c.end_date) for c in sorted(stored, key=lambda c: c.start_date)]
+
+
+def test_only_length_cooldown_and_start_day_change_the_schedule() -> None:
+    """The upcoming count and the auto-add switches leave dates alone."""
+    assert schedule_changed(_settings(), _settings(duration_weeks=1))
+    assert schedule_changed(_settings(), _settings(cooldown_weeks=1))
+    assert schedule_changed(_settings(), _settings(start_weekday=2))
+    assert not schedule_changed(_settings(), _settings(upcoming_count=4, move_unfinished=False))
+
+
+def test_a_shorter_length_moves_the_upcoming_cycles_and_keeps_the_current_one(repositories: Any) -> None:
+    """One week cycles pull the upcoming two in behind the current cycle, ids and names kept."""
+    ensure_cycles(repositories.planning, _settings(), TUESDAY)
+
+    result = reschedule_upcoming(repositories.planning, _settings(duration_weeks=1), TUESDAY)
+
+    assert [c.cycle_id for c in result.moved] == ["auto-20260323", "auto-20260406"]
+    assert result.created == []
+    assert _dates(repositories) == [
+        ("auto-20260309", "Cycle 1", "2026-03-09", "2026-03-22"),
+        ("auto-20260323", "Cycle 2", "2026-03-23", "2026-03-29"),
+        ("auto-20260406", "Cycle 3", "2026-03-30", "2026-04-05"),
+    ]
+
+
+def test_a_new_start_day_and_cooldown_move_the_upcoming_cycles(repositories: Any) -> None:
+    """Wednesday starts with a week of cooldown between each upcoming cycle."""
+    ensure_cycles(repositories.planning, _settings(), TUESDAY)
+
+    reschedule_upcoming(repositories.planning, _settings(start_weekday=2, cooldown_weeks=1), TUESDAY)
+
+    assert [row[2:] for row in _dates(repositories)] == [
+        ("2026-03-09", "2026-03-22"),
+        ("2026-04-01", "2026-04-14"),
+        ("2026-04-22", "2026-05-05"),
+    ]
+
+
+def test_a_new_cycle_on_a_moved_cycles_old_date_takes_a_suffixed_id(repositories: Any) -> None:
+    """The id a moved cycle still holds is not mistaken for the new cycle already existing."""
+    ensure_cycles(repositories.planning, _settings(), TUESDAY)
+    reschedule_upcoming(repositories.planning, _settings(duration_weeks=1), TUESDAY)
+
+    result = ensure_cycles(repositories.planning, _settings(duration_weeks=1, upcoming_count=3), TUESDAY)
+
+    assert [(c.cycle_id, c.name, c.start_date) for c in result.created] == [
+        ("auto-20260406-2", "Cycle 4", "2026-04-06")
+    ]
+
+
+def test_an_upcoming_cycle_made_by_hand_keeps_the_chain_as_it_is(repositories: Any) -> None:
+    """A planner who shaped the upcoming chain keeps it; nothing moves."""
+    ensure_cycles(repositories.planning, _settings(), TUESDAY)
+    repositories.planning.create_cycle(_cycle("2026-04-20", "2026-04-26", cid="manual"))
+    before = _dates(repositories)
+
+    result = reschedule_upcoming(repositories.planning, _settings(duration_weeks=1), TUESDAY)
+
+    assert result.moved == []
+    assert _dates(repositories) == before

@@ -41,7 +41,7 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
-import { CYCLE_STATUS_LABELS } from '../../lib/planningDisplay';
+import { cycleOptionDetail, pickerCycleOrder } from '../../lib/planningDisplay';
 import { awayNote, isAway, statusSummary } from '../../lib/userStatus';
 import {
   STATUS_CATEGORY_LABELS,
@@ -828,7 +828,8 @@ export interface CyclePickerProps extends PickerBaseProps {
 /**
  * Picks the cycle an issue is planned into. Finished and cancelled cycles are
  * left out, since nobody plans into the past, unless the issue is already in
- * one, so the current value is always in the list.
+ * one, so the current value is always in the list. The current cycle comes
+ * first, and each cycle reads as Current, Next or Upcoming with its dates.
  */
 export const CyclePicker: React.FC<CyclePickerProps> = ({
   cycles,
@@ -838,10 +839,12 @@ export const CyclePicker: React.FC<CyclePickerProps> = ({
 }) => {
   const variant = base.variant ?? 'rail';
   const current = cycles.find((cycle) => cycle.cycle_id === value);
-  const open = cycles.filter(
-    (cycle) =>
-      cycle.cycle_id === value ||
-      (cycle.status !== 'completed' && cycle.status !== 'cancelled')
+  const open = pickerCycleOrder(
+    cycles.filter(
+      (cycle) =>
+        cycle.cycle_id === value ||
+        (cycle.status !== 'completed' && cycle.status !== 'cancelled')
+    )
   );
   const options: ComboboxOption[] = [
     { value: NONE, label: 'No cycle' },
@@ -849,7 +852,7 @@ export const CyclePicker: React.FC<CyclePickerProps> = ({
       value: cycle.cycle_id,
       label: cycle.name,
       icon: <LuIterationCw className="h-3.5 w-3.5" />,
-      detail: CYCLE_STATUS_LABELS[cycle.status],
+      detail: cycleOptionDetail(cycle, cycles),
     })),
   ];
   return (

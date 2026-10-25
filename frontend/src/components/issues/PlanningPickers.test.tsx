@@ -170,7 +170,7 @@ describe('the choices offered', () => {
     });
   });
 
-  it('offers each cycle with the status the server derived', async () => {
+  it('offers each cycle with its place on the schedule and its dates', async () => {
     const user = userEvent.setup();
     renderPickers();
     await waitFor(() => {
@@ -180,7 +180,7 @@ describe('the choices offered', () => {
     await user.click(screen.getByRole('button', { name: /^Cycle:/ }));
 
     const option = await screen.findByRole('option', { name: /Sprint 1/ });
-    expect(option).toHaveTextContent('Active');
+    expect(option).toHaveTextContent(/Current · Sep 1(, 2026)? to Sep 14/);
     expect(
       screen.getByRole('option', { name: 'No cycle' })
     ).toBeInTheDocument();
