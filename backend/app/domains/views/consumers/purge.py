@@ -83,6 +83,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
         repositories.views.delete_list_folds_for_user(workspace_id, job.user_id)
         repositories.views.delete_drafts_for_user(workspace_id, job.user_id)
         repositories.views.delete_issue_drafts_for_user(workspace_id, job.user_id)
+        repositories.views.delete_update_drafts_for_user(workspace_id, job.user_id)
         repositories.inbox.delete_all(workspace_id, job.user_id)
     return None
 

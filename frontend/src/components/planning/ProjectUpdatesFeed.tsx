@@ -146,6 +146,9 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
             autoFocus
             clearOnSubmit
             withDetailsToggle
+            {...(feed.draftTarget === undefined
+              ? {}
+              : { draftTarget: feed.draftTarget })}
             onSubmit={post}
             onCancel={() => {
               onComposingChange(false);

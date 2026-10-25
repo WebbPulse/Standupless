@@ -3377,6 +3377,22 @@ class TriageTeamCount(TypedDict):
     team_id: str
 
 
+class UpdateDraftRead(TypedDict):
+    body: str
+    created_at: str
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    initiative_id: NotRequired[str | None]
+    project_id: NotRequired[str | None]
+    target_kind: Literal["project", "initiative"]
+    target_name: NotRequired[str | None]
+    updated_at: str
+
+
+class UpdateDraftWrite(TypedDict):
+    body: str
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+
+
 class UploadCommit(TypedDict):
     issue_id: str
     ticket: str
@@ -5239,6 +5255,10 @@ class TriageSettingsUpdate(TypedDict):
 
 class TriageSummaryRead(TypedDict):
     teams: NotRequired[list[TriageTeamCount]]
+
+
+class UpdateDraftListRead(TypedDict):
+    drafts: list[UpdateDraftRead]
 
 
 class UserPreferencesUpdate(TypedDict):

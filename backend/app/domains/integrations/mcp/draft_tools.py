@@ -1,11 +1,13 @@
-"""The MCP tools for comment and new issue drafts, so an agent can stage work for a person to finish.
+"""The MCP tools for comment, new issue and status update drafts, so an agent can stage work for a person to finish.
 
-Every tool runs the drafts routes' own `app.common.comment_drafts` or
-`app.common.issue_drafts` path, which keys each draft by the credential's own
-user, so no argument can reach another member's drafts. A comment draft saved
-here is restored in that member's composer the next time they open the issue or
-the reply thread, a new issue draft is listed under Drafts in their create
-dialog, and saving either never notifies anyone.
+Every tool runs the drafts routes' own `app.common.comment_drafts`,
+`app.common.issue_drafts` or `app.common.update_drafts` path, which keys each
+draft by the credential's own user, so no argument can reach another member's
+drafts. A comment draft saved here is restored in that member's composer the
+next time they open the issue or the reply thread, a new issue draft is listed
+under Drafts in their create dialog, a status update draft is restored in the
+update composer of its project or initiative, and saving any of them never
+notifies anyone.
 """
 
 from __future__ import annotations
@@ -17,18 +19,21 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from app.common.api.dependencies.authz import Capability, check_capability
-from app.common.api.schemas.drafts import DraftRead, DraftWrite
+from app.common.api.schemas.drafts import DraftRead, DraftWrite, UpdateDraftRead, UpdateDraftWrite
 from app.common.api.schemas.issue_drafts import DRAFT_ID_PATTERN, IssueDraftRead, IssueDraftWrite
 from app.common.comment_drafts import delete_draft, get_draft, list_drafts, save_draft
-from app.common.db.dynamo.views import ISSUE_DRAFTS_MAX
+from app.common.db.dynamo.views import ISSUE_DRAFTS_MAX, UpdateDraftTarget
 from app.common.issue_drafts import delete_issue_draft, get_issue_draft, list_issue_drafts, save_issue_draft
 from app.common.issue_keys import current
+from app.common.update_drafts import delete_update_draft, find_update_draft, save_update_draft
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
     enum,
+    initiative_id_ref,
     issue_ref,
     object_schema,
+    project_id_ref,
     string,
     string_list,
     team_id_ref,
@@ -41,6 +46,12 @@ ISSUE = "The issue's id, or its key such as ABC-123"
 DRAFT_ID = "The new issue draft's id, as list_issue_drafts or save_issue_draft answered it"
 
 PRIORITIES = ("none", "urgent", "high", "medium", "low")
+
+PROJECT = "The project's id or name; give this or initiative_id, not both"
+
+INITIATIVE = "The initiative's id or name; give this or project_id, not both"
+
+HEALTHS = ("on_track", "at_risk", "off_track")
 
 PARENT = "A top level comment on the same issue whose reply thread the draft belongs to; omit for the issue itself"
 
@@ -192,6 +203,53 @@ def _delete_issue_draft(call: ToolCall) -> Any:
     return {"deleted": True, "draft_id": draft_id}
 
 
+def _update_target(call: ToolCall) -> tuple[UpdateDraftTarget, str]:
+    """The project or initiative a status update draft call names, refusing both or neither."""
+    project = call.optional("project_id")
+    initiative = call.optional("initiative_id")
+    if bool(project) == bool(initiative):
+        raise ToolError("Give exactly one of project_id and initiative_id")
+    if initiative:
+        return "initiative", initiative_id_ref(call, initiative)
+    return "project", project_id_ref(call, project)
+
+
+def _update_draft_json(draft: UpdateDraftRead) -> dict[str, Any]:
+    """One status update draft as the drafts routes answer it."""
+    return draft.model_dump(mode="json")
+
+
+def _set_update_draft(call: ToolCall) -> Any:
+    """Save the caller's status update draft on a project or initiative, replacing the one there."""
+    _workspace_member(call)
+    target_kind, target_id = _update_target(call)
+    try:
+        payload = UpdateDraftWrite.model_validate(
+            {"body": str(call.require("body")), "health": call.optional("health")}
+        )
+    except ValidationError as exc:
+        raise ToolError(validation_message(exc)) from exc
+    saved = save_update_draft(call.repositories, call.context, target_kind, target_id, payload)
+    return _update_draft_json(saved)
+
+
+def _get_update_draft(call: ToolCall) -> Any:
+    """The caller's status update draft on a project or initiative, or null when there is none."""
+    _workspace_member(call)
+    target_kind, target_id = _update_target(call)
+    found = find_update_draft(call.repositories, call.context, target_kind, target_id)
+    return {"draft": _update_draft_json(found) if found is not None else None}
+
+
+def _delete_update_draft(call: ToolCall) -> Any:
+    """Discard the caller's status update draft on a project or initiative, a no-op when there is none."""
+    _workspace_member(call)
+    target_kind, target_id = _update_target(call)
+    delete_update_draft(call.repositories, call.context, target_kind, target_id)
+    key = "project_id" if target_kind == "project" else "initiative_id"
+    return {"deleted": True, key: target_id}
+
+
 DRAFT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="set_comment_draft",
@@ -307,6 +365,49 @@ DRAFT_TOOLS: tuple[Tool, ...] = (
         scopes=("issues:write",),
         schema=object_schema({"draft_id": string(DRAFT_ID)}, required=("draft_id",)),
         handler=_delete_issue_draft,
+        destructive=True,
+        idempotent=True,
+    ),
+    Tool(
+        name="set_update_draft",
+        description=(
+            "Stage a status update as your draft on a project or an initiative, for a person to review and post. "
+            "Give exactly one of project_id and initiative_id. It is restored in the update composer when the "
+            "project or initiative is opened. One draft per project and per initiative: saving again replaces it. "
+            "Drafts are private and never notify anyone; posting the update clears it."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT),
+                "initiative_id": string(INITIATIVE),
+                "body": string("The draft body, in Markdown"),
+                "health": enum(HEALTHS, "The health the update would report; omit while undecided"),
+            },
+            required=("body",),
+        ),
+        handler=_set_update_draft,
+        idempotent=True,
+    ),
+    Tool(
+        name="get_update_draft",
+        description=(
+            "Your status update draft on a project or an initiative. Give exactly one of project_id and "
+            "initiative_id. Answers draft=null when there is none."
+        ),
+        scopes=("projects:read",),
+        schema=object_schema({"project_id": string(PROJECT), "initiative_id": string(INITIATIVE)}),
+        handler=_get_update_draft,
+    ),
+    Tool(
+        name="delete_update_draft",
+        description=(
+            "Discard your status update draft on a project or an initiative. Give exactly one of project_id and "
+            "initiative_id. A no-op when there is none."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema({"project_id": string(PROJECT), "initiative_id": string(INITIATIVE)}),
+        handler=_delete_update_draft,
         destructive=True,
         idempotent=True,
     ),

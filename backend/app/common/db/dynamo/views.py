@@ -327,6 +327,52 @@ class IssueDraft(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+UPDATE_DRAFT_PREFIX = "updatedraft#"
+"""The sort key prefix every status update draft shares, apart from the comment and new issue drafts."""
+
+UpdateDraftTarget = Literal["project", "initiative"]
+"""What a status update draft is written for, which is also the key segment naming it."""
+
+UpdateDraftHealth = Literal["on_track", "at_risk", "off_track"]
+"""The health a status update draft may carry, the same three a posted update takes."""
+
+UPDATE_DRAFT_TARGETS: tuple[str, ...] = get_args(UpdateDraftTarget)
+
+UPDATE_DRAFTS_MAX = 200
+"""The most status update drafts one listing reads, so it stays one bounded query."""
+
+
+def update_draft_user_prefix(user_id: str) -> str:
+    """The sort key prefix every status update draft of one member shares."""
+    return f"{UPDATE_DRAFT_PREFIX}{user_id}#"
+
+
+def update_draft_key(user_id: str, target_kind: str, target_id: str) -> str:
+    """The sort key of one member's status update draft on one project or initiative."""
+    return f"{update_draft_user_prefix(user_id)}{target_kind}#{target_id}"
+
+
+class UpdateDraft(BaseModel):
+    """One member's unposted status update on a project or an initiative, with the health they picked.
+
+    Stored beside the comment drafts for the same reasons: the table has no
+    stream, so saving never notifies, and the key starts with the author, so a
+    member reads only their own. The target is a kind and an id rather than a
+    column per kind, so a further kind of update is one more value of
+    `UpdateDraftTarget`. `health` is null until one is picked.
+    """
+
+    workspace_id: str
+    view_key: str
+    user_id: str
+    target_kind: UpdateDraftTarget
+    target_id: str
+    body: str
+    health: UpdateDraftHealth | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 LIST_FOLDS_PREFIX = "folds#"
 """The sort key prefix every member's remembered list folds share."""
 
@@ -771,6 +817,76 @@ class ViewRepository(DashboardRows):
             if item.get("team_id") == team_id:
                 self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
                 removed += 1
+        return removed
+
+    def get_update_draft(self, workspace_id: str, user_id: str, target_kind: str, target_id: str) -> UpdateDraft | None:
+        """One member's status update draft on one project or initiative, or `None`."""
+        if not workspace_id or not user_id or not target_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "view_key": update_draft_key(user_id, target_kind, target_id)}
+        )
+        return UpdateDraft.model_validate(dict(item)) if item is not None else None
+
+    def put_update_draft(self, draft: UpdateDraft) -> UpdateDraft:
+        """Store a status update draft, replacing the one already on its target."""
+        self._repository.put(as_item(draft))
+        return draft
+
+    def delete_update_draft(self, workspace_id: str, user_id: str, target_kind: str, target_id: str) -> None:
+        """Remove one member's status update draft on one target, a no-op when there is none."""
+        if not workspace_id or not user_id or not target_id:
+            return
+        self._repository.delete(
+            {"workspace_id": workspace_id, "view_key": update_draft_key(user_id, target_kind, target_id)}
+        )
+
+    def clear_update_draft_before(
+        self, workspace_id: str, user_id: str, target_kind: str, target_id: str, posted_at: datetime
+    ) -> bool:
+        """Remove a status update draft last saved no later than `posted_at`, reporting whether one went.
+
+        The update draft counterpart of `clear_draft_before`: the draft the
+        posted update came from goes, and one saved after it, or saved between
+        the read and the delete, stays.
+        """
+        if not workspace_id or not user_id or not target_id:
+            return False
+        key = {"workspace_id": workspace_id, "view_key": update_draft_key(user_id, target_kind, target_id)}
+        item = self._repository.get(key)
+        if item is None or UpdateDraft.model_validate(dict(item)).updated_at > posted_at:
+            return False
+        try:
+            self._repository.delete(key, condition=Attr("updated_at").eq(item["updated_at"]))
+        except ConditionFailed:
+            return False
+        return True
+
+    def list_update_drafts(
+        self, workspace_id: str, user_id: str, *, limit: int = UPDATE_DRAFTS_MAX
+    ) -> list[UpdateDraft]:
+        """One member's status update drafts, newest saved first."""
+        if not workspace_id or not user_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(update_draft_user_prefix(user_id)),
+            max_items=limit,
+        )
+        rows = [UpdateDraft.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: row.updated_at, reverse=True)
+
+    def delete_update_drafts_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every status update draft one member holds in a workspace, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        removed = 0
+        for item in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(update_draft_user_prefix(user_id))
+            )
+        ):
+            self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+            removed += 1
         return removed
 
     def subscribe(self, workspace_id: str, view: SavedView, user_id: str) -> ViewSubscription:

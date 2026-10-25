@@ -78,10 +78,17 @@ from app.common.db.dynamo.inbox import (
     notification_id,
 )
 from app.common.db.dynamo.notify_digests import DigestEntry
-from app.common.db.dynamo.planning import INITIATIVE, PROJECT, PROJECT_UPDATE, Initiative, Project
+from app.common.db.dynamo.planning import (
+    INITIATIVE,
+    INITIATIVE_UPDATE,
+    PROJECT,
+    PROJECT_UPDATE,
+    Initiative,
+    Project,
+)
 from app.common.db.dynamo.update_threads import INITIATIVE_UPDATE_COMMENT, PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
-from app.common.db.dynamo.views import SavedView
+from app.common.db.dynamo.views import SavedView, UpdateDraftTarget
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.notification_pause import bypasses_hold, held_until
@@ -89,6 +96,7 @@ from app.common.project_update_report import report_for_item
 from app.common.team_privacy import person_can_see_initiative, person_can_see_team
 from app.common.trash_stream import touches_trash
 from app.common.triage_duty import duty_notified
+from app.common.update_drafts import clear_posted_update_draft
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
 from app.domains.views.consumers.document_comments import handle_document_comment
@@ -1432,6 +1440,35 @@ def clear_comment_draft(repositories: Repositories, record: Mapping[str, Any]) -
     )
 
 
+def clear_update_draft(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Clear the author's status update draft on the project or initiative a new update was posted to.
+
+    The status update counterpart of `clear_comment_draft`, done here because
+    the planning image may not write the table drafts live in, and this covers
+    every client that posts. A draft saved after the update was posted is kept.
+    A bulk import clears nothing.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+        return False
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image:
+        return False
+    kind = _text(new_image, "kind")
+    target_kind: UpdateDraftTarget
+    if kind == PROJECT_UPDATE:
+        target_kind, target_id = "project", _text(new_image, "project_id")
+    elif kind == INITIATIVE_UPDATE:
+        target_kind, target_id = "initiative", _text(new_image, "initiative_id")
+    else:
+        return False
+    workspace_id = _text(new_image, "workspace_id")
+    author_id = _text(new_image, "author_id")
+    posted_at = _stamped_at({"created_at": new_image.get("created_at")})
+    if not workspace_id or not target_id or not author_id or posted_at is None:
+        return False
+    return clear_posted_update_draft(repositories, workspace_id, author_id, target_kind, target_id, posted_at)
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
@@ -1482,6 +1519,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_subscription_record(repositories, record)
     elif physical == table_name("planning", prefix):
         written = handle_planning_record(repositories, record)
+        clear_update_draft(repositories, record)
     elif physical == table_name("reactions", prefix):
         written = handle_reaction_record(repositories, record)
     elif physical == table_name("relations", prefix):

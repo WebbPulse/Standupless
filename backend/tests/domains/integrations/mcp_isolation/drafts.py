@@ -1,11 +1,12 @@
-"""Isolation arguments for the comment and new issue draft MCP tools.
+"""Isolation arguments for the comment, new issue and status update draft MCP tools.
 
 Drafts are keyed by the credential's own user in the key's own workspace, so
 listing every draft answers from home, and reading or discarding the owner's
 own draft in the other workspace answers null or a no-op from home rather than
 a refusal. Saving, reading or discarding a foreign issue's comment draft
 refuses, because the issue never resolves, and saving a new issue draft on a
-foreign team refuses, because the team never resolves.
+foreign team refuses, because the team never resolves. Every status update
+draft tool refuses a foreign project or initiative, which never resolves either.
 """
 
 from __future__ import annotations
@@ -52,4 +53,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "get_issue_draft": {"draft_id": foreign["issue_draft_id"]},
         "list_issue_drafts": {},
         "delete_issue_draft": {"draft_id": foreign["issue_draft_id"]},
+        "set_update_draft": {"project_id": foreign["project_id"], "body": "Staged"},
+        "get_update_draft": {"initiative_id": foreign["initiative_id"]},
+        "delete_update_draft": {"project_id": foreign["project_id"]},
     }
