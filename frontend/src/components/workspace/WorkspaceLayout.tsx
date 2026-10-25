@@ -112,6 +112,13 @@ const presetOf = (request: Request): CreateIssuePreset => ({
   ...(request.templateId === undefined
     ? {}
     : { templateId: request.templateId }),
+  ...(request.title === undefined ? {} : { title: request.title }),
+  ...(request.description === undefined
+    ? {}
+    : { description: request.description }),
+  ...(request.relatedIssueId === undefined
+    ? {}
+    : { relatedIssueId: request.relatedIssueId }),
 });
 
 /**

@@ -59,7 +59,15 @@ export const shouldShowToolbar = (
 export interface FormatContext {
   /** Opens the surface's link field at the selection. */
   openLink: () => void;
+  /**
+   * Files an issue from the selection. Unset when the surface or the person
+   * cannot, which leaves the button out.
+   */
+  createIssue?: () => void;
 }
+
+/** The name and tooltip of the button that files an issue from the selection. */
+export const CREATE_ISSUE_LABEL = 'Create issue from selection';
 
 /** One toolbar button. */
 export interface FormatAction {

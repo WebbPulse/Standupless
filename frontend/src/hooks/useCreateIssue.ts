@@ -12,7 +12,9 @@
  * the request, exposed as {@link CreateIssueState.request}, and handed to the
  * dialog as its starting draft. A team change in the dialog drops them, since
  * each is scoped to the team it was chosen in. `templateId` names the template
- * the draft starts from in place of the team's default.
+ * the draft starts from in place of the team's default. `title` and
+ * `description` start the draft on text, such as a selection, and
+ * `relatedIssueId` relates the new issue to the one the text came from.
  *
  * {@link CreateIssueState.hasDraft} says whether the viewer has a draft saved
  * in this workspace, so the new issue button can show that pressing it brings
@@ -37,6 +39,12 @@ export interface CreateIssueOptions {
   parentKey?: string;
   /** A template the draft starts from, in place of the team's default. */
   templateId?: string;
+  /** The title the draft starts with, such as a selected line of text. */
+  title?: string;
+  /** The description Markdown the draft starts with, beside `title`. */
+  description?: string;
+  /** An issue the new one is filed as related to. */
+  relatedIssueId?: string;
   /** Called with the new issue after the dialog closes on success. */
   onCreated?: (issue: IssueRead) => void;
 }
