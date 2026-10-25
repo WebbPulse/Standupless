@@ -23,7 +23,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import SubscribersRead
 from app.common.comment_writes import conflict
-from app.common.db.dynamo.comments import Comment, ThreadResolution, as_comment, build_comment
+from app.common.db.dynamo.comments import Comment, CommentAnchor, ThreadResolution, as_comment, build_comment
 from app.common.db.dynamo.documents import Document
 from app.common.documents import Parent, Rights, load_readable_document
 from app.common.issue_subscribers import ME, render_subscribers
@@ -82,15 +82,19 @@ def create_document_comment(
     body: str,
     *,
     parent_comment_id: Optional[str] = None,
+    anchor: Optional[CommentAnchor] = None,
 ) -> Comment:
     """Add a comment to a document, subscribing its author and everyone it mentions.
 
     A reply hangs off a root only, as on an issue, and a reply to a resolved
     thread reopens it. The inbox rows are written by the notify consumer off the
-    table's stream, so the request does no notification work.
+    table's stream, so the request does no notification work. `anchor` pins a new
+    thread to a passage of the document's body, so a reply carrying one is a 422.
     """
     if not body.strip():
         raise unprocessable("body must not be empty")
+    if anchor is not None and parent_comment_id:
+        raise unprocessable("A reply cannot be pinned to a passage")
     _, document = require_document_commenter(repositories, context, document_id)
     parent: Optional[Comment] = None
     if parent_comment_id:
@@ -111,6 +115,7 @@ def create_document_comment(
         mentions=mentions,
         source=context.source,
         document_id=document.document_id,
+        anchor=anchor,
     )
     try:
         created = repositories.comments.create(comment)

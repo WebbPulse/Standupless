@@ -887,6 +887,7 @@ class DisplayOptionsBody(TypedDict):
 
 
 class DocumentCommentCreate(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     body: str
     parent_comment_id: NotRequired[str | None]
 

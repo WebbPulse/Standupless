@@ -2,7 +2,9 @@
  * One document's page and its keys. Covers that R focuses and selects the
  * title for a person who may edit it and stands down for one who may not or
  * while the body is being typed in, and that Cmd or Ctrl+Shift+Comma copies
- * the document's address, as Linear binds them.
+ * the document's address, as Linear binds them, and that Cmd or Ctrl+Alt+M,
+ * which comments on a selected passage, is bound for a person who may comment
+ * and not for one who may not.
  */
 
 import { act, render, screen } from '@testing-library/react';
@@ -258,5 +260,21 @@ describe('DocumentDetail keyboard', () => {
     expect(writeText).toHaveBeenCalledWith(
       `${globalThis.location.origin}${documentPath('mine', 'doc-1')}`
     );
+  });
+
+  it('binds Cmd or Ctrl+Alt+M to comment on a passage', async () => {
+    renderWithKeys();
+    await screen.findByRole('textbox', { name: 'Document' }, { timeout: 5000 });
+
+    await keysBound('mod+alt+m');
+  });
+
+  it('does not bind passage comments when the document cannot be edited', async () => {
+    getDocument.mockResolvedValue({ ...spec, can_edit: false });
+    renderWithKeys();
+    await screen.findByRole('textbox', { name: 'Document' }, { timeout: 5000 });
+    await keysBound('mod+shift+,');
+
+    expect(boundKeys()).not.toContain('mod+alt+m');
   });
 });

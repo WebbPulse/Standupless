@@ -2763,7 +2763,7 @@
         "type": "object"
       },
       "CommentAnchor": {
-        "description": "The passage of the issue description a root comment is pinned to.\n\nThe quoted text plus a little of the text either side, which is what finds the\npassage again among repeats of it. Never written into the description, so an\nedit that removes the passage leaves the quote here and the reader shows it as\nchanged.",
+        "description": "The passage of the issue description, or of the document, a root comment is pinned to.\n\nThe quoted text plus a little of the text either side, which is what finds the\npassage again among repeats of it. Never written into the text, so an\nedit that removes the passage leaves the quote here and the reader shows it as\nchanged.",
         "properties": {
           "prefix": {
             "default": "",
@@ -5715,8 +5715,18 @@
         "type": "object"
       },
       "DocumentCommentCreate": {
-        "description": "The body a comment on a document takes: text, and the root it replies to if any.",
+        "description": "The body a comment on a document takes: text, the root it replies to if any, and its passage.\n\n`anchor` pins a new thread to a passage of the document's body, held to the\nsame caps as an issue comment's, so a reply cannot carry one.",
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "body": {
             "minLength": 1,
             "title": "Body",
@@ -40093,7 +40103,7 @@
         ]
       },
       "post": {
-        "description": "Add a comment or a reply to a document, subscribing the author and everyone it mentions.",
+        "description": "Add a comment or a reply to a document, subscribing the author and everyone it mentions.\n\nA new thread may be pinned to a passage of the document through `anchor`.",
         "operationId": "post_document_comment_api_workspaces__workspace_id__documents__document_id__comments_post",
         "parameters": [
           {

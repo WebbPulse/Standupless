@@ -1,6 +1,6 @@
 /**
- * Starts a comment thread pinned to a passage of the issue description. It
- * opens under the description once the Comment button over a selection is
+ * Starts a comment thread pinned to a passage of the issue description, or
+ * of a document when given one. It opens under the text once the Comment button over a selection is
  * pressed, shows the passage it will be pinned to, and closes when the thread
  * posts or is cancelled. It keeps no draft, since the passage is only in hand
  * while it is open.
@@ -21,9 +21,11 @@ export interface PassageComposerProps {
   /** Called with the thread once it posted. */
   onPosted: (comment: CommentRead) => void;
   onCancel: () => void;
+  /** The document the thread goes on, in place of the issue `issueId` names. */
+  documentId?: string;
 }
 
-/** A compact composer for a new thread on one passage of the description. */
+/** A compact composer for a new thread on one passage of the description or document. */
 export const PassageComposer: React.FC<PassageComposerProps> = ({
   workspaceId,
   issueId,
@@ -31,6 +33,7 @@ export const PassageComposer: React.FC<PassageComposerProps> = ({
   anchor,
   onPosted,
   onCancel,
+  documentId,
 }) => (
   <div
     role="group"
@@ -45,6 +48,7 @@ export const PassageComposer: React.FC<PassageComposerProps> = ({
       issueId={issueId}
       people={people}
       anchor={anchor}
+      {...(documentId === undefined ? {} : { documentId })}
       placeholder="Comment on this passage..."
       autoFocus
       compact
