@@ -370,7 +370,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_dashboard",
         "delete_dashboard",
     }
-    assert len(TOOLS) == 251
+    assert len(TOOLS) == 256
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
