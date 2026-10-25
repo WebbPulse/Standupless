@@ -10,6 +10,7 @@ import {
   createSubIssues,
   parentOfIssue,
   subIssueBody,
+  subIssueDialogPresets,
   type ResolvedSubIssueParent,
 } from './subIssueCreation';
 import { clearToasts } from './toast';
@@ -85,6 +86,44 @@ describe('subIssueBody', () => {
     expect(
       subIssueBody(parentOfIssue(issue), { title: 'A' })
     ).not.toHaveProperty('label_ids');
+  });
+});
+
+describe('subIssueDialogPresets', () => {
+  it("presets the parent's team, key, priority and project", () => {
+    expect(subIssueDialogPresets(parent)).toEqual({
+      teamId: 'team-1',
+      parentId: 'p-1',
+      parentKey: 'ENG-1',
+      priority: 'high',
+      projectId: 'proj-1',
+    });
+  });
+
+  it('leaves out a priority of none and a missing project', () => {
+    expect(
+      subIssueDialogPresets({ ...parent, priority: 'none', projectId: null })
+    ).toEqual({ teamId: 'team-1', parentId: 'p-1', parentKey: 'ENG-1' });
+  });
+
+  it('reads the presets from an issue row, never its labels', () => {
+    const presets = subIssueDialogPresets(
+      parentOfIssue({
+        id: 'p-2',
+        key: 'ENG-2',
+        team_id: 'team-2',
+        priority: 'urgent',
+        project_id: 'proj-2',
+      })
+    );
+    expect(presets).toEqual({
+      teamId: 'team-2',
+      parentId: 'p-2',
+      parentKey: 'ENG-2',
+      priority: 'urgent',
+      projectId: 'proj-2',
+    });
+    expect(presets).not.toHaveProperty('labelIds');
   });
 });
 

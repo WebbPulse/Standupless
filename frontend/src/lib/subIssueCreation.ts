@@ -8,6 +8,7 @@
 
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { createIssue, getIssue } from '../api/issues';
+import type { CreateIssueOptions } from '../hooks/useCreateIssue';
 import type { IssueCreate, IssuePriority, IssueRead } from '../types/Api';
 import { errorMessage } from './errors';
 import { activityKey, childrenKey } from './queryKeys';
@@ -70,6 +71,23 @@ export const resolveSubIssueParent = async (
   }
   return parentOfIssue(await getIssue(workspaceId, parent.id));
 };
+
+/**
+ * The create dialog presets for one child: the parent's team, key, priority
+ * and project, never its labels.
+ */
+export const subIssueDialogPresets = (
+  parent: ResolvedSubIssueParent
+): Pick<
+  CreateIssueOptions,
+  'teamId' | 'parentId' | 'parentKey' | 'priority' | 'projectId'
+> => ({
+  teamId: parent.teamId,
+  parentId: parent.id,
+  parentKey: parent.key,
+  ...(parent.priority === 'none' ? {} : { priority: parent.priority }),
+  ...(parent.projectId === null ? {} : { projectId: parent.projectId }),
+});
 
 /**
  * The create body for one child: the parent's team, priority and project, the
