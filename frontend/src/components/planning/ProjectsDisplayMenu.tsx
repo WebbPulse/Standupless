@@ -381,7 +381,12 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>
         <div className="flex flex-wrap gap-1.5">
-          {PROJECT_COLUMN_CHIPS.map((column) => {
+          {PROJECT_COLUMN_CHIPS.filter(
+            (column) =>
+              customerOrdering ||
+              column !== 'important' ||
+              columns.includes(column)
+          ).map((column) => {
             const on = columns.includes(column);
             return (
               <button
