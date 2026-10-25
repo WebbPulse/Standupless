@@ -315,7 +315,8 @@ def _insufficient_scope(
     credential is attributed to MCP and an OAuth token cannot be told from an API key:
     an OAuth client is told to authorize again for the scope, which adds it to the
     existing grant and keeps what the grant already held, and an API key is pointed
-    at the API keys page, since a key's scopes are fixed when it is created. The body is the one a REST route refuses with.
+    at the API keys page, since a key's scopes are fixed when it is created. The body
+    is the one a REST route refuses with.
     """
     detail = insufficient_scope_detail(context, missing, repositories)
     message = str(detail.pop("message"))
