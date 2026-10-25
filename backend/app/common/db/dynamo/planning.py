@@ -25,6 +25,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 from app.common.bulk_import import IMPORT_BATCH_ATTRIBUTE
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import PLANNING
+from app.common.db.dynamo.update_threads import UpdateThreadStore
 
 TARGET_DATE_INDEX = "ws_team-target_date-index"
 
@@ -1177,6 +1178,7 @@ class PlanningRepository:
     def __init__(self, repository: Repository | None = None) -> None:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(PLANNING, repository)
+        self.update_threads = UpdateThreadStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""

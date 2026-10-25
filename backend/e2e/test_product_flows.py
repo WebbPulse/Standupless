@@ -981,6 +981,24 @@ class TestPlanningDomain:
             assert edited.status_code == 200, edited.text[:400]
             assert edited.json()["edited_at"] is not None
 
+            replies_path = f"{update_path}/comments"
+            reply = api.post(replies_path, json={"body": run_scope.name("reply")})
+            assert reply.status_code == 201, reply.text[:400]
+            reply_path = f"{replies_path}/{reply.json()['comment_id']}"
+            assert api.patch(reply_path, json={"body": run_scope.name("reply-edited")}).status_code == 200
+            thread = api.get(replies_path)
+            assert thread.status_code == 200, thread.text[:400]
+            assert [row["comment_id"] for row in thread.json()["comments"]] == [reply.json()["comment_id"]]
+
+            reactions_path = f"{update_path}/reactions"
+            reacted = api.put(reactions_path, json={"emoji": "👍"})
+            assert reacted.status_code == 200, reacted.text[:400]
+            assert reacted.json()["reacted"] is True
+            unreacted = api.delete(reactions_path, params={"emoji": "👍"})
+            assert unreacted.status_code in (200, 204), unreacted.text[:400]
+            dropped = api.delete(reply_path)
+            assert dropped.status_code in (200, 204), dropped.text[:400]
+
             removed = api.delete(update_path)
             assert removed.status_code in (200, 204), removed.text[:400]
             assert api.get(updates_path).json()["updates"] == []

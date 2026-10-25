@@ -32,6 +32,7 @@ from app.common.db.dynamo.planning import (
     RollupCounts,
     normalise_project_status,
 )
+from app.common.discussion_reads import ReactionGroupRead
 from app.common.project_cadence import (
     DEFAULT_INTERVAL_DAYS,
     UpdateDueState,
@@ -982,7 +983,9 @@ class ProjectUpdateRead(BaseModel):
 
     `can_edit` says whether this caller may edit or delete it, which is its
     author, a workspace admin or an admin of one of the project's teams, so a
-    client draws the menu without repeating the rule.
+    client draws the menu without repeating the rule. `reactions` and
+    `comment_count` summarise the update's thread so the feed draws the reaction
+    bar and the replies toggle without a read per card.
     """
 
     update_id: str
@@ -996,10 +999,19 @@ class ProjectUpdateRead(BaseModel):
     updated_at: datetime
     edited_at: Optional[datetime] = None
     can_edit: bool = False
+    reactions: list[ReactionGroupRead] = Field(default_factory=list)
+    comment_count: int = 0
 
     @classmethod
-    def from_row(cls, update: ProjectUpdateRow, *, can_edit: bool) -> "ProjectUpdateRead":
-        """Build the response shape from a stored update row."""
+    def from_row(
+        cls,
+        update: ProjectUpdateRow,
+        *,
+        can_edit: bool,
+        reactions: Optional[list[ReactionGroupRead]] = None,
+        comment_count: int = 0,
+    ) -> "ProjectUpdateRead":
+        """Build the response shape from a stored update row and its thread summary."""
         return cls(
             update_id=update.update_id,
             project_id=update.project_id,
@@ -1012,6 +1024,8 @@ class ProjectUpdateRead(BaseModel):
             updated_at=update.updated_at,
             edited_at=update.edited_at,
             can_edit=can_edit,
+            reactions=reactions or [],
+            comment_count=comment_count,
         )
 
 

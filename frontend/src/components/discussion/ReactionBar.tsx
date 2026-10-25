@@ -7,32 +7,27 @@
  * them, because `Issue` is the M2 shape and M3 does not extend it, so the
  * issue page omits the prop and this reads the reactions route itself.
  *
+ * The row itself is `ReactionGroups`, shared with project update threads.
+ *
  * A comment is partitioned by its issue, so a comment target carries `issueId`
  * on every read and write; the API answers 404 without it.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { LuSmilePlus } from 'react-icons/lu';
 import {
   addReaction,
   listReactions,
   removeReaction,
 } from '../../api/discussion';
-import { cn } from '../../lib/cn';
-import { errorMessage } from '../../lib/errors';
 import { reactionsKey } from '../../lib/queryKeys';
-import { normalizeReaction, reactionLabel } from '../../lib/reactions';
 import type { QueryKey } from '@webbpulse/api-client/react';
 import type { ReactionGroup, ReactionTarget } from '../../types/Api';
-import { ErrorAlert } from '../ui/alert';
-import { IconButton } from '../ui/button';
-import Popover from '../ui/popover';
-import EmojiPicker from './EmojiPicker';
+import ReactionGroups from './ReactionGroups';
 
 /** Props for ReactionBar: the target, its groups and what to refetch after. */
 export interface ReactionBarProps {
@@ -64,7 +59,6 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
   canReact,
   refetchKey,
 }) => {
-  const [picking, setPicking] = useState(false);
   const auth = useQueryAuth();
   const isSelfRead = reactions === undefined;
   const ownKey = reactionsKey(targetKind, targetId);
@@ -100,73 +94,13 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
     invalidates
   );
 
-  const groups = shown.filter((group) => group.count > 0);
-  const held = new Set(
-    groups
-      .filter((group) => group.reacted)
-      .map((group) => normalizeReaction(group.emoji))
-  );
-
   return (
-    <div className="space-y-1">
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not change that reaction.')}
-        />
-      )}
-
-      <div className="flex flex-wrap items-center gap-1">
-        {groups.map((group) => (
-          <button
-            key={group.emoji}
-            type="button"
-            disabled={!canReact}
-            aria-pressed={group.reacted}
-            aria-label={reactionLabel(group.emoji, group.count)}
-            className={cn(
-              'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs transition-colors duration-100 select-none disabled:cursor-not-allowed disabled:opacity-50',
-              group.reacted
-                ? 'border-accent bg-accent-soft text-accent'
-                : 'border-line bg-bg text-text-muted hover:bg-raised hover:text-text'
-            )}
-            onClick={() => {
-              void toggle(group.emoji, group.reacted).catch(() => undefined);
-            }}
-          >
-            <span aria-hidden="true">{group.emoji}</span>
-            <span>{group.count}</span>
-          </button>
-        ))}
-
-        {canReact && (
-          <Popover
-            label="Choose a reaction"
-            open={picking}
-            onOpenChange={setPicking}
-            trigger={(props) => (
-              <IconButton
-                label="Add a reaction"
-                size="sm"
-                className="rounded-full"
-                {...props}
-              >
-                <LuSmilePlus className="h-3.5 w-3.5" />
-              </IconButton>
-            )}
-          >
-            <EmojiPicker
-              held={held}
-              onPick={(emoji) => {
-                setPicking(false);
-                void toggle(emoji, held.has(normalizeReaction(emoji))).catch(
-                  () => undefined
-                );
-              }}
-            />
-          </Popover>
-        )}
-      </div>
-    </div>
+    <ReactionGroups
+      reactions={shown}
+      canReact={canReact}
+      onToggle={toggle}
+      error={error}
+    />
   );
 };
 

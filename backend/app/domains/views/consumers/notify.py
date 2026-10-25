@@ -2,12 +2,14 @@
 
 It reads four streams on one route, the `issues` table's, the `comments` table's,
 the `subscriptions` table's, filtered to inserted rows one member made for
-another, and the `planning` table's, filtered to inserted project updates, and
-tells them apart by `eventSourceARN` rather than by guessing from the attributes present,
+another, and the `planning` table's, filtered to inserted project updates and
+replies on them, and tells them apart by `eventSourceARN` rather than by guessing from the attributes present,
 because a filtered record carries no marker of its own.
 
 A project has no subscriptions of its own, so a project update reaches the
-project's lead and members, never its author.
+project's lead and members, never its author. A reply on an update reaches the
+update's author, everyone who replied before and anyone it mentions, in the inbox
+only.
 
 Who hears about an issue is its subscribers, as in Linear: a comment or a status
 change reaches everyone following the issue except the person who made it, while
@@ -48,9 +50,16 @@ from app.common.bulk_import import from_bulk_import
 from app.common.comment_drafts import clear_posted_draft
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
-from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition, notification_id
+from app.common.db.dynamo.inbox import (
+    PROJECT_UPDATE_REPLIED,
+    Notification,
+    expires_at,
+    inbox_partition,
+    notification_id,
+)
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
+from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
 from app.common.issue_keys import display_key
 from app.common.team_privacy import person_can_see_team
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
@@ -641,16 +650,107 @@ def write_project_update_notification(
     return True
 
 
+def write_update_reply_notification(
+    repositories: Repositories,
+    *,
+    project: Project,
+    recipient_id: str,
+    update_id: str,
+    comment_id: str,
+    actor_id: str,
+    actor_display: str,
+    created_at: datetime | None,
+    source: str | None = None,
+) -> bool:
+    """Write one inbox row for a reply on a project update, in the inbox only.
+
+    The recipient must still see one of the project's teams, as for the update
+    itself. A reply is never mailed or posted to chat: it is a conversation the
+    inbox folds under its project, not news worth a message of its own.
+    """
+    if not recipient_id or recipient_id == actor_id:
+        return False
+    team_id = receiving_team(repositories, project, recipient_id)
+    if not team_id:
+        return False
+    recipient = repositories.users.get(recipient_id)
+    if recipient is not None and not recipient.wants_notification(PROJECT_UPDATE_REPLIED, "in_app"):
+        return False
+    stamped = created_at if created_at is not None else datetime.now(timezone.utc)
+    row = Notification(
+        ws_user=inbox_partition(project.workspace_id, recipient_id),
+        notification_id=notification_id(created_at, PROJECT_UPDATE_REPLIED, recipient_id, comment_id),
+        workspace_id=project.workspace_id,
+        kind=PROJECT_UPDATE_REPLIED,
+        team_id=team_id,
+        comment_id=comment_id,
+        project_id=project.project_id,
+        project_name=project.name,
+        project_update_id=update_id,
+        actor_id=actor_id,
+        actor_name=actor_display,
+        source=source,
+        recipient_id=recipient_id,
+        created_at=stamped,
+        unread_at=stamped.isoformat(),
+        expires_at=expires_at(stamped),
+    )
+    return repositories.inbox.create(row)
+
+
+def handle_update_reply(repositories: Repositories, new_image: Mapping[str, Any]) -> int:
+    """Notify from one new reply on a project update, answering how many rows were written."""
+    workspace_id = _text(new_image, "workspace_id")
+    project_id = _text(new_image, "project_id")
+    update_id = _text(new_image, "update_id")
+    comment_id = _text(new_image, "comment_id")
+    if not workspace_id or not project_id or not update_id or not comment_id:
+        return 0
+    project = repositories.planning.get_project(workspace_id, project_id)
+    update = repositories.planning.get_project_update(workspace_id, project_id, update_id)
+    if project is None or update is None:
+        return 0
+
+    actor_id = _text(new_image, "author_id")
+    thread = repositories.planning.update_threads.read(workspace_id, project_id, update_id)
+    mentions = [str(user_id) for user_id in new_image.get("mentions") or [] if user_id]
+    audience = dict.fromkeys([update.author_id, *(comment.author_id for comment in thread.comments), *mentions])
+    display = actor_name(repositories, actor_id)
+    created_at = _stamped_at(new_image)
+    written = 0
+    for recipient_id in cap_recipients(
+        [user_id for user_id in audience if user_id and user_id != actor_id],
+        workspace_id=workspace_id,
+        source=f"project_update_comment#{comment_id}",
+    ):
+        written += int(
+            write_update_reply_notification(
+                repositories,
+                project=project,
+                recipient_id=recipient_id,
+                update_id=update_id,
+                comment_id=comment_id,
+                actor_id=actor_id,
+                actor_display=display,
+                created_at=created_at,
+                source=_text(new_image, "source") or None,
+            )
+        )
+    return written
+
+
 def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
     """Notify from one `planning` record, answering how many rows were written.
 
-    Only a newly posted project update is news. It reaches the project's lead and
-    members, each once, except its author; an edit or a delete notifies nobody,
-    and neither does an update a bulk import wrote.
+    Only a newly posted project update or reply is news. An update reaches the
+    project's lead and members, each once, except its author; an edit or a delete
+    notifies nobody, and neither does a row a bulk import wrote.
     """
     if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
         return 0
     new_image = deserialize_image(record, "NewImage")
+    if new_image and _text(new_image, "kind") == PROJECT_UPDATE_COMMENT:
+        return handle_update_reply(repositories, new_image)
     if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:
         return 0
 

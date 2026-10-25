@@ -24,6 +24,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'status_changed',
   'subscribed',
   'project_update',
+  'project_update_comment',
   'project_update_due',
   'initiative_update_due',
   'due_soon',

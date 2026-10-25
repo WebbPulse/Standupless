@@ -1817,6 +1817,7 @@ export type NotificationKind =
   | 'status_changed'
   | 'subscribed'
   | 'project_update'
+  | 'project_update_comment'
   | 'project_update_due'
   | 'initiative_update_due'
   | 'due_soon'
@@ -2614,9 +2615,46 @@ export interface StatusUpdateRead {
   source?: ChangeSource | null;
 }
 
-/** One written update on a project. */
+/**
+ * One written update on a project. `reactions` and `comment_count` summarise
+ * its thread, so the feed shows the reaction bar and reply toggle without a
+ * read per card.
+ */
 export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
+  reactions?: ReactionGroup[];
+  comment_count?: number;
+}
+
+/**
+ * One reply on a project update. `can_edit` says whether the caller may edit
+ * or delete it: its author, a workspace admin or an admin of a project team.
+ */
+export interface ProjectUpdateCommentRead {
+  comment_id: string;
+  update_id: string;
+  project_id: string;
+  workspace_id: string;
+  body: string;
+  author_id: string;
+  author: AuthorRead;
+  mentions: string[];
+  reactions: ReactionGroup[];
+  source?: ChangeSource | null;
+  created_at: string;
+  edited_at: string | null;
+  can_edit: boolean;
+}
+
+/** An update's whole thread, oldest reply first. */
+export interface ProjectUpdateCommentListRead {
+  comments: ProjectUpdateCommentRead[];
+}
+
+/** A reaction on a project update, or on one of its replies when `comment_id` is set. */
+export interface ProjectUpdateReactionWrite {
+  emoji: string;
+  comment_id?: string;
 }
 
 /** One page of a project's updates, newest first. */

@@ -1687,6 +1687,14 @@ class ProjectUpdate(TypedDict):
     update_interval_days: NotRequired[int | None]
 
 
+class ProjectUpdateCommentCreate(TypedDict):
+    body: str
+
+
+class ProjectUpdateCommentPatch(TypedDict):
+    body: str
+
+
 class ProjectUpdateCreate(TypedDict):
     body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
@@ -1698,18 +1706,9 @@ class ProjectUpdatePatch(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
 
 
-class ProjectUpdateRead(TypedDict):
-    author_id: str
-    body: str
-    can_edit: NotRequired[bool]
-    created_at: str
-    edited_at: NotRequired[str | None]
-    health: Literal["on_track", "at_risk", "off_track"]
-    project_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
-    update_id: str
-    updated_at: str
-    workspace_id: str
+class ProjectUpdateReactionWrite(TypedDict):
+    comment_id: NotRequired[str | None]
+    emoji: str
 
 
 class ProjectsDisplay(TypedDict):
@@ -2806,6 +2805,7 @@ class UserPreferencesUpdate(TypedDict):
                 "status_changed",
                 "subscribed",
                 "project_update",
+                "project_update_comment",
                 "project_update_due",
                 "initiative_update_due",
                 "due_soon",
@@ -3555,12 +3555,6 @@ class HomePullRequestItem(TypedDict):
     pull_request: PullRequestSummaryEntryRead
 
 
-class HomePulseItem(TypedDict):
-    project_id: str
-    project_name: str
-    update: ProjectUpdateRead
-
-
 class HomeShippedItem(TypedDict):
     completed_at: str
     completed_by: NotRequired[str | None]
@@ -3899,9 +3893,36 @@ class ProjectRelationListRead(TypedDict):
     relations: list[ProjectRelationRead]
 
 
-class ProjectUpdateListRead(TypedDict):
-    next_cursor: NotRequired[str | None]
-    updates: list[ProjectUpdateRead]
+class ProjectUpdateCommentRead(TypedDict):
+    author: AuthorRead
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    comment_id: str
+    created_at: str
+    edited_at: NotRequired[str | None]
+    mentions: NotRequired[list[str]]
+    project_id: str
+    reactions: NotRequired[list[ReactionGroupRead]]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    update_id: str
+    workspace_id: str
+
+
+class ProjectUpdateRead(TypedDict):
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    comment_count: NotRequired[int]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    health: Literal["on_track", "at_risk", "off_track"]
+    project_id: str
+    reactions: NotRequired[list[ReactionGroupRead]]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    update_id: str
+    updated_at: str
+    workspace_id: str
 
 
 class RecurringListRead(TypedDict):
@@ -4188,6 +4209,12 @@ class FavoriteListRead(TypedDict):
     folders: NotRequired[list[FavoriteFolderRead]]
 
 
+class HomePulseItem(TypedDict):
+    project_id: str
+    project_name: str
+    update: ProjectUpdateRead
+
+
 class HomeRead(TypedDict):
     cycles: NotRequired[list[CycleRead]]
     focus: HomeFocusRead
@@ -4239,6 +4266,15 @@ class MemberActivityListRead(TypedDict):
 class ProjectListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     projects: list[ProjectRead]
+
+
+class ProjectUpdateCommentListRead(TypedDict):
+    comments: list[ProjectUpdateCommentRead]
+
+
+class ProjectUpdateListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    updates: list[ProjectUpdateRead]
 
 
 class ReleaseListRead(TypedDict):
