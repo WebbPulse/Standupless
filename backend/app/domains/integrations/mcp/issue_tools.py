@@ -103,7 +103,8 @@ SORT_HELP = (
     "and issues without a running SLA last; status_asc follows the board's status order, "
     "start_asc the earliest start date and estimate_desc the largest estimate; "
     "customer_requests_desc puts the most customer requests first, customer_important_desc the most "
-    "important ones and customer_revenue_desc the highest summed revenue of the customers asking; completed_desc puts the latest completed_at "
+    "important ones and customer_revenue_desc the highest summed revenue of the customers asking; "
+    "completed_desc puts the latest completed_at "
     "first and issues not completed last"
 )
 
