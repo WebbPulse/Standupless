@@ -51,7 +51,7 @@ import {
   PriorityCell,
   StatusCell,
 } from './IssueProperties';
-import { useIssueViewEnv } from './IssueViewContext';
+import { useIssueViewEnv, useRowFocus } from './IssueViewContext';
 import { ArchivedMarker, GroupFigure, GroupGlyph } from './ListRows';
 import { CardParentRef } from './SubIssueCues';
 import {
@@ -126,9 +126,8 @@ const BoardCard: React.FC<BoardCardProps> = ({
   const env = useIssueViewEnv();
   const shows = (property: (typeof env.state.visible)[number]): boolean =>
     env.state.visible.includes(property);
-  const isFocused = env.focusedId === issue.id;
+  const { focused: isFocused, peeked: isPeeked } = useRowFocus(issue);
   const isSelected = env.selected.has(issue.id);
-  const isPeeked = env.peekedKey === issue.key;
   const prefetch = useIssuePrefetch(issue.key, isFocused);
   const parent = env.parentOf?.(issue) ?? parentRefOf(issue);
   const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
