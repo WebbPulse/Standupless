@@ -47,7 +47,7 @@ import {
   takeLegacyFolds,
   useListFolds,
 } from '../../../hooks/useListFolds';
-import { useShortcut } from '../../../hooks/useShortcuts';
+import { displayKeys, useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { useOffline } from '../../../hooks/useOffline';
 import { isFeatureOn } from '../../../lib/features';
@@ -136,6 +136,13 @@ export interface ViewDetails {
   /** True for a view everyone at its location sees, false for the caller's own. */
   shared: boolean;
 }
+
+/** The keys that save the list or board in view as a new view, Option or Alt+V as in Linear. */
+export const SAVE_VIEW_KEYS = 'alt+v';
+
+/** The Save as view button's tooltip, naming its key. */
+export const saveViewTitle = (): string =>
+  `Save as view (${displayKeys(SAVE_VIEW_KEYS)[0] ?? ''})`;
 
 /** Props for SaveViewDialog. */
 export interface SaveViewDialogProps {
@@ -823,7 +830,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   };
 
   useShortcut({
-    keys: 'shift+v',
+    keys: SAVE_VIEW_KEYS,
     label: 'Save as view',
     scope: 'page',
     group: 'View',
@@ -848,6 +855,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         size="sm"
         variant="ghost"
         className="gap-1.5"
+        title={saveViewTitle()}
         onClick={openSaveNew}
       >
         <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
