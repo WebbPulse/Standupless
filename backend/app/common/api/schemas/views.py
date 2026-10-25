@@ -188,6 +188,18 @@ NotificationKindField = Literal[
     "initiative_owner_assigned",
 ]
 
+NUMBER_FILTER_FIELDS: frozenset[str] = frozenset(
+    {
+        "customer_revenue_min",
+        "customer_revenue_max",
+        "customer_size_min",
+        "customer_size_max",
+        "customer_request_count_min",
+        "customer_request_count_max",
+    }
+)
+"""The issue filter keys that hold one whole number, stored as its text like every other value."""
+
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
         "team_id",
@@ -236,6 +248,12 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "completed_before",
         "customer_id",
         "customer_id_not",
+        "customer_status_id",
+        "customer_status_id_not",
+        "customer_tier_id",
+        "customer_tier_id_not",
+        *NUMBER_FILTER_FIELDS,
+        "customer_important",
         "release_id",
         "release_id_not",
         "match",
@@ -321,12 +339,14 @@ SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
         "content_not",
         "completed_after",
         "completed_before",
+        "customer_important",
+        *NUMBER_FILTER_FIELDS,
         "match",
     }
 )
 """The filter keys the issue list takes once, so a stored list for one would not run."""
 
-BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking", "has_sub_issues"})
+BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking", "has_sub_issues", "customer_important"})
 """The scalar filter keys that hold `true` or `false`, stored as text like every other value."""
 
 MATCH_VALUES: tuple[str, ...] = ("all", "any")
@@ -340,6 +360,10 @@ MAX_FILTER_GROUPS = 10
 
 MAX_GROUP_DEPTH = 2
 """How deep stored groups nest, the issue list's own bound."""
+
+
+NUMBER_FILTER_DIGITS = 16
+"""The most digits a stored numeric bound holds, the issue list's own ceiling of 10**15."""
 
 
 def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
@@ -363,9 +387,14 @@ def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]
 def _normalized_entry(key: str, entry: Any) -> Any:
     """One filter value with a boolean key's bool, or its upper cased text, turned into `true` or `false`.
 
-    An update age sent as a JSON number is stored as its text, as every other value is.
+    An update age or a numeric customer bound sent as a JSON number is stored as
+    its text, as every other value is.
     """
-    if key in UPDATE_AGE_FIELDS and isinstance(entry, int) and not isinstance(entry, bool):
+    if (
+        (key in UPDATE_AGE_FIELDS or key in NUMBER_FILTER_FIELDS)
+        and isinstance(entry, int)
+        and not isinstance(entry, bool)
+    ):
         return str(entry)
     if key not in BOOLEAN_FILTER_FIELDS:
         return entry
@@ -407,6 +436,8 @@ def _entry_well_formed(key: str, entry: Any) -> bool:
         return entry in ("true", "false")
     if key == "match":
         return entry in MATCH_VALUES
+    if key in NUMBER_FILTER_FIELDS:
+        return isinstance(entry, str) and entry.isascii() and entry.isdigit() and len(entry) <= NUMBER_FILTER_DIGITS
     if isinstance(entry, str):
         return True
     repeatable = key not in SCALAR_FILTER_FIELDS

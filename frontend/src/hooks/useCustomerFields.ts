@@ -13,6 +13,9 @@ import { DEFAULT_CUSTOMER_STATUSES } from '../lib/customerDisplay';
 import { customerFieldsKey } from '../lib/queryKeys';
 import type { CustomerFieldRead } from '../types/Api';
 
+/** The tiers until they arrive, one list so a memo keyed on it holds. */
+const NO_TIERS: CustomerFieldRead[] = [];
+
 /** How often the lists re-read. */
 const POLL_MS = 60000;
 
@@ -63,7 +66,7 @@ export const useCustomerFields = (
 
   return {
     statuses: statuses.data ?? DEFAULT_CUSTOMER_STATUSES,
-    tiers: tiers.data ?? [],
+    tiers: tiers.data ?? NO_TIERS,
     error: statuses.error ?? tiers.error,
     isLoading: statuses.isLoading || tiers.isLoading,
     statusesKey,

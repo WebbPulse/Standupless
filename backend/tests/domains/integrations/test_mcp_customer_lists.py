@@ -75,3 +75,44 @@ def test_a_guest_is_refused_customer_lists(client: TestClient, repositories: Any
     assert refusal(tool(client, secret, "list_issues", {"team_id": TEAM, "sort": "customer_requests_desc"}))
     assert refusal(tool(client, secret, "list_projects", {"sort": "customer_requests_desc"}))
     assert answer(tool(client, secret, "list_issues", {"team_id": TEAM}))["issues"]
+
+
+def test_list_issues_filters_by_customer_fields(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """The status, tier, revenue, size, request count and important arguments reach the list path."""
+    other = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    customer = Customer(
+        workspace_id=WORKSPACE,
+        name="Big",
+        status_id="active",
+        tier_id="tier-1",
+        revenue=50_000,
+        size=80,
+        created_by=OWNER,
+    )
+    repositories.customers.create(customer)
+    repositories.customers.add_request(
+        CustomerRequest(
+            workspace_id=WORKSPACE,
+            customer_id=customer.customer_id,
+            target_kind="issue",
+            target_id=issue.issue_id,
+            team_ids=[TEAM],
+            author_id=OWNER,
+            important=True,
+        )
+    )
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    def keys(**arguments: Any) -> list[str]:
+        """The issue keys `list_issues` answers under the given arguments."""
+        rows = answer(tool(client, secret, "list_issues", {"team_id": TEAM, **arguments}))["issues"]
+        return [row["issue_key"] for row in rows]
+
+    assert keys(customer_status_id=["active"]) == [issue.key]
+    assert keys(customer_tier_id_not=["tier-1"]) == [other.key]
+    assert keys(customer_revenue_min=10_000, customer_size_max="100") == [issue.key]
+    assert keys(customer_request_count_max=0) == [other.key]
+    assert keys(customer_important=True) == [issue.key]
+    assert refusal(tool(client, secret, "list_issues", {"team_id": TEAM, "customer_revenue_min": "lots"}))
+    guest = mint_for(repositories, GUEST, ("issues:read",))
+    assert refusal(tool(client, guest, "list_issues", {"team_id": TEAM, "customer_status_id": ["active"]}))

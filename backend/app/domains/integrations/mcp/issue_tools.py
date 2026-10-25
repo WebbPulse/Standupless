@@ -197,10 +197,14 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "customer_id_not",
     "release_id",
     "release_id_not",
+    "customer_status_id",
+    "customer_status_id_not",
+    "customer_tier_id",
+    "customer_tier_id_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
-BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking", "has_sub_issues")
+BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking", "has_sub_issues", "customer_important")
 """The filter arguments taken as booleans and passed through as sent, for the filter to check."""
 
 SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
@@ -215,11 +219,22 @@ SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
     "content",
     "content_not",
     "match",
+    "customer_revenue_min",
+    "customer_revenue_max",
+    "customer_size_min",
+    "customer_size_max",
+    "customer_request_count_min",
+    "customer_request_count_max",
 )
 """The filter arguments taken once as text, passed through for the filter to check."""
 
 PARENT_ARGUMENTS: tuple[str, ...] = ("parent_id", "parent_id_not")
 """The filter arguments naming issues, where an issue key is resolved to its id."""
+
+
+def _count(description: str) -> dict[str, Any]:
+    """A whole number filter of zero or more, which a saved view may also hold as digit text."""
+    return {"type": ["integer", "string"], "description": description}
 
 
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
@@ -279,6 +294,28 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
             "Requested by none of these customers; 'none' keeps requested issues only, "
             "'important' drops issues with an important request"
         ),
+        "customer_status_id": one_or_many(
+            "Requested by a customer in any of these customer statuses; 'none' is issues no customer asked for"
+        ),
+        "customer_status_id_not": one_or_many(
+            "Requested by no customer in these customer statuses; 'none' keeps requested issues only"
+        ),
+        "customer_tier_id": one_or_many(
+            "Requested by a customer in any of these customer tiers; 'none' is issues no customer asked for"
+        ),
+        "customer_tier_id_not": one_or_many(
+            "Requested by no customer in these customer tiers; 'none' keeps requested issues only"
+        ),
+        "customer_revenue_min": _count("Requested by a customer whose revenue is at least this"),
+        "customer_revenue_max": _count("Requested by a customer whose revenue is at most this"),
+        "customer_size_min": _count("Requested by a customer whose size is at least this"),
+        "customer_size_max": _count("Requested by a customer whose size is at most this"),
+        "customer_request_count_min": _count("Carrying at least this many customer requests"),
+        "customer_request_count_max": _count("Carrying at most this many customer requests; 0 is unrequested issues"),
+        "customer_important": {
+            "type": "boolean",
+            "description": "True for issues with an important customer request, false for the rest",
+        },
         "release_id": one_or_many("Shipped in any of these releases; 'none' is issues in no release"),
         "release_id_not": one_or_many("Shipped in none of these releases; 'none' keeps released issues only"),
         "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),

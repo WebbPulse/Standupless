@@ -9,7 +9,9 @@
  * one choice that matches in every team. A date field takes one day instead,
  * picked from a few relative presets or a calendar, and its verb flips
  * between "before" and "after". Content takes free text matched against the
- * title and description. As in Linear, Shift F drops the filter added last and
+ * title and description. A customer's revenue or size, or how many customer
+ * requests an issue carries, takes one whole number whose verb flips between
+ * "at least" and "at most", and revenue reads as a compact amount. As in Linear, Shift F drops the filter added last and
  * Alt Shift F clears every filter, the same as the chips' Clear button, and
  * Alt click or Alt Enter on a value makes it the only one chosen. The team
  * filter leads with My teams, which follows whoever views the list.
@@ -26,6 +28,10 @@ import {
   LuCalendarPlus,
   LuCircleAlert,
   LuCircleDashed,
+  LuCircleDot,
+  LuCrown,
+  LuDollarSign,
+  LuMessageSquare,
   LuClock,
   LuCornerLeftUp,
   LuFileText,
@@ -43,6 +49,7 @@ import {
   LuTag,
   LuTriangle,
   LuUserRound,
+  LuUsersRound,
   LuX,
 } from 'react-icons/lu';
 import { IMPORTANT_CUSTOMER, NONE } from '../../../api/issues';
@@ -59,6 +66,8 @@ import {
   RELATIVE_CYCLES,
   filterFieldsFor,
   isDateField,
+  isFilterNumber,
+  isNumberField,
   releasesInOrder,
   isTextField,
   labelGroupKey,
@@ -68,7 +77,9 @@ import {
   type FilterGroup,
   type FilterMatch,
   type IssueContext,
+  type IssueCustomerField,
 } from '../../../lib/issueView';
+import { revenueLabel, sizeLabel } from '../../../lib/customerDisplay';
 import {
   STATUS_CATEGORY_LABELS,
   sortStatuses,
@@ -125,6 +136,12 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   blocking: <BlockingGlyph className="h-3.5 w-3.5" />,
   relation: <LuLink className="h-3.5 w-3.5" />,
   customer: <LuBuilding2 className="h-3.5 w-3.5" />,
+  customer_status: <LuCircleDot className="h-3.5 w-3.5" />,
+  customer_tier: <LuCrown className="h-3.5 w-3.5" />,
+  customer_revenue: <LuDollarSign className="h-3.5 w-3.5" />,
+  customer_size: <LuUsersRound className="h-3.5 w-3.5" />,
+  customer_requests: <LuMessageSquare className="h-3.5 w-3.5" />,
+  customer_important: <LuCircleAlert className="h-3.5 w-3.5" />,
   release: <LuRocket className="h-3.5 w-3.5" />,
 };
 
@@ -191,6 +208,30 @@ const setDateBound = (
   );
 };
 
+/** Sets a number field's one bound, replacing any bound it held with the same verb. */
+const setNumberBound = (
+  filters: FilterClause[],
+  field: FilterField,
+  op: 'at_least' | 'at_most',
+  value: string
+): FilterClause[] => {
+  const index = filters.findIndex(
+    (clause) => clause.field === field && clause.op === op
+  );
+  if (index < 0) return [...filters, { field, op, values: [value] }];
+  return filters.map((clause, at) =>
+    at === index ? { ...clause, values: [value] } : clause
+  );
+};
+
+/** How a number filter's bound reads: revenue as a compact amount, size as a compact count. */
+const numberLabel = (field: FilterField, value: string): string => {
+  const amount = Number(value);
+  if (field === 'customer_revenue') return revenueLabel(amount) ?? value;
+  if (field === 'customer_size') return sizeLabel(amount) ?? value;
+  return value;
+};
+
 /**
  * Every estimate any team's scale can hold: the T-shirt sizes, then every
  * point value in numeric order, each offered once however many scales share it.
@@ -229,6 +270,37 @@ const hollow = (
 const yesNo = (icon: React.ReactNode): FilterChoice[] => [
   { option: { value: 'true', label: 'Yes', icon }, ids: ['true'] },
   { option: { value: 'false', label: 'No', icon: hollow }, ids: ['false'] },
+];
+
+/**
+ * The choices of a customer status or tier filter: no customer first, then
+ * each entry of the workspace's list, in its own order and colour.
+ */
+const customerFieldChoices = (
+  fields: readonly IssueCustomerField[]
+): FilterChoice[] => [
+  {
+    option: { value: NONE, label: 'No customer', icon: hollow },
+    ids: [NONE],
+  },
+  ...fields.map((field) => ({
+    option: {
+      value: field.id,
+      label: field.name,
+      icon: (
+        <span
+          aria-hidden="true"
+          className="h-2.5 w-2.5 rounded-full bg-text-faint"
+          style={
+            field.color === null || field.color === undefined
+              ? undefined
+              : { backgroundColor: field.color }
+          }
+        />
+      ),
+    },
+    ids: [field.id],
+  })),
 ];
 
 /** The Triage choice a status filter offers when a team in the list has triage on. */
@@ -423,7 +495,16 @@ const filterChoices = (
     case 'completed':
     case 'due':
     case 'content':
+    case 'customer_revenue':
+    case 'customer_size':
+    case 'customer_requests':
       return [];
+    case 'customer_status':
+      return customerFieldChoices(context.customerStatuses ?? []);
+    case 'customer_tier':
+      return customerFieldChoices(context.customerTiers ?? []);
+    case 'customer_important':
+      return yesNo(<LuCircleAlert className="h-3.5 w-3.5 text-warning" />);
     case 'parent':
       return [
         {
@@ -730,6 +811,104 @@ const TextValue: React.FC<{
   );
 };
 
+/**
+ * A number field's bound: a verb switch between at least and at most and a
+ * whole number applied on Enter, so each keystroke does not reload the list.
+ * The request count also offers No requests, an upper bound of 0.
+ */
+const NumberValue: React.FC<{
+  field: FilterField;
+  op: 'at_least' | 'at_most';
+  filters: FilterClause[];
+  onChange: (filters: FilterClause[]) => void;
+}> = ({ field, op: initialOp, filters, onChange }) => {
+  const [op, setOp] = useState<'at_least' | 'at_most'>(initialOp);
+  const held = filters.find(
+    (clause) => clause.field === field && clause.op === op
+  )?.values[0];
+  const [text, setText] = useState(held ?? '');
+  const value = text.trim().replace(/[,_\s]/g, '');
+  const valid = isFilterNumber(value);
+  const label = FILTER_LABELS[field];
+  return (
+    <form
+      className="flex flex-col gap-1.5 p-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (valid) {
+          onChange(setNumberBound(filters, field, op, String(Number(value))));
+        }
+      }}
+    >
+      <div
+        role="radiogroup"
+        aria-label={`${label} bound`}
+        className="flex gap-1"
+      >
+        {(['at_least', 'at_most'] as const).map((verb) => (
+          <button
+            key={verb}
+            type="button"
+            role="radio"
+            aria-checked={op === verb}
+            onClick={() => {
+              setOp(verb);
+            }}
+            className={cn(
+              'h-6 rounded px-2 text-xs focus-visible:outline-2 focus-visible:outline-accent',
+              op === verb
+                ? 'bg-raised text-text'
+                : 'text-text-muted hover:bg-raised hover:text-text'
+            )}
+          >
+            {verb === 'at_least' ? 'At least' : 'At most'}
+          </button>
+        ))}
+      </div>
+      <Input
+        aria-label={`${label} ${op === 'at_least' ? 'at least' : 'at most'}`}
+        inputMode="numeric"
+        placeholder={
+          field === 'customer_revenue' ? 'Amount, such as 50000' : 'Number'
+        }
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+        }}
+      />
+      <span className="px-0.5 text-xs text-text-faint">
+        {text.trim() !== '' && !valid
+          ? 'Enter a whole number'
+          : valid
+            ? `Press Enter to apply ${numberLabel(field, String(Number(value)))}`
+            : 'Press Enter to apply'}
+      </span>
+      {field === 'customer_requests' ? (
+        <button
+          type="button"
+          onClick={() => {
+            onChange(
+              setNumberBound(
+                filters.filter(
+                  (clause) =>
+                    !(clause.field === field && clause.op === 'at_least')
+                ),
+                field,
+                'at_most',
+                '0'
+              )
+            );
+          }}
+          className="flex h-7 items-center gap-2 rounded px-1.5 text-left text-xs text-text-muted hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {hollow}
+          No requests
+        </button>
+      ) : null}
+    </form>
+  );
+};
+
 /** The list of one field's values, toggling each on the filters. */
 const ValueList: React.FC<{
   field: FilterField;
@@ -747,6 +926,16 @@ const ValueList: React.FC<{
       <DateList
         field={field}
         op={field === 'due' ? 'before' : 'after'}
+        filters={filters}
+        onChange={onChange}
+      />
+    );
+  }
+  if (isNumberField(field)) {
+    return (
+      <NumberValue
+        field={field}
+        op="at_least"
         filters={filters}
         onChange={onChange}
       />
@@ -792,6 +981,10 @@ const nextOp = (clause: FilterClause): FilterClause['op'] => {
       return 'after';
     case 'after':
       return 'before';
+    case 'at_least':
+      return 'at_most';
+    case 'at_most':
+      return 'at_least';
     case 'is':
       return ALL_OF_FIELDS.has(clause.field) && clause.values.length > 1
         ? 'all'
@@ -807,6 +1000,8 @@ const nextOp = (clause: FilterClause): FilterClause['op'] => {
 const verbOf = (clause: FilterClause): string => {
   const many = clause.values.length > 1;
   if (clause.op === 'before' || clause.op === 'after') return clause.op;
+  if (clause.op === 'at_least') return 'at least';
+  if (clause.op === 'at_most') return 'at most';
   if (isTextField(clause.field)) {
     return clause.op === 'is' ? 'contains' : 'does not contain';
   }
@@ -818,6 +1013,8 @@ const verbOf = (clause: FilterClause): string => {
 /** The short verb a chip's switch names in its accessible label. */
 const verbName = (clause: FilterClause): string => {
   if (clause.op === 'before' || clause.op === 'after') return clause.op;
+  if (clause.op === 'at_least') return 'at least';
+  if (clause.op === 'at_most') return 'at most';
   if (isTextField(clause.field)) {
     return clause.op === 'is' ? 'contains' : 'does not contain';
   }
@@ -835,21 +1032,26 @@ const FilterChip: React.FC<{
   const triage = useTriageInList(context);
   const choiceContext = useChoiceContext(context, clause.field);
   const dated = clause.op === 'before' || clause.op === 'after';
+  const bounded = clause.op === 'at_least' || clause.op === 'at_most';
   const text = isTextField(clause.field);
   const choices =
-    dated || text ? [] : filterChoices(clause.field, choiceContext, triage);
+    dated || bounded || text
+      ? []
+      : filterChoices(clause.field, choiceContext, triage);
   const names = chosen(clause, choices).map((choice) => choice.option.label);
   const summary = dated
     ? dayLabel(clause.values[0] ?? '')
-    : text
-      ? `"${clause.values[0] ?? ''}"`
-      : names.length === 0
-        ? clause.values.length === 1
-          ? '1 value'
-          : `${String(clause.values.length)} values`
-        : names.length <= 2
-          ? names.join(', ')
-          : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
+    : bounded
+      ? numberLabel(clause.field, clause.values[0] ?? '')
+      : text
+        ? `"${clause.values[0] ?? ''}"`
+        : names.length === 0
+          ? clause.values.length === 1
+            ? '1 value'
+            : `${String(clause.values.length)} values`
+          : names.length <= 2
+            ? names.join(', ')
+            : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
   const flipped = nextOp(clause);
   const flipTaken = filters.some(
     (item) =>
@@ -903,6 +1105,13 @@ const FilterChip: React.FC<{
       >
         {clause.op === 'before' || clause.op === 'after' ? (
           <DateList
+            field={clause.field}
+            op={clause.op}
+            filters={filters}
+            onChange={onChange}
+          />
+        ) : clause.op === 'at_least' || clause.op === 'at_most' ? (
+          <NumberValue
             field={clause.field}
             op={clause.op}
             filters={filters}

@@ -103,6 +103,17 @@ export interface ViewFilterNegations {
   team_id_not?: string | string[];
   creator_id_not?: string | string[];
   customer_id_not?: string | string[];
+  customer_status_id?: string | string[];
+  customer_status_id_not?: string | string[];
+  customer_tier_id?: string | string[];
+  customer_tier_id_not?: string | string[];
+  customer_revenue_min?: string;
+  customer_revenue_max?: string;
+  customer_size_min?: string;
+  customer_size_max?: string;
+  customer_request_count_min?: string;
+  customer_request_count_max?: string;
+  customer_important?: 'true' | 'false';
   release_id_not?: string | string[];
   status_id_not?: string | string[];
   status_category_not?: string | string[];
