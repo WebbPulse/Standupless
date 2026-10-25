@@ -8,10 +8,7 @@
 import React, { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import {
-  invalidateQueries,
-  usePolledQuery,
-} from '@webbpulse/api-client/react';
+import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   deleteIssuePermanently,
   listDeletedIssues,
@@ -154,7 +151,10 @@ const TeamTrash: React.FC = () => {
         {listError !== null && (
           <div className="mt-4">
             <ErrorAlert
-              message={errorMessage(listError, 'Could not load deleted issues.')}
+              message={errorMessage(
+                listError,
+                'Could not load deleted issues.'
+              )}
             />
           </div>
         )}

@@ -122,11 +122,7 @@ import {
   duplicatePath,
   runDuplicate,
 } from '../../lib/issueConversion';
-import {
-  recordArchive,
-  recordDelete,
-  recordPatch,
-} from '../../lib/issueUndo';
+import { recordArchive, recordDelete, recordPatch } from '../../lib/issueUndo';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { reminderLabel } from '../../lib/reminders';
 import { useOptimisticRecord } from '../../lib/optimistic';

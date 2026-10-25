@@ -150,7 +150,9 @@ describe('TeamTrash', () => {
   it('lists each deleted issue with who deleted it and the retention', async () => {
     renderPage();
 
-    expect(await screen.findByText('Login fails on Safari')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Login fails on Safari')
+    ).toBeInTheDocument();
     expect(screen.getByText(/Deleted by Ada/)).toBeInTheDocument();
     expect(screen.getByText(/stay here for 30 days/)).toBeInTheDocument();
     expect(api.listDeletedIssues).toHaveBeenCalledWith('ws-1', 'team-1');

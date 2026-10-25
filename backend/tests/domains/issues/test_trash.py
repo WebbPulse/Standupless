@@ -217,9 +217,7 @@ def test_the_trash_lists_who_deleted_what_newest_first(client: TestClient, works
     assert all(row["deleted_at"] for row in body["issues"])
 
 
-def test_only_a_team_admin_purges_by_hand(
-    client: TestClient, workspace: str, statuses: Any, repositories: Any
-) -> None:
+def test_only_a_team_admin_purges_by_hand(client: TestClient, workspace: str, statuses: Any, repositories: Any) -> None:
     """A member is refused, a live issue is a conflict, and an admin's purge removes the row."""
     sign_in(client, MEMBER)
     issue = create_issue(client, workspace)
