@@ -147,11 +147,10 @@ describe('the /date picker', () => {
     const labels = within(picker)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    expect(labels.map((label) => label.split(/\s/)[0])).toEqual([
-      'Today',
-      'Tomorrow',
-      'Next',
-    ]);
+    expect(labels).toHaveLength(3);
+    ['Today', 'Tomorrow', 'Next week'].forEach((name, index) => {
+      expect(labels[index]?.startsWith(name)).toBe(true);
+    });
     act(() => {
       fireEvent.click(within(picker).getByRole('option', { name: /Tomorrow/ }));
     });
