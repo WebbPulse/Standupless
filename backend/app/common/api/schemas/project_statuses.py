@@ -3,7 +3,9 @@
 A project status is a named stage a workspace sets up inside one of the six fixed
 categories: backlog, planned, started (stored as `in_progress`), paused,
 completed and canceled. Every rule reads the category; the status carries the
-name, colour and order people see.
+name, colour and order people see. A status with no team belongs to the whole
+workspace; one with a team belongs to that team and is offered only to its
+projects.
 """
 
 from __future__ import annotations
@@ -30,6 +32,9 @@ class ProjectStatusCreate(BaseModel):
     color: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=LABEL_DESCRIPTION_MAX)
     position: Optional[int] = Field(default=None, ge=0)
+    team_id: Optional[str] = Field(
+        default=None, min_length=1, description="The team that owns the status, or null for a workspace status"
+    )
 
     @field_validator("name")
     @classmethod
@@ -76,6 +81,9 @@ class ProjectStatusRead(BaseModel):
     category: ProjectStatusCategory
     color: Optional[str] = Field(default=None, description="A `#rrggbb` colour, or null to draw the category's tone")
     description: Optional[str] = None
+    team_id: Optional[str] = Field(
+        default=None, description="The team that owns the status, or null for a workspace status"
+    )
     position: int
     is_default: bool = Field(description="Whether this is the status a bare category value lands on")
     project_count: int = Field(default=0, description="Projects the caller can see that sit in the status")
@@ -91,6 +99,7 @@ class ProjectStatusRead(BaseModel):
             category=cast(ProjectStatusCategory, row.category),
             color=row.color,
             description=row.description,
+            team_id=row.team_id,
             position=row.position,
             is_default=is_default,
             project_count=project_count,

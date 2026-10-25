@@ -166,6 +166,7 @@ EXPECTED_TOOLS = frozenset(
         "update_project_label",
         "delete_project_label",
         "list_project_statuses",
+        "create_project_status",
         "list_statuses",
         "list_team_members",
         "list_teams",

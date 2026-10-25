@@ -506,6 +506,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
               inline
               value={project.label_ids ?? []}
               labels={projectLabels}
+              teamIds={project.team_ids}
               disabled={!editable}
               onChange={(labelIds) => {
                 void update({ label_ids: labelIds });
@@ -559,6 +560,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             variant="rail"
             value={project.status}
             statusId={project.status_id}
+            teamIds={project.team_ids}
             percent={percent}
             disabled={!editable}
             onChange={closePrompt.changeStatus}

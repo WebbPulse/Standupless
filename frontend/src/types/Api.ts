@@ -2908,6 +2908,8 @@ export interface ProjectLabelRead {
   description: string | null;
   /** How many projects the caller can see carry the label. */
   project_count: number;
+  /** The team that keeps the label for its own projects, or none for the workspace's. */
+  team_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2928,6 +2930,8 @@ export interface ProjectStatusRead {
   is_default: boolean;
   /** How many projects the caller can see sit in the status. */
   project_count: number;
+  /** The team that keeps the status for its own projects, or none for the workspace's. */
+  team_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2944,6 +2948,8 @@ export interface ProjectStatusCreate {
   color?: string | null;
   description?: string | null;
   position?: number;
+  /** The team the status is for, a team admin's own; left out for the workspace. */
+  team_id?: string | null;
 }
 
 /** The editable fields on a project status; a null color clears it. */
@@ -2964,6 +2970,8 @@ export interface ProjectLabelCreate {
   name: string;
   color: string;
   description?: string | null;
+  /** The team the label is for, a team admin's own; left out for the workspace. */
+  team_id?: string | null;
 }
 
 /** The editable fields on a project label; an empty description clears it. */

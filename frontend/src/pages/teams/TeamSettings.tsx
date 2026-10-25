@@ -1,6 +1,6 @@
 /**
  * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
- * issues move through, its labels, its issue templates and the recurring issues made from them, its automatic cycles, the addresses mail files issues through, when stale open
+ * issues move through, its labels, the project labels and statuses its projects are offered beside the workspace's, its issue templates and the recurring issues made from them, its automatic cycles, the addresses mail files issues through, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
@@ -23,6 +23,7 @@ import CyclesSection from '../../components/team/CyclesSection';
 import EmailIntakeSection from '../../components/team/EmailIntakeSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
+import ProjectsSection from '../../components/team/ProjectsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import RecurringSection from '../../components/team/RecurringSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
@@ -70,6 +71,7 @@ const SECTIONS = [
   { id: 'members', label: 'Members' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
+  { id: 'projects', label: 'Projects' },
   { id: 'templates', label: 'Templates' },
   { id: 'recurring', label: 'Recurring' },
   { id: 'cycles', label: 'Cycles' },
@@ -283,6 +285,14 @@ const TeamSettings: React.FC = () => {
               teamId={team.id}
               slug={slug ?? ''}
               parentSettingsPath={parentSettings}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'projects',
+            <ProjectsSection
+              workspaceId={workspaceId}
+              teamId={team.id}
               canEdit={editable}
             />
           )}

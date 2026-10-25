@@ -1875,6 +1875,7 @@ class ProjectLabelCreate(TypedDict):
     color: str
     description: NotRequired[str | None]
     name: str
+    team_id: NotRequired[str | None]
 
 
 class ProjectLabelRead(TypedDict):
@@ -1884,6 +1885,7 @@ class ProjectLabelRead(TypedDict):
     id: str
     name: str
     project_count: NotRequired[int]
+    team_id: NotRequired[str | None]
     updated_at: str
 
 
@@ -1958,6 +1960,7 @@ class ProjectStatusCreate(TypedDict):
     description: NotRequired[str | None]
     name: str
     position: NotRequired[int | None]
+    team_id: NotRequired[str | None]
 
 
 class ProjectStatusRead(TypedDict):
@@ -1970,6 +1973,7 @@ class ProjectStatusRead(TypedDict):
     name: str
     position: int
     project_count: NotRequired[int]
+    team_id: NotRequired[str | None]
     updated_at: str
 
 

@@ -18,8 +18,10 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { createProject, updateProject } from '../../api/planning';
 import { listTeamTemplates } from '../../api/templates';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { isCoarse } from '../../lib/dateResolution';
 import { errorMessage } from '../../lib/errors';
+import { isOfferedTo } from '../../lib/projectScopes';
 import type { ProjectMove } from '../../lib/projectList';
 import { showToast } from '../../lib/toast';
 import {
@@ -172,6 +174,12 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [applied, setApplied] = useState<AppliedTemplate | null>(null);
   const [pendingDefault, setPendingDefault] = useState(true);
   const { people } = usePlanningTeamLists(workspaceId, teamIds);
+  const projectStatuses = useProjectStatuses(workspaceId);
+  const offeredStatusId =
+    statusId !== undefined &&
+    isOfferedTo(projectStatuses.byId.get(statusId), teamIds)
+      ? statusId
+      : undefined;
   const auth = useQueryAuth();
 
   const { data: templateList } = usePolledQuery(
@@ -252,9 +260,9 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       body.target_date_resolution = targetResolution;
     }
     if (fill.status !== status) body.status = status;
-    if (statusId !== undefined && statusId !== status) {
+    if (offeredStatusId !== undefined && offeredStatusId !== status) {
       body.status = status;
-      body.status_id = statusId;
+      body.status_id = offeredStatusId;
     }
     if (fill.icon !== icon) body.icon = icon;
     if (fill.color !== color) body.color = color;
@@ -360,7 +368,8 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
           <ProjectStatusPicker
             variant="chip"
             value={status}
-            statusId={statusId}
+            statusId={offeredStatusId}
+            teamIds={teamIds}
             onChange={(category, id) => {
               setStatus(category);
               setStatusId(id);

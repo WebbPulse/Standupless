@@ -182,7 +182,7 @@ def list_projects(
     the named project labels, `none` standing for a project with no label.
     Archived projects are left out unless `include_archived` is set, as Linear
     hides them from its lists, though they still count as blockers.
-    `status_filter` names a workspace project status, or a category to keep
+    `status_filter` names a project status, a team's included, or a category to keep
     every status in it, the legacy `done` included.
     """
     statuses = workspace_project_statuses(repositories, context.workspace_id) if status_filter is not None else []
@@ -323,13 +323,14 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         require_workspace_member(repositories, context, member_id)
     if payload.initiative_id is not None:
         require_initiative_target(repositories, context, payload.initiative_id)
-    require_project_labels(repositories, context.workspace_id, payload.label_ids)
+    require_project_labels(repositories, context.workspace_id, payload.label_ids, teams)
     explicit = "status" in payload.model_fields_set or payload.status_id is None
     chosen = choose_project_status(
         repositories,
         context.workspace_id,
         status_value=payload.status if explicit else None,
         status_id=payload.status_id,
+        team_ids=teams,
     )
     category, status_id = chosen if chosen is not None else (payload.status, payload.status)
 
@@ -504,6 +505,7 @@ def update_project(
             repositories,
             context.workspace_id,
             [label_id for label_id in fields["label_ids"] if label_id not in existing.label_ids],
+            fields.get("team_ids", existing.team_ids),
         )
     if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
         require_initiative_access(context)
@@ -514,6 +516,7 @@ def update_project(
         context.workspace_id,
         status_value=fields.pop("status", None),
         status_id=fields.pop("status_id", None),
+        team_ids=fields.get("team_ids", existing.team_ids),
         current=existing,
     )
     if chosen is not None:

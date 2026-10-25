@@ -1482,19 +1482,19 @@
     "path": "/api/workspaces/{workspace_id}/project-labels"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/project-labels"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/project-labels/{label_id}"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/project-labels/{label_id}"
@@ -1506,19 +1506,19 @@
     "path": "/api/workspaces/{workspace_id}/project-statuses"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/project-statuses"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/project-statuses/{status_id}"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/project-statuses/{status_id}"

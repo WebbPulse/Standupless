@@ -328,6 +328,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
             inline
             value={project.label_ids ?? []}
             labels={projectLabels}
+            teamIds={project.team_ids}
             disabled={!editable}
             className="flex-wrap"
             onChange={(labelIds) => {
@@ -343,6 +344,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
               variant="icon"
               value={project.status}
               statusId={project.status_id}
+              teamIds={project.team_ids}
               percent={percent}
               disabled={!editable}
               onChange={(status, statusId) => {

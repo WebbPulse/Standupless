@@ -868,12 +868,17 @@ class ProjectRelation(BaseModel):
 
 
 class ProjectLabel(BaseModel):
-    """One label of the workspace that tags projects, apart from the labels issues carry."""
+    """One label that tags projects, apart from the labels issues carry.
+
+    A null `team_id` is a workspace label every project is offered; a team id
+    makes it that team's own, offered only to the projects on that team.
+    """
 
     workspace_id: str
     planning_key: str = ""
     label_id: str = Field(default_factory=new_planning_id)
     kind: str = PROJECT_LABEL
+    team_id: str | None = None
     name: str
     color: str
     description: str | None = None
@@ -892,14 +897,17 @@ class ProjectStatusRow(BaseModel):
 
     `category` is one of `PROJECT_STATUSES` and never changes, so every rule that
     reads a project's category holds however the status is renamed. `position`
-    orders the statuses within their category. A null `color` draws the
-    category's own tone.
+    orders the statuses within their category and scope. A null `color` draws
+    the category's own tone. A null `team_id` is a workspace status every
+    project is offered; a team id makes it that team's own, offered only to the
+    projects on that team.
     """
 
     workspace_id: str
     planning_key: str = ""
     status_id: str = Field(default_factory=new_planning_id)
     kind: str = PROJECT_STATUS
+    team_id: str | None = None
     name: str
     category: str
     color: str | None = None
@@ -1735,8 +1743,9 @@ class PlanningRepository:
     def put_project_label(self, label: ProjectLabel, *, create: bool) -> ProjectLabel:
         """Store a new project label or write an edited one, raising `ConditionFailed` on a taken or missing key."""
         item = label.model_dump(mode="json")
-        if item.get("description") is None:
-            item.pop("description", None)
+        for name in ("description", "team_id"):
+            if item.get(name) is None:
+                item.pop(name, None)
         condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
         self._repository.put(item, condition=condition)
         return label
@@ -1751,7 +1760,7 @@ class PlanningRepository:
         return ProjectStatusRow.model_validate(dict(item))
 
     def list_project_statuses(self, workspace_id: str, *, max_items: int = 1000) -> list[ProjectStatusRow]:
-        """Every stored project status of the workspace, by category then position; empty before the first edit."""
+        """Every stored project status of the workspace, by category, workspace before team, then position."""
         if not workspace_id:
             return []
         items = self._repository.iter_query(
@@ -1760,12 +1769,21 @@ class PlanningRepository:
         )
         rows = [ProjectStatusRow.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_STATUS]
         order = {category: index for index, category in enumerate(PROJECT_STATUSES)}
-        return sorted(rows, key=lambda row: (order.get(row.category, len(order)), row.position, row.status_id))
+        return sorted(
+            rows,
+            key=lambda row: (
+                order.get(row.category, len(order)),
+                row.team_id is not None,
+                row.team_id or "",
+                row.position,
+                row.status_id,
+            ),
+        )
 
     def put_project_status(self, row: ProjectStatusRow, *, create: bool) -> ProjectStatusRow:
         """Store a new project status or write an edited one, raising `ConditionFailed` on a taken or missing key."""
         item = row.model_dump(mode="json")
-        for name in ("color", "description"):
+        for name in ("color", "description", "team_id"):
             if item.get(name) is None:
                 item.pop(name, None)
         condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
