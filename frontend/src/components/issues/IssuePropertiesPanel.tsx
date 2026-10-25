@@ -32,7 +32,7 @@ import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
 import { projectPatch } from '../../lib/milestones';
-import { projectMilestonePath, projectPath } from '../../lib/paths';
+import { memberPath, projectMilestonePath, projectPath } from '../../lib/paths';
 import { liveSlaStatus } from '../../lib/sla';
 import { shownStatusId } from '../../lib/triageStatus';
 import type { EstimateOptions } from '../../lib/validation';
@@ -344,15 +344,24 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
             onUpdate({ priority });
           }}
         />
-        <AssigneePicker
-          disabled={disabled}
-          people={people}
-          value={issue.assignee_id}
-          currentUserId={currentUserId}
-          onChange={(assigneeId) => {
-            onUpdate({ assignee_id: assigneeId });
-          }}
-        />
+        <PlanningRowLink
+          to={
+            issue.assignee_id === null
+              ? null
+              : memberPath(slug, issue.assignee_id)
+          }
+          label="Open member page"
+        >
+          <AssigneePicker
+            disabled={disabled}
+            people={people}
+            value={issue.assignee_id}
+            currentUserId={currentUserId}
+            onChange={(assigneeId) => {
+              onUpdate({ assignee_id: assigneeId });
+            }}
+          />
+        </PlanningRowLink>
         <IssueTeamRow team={team} canMove={canAct} onMove={onMove} />
         {showEstimate && (
           <EstimatePicker

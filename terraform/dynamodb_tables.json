@@ -16,12 +16,22 @@
       {
         "name": "created_at",
         "type": "S"
+      },
+      {
+        "name": "ws_actor",
+        "type": "S"
       }
     ],
     "global_secondary_indexes": [
       {
         "hash_key": "ws_team",
         "name": "ws_team-created_at-index",
+        "projection_type": "ALL",
+        "range_key": "created_at"
+      },
+      {
+        "hash_key": "ws_actor",
+        "name": "ws_actor-created_at-index",
         "projection_type": "ALL",
         "range_key": "created_at"
       }

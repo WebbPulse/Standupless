@@ -188,6 +188,16 @@ export const roadmapPath = (slug: string): string =>
 export const myIssuesPath = (slug: string): string =>
   `${workspacePath(slug)}/issues`;
 
+/** One member's page, optionally opened on a tab other than Assigned. */
+export const memberPath = (
+  slug: string,
+  userId: string,
+  tab?: string
+): string =>
+  `${workspacePath(slug)}/members/${userId}${
+    tab === undefined || tab === 'assigned' ? '' : `?tab=${tab}`
+  }`;
+
 /** One issue, addressed by the key a person can type from memory. */
 export const issuePath = (slug: string, issueKey: string): string =>
   `${workspacePath(slug)}/issues/${issueKey}`;

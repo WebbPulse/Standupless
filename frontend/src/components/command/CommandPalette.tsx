@@ -113,6 +113,7 @@ import {
   initiativesPath,
   issuePath,
   mcpSetupPath,
+  memberPath,
   myIssuesPath,
   newViewPath,
   preferencesSettingsPath,
@@ -174,6 +175,7 @@ import {
 } from '../../lib/workspaceNav';
 import type { CycleRead, TeamRead, WorkspaceRead } from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
+import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 
 /** How many hits the palette asks the search route for. */
 const RESULT_LIMIT = 20;
@@ -433,6 +435,11 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       queryKey: workspaceDocumentsKey(workspaceId),
       auth,
     }
+  );
+
+  const members = useWorkspaceMembers(
+    workspaceId,
+    page === 'root' && deferred !== ''
   );
 
   const { data: savedViews } = usePolledQuery(
@@ -1184,6 +1191,27 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }
     }
 
+    if (!isKey && deferred !== '') {
+      const people = members
+        .map((member) => ({
+          id: `member-${member.user_id}`,
+          label: `Go to member ${
+            member.display_name ??
+            (member.full_name !== undefined && member.full_name !== ''
+              ? member.full_name
+              : 'Member')
+          }`,
+          keywords: `people person member ${member.full_name ?? ''}`,
+          icon: <LuUserRound className={ICON} />,
+          to: memberPath(slug, member.user_id),
+        }))
+        .filter((command) => matches(command, deferred))
+        .slice(0, DOCUMENT_LIMIT);
+      if (people.length > 0) {
+        built.push({ heading: 'People', commands: people });
+      }
+    }
+
     const doable = actions.filter((command) => matches(command, deferred));
     if (deferred === '' && routePrefix !== null) {
       const here = teams.find((row) => row.key_prefix === routePrefix);
@@ -1247,6 +1275,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     issueKey,
     data,
     documents,
+    members,
     enabled,
     actions,
     places,

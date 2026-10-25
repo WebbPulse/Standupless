@@ -4,6 +4,8 @@ Partitioned per issue rather than per team, because an issue's history is what
 grows without bound and the MVP exposes only the newest page. `ws_team-created_at-index`
 is the team feed a later project reads; nothing in M2 queries it, which leaves
 it correct and unused rather than absent and needing a backfill.
+`ws_actor-created_at-index` is one person's history across every issue, which
+the member page reads; only rows a person made carry its attribute.
 
 Rows are written by the request handler in the same call as the change they record,
 never by the stream consumer, so a failed write cannot leave history behind a change
@@ -20,15 +22,18 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Mapping
 
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
-from webbpulse.dynamodb import Page, Repository, new_ulid
+from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.change_source import source_for
 from app.common.db.dynamo.base import as_item, build_repository, utc_now
 from app.common.db.dynamo.tables import ACTIVITY
 
 TEAM_FEED_INDEX = "ws_team-created_at-index"
+
+ACTOR_FEED_INDEX = "ws_actor-created_at-index"
 
 ActorKindField = Literal["user", "system", "github"]
 
@@ -84,6 +89,24 @@ def ws_issue(workspace_id: str, issue_id: str) -> str:
 def ws_team(workspace_id: str, team_id: str) -> str:
     """The team feed index's hash key, scoped to one workspace."""
     return f"{workspace_id}#{team_id}"
+
+
+def ws_actor(workspace_id: str, actor_id: str) -> str:
+    """The actor feed index's hash key: one person's history inside one workspace."""
+    return f"{workspace_id}#{actor_id}"
+
+
+def index_attributes(row: "Activity") -> dict[str, str]:
+    """The feed index attributes one issue row is stored with.
+
+    Every issue row joins its team's feed. Only a person's own change joins the
+    actor feed, so system and GitHub rows never pile into one shared hot partition
+    and the index stays as sparse as the member page needs.
+    """
+    attributes = {"ws_team": ws_team(row.workspace_id, row.team_id)}
+    if row.actor_kind == "user" and row.issue_id and row.actor_id:
+        attributes["ws_actor"] = ws_actor(row.workspace_id, row.actor_id)
+    return attributes
 
 
 TOMBSTONE_KIND = "deleted"
@@ -197,7 +220,7 @@ class ActivityRepository:
         collide with and a condition would only add a failure mode to a write that
         sits in the request path.
         """
-        self._repository.put(as_item(activity, ws_team=ws_team(activity.workspace_id, activity.team_id)))
+        self._repository.put(as_item(activity, **index_attributes(activity)))
         return activity
 
     def record_many(self, rows: list[Activity]) -> list[Activity]:
@@ -208,7 +231,7 @@ class ActivityRepository:
         """
         if not rows:
             return []
-        self._repository.put_many([as_item(row, ws_team=ws_team(row.workspace_id, row.team_id)) for row in rows])
+        self._repository.put_many([as_item(row, **index_attributes(row)) for row in rows])
         return rows
 
     def list_for_issue(
@@ -230,6 +253,63 @@ class ActivityRepository:
             start_key=dict(start_key) if start_key else None,
             ascending=False,
         )
+
+    def list_for_actor(
+        self,
+        workspace_id: str,
+        actor_id: str,
+        *,
+        before: datetime | None = None,
+        max_items: int = 50,
+    ) -> list[Activity]:
+        """One person's issue rows in one workspace, newest first, from `before` back.
+
+        `before` is padded by a second because stored stamps drop a zero fraction,
+        so the caller cuts the exact boundary from the parsed rows. An index still
+        being built answers nothing rather than failing the read.
+        """
+        if not workspace_id or not actor_id:
+            return []
+        condition = Key("ws_actor").eq(ws_actor(workspace_id, actor_id))
+        if before is not None:
+            upper = (before + timedelta(seconds=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+            condition = condition & Key("created_at").lte(upper)
+        try:
+            items = list(
+                self._repository.iter_query(
+                    condition,
+                    index_name=ACTOR_FEED_INDEX,
+                    ascending=False,
+                    max_items=max_items,
+                    page_size=max_items,
+                )
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("ValidationException", "ResourceNotFoundException"):
+                return []
+            raise
+        return [as_activity(item) for item in items]
+
+    def stamp_actor_index(self, item: Mapping[str, Any]) -> bool:
+        """Give one stored row its actor feed attribute, for the backfill.
+
+        Returns whether the row needed it, so a second run writes nothing. A row
+        deleted since the scan read it stays deleted.
+        """
+        row = as_activity(item)
+        wanted = index_attributes(row).get("ws_actor")
+        if wanted is None or item.get("ws_actor") == wanted:
+            return False
+        try:
+            self._repository.update(
+                {"ws_issue": row.ws_issue, "activity_id": row.activity_id},
+                update_expression="SET ws_actor = :actor",
+                expression_values={":actor": wanted},
+                condition=Attr("activity_id").exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def delete_for_issue(self, workspace_id: str, issue_id: str) -> int:
         """Remove one issue's whole history, returning how many rows went.
@@ -375,6 +455,6 @@ class ActivityRepository:
 
 
 def as_activity(item: Mapping[str, Any]) -> Activity:
-    """One stored item as an `Activity`, ignoring the team feed's index attribute."""
-    fields = {key: value for key, value in item.items() if key != "ws_team"}
+    """One stored item as an `Activity`, ignoring the feed indexes' attributes."""
+    fields = {key: value for key, value in item.items() if key not in ("ws_team", "ws_actor")}
     return Activity.model_validate(fields)

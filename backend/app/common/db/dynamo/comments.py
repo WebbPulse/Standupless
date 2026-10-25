@@ -369,6 +369,29 @@ class CommentRepository:
         comments = [as_comment(item) for item in items]
         return [comment for comment in comments if since <= comment.created_at < until]
 
+    def list_by_author(
+        self, workspace_id: str, author_id: str, *, before: datetime | None = None, max_items: int = 50
+    ) -> list[Comment]:
+        """One author's comments in one workspace, newest first, from `before` back.
+
+        `before` is padded by a second because stored stamps drop a zero fraction,
+        so the caller cuts the exact boundary from the parsed rows.
+        """
+        if not workspace_id or not author_id:
+            return []
+        condition = Key("ws_author").eq(ws_author(workspace_id, author_id))
+        if before is not None:
+            upper = (before + timedelta(seconds=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+            condition = condition & Key("created_at").lte(upper)
+        items = self._repository.iter_query(
+            condition,
+            index_name=AUTHOR_CREATED_INDEX,
+            ascending=False,
+            max_items=max_items,
+            page_size=max_items,
+        )
+        return [as_comment(item) for item in items]
+
     def delete_for_issue(self, workspace_id: str, issue_id: str, *, batch: int = 100) -> int:
         """Remove every comment of one issue, a page at a time, returning how many went."""
         partition = ws_issue(workspace_id, issue_id)

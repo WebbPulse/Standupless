@@ -2138,6 +2138,18 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/members/{user_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/members/{user_id}/activity"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/views/{view_id}"
   },

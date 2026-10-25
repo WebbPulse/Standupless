@@ -758,3 +758,15 @@ export const slackLinkKey = (workspaceId: string): QueryKey => [
   'slack-link',
   workspaceId,
 ];
+
+/** One member's profile as the member page reads it. */
+export const memberProfileKey = (
+  workspaceId: string,
+  userId: string
+): QueryKey => ['member', workspaceId, userId, 'profile'];
+
+/** One member's recent activity feed. */
+export const memberActivityKey = (
+  workspaceId: string,
+  userId: string
+): QueryKey => ['member', workspaceId, userId, 'activity'];
