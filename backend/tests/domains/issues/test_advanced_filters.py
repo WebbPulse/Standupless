@@ -130,6 +130,43 @@ def test_parent_and_sub_issue_filters(client: TestClient, workspace: str, reposi
     assert _ids(_list(client, workspace, parent_id_not=parent["id"])) == {parent["id"], loose["id"]}
 
 
+def test_issue_id_keeps_only_the_named_issues(client: TestClient, workspace: str, statuses: Any) -> None:
+    """`issue_id` is set membership, the filter a one-off key list saves as a view."""
+    sign_in(client, OWNER)
+    first = create_issue(client, workspace, title="First")
+    second = create_issue(client, workspace, team_id=OTHER_TEAM, title="Second")
+    create_issue(client, workspace, title="Third")
+
+    assert _ids(_list(client, workspace, issue_id=[first["id"], second["id"]])) == {first["id"], second["id"]}
+
+
+def test_keys_list_the_named_issues_across_teams(client: TestClient, workspace: str, statuses: Any) -> None:
+    """Keys from two teams read in one request, case insensitive, and unknown keys are skipped."""
+    sign_in(client, OWNER)
+    first = create_issue(client, workspace, title="First")
+    second = create_issue(client, workspace, team_id=OTHER_TEAM, title="Second")
+    create_issue(client, workspace, title="Third")
+
+    listed = _list(client, workspace, key=[first["key"].lower(), second["key"], "ZZZ-9", "not a key"])
+
+    assert _ids(listed) == {first["id"], second["id"]}
+
+
+def test_keys_naming_nothing_list_nothing(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A key list that resolves to no issue is an empty list, never the unfiltered one."""
+    sign_in(client, OWNER)
+    create_issue(client, workspace, title="Kept out")
+
+    assert _ids(_list(client, workspace, key=["ZZZ-1", "ZZZ-2"])) == set()
+
+
+def test_too_many_keys_are_refused(client: TestClient, workspace: str, statuses: Any) -> None:
+    """More than a page of keys is a 422 rather than a hundred lookups."""
+    sign_in(client, OWNER)
+    response = client.get(f"/api/workspaces/{workspace}/issues", params={"key": [f"ABC-{n}" for n in range(1, 102)]})
+    assert response.status_code == 422
+
+
 def test_content_matches_title_and_description(client: TestClient, workspace: str, statuses: Any) -> None:
     """Content is a case insensitive substring of the title or the description, unlike `q`."""
     sign_in(client, OWNER)

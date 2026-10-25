@@ -28,7 +28,7 @@ import {
   LuPlus,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { IssueListFilters } from '../../../api/issues';
+import type { IssueListFilters, OrderedIssueRead } from '../../../api/issues';
 import {
   VIEW_COLORS,
   createView,
@@ -422,6 +422,15 @@ export interface IssueViewPageProps {
   notice?: ReactNode;
   /** True on My issues > Assigned, the one list that offers the Focus grouping. */
   focusGrouping?: boolean;
+  /** Positions by issue id the manual ordering follows, such as a key list's order. */
+  rank?: ReadonlyMap<string, number> | undefined;
+  /**
+   * The scope a new view saves over, when it differs from the one the page
+   * reads under, such as the issue ids a one-off key list resolved to.
+   */
+  saveScope?: IssueListFilters | undefined;
+  /** Told the rows each settled read holds, for a page that labels or orders by them. */
+  onRowsRead?: ((issues: readonly OrderedIssueRead[]) => void) | undefined;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -460,6 +469,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   statusCategories,
   notice,
   focusGrouping = false,
+  rank,
+  saveScope,
+  onRowsRead,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -595,6 +607,10 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
+  useEffect(() => {
+    if (onRowsRead !== undefined && !collection.isLoading)
+      onRowsRead(collection.issues);
+  }, [onRowsRead, collection.isLoading, collection.issues]);
   const customersShown =
     workspace !== null &&
     workspace.role !== 'guest' &&
@@ -731,10 +747,11 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       return;
     }
     const teamId = details.teamId;
+    const savedOver = saveScope ?? scope;
     const runsOver =
-      teamId === undefined || typeof scope.team_id === 'string'
-        ? scope
-        : { ...scope, team_id: teamId };
+      teamId === undefined || typeof savedOver.team_id === 'string'
+        ? savedOver
+        : { ...savedOver, team_id: teamId };
     try {
       const created = await createView(
         workspaceId,
@@ -1085,6 +1102,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             filterFields={filterFields}
             statusCategories={statusCategories}
             {...(customersShown ? { customerRequests } : {})}
+            rank={rank}
           />
         </div>
         {insightsOpen && (

@@ -259,6 +259,7 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "label_id_all",
         "parent_id_not",
         "has_sub_issues",
+        "issue_id",
         "content",
         "content_not",
         "completed_after",

@@ -93,6 +93,7 @@ export interface ViewFilterNegations {
   subscriber_id_not?: string | string[];
   label_id_all?: string | string[];
   parent_id_not?: string | string[];
+  issue_id?: string | string[];
   has_sub_issues?: 'true' | 'false';
   completed_after?: string;
   completed_before?: string;

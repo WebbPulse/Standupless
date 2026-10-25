@@ -41,6 +41,7 @@ from app.common.issue_archive import archive_issue as archive_issue_row
 from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
 from app.common.issue_conversion import convert_to_project, duplicate_issue
+from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
@@ -103,6 +104,8 @@ def list_issues(
     due_after: Annotated[Optional[str], Query()] = None,
     team_id_in: Values = None,
     team_id_not: Values = None,
+    issue_id: Values = None,
+    key: Values = None,
     created_after: Annotated[Optional[str], Query()] = None,
     created_before: Annotated[Optional[str], Query()] = None,
     updated_after: Annotated[Optional[str], Query()] = None,
@@ -196,6 +199,10 @@ def list_issues(
     triage are left out the same way unless `include_triage` is set, and
     `triage_only` lists nothing but them.
 
+    `issue_id` keeps only the named issues, and `key` names them by key instead,
+    up to 100 in one read, each resolved as the by-key read resolves it, so a
+    one-off list of keys costs one request; a key naming nothing is skipped.
+
     `include_sub_teams` with a `team_id` rolls that team's sub-teams the caller
     may see into the list, so a parent team's views show its sub-teams' issues.
     `reverse` turns the sort around, issues lacking the sorted value still last.
@@ -250,6 +257,7 @@ def list_issues(
             due_after=due_after,
             team_id_in=team_id_in,
             team_id_not=team_id_not,
+            issue_id=issue_ids_for_keys(repositories, context, issue_id, key),
             created_after=created_after,
             created_before=created_before,
             updated_after=updated_after,

@@ -307,6 +307,7 @@ class IssueFilter:
 
     team_ids: FilterValues = field(default_factory=frozenset)
     team_ids_not: FilterValues = field(default_factory=frozenset)
+    issue_ids: FilterValues = field(default_factory=frozenset)
     status_ids: FilterValues = field(default_factory=frozenset)
     status_ids_not: FilterValues = field(default_factory=frozenset)
     status_categories: FilterValues = field(default_factory=frozenset)
@@ -540,6 +541,8 @@ class IssueFilter:
         """One result per condition this filter carries, groups last, lazily so `all` and `any` stop early."""
         if self.team_ids or self.team_ids_not:
             yield _included(self.team_ids, self.team_ids_not, issue.team_id)
+        if self.issue_ids:
+            yield issue.issue_id in self.issue_ids
         if self.status_ids or self.status_ids_not:
             yield _included(self.status_ids, self.status_ids_not, shown_status_id(issue))
         category = categories.get(issue.status_id)
@@ -817,6 +820,7 @@ def build_issue_filter(
     user_id: str,
     team_id_in: Iterable[str] | str | None = None,
     team_id_not: Iterable[str] | str | None = None,
+    issue_id: Iterable[str] | str | None = None,
     status_id: Iterable[str] | str | None = None,
     status_id_not: Iterable[str] | str | None = None,
     status_category: Iterable[str] | str | None = None,
@@ -889,7 +893,8 @@ def build_issue_filter(
     Keyword names match the query parameters and the saved view filter keys, so a
     stored filter can be splatted straight in. `team_id_in` and `team_id_not`
     narrow the teams a list already fanned out over, which is how a workspace
-    view says "these teams" or "every team but these". Raises `UnknownStatusCategory` for a
+    view says "these teams" or "every team but these". `issue_id` keeps only the
+    named issues, which is how a one-off list of keys is saved as a view. Raises `UnknownStatusCategory` for a
     category outside the fixed five, and its `UnknownSlaStatus` subclass for an
     SLA status outside the fixed four. `is_blocked` and `is_blocking` take a bool
     or `true` and `false`, and `has_relation` a link type, each refused with
@@ -925,6 +930,7 @@ def build_issue_filter(
     return IssueFilter(
         team_ids=_values(team_id_in, nullable=False),
         team_ids_not=_values(team_id_not, nullable=False),
+        issue_ids=_values(issue_id, nullable=False),
         status_ids=_values(status_id, nullable=False),
         status_ids_not=_values(status_id_not, nullable=False),
         status_categories=_categories(status_category),
