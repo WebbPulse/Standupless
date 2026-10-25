@@ -157,10 +157,10 @@ def readable_parents(repositories: Repositories, context: AuthzContext) -> dict[
     visible = {team.team_id for team in teams}
     parents: dict[tuple[str, str], Parent] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
-        teams = visible_project_teams(project, visible)
-        if teams:
+        project_teams = visible_project_teams(project, visible)
+        if project_teams:
             parents[("project", project.project_id)] = Parent(
-                kind="project", parent_id=project.project_id, name=project.name, teams=teams
+                kind="project", parent_id=project.project_id, name=project.name, teams=project_teams
             )
     if not context.is_guest:
         for initiative in repositories.planning.list_initiatives(context.workspace_id):

@@ -148,7 +148,7 @@ def _delete_document(call: ToolCall) -> Any:
 DOCUMENT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_documents",
-        description="The documents of one project, initiative or team, most recently edited first, without their bodies.",
+        description="The documents of one project, initiative or team, newest edit first, without their bodies.",
         scopes=("projects:read",),
         schema=object_schema(PARENT_PROPERTIES),
         handler=_list_documents,
