@@ -12,15 +12,10 @@ read the issue or document a page reports open.
 from typing import TYPE_CHECKING
 
 from app.common.composition.consumers import CONSUMERS
-from app.common.composition.wiring import (
-    Domain,
-    build_domain_app,
-    configure_logging,
-    configure_tracing,
-)
+from app.common.composition.wiring import Domain, domain_entrypoint
 
 if TYPE_CHECKING:  # pragma: no cover
-    from fastapi import APIRouter, FastAPI
+    from fastapi import APIRouter
 
 GRANT = CONSUMERS["integrations-realtime-consumer"]
 
@@ -42,18 +37,7 @@ def _routers() -> "list[APIRouter]":
     return [build_router(GRANT.bundle())]
 
 
-def build_app() -> "FastAPI":
-    """The WebSocket event route and the root probes, and nothing else."""
-    return build_domain_app(DOMAIN, title=DOMAIN.title)
-
-
-def main() -> None:
-    """Configure logging and tracing process-wide, then serve the application."""
-    from webbpulse.lambda_entry import run_uvicorn
-
-    configure_logging(service=DOMAIN.service_name)
-    configure_tracing(DOMAIN)
-    run_uvicorn(build_app())
+build_app, main = domain_entrypoint(DOMAIN)
 
 
 if __name__ == "__main__":

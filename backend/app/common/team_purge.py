@@ -424,10 +424,7 @@ def build_app(domain: "Domain") -> "FastAPI":
 
 def serve(domain: "Domain") -> None:
     """Configure logging and tracing process-wide, then serve one stage's application."""
-    from webbpulse.lambda_entry import run_uvicorn
+    from app.common.composition.wiring import domain_entrypoint
 
-    from app.common.composition.wiring import configure_logging, configure_tracing
-
-    configure_logging(service=domain.service_name)
-    configure_tracing(domain)
-    run_uvicorn(build_app(domain))
+    _, main = domain_entrypoint(domain)
+    main()

@@ -8,16 +8,11 @@ it carries a bundle of its own rather than the integrations domain's.
 
 from typing import TYPE_CHECKING
 
-from app.common.composition.wiring import (
-    Domain,
-    build_domain_app,
-    configure_logging,
-    configure_tracing,
-)
+from app.common.composition.wiring import Domain, domain_entrypoint
 from app.common.issue_import import IMPORT_READ_REPOSITORIES, IMPORT_REPOSITORIES
 
 if TYPE_CHECKING:  # pragma: no cover
-    from fastapi import APIRouter, FastAPI
+    from fastapi import APIRouter
 
 DOMAIN = Domain(
     name="integrations-import-consumer",
@@ -37,18 +32,7 @@ def _routers() -> "list[APIRouter]":
     return [build_router()]
 
 
-def build_app() -> "FastAPI":
-    """The consumer route and the root probes, and nothing else."""
-    return build_domain_app(DOMAIN, title=DOMAIN.title)
-
-
-def main() -> None:
-    """Configure logging and tracing process-wide, then serve the application."""
-    from webbpulse.lambda_entry import run_uvicorn
-
-    configure_logging(service=DOMAIN.service_name)
-    configure_tracing(DOMAIN)
-    run_uvicorn(build_app())
+build_app, main = domain_entrypoint(DOMAIN)
 
 
 if __name__ == "__main__":
