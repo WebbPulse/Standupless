@@ -98,6 +98,23 @@ workspaces keep working without a reinstall. Until then a member's link works bu
 the first message marks it broken with `messages_tab_disabled`, and linking again
 after the update resumes delivery.
 
+`scripts/apply_slack_manifest.py` does the same through the manifest API. It needs
+an App configuration token, which only a person can mint: on
+https://api.slack.com/apps, under **Your App Configuration Tokens**, press
+**Generate Token** for the WebbPulse workspace and store the access token with
+`webbpulse-config ... secret set SLACK_CONFIG_TOKEN`. It lasts 12 hours. Then, with
+the App ID from **Basic Information**:
+
+```sh
+SLACK_CONFIG_TOKEN='{{resolve:secretsmanager:standupless-staging/app:SecretString:SLACK_CONFIG_TOKEN}}' \
+  asm-exec python3 scripts/apply_slack_manifest.py staging --app-id <APP_ID>
+```
+
+`--dry-run` validates and diffs without writing. The script refuses an App whose
+name does not match the manifest, so a staging run cannot touch production. A
+manifest that adds a scope, such as `reactions:read`, also needs each connected
+workspace to reinstall the App before Slack grants it.
+
 ## The secret keys
 
 Each environment's `app` secret holds the keys. Terraform does not declare them:
