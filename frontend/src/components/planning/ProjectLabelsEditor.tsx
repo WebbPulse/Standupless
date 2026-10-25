@@ -249,7 +249,7 @@ const ProjectLabelsEditor: React.FC<ProjectLabelsEditorProps> = ({
             className="ml-auto"
             disabled={name.trim() === '' || isAdding}
           >
-            {isAdding ? 'Adding' : 'Add label'}
+            {isAdding ? 'Adding' : 'Add project label'}
           </Button>
         </form>
       )}

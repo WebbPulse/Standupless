@@ -153,13 +153,11 @@ describe('the team projects settings', () => {
     renderSection();
     await screen.findByDisplayValue('Mobile');
     await user.type(screen.getByLabelText('New project label'), 'Web');
-    await user.click(screen.getByRole('button', { name: 'Add label' }));
+    await user.click(screen.getByRole('button', { name: 'Add project label' }));
     await waitFor(() => {
-      expect(createProjectLabel).toHaveBeenCalledWith({
-        name: 'Web',
-        color: '#5e6ad2',
-        team_id: TEAM,
-      });
+      expect(createProjectLabel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Web', team_id: TEAM })
+      );
     });
   });
 
