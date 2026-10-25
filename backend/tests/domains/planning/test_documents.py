@@ -242,6 +242,49 @@ def test_document_search_matches_short_words_and_a_last_word_prefix(
     assert found("nigh csv") == []
 
 
+def _search(views_client: TestClient, workspace: str, q: str) -> list[str]:
+    """The document ids one search returns, in order."""
+    response = views_client.get(f"{_base(workspace)}/search", params={"q": q})
+    assert response.status_code == 200, response.text
+    return [row["document_id"] for row in response.json()["documents"]]
+
+
+def test_document_search_matches_the_parent_name(client: TestClient, views_client: TestClient, workspace: str) -> None:
+    """A query matches through the parent's name alone or split with the title, own matches first."""
+    sign_in(client, MEMBER)
+    sign_in(views_client, MEMBER)
+    launch = seed_project(client, workspace)["project_id"]
+    billing = seed_project(client, workspace, name="Billing")["project_id"]
+    titled = _create(client, workspace, "project", launch, title="Billing runbook", body="Steps")
+    nested = _create(client, workspace, "project", billing, title="Runbook", body="Steps")
+
+    assert _search(views_client, workspace, "billing") == [titled["document_id"], nested["document_id"]]
+    assert _search(views_client, workspace, "billing runbook") == [titled["document_id"], nested["document_id"]]
+    assert _search(views_client, workspace, "runbook bill") == [titled["document_id"], nested["document_id"]]
+    assert _search(views_client, workspace, "launch runbook") == [titled["document_id"]]
+    found = views_client.get(f"{_base(workspace)}/search", params={"q": "billing runbook"}).json()["documents"]
+    assert [row["parent_name"] for row in found] == ["Launch", "Billing"]
+
+    renamed = client.patch(f"{_base(workspace)}/projects/{billing}", json={"name": "Payments"})
+    assert renamed.status_code == 200, renamed.text
+    assert _search(views_client, workspace, "payments runbook") == [nested["document_id"]]
+
+
+def test_document_search_skips_a_parent_the_caller_cannot_read(
+    client: TestClient, views_client: TestClient, workspace: str
+) -> None:
+    """A parent outside the caller's teams never lends its name to a match."""
+    sign_in(client, OWNER)
+    billing = seed_project(client, workspace, name="Billing", team_id=OTHER_TEAM)["project_id"]
+    hidden = _create(client, workspace, "project", billing, title="Runbook", body="Steps")
+
+    sign_in(views_client, OWNER)
+    assert _search(views_client, workspace, "billing runbook") == [hidden["document_id"]]
+    sign_in(views_client, GUEST)
+    assert _search(views_client, workspace, "billing runbook") == []
+    assert _search(views_client, workspace, "billing") == []
+
+
 def test_deleting_the_parent_deletes_its_documents(client: TestClient, repositories: Any, workspace: str) -> None:
     """Neither a project nor an initiative leaves orphaned documents behind."""
     sign_in(client, MEMBER)
