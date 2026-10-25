@@ -1,7 +1,8 @@
 /**
- * Reorders and timeline drags made on the initiatives page, shown before the
- * polled read catches up. A move lays its new place or dates over the
- * initiative at once, so the row lands where it was dropped; the stored
+ * Reorders, timeline drags and inline property edits made on the initiatives
+ * page, shown before the polled read catches up. A move lays its new place,
+ * dates or properties over the initiative at once, so the row lands where it
+ * was dropped or shows the value just picked; the stored
  * initiative replaces it when the write answers, and a newer read replaces
  * that. A failed write takes the move back and says so in a notice.
  */
@@ -11,11 +12,19 @@ import { invalidateQueries, type QueryKey } from '@webbpulse/api-client/react';
 import { updateInitiative } from '../api/initiatives';
 import { errorMessage } from '../lib/errors';
 import { showErrorToast } from '../lib/toast';
-import type { DateResolution, InitiativeRead } from '../types/Api';
+import type {
+  DateResolution,
+  InitiativeRead,
+  InitiativeStatus,
+  ProjectHealth,
+} from '../types/Api';
 
-/** The change one move writes: a new manual position, or new dates from the timeline. */
+/** The change one move writes: a new manual position, new dates from the timeline, or a property picked on a row. */
 export interface InitiativeMove {
   sort_order?: string;
+  status?: InitiativeStatus;
+  owner_id?: string | null;
+  health?: ProjectHealth | null;
   start_date?: string | null;
   start_date_resolution?: DateResolution | null;
   target_date?: string | null;
