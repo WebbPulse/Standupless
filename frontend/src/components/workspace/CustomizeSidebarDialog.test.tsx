@@ -10,13 +10,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceRole } from '../../types/Api';
 import CustomizeSidebarDialog from './CustomizeSidebarDialog';
 
-const auth = vi.hoisted(() => ({
-  user: { email: 'me@example.com', display_name: 'Me' } as Record<
-    string,
-    unknown
-  >,
-  login: vi.fn(),
-}));
+const auth = vi.hoisted(() => {
+  const user: Record<string, unknown> = {
+    email: 'me@example.com',
+    display_name: 'Me',
+  };
+  return { user, login: vi.fn<(user: Record<string, unknown>) => void>() };
+});
 const updatePreferences =
   vi.fn<(changes: Record<string, unknown>) => Promise<unknown>>();
 
@@ -80,15 +80,10 @@ describe('the Customize sidebar dialog', () => {
     expect(updatePreferences).toHaveBeenCalledWith({
       sidebar_items: { views: 'show' },
     });
-    expect(auth.login).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        sidebar_items: expect.objectContaining({
-          views: 'show',
-          roadmap: 'hide',
-        }),
-      })
-    );
+    expect(auth.login.mock.calls[0]?.[0].sidebar_items).toMatchObject({
+      views: 'show',
+      roadmap: 'hide',
+    });
     await waitFor(() => {
       expect(auth.login).toHaveBeenCalledTimes(2);
     });

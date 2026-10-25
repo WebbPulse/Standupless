@@ -59,13 +59,13 @@ const getPulseCount = vi.fn<() => Promise<number>>();
 const getCycleSettings =
   vi.fn<(teamId: string) => Promise<CycleSettingsRead>>();
 
-const auth = vi.hoisted(() => ({
-  user: { email: 'me@example.com', display_name: 'Me' } as Record<
-    string,
-    unknown
-  >,
-  login: vi.fn(),
-}));
+const auth = vi.hoisted(() => {
+  const user: Record<string, unknown> = {
+    email: 'me@example.com',
+    display_name: 'Me',
+  };
+  return { user, login: vi.fn<(user: Record<string, unknown>) => void>() };
+});
 const updatePreferences =
   vi.fn<(changes: Record<string, unknown>) => Promise<unknown>>();
 
@@ -1099,11 +1099,9 @@ describe('the sidebar customization', () => {
     expect(updatePreferences).toHaveBeenCalledWith({
       sidebar_items: { views: 'hide' },
     });
-    expect(auth.login).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sidebar_items: expect.objectContaining({ views: 'hide' }),
-      })
-    );
+    expect(auth.login.mock.calls[0]?.[0].sidebar_items).toMatchObject({
+      views: 'hide',
+    });
   });
 
   it('moves an item to More from its right-click menu', async () => {
