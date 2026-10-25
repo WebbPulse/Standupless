@@ -16,7 +16,7 @@ import {
 import SelectionQuote from './SelectionQuote';
 
 /** Presses Cmd Alt M the way a Mac reports it, Option turning M into µ. */
-const pressCommentChord = (target: EventTarget = document): boolean =>
+const pressCommentChord = (target: Document | Element = document): boolean =>
   fireEvent.keyDown(target, {
     key: 'µ',
     code: 'KeyM',
