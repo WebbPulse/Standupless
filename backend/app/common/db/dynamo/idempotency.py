@@ -52,6 +52,14 @@ class IdempotencyRepository:
         """Drop a claim, so a caller that failed can be retried before the TTL."""
         self._store.release(scoped_key(workspace_id, scope, key))
 
+    def held(self, workspace_id: str, scope: str, key: str) -> bool:
+        """Whether a claim on one key is still present, without taking it.
+
+        Matches `claim`: a row past its TTL that DynamoDB has not reclaimed yet
+        still counts, since a claim on it would lose too.
+        """
+        return self._repository.get({"scope_key": scoped_key(workspace_id, scope, key)}, consistent=True) is not None
+
     @property
     def event_store(self) -> IdempotencyStore:
         """The unscoped store, for provider event ids that are already globally unique.

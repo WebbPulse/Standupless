@@ -36,8 +36,8 @@ from app.common.media_tokens import (
     read_media_token,
 )
 from app.common.plan_limits import check_storage, plan_of, storage_limit_of
+from app.common.upload_rules import ATTACHMENT_CONTENT_TYPES, normalized_content_type, upload_ceiling
 from app.domains.discussion.schemas.discussion import (
-    ATTACHMENT_CONTENT_TYPES,
     CONTENT_EXPIRES_IN,
     CONTENT_REDIRECT_MAX_AGE,
     DEFAULT_LIMIT,
@@ -55,9 +55,7 @@ from app.domains.discussion.schemas.discussion import (
     UrlAttachmentCreate,
     content_disposition,
     favicon_for,
-    normalized_content_type,
     title_for,
-    upload_ceiling,
 )
 from app.domains.discussion.service import (
     attachments_bucket,

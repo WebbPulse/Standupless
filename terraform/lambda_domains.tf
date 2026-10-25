@@ -189,7 +189,7 @@ locals {
       secrets     = false
       ses         = false
       memory      = 1024
-      tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "planning", "attachments", "idempotency", "inbox", "rate-limits"]
+      tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "planning", "attachments", "idempotency", "inbox", "comments", "relations", "rate-limits"]
       read_tables = ["workspaces", "memberships", "users", "teams", "github"]
     }
   } : {}

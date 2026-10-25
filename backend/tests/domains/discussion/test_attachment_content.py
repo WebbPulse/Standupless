@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.common.media_tokens import mint_media_token, read_media_token
-from app.domains.discussion.schemas.discussion import MAX_UPLOAD_BYTES, MAX_VIDEO_UPLOAD_BYTES
+from app.common.upload_rules import MAX_UPLOAD_BYTES, MAX_VIDEO_UPLOAD_BYTES
 from tests.domains.discussion.conftest import seed_issue
 from tests.domains.discussion.test_attachments import request_upload, upload
 from tests.domains.helpers import GUEST, MEMBER, sign_in, sign_out

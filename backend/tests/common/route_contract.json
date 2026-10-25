@@ -669,6 +669,30 @@
     "auth": "team:admin",
     "domain": "integrations",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake"
+  },
+  {
+    "auth": "team:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake/regenerate"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
   },
   {

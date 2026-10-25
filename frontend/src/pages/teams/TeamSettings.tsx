@@ -1,6 +1,6 @@
 /**
  * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
- * issues move through, its labels, its issue templates and the recurring issues made from them, its automatic cycles, when stale open
+ * issues move through, its labels, its issue templates and the recurring issues made from them, its automatic cycles, the addresses mail files issues through, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
@@ -20,6 +20,7 @@ import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import AutoCloseSection from '../../components/team/AutoCloseSection';
 import ParentAutoCloseSection from '../../components/team/ParentAutoCloseSection';
 import CyclesSection from '../../components/team/CyclesSection';
+import EmailIntakeSection from '../../components/team/EmailIntakeSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
@@ -72,6 +73,7 @@ const SECTIONS = [
   { id: 'recurring', label: 'Recurring' },
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
+  { id: 'email', label: 'Create by email' },
   { id: 'sla', label: 'SLAs' },
   { id: 'auto-close', label: 'Auto-close' },
   { id: 'parent-auto-close', label: 'Parent and sub-issues' },
@@ -328,6 +330,14 @@ const TeamSettings: React.FC = () => {
               canEdit={editable}
               planIncluded={planIncludes(workspace?.plan, 'triage')}
               slug={slug ?? ''}
+            />
+          )}
+          {frame(
+            'email',
+            <EmailIntakeSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
             />
           )}
           {frame(

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.common import plan_limits
 from app.common.plan_limits import storage_limit_of
-from app.domains.discussion.schemas.discussion import MAX_UPLOAD_BYTES
+from app.common.upload_rules import MAX_UPLOAD_BYTES
 from tests.domains.discussion.conftest import put_object
 from tests.domains.helpers import ADMIN, MEMBER, sign_in
 

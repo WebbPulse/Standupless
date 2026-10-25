@@ -371,6 +371,19 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    EMAIL_INTAKE_DOMAIN: str = Field(
+        default="",
+        description=(
+            "Mail domain the create by email addresses live under, such as "
+            "intake.standupless.dev. Empty means create by email cannot be turned on."
+        ),
+    )
+
+    EMAIL_INTAKE_BUCKET: str = Field(
+        default="",
+        description="Bucket SES writes inbound intake mail to, read and emptied by the intake consumer.",
+    )
+
     AWS_REGION: str = Field(
         default="auto",
         description="AWS region for the AWS clients. Also accepts AWS_DEFAULT_REGION.",

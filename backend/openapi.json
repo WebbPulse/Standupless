@@ -161,7 +161,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -2937,7 +2938,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -3910,7 +3912,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -5738,7 +5741,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -5845,7 +5849,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -6112,6 +6117,100 @@
           "body"
         ],
         "title": "DraftWrite",
+        "type": "object"
+      },
+      "EmailIntakeList": {
+        "description": "A team's create by email addresses.\n\n`available` is false when this deployment has no intake mail domain, so no\naddress can be turned on.",
+        "properties": {
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/EmailIntakeRead"
+            },
+            "title": "Addresses",
+            "type": "array"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "available",
+          "addresses"
+        ],
+        "title": "EmailIntakeList",
+        "type": "object"
+      },
+      "EmailIntakeRead": {
+        "description": "One live create by email address, of the team itself or of one of its templates.\n\nMail sent to `address` files an issue in the team, into Triage when the team\nhas triage on, with the template applied when `template_id` is set.",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled_by": {
+            "title": "Enabled By",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "address",
+          "enabled_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EmailIntakeRead",
+        "type": "object"
+      },
+      "EmailIntakeWrite": {
+        "additionalProperties": false,
+        "description": "Which address to turn on or regenerate: the team's own, or one template's.",
+        "properties": {
+          "template_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          }
+        },
+        "title": "EmailIntakeWrite",
         "type": "object"
       },
       "ErrorResponse": {
@@ -8493,7 +8592,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -9760,7 +9860,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -13420,7 +13521,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -13804,7 +13906,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -16126,7 +16229,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -16353,7 +16457,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -16823,7 +16928,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -44273,7 +44379,8 @@
                     "cli",
                     "api",
                     "github",
-                    "system"
+                    "system",
+                    "email"
                   ],
                   "type": "string"
                 },
@@ -53593,6 +53700,268 @@
         "summary": "Create Team Document",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake": {
+      "delete": {
+        "description": "Turn the team's address, or one template's, off, or 404 when it was not on.",
+        "operationId": "delete_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Email Intake",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "The team's live create by email addresses, its own and its templates'.",
+        "operationId": "get_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIntakeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Email Intake",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Turn the team's address, or one template's, on; an address already on is answered unchanged.\n\nMail to it files issues as the admin who turned it on, so the 409 for a\ndeployment without an intake domain and the 404 for an unknown template\ncome before anything is written.",
+        "operationId": "put_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailIntakeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIntakeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Email Intake",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake/regenerate": {
+      "post": {
+        "description": "Give a live address a fresh token, revoking the old address at once.",
+        "operationId": "regenerate_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailIntakeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIntakeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Regenerate Email Intake",
+        "tags": [
+          "integrations"
         ]
       }
     },

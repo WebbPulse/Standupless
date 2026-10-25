@@ -166,6 +166,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_project_relations",
         "get_standup",
         "get_team",
+        "get_team_email_intake",
         "get_team_github_sync",
         "get_triage_summary",
         "get_workspace",
@@ -294,6 +295,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_auto_close_settings",
         "update_team_cycle_settings",
         "update_team_display_defaults",
+        "update_team_email_intake",
         "update_team_github_sync",
         "pin_team_repository",
         "update_team_member_role",
@@ -372,7 +374,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "suspend_member",
         "reactivate_member",
     }
-    assert len(TOOLS) == 258
+    assert len(TOOLS) == 260
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

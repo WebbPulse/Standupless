@@ -435,14 +435,24 @@ class FreshRows:
 
 
 def create_issue(
-    repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
+    repositories: Repositories,
+    context: AuthzContext,
+    payload: IssueCreate,
+    *,
+    fresh: Optional[FreshRows] = None,
+    origin_ref: Optional[str] = None,
 ) -> Issue:
     """Create an issue and the sub-issues its template adds, answering the issue."""
-    return create_issue_tree(repositories, context, payload, fresh=fresh)[0]
+    return create_issue_tree(repositories, context, payload, fresh=fresh, origin_ref=origin_ref)[0]
 
 
 def create_issue_tree(
-    repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
+    repositories: Repositories,
+    context: AuthzContext,
+    payload: IssueCreate,
+    *,
+    fresh: Optional[FreshRows] = None,
+    origin_ref: Optional[str] = None,
 ) -> tuple[Issue, list[Issue]]:
     """Create an issue and the sub-issues its template adds, all of them or none.
 
@@ -452,9 +462,11 @@ def create_issue_tree(
     anything is written. When one of them fails, every row this create wrote is
     removed and the 422 names the sub-issue, so a parent is never left half
     built. An issue landing in triage then runs its team's triage rules.
+    `origin_ref` is kept on the issue's created activity, such as the Message-ID
+    of the mail that filed it.
     """
     fresh = fresh or FreshRows()
-    issue, template, filled = _create_one(repositories, context, payload, fresh)
+    issue, template, filled = _create_one(repositories, context, payload, fresh, origin_ref=origin_ref)
     created: list[Issue] = []
     try:
         team = repositories.teams.get(context.workspace_id, issue.team_id)
@@ -509,7 +521,12 @@ def _remove_new_issue(repositories: Repositories, context: AuthzContext, issue: 
 
 
 def _create_one(
-    repositories: Repositories, context: AuthzContext, payload: IssueCreate, fresh: FreshRows
+    repositories: Repositories,
+    context: AuthzContext,
+    payload: IssueCreate,
+    fresh: FreshRows,
+    *,
+    origin_ref: Optional[str] = None,
 ) -> tuple[Issue, Optional[IssueTemplate], IssueCreate]:
     """Create one issue, allocating its key from the team's counter, and answer the template and the filled create.
 
@@ -613,6 +630,7 @@ def _create_one(
             created.issue_id,
             context.user_id,
             "created",
+            to_value=origin_ref,
             source=context.source,
         )
     )

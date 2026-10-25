@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from fastapi import Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
-from webbpulse.storage import UPLOAD_CONTENT_TYPES, disposition_for
+from webbpulse.storage import disposition_for
 
 from app.common.change_source import ChangeSource
 from app.common.comment_anchors import ANCHOR_CONTEXT_MAX, ANCHOR_QUOTE_MAX
@@ -24,6 +24,7 @@ from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
 from app.common.db.dynamo.comments import Comment, CommentAnchor, GithubThread, ThreadResolution
 from app.common.discussion_reads import AuthorRead, ReactionGroupRead, check_emoji
+from app.common.upload_rules import VIDEO_CONTENT_TYPES, normalized_content_type
 
 TargetKindField = Literal["issue", "comment"]
 
@@ -51,22 +52,6 @@ with a few files rather than a folder.
 """
 
 URL_MAX = 2048
-
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-"""The ceiling a presigned PUT is signed with, 25 MiB.
-
-A larger declared `size_bytes` is refused rather than silently lowered, because a
-client that declares 100 MB and is handed a 25 MiB URL fails at the end of the
-upload instead of at the start.
-"""
-
-MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024
-"""The ceiling a video upload is signed with, 200 MiB.
-
-A screen recording of a minute or two is the case this exists for, and it runs well
-past the document cap, so video gets its own bound rather than raising the cap on
-everything else.
-"""
 
 DOWNLOAD_EXPIRES_IN = 300
 """How long a presigned download stays valid, in seconds.
@@ -122,28 +107,6 @@ which the picker imports, and `tests/domains/discussion/test_reactions.py` fails
 when the checked-in file has drifted, so the two halves cannot disagree.
 """
 
-VIDEO_CONTENT_TYPES: frozenset[str] = frozenset({"video/mp4", "video/webm", "video/quicktime"})
-"""The video types an editor may embed inline and a reader plays with native controls.
-
-Held here rather than upstream because this product is the one consumer that plays
-video; the platform list stays the conservative document set.
-"""
-
-ATTACHMENT_CONTENT_TYPES: frozenset[str] = (frozenset(UPLOAD_CONTENT_TYPES) - {"image/svg+xml"}) | VIDEO_CONTENT_TYPES
-"""What an upload may declare here: the platform allow list minus SVG, plus video.
-
-The shared list admits `image/svg+xml` and leans on `disposition_for` to force it
-to download, which is a correct answer for a product that needs SVG. This contract
-refuses it outright, so the product narrows the platform list rather than restating
-it: a type added upstream arrives here, and the one exclusion says why it is an
-exclusion.
-"""
-
-
-def normalized_content_type(value: str) -> str:
-    """A declared content type without parameters, lower cased, for set membership."""
-    return value.split(";")[0].strip().lower()
-
 
 def content_disposition(content_type: str, filename: str) -> str:
     """The disposition an embedded file is served with.
@@ -155,11 +118,6 @@ def content_disposition(content_type: str, filename: str) -> str:
     if normalized_content_type(content_type) in VIDEO_CONTENT_TYPES and disposition.startswith("attachment"):
         return "inline" + disposition[len("attachment") :]
     return disposition
-
-
-def upload_ceiling(content_type: str) -> int:
-    """The largest declared size one content type may be presigned for."""
-    return MAX_VIDEO_UPLOAD_BYTES if normalized_content_type(content_type) in VIDEO_CONTENT_TYPES else MAX_UPLOAD_BYTES
 
 
 def _check_body(value: str) -> str:

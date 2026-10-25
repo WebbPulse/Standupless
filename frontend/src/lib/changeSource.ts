@@ -10,9 +10,10 @@ const LABELS: Partial<Record<ChangeSource, string>> = {
   mcp: 'MCP',
   cli: 'CLI',
   api: 'API',
+  email: 'email',
 };
 
-/** "via MCP", "via CLI" or "via API", or null when nothing should show. */
+/** "via MCP", "via CLI", "via API" or "via email", or null when nothing should show. */
 export const viaLabel = (
   source: ChangeSource | null | undefined
 ): string | null => {

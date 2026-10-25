@@ -38,7 +38,7 @@ ActivityRead = TypedDict(
             "thread_unresolved",
         ],
         "release_id": NotRequired[str | None],
-        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None],
         "to": NotRequired[Any],
     },
 )
@@ -561,7 +561,7 @@ class CustomerRequestRead(TypedDict):
     customer_name: NotRequired[str]
     important: NotRequired[bool]
     request_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     target_id: str
     target_key: NotRequired[str]
     target_kind: Literal["issue", "project"]
@@ -854,7 +854,7 @@ class DocumentRead(TypedDict):
     parent_id: str
     parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     title: str
     updated_at: str
     updated_by: str
@@ -871,7 +871,7 @@ class DocumentSummaryRead(TypedDict):
     parent_id: str
     parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     title: str
     updated_at: str
     updated_by: str
@@ -905,6 +905,19 @@ class DraftRead(TypedDict):
 
 class DraftWrite(TypedDict):
     body: str
+
+
+class EmailIntakeRead(TypedDict):
+    address: str
+    created_at: str
+    enabled_by: str
+    team_id: str
+    template_id: NotRequired[str | None]
+    updated_at: str
+
+
+class EmailIntakeWrite(TypedDict, closed=True):
+    template_id: NotRequired[str | None]
 
 
 class FavoriteFolderRead(TypedDict):
@@ -1132,7 +1145,7 @@ class InitiativeUpdateRead(TypedDict):
     edited_at: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
     initiative_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     update_id: str
     updated_at: str
     workspace_id: str
@@ -1258,7 +1271,7 @@ class IssueDescriptionVersionRead(TypedDict):
     edited_at: str
     edited_by: str
     issue_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     version_id: str
 
 
@@ -1639,7 +1652,7 @@ class NotificationRead(TypedDict):
     project_name: NotRequired[str | None]
     project_update_id: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     standup_date: NotRequired[str | None]
     summary: NotRequired[str]
     team_id: str
@@ -1709,7 +1722,7 @@ ProjectActivityRead = TypedDict(
         "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
         "project_id": str,
-        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None],
         "to": NotRequired[Any],
     },
 )
@@ -2045,7 +2058,7 @@ class PulseItemRead(TypedDict):
     project_icon: NotRequired[str | None]
     project_id: NotRequired[str | None]
     project_name: NotRequired[str | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     subject_type: Literal["project", "initiative"]
     unread: NotRequired[bool]
     update_id: NotRequired[str | None]
@@ -3984,7 +3997,7 @@ class CommentRead(TypedDict):
     reactions: NotRequired[list[ReactionGroupRead]]
     reply_count: NotRequired[int]
     resolution: NotRequired[ThreadResolution | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     team_id: str
     workspace_id: str
 
@@ -4060,6 +4073,12 @@ class DocumentVersionListRead(TypedDict):
 
 class DraftListRead(TypedDict):
     drafts: list[DraftRead]
+
+
+class EmailIntakeList(TypedDict):
+    addresses: list[EmailIntakeRead]
+    available: bool
+    team_id: str
 
 
 class ErrorResponse(TypedDict):
@@ -4565,7 +4584,7 @@ class ProjectUpdateCommentRead(TypedDict):
     mentions: NotRequired[list[str]]
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     update_id: str
     workspace_id: str
 
@@ -4580,7 +4599,7 @@ class ProjectUpdateRead(TypedDict):
     health: Literal["on_track", "at_risk", "off_track"]
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     update_id: str
     updated_at: str
     workspace_id: str
