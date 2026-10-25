@@ -18,6 +18,7 @@ import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinitio
 import { useLinkedReference } from '../../hooks/useLinkedReference';
 import { cn } from '../../lib/cn';
 import { isContentPath } from '../../lib/media';
+import { isMermaidLanguage } from '../../lib/mermaid';
 import {
   parseMarkdown,
   type BlockNode,
@@ -25,6 +26,7 @@ import {
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
 import HighlightedCode from './highlighted-code';
+import MermaidBlock from './mermaid-block';
 import IssueChip from './IssueChip';
 import MarkdownCallout from './markdown-callout';
 import ReferenceChip from './ReferenceChip';
@@ -168,6 +170,9 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
       );
     }
     case 'code':
+      if (isMermaidLanguage(block.language)) {
+        return <MermaidBlock key={key} value={block.value} />;
+      }
       return (
         <HighlightedCode
           key={key}
