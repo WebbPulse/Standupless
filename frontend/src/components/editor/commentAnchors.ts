@@ -77,6 +77,10 @@ export const flatten = (doc: ProseMirrorNode): FlatText => {
     if (node.isBlock || node.type.name === 'hardBreak') brk();
     return true;
   });
+  while (text.endsWith('\n')) {
+    text = text.slice(0, -1);
+    positions.pop();
+  }
   return { text, positions };
 };
 
