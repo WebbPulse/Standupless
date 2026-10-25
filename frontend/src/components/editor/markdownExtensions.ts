@@ -45,6 +45,7 @@ import { isLinkTarget } from '../../lib/markdown';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
 import { EditorShortcuts } from './editorShortcuts';
+import { DocumentLinkSuggestion } from './DocumentLinkSuggestion';
 import { EmojiSuggestion } from './EmojiSuggestion';
 import { MediaImage, MediaUpload } from './mediaNodes';
 
@@ -324,6 +325,7 @@ export const markdownExtensions = (
     EditorShortcuts,
     MentionChips,
     EmojiSuggestion,
+    DocumentLinkSuggestion,
     ReferenceChips.configure({
       ...(options.isIssueKey === undefined
         ? {}

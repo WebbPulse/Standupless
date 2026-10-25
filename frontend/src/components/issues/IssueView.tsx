@@ -152,6 +152,10 @@ import IssueSubscribeButton from './IssueSubscribeButton';
 import RemindMeDialog from './RemindMeDialog';
 import FavoriteButton from '../ui/FavoriteButton';
 import IssueTimeline from './IssueTimeline';
+import {
+  DocumentLinkContext,
+  issueDocumentParent,
+} from '../../contexts/DocumentLinkContext';
 import IssueTrailNav from './IssueTrailNav';
 import MoveIssueDialog, {
   MOVE_ISSUE_KEYS,
@@ -1017,17 +1021,21 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 </div>
 
                 <div className="order-3 min-w-0 border-t border-line pt-6 @min-[860px]:mt-8">
-                  <IssueTimeline
-                    workspaceId={workspaceId}
-                    issueId={issue.id}
-                    currentUserId={currentUserId}
-                    canComment={canEdit}
-                    isAdmin={isAdmin}
-                    context={context}
-                    slug={slug}
-                    teamKeyPrefix={team?.key_prefix ?? ''}
-                    onCommentAttachments={onCommentAttachments}
-                  />
+                  <DocumentLinkContext.Provider
+                    value={issueDocumentParent(issue.project_id)}
+                  >
+                    <IssueTimeline
+                      workspaceId={workspaceId}
+                      issueId={issue.id}
+                      currentUserId={currentUserId}
+                      canComment={canEdit}
+                      isAdmin={isAdmin}
+                      context={context}
+                      slug={slug}
+                      teamKeyPrefix={team?.key_prefix ?? ''}
+                      onCommentAttachments={onCommentAttachments}
+                    />
+                  </DocumentLinkContext.Provider>
                 </div>
               </div>
 

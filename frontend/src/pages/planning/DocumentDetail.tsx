@@ -42,6 +42,7 @@ import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import { refreshDocumentLists } from '../../hooks/useDocuments';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
@@ -492,20 +493,24 @@ export const DocumentDetail: React.FC = () => {
               )
             }
           >
-            <RichMarkdownEditor
-              ref={editor}
-              value={page.body}
-              editable={page.can_edit}
-              ariaLabel="Document"
-              className={`${BODY_CLASS} min-h-48`}
-              onCommit={saveBody}
-              onChange={scheduleSave}
-              onCancel={() => {
-                editor.current?.focus();
-              }}
-              {...(page.can_edit ? { placeholder: 'Start writing...' } : {})}
-              {...(isMember ? { mentionPeople: people } : {})}
-            />
+            <DocumentLinkContext.Provider
+              value={{ kind: page.parent_kind, id: page.parent_id }}
+            >
+              <RichMarkdownEditor
+                ref={editor}
+                value={page.body}
+                editable={page.can_edit}
+                ariaLabel="Document"
+                className={`${BODY_CLASS} min-h-48`}
+                onCommit={saveBody}
+                onChange={scheduleSave}
+                onCancel={() => {
+                  editor.current?.focus();
+                }}
+                {...(page.can_edit ? { placeholder: 'Start writing...' } : {})}
+                {...(isMember ? { mentionPeople: people } : {})}
+              />
+            </DocumentLinkContext.Provider>
           </Suspense>
           {page.mentions.length > 0 && (
             <section
