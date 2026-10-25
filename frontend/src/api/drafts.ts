@@ -1,6 +1,7 @@
 /**
- * The comment draft routes: the caller's unposted comments, one per issue and
- * one per reply thread. Drafts are the caller's own, saved as they type and
+ * The comment draft routes: the caller's unposted comments, one per issue,
+ * document or update reply thread, and one per reply thread of an issue or
+ * document comment. Drafts are the caller's own, saved as they type and
  * restored when the composer opens again, and posting the comment clears its
  * draft on the server too.
  *
@@ -26,23 +27,50 @@ export const draftsPath = (workspaceId: string): string =>
 export const issueDraftPath = (workspaceId: string, issueId: string): string =>
   `${draftsPath(workspaceId)}/${issueId}`;
 
-/** The query naming a reply thread, empty for the issue's own thread. */
+/** The thread a comment draft sits on: an issue, a document, or the reply thread of an update. */
+export type CommentDraftParent =
+  | { kind: 'issue'; id: string }
+  | { kind: 'document'; id: string }
+  | { kind: 'project_update'; projectId: string; updateId: string }
+  | { kind: 'initiative_update'; initiativeId: string; updateId: string };
+
+/** The route one parent's draft is read, saved and discarded through. */
+export const commentDraftPath = (
+  workspaceId: string,
+  parent: CommentDraftParent
+): string => {
+  const base = draftsPath(workspaceId);
+  if (parent.kind === 'document') return `${base}/documents/${parent.id}`;
+  if (parent.kind === 'project_update')
+    return `${base}/update-replies/projects/${parent.projectId}/${parent.updateId}`;
+  if (parent.kind === 'initiative_update')
+    return `${base}/update-replies/initiatives/${parent.initiativeId}/${parent.updateId}`;
+  return issueDraftPath(workspaceId, parent.id);
+};
+
+/** The listing filter naming one parent. */
+const parentQuery = (parent: CommentDraftParent): Record<string, string> => {
+  if (parent.kind === 'document') return { document_id: parent.id };
+  if (parent.kind === 'issue') return { issue_id: parent.id };
+  return { update_id: parent.updateId };
+};
+
+/** The query naming a reply thread, empty for the parent's own thread. */
 const threadQuery = (
   parentCommentId: string | null | undefined
 ): Record<string, string> =>
   parentCommentId ? { parent_comment_id: parentCommentId } : {};
 
-/** Reads the caller's drafts on one issue, answering an empty list for a missing body. */
+/** Reads the caller's drafts on one parent, answering an empty list for a missing body. */
 export const listIssueDrafts = async (
   workspaceId: string,
-  issueId: string,
+  parent: CommentDraftParent,
   signal?: AbortSignal
 ): Promise<DraftRead[]> => {
+  const query = parentQuery(parent);
   const response = await apiClient.get<DraftListRead>(
     draftsPath(workspaceId),
-    signal === undefined
-      ? { query: { issue_id: issueId } }
-      : { query: { issue_id: issueId }, signal }
+    signal === undefined ? { query } : { query, signal }
   );
   return Array.isArray(response.data?.drafts) ? response.data.drafts : [];
 };
@@ -50,13 +78,13 @@ export const listIssueDrafts = async (
 /** Saves the caller's draft in one thread, replacing the one there. */
 export const saveDraft = async (
   workspaceId: string,
-  issueId: string,
+  parent: CommentDraftParent,
   parentCommentId: string | null | undefined,
   body: string
 ): Promise<DraftRead> => {
   const write: DraftWrite = { body };
   const response = await apiClient.put<DraftRead>(
-    issueDraftPath(workspaceId, issueId),
+    commentDraftPath(workspaceId, parent),
     write,
     { query: threadQuery(parentCommentId) }
   );
@@ -66,10 +94,10 @@ export const saveDraft = async (
 /** Discards the caller's draft in one thread. Discarding none is not an error. */
 export const deleteDraft = async (
   workspaceId: string,
-  issueId: string,
+  parent: CommentDraftParent,
   parentCommentId: string | null | undefined
 ): Promise<void> => {
-  await apiClient.delete<void>(issueDraftPath(workspaceId, issueId), {
+  await apiClient.delete<void>(commentDraftPath(workspaceId, parent), {
     query: threadQuery(parentCommentId),
   });
 };

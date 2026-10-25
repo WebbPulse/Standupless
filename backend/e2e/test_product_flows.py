@@ -704,6 +704,81 @@ class TestDiscussionDomain:
         gone = api.get(path)
         assert gone.status_code == 404, gone.text[:400]
 
+    @WRITES
+    def test_document_and_update_reply_drafts_are_saved_restored_and_discarded(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A draft on a document thread and on project and initiative update threads reads back, lists and goes.
+
+        Each parent kind has its own route under the drafts prefix, and the
+        listing filters by the parent's id, so all three are driven here.
+        """
+        base = f"/api/workspaces/{workspace['id']}"
+        drafts = f"{base}/drafts"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("draft-project")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        initiative = _created(
+            api.post(f"{base}/initiatives", json={"name": run_scope.name("draft-init")}), "initiative"
+        )
+        initiative_path = f"{base}/initiatives/{initiative['id']}"
+        try:
+            document = _created(
+                api.post(f"{project_path}/documents", json={"title": run_scope.name("draft-doc")}), "document"
+            )
+            project_update = _created(
+                api.post(
+                    f"{project_path}/updates", json={"body": run_scope.name("draft-update"), "health": "on_track"}
+                ),
+                "update",
+            )
+            initiative_update = _created(
+                api.post(
+                    f"{initiative_path}/updates",
+                    json={"body": run_scope.name("draft-init-update"), "health": "on_track"},
+                ),
+                "update",
+            )
+            threads = (
+                (f"{drafts}/documents/{document['id']}", {"document_id": document["id"]}, "document"),
+                (
+                    f"{drafts}/update-replies/projects/{project['id']}/{project_update['id']}",
+                    {"update_id": project_update["id"]},
+                    "project_update",
+                ),
+                (
+                    f"{drafts}/update-replies/initiatives/{initiative['id']}/{initiative_update['id']}",
+                    {"update_id": initiative_update["id"]},
+                    "initiative_update",
+                ),
+            )
+            for path, scope, kind in threads:
+                body = run_scope.name(f"{kind} draft")
+
+                saved = api.put(path, json={"body": body})
+                assert saved.status_code == 200, saved.text[:400]
+                assert saved.json()["parent_kind"] == kind
+
+                readback = api.get(path)
+                assert readback.status_code == 200, readback.text[:400]
+                assert readback.json()["body"] == body
+
+                listed = api.get(drafts, params=scope)
+                assert listed.status_code == 200, listed.text[:400]
+                assert [row["body"] for row in listed.json()["drafts"]] == [body]
+
+                for _ in range(2):
+                    discarded = api.delete(path)
+                    assert discarded.status_code == 204, discarded.text[:400]
+
+                gone = api.get(path)
+                assert gone.status_code == 404, gone.text[:400]
+        finally:
+            api.delete(initiative_path)
+            api.delete(project_path, params={"team_id": team["id"]})
+
 
 class TestViewsDomain:
     """The read surfaces a signed in user lands on: the board, the inbox and search."""

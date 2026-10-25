@@ -6109,15 +6109,25 @@ export interface FavoriteListRead {
   folders?: FavoriteFolderRead[];
 }
 
-/** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
+/** What a comment draft sits on. */
+export type CommentDraftParentKind =
+  'issue' | 'document' | 'project_update' | 'initiative_update';
+
+/** One of the caller's unposted comment drafts, on an issue, a document or an update thread, or one reply thread of them. */
 export interface DraftRead {
-  issue_id: string;
-  /** The root comment a reply draft answers, or null for a draft on the issue itself. */
+  parent_kind?: CommentDraftParentKind;
+  issue_id?: string | null;
+  document_id?: string | null;
+  update_id?: string | null;
+  project_id?: string | null;
+  initiative_id?: string | null;
+  /** The root comment a reply draft answers, or null for a draft on the parent itself. */
   parent_comment_id?: string | null;
-  team_id: string;
+  team_id?: string | null;
   body: string;
   issue_key?: string | null;
   issue_title?: string | null;
+  document_title?: string | null;
   created_at: string;
   updated_at: string;
 }

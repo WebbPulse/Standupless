@@ -2,7 +2,8 @@
  * The replies under one project or initiative update, as Linear shows them: each reply with
  * its author, a relative time, the body as Markdown and its own reactions, and
  * a reply box at the foot on the same rich editor updates are written on, with
- * @mentions from the people the card is given.
+ * @mentions from the people the card is given. The reply box keeps the
+ * caller's unposted reply as a draft on the update's thread.
  *
  * The thread is read only while it is open, so a feed of closed cards costs no
  * request per card. A reply's author or an admin edits or deletes it from its
@@ -286,6 +287,21 @@ export const ProjectUpdateThread: React.FC<ProjectUpdateThreadProps> = ({
         placeholder="Leave a reply..."
         autoFocus={autoFocus}
         clearOnSubmit
+        replyDraft={{
+          workspaceId,
+          parent:
+            parent.kind === 'project'
+              ? {
+                  kind: 'project_update',
+                  projectId: parent.id,
+                  updateId,
+                }
+              : {
+                  kind: 'initiative_update',
+                  initiativeId: parent.id,
+                  updateId,
+                },
+        }}
         onSubmit={post}
       />
     </section>

@@ -18,16 +18,21 @@
  *
  * Given a draft target, the composer keeps the caller's unposted text and
  * health on the server: it restores them when it opens, saves after a pause,
- * and clears them once the update posts. Editing a posted update or writing a
- * reply passes no target and keeps no draft.
+ * and clears them once the update posts. Editing a posted update passes no
+ * target and keeps no draft.
+ *
+ * A reply box given a reply draft keeps the caller's unposted reply the same
+ * way, as a comment draft on that update's thread, and clears it once the
+ * reply posts.
  *
  * The editor is its own lazily loaded chunk, so a stand in with the same shape
  * shows until it arrives.
  */
 
-import React, { Suspense, lazy, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
 import { LuChevronDown, LuFileText } from 'react-icons/lu';
-import type { UpdateDraftTarget } from '../../api/drafts';
+import type { CommentDraftParent, UpdateDraftTarget } from '../../api/drafts';
+import { useCommentDraft } from '../../hooks/useCommentDraft';
 import { useUpdateDraft } from '../../hooks/useUpdateDraft';
 import { cn } from '../../lib/cn';
 import type { Assignable } from '../../lib/issuePeople';
@@ -117,7 +122,17 @@ export interface ProjectUpdateEditorProps {
   initialHideDetails?: boolean;
   /** The project or initiative whose server side draft the composer keeps; none keeps no draft. */
   draftTarget?: UpdateDraftTarget;
+  /** The update thread whose comment draft a reply box keeps; none keeps no reply draft. */
+  replyDraft?: ReplyDraftTarget;
 }
+
+/** The update thread a reply box keeps the caller's comment draft on. */
+export interface ReplyDraftTarget {
+  workspaceId: string;
+  parent: CommentDraftParent;
+}
+
+const NO_REPLY_PARENT: CommentDraftParent = { kind: 'issue', id: '' };
 
 /** A Markdown box and a health chooser that submit together. */
 export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
@@ -137,6 +152,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
   withDetailsToggle = false,
   initialHideDetails = false,
   draftTarget,
+  replyDraft,
 }) => {
   const [draft, setDraft] = useState(initialBody);
   const [health, setHealth] = useState<ProjectHealth>(initialHealth);
@@ -153,6 +169,23 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     },
   });
 
+  const commentDraft = useCommentDraft(
+    replyDraft?.workspaceId ?? '',
+    replyDraft?.parent ?? NO_REPLY_PARENT,
+    undefined,
+    editor,
+    replyDraft !== undefined
+  );
+  const { ref: updateDraftRef } = serverDraft;
+  const { ref: replyDraftRef } = commentDraft;
+  const editorRef = useCallback(
+    (handle: RichMarkdownHandle | null): void => {
+      updateDraftRef(handle);
+      replyDraftRef(handle);
+    },
+    [updateDraftRef, replyDraftRef]
+  );
+
   const pickHealth = (picked: ProjectHealth): void => {
     setHealth(picked);
     serverDraft.pickHealth(picked);
@@ -166,7 +199,10 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     setBusy(true);
     void onSubmit(body, health, hideDetails).then((saved) => {
       setBusy(false);
-      if (saved) serverDraft.clear();
+      if (saved) {
+        serverDraft.clear();
+        commentDraft.clear();
+      }
       if (saved && clearOnSubmit) {
         editor.current?.setMarkdown('');
         setDraft('');
@@ -180,6 +216,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     editor.current?.setMarkdown(body);
     setDraft(body);
     serverDraft.save(body);
+    commentDraft.save(body);
   };
 
   const usable = templates.filter(
@@ -204,7 +241,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
         }
       >
         <RichMarkdownEditor
-          ref={serverDraft.ref}
+          ref={editorRef}
           value={initialBody}
           editable
           ariaLabel={ariaLabel}
@@ -217,6 +254,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
           onChange={(markdown) => {
             setDraft(markdown);
             serverDraft.save(markdown);
+            commentDraft.save(markdown);
           }}
           onSubmit={submit}
           onFocusChange={setFocused}

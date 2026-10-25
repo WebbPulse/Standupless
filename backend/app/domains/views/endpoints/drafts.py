@@ -2,7 +2,9 @@
 
 A draft is the caller's alone, so every route reads and writes only rows keyed
 by them. `parent_comment_id` names the reply thread a comment draft belongs to,
-and is left out for a draft on the issue itself. New issue drafts sit under
+and is left out for a draft on the issue itself. A comment draft on a document
+sits under `/drafts/documents/<document_id>` the same way, and one on the reply
+thread of a project or initiative update under `/drafts/update-replies`. New issue drafts sit under
 `/drafts/new-issues` and status update drafts under `/drafts/updates`, both
 registered first so the comment routes never read those segments as an issue id.
 """
@@ -24,8 +26,15 @@ from app.common.api.schemas.drafts import (
     UpdateDraftWrite,
 )
 from app.common.api.schemas.issue_drafts import DRAFT_ID_PATTERN, IssueDraftListRead, IssueDraftRead, IssueDraftWrite
-from app.common.comment_drafts import delete_draft, get_draft, list_drafts, save_draft
-from app.common.db.dynamo.views import ISSUE_DRAFTS_MAX
+from app.common.comment_drafts import (
+    DraftParent,
+    UpdateThreadRef,
+    delete_draft,
+    get_draft,
+    list_drafts,
+    save_draft,
+)
+from app.common.db.dynamo.views import ISSUE_DRAFTS_MAX, UpdateDraftTarget
 from app.common.issue_drafts import delete_issue_draft, get_issue_draft, list_issue_drafts, save_issue_draft
 from app.common.update_drafts import delete_update_draft, get_update_draft, list_update_drafts, save_update_draft
 
@@ -172,15 +181,148 @@ def discard_initiative_update_draft(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/{workspace_id}/drafts/documents/{document_id}", response_model=DraftRead)
+def read_document_draft(
+    workspace_id: str = Path(..., min_length=1),
+    document_id: str = Path(..., min_length=1, max_length=64),
+    parent_comment_id: Optional[str] = Query(default=None, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> DraftRead:
+    """The caller's comment draft on a document or one of its reply threads, or a 404 when there is none."""
+    parent = DraftParent(document_id=document_id)
+    return get_draft(repositories, context, None, parent_comment_id=parent_comment_id, parent=parent)
+
+
+@router.put("/{workspace_id}/drafts/documents/{document_id}", response_model=DraftRead)
+def write_document_draft(
+    payload: DraftWrite,
+    workspace_id: str = Path(..., min_length=1),
+    document_id: str = Path(..., min_length=1, max_length=64),
+    parent_comment_id: Optional[str] = Query(default=None, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> DraftRead:
+    """Save the caller's comment draft on a document they may comment on, or on one of its reply threads."""
+    parent = DraftParent(document_id=document_id)
+    return save_draft(repositories, context, None, payload.body, parent_comment_id=parent_comment_id, parent=parent)
+
+
+@router.delete("/{workspace_id}/drafts/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def discard_document_draft(
+    workspace_id: str = Path(..., min_length=1),
+    document_id: str = Path(..., min_length=1, max_length=64),
+    parent_comment_id: Optional[str] = Query(default=None, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Discard the caller's comment draft in one document thread, a no-op when there is none."""
+    delete_draft(
+        repositories, context, None, parent_comment_id=parent_comment_id, parent=DraftParent(document_id=document_id)
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _reply_parent(target_kind: UpdateDraftTarget, target_id: str, update_id: str) -> DraftParent:
+    """The reply thread of one project or initiative update, as a draft parent."""
+    return DraftParent(update=UpdateThreadRef(target_kind, target_id, update_id))
+
+
+@router.get("/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}", response_model=DraftRead)
+def read_project_update_reply_draft(
+    workspace_id: str = Path(..., min_length=1),
+    project_id: str = Path(..., min_length=1, max_length=64),
+    update_id: str = Path(..., min_length=1, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> DraftRead:
+    """The caller's reply draft on a project update's thread, or a 404 when there is none."""
+    return get_draft(repositories, context, None, parent=_reply_parent("project", project_id, update_id))
+
+
+@router.put("/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}", response_model=DraftRead)
+def write_project_update_reply_draft(
+    payload: DraftWrite,
+    workspace_id: str = Path(..., min_length=1),
+    project_id: str = Path(..., min_length=1, max_length=64),
+    update_id: str = Path(..., min_length=1, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> DraftRead:
+    """Save the caller's reply draft on a readable project update's thread."""
+    return save_draft(repositories, context, None, payload.body, parent=_reply_parent("project", project_id, update_id))
+
+
+@router.delete(
+    "/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def discard_project_update_reply_draft(
+    workspace_id: str = Path(..., min_length=1),
+    project_id: str = Path(..., min_length=1, max_length=64),
+    update_id: str = Path(..., min_length=1, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Discard the caller's reply draft on a project update's thread, a no-op when there is none."""
+    delete_draft(repositories, context, None, parent=_reply_parent("project", project_id, update_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}", response_model=DraftRead)
+def read_initiative_update_reply_draft(
+    workspace_id: str = Path(..., min_length=1),
+    initiative_id: str = Path(..., min_length=1, max_length=64),
+    update_id: str = Path(..., min_length=1, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> DraftRead:
+    """The caller's reply draft on an initiative update's thread, or a 404 when there is none."""
+    return get_draft(repositories, context, None, parent=_reply_parent("initiative", initiative_id, update_id))
+
+
+@router.put("/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}", response_model=DraftRead)
+def write_initiative_update_reply_draft(
+    payload: DraftWrite,
+    workspace_id: str = Path(..., min_length=1),
+    initiative_id: str = Path(..., min_length=1, max_length=64),
+    update_id: str = Path(..., min_length=1, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> DraftRead:
+    """Save the caller's reply draft on a readable initiative update's thread."""
+    return save_draft(
+        repositories, context, None, payload.body, parent=_reply_parent("initiative", initiative_id, update_id)
+    )
+
+
+@router.delete(
+    "/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def discard_initiative_update_reply_draft(
+    workspace_id: str = Path(..., min_length=1),
+    initiative_id: str = Path(..., min_length=1, max_length=64),
+    update_id: str = Path(..., min_length=1, max_length=64),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Discard the caller's reply draft on an initiative update's thread, a no-op when there is none."""
+    delete_draft(repositories, context, None, parent=_reply_parent("initiative", initiative_id, update_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{workspace_id}/drafts", response_model=DraftListRead)
 def read_drafts(
     workspace_id: str = Path(..., min_length=1),
     issue_id: Optional[str] = Query(default=None, min_length=1, max_length=64),
+    document_id: Optional[str] = Query(default=None, min_length=1, max_length=64),
+    update_id: Optional[str] = Query(default=None, min_length=1, max_length=64),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> DraftListRead:
-    """The caller's drafts, newest saved first, across the workspace or on one issue."""
-    return DraftListRead(drafts=list_drafts(repositories, context, issue_id=issue_id))
+    """The caller's comment drafts, newest saved first, across the workspace or on one issue, document or update."""
+    drafts = list_drafts(repositories, context, issue_id=issue_id, document_id=document_id, update_id=update_id)
+    return DraftListRead(drafts=drafts)
 
 
 @router.get("/{workspace_id}/drafts/{issue_id}", response_model=DraftRead)
