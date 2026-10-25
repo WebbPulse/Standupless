@@ -80,7 +80,7 @@ describe('the Customize sidebar dialog', () => {
     expect(updatePreferences).toHaveBeenCalledWith({
       sidebar_items: { views: 'show' },
     });
-    expect(auth.login.mock.calls[0]?.[0].sidebar_items).toMatchObject({
+    expect(auth.login.mock.calls[0]?.[0]['sidebar_items']).toMatchObject({
       views: 'show',
       roadmap: 'hide',
     });

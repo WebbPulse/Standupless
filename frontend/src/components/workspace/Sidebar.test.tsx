@@ -1099,7 +1099,7 @@ describe('the sidebar customization', () => {
     expect(updatePreferences).toHaveBeenCalledWith({
       sidebar_items: { views: 'hide' },
     });
-    expect(auth.login.mock.calls[0]?.[0].sidebar_items).toMatchObject({
+    expect(auth.login.mock.calls[0]?.[0]['sidebar_items']).toMatchObject({
       views: 'hide',
     });
   });
