@@ -226,7 +226,7 @@ def test_the_form_modal_asks_each_question_with_its_own_input() -> None:
         form_fields=FIELDS,
         in_slack=True,
     )
-    view = request_forms.form_view(_group(template))
+    view = request_forms.form_view(_group(template), template)
     assert view["callback_id"] == request_forms.FORM_CALLBACK
     blocks = _blocks(view)
     assert list(blocks) == [
@@ -251,7 +251,12 @@ def test_the_form_modal_asks_each_question_with_its_own_input() -> None:
     assert json.loads(view["private_metadata"]) == {"team_id": TEAM, "template_id": FORM}
 
     from_message = request_forms.form_view(
-        _group(template), title="Typed", channel_id="C0ENG", thread_ts="1.2", permalink="https://acme.slack.com/p1"
+        _group(template),
+        template,
+        title="Typed",
+        channel_id="C0ENG",
+        thread_ts="1.2",
+        permalink="https://acme.slack.com/p1",
     )
     assert _blocks(from_message)[request_forms.TITLE_BLOCK]["element"]["initial_value"] == "Typed"
     assert json.loads(from_message["private_metadata"])["thread_ts"] == "1.2"
