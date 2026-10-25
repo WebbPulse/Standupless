@@ -68,6 +68,7 @@ import {
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
+import { toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
@@ -377,7 +378,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           'aria-multiline': 'true',
           'aria-label': ariaLabel,
         },
-        handleKeyDown: (_view, event) => {
+        handleKeyDown: (view, event) => {
           const mod = event.metaKey || event.ctrlKey;
           const inserting = slashState.current;
           if (inserting.slash !== null && inserting.matches.length > 0) {
@@ -457,6 +458,12 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           }
           if (mod && event.key === 'Enter') {
             event.preventDefault();
+            if (
+              view.editable &&
+              toggleChecklistItem(view.state, view.dispatch, event.shiftKey)
+            ) {
+              return true;
+            }
             const submit = handlers.current.onSubmit;
             if (submit !== undefined) {
               submit();
