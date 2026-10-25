@@ -3,10 +3,12 @@
  * options and keyboard as a team's issues. Inside one project the view also
  * knows the project's milestones, so it can group and filter by milestone
  * and the "Set milestone" command is offered on its issues. The filters and
- * display live in the URL beside the page's own tab parameter.
+ * display live in the URL beside the page's own tab parameter. Issues still
+ * waiting in a team's triage stay out unless the viewer turns on "Show triage
+ * issues", a choice remembered in this browser per project.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useIssueCollection } from '../../hooks/useIssueCollection';
@@ -23,6 +25,10 @@ import {
   writeViewState,
   type ViewState,
 } from '../../lib/issueView';
+import {
+  readProjectShowTriage,
+  rememberProjectShowTriage,
+} from '../../lib/projectTriage';
 import { estimateOptionsOf } from '../../lib/validation';
 import type { MilestoneRead, TeamRead } from '../../types/Api';
 import DisplayMenu from '../issues/view/DisplayMenu';
@@ -70,8 +76,30 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
     [setParams, base, params]
   );
 
+  const [triage, setTriage] = useState(() => ({
+    projectId,
+    shown: readProjectShowTriage(projectId),
+  }));
+  const showTriage =
+    triage.projectId === projectId
+      ? triage.shown
+      : readProjectShowTriage(projectId);
+  const changeTriage = useCallback(
+    (shown: boolean) => {
+      rememberProjectShowTriage(projectId, shown);
+      setTriage({ projectId, shown });
+    },
+    [projectId]
+  );
+
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
-  const scope = useMemo(() => ({ project_id: projectId }), [projectId]);
+  const scope = useMemo(
+    () => ({
+      project_id: projectId,
+      ...(showTriage ? { include_triage: true } : {}),
+    }),
+    [projectId, showTriage]
+  );
   const collection = useIssueCollection(
     workspaceId,
     `project:${projectId}`,
@@ -135,7 +163,9 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
             groupFields={groupFieldsFor(lists.context)}
             context={lists.context}
             estimates={listEstimates}
+            triage={{ shown: showTriage, onChange: changeTriage }}
             onReset={
+              !showTriage &&
               sameViewState(
                 {
                   ...state,
@@ -148,6 +178,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
               )
                 ? undefined
                 : () => {
+                    changeTriage(false);
                     setState({
                       ...base,
                       filters: state.filters,

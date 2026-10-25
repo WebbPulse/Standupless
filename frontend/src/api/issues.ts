@@ -171,6 +171,8 @@ export interface IssueListFilters {
   include_archived?: boolean;
   /** True to list only archived issues, the archive view. */
   archived_only?: boolean;
+  /** True to list issues waiting in their team's triage too, left out by default. */
+  include_triage?: boolean;
   /** True to add the sub-teams of `team_id` the caller can see, rolling them up. */
   include_sub_teams?: boolean;
   sort?: IssueListSort;

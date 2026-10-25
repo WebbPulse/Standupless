@@ -253,3 +253,30 @@ describe('DisplayMenu group header', () => {
     expect(screen.queryByLabelText('Group header')).toBeNull();
   });
 });
+
+describe('DisplayMenu triage switch', () => {
+  it('offers Show triage issues only where the list passes one', async () => {
+    const user = userEvent.setup();
+    const onTriage = vi.fn<(shown: boolean) => void>();
+    const { rerender } = render(
+      <DisplayMenu state={defaultViewState('list')} onChange={vi.fn()} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    expect(
+      screen.queryByRole('switch', { name: 'Show triage issues' })
+    ).toBeNull();
+
+    rerender(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={vi.fn()}
+        triage={{ shown: false, onChange: onTriage }}
+      />
+    );
+    const toggle = screen.getByRole('switch', { name: 'Show triage issues' });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    expect(onTriage).toHaveBeenCalledWith(true);
+  });
+});
