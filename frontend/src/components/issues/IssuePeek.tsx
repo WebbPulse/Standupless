@@ -7,7 +7,7 @@
  * its foot, so a thread can be read and answered without leaving the list.
  * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard, and
  * Cmd or Ctrl+Shift+Up and Down peek its parent and its first sub-issue in
- * place.
+ * place, and O then G opens its linked pull request.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -22,6 +22,7 @@ import {
   useIssueTreeKeys,
   type IssueTreeTarget,
 } from '../../hooks/useIssueTreeKeys';
+import { useOpenPullRequestShortcut } from '../../hooks/useOpenPullRequestShortcut';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
@@ -205,6 +206,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
       onUpdate({ parent_id: null });
     },
   });
+  useOpenPullRequestShortcut(workspaceId, issueId, issue !== null);
 
   return (
     <aside

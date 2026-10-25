@@ -2,14 +2,24 @@
  * The corner stack the notices in `lib/toast` render into. Any surface that
  * raises notices may mount one; only the first mounted instance draws, so a
  * page level Toaster and a later application level one never show a notice
- * twice.
+ * twice. The drawing instance also binds Cmd or Ctrl, Alt and X, which
+ * dismisses every notice.
  */
 
 import React, { useEffect, useId, useSyncExternalStore } from 'react';
 import { LuX } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
-import { currentToasts, dismissToast, subscribeToasts } from '../../lib/toast';
+import {
+  currentToasts,
+  dismissAllToasts,
+  dismissToast,
+  subscribeToasts,
+} from '../../lib/toast';
+
+/** The keys that dismiss every notice, Cmd Option X on a Mac. */
+export const DISMISS_ALL_TOASTS_KEYS = 'mod+alt+x';
 
 const owners: string[] = [];
 const ownerListeners = new Set<() => void>();
@@ -63,6 +73,17 @@ export const Toaster: React.FC = () => {
       emitOwners();
     };
   }, [id]);
+
+  useShortcut({
+    keys: DISMISS_ALL_TOASTS_KEYS,
+    label: 'Dismiss all toasts',
+    group: 'General',
+    enabled: owner === id,
+    handler: (event) => {
+      if (event?.isComposing === true) return;
+      dismissAllToasts();
+    },
+  });
 
   if (owner !== id) return null;
 

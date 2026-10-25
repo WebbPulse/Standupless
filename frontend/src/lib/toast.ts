@@ -117,10 +117,16 @@ export const showToast = (
 export const showErrorToast = (message: string): number =>
   showToast(message, 'error');
 
-/** Clears every notice. Used between tests so one does not leak into another. */
-export const clearToasts = (): void => {
+/** Dismisses every notice on screen at once, as Cmd or Ctrl, Alt and X does. */
+export const dismissAllToasts = (): void => {
   for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
+  if (toasts.length === 0) return;
   toasts = [];
   emit();
+};
+
+/** Clears every notice. Used between tests so one does not leak into another. */
+export const clearToasts = (): void => {
+  dismissAllToasts();
 };

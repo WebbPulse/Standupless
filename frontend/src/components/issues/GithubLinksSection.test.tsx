@@ -3,17 +3,19 @@
  * rather than showing an empty panel on every issue without a linked pull
  * request, that each link points at the pull request, that a closing link says
  * so since that is what drives the merge transition, that each state's icon
- * carries its GitHub color, and that the synced GitHub issue is not listed here.
+ * carries its GitHub color, that the synced GitHub issue is not listed here,
+ * and that O then G opens the pull request or the synced issue.
  */
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GithubIssueLinkRead } from '../../types/Api';
+import type { GithubIssueLinkRead, IssueSyncRead } from '../../types/Api';
 import {
   createShortcutRegistry,
   ShortcutRegistryContext,
 } from '../../hooks/useShortcuts';
+import { clearToasts, currentToasts } from '../../lib/toast';
 import GithubLinksSection from './GithubLinksSection';
 
 const listIssueLinks = vi.fn<
@@ -23,6 +25,8 @@ const listIssueLinks = vi.fn<
   }>
 >();
 
+const getIssueSync = vi.fn<() => Promise<IssueSyncRead | null>>();
+
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
     '../../api/integrations'
@@ -30,6 +34,7 @@ vi.mock('../../api/integrations', async () => {
   return {
     ...actual,
     listIssueLinks: () => listIssueLinks(),
+    getIssueSync: () => getIssueSync(),
   };
 });
 
@@ -66,6 +71,8 @@ const link = (
 beforeEach(() => {
   listIssueLinks.mockReset();
   listIssueLinks.mockResolvedValue({ items: [link()], next_cursor: null });
+  getIssueSync.mockReset();
+  getIssueSync.mockResolvedValue(null);
 });
 
 describe('the linked pull requests', () => {
@@ -305,5 +312,87 @@ describe('stacked pull requests', () => {
       screen.getByRole('img', { name: 'Checks failed' })
     ).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Stack of/ })).toHaveLength(1);
+  });
+});
+
+/** Presses O then G through the registry. */
+const pressOpenPullRequest = (
+  registry: ReturnType<typeof createShortcutRegistry>
+): void => {
+  registry.handleKey(new KeyboardEvent('keydown', { key: 'o' }));
+  registry.handleKey(new KeyboardEvent('keydown', { key: 'g' }));
+};
+
+describe('O then G', () => {
+  it('opens the linked pull request in a new tab', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const registry = createShortcutRegistry();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <GithubLinksSection workspaceId="ws-1" issueId="iss-1" />
+      </ShortcutRegistryContext.Provider>
+    );
+    await screen.findByRole('link', { name: /Boot the engine/ });
+
+    pressOpenPullRequest(registry);
+
+    expect(open).toHaveBeenCalledWith(
+      'https://github.com/WebbPulse/standupless/pull/7',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    open.mockRestore();
+  });
+
+  it('opens the synced GitHub issue when no pull request is linked', async () => {
+    listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
+    getIssueSync.mockResolvedValue({
+      issue_id: 'iss-1',
+      repository_full_name: 'WebbPulse/standupless',
+      number: 42,
+      url: 'https://github.com/WebbPulse/standupless/issues/42',
+      origin: 'github',
+      synced_at: '2026-10-01T00:00:00Z',
+    });
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const registry = createShortcutRegistry();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <GithubLinksSection workspaceId="ws-1" issueId="iss-1" />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    await vi.waitFor(() => {
+      pressOpenPullRequest(registry);
+      expect(open).toHaveBeenCalledWith(
+        'https://github.com/WebbPulse/standupless/issues/42',
+        '_blank',
+        'noopener,noreferrer'
+      );
+    });
+    open.mockRestore();
+  });
+
+  it('says so when there is nothing to open', async () => {
+    listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const registry = createShortcutRegistry();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <GithubLinksSection workspaceId="ws-1" issueId="iss-1" />
+      </ShortcutRegistryContext.Provider>
+    );
+    await vi.waitFor(() => {
+      expect(getIssueSync).toHaveBeenCalled();
+    });
+
+    pressOpenPullRequest(registry);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(currentToasts().map((toast) => toast.message)).toContain(
+      'No linked pull request'
+    );
+    clearToasts();
+    open.mockRestore();
   });
 });

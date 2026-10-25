@@ -88,6 +88,29 @@ export const groupPullRequests = (
   return rows;
 };
 
+/** Orders links newest linked first. */
+const newestFirst = (a: GithubIssueLinkRead, b: GithubIssueLinkRead): number =>
+  b.linked_at.localeCompare(a.linked_at);
+
+/**
+ * The pull request O then G opens: the most recently linked one still open,
+ * where a stack offers only its lowest open entry as the rail's collapsed row
+ * does, else the most recently linked merged one, else null.
+ */
+export const pullRequestToOpen = (
+  links: readonly GithubIssueLinkRead[]
+): GithubIssueLinkRead | null => {
+  const leads = groupPullRequests(links).map((row) =>
+    row.kind === 'single' ? row.link : row.lead
+  );
+  const open = leads.filter(isActive).sort(newestFirst)[0];
+  if (open !== undefined) return open;
+  const merged = links
+    .filter((link) => link.pr_state === 'merged')
+    .sort(newestFirst)[0];
+  return merged ?? null;
+};
+
 /** How one review decision or check state renders. */
 export interface StatusStyle {
   label: string;
