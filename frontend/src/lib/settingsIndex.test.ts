@@ -216,11 +216,15 @@ describe('buildSettingsIndex', () => {
 
 describe('settingsNavGroups', () => {
   /** The group titles and their page titles, for a role. */
-  const outline = (role: 'owner' | 'admin' | 'member' | 'guest') =>
-    settingsNavGroups(role).map((group) => [
-      group.title,
-      group.pages.map((page) => page.title),
-    ]);
+  const outline = (
+    role: 'owner' | 'admin' | 'member' | 'guest'
+  ): Record<string, string[]> =>
+    Object.fromEntries(
+      settingsNavGroups(role).map((group): [string, string[]] => [
+        group.title,
+        group.pages.map((page) => page.title),
+      ])
+    );
 
   it('lists every group in order for an admin', () => {
     expect(settingsNavGroups('admin').map((group) => group.id)).toEqual([
@@ -233,7 +237,7 @@ describe('settingsNavGroups', () => {
   });
 
   it('puts the admin only pages under Administration and Features', () => {
-    const groups = Object.fromEntries(outline('owner'));
+    const groups = outline('owner');
     expect(groups.Administration).toEqual(
       expect.arrayContaining(['Security', 'Export', 'Audit log'])
     );
@@ -244,7 +248,7 @@ describe('settingsNavGroups', () => {
   });
 
   it('leaves a member no Administration or Features group but keeps Workspace', () => {
-    const groups = Object.fromEntries(outline('member'));
+    const groups = outline('member');
     expect(Object.keys(groups)).toEqual([
       'Account',
       'Workspace',
