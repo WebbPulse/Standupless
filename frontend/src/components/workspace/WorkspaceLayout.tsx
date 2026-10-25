@@ -386,6 +386,7 @@ const WorkspaceOverlays: React.FC = () => {
                         <GlobalShortcuts
                           workspace={workspace}
                           teams={teams}
+                          currentUserId={user?.id}
                           onShowHelp={showHelp}
                         />
                         <CommandPalette
