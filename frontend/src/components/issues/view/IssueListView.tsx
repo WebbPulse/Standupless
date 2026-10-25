@@ -8,7 +8,9 @@
  * or convert it into a project, M then B, X, R or D marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
  * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
- * them, and Cmd or Ctrl+Delete deletes them after a confirmation. On a
+ * them, Cmd or Ctrl+Shift+C, D and L add them to the active cycle, clear
+ * their due date and clear their labels without a picker, and Cmd or
+ * Ctrl+Delete deletes them after a confirmation. On a
  * board j and k stay in the focused column, h and l or the side arrows cross to the next column
  * holding a card, and labels move to Shift+L. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
@@ -49,6 +51,7 @@ import {
 } from '../../../hooks/useIssueSubject';
 import type { IssueContextState } from '../../../hooks/useIssueContext';
 import { usePeekIssue } from '../../../hooks/usePeekIssue';
+import { useQuickActions } from '../../../hooks/useQuickActions';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { WorkspaceContext } from '../../../contexts/WorkspaceContextDefinition';
 import { desktopOpenInNewTab } from '../../../lib/desktop';
@@ -929,6 +932,13 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       event?.preventDefault();
       setDeleting(targets);
     },
+  });
+  useQuickActions({
+    workspaceId,
+    issues: targets,
+    enabled: canCommand,
+    write: update,
+    cyclesFor: (teamId) => forTeam(teamId).cycles,
   });
   usePublishIssueSubject(subjectOf(targets));
   useShortcut({

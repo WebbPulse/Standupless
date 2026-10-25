@@ -2,10 +2,18 @@
  * The issue page's keys: the list's pickers write through the page's update as
  * an IssueUpdate patch, I assigns the issue to the viewer or back off them,
  * Shift+M picks a milestone of the issue's project, labels arrive as the whole label_ids set, and Cmd or
- * Ctrl+Backspace deletes only after the confirmation.
+ * Ctrl+Backspace deletes only after the confirmation, and Cmd or Ctrl+Shift+C,
+ * D and L add the issue to the active cycle, clear its due date and clear its
+ * labels.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -347,5 +355,41 @@ describe('walking the issue tree from the page', () => {
         },
       ])
     );
+  });
+});
+
+describe('IssuePageCommands quick actions', () => {
+  const modShift = { ctrlKey: true, shiftKey: true };
+
+  it('adds the issue to the active cycle on Cmd or Ctrl+Shift+C', async () => {
+    renderCommands();
+    press('C', modShift);
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith({ cycle_id: 'cy-1' });
+    });
+  });
+
+  it('clears the due date on Cmd or Ctrl+Shift+D', () => {
+    renderCommands(true, { ...issue, due_date: '2026-11-01' });
+    press('D', modShift);
+
+    expect(onUpdate).toHaveBeenCalledWith({ due_date: null });
+  });
+
+  it('clears the labels on Cmd or Ctrl+Shift+L', () => {
+    renderCommands();
+    press('L', modShift);
+
+    expect(onUpdate).toHaveBeenCalledWith({ label_ids: [] });
+  });
+
+  it('binds none of them for a viewer who cannot edit', () => {
+    renderCommands(false, { ...issue, due_date: '2026-11-01' });
+    press('C', modShift);
+    press('D', modShift);
+    press('L', modShift);
+
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 });
