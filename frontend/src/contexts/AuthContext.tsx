@@ -231,13 +231,6 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   usePreferenceSync(isAuthenticated ? user : null);
   useThemeSync(isAuthenticated ? user : null, setUser);
 
-  const login = useCallback(
-    (userData: UserRead) => {
-      setUser(userData);
-    },
-    [setUser]
-  );
-
   const checkAuthStatus = useCallback(async () => {
     try {
       await reloadUser();
@@ -262,8 +255,8 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   const value = useMemo<AuthExtrasContextType>(
-    () => ({ login, logout, checkAuthStatus }),
-    [login, logout, checkAuthStatus]
+    () => ({ login: setUser, logout, checkAuthStatus }),
+    [setUser, logout, checkAuthStatus]
   );
 
   return (
