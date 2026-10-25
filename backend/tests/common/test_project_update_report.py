@@ -66,8 +66,10 @@ def test_progress_shows_only_once_it_moved_by_more_than_two_points() -> None:
 
 def test_target_lead_and_status_changes_each_get_a_line() -> None:
     """Moved, set and removed each read differently."""
-    before = _snapshot(target_date="2026-11-01", lead_id="u1", lead_name="Ada", status_name="Planned")
-    after = _snapshot(target_date="2026-12-01", lead_id="u2", lead_name="Grace", status_name="In progress")
+    before = _snapshot(target_date="2026-11-01", lead_id="u1", lead_name="Ada", status_id="s1", status_name="Planned")
+    after = _snapshot(
+        target_date="2026-12-01", lead_id="u2", lead_name="Grace", status_id="s2", status_name="In progress"
+    )
     assert report_lines(after, before) == [
         "Target date moved from 2026-11-01 to 2026-12-01",
         "New lead Grace",

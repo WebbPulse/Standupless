@@ -75,6 +75,7 @@ describe('reportLines', () => {
       target_date_resolution: 'month',
       lead_id: 'u1',
       lead_name: 'Ada',
+      status_id: 's1',
       status_name: 'Planned',
     });
     const after = snapshot({
@@ -82,6 +83,7 @@ describe('reportLines', () => {
       target_date_resolution: 'month',
       lead_id: 'u2',
       lead_name: 'Grace',
+      status_id: 's2',
       status_name: 'In progress',
     });
     expect(reportLines(after, before)).toEqual([
