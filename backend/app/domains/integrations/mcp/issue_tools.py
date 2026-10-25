@@ -35,13 +35,13 @@ from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_anchors import ANCHOR_QUOTE_MAX, anchor_from_quote
 from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
-from app.common.document_comments import create_document_comment, document_comment_page
 from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.document_comments import create_document_comment, document_comment_page
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
