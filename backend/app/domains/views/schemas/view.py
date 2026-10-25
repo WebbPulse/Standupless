@@ -304,7 +304,11 @@ class SearchInitiativeRead(BaseModel):
 
 
 class SearchCommentRead(BaseModel):
-    """One comment whose body holds every term, with its issue and an excerpt around the first match."""
+    """One comment whose body holds every term, with its issue or document and an excerpt around the first match.
+
+    A comment on a document carries `document_id` and `document_title`, its
+    `issue_id` is the document id, and its issue key, title and team are empty.
+    """
 
     comment_id: str
     issue_id: str
@@ -314,6 +318,8 @@ class SearchCommentRead(BaseModel):
     author_id: str
     snippet: str
     created_at: datetime
+    document_id: Optional[str] = None
+    document_title: Optional[str] = None
 
 
 class SearchRead(BaseModel):

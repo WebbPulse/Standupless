@@ -319,10 +319,11 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
     that partitions them rides along as a query parameter. Every route still starts
     from an issue, so visibility is decided against one team.
     """
-    from app.domains.discussion.endpoints import attachments, comments, reactions
+    from app.domains.discussion.endpoints import attachments, comments, document_comments, reactions
 
     return [
         (comments.router, "/workspaces", ("discussion",)),
+        (document_comments.router, "/workspaces", ("discussion",)),
         (reactions.router, "/workspaces", ("discussion",)),
         (attachments.router, "/workspaces", ("discussion",)),
     ]
@@ -406,7 +407,22 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions", "activity")
 
-_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys", "custom_emoji")
+_DISCUSSION_READ_REPOSITORIES = (
+    "memberships",
+    "workspaces",
+    "users",
+    "teams",
+    "issues",
+    "api_keys",
+    "planning",
+    "documents",
+    "custom_emoji",
+)
+"""What the discussion image reads.
+
+`planning` and `documents` are for comments on a document, whose visibility is
+decided against the project, initiative or team the document sits under.
+"""
 
 _INTEGRATIONS_REPOSITORIES = (
     "github",

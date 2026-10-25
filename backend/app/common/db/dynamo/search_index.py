@@ -341,6 +341,15 @@ def comment_term(term: str) -> str:
     return f"{COMMENT_PREFIX}{term}"
 
 
+DOCUMENT_COMMENTS = "~documents"
+"""The team slot a workspace's document comments are posted under, since a document may sit under no team.
+
+No team id starts with `~`, so the partition never meets a real team's, and a
+search reads it only for a caller allowed to read documents, checking each hit's
+document against the parents the caller reads.
+"""
+
+
 def comment_doc(comment_id: str, issue_id: str) -> str:
     """The posting id of one comment: its own id first, so postings read newest comment first."""
     return f"{comment_id}#{issue_id}"

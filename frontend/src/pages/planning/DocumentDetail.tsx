@@ -7,7 +7,9 @@
  * the issues the text names are listed and linked under it. The title takes
  * an icon or an emoji, an outline of the headings sits beside the text on a
  * wide screen, and Move files the document under another project, initiative
- * or team.
+ * or team. A comment thread sits under the body, and the actions menu follows
+ * or leaves the document and names who follows it, as in Linear: the author
+ * and every commenter follow it on their own.
  */
 
 import React, {
@@ -19,8 +21,14 @@ import React, {
   useState,
 } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  invalidateQueries,
+  useMutationWithRefetch,
+  usePolledQuery,
+} from '@webbpulse/api-client/react';
+import {
+  LuBell,
+  LuBellOff,
   LuChevronRight,
   LuEllipsis,
   LuFolderInput,
@@ -28,6 +36,10 @@ import {
   LuTrash2,
 } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  listDocumentSubscribers,
+  setDocumentSubscribed,
+} from '../../api/discussion';
 import {
   deleteDocument,
   getDocument,
@@ -38,6 +50,7 @@ import type { RichMarkdownHandle } from '../../components/editor/RichMarkdownEdi
 import DocumentIcon from '../../components/planning/DocumentIcon';
 import DocumentIconPicker from '../../components/planning/DocumentIconPicker';
 import DocumentOutline from '../../components/planning/DocumentOutline';
+import DocumentThread from '../../components/planning/DocumentThread';
 import EditableText from '../../components/planning/EditableText';
 import MoveDocumentDialog, {
   type Destination,
@@ -47,11 +60,16 @@ import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Markdown from '../../components/ui/markdown';
-import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
+import Menu, {
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+} from '../../components/ui/menu';
 import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
+import { useAuth } from '../../hooks/useAuth';
 import { refreshDocumentLists } from '../../hooks/useDocuments';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeams } from '../../hooks/useTeams';
@@ -71,8 +89,9 @@ import {
   documentVersionsKey,
   favoritesKey,
   issueDocumentsKey,
+  subscribersKey,
 } from '../../lib/queryKeys';
-import { showToast } from '../../lib/toast';
+import { showErrorToast, showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import type { DocumentPatch, DocumentRead, TeamRead } from '../../types/Api';
 
@@ -196,6 +215,9 @@ const VersionsDialog: React.FC<{
   );
 };
 
+/** How many followers the actions menu names before summing up the rest. */
+const SUBSCRIBERS_SHOWN = 8;
+
 /** The page. */
 export const DocumentDetail: React.FC = () => {
   const { documentId = '' } = useParams<{ documentId: string }>();
@@ -207,6 +229,8 @@ export const DocumentDetail: React.FC = () => {
   const isMember = workspace !== null && workspace.role !== 'guest';
   const people = useWorkspaceMembers(workspaceId, isMember);
   const teams = useTeams();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? '';
 
   const { data, error, isLoading, refetch } = usePolledQuery(
     ({ signal }) => getDocument(workspaceId, documentId, signal),
@@ -216,6 +240,22 @@ export const DocumentDetail: React.FC = () => {
       queryKey: documentKey(workspaceId, documentId),
       auth,
     }
+  );
+
+  const followersKey = subscribersKey(workspaceId, documentId);
+  const { data: followers } = usePolledQuery(
+    ({ signal }) => listDocumentSubscribers(workspaceId, documentId, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: workspaceId !== '' && documentId !== '',
+      queryKey: followersKey,
+      auth,
+    }
+  );
+  const { mutate: follow, isMutating: following } = useMutationWithRefetch(
+    (subscribed: boolean) =>
+      setDocumentSubscribed(workspaceId, documentId, subscribed),
+    [followersKey]
   );
 
   const [local, setLocal] = useState<DocumentRead | null>(null);
@@ -433,6 +473,23 @@ export const DocumentDetail: React.FC = () => {
     });
   };
 
+  const toggleFollow = (): void => {
+    const next = !(followers?.subscribed ?? false);
+    void follow(next)
+      .then(() => {
+        showToast(
+          next ? 'Subscribed to the document' : 'Unsubscribed from the document'
+        );
+      })
+      .catch((problem: unknown) => {
+        showErrorToast(
+          errorMessage(problem, 'Could not change your subscription.')
+        );
+      });
+  };
+  const subscriberList = followers?.subscribers ?? [];
+  const hiddenFollowers = subscriberList.length - SUBSCRIBERS_SHOWN;
+
   const outlineSource = liveBody ?? page.body;
   const author = people.find((person) => person.user_id === page.author_id);
   const editorPerson = people.find(
@@ -481,6 +538,41 @@ export const DocumentDetail: React.FC = () => {
               <LuHistory aria-hidden="true" className="h-3.5 w-3.5" />
               Version history
             </MenuItem>
+            <MenuItem disabled={following} onSelect={toggleFollow}>
+              {followers?.subscribed === true ? (
+                <LuBellOff aria-hidden="true" className="h-3.5 w-3.5" />
+              ) : (
+                <LuBell aria-hidden="true" className="h-3.5 w-3.5" />
+              )}
+              {followers?.subscribed === true ? 'Unsubscribe' : 'Subscribe'}
+            </MenuItem>
+            {subscriberList.length > 0 && (
+              <>
+                <MenuSeparator />
+                <MenuLabel>
+                  {subscriberList.length === 1
+                    ? '1 subscriber'
+                    : `${subscriberList.length} subscribers`}
+                </MenuLabel>
+                <ul aria-label="Subscribers" className="px-2 pb-1">
+                  {subscriberList.slice(0, SUBSCRIBERS_SHOWN).map((row) => (
+                    <li
+                      key={row.user_id}
+                      className="truncate py-0.5 text-xs text-text-muted"
+                    >
+                      {row.user_id === currentUserId
+                        ? `${row.display_name} (you)`
+                        : row.display_name}
+                    </li>
+                  ))}
+                  {hiddenFollowers > 0 && (
+                    <li className="py-0.5 text-xs text-text-faint">
+                      {`and ${hiddenFollowers} more`}
+                    </li>
+                  )}
+                </ul>
+              </>
+            )}
             {page.can_edit && (
               <MenuItem
                 onSelect={() => {
@@ -627,6 +719,14 @@ export const DocumentDetail: React.FC = () => {
               </ul>
             </section>
           )}
+          <DocumentThread
+            workspaceId={workspaceId}
+            documentId={page.document_id}
+            currentUserId={currentUserId}
+            canComment={page.can_edit}
+            canModerate={page.can_delete}
+            people={isMember ? people : []}
+          />
         </article>
         <aside className="hidden min-w-0 xl:block">
           <DocumentOutline

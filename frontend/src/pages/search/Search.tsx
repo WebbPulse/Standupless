@@ -548,7 +548,11 @@ export const Search: React.FC = () => {
                         className="flex items-start border-b border-line px-4 py-2 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6"
                       >
                         <Link
-                          to={`${issuePath(slug, comment.issue_key)}#comment-${comment.comment_id}`}
+                          to={`${
+                            comment.document_id
+                              ? documentPath(slug, comment.document_id)
+                              : issuePath(slug, comment.issue_key)
+                          }#comment-${comment.comment_id}`}
                           data-hover="parent"
                           className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xs"
                         >
@@ -559,10 +563,14 @@ export const Search: React.FC = () => {
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-2">
                               <span className="w-16 shrink-0 truncate font-mono text-xs text-text-faint">
-                                {comment.issue_key}
+                                {comment.document_id
+                                  ? 'Doc'
+                                  : comment.issue_key}
                               </span>
                               <span className="truncate text-sm font-medium text-text">
-                                {comment.issue_title}
+                                {comment.document_id
+                                  ? (comment.document_title ?? 'Document')
+                                  : comment.issue_title}
                               </span>
                             </span>
                             <span className="mt-0.5 line-clamp-2 text-xs text-text-muted">
