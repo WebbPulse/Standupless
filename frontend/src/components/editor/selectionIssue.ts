@@ -170,8 +170,9 @@ export interface SelectedListItem extends SelectedRange {
 
 /**
  * The list items a range is made of, in document order, nested ones included,
- * or an empty list when the range touches any text block that is not the line
- * of a list item. Items whose line holds no text are skipped.
+ * or an empty list when the range takes text from any text block that is not
+ * the line of a list item. Items whose line holds no text are skipped, and so
+ * are blocks the range only grazes, such as an empty trailing paragraph.
  */
 export const selectedListItems = (
   doc: ProseMirrorNode,
@@ -198,7 +199,11 @@ export const selectedListItems = (
       return true;
     }
     if (node.isTextblock) {
-      if (!heads.has(pos)) mixed = true;
+      if (!heads.has(pos)) {
+        const start = Math.max(from, pos + 1);
+        const end = Math.min(to, pos + 1 + node.content.size);
+        mixed = end > start && doc.textBetween(start, end).trim() !== '';
+      }
       return false;
     }
     return true;
