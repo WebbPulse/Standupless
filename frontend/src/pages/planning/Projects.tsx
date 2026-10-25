@@ -81,10 +81,10 @@ import { ErrorAlert } from '../../components/ui/alert';
 import LoadError from '../../components/ui/load-error';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
-import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
+import type { ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
-import { Popover } from '../../components/ui/popover';
+import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
@@ -294,70 +294,6 @@ const flagParam = (value: string): FlagFilter =>
   value === 'true' || value === 'false' ? value : '';
 /** The customer filter value for projects no customer asked for. */
 const NO_CUSTOMER = 'none';
-
-/** Props for FilterButton: one filter's options and what is chosen. */
-interface FilterButtonProps {
-  field: string;
-  options: ComboboxOption[];
-  selected: string[];
-  multiple?: boolean;
-  onSelect: (value: string) => void;
-}
-
-/** A toolbar chip that opens one filter's options. */
-const FilterButton: React.FC<FilterButtonProps> = ({
-  field,
-  options,
-  selected,
-  multiple = false,
-  onSelect,
-}) => {
-  const chosen = options.filter((option) => selected.includes(option.value));
-  const summary =
-    chosen.length === 0
-      ? null
-      : chosen.length === 1
-        ? (chosen[0]?.label ?? '')
-        : `${String(chosen.length)} selected`;
-  return (
-    <Popover
-      label={field}
-      contentClassName="w-60"
-      trigger={(trigger) => (
-        <button
-          type="button"
-          {...trigger}
-          aria-label={`${field} filter${summary === null ? '' : `: ${summary}`}`}
-          className={cn(
-            'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2 text-xs transition-colors duration-100',
-            summary === null
-              ? 'border-dashed border-line text-text-muted hover:border-line-strong hover:text-text'
-              : 'border-line bg-raised text-text hover:border-line-strong'
-          )}
-        >
-          <span className={summary === null ? '' : 'text-text-muted'}>
-            {field}
-          </span>
-          {summary !== null && <span className="font-medium">{summary}</span>}
-        </button>
-      )}
-    >
-      {(close) => (
-        <Combobox
-          label={field}
-          placeholder={`Filter by ${field.toLowerCase()}`}
-          options={options}
-          selected={selected}
-          multiple={multiple}
-          onSelect={(value) => {
-            onSelect(value);
-            if (!multiple) close();
-          }}
-        />
-      )}
-    </Popover>
-  );
-};
 
 /** Props for ProjectRow: one project and what the row needs to edit it. */
 interface ProjectRowProps {

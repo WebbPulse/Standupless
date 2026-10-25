@@ -7298,6 +7298,39 @@
         "title": "InitiativeUpdateRead",
         "type": "object"
       },
+      "InitiativesDisplay": {
+        "description": "How the person arranges the workspace initiatives list.\n\n`order` sorts the initiatives inside each status group, sub-initiatives\nstaying under their parent. `completed` shows or hides the completed group.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
+        "properties": {
+          "columns": {
+            "default": "health,owner,projects,target,progress",
+            "title": "Columns",
+            "type": "string"
+          },
+          "completed": {
+            "default": "show",
+            "enum": [
+              "show",
+              "hide"
+            ],
+            "title": "Completed",
+            "type": "string"
+          },
+          "order": {
+            "default": "target",
+            "enum": [
+              "target",
+              "name",
+              "progress",
+              "created",
+              "updated"
+            ],
+            "title": "Order",
+            "type": "string"
+          }
+        },
+        "title": "InitiativesDisplay",
+        "type": "object"
+      },
       "InsightBucket": {
         "description": "One bar or bar segment: a value of the dimension and what it measures.\n\n`key` is the raw value, an id or an enum, and null for the unset bucket such\nas unassigned. `label` is its display name, resolved on the server so a reader\nwithout the workspace's lookups can still show it.",
         "properties": {
@@ -21575,7 +21608,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "auto_assign_to_self": {
             "anyOf": [
@@ -21666,6 +21699,16 @@
               }
             ],
             "title": "Home View"
+          },
+          "initiatives_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitiativesDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name_display": {
             "anyOf": [
@@ -21808,7 +21851,7 @@
         "type": "object"
       },
       "UserRead": {
-        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead.",
+        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead. `initiatives_display` and\n`initiatives_display_saved` are the same for the initiatives list.",
         "properties": {
           "auto_assign_to_self": {
             "default": false,
@@ -21888,6 +21931,14 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "initiatives_display": {
+            "$ref": "#/components/schemas/InitiativesDisplay"
+          },
+          "initiatives_display_saved": {
+            "default": false,
+            "title": "Initiatives Display Saved",
+            "type": "boolean"
           },
           "name_display": {
             "default": "username",

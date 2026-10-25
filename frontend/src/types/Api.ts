@@ -37,6 +37,10 @@ export interface UserRead {
   projects_display?: ProjectsDisplayPreference;
   /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
   projects_display_saved?: boolean;
+  /** How the initiatives page is ordered and which of its properties show. */
+  initiatives_display?: InitiativesDisplayPreference;
+  /** Whether the person arranged the initiatives page, so their own arrangement wins over the default. */
+  initiatives_display_saved?: boolean;
   /** Whether issues the person creates start assigned to them. */
   auto_assign_to_self?: boolean;
   /** Whether copying a git branch name moves a backlog or unstarted issue to the team's first started status. */
@@ -45,6 +49,14 @@ export interface UserRead {
   branch_copy_assigns?: boolean;
   /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
   auto_grant_new_scopes?: boolean;
+}
+
+/** The initiatives page arrangement an account saves, every field filled. */
+export interface InitiativesDisplayPreference {
+  order: 'target' | 'name' | 'progress' | 'created' | 'updated';
+  completed: 'show' | 'hide';
+  /** The shown properties, comma separated in the list's own order. */
+  columns: string;
 }
 
 /** The projects page arrangement an account saves, every field filled. */
@@ -146,6 +158,8 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
+  /** Replaces the saved initiatives page arrangement whole, null forgets it. */
+  initiatives_display?: InitiativesDisplayPreference | null;
   auto_assign_to_self?: boolean;
   branch_copy_starts?: boolean;
   branch_copy_assigns?: boolean;

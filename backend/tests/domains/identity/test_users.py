@@ -69,6 +69,12 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
         },
         "projects_display_saved": False,
+        "initiatives_display": {
+            "order": "target",
+            "completed": "show",
+            "columns": "health,owner,projects,target,progress",
+        },
+        "initiatives_display_saved": False,
         "auto_assign_to_self": False,
         "branch_copy_starts": True,
         "branch_copy_assigns": True,
@@ -265,6 +271,45 @@ def test_a_saved_projects_display_is_marked_and_null_forgets_it(client: TestClie
     assert forgotten.json()["projects_display"] == built_in
     assert repositories.users.get(OWNER).projects_display == {}
     assert client.patch("/api/users/me/preferences", json={"projects_display": None}).status_code == 200
+
+
+def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgotten_by_null(
+    client: TestClient, repositories: Any
+) -> None:
+    """The initiatives list arrangement follows the account, refuses a choice it lacks, and null forgets it."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    saved = client.patch(
+        "/api/users/me/preferences",
+        json={"initiatives_display": {"order": "name", "completed": "hide", "columns": ["progress", "owner"]}},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["initiatives_display"] == {"order": "name", "completed": "hide", "columns": "owner,progress"}
+    assert saved.json()["initiatives_display_saved"] is True
+    assert repositories.users.get(OWNER).initiatives_display["order"] == "name"
+    assert client.get("/api/users/me").json()["projects_display_saved"] is False
+
+    for field, value in (("order", "manual"), ("completed", "yes"), ("columns", "owner,budget")):
+        refused = client.patch("/api/users/me/preferences", json={"initiatives_display": {field: value}})
+        assert refused.status_code == 422
+
+    forgotten = client.patch("/api/users/me/preferences", json={"initiatives_display": None})
+    assert forgotten.status_code == 200, forgotten.text
+    assert forgotten.json()["initiatives_display_saved"] is False
+    assert forgotten.json()["initiatives_display"]["order"] == "target"
+    assert repositories.users.get(OWNER).initiatives_display == {}
+
+
+def test_a_retired_initiatives_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
+    """A stored choice the list no longer offers reads back as the default rather than failing the read."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+    repositories.users.update(OWNER, initiatives_display={"order": "manual", "columns": "budget,health"})
+
+    display = client.get("/api/users/me").json()["initiatives_display"]
+
+    assert display == {"order": "target", "completed": "show", "columns": "health"}
 
 
 def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:

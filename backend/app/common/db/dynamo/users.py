@@ -89,6 +89,8 @@ class User(BaseModel):
     `projects_display` is how the person last arranged the projects list, its
     layout, grouping, ordering, closed window and timeline zoom, kept as plain
     strings that the read falls back from when a choice is retired.
+    `initiatives_display` is the same for the initiatives list: its ordering,
+    whether completed initiatives show, and which properties show.
 
     `auto_assign_to_self`, `branch_copy_starts` and `branch_copy_assigns` are the
     workflow preferences: whether an issue the person creates defaults to them as
@@ -117,6 +119,7 @@ class User(BaseModel):
     name_display: str = "username"
     font_size: str = "default"
     projects_display: dict[str, str] = Field(default_factory=dict)
+    initiatives_display: dict[str, str] = Field(default_factory=dict)
     auto_assign_to_self: bool = False
     branch_copy_starts: bool = True
     branch_copy_assigns: bool = True
