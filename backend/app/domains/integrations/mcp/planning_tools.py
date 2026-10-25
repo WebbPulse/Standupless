@@ -857,11 +857,13 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
     "start_date_resolution": enum(
         DATE_RESOLUTIONS,
-        "How wide start_date is: day (the default), or the month, quarter, half or year it opens; the date moves to that period's first day",
+        "How wide start_date is: day (the default), or the month, quarter, half or year it opens; "
+        "the date moves to that period's first day",
     ),
     "target_date_resolution": enum(
         DATE_RESOLUTIONS,
-        "How wide target_date is: day (the default), or the month, quarter, half or year it closes; the date moves to that period's last day",
+        "How wide target_date is: day (the default), or the month, quarter, half or year it closes; "
+        "the date moves to that period's last day",
     ),
     "status": string(STATUS_HELP),
     "status_id": string("The project status by id or name, as list_project_statuses names it"),

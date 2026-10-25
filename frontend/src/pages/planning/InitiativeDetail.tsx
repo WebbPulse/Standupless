@@ -84,7 +84,7 @@ import {
   progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject, daysBetween } from '../../lib/planningModel';
-import { planningDateLabel } from '../../lib/dateResolution';
+import { isCoarse, planningDateLabel } from '../../lib/dateResolution';
 import {
   initiativeDetailKey,
   initiativeProgressKey,
@@ -707,7 +707,9 @@ export const InitiativeDetail: React.FC = () => {
         onChange={(value, resolution) => {
           void update({
             target_date: value,
-            target_date_resolution: resolution,
+            ...(isCoarse(resolution)
+              ? { target_date_resolution: resolution }
+              : {}),
           });
         }}
       />

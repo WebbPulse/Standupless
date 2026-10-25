@@ -34,7 +34,7 @@ from app.common.customer_index import (
     load_customer_index,
     require_customer_list_reader,
 )
-from app.common.date_resolution import settle_date_fields, stored_resolution
+from app.common.date_resolution import DateEdge, settle_date_fields, stored_resolution
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
@@ -518,10 +518,11 @@ def update_project(
     )
     if chosen is not None:
         fields["status"], fields["status_id"] = chosen
-    for date_name, edge, current in (
+    dates: tuple[tuple[str, DateEdge, Optional[str]], ...] = (
         ("start_date", "start", existing.start_date),
         ("target_date", "end", existing.target_date),
-    ):
+    )
+    for date_name, edge, current in dates:
         refusal = settle_date_fields(fields, date_name, f"{date_name}_resolution", edge, current)
         if refusal is not None:
             raise unprocessable(refusal)

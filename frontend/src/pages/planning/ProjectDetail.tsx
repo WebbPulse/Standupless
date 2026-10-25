@@ -53,6 +53,7 @@ import {
 } from '../../api/planning';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
 import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
+import { isCoarse } from '../../lib/dateResolution';
 import EditableText from '../../components/planning/EditableText';
 import CustomerRequestsSection from '../../components/customers/CustomerRequestsSection';
 import DocumentsSection from '../../components/planning/DocumentsSection';
@@ -631,7 +632,9 @@ export const ProjectDetail: React.FC = () => {
           onChange={(value, resolution) => {
             void update({
               start_date: value,
-              start_date_resolution: resolution,
+              ...(isCoarse(resolution)
+                ? { start_date_resolution: resolution }
+                : {}),
             });
           }}
         />
@@ -651,7 +654,9 @@ export const ProjectDetail: React.FC = () => {
           onChange={(value, resolution) => {
             void update({
               target_date: value,
-              target_date_resolution: resolution,
+              ...(isCoarse(resolution)
+                ? { target_date_resolution: resolution }
+                : {}),
             });
           }}
         />

@@ -84,6 +84,7 @@ import {
 import ProgressRing from '../../components/planning/ProgressRing';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
 import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
+import { isCoarse } from '../../lib/dateResolution';
 import {
   HealthPicker,
   LeadPicker,
@@ -605,7 +606,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             onChange={(start, resolution) => {
               void update({
                 start_date: start,
-                start_date_resolution: resolution,
+                ...(isCoarse(resolution)
+                  ? { start_date_resolution: resolution }
+                  : {}),
               });
             }}
           />
@@ -633,7 +636,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             onChange={(target, resolution) => {
               void update({
                 target_date: target,
-                target_date_resolution: resolution,
+                ...(isCoarse(resolution)
+                  ? { target_date_resolution: resolution }
+                  : {}),
               });
             }}
           />

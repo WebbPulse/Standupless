@@ -87,7 +87,7 @@ import {
   type ProjectMove,
   type ProjectOrdering,
 } from '../../lib/projectList';
-import { planningDateLabel } from '../../lib/dateResolution';
+import { isCoarse, planningDateLabel } from '../../lib/dateResolution';
 import type {
   DateResolution,
   ProjectLabelRead,
@@ -398,7 +398,9 @@ const BoardCard: React.FC<BoardCardProps> = ({
               onChange={(start, resolution) => {
                 onChange({
                   start_date: start,
-                  start_date_resolution: resolution,
+                  ...(isCoarse(resolution)
+                    ? { start_date_resolution: resolution }
+                    : {}),
                 });
               }}
             />
@@ -423,7 +425,9 @@ const BoardCard: React.FC<BoardCardProps> = ({
               onChange={(target, resolution) => {
                 onChange({
                   target_date: target,
-                  target_date_resolution: resolution,
+                  ...(isCoarse(resolution)
+                    ? { target_date_resolution: resolution }
+                    : {}),
                 });
               }}
             />

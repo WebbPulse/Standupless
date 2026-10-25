@@ -281,9 +281,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
       return;
     void update({
       start_date: dayValue(next.start),
-      start_date_resolution: 'day',
       target_date: dayValue(next.end),
-      target_date_resolution: 'day',
     });
   };
 

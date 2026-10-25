@@ -673,8 +673,12 @@ class ProjectCreate(BaseModel):
             self.team_ids = [self.team_id]
         elif self.team_id is not None and self.team_id not in self.team_ids:
             raise ValueError("team_id must be one of team_ids")
-        self.start_date = _settle_resolution(self.start_date, self.start_date_resolution, "start", "start_date")
-        self.target_date = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
+        start = _settle_resolution(self.start_date, self.start_date_resolution, "start", "start_date")
+        if start != self.start_date:
+            self.start_date = start
+        target = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
+        if target != self.target_date:
+            self.target_date = target
         _check_order(self.start_date, self.target_date, "target_date")
         return self
 
@@ -1594,7 +1598,9 @@ class InitiativeCreate(BaseModel):
     @model_validator(mode="after")
     def widen_target_date(self) -> "InitiativeCreate":
         """Move a coarse target date to the last day of its period."""
-        self.target_date = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
+        target = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
+        if target != self.target_date:
+            self.target_date = target
         return self
 
 
