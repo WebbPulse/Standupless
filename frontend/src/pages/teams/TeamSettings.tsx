@@ -53,6 +53,7 @@ import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import { useTeam } from '../../hooks/useTeam';
 import { useTeamsFor } from '../../hooks/useTeams';
+import { useOffline } from '../../hooks/useOffline';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { planIncludes } from '../../lib/billing';
 import {
@@ -114,6 +115,7 @@ const jumpTo = (event: React.MouseEvent<HTMLAnchorElement>, id: string) => {
 const TeamSettings: React.FC = () => {
   const { keyPrefix, slug } = useParams<{ keyPrefix: string; slug: string }>();
   const { workspace } = useWorkspace();
+  const offline = useOffline();
   const { team, workspaceId, isLoading, notFound, error } = useTeam(keyPrefix);
   const { data: teams } = useTeamsFor(workspaceId);
   const { hash } = useLocation();
@@ -151,14 +153,17 @@ const TeamSettings: React.FC = () => {
     );
   }
 
-  const editable = isTeamAdmin(workspace?.role, team.role);
+  const admin = isTeamAdmin(workspace?.role, team.role);
+  const editable = admin && !offline;
+  const writable = canWriteIssues(workspace?.role, team.role) && !offline;
   const parent = (teams ?? []).find((row) => row.id === team.parent_team_id);
   const parentSettings =
     parent === undefined
       ? undefined
       : teamSettingsPath(slug ?? '', parent.key_prefix);
-  const canDelete = canDeleteTeam(workspace?.role);
-  const showDanger = canDelete || editable;
+  const mayDelete = canDeleteTeam(workspace?.role);
+  const canDelete = mayDelete && !offline;
+  const showDanger = mayDelete || admin;
   const releasesOn = isFeatureOn(workspace, 'releases');
   const sections = SECTIONS.filter(
     (section) =>
@@ -304,7 +309,7 @@ const TeamSettings: React.FC = () => {
               teamId={team.id}
               estimateScale={team.estimate_scale}
               estimateOptions={estimateOptionsOf(team)}
-              canEdit={canWriteIssues(workspace?.role, team.role)}
+              canEdit={writable}
               canSetDefault={editable}
               onMakeRecurring={(template) => {
                 makeRecurring(template.id);
@@ -317,7 +322,7 @@ const TeamSettings: React.FC = () => {
               key={recurringStart?.nonce ?? 0}
               workspaceId={workspaceId}
               teamId={team.id}
-              canEdit={canWriteIssues(workspace?.role, team.role)}
+              canEdit={writable}
               initialTemplateId={recurringStart?.templateId ?? null}
             />
           )}

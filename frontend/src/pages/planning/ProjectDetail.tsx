@@ -108,6 +108,7 @@ import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { usePrintCommand } from '../../hooks/usePrintCommand';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
+import { useOffline } from '../../hooks/useOffline';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
@@ -223,6 +224,7 @@ export const ProjectDetail: React.FC = () => {
   const projectId = useRouteEntityId();
   const [params, setParams] = useSearchParams();
   const { workspace } = useWorkspace();
+  const offline = useOffline();
   const slug = workspace?.slug ?? '';
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -381,7 +383,9 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const mayPost =
-    project !== null && canEditProject(workspace?.role, project, teams);
+    project !== null &&
+    canEditProject(workspace?.role, project, teams) &&
+    !offline;
   const writeUpdate = useCallback((): void => {
     setTab('updates');
     setComposing(true);
@@ -577,10 +581,11 @@ export const ProjectDetail: React.FC = () => {
     );
   }
 
-  const canEdit = canEditProject(workspace?.role, project, teams);
+  const canEdit = canEditProject(workspace?.role, project, teams) && !offline;
   const canDelete =
-    isTeamAdmin(workspace?.role, undefined) ||
-    projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role));
+    (isTeamAdmin(workspace?.role, undefined) ||
+      projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role))) &&
+    !offline;
   const percent = progressPercent(project);
   const nudge = updateNudge(project);
   const workspaceCadence = workspace?.project_update_interval_days ?? 7;

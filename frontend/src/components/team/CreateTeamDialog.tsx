@@ -26,6 +26,7 @@
 import React, { useMemo, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { createTeam, updateTeam } from '../../api/teams';
+import { useOffline } from '../../hooks/useOffline';
 import { errorMessage, hasStatus, CONFLICT } from '../../lib/errors';
 import { teamsKey } from '../../lib/queryKeys';
 import { cn } from '../../lib/cn';
@@ -192,6 +193,7 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   );
   const subTeam = initialParentTeamId !== null;
   const [isSaving, setIsSaving] = useState(false);
+  const offline = useOffline();
   const [error, setError] = useState<string | null>(null);
 
   const nameError = validateTeamName(name);
@@ -203,7 +205,8 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
     nameError === null &&
     prefixError === null &&
     descriptionError === null &&
-    !isSaving;
+    !isSaving &&
+    !offline;
 
   const onSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();

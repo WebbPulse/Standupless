@@ -9,7 +9,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ProjectCreate,
   ProjectRead,
@@ -19,6 +19,18 @@ import type {
   TemplateRead,
 } from '../../types/Api';
 import CreateProjectDialog from './CreateProjectDialog';
+
+const network = vi.hoisted(() => ({ offline: false }));
+
+vi.mock('../../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOffline: () => network.offline,
+  useWritable: (permitted: boolean) => permitted && !network.offline,
+}));
+
+afterEach(() => {
+  network.offline = false;
+});
 
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
 const updateProject =
@@ -348,5 +360,23 @@ describe('project templates in the new project dialog', () => {
       expect(onCreated).toHaveBeenCalledTimes(1);
     });
     expect(showToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('offline', () => {
+  it('holds the create back with the connection hint', async () => {
+    network.offline = true;
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Project name' }),
+      'Search'
+    );
+
+    const create = screen.getByRole('button', { name: 'Create project' });
+    expect(create).toBeDisabled();
+    expect(create).toHaveAttribute('title', 'Changes need a connection');
+    expect(createProject).not.toHaveBeenCalled();
   });
 });

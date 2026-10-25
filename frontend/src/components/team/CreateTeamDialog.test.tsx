@@ -9,11 +9,23 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@webbpulse/api-client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TeamRead } from '../../types/Api';
 import CreateTeamDialog, {
   type CreateTeamDialogProps,
 } from './CreateTeamDialog';
+
+const network = vi.hoisted(() => ({ offline: false }));
+
+vi.mock('../../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOffline: () => network.offline,
+  useWritable: (permitted: boolean) => permitted && !network.offline,
+}));
+
+afterEach(() => {
+  network.offline = false;
+});
 
 const createTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
 const updateTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
@@ -401,5 +413,19 @@ describe('copying settings', () => {
     expect(
       screen.queryByRole('button', { name: /Copy settings from/ })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('offline', () => {
+  it('holds the create back with the connection hint', async () => {
+    network.offline = true;
+    const { user } = renderDialog();
+
+    await user.type(screen.getByLabelText('Name'), 'Platform');
+
+    const create = screen.getByRole('button', { name: 'Create team' });
+    expect(create).toBeDisabled();
+    expect(create).toHaveAttribute('title', 'Changes need a connection');
+    expect(createTeam).not.toHaveBeenCalled();
   });
 });
