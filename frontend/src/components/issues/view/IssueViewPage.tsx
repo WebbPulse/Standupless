@@ -49,6 +49,7 @@ import {
 } from '../../../hooks/useListFolds';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
+import { isFeatureOn } from '../../../lib/features';
 import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useCustomers } from '../../../hooks/useCustomers';
 import {
@@ -570,16 +571,23 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
-  const isMember = workspace !== null && workspace.role !== 'guest';
-  const { customers } = useCustomers(workspaceId, isMember);
+  const customersShown =
+    workspace !== null &&
+    workspace.role !== 'guest' &&
+    isFeatureOn(workspace, 'customers');
+  const releasesOn = isFeatureOn(workspace, 'releases');
+  const { customers } = useCustomers(workspaceId, customersShown);
   const customerRequests = useCustomerRequestMap(
     workspaceId,
-    isMember &&
+    customersShown &&
       (state.groupBy === 'customer' ||
         state.subGroupBy === 'customer' ||
         showsCustomerProperties(state.visible))
   );
-  const releaseIndex = useReleaseIndex(workspaceId, teamIds.length > 0);
+  const releaseIndex = useReleaseIndex(
+    workspaceId,
+    releasesOn && teamIds.length > 0
+  );
   const namedTeams = useMemo(() => namedTeamIds(state), [state]);
   const filterContext = useMemo(
     () => ({
@@ -590,7 +598,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         key: team.key_prefix,
         isMember: team.is_member === true,
       })),
-      ...(isMember
+      ...(customersShown
         ? {
             customers: customers.map((customer) => ({
               id: customer.customer_id,
@@ -600,9 +608,17 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             })),
           }
         : {}),
-      ...releaseContext(releaseIndex),
+      ...(releasesOn ? releaseContext(releaseIndex) : {}),
     }),
-    [lists.context, teams, namedTeams, isMember, customers, releaseIndex]
+    [
+      lists.context,
+      teams,
+      namedTeams,
+      customersShown,
+      customers,
+      releasesOn,
+      releaseIndex,
+    ]
   );
   const viewLists = useMemo(
     () => ({ ...lists, context: filterContext }),
@@ -877,7 +893,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           groupFields={groupFieldsFor(filterContext, { focus: focusGrouping })}
           context={filterContext}
           teamDefault={teamDefaultActions}
-          customerSorts={isMember}
+          customerSorts={customersShown}
           estimates={listEstimates}
           onReset={
             !displayChanged && (keepsFolds || viewerFolds.collapsed.size === 0)
@@ -1026,7 +1042,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             {...(emptyMessage === undefined ? {} : { emptyMessage })}
             filterFields={filterFields}
             statusCategories={statusCategories}
-            {...(isMember ? { customerRequests } : {})}
+            {...(customersShown ? { customerRequests } : {})}
           />
         </div>
         {insightsOpen && (

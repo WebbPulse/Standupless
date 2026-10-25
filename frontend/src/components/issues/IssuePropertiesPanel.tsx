@@ -29,6 +29,7 @@ import type { IssueSubscription } from '../../hooks/useIssueSubscription';
 import { useTriageOn } from '../../hooks/useTriageTeams';
 import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { isFeatureOn } from '../../lib/features';
 import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
@@ -531,18 +532,22 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
               }
             : {})}
         />
-        <IssueReleasesSection
-          workspaceId={workspaceId}
-          issueId={issue.id}
-          slug={slug}
-          teams={teams}
-        />
-        <IssueDocumentsSection
-          workspaceId={workspaceId}
-          issueId={issue.id}
-          slug={slug}
-        />
-        {isMember && (
+        {isFeatureOn(workspace, 'releases') && (
+          <IssueReleasesSection
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            slug={slug}
+            teams={teams}
+          />
+        )}
+        {isFeatureOn(workspace, 'documents') && (
+          <IssueDocumentsSection
+            workspaceId={workspaceId}
+            issueId={issue.id}
+            slug={slug}
+          />
+        )}
+        {isMember && isFeatureOn(workspace, 'customers') && (
           <CustomerRequestsSection
             workspaceId={workspaceId}
             slug={slug}

@@ -21,6 +21,7 @@ import {
   billingSettingsPath,
   connectedAppsPath,
   exportSettingsPath,
+  featuresSettingsPath,
   importSettingsPath,
   integrationsSettingsPath,
   labelsSettingsPath,
@@ -401,6 +402,24 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         anchor: settingsAnchorId('sso'),
       },
     ],
+  },
+  {
+    id: 'features',
+    title: 'Features',
+    scope: 'workspace',
+    paletteLabel: 'Workspace features',
+    synonyms: [
+      'turn off',
+      'disable',
+      'enable',
+      'initiatives',
+      'customers',
+      'releases',
+      'documents',
+      'pulse',
+    ],
+    path: featuresSettingsPath,
+    adminOnly: true,
   },
   {
     id: 'teams',
@@ -879,10 +898,22 @@ export const visibleSettingsPages = (
   return SETTINGS_PAGES.filter((page) => admin || page.adminOnly !== true);
 };
 
+/**
+ * The team settings sections the workspace offers, leaving out Releases while
+ * an admin has turned releases off for the workspace.
+ */
+export const teamSettingsSectionsFor = (
+  features?: WorkspaceRead['features']
+): readonly TeamSettingsSection[] =>
+  features?.releases !== false
+    ? TEAM_SETTINGS_SECTIONS
+    : TEAM_SETTINGS_SECTIONS.filter((section) => section.id !== 'releases');
+
 /** The entries of one team's settings page, itself first. */
 export const teamSettingsEntries = (
   slug: string,
-  team: Pick<TeamRead, 'name' | 'key_prefix'>
+  team: Pick<TeamRead, 'name' | 'key_prefix'>,
+  features?: WorkspaceRead['features']
 ): SettingsEntry[] => {
   const base = teamSettingsPath(slug, team.key_prefix);
   const entries: SettingsEntry[] = [
@@ -895,7 +926,7 @@ export const teamSettingsEntries = (
       to: base,
     },
   ];
-  for (const section of TEAM_SETTINGS_SECTIONS) {
+  for (const section of teamSettingsSectionsFor(features)) {
     const to = `${base}#${teamSettingsAnchorId(section.id)}`;
     entries.push({
       id: `team:${team.key_prefix}:${section.id}`,
@@ -921,7 +952,8 @@ export const teamSettingsEntries = (
 
 /** What the index is built for: the workspace and the teams to cover. */
 export interface SettingsIndexInput {
-  workspace: Pick<WorkspaceRead, 'slug' | 'role'>;
+  workspace: Pick<WorkspaceRead, 'slug' | 'role'> &
+    Partial<Pick<WorkspaceRead, 'features'>>;
   teams?: readonly Pick<TeamRead, 'name' | 'key_prefix'>[];
 }
 
@@ -957,7 +989,9 @@ export const buildSettingsIndex = ({
     }
   }
   for (const team of teams) {
-    entries.push(...teamSettingsEntries(workspace.slug, team));
+    entries.push(
+      ...teamSettingsEntries(workspace.slug, team, workspace.features)
+    );
   }
   return entries;
 };

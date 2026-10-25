@@ -11,6 +11,7 @@
 import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { SidebarDataContext } from '../../contexts/SidebarDataContextDefinition';
+import { useFeatureOn } from '../../hooks/useFeatureOn';
 import { cn } from '../../lib/cn';
 import {
   teamBoardPath,
@@ -54,6 +55,7 @@ const tabClass = (active: boolean): string =>
  * The Issues, Board, Cycles, Releases, Documents, Standup and Settings switch for one
  * team, led by Triage whenever the team has triage on or the triage page is
  * showing, so the inbox is one click from any of the team's surfaces.
+ * Releases and Documents drop out while the workspace has them off.
  */
 export const TeamTabs: React.FC<TeamTabsProps> = ({
   slug,
@@ -62,6 +64,8 @@ export const TeamTabs: React.FC<TeamTabsProps> = ({
   teamId,
 }) => {
   const shared = useContext(SidebarDataContext);
+  const releasesOn = useFeatureOn('releases');
+  const documentsOn = useFeatureOn('documents');
   const triageOn =
     teamId !== undefined &&
     (shared?.triage?.teams ?? []).some((row) => row.team_id === teamId);
@@ -82,16 +86,24 @@ export const TeamTabs: React.FC<TeamTabsProps> = ({
       label: 'Cycles',
       to: teamCyclesPath(slug, keyPrefix),
     },
-    {
-      tab: 'releases',
-      label: 'Releases',
-      to: teamReleasesPath(slug, keyPrefix),
-    },
-    {
-      tab: 'documents',
-      label: 'Documents',
-      to: teamDocumentsPagePath(slug, keyPrefix),
-    },
+    ...(releasesOn
+      ? [
+          {
+            tab: 'releases' as const,
+            label: 'Releases',
+            to: teamReleasesPath(slug, keyPrefix),
+          },
+        ]
+      : []),
+    ...(documentsOn
+      ? [
+          {
+            tab: 'documents' as const,
+            label: 'Documents',
+            to: teamDocumentsPagePath(slug, keyPrefix),
+          },
+        ]
+      : []),
     {
       tab: 'standup',
       label: 'Standup',

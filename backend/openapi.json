@@ -29938,6 +29938,106 @@
         "title": "WorkspaceExportRead",
         "type": "object"
       },
+      "WorkspaceFeatures": {
+        "description": "Which areas of the product are on for the workspace, every one on unless an admin turned it off.",
+        "properties": {
+          "customers": {
+            "default": true,
+            "description": "Customers and customer requests",
+            "title": "Customers",
+            "type": "boolean"
+          },
+          "documents": {
+            "default": true,
+            "description": "Documents on teams, projects and initiatives",
+            "title": "Documents",
+            "type": "boolean"
+          },
+          "initiatives": {
+            "default": true,
+            "description": "Initiatives and their updates",
+            "title": "Initiatives",
+            "type": "boolean"
+          },
+          "pulse": {
+            "default": true,
+            "description": "The Pulse feed of updates and following projects or initiatives",
+            "title": "Pulse",
+            "type": "boolean"
+          },
+          "releases": {
+            "default": true,
+            "description": "Team releases and the release pipeline",
+            "title": "Releases",
+            "type": "boolean"
+          }
+        },
+        "title": "WorkspaceFeatures",
+        "type": "object"
+      },
+      "WorkspaceFeaturesUpdate": {
+        "additionalProperties": false,
+        "description": "The areas to turn on or off; an absent area is left as it is, and an unknown one is refused.",
+        "properties": {
+          "customers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customers"
+          },
+          "documents": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documents"
+          },
+          "initiatives": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiatives"
+          },
+          "pulse": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse"
+          },
+          "releases": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releases"
+          }
+        },
+        "title": "WorkspaceFeaturesUpdate",
+        "type": "object"
+      },
       "WorkspaceListRead": {
         "description": "The body `GET /api/workspaces` answers with.",
         "properties": {
@@ -30044,6 +30144,10 @@
               }
             ],
             "title": "Deletion Scheduled By"
+          },
+          "features": {
+            "$ref": "#/components/schemas/WorkspaceFeatures",
+            "description": "Which areas are on; writes to an area that is off are refused with FEATURE_DISABLED"
           },
           "icon_url": {
             "anyOf": [
@@ -30173,7 +30277,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format, who may invite people or create teams and whether\nthird-party apps need an admin's approval are editable.\nThe slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format, who may invite people or create teams and whether\nthird-party apps need an admin's approval are editable, and so are the\nareas of the product that are on.\nThe slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -30203,6 +30307,17 @@
             ],
             "description": "How copied git branch names are built: key_title, user_key_title or key",
             "title": "Branch Format"
+          },
+          "features": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceFeaturesUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Areas to turn on or off: initiatives, customers, releases, documents and pulse"
           },
           "invite_permission": {
             "anyOf": [

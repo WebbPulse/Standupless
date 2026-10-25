@@ -163,6 +163,7 @@ def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, rep
         "branch_format",
         "invite_permission",
         "team_creation_permission",
+        "features",
     }
     assert "required" in refusal(tool(client, secret, "update_workspace", {}))
 

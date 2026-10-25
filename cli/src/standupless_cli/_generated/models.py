@@ -4018,6 +4018,22 @@ class WorkspaceExportRead(TypedDict):
     workspace_id: str
 
 
+class WorkspaceFeatures(TypedDict):
+    customers: NotRequired[bool]
+    documents: NotRequired[bool]
+    initiatives: NotRequired[bool]
+    pulse: NotRequired[bool]
+    releases: NotRequired[bool]
+
+
+class WorkspaceFeaturesUpdate(TypedDict, closed=True):
+    customers: NotRequired[bool | None]
+    documents: NotRequired[bool | None]
+    initiatives: NotRequired[bool | None]
+    pulse: NotRequired[bool | None]
+    releases: NotRequired[bool | None]
+
+
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
     auth_policy_allowed_methods: NotRequired[list[str] | None]
@@ -4027,6 +4043,7 @@ class WorkspaceRead(TypedDict):
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
+    features: NotRequired[WorkspaceFeatures]
     icon_url: NotRequired[str | None]
     id: str
     invite_permission: NotRequired[Literal["admins", "members"]]
@@ -4050,6 +4067,7 @@ class WorkspaceSummaryRead(TypedDict):
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
     branch_format: NotRequired[Literal["key_title", "user_key_title", "key"] | None]
+    features: NotRequired[WorkspaceFeaturesUpdate | None]
     invite_permission: NotRequired[Literal["admins", "members"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]

@@ -3,7 +3,8 @@
  * palette: a typed term lists them by name under their own headings, up to
  * eight a group, Open initiative and Open customer open pickers of every one
  * the viewer's reads return, choosing a row opens its page, and a guest is
- * offered no initiatives or customers but still finds what their reads return.
+ * offered no initiatives or customers but still finds what their reads return,
+ * and that an area an admin turned off leaves the palette entirely.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -18,6 +19,7 @@ import type {
   InitiativeRead,
   ProjectRead,
   TeamRead,
+  WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
@@ -149,7 +151,10 @@ const view = (id: string, name: string): SavedViewDisplayRead =>
   }) as SavedViewDisplayRead;
 
 /** Renders the open palette for a viewer with the given workspace role. */
-const renderPalette = (role: WorkspaceRole = 'owner') => {
+const renderPalette = (
+  role: WorkspaceRole = 'owner',
+  features?: WorkspaceRead['features']
+) => {
   const user = userEvent.setup();
   render(
     <MemoryRouter initialEntries={['/w/mine/team/ENG']}>
@@ -157,7 +162,12 @@ const renderPalette = (role: WorkspaceRole = 'owner') => {
         <CommandPalette
           open
           onClose={() => undefined}
-          workspace={{ id: 'ws-1', slug: 'mine', role }}
+          workspace={{
+            id: 'ws-1',
+            slug: 'mine',
+            role,
+            ...(features === undefined ? {} : { features }),
+          }}
           teams={[engine]}
         />
       </ShortcutProvider>
@@ -354,5 +364,79 @@ describe('the pickers', () => {
       screen.queryByRole('option', { name: /Open initiative/ })
     ).toBeNull();
     expect(screen.queryByRole('option', { name: /Open customer/ })).toBeNull();
+  });
+});
+
+describe('an area an admin turned off', () => {
+  it('lists no initiatives and reads none while initiatives is off', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [initiative('ini-3', 'Billing goal')],
+    });
+    const user = renderPalette('owner', { initiatives: false });
+    await user.type(screen.getByRole('combobox'), 'billing');
+
+    await screen.findByRole('group', { name: 'Projects' });
+    expect(screen.queryByRole('group', { name: 'Initiatives' })).toBeNull();
+    expect(listInitiatives).not.toHaveBeenCalled();
+  });
+
+  it('lists no customers and reads none while customers is off', async () => {
+    listCustomers.mockResolvedValue([customer('cus-3', 'Billing Co')]);
+    const user = renderPalette('owner', { customers: false });
+    await user.type(screen.getByRole('combobox'), 'billing');
+
+    await screen.findByRole('group', { name: 'Projects' });
+    expect(screen.queryByRole('group', { name: 'Customers' })).toBeNull();
+    expect(listCustomers).not.toHaveBeenCalled();
+  });
+
+  it('offers neither picker while both areas are off', async () => {
+    const user = renderPalette('owner', {
+      initiatives: false,
+      customers: false,
+    });
+    await user.type(screen.getByRole('combobox'), 'open');
+
+    await screen.findAllByRole('option');
+    expect(
+      screen.queryByRole('option', { name: /Open initiative/ })
+    ).toBeNull();
+    expect(screen.queryByRole('option', { name: /Open customer/ })).toBeNull();
+  });
+
+  it('offers the team releases page while releases is on', async () => {
+    const user = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'engine');
+
+    expect(
+      await screen.findByRole('option', { name: /Engine releases/ })
+    ).toBeInTheDocument();
+  });
+
+  it('leaves the team releases page out while releases is off', async () => {
+    const user = renderPalette('owner', { releases: false });
+    await user.type(screen.getByRole('combobox'), 'engine');
+
+    await screen.findByRole('option', { name: /Engine views/ });
+    expect(
+      screen.queryByRole('option', { name: /Engine releases/ })
+    ).toBeNull();
+  });
+
+  it('offers Pulse while Pulse is on', async () => {
+    const user = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'pulse');
+
+    expect(
+      await screen.findByRole('option', { name: /^Pulse/ })
+    ).toBeInTheDocument();
+  });
+
+  it('leaves Pulse out while Pulse is off', async () => {
+    const user = renderPalette('owner', { pulse: false });
+    await user.type(screen.getByRole('combobox'), 'pulse');
+
+    await screen.findAllByRole('option');
+    expect(screen.queryByRole('option', { name: /^Pulse/ })).toBeNull();
   });
 });

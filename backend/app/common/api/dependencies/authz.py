@@ -993,10 +993,25 @@ def require(
         )
         _enforce_route_scopes(request, context, repositories)
         _check_permission_setting(repositories, context, capability)
+        _check_workspace_features(request, repositories, workspace_id)
         return context
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
     return dependency
+
+
+def _check_workspace_features(request: Request, repositories: RepositoryBundle, workspace_id: str) -> None:
+    """Refuse a write to an area of the product the workspace has turned off.
+
+    Runs after membership, so a stranger still gets the 404 and never learns
+    which areas are on. A read never reaches the workspace row here.
+    """
+    from app.common.workspace_features import features_for_route, refuse_if_disabled
+
+    route = request.scope.get("route")
+    features = features_for_route(request.method, getattr(route, "path", None))
+    if features:
+        refuse_if_disabled(repositories, workspace_id, *features)
 
 
 def _check_permission_setting(repositories: RepositoryBundle, context: AuthzContext, capability: Capability) -> None:

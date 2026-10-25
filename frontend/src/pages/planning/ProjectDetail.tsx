@@ -55,6 +55,7 @@ import {
 } from '../../api/planning';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
 import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
+import { isFeatureOn } from '../../lib/features';
 import { isCoarse } from '../../lib/dateResolution';
 import EditableText from '../../components/planning/EditableText';
 import CustomerRequestsSection from '../../components/customers/CustomerRequestsSection';
@@ -786,7 +787,7 @@ export const ProjectDetail: React.FC = () => {
           if (next.length > 0) void update({ team_ids: next });
         }}
       />
-      {workspace?.role !== 'guest' && (
+      {workspace?.role !== 'guest' && isFeatureOn(workspace, 'initiatives') && (
         <InitiativePicker
           variant="chip"
           value={project.initiative_id ?? null}
@@ -1040,25 +1041,28 @@ export const ProjectDetail: React.FC = () => {
                   ).catch(() => undefined)
                 }
               />
-              <DocumentsSection
-                workspaceId={workspaceId}
-                slug={slug}
-                parentKind="project"
-                parentId={projectId}
-                canCreate={canEdit}
-                people={people}
-              />
-              {workspace?.role !== 'guest' && (
-                <CustomerRequestsSection
+              {isFeatureOn(workspace, 'documents') && (
+                <DocumentsSection
                   workspaceId={workspaceId}
                   slug={slug}
-                  targetKind="project"
-                  targetId={projectId}
-                  targetLabel={project.name}
-                  canAdd={canEdit}
-                  variant="section"
+                  parentKind="project"
+                  parentId={projectId}
+                  canCreate={canEdit}
+                  people={people}
                 />
               )}
+              {workspace?.role !== 'guest' &&
+                isFeatureOn(workspace, 'customers') && (
+                  <CustomerRequestsSection
+                    workspaceId={workspaceId}
+                    slug={slug}
+                    targetKind="project"
+                    targetId={projectId}
+                    targetLabel={project.name}
+                    canAdd={canEdit}
+                    variant="section"
+                  />
+                )}
               <section aria-labelledby="project-issues-preview">
                 <div className="mb-2 flex items-center justify-between">
                   <h2

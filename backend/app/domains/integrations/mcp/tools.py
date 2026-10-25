@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.common.db.dynamo.workspaces import WorkspaceFeature
 from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.asana_import_tools import ASANA_IMPORT_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
@@ -92,7 +93,20 @@ TOOLS: tuple[Tool, ...] = (
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
-__all__ = ["TOOLS", "TOOLS_BY_NAME", "Tool", "ToolCall", "render"]
+FEATURE_OF_TOOL: dict[str, WorkspaceFeature] = {
+    tool.name: feature
+    for tools, feature in (
+        (INITIATIVE_TOOLS, WorkspaceFeature.INITIATIVES),
+        (PULSE_TOOLS, WorkspaceFeature.PULSE),
+        (DOCUMENT_TOOLS, WorkspaceFeature.DOCUMENTS),
+        (CUSTOMER_TOOLS, WorkspaceFeature.CUSTOMERS),
+        (RELEASE_TOOLS, WorkspaceFeature.RELEASES),
+    )
+    for tool in tools
+}
+"""The area each tool belongs to, so a write tool is refused while its area is turned off."""
+
+__all__ = ["FEATURE_OF_TOOL", "TOOLS", "TOOLS_BY_NAME", "Tool", "ToolCall", "render"]
 
 
 def render(value: Any) -> str:

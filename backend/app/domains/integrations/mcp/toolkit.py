@@ -32,6 +32,7 @@ from app.common.sla import sla_status
 from app.common.sla_clock import calendar_of
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.common.team_retirement import refuse_if_retired
+from app.common.workspace_features import FEATURE_DISABLED
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -488,8 +489,8 @@ def summary_json(teams: TeamRepository, issue: Issue, parent: Optional[Issue] = 
     }
 
 
-PLAN_REFUSAL_CODES: frozenset[str] = frozenset({PLAN_FEATURE_UNAVAILABLE, PLAN_LIMIT_REACHED})
-"""The error codes that mean the workspace plan, not the credential, refused a write."""
+PLAN_REFUSAL_CODES: frozenset[str] = frozenset({PLAN_FEATURE_UNAVAILABLE, PLAN_LIMIT_REACHED, FEATURE_DISABLED})
+"""The error codes that mean the workspace, its plan or its features, not the credential, refused a write."""
 
 
 def http_error_message(exc: HTTPException) -> str:
@@ -497,7 +498,8 @@ def http_error_message(exc: HTTPException) -> str:
 
     A 404 keeps the routes' rule that invisible and absent look the same, except a
     team's, whose message already names the reference and nothing more. A plan
-    refusal says what the plan lacks and carries its code, so a caller with the
+    refusal, or a write to an area the workspace turned off, says what is missing
+    and carries its code, so a caller with the
     role is not sent chasing credentials. Any other 403 says the credential may not
     write there. Anything else carries the route's own message, which is written
     for a person and reads as well to a model.

@@ -1,13 +1,15 @@
 /**
  * The team surface switch: that every tab links to its own route, that the
  * showing one is marked as the current page, and that the links carry the slug
- * and key prefix they were given.
+ * and key prefix they were given, and that the Releases and Documents tabs
+ * leave while an admin has that area turned off.
  */
 
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { SidebarDataContext } from '../../contexts/SidebarDataContextDefinition';
+import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { EMPTY_FAVORITES } from '../../lib/favorites';
 import TeamTabs, { type TeamTab } from './TeamTabs';
 
@@ -116,4 +118,41 @@ describe('TeamTabs', () => {
       screen.queryByRole('link', { name: 'Triage' })
     ).not.toBeInTheDocument();
   });
+
+  it.each([
+    ['releases', 'Releases'],
+    ['documents', 'Documents'],
+  ] as const)(
+    'leaves out the %s tab while that area is off',
+    (feature, label) => {
+      render(
+        <MemoryRouter>
+          <WorkspaceContext.Provider
+            value={{
+              workspace: {
+                id: 'ws',
+                name: 'Mine',
+                slug: 'mine',
+                plan: 'free',
+                created_at: '2026-09-17T00:00:00Z',
+                role: 'owner',
+                features: { [feature]: false },
+              },
+              isLoading: false,
+              notFound: false,
+              error: null,
+              refresh: () => Promise.resolve(),
+            }}
+          >
+            <TeamTabs slug="mine" keyPrefix="ENG" current="issues" />
+          </WorkspaceContext.Provider>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByRole('link', { name: 'Cycles' })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: label })
+      ).not.toBeInTheDocument();
+    }
+  );
 });

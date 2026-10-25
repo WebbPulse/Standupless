@@ -51,6 +51,7 @@ import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
+import { isFeatureOn } from '../../lib/features';
 import { activeTeams } from '../../lib/teamRetirement';
 import { emptyFilters } from '../../lib/issueFilters';
 import { rememberWorkspace } from '../../lib/lastWorkspace';
@@ -320,7 +321,10 @@ const WorkspaceOverlays: React.FC = () => {
   );
 
   const mayCreateProject = writable.length > 0;
-  const mayCreateInitiative = role !== undefined && role !== 'guest';
+  const mayCreateInitiative =
+    role !== undefined &&
+    role !== 'guest' &&
+    isFeatureOn(workspace, 'initiatives');
   const createPlanning = useMemo<CreatePlanningState>(
     () => ({
       openProject: () => {
@@ -462,6 +466,7 @@ const WorkspaceOverlays: React.FC = () => {
                     <CustomizeSidebarDialog
                       open={customizing}
                       role={role}
+                      features={workspace?.features}
                       onClose={() => {
                         setCustomizing(false);
                       }}

@@ -10,8 +10,10 @@ import type {
   SidebarBadgeStyle,
   SidebarItem,
   SidebarVisibility,
+  WorkspaceFeatures,
   WorkspaceRole,
 } from '../types/Api';
+import { featureOfSidebarItem } from './features';
 
 /** Every customizable item in sidebar order, with the words it reads as. */
 export const SIDEBAR_ITEMS: { item: SidebarItem; label: string }[] = [
@@ -85,11 +87,21 @@ export const resolveSidebarItems = (
   return resolved;
 };
 
-/** Whether an item applies to someone with this workspace role at all. */
+/**
+ * Whether an item applies to someone with this workspace role at all, and
+ * whether the workspace has the area behind it on.
+ */
 export const itemAvailable = (
   item: SidebarItem,
-  role: WorkspaceRole | undefined
-): boolean => role !== 'guest' || !MEMBER_ONLY.includes(item);
+  role: WorkspaceRole | undefined,
+  features?: Partial<WorkspaceFeatures>
+): boolean => {
+  const feature = featureOfSidebarItem(item);
+  if (feature !== null && features?.[feature] === false) {
+    return false;
+  }
+  return role !== 'guest' || !MEMBER_ONLY.includes(item);
+};
 
 /** The label an item reads as. */
 export const sidebarItemLabel = (item: SidebarItem): string =>

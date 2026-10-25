@@ -339,6 +339,8 @@ export interface WorkspaceRead {
   team_creation_permission?: PermissionLevel;
   /** Whether members need an admin's approval before connecting a third-party app. */
   third_party_app_approvals?: boolean;
+  /** Which optional areas the workspace has on. A missing area is on. */
+  features?: Partial<WorkspaceFeatures>;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -594,7 +596,16 @@ export interface WorkspaceUpdate {
   invite_permission?: PermissionLevel;
   team_creation_permission?: PermissionLevel;
   third_party_app_approvals?: boolean;
+  /** The areas to turn on or off. Areas left out keep their current setting. */
+  features?: Partial<WorkspaceFeatures>;
 }
+
+/** An optional workspace area an admin can turn off. */
+export type WorkspaceFeature =
+  'initiatives' | 'customers' | 'releases' | 'documents' | 'pulse';
+
+/** Whether each optional workspace area is on. */
+export type WorkspaceFeatures = Record<WorkspaceFeature, boolean>;
 
 /** Where a member stands: active, suspended by an admin, or invited and not yet joined. */
 export type MemberStatus = 'active' | 'suspended' | 'invited';

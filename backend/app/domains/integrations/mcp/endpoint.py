@@ -47,9 +47,10 @@ from app.common.api.dependencies.authz import (
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.change_source import MCP
 from app.common.core.config import settings
+from app.common.workspace_features import features_for_tool, refuse_if_disabled
 from app.domains.integrations.mcp.arguments import check_arguments
 from app.domains.integrations.mcp.toolkit import http_error_message, resolve_team_arguments, validation_message
-from app.domains.integrations.mcp.tools import TOOLS, TOOLS_BY_NAME, ToolCall, render
+from app.domains.integrations.mcp.tools import FEATURE_OF_TOOL, TOOLS, TOOLS_BY_NAME, ToolCall, render
 from app.domains.integrations.mcp.transport import (
     INSUFFICIENT_SCOPE,
     INTERNAL_ERROR,
@@ -263,7 +264,9 @@ def _call_tool(
 
     The arguments are checked against the tool's schema before its handler runs, so
     an unknown or missing argument is refused here, once, for every tool. A write
-    tool naming a retired team in `team_id` is refused here too.
+    tool naming a retired team in `team_id` is refused here too, and so is a write
+    tool in an area of the product the workspace has turned off, answered with the
+    same FEATURE_DISABLED message a REST write gets.
     """
     name = params.get("name")
     if not isinstance(name, str) or not name:
@@ -285,6 +288,10 @@ def _call_tool(
         checked = check_arguments(tool.name, tool.schema, arguments)
         call = ToolCall(context=context, repositories=repositories, arguments=checked)
         writes = not tool.read_only and tool.name not in RETIRED_TEAM_TOOLS
+        if not tool.read_only:
+            refuse_if_disabled(
+                repositories, context.workspace_id, *features_for_tool(FEATURE_OF_TOOL.get(tool.name), checked)
+            )
         resolved = resolve_team_arguments(call, administer=tool.administers_team, writes=writes)
         return tool_result(render(tool.handler(resolved)))
     except ToolError as exc:

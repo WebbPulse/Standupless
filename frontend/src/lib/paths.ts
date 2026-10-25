@@ -331,6 +331,10 @@ export const templatesSettingsPath = (slug: string): string =>
 export const billingSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/billing`;
 
+/** The admin only page that turns optional workspace areas on and off. */
+export const featuresSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/features`;
+
 /** The admin only workspace security policy: SSO, two-factor and domains. */
 export const workspaceSecuritySettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/security`;

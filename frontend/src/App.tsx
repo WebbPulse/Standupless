@@ -71,6 +71,7 @@ import Roadmap from './pages/planning/Roadmap';
 import ReleaseDetail from './pages/releases/ReleaseDetail';
 import Releases from './pages/releases/Releases';
 import Pulse from './pages/pulse/Pulse';
+import FeatureGate from './components/workspace/FeatureGate';
 import Reviews from './pages/reviews/Reviews';
 import Inbox from './pages/inbox/Inbox';
 import Landing from './pages/landing/Landing';
@@ -122,6 +123,7 @@ import ExportSettings from './pages/workspaces/ExportSettings';
 import IntegrationsSettings from './pages/workspaces/IntegrationsSettings';
 import ImportSettings from './pages/workspaces/ImportSettings';
 import SecuritySettings from './pages/workspaces/SecuritySettings';
+import FeaturesSettings from './pages/workspaces/FeaturesSettings';
 import AuditLogSettings from './pages/workspaces/AuditLogSettings';
 import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
 import ProjectLabelsSettings from './pages/workspaces/ProjectLabelsSettings';
@@ -218,6 +220,7 @@ const App: React.FC = () => (
           <Route path="settings/export" element={<ExportSettings />} />
           <Route path="settings/import" element={<ImportSettings />} />
           <Route path="settings/security" element={<SecuritySettings />} />
+          <Route path="settings/features" element={<FeaturesSettings />} />
           <Route path="settings/audit-log" element={<AuditLogSettings />} />
           <Route
             path="settings/notifications"
@@ -250,30 +253,43 @@ const App: React.FC = () => (
             path="team/:keyPrefix/cycles/:cycleId"
             element={<CycleDetail />}
           />
-          <Route path="team/:keyPrefix/releases" element={<Releases />} />
-          <Route
-            path="team/:keyPrefix/releases/:releaseId"
-            element={<ReleaseDetail />}
-          />
-          <Route path="team/:keyPrefix/documents" element={<TeamDocuments />} />
+          <Route element={<FeatureGate feature="releases" />}>
+            <Route path="team/:keyPrefix/releases" element={<Releases />} />
+            <Route
+              path="team/:keyPrefix/releases/:releaseId"
+              element={<ReleaseDetail />}
+            />
+          </Route>
+          <Route element={<FeatureGate feature="documents" />}>
+            <Route
+              path="team/:keyPrefix/documents"
+              element={<TeamDocuments />}
+            />
+            <Route path="documents/:documentId" element={<DocumentDetail />} />
+          </Route>
           <Route path="team/:keyPrefix/standup" element={<Standup />} />
           <Route path="team/:keyPrefix/views" element={<Views />} />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
-          <Route path="initiatives" element={<Initiatives />} />
-          <Route path="initiatives/:id" element={<InitiativeDetail />} />
-          <Route path="customers" element={<Customers />} />
-          <Route path="customers/:customerId" element={<CustomerDetail />} />
-          <Route path="documents/:documentId" element={<DocumentDetail />} />
+          <Route element={<FeatureGate feature="initiatives" />}>
+            <Route path="initiatives" element={<Initiatives />} />
+            <Route path="initiatives/:id" element={<InitiativeDetail />} />
+          </Route>
+          <Route element={<FeatureGate feature="customers" />}>
+            <Route path="customers" element={<Customers />} />
+            <Route path="customers/:customerId" element={<CustomerDetail />} />
+          </Route>
 
           <Route path="issues" element={<MyIssues />} />
           <Route path="issues/:key" element={<IssueDetail />} />
           <Route path="search" element={<Search />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="reviews" element={<Reviews />} />
-          <Route path="pulse" element={<Pulse />} />
+          <Route element={<FeatureGate feature="pulse" />}>
+            <Route path="pulse" element={<Pulse />} />
+          </Route>
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="views" element={<Views />} />
           <Route path="views/new" element={<NewView />} />
