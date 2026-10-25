@@ -140,6 +140,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/imports/{import_id}"): SETTINGS_READ_ADMIN,
     ("POST", "/{workspace_id}/imports/{import_id}/cancel"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/imports/linear/teams"): SETTINGS_WRITE_ADMIN,
+    ("POST", "/{workspace_id}/imports/linear/preview"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/imports/linear"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/imports/shortcut/teams"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/imports/shortcut/preview"): SETTINGS_WRITE_ADMIN,

@@ -12323,8 +12323,25 @@
         "title": "LabelUpdate",
         "type": "object"
       },
+      "LinearImportPreviewRead": {
+        "description": "What a Linear import would create in each team, computed without writing anything.",
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/LinearPreviewTeamRead"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams"
+        ],
+        "title": "LinearImportPreviewRead",
+        "type": "object"
+      },
       "LinearImportRequest": {
-        "description": "A Linear import: the key, sealed while the job runs and deleted after, and the team mapping.",
+        "description": "A Linear import or its preview: the key, sealed while the job runs and deleted after, and the team mapping.",
         "properties": {
           "api_key": {
             "description": "A Linear personal API key with read access.",
@@ -12367,9 +12384,80 @@
         "title": "LinearKeyRequest",
         "type": "object"
       },
+      "LinearPreviewTeamRead": {
+        "description": "What the optional phases of importing one Linear team would create, whether switched on or not.",
+        "properties": {
+          "linear_key": {
+            "title": "Linear Key",
+            "type": "string"
+          },
+          "linear_team_id": {
+            "title": "Linear Team Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "new_statuses": {
+            "description": "The Linear states the team has no status for, by name.",
+            "items": {
+              "type": "string"
+            },
+            "title": "New Statuses",
+            "type": "array"
+          },
+          "new_templates": {
+            "description": "The Linear issue templates the team has no template for, by name.",
+            "items": {
+              "type": "string"
+            },
+            "title": "New Templates",
+            "type": "array"
+          },
+          "status_count": {
+            "description": "How many statuses creating the missing statuses would add.",
+            "title": "Status Count",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "template_count": {
+            "description": "How many templates importing the templates would add.",
+            "title": "Template Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "linear_team_id",
+          "linear_key",
+          "name",
+          "team_id",
+          "new_statuses",
+          "new_templates",
+          "status_count",
+          "template_count"
+        ],
+        "title": "LinearPreviewTeamRead",
+        "type": "object"
+      },
       "LinearTeamChoice": {
         "description": "One Linear team to import and the Standupless team it goes into.",
         "properties": {
+          "create_statuses": {
+            "default": false,
+            "description": "Create a status, in the matching category, for each Linear workflow state the team has no status of the same name for, before the issues are imported.",
+            "title": "Create Statuses",
+            "type": "boolean"
+          },
+          "import_templates": {
+            "default": false,
+            "description": "Bring the Linear team's issue templates over as team templates, skipping a name the team already has.",
+            "title": "Import Templates",
+            "type": "boolean"
+          },
           "linear_team_id": {
             "maxLength": 64,
             "minLength": 1,
@@ -12410,6 +12498,18 @@
       "LinearTeamMappingRead": {
         "description": "One Linear team a Linear import reads and the Standupless team it writes into.",
         "properties": {
+          "create_statuses": {
+            "default": false,
+            "description": "Whether the import creates a status for each Linear state the team lacks.",
+            "title": "Create Statuses",
+            "type": "boolean"
+          },
+          "import_templates": {
+            "default": false,
+            "description": "Whether the import brings the team's Linear issue templates over.",
+            "title": "Import Templates",
+            "type": "boolean"
+          },
           "linear_key": {
             "title": "Linear Key",
             "type": "string"
@@ -39667,6 +39767,65 @@
           }
         ],
         "summary": "Start Linear Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/linear/preview": {
+      "post": {
+        "description": "The statuses and templates importing the chosen Linear teams would create, team by team, writing nothing.",
+        "operationId": "preview_linear_import_api_workspaces__workspace_id__imports_linear_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinearImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinearImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Linear Import",
         "tags": [
           "integrations"
         ]
