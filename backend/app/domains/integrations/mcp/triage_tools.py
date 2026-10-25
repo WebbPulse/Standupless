@@ -169,8 +169,8 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Work one issue in triage. accept moves it into the team, in status_id or the first unstarted "
             "status, setting an optional priority and posting an optional comment as the caller; a team that "
-            "requires a priority refuses an accept that leaves the issue with none. decline moves it to the cancelled status, keeping "
-            "an optional reason in its history. "
+            "requires a priority refuses an accept that leaves the issue with none. decline moves it to the "
+            "cancelled status, keeping an optional reason in its history. "
             "duplicate closes it as a duplicate of duplicate_of_id. snooze hides it until `until` (ISO 8601, "
             "1 minute to 90 days out), or null to bring it back. Needs team membership."
         ),
