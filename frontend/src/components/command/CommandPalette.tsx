@@ -814,7 +814,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-views',
         label: `${team.name} views`,
         keywords: 'views saved filters go to views',
-        ...(insideTeam ? { hint: 'G then V' } : {}),
+        ...(insideTeam ? { hint: shortcutHint('g shift+v') } : {}),
         icon: <LuLayers className={ICON} />,
         to: teamViewsPath(slug, team.key_prefix),
       });
@@ -838,7 +838,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-views',
         label: 'Views',
-        ...(insideTeam ? {} : { hint: 'G then V' }),
+        ...(insideTeam ? {} : { hint: shortcutHint('g shift+v') }),
         icon: <LuLayers className={ICON} />,
         to: viewsPath(slug),
       },

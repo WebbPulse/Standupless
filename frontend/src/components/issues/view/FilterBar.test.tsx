@@ -1,7 +1,9 @@
 /**
  * The Filter button: that F opens its field list from anywhere in the view,
  * as Linear's does, and that the key stands down while the list is open. The
- * chips: that team and date clauses read and flip like the others.
+ * chips: that team and date clauses read and flip like the others. The
+ * removal keys: that Shift F drops the newest filter and Alt Shift F clears
+ * them all, as Linear's do, and that neither binds with nothing to remove.
  */
 
 import { act, render, screen } from '@testing-library/react';
@@ -12,7 +14,7 @@ import {
   ShortcutRegistryContext,
 } from '../../../hooks/useShortcuts';
 import type { IssueContext } from '../../../lib/issueView';
-import { FilterButton, FilterChips } from './FilterBar';
+import { FilterButton, FilterChips, withoutLastFilter } from './FilterBar';
 
 const context: IssueContext = {
   statuses: [],
@@ -262,5 +264,146 @@ describe('filter logic', () => {
     expect(onChange).toHaveBeenCalledWith([
       { field: 'label', op: 'all', values: ['lb-bug', 'lb-ui'] },
     ]);
+  });
+});
+
+describe('filter removal keys', () => {
+  const priority = {
+    field: 'priority' as const,
+    op: 'is' as const,
+    values: ['high'],
+  };
+  const label = {
+    field: 'label' as const,
+    op: 'is' as const,
+    values: ['lb-bug'],
+  };
+  const group = { match: 'any' as const, filters: [label] };
+
+  /** Presses one key on the registry. */
+  const press = (
+    registry: ReturnType<typeof createShortcutRegistry>,
+    init: KeyboardEventInit
+  ): void => {
+    act(() => {
+      registry.handleKey(new KeyboardEvent('keydown', init));
+    });
+  };
+
+  it('drops the newest filter on Shift F', () => {
+    const registry = createShortcutRegistry();
+    const onChange = vi.fn();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton
+          filters={[priority, label]}
+          context={context}
+          onChange={onChange}
+        />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    press(registry, { key: 'F', shiftKey: true, code: 'KeyF' });
+
+    expect(onChange).toHaveBeenCalledWith([priority]);
+    expect(screen.queryAllByLabelText('Filter by')).toHaveLength(0);
+  });
+
+  it('clears every filter and group on Alt Shift F', () => {
+    const registry = createShortcutRegistry();
+    const onLogicChange = vi.fn();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton
+          filters={[priority]}
+          match="any"
+          groups={[group]}
+          context={context}
+          onChange={vi.fn()}
+          onLogicChange={onLogicChange}
+        />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    press(registry, {
+      key: 'Ï',
+      shiftKey: true,
+      altKey: true,
+      code: 'KeyF',
+    });
+
+    expect(onLogicChange).toHaveBeenCalledWith({
+      filters: [],
+      match: 'all',
+      groups: [],
+    });
+  });
+
+  it('clears flat filters on Alt Shift F without a logic handler', () => {
+    const registry = createShortcutRegistry();
+    const onChange = vi.fn();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton
+          filters={[priority, label]}
+          context={context}
+          onChange={onChange}
+        />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    press(registry, {
+      key: 'F',
+      shiftKey: true,
+      altKey: true,
+      code: 'KeyF',
+    });
+
+    expect(onChange).toHaveBeenCalledWith([]);
+  });
+
+  it('binds neither key with nothing to remove', () => {
+    const registry = createShortcutRegistry();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton filters={[]} context={context} onChange={vi.fn()} />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    const keys = registry.list().map((shortcut) => shortcut.keys);
+    expect(keys).not.toContain('shift+f');
+    expect(keys).not.toContain('alt+shift+f');
+  });
+
+  it('lists all three keys under Filters', () => {
+    const registry = createShortcutRegistry();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton
+          filters={[priority]}
+          context={context}
+          onChange={vi.fn()}
+        />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    const filters = registry
+      .list()
+      .filter((shortcut) => shortcut.group === 'Filters')
+      .map((shortcut) => shortcut.label);
+    expect(filters).toEqual([
+      'Add filter',
+      'Remove last filter',
+      'Clear all filters',
+    ]);
+  });
+
+  it('drops the last group once the flat filters are gone', () => {
+    expect(
+      withoutLastFilter({ filters: [], match: 'any', groups: [group, group] })
+    ).toEqual({ filters: [], match: 'any', groups: [group] });
+    expect(
+      withoutLastFilter({ filters: [priority], match: 'all', groups: [group] })
+    ).toEqual({ filters: [], match: 'all', groups: [group] });
   });
 });

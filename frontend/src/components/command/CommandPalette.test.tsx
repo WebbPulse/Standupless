@@ -968,6 +968,7 @@ describe('the team go-to commands', () => {
     ['go to backlog', /Go to backlog/, 'G then B'],
     ['Engine board', /Engine board/, 'G then D'],
     ['archived issues', /Engine archived issues/, 'G then X'],
+    ['Engine views', /Engine views/, 'G then Shift V'],
   ])('shows %s with its keys', async (term, name, keys) => {
     const user = renderPalette({ path: '/w/mine/team/ENG' });
 

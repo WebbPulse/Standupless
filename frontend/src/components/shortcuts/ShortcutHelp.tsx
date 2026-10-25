@@ -154,7 +154,7 @@ const fixedGroups = (): HelpGroup[] => {
 const APP_WIDE = ['General', 'Navigation', 'Open', 'Tabs', PANEL_GROUP];
 
 /** The order page headings appear in; anything else follows alphabetically. */
-const PAGE_ORDER = ['Issue', 'List', 'Board'];
+const PAGE_ORDER = ['Issue', 'List', 'Filters', 'Board'];
 
 /** Where a heading sorts: the page's own first, then the app-wide ones. */
 const rank = (group: HelpGroup): number => {
