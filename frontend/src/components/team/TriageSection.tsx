@@ -8,6 +8,7 @@
  * issue enters the inbox: everyone on duty is notified, or one of them, round
  * robin, is assigned it. The priority rule holds an accept until the issue has
  * a priority. Each control is one choice, so it saves as soon as it changes.
+ * The ordered rules below them run on every issue entering the inbox.
  *
  * Turning triage on needs a plan with triage, so on a plan without it the
  * switch only turns off and a note links to the plans; the server's refusal
@@ -35,6 +36,7 @@ import {
 import { showToast } from '../../lib/toast';
 import type {
   TriageResponsibilityAction,
+  TriageRuleBody,
   TriageSettingsUpdate,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -42,6 +44,7 @@ import Checkbox from '../ui/checkbox';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
 import PlanRequiredNote from './PlanRequiredNote';
+import TriageRulesSection from './TriageRulesSection';
 
 /** Props for TriageSection: which team, and whether the caller may edit. */
 export interface TriageSectionProps {
@@ -196,6 +199,15 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
     );
   };
 
+  const onRules = async (
+    rules: TriageRuleBody[],
+    done: string
+  ): Promise<void> => {
+    await save({ rules });
+    await refetch();
+    showToast(done);
+  };
+
   const onPriority = (): void => {
     void apply(
       { require_priority: !requirePriority },
@@ -336,6 +348,20 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
                 labelledBy={priorityLabelId}
                 disabled={!canEdit || saving}
                 onFlip={onPriority}
+              />
+            </li>
+          )}
+          {enabled && (
+            <li className="px-3 py-3">
+              <TriageRulesSection
+                workspaceId={workspaceId}
+                teamId={teamId}
+                canEdit={canEdit}
+                rules={data?.rules ?? []}
+                assignees={candidates}
+                creators={workspaceMembers ?? teamMembers ?? []}
+                saving={saving}
+                onSave={onRules}
               />
             </li>
           )}

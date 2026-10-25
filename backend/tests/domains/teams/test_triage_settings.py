@@ -16,7 +16,7 @@ from webbpulse.audit import AuditQuery
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.db.dynamo.team_config import triage_settings_key
+from app.common.db.dynamo.team_config import Label, label_key, new_config_id, triage_settings_key
 from tests.domains.helpers import (
     ADMIN,
     GUEST,
@@ -71,6 +71,7 @@ def test_unsaved_settings_read_as_off(client: TestClient, team: str) -> None:
         "responsible_user_ids": [],
         "responsibility_action": "notify",
         "require_priority": False,
+        "rules": [],
         "updated_at": None,
     }
 
@@ -227,3 +228,81 @@ def test_changes_land_in_the_audit_log(client: TestClient, team: str, repositori
         {"responsible_user_ids": [MEMBER], "responsibility_action": "assign"},
     ) in changes
     assert all(row.target.id == TEAM and row.actor.id == ADMIN for row in rows)
+
+
+def _label(repositories: Any, name: str) -> str:
+    """Seed one label on `TEAM`, answering its id."""
+    label_id = new_config_id()
+    repositories.team_config.create_label(
+        Label(
+            workspace_id=WORKSPACE,
+            config_key=label_key(TEAM, label_id),
+            team_id=TEAM,
+            label_id=label_id,
+            name=name,
+            color="#ff0000",
+        )
+    )
+    return label_id
+
+
+def test_rules_save_in_order_and_keep_their_ids(client: TestClient, team: str, repositories: Any) -> None:
+    """New rules get ids, a rule sent back with its id keeps it, and the order sent is the order saved."""
+    bug = _label(repositories, "Bug")
+    sign_in(client, ADMIN)
+    first = {"name": "Bugs", "filter": {"text": "crash"}, "actions": {"add_label_ids": [bug]}}
+    second = {"name": "Urgent", "continue_after": True, "actions": {"priority": "urgent"}}
+
+    saved = client.patch(URL, json={"enabled": True, "rules": [first, second]})
+    assert saved.status_code == 200, saved.text
+    rules = saved.json()["rules"]
+    assert [rule["name"] for rule in rules] == ["Bugs", "Urgent"]
+    assert all(rule["rule_id"] and rule["enabled"] and rule["warning"] is None for rule in rules)
+    assert rules[1]["continue_after"] is True
+
+    swapped = client.patch(URL, json={"rules": [rules[1], {**rules[0], "enabled": False}]})
+
+    assert swapped.status_code == 200, swapped.text
+    after = swapped.json()["rules"]
+    assert [rule["rule_id"] for rule in after] == [rules[1]["rule_id"], rules[0]["rule_id"]]
+    assert after[1]["enabled"] is False
+    assert client.get(URL).json()["rules"] == after
+
+
+def test_a_rule_needs_an_action_and_real_targets(client: TestClient, team: str) -> None:
+    """A rule that does nothing, or names a label or team that does not exist, is refused."""
+    sign_in(client, ADMIN)
+
+    empty = client.patch(URL, json={"rules": [{"name": "Nothing", "actions": {}}]})
+    label = client.patch(URL, json={"rules": [{"name": "Gone", "actions": {"add_label_ids": ["missing"]}}]})
+    own = client.patch(URL, json={"rules": [{"name": "Self", "actions": {"team_id": TEAM}}]})
+
+    assert empty.status_code == 422
+    assert label.status_code == 422
+    assert own.status_code == 422
+
+
+def test_a_rule_whose_label_was_deleted_reads_off_with_a_warning(
+    client: TestClient, team: str, repositories: Any
+) -> None:
+    """Deleting a rule's label switches it off with a reason, and the team can still save around it."""
+    bug = _label(repositories, "Bug")
+    sign_in(client, ADMIN)
+    rule = {"name": "Bugs", "actions": {"add_label_ids": [bug]}}
+    [saved] = client.patch(URL, json={"enabled": True, "rules": [rule]}).json()["rules"]
+
+    repositories.team_config.delete_label(WORKSPACE, TEAM, bug)
+    [broken] = client.get(URL).json()["rules"]
+    kept = client.patch(URL, json={"rules": [broken, {"name": "Urgent", "actions": {"priority": "urgent"}}]})
+
+    assert broken["rule_id"] == saved["rule_id"]
+    assert broken["enabled"] is False
+    assert broken["warning"]
+    assert kept.status_code == 200, kept.text
+    assert [row["name"] for row in kept.json()["rules"]] == ["Bugs", "Urgent"]
+
+
+def test_a_member_cannot_change_the_rules(client: TestClient, team: str) -> None:
+    """Rules are a team admin's call, as the rest of the settings are."""
+    sign_in(client, MEMBER)
+    assert client.patch(URL, json={"rules": []}).status_code == 403

@@ -51,6 +51,20 @@ describe('describeActivity', () => {
     expect(text({ kind: 'created' })).toBe('created the issue');
   });
 
+  it('names the triage rule that applied', () => {
+    expect(
+      text({
+        actor_id: 'system',
+        actor_kind: 'system',
+        field: 'triage_rule',
+        to: { id: 'r-1', name: 'Crashes' },
+      })
+    ).toBe('applied the triage rule "Crashes"');
+    expect(text({ field: 'triage_rule', to: null })).toBe(
+      'applied a triage rule'
+    );
+  });
+
   it('names both statuses of a move', () => {
     expect(text({ field: 'status_id', from: 'st-todo', to: 'st-doing' })).toBe(
       'changed the status from Todo to In Progress'

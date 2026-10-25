@@ -2338,6 +2338,8 @@ export interface TriageSettingsRead {
   responsible_user_ids: string[];
   responsibility_action: TriageResponsibilityAction;
   require_priority: boolean;
+  /** The team's triage rules, in the order they run. */
+  rules?: TriageRuleRead[];
   updated_at: string | null;
 }
 
@@ -2347,6 +2349,58 @@ export interface TriageSettingsUpdate {
   responsible_user_ids?: string[];
   responsibility_action?: TriageResponsibilityAction;
   require_priority?: boolean;
+  /** The whole ordered rule list, replacing the saved one. */
+  rules?: TriageRuleBody[];
+}
+
+/** Where an issue came from, as a triage rule filters on it. */
+export type TriageRuleSource =
+  'web' | 'form' | 'mcp' | 'cli' | 'api' | 'github' | 'system';
+
+/**
+ * What an issue entering triage must match. Every field given must hold, a
+ * list matches any of its values, and an empty filter matches every issue.
+ */
+export interface TriageRuleFilter {
+  label_ids?: string[];
+  priorities?: IssuePriority[];
+  creator_ids?: string[];
+  sources?: TriageRuleSource[];
+  /** A case-insensitive substring of the title or description. */
+  text?: string | null;
+}
+
+/** What a matching rule does; `team_id` moves the issue to that team. */
+export interface TriageRuleActions {
+  add_label_ids?: string[];
+  priority?: Exclude<IssuePriority, 'none'> | null;
+  assignee_id?: string | null;
+  project_id?: string | null;
+  team_id?: string | null;
+}
+
+/** One triage rule as the API returns it. */
+export interface TriageRuleRead {
+  rule_id: string;
+  name: string;
+  /** False when switched off, or when a target was deleted. */
+  enabled: boolean;
+  /** Whether later rules still run after this one applies. */
+  continue_after: boolean;
+  filter: TriageRuleFilter;
+  actions: TriageRuleActions;
+  /** Why the rule is off because a label, project, user or team it names was deleted. */
+  warning?: string | null;
+}
+
+/** One triage rule as a settings patch sends it; a rule without `rule_id` is new. */
+export interface TriageRuleBody {
+  rule_id?: string | null;
+  name: string;
+  enabled?: boolean;
+  continue_after?: boolean;
+  filter?: TriageRuleFilter;
+  actions: TriageRuleActions;
 }
 
 /** One triage-enabled team and how many issues wait in it, snoozed ones aside. */

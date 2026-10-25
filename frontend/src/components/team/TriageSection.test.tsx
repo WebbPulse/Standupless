@@ -76,6 +76,19 @@ vi.mock('../../api/teams', async () => {
   return {
     ...actual,
     listTeamMembers: () => Promise.resolve(TEAM_MEMBERS),
+    listLabels: () => Promise.resolve([]),
+    listTeams: () => Promise.resolve([]),
+  };
+});
+
+vi.mock('../../api/planning', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/planning')>(
+      '../../api/planning'
+    );
+  return {
+    ...actual,
+    listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
   };
 });
 

@@ -21665,6 +21665,292 @@
         "title": "TriageDuplicate",
         "type": "object"
       },
+      "TriageRuleActionsBody": {
+        "description": "What a matching rule does; at least one action must be set, and `team_id` moves the issue.",
+        "properties": {
+          "add_label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Add Label Ids",
+            "type": "array"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "title": "TriageRuleActionsBody",
+        "type": "object"
+      },
+      "TriageRuleActionsRead": {
+        "description": "What a matching rule does; `team_id` moves the issue to that team.",
+        "properties": {
+          "add_label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Add Label Ids",
+            "type": "array"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "title": "TriageRuleActionsRead",
+        "type": "object"
+      },
+      "TriageRuleBody": {
+        "description": "One triage rule as a settings patch sends it; a rule without `rule_id` is new.",
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/TriageRuleActionsBody"
+          },
+          "continue_after": {
+            "default": false,
+            "title": "Continue After",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/TriageRuleFilterBody"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "name",
+          "actions"
+        ],
+        "title": "TriageRuleBody",
+        "type": "object"
+      },
+      "TriageRuleFilterBody": {
+        "description": "What an issue entering triage must match; every field given must hold, an empty filter matches all.",
+        "properties": {
+          "creator_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Creator Ids",
+            "type": "array"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "priorities": {
+            "items": {
+              "enum": [
+                "none",
+                "urgent",
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            "title": "Priorities",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "web",
+                "form",
+                "mcp",
+                "cli",
+                "api",
+                "github",
+                "system"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "TriageRuleFilterBody",
+        "type": "object"
+      },
+      "TriageRuleRead": {
+        "description": "One triage rule as the API returns it; `warning` says why a broken rule is off.",
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/TriageRuleActionsRead"
+          },
+          "continue_after": {
+            "title": "Continue After",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/TriageRuleFilterBody"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "rule_id",
+          "name",
+          "enabled",
+          "continue_after",
+          "filter",
+          "actions"
+        ],
+        "title": "TriageRuleRead",
+        "type": "object"
+      },
       "TriageSettingsRead": {
         "description": "A team's triage settings as the API returns them.",
         "properties": {
@@ -21691,6 +21977,13 @@
               "type": "string"
             },
             "title": "Responsible User Ids",
+            "type": "array"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/TriageRuleRead"
+            },
+            "title": "Rules",
             "type": "array"
           },
           "team_id": {
@@ -21771,6 +22064,21 @@
               }
             ],
             "title": "Responsible User Ids"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TriageRuleBody"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
           }
         },
         "title": "TriageSettingsUpdate",
@@ -50810,7 +51118,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings": {
       "get": {
-        "description": "The team's triage switch, who is on duty for its inbox and whether accepting needs a priority.",
+        "description": "The team's triage switch, who is on duty, whether accepting needs a priority and its ordered rules.",
         "operationId": "read_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_get",
         "parameters": [
           {

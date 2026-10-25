@@ -2814,20 +2814,48 @@ class TriageDuplicate(TypedDict):
     duplicate_of_id: str
 
 
+class TriageRuleActionsBody(TypedDict):
+    add_label_ids: NotRequired[list[str]]
+    assignee_id: NotRequired[str | None]
+    priority: NotRequired[Literal["urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+
+
+class TriageRuleActionsRead(TypedDict):
+    add_label_ids: NotRequired[list[str]]
+    assignee_id: NotRequired[str | None]
+    priority: NotRequired[Literal["urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+
+
+class TriageRuleFilterBody(TypedDict):
+    creator_ids: NotRequired[list[str]]
+    label_ids: NotRequired[list[str]]
+    priorities: NotRequired[list[Literal["none", "urgent", "high", "medium", "low"]]]
+    sources: NotRequired[list[Literal["web", "form", "mcp", "cli", "api", "github", "system"]]]
+    text: NotRequired[str | None]
+
+
+class TriageRuleRead(TypedDict):
+    actions: TriageRuleActionsRead
+    continue_after: bool
+    enabled: bool
+    filter: TriageRuleFilterBody
+    name: str
+    rule_id: str
+    warning: NotRequired[str | None]
+
+
 class TriageSettingsRead(TypedDict):
     enabled: bool
     require_priority: NotRequired[bool]
     responsibility_action: NotRequired[Literal["notify", "assign"]]
     responsible_user_ids: NotRequired[list[str]]
+    rules: NotRequired[list[TriageRuleRead]]
     team_id: str
     updated_at: NotRequired[str | None]
-
-
-class TriageSettingsUpdate(TypedDict):
-    enabled: NotRequired[bool | None]
-    require_priority: NotRequired[bool | None]
-    responsibility_action: NotRequired[Literal["notify", "assign"] | None]
-    responsible_user_ids: NotRequired[list[str] | None]
 
 
 class TriageSnooze(TypedDict):
@@ -4272,6 +4300,23 @@ class TemplateUpdate(TypedDict):
     status_id: NotRequired[str | None]
     sub_issues: NotRequired[list[IssueTemplateItem] | None]
     title: NotRequired[str | None]
+
+
+class TriageRuleBody(TypedDict):
+    actions: TriageRuleActionsBody
+    continue_after: NotRequired[bool]
+    enabled: NotRequired[bool]
+    filter: NotRequired[TriageRuleFilterBody]
+    name: str
+    rule_id: NotRequired[str | None]
+
+
+class TriageSettingsUpdate(TypedDict):
+    enabled: NotRequired[bool | None]
+    require_priority: NotRequired[bool | None]
+    responsibility_action: NotRequired[Literal["notify", "assign"] | None]
+    responsible_user_ids: NotRequired[list[str] | None]
+    rules: NotRequired[list[TriageRuleBody] | None]
 
 
 class TriageSummaryRead(TypedDict):
