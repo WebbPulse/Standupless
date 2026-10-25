@@ -75,7 +75,7 @@ locals {
       ses         = true
       memory      = 512
       tables      = ["github", "idempotency", "team_config", "issues", "comments", "reactions", "attachments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "agent_profiles", "rate-limits"]
-      read_tables = ["users", "api-keys", "oauth-links", "search_index"]
+      read_tables = ["users", "api-keys", "oauth-links", "search_index", "realtime_connections"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -95,8 +95,15 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["github", "rate-limits"]
+      tables      = ["github", "realtime_connections", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments", "planning"]
+    }
+    integrations-realtime-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["realtime_connections", "rate-limits"]
+      read_tables = ["memberships"]
     }
     admin = {
       secrets     = true
@@ -114,6 +121,7 @@ locals {
     integrations-events-consumer   = "integrations"
     integrations-dispatch-consumer = "integrations"
     integrations-stream-consumer   = "integrations"
+    integrations-realtime-consumer = "integrations"
     discussion-purge-consumer      = "discussion"
     integrations-purge-consumer    = "integrations"
     views-purge-consumer           = "views"
@@ -133,6 +141,7 @@ locals {
     integrations-events-consumer   = ["python", "-m", "app.domains.integrations.consumers.events_entrypoint"]
     integrations-dispatch-consumer = ["python", "-m", "app.domains.integrations.consumers.dispatch_entrypoint"]
     integrations-stream-consumer   = ["python", "-m", "app.domains.integrations.consumers.stream_entrypoint"]
+    integrations-realtime-consumer = ["python", "-m", "app.domains.integrations.consumers.realtime_entrypoint"]
     discussion-purge-consumer      = ["python", "-m", "app.domains.discussion.consumers.purge_entrypoint"]
     integrations-purge-consumer    = ["python", "-m", "app.domains.integrations.consumers.purge_entrypoint"]
     views-purge-consumer           = ["python", "-m", "app.domains.views.consumers.purge_entrypoint"]
@@ -315,6 +324,10 @@ locals {
       contains(keys(local.team_purge_consumer_stages), name) && local.team_purge_enabled ? {
         for stage in lookup(local.team_purge_senders, name, []) :
         "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
+      } : {},
+
+      name == "integrations-stream-consumer" ? {
+        REALTIME_ENDPOINT_URL = local.realtime_enabled ? local.realtime_management_url : ""
       } : {},
 
       name == "views-notify-consumer" ? {
@@ -792,6 +805,14 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:PutObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
+        },
+      ] : [],
+      each.key == "integrations-stream-consumer" && local.realtime_enabled ? [
+        {
+          Sid      = "PostToRealtimeConnections"
+          Effect   = "Allow"
+          Action   = ["execute-api:ManageConnections"]
+          Resource = ["${aws_apigatewayv2_api.realtime[0].execution_arn}/${local.realtime_stage}/POST/@connections/*"]
         },
       ] : [],
       each.key == "workspaces-export-consumer" ? [

@@ -172,3 +172,8 @@ output "alarm_topic_arn" {
   description = "SNS topic the production alarms publish to. Staging creates the topic but no alarms, per the cost-lean decision."
   value       = module.alarms.sns_topic_arn
 }
+
+output "realtime_url" {
+  description = "WebSocket URL clients open for change notices (empty before the first image)"
+  value       = local.realtime_enabled ? "${aws_apigatewayv2_api.realtime[0].api_endpoint}/${local.realtime_stage}" : ""
+}

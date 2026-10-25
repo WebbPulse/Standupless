@@ -265,6 +265,15 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    REALTIME_ENDPOINT_URL: str = Field(
+        default="",
+        description=(
+            "The WebSocket API's connection management endpoint, "
+            "https://<api id>.execute-api.<region>.amazonaws.com/<stage>. Empty means "
+            "no change notice is pushed and clients stay on polling."
+        ),
+    )
+
     TEAM_PURGE_DISCUSSION_QUEUE_URL: str = Field(
         default="",
         description=(

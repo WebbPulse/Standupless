@@ -41,7 +41,14 @@ from typing import Any, Callable, Mapping
 
 from fastapi import APIRouter
 from webbpulse.dynamodb import table_name
-from webbpulse.events import deserialize_image, register_stream_consumer, source_table
+from webbpulse.events import (
+    batch_item_failures,
+    deserialize_image,
+    event_records,
+    record_id,
+    register_stream_consumer,
+    source_table,
+)
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.bulk_import import from_bulk_import
@@ -58,6 +65,8 @@ from app.domains.integrations.channels import events as channel_events
 from app.domains.integrations.channels.events import DestinationCache
 from app.domains.integrations.outbound import payloads
 from app.domains.integrations.outbound.delivery import epoch_to_datetime, schedule
+from app.domains.integrations.realtime.fanout import ConnectionSender, default_sender, fan_out
+from app.domains.integrations.realtime.notices import batch_notices
 
 _log = logging.getLogger(__name__)
 
@@ -520,16 +529,63 @@ def _on_document(record: Mapping[str, Any]) -> bool:
     return bool(image.get("document_id"))
 
 
-def build_router(repositories: Repositories | None = None) -> APIRouter:
-    """The outbound stream consumer's router, mounted at the root."""
+def build_router(
+    repositories: Repositories | None = None,
+    sender: ConnectionSender | None = None,
+    *,
+    sender_factory: Callable[[], ConnectionSender | None] = default_sender,
+) -> APIRouter:
+    """The outbound stream consumer's router, mounted at the root.
+
+    Each record is handled on its own, a failure reported for retry as before, and
+    then the whole batch's change notices go out to the open WebSocket connections
+    once. A notice is sent whether or not its record's outbound work failed, since
+    the write it describes committed either way.
+    """
     bundle = repositories if repositories is not None else _GRANT.bundle()
     router = APIRouter()
     cache = EndpointCache()
     channel_cache = DestinationCache()
 
-    def consume(record: Mapping[str, Any]) -> None:
-        """Handle one record against this domain's bundle."""
-        handle_record(bundle, record, cache, channel_cache)
+    def consume(event: Mapping[str, Any]) -> dict[str, Any]:
+        """Handle one batch against this domain's bundle, then push its notices."""
+        records = event_records(event)
+        failures: list[str] = []
+        for record in records:
+            try:
+                handle_record(bundle, record, cache, channel_cache)
+            except Exception:
+                _log.exception(
+                    "Handling a stream record failed; the event source mapping will retry it.",
+                    extra={"event": "integrations.stream.batch.record_failed", "record_id": record_id(record)},
+                )
+                failures.append(record_id(record))
+        pushed = push_notices(bundle, records, sender if sender is not None else sender_factory())
+        _log.info(
+            "Handled a stream batch.",
+            extra={
+                "event": "integrations.stream.batch",
+                "records": len(records),
+                "handled": len(records) - len(failures),
+                "failed": len(failures),
+                **{f"notices_{name}": count for name, count in pushed.items()},
+            },
+        )
+        return batch_item_failures(failures)
 
-    register_stream_consumer(router, consume, log_event="integrations.stream.batch")
+    register_stream_consumer(router, consume, per_record=False, log_event="integrations.stream.batch")
     return router
+
+
+def push_notices(
+    repositories: Repositories, records: list[Mapping[str, Any]], sender: ConnectionSender | None
+) -> dict[str, int]:
+    """Send a batch's change notices, logging rather than raising on any failure."""
+    try:
+        return fan_out(_GRANT.narrow(repositories), batch_notices(records), sender)
+    except Exception:
+        _log.exception(
+            "Pushing a stream batch's change notices failed; clients fall back to polling.",
+            extra={"event": "integrations.realtime.fanout_failed"},
+        )
+        return {}
