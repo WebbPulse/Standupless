@@ -3996,6 +3996,10 @@
       "CycleSettingsRead": {
         "description": "A team's automatic cycle settings as the API returns them.",
         "properties": {
+          "auto_add_completed": {
+            "title": "Auto Add Completed",
+            "type": "boolean"
+          },
           "auto_add_started": {
             "title": "Auto Add Started",
             "type": "boolean"
@@ -4049,6 +4053,7 @@
           "start_weekday",
           "upcoming_count",
           "auto_add_started",
+          "auto_add_completed",
           "move_unfinished"
         ],
         "title": "CycleSettingsRead",
@@ -4057,6 +4062,17 @@
       "CycleSettingsUpdate": {
         "description": "The body a team's cycle settings patch takes, every field optional.\n\n`start_weekday` counts from Monday as 0 to Sunday as 6.",
         "properties": {
+          "auto_add_completed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Add Completed"
+          },
           "auto_add_started": {
             "anyOf": [
               {
@@ -11937,7 +11953,9 @@
               "milestone_changed",
               "link_added",
               "link_removed",
-              "link_changed"
+              "link_changed",
+              "archived",
+              "unarchived"
             ],
             "title": "Kind",
             "type": "string"
@@ -12875,6 +12893,19 @@
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the project was archived, null while it is live",
+            "title": "Archived At"
+          },
           "blocked_by_project_ids": {
             "description": "The visible projects that block this one, oldest link first",
             "items": {
@@ -14252,6 +14283,7 @@
               "created",
               "updated",
               "customers",
+              "important",
               "manual"
             ],
             "title": "Order",
@@ -22022,7 +22054,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `activity_filter` is whether issue activity shows every change or\nonly comments. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `email_format`\npicks a digest or one email per notification. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `theme` is the interface theme and `pointer_cursors` whether\ninteractive elements show the pointer cursor. `activity_filter` is whether issue activity shows every change or\nonly comments. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "activity_filter": {
             "anyOf": [
@@ -22082,6 +22114,21 @@
               }
             ],
             "title": "Branch Copy Starts"
+          },
+          "email_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "digest",
+                  "immediate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Format"
           },
           "email_notifications": {
             "anyOf": [
@@ -22189,6 +22236,17 @@
             ],
             "title": "Notification Preferences"
           },
+          "pointer_cursors": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pointer Cursors"
+          },
           "projects_display": {
             "anyOf": [
               {
@@ -22214,6 +22272,22 @@
               }
             ],
             "title": "Pulse Digest"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system",
+                  "light",
+                  "dark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
           },
           "timezone": {
             "anyOf": [
@@ -22281,7 +22355,7 @@
         "type": "object"
       },
       "UserRead": {
-        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead. `initiatives_display` and\n`initiatives_display_saved` are the same for the initiatives list.",
+        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead. `initiatives_display` and\n`initiatives_display_saved` are the same for the initiatives list. `theme`\nis null until the person first saves one.",
         "properties": {
           "activity_filter": {
             "default": "all",
@@ -22329,6 +22403,15 @@
           },
           "email": {
             "title": "Email",
+            "type": "string"
+          },
+          "email_format": {
+            "default": "digest",
+            "enum": [
+              "digest",
+              "immediate"
+            ],
+            "title": "Email Format",
             "type": "string"
           },
           "email_notifications": {
@@ -22395,6 +22478,11 @@
             "title": "Notification Preferences",
             "type": "object"
           },
+          "pointer_cursors": {
+            "default": false,
+            "title": "Pointer Cursors",
+            "type": "boolean"
+          },
           "projects_display": {
             "$ref": "#/components/schemas/ProjectsDisplay"
           },
@@ -22412,6 +22500,22 @@
             ],
             "title": "Pulse Digest",
             "type": "string"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system",
+                  "light",
+                  "dark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
           },
           "timezone": {
             "anyOf": [
@@ -41602,7 +41706,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none. Archived projects are left out unless\n`include_archived` is set.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -41810,6 +41914,16 @@
                 }
               ],
               "title": "Label Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
             }
           }
         ],
@@ -42189,6 +42303,64 @@
           }
         ],
         "summary": "List Activity",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/archive": {
+      "post": {
+        "description": "Archive a project, hiding it from the projects list while keeping it readable and restorable.\n\nIdempotent: archiving an archived project answers with it unchanged.",
+        "operationId": "archive_project_api_workspaces__workspace_id__projects__project_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Archive Project",
         "tags": [
           "planning"
         ]
@@ -43441,6 +43613,64 @@
           }
         ],
         "summary": "Delete Project Relation",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/unarchive": {
+      "post": {
+        "description": "Restore an archived project to the projects list.\n\nIdempotent: restoring a live project answers with it unchanged.",
+        "operationId": "unarchive_project_api_workspaces__workspace_id__projects__project_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unarchive Project",
         "tags": [
           "planning"
         ]

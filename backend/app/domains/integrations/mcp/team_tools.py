@@ -207,6 +207,7 @@ def _cycle_settings_json(settings: CycleSettings) -> dict[str, Any]:
         "start_weekday": settings.start_weekday,
         "upcoming_count": settings.upcoming_count,
         "auto_add_started": settings.auto_add_started,
+        "auto_add_completed": settings.auto_add_completed,
         "move_unfinished": settings.move_unfinished,
     }
 
@@ -542,6 +543,7 @@ def _update_cycle_settings(call: ToolCall) -> Any:
         "start_weekday",
         "upcoming_count",
         "auto_add_started",
+        "auto_add_completed",
         "move_unfinished",
     )
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
@@ -1002,8 +1004,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="update_team_cycle_settings",
         description=(
             "Turn a team's automatic cycles on or off and set their length, cooldown, start day and "
-            "how many upcoming cycles exist, and whether unfinished issues move to the next cycle when "
-            "one ends. Needs team admin. Turning cycles off keeps existing cycles."
+            "how many upcoming cycles exist, whether started or completed issues join the current cycle, "
+            "and whether unfinished issues move to the next cycle when one ends. Needs team admin. "
+            "Turning cycles off keeps existing cycles."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1015,6 +1018,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "start_weekday": integer("Day cycles start, Monday 0 to Sunday 6", 0, 6),
                 "upcoming_count": integer("How many upcoming cycles to keep created", 1, MAX_UPCOMING_CYCLES),
                 "auto_add_started": boolean("Add issues to the current cycle when they are started"),
+                "auto_add_completed": boolean("Add issues to the current cycle when they are completed"),
                 "move_unfinished": boolean("Move unfinished issues to the next cycle when a cycle ends"),
             },
             required=("team_id",),

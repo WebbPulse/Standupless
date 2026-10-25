@@ -2139,6 +2139,13 @@ def cycle_settings(
             help="Whether started issues join the current cycle.",
         ),
     ] = None,
+    auto_add_completed: Annotated[
+        bool | None,
+        typer.Option(
+            "--auto-add-completed/--no-auto-add-completed",
+            help="Whether completed issues join the current cycle.",
+        ),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Show a team's cycle settings, or change them with a flag. Changing needs team admin."""
@@ -2151,6 +2158,8 @@ def cycle_settings(
         changes["move_unfinished"] = move_unfinished
     if auto_add_started is not None:
         changes["auto_add_started"] = auto_add_started
+    if auto_add_completed is not None:
+        changes["auto_add_completed"] = auto_add_completed
     if changes:
         settings = context.client.update_cycle_settings(context.workspace_id, found["id"], changes)
     else:
@@ -2168,6 +2177,7 @@ def cycle_settings(
             ["Starts on", WEEKDAYS[weekday] if 0 <= weekday < len(WEEKDAYS) else weekday],
             ["Upcoming cycles", settings["upcoming_count"]],
             ["Add started issues", _on_off(settings["auto_add_started"])],
+            ["Add completed issues", _on_off(settings.get("auto_add_completed", False))],
             ["Move unfinished issues", _on_off(settings.get("move_unfinished", True))],
         ],
         "No settings.",

@@ -19,6 +19,8 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether notification emails are batched into a digest or sent one at a time. */
+  email_format?: EmailFormat;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
   /** The IANA zone due dates are judged in, or null when none is stored yet. */
@@ -33,6 +35,10 @@ export interface UserRead {
   name_display?: NameDisplay;
   /** The interface text size. */
   font_size?: FontSize;
+  /** The interface theme, null until the person first saves one. */
+  theme?: Theme | null;
+  /** Whether interactive elements show the pointer cursor. */
+  pointer_cursors?: boolean;
   /** Whether issue activity shows every change or only comments. */
   activity_filter?: ActivityFilter;
   /** How the projects page is laid out, grouped, ordered and windowed. */
@@ -75,6 +81,7 @@ export interface ProjectsDisplayPreference {
     | 'created'
     | 'updated'
     | 'customers'
+    | 'important'
     | 'manual';
   closed: 'all' | 'fortnight' | 'month' | 'none';
   /** Whether groups run in their own order or reversed. */
@@ -106,11 +113,17 @@ export type NameDisplay = 'username' | 'full_name';
 /** The interface text size a person picked. */
 export type FontSize = 'small' | 'default' | 'large';
 
+/** The interface themes a person may pick. */
+export type Theme = 'system' | 'light' | 'dark';
+
 /** Whether an issue's activity shows every change or only its comments. */
 export type ActivityFilter = 'all' | 'comments';
 
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
+
+/** How notification emails arrive: batched into a short digest, or one per notification. */
+export type EmailFormat = 'digest' | 'immediate';
 
 /** One workspace as the account deletion plan names it. */
 export interface WorkspaceSummaryRead {
@@ -155,12 +168,15 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  email_format?: EmailFormat;
   timezone?: string;
   pulse_digest?: PulseDigest;
   home_view?: HomeView;
   week_start?: WeekStart;
   name_display?: NameDisplay;
   font_size?: FontSize;
+  theme?: Theme;
+  pointer_cursors?: boolean;
   activity_filter?: ActivityFilter;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
@@ -2233,6 +2249,7 @@ export interface CycleSettingsRead {
   start_weekday: number;
   upcoming_count: number;
   auto_add_started: boolean;
+  auto_add_completed?: boolean;
   move_unfinished: boolean;
   updated_at: string | null;
 }
@@ -2245,6 +2262,7 @@ export interface CycleSettingsUpdate {
   start_weekday?: number;
   upcoming_count?: number;
   auto_add_started?: boolean;
+  auto_add_completed?: boolean;
   move_unfinished?: boolean;
 }
 
@@ -2481,6 +2499,8 @@ export interface ProjectRead {
   label_ids?: string[];
   /** The short project id: the lowercased tail of `project_id`. */
   slug_id?: string;
+  /** When the project was archived, null while it is live. */
+  archived_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2803,7 +2823,9 @@ export type ProjectActivityKind =
   | 'milestone_changed'
   | 'link_added'
   | 'link_removed'
-  | 'link_changed';
+  | 'link_changed'
+  | 'archived'
+  | 'unarchived';
 
 /**
  * One recorded change to a project: a property a patch moved, with its old and
@@ -3053,6 +3075,8 @@ export interface ProjectListQuery {
   /** Leaves out the projects these customers asked for, `none` for projects no customer asked for. */
   customer_id_not?: string[];
   sort?: ProjectSortField;
+  /** Lists archived projects too, which the list leaves out by default. */
+  include_archived?: boolean;
   cursor?: string;
   limit?: number;
 }

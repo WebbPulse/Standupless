@@ -30,16 +30,20 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
     ACTIVITY_FILTERS,
+    EMAIL_FORMATS,
     FONT_SIZES,
     HOME_VIEWS,
     NAME_DISPLAYS,
     PULSE_DIGESTS,
+    THEMES,
     WEEK_STARTS,
     ActivityFilterField,
+    EmailFormatField,
     FontSizeField,
     HomeViewField,
     NameDisplayField,
     PulseDigestField,
+    ThemeField,
     User,
     WeekStartField,
 )
@@ -90,7 +94,8 @@ class UserRead(BaseModel):
     when they never arranged the page, and `projects_display_saved` says whether
     they did. A person who has not opens the page with their team's or the
     workspace's default instead. `initiatives_display` and
-    `initiatives_display_saved` are the same for the initiatives list.
+    `initiatives_display_saved` are the same for the initiatives list. `theme`
+    is null until the person first saves one.
     """
 
     id: str
@@ -100,6 +105,7 @@ class UserRead(BaseModel):
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
+    email_format: EmailFormatField = "digest"
     avatar_url: Optional[str] = None
     two_factor: bool = False
     timezone: Optional[str] = None
@@ -108,6 +114,8 @@ class UserRead(BaseModel):
     week_start: WeekStartField = "monday"
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
+    theme: Optional[ThemeField] = None
+    pointer_cursors: bool = False
     activity_filter: ActivityFilterField = "all"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
@@ -161,13 +169,15 @@ class UserPreferencesUpdate(BaseModel):
     """The preferences a person may change on their own account.
 
     Every field is optional, so the global email switch, one kind's channels and
-    the timezone can each be changed without restating the others. `timezone` is
+    the timezone can each be changed without restating the others. `email_format`
+    picks a digest or one email per notification. `timezone` is
     the IANA zone due date reminders are judged in, which the browser captures on
     sign in and the person can change. `pulse_digest` is how often the Pulse
     digest email comes, `off` by default. `home_view`, `week_start`,
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
-    device. `activity_filter` is whether issue activity shows every change or
+    device. `theme` is the interface theme and `pointer_cursors` whether
+    interactive elements show the pointer cursor. `activity_filter` is whether issue activity shows every change or
     only comments. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
     the workspace's default again, and `initiatives_display` does the same for
@@ -182,12 +192,15 @@ class UserPreferencesUpdate(BaseModel):
 
     email_notifications: Optional[bool] = None
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
+    email_format: Optional[EmailFormatField] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     pulse_digest: Optional[PulseDigestField] = None
     home_view: Optional[HomeViewField] = None
     week_start: Optional[WeekStartField] = None
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
+    theme: Optional[ThemeField] = None
+    pointer_cursors: Optional[bool] = None
     activity_filter: Optional[ActivityFilterField] = None
     projects_display: Optional[ProjectsDisplay] = None
     initiatives_display: Optional[InitiativesDisplay] = None
@@ -254,6 +267,7 @@ def _as_read(user: "Any") -> UserRead:
             )
             for kind in NOTIFICATION_KINDS
         },
+        email_format=_known(user.email_format, EMAIL_FORMATS, "digest"),
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
         pulse_digest=user.pulse_digest if user.pulse_digest in PULSE_DIGESTS else "off",
@@ -261,6 +275,8 @@ def _as_read(user: "Any") -> UserRead:
         week_start=_known(user.week_start, WEEK_STARTS, "monday"),
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
+        theme=user.theme if user.theme in THEMES else None,
+        pointer_cursors=bool(user.pointer_cursors),
         activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
@@ -375,10 +391,13 @@ def update_current_user_preferences(
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
     for field in (
+        "email_format",
         "home_view",
         "week_start",
         "name_display",
         "font_size",
+        "theme",
+        "pointer_cursors",
         "activity_filter",
         "auto_assign_to_self",
         "branch_copy_starts",

@@ -85,6 +85,9 @@ export interface ProjectsDisplayMenuProps {
   /** Whether the timeline draws its dependency lines, left out off the timeline. */
   dependencies?: DependencyLinesChoice;
   onDependenciesChange?: (dependencies: DependencyLinesChoice) => void;
+  /** Whether archived projects list too, left out where they never show. */
+  archived?: boolean;
+  onArchivedChange?: (archived: boolean) => void;
   /** The shown properties, left out where the layout draws no columns. */
   columns?: readonly ProjectColumn[];
   onColumnsChange?: (columns: ProjectColumn[]) => void;
@@ -221,6 +224,8 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   onEmptyChange,
   dependencies,
   onDependenciesChange,
+  archived,
+  onArchivedChange,
   layout,
   ordering,
   closed,
@@ -363,12 +368,25 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
           }}
         />
       )}
+      {archived !== undefined && onArchivedChange !== undefined && (
+        <SwitchRow
+          id="projects-archived"
+          label="Show archived projects"
+          checked={archived}
+          onChange={onArchivedChange}
+        />
+      )}
     </div>
     {columns !== undefined && onColumnsChange !== undefined && (
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>
         <div className="flex flex-wrap gap-1.5">
-          {PROJECT_COLUMN_CHIPS.map((column) => {
+          {PROJECT_COLUMN_CHIPS.filter(
+            (column) =>
+              customerOrdering ||
+              column !== 'important' ||
+              columns.includes(column)
+          ).map((column) => {
             const on = columns.includes(column);
             return (
               <button

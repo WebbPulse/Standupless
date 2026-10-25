@@ -1,4 +1,4 @@
-"""Project list, create, patch and delete, shared by the project routes and the MCP tools.
+"""Project list, create, patch, archive and delete, shared by the project routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
 code, and a project an agent creates or edits must pass the same team, lead and
@@ -152,6 +152,7 @@ def list_projects(
     customer_id_not: Optional[list[str]] = None,
     sort: Optional[str] = None,
     label_id: Optional[list[str]] = None,
+    include_archived: bool = False,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -174,6 +175,8 @@ def list_projects(
     fills `customer_request_count` and `customer_important_count`,
     and neither is open to a guest. `label_id` keeps the projects carrying any of
     the named project labels, `none` standing for a project with no label.
+    Archived projects are left out unless `include_archived` is set, as Linear
+    hides them from its lists, though they still count as blockers.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
@@ -207,6 +210,8 @@ def list_projects(
         readable.add(row.project_id)
         if normalise_project_status(row.status) in CLOSED_STATUSES:
             closed.add(row.project_id)
+        if row.archived_at is not None and not include_archived:
+            continue
         if wanted_teams is not None and wanted_teams.isdisjoint(teams):
             continue
         if wanted_status is not None and row.status != wanted_status:
@@ -251,6 +256,8 @@ def list_projects(
     )
     if wanted_labels:
         scope = f"{scope}:labels={label_scope(wanted_labels)}"
+    if include_archived:
+        scope = f"{scope}:archived"
     if is_blocked is not None or is_blocking is not None:
         scope = f"{scope}:{_flag_scope(is_blocked)}{_flag_scope(is_blocking)}"
     scope = digest_scope(scope)
@@ -548,3 +555,37 @@ def delete_project(
     repositories.planning.delete_project_relations_for(context.workspace_id, project_id)
     repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))
+
+
+def set_project_archived(
+    repositories: Repositories,
+    context: AuthzContext,
+    project_id: str,
+    archived: bool,
+    team_id: Optional[str] = None,
+) -> ProjectRead:
+    """Archive or restore one project, recording an `archived` or `unarchived` activity row.
+
+    Any writer on one of the project's visible teams may, as in Linear. Its
+    issues, milestones and updates stay as they are. Idempotent: archiving an
+    archived project or restoring a live one answers it unchanged and records
+    nothing.
+    """
+    existing, teams = load_readable_project(repositories, context, project_id, team_id)
+    require_project_editor(repositories, context, teams)
+    stored = existing
+    if (existing.archived_at is not None) != archived:
+        now = utc_now()
+        updated = existing.model_copy(update={"archived_at": now if archived else None, "updated_at": now})
+        try:
+            stored = repositories.planning.replace_project(updated)
+        except ConditionFailed as exc:
+            raise not_found() from exc
+        project_activity.record_project_archive(
+            repositories, context, project_id, "archived" if archived else "unarchived"
+        )
+    body = ProjectRead.from_row(
+        stored, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
+    )
+    fill_one(repositories, context, body)
+    return with_links(repositories, body)

@@ -32,6 +32,11 @@ PulseDigestField = Literal["off", "daily", "weekly"]
 PULSE_DIGESTS: tuple[str, ...] = ("off", "daily", "weekly")
 """How often a person's Pulse digest email comes, if at all."""
 
+EmailFormatField = Literal["digest", "immediate"]
+
+EMAIL_FORMATS: tuple[str, ...] = ("digest", "immediate")
+"""How notification emails reach a person: batched into a short digest, or one email per notification."""
+
 HomeViewField = Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]
 
 HOME_VIEWS: tuple[str, ...] = ("home", "inbox", "my_issues", "projects", "pulse", "views")
@@ -51,6 +56,11 @@ FontSizeField = Literal["small", "default", "large"]
 
 FONT_SIZES: tuple[str, ...] = ("small", "default", "large")
 """The interface text sizes a person may pick."""
+
+ThemeField = Literal["system", "light", "dark"]
+
+THEMES: tuple[str, ...] = ("system", "light", "dark")
+"""The interface themes a person may pick."""
 
 ActivityFilterField = Literal["all", "comments"]
 
@@ -91,6 +101,9 @@ class User(BaseModel):
     `home_view`, `week_start`, `name_display` and `font_size` are the interface
     preferences that follow the person to every device. They default to the values
     the interface used before they existed, so an older row reads unchanged.
+    `theme` is the interface theme, None until the person first saves one, so a
+    browser's earlier local choice can be uploaded once. `pointer_cursors` shows
+    the pointer cursor on interactive elements, off by default.
     `activity_filter` is whether every issue's activity shows all of it or only
     its comments, all by default.
     `projects_display` is how the person last arranged the projects list, its
@@ -108,6 +121,9 @@ class User(BaseModel):
     `auto_grant_new_scopes` is the person's opt-in, off by default, to have a scope
     the product adds later join every connected app grant that took every scope on
     offer when it was given, at that app's next token refresh.
+
+    `email_format` is how notification emails arrive, one of `EMAIL_FORMATS`:
+    `digest` by default, or `immediate` for one email per notification.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -119,12 +135,15 @@ class User(BaseModel):
     email_verified: bool = False
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    email_format: str = "digest"
     timezone: Optional[str] = None
     pulse_digest: str = "off"
     home_view: str = "home"
     week_start: str = "monday"
     name_display: str = "username"
     font_size: str = "default"
+    theme: Optional[str] = None
+    pointer_cursors: bool = False
     activity_filter: str = "all"
     projects_display: dict[str, str] = Field(default_factory=dict)
     initiatives_display: dict[str, str] = Field(default_factory=dict)
@@ -178,6 +197,11 @@ class User(BaseModel):
         if channel == "email" and not self.email_notifications:
             return False
         return bool(self.notification_preferences.get(kind, {}).get(channel, True))
+
+    @property
+    def immediate_email(self) -> bool:
+        """Whether this person asked for one email per notification rather than a digest."""
+        return self.email_format == "immediate"
 
     @property
     def email_lower(self) -> str:

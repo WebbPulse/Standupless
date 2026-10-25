@@ -9,7 +9,12 @@ Claiming is a conditional delete of the window's due marker, so two overlapping
 flushes never mail one window twice. A failure before the send puts the marker
 back for the next run; the send itself never raises. The recipient's email
 preference and team visibility are checked again here, so switching email off
-or losing access during the window is honoured.
+or losing access during the window is honoured, and so is each entry's inbox
+row: one read, archived or deleted before the flush is dropped from the email,
+and a window with nothing left sends nothing, as in Linear.
+
+A person who chose immediate email skips the window: `send_immediately` mails
+each notification on its own as it is written.
 """
 
 from __future__ import annotations
@@ -60,16 +65,37 @@ class FlushSummary:
     failed: int = 0
 
 
-def _compose(repositories: Repositories, due: DueDigest, entries: list[DigestEntry]) -> EmailMessage | None:
-    """The one email a window becomes, or `None` when nothing in it should still be mailed."""
+def still_unhandled(repositories: Repositories, entry: DigestEntry) -> bool:
+    """Whether the inbox row behind one held entry is still there and, when it was held unread, still unread."""
+    if entry.unread_when_held is None:
+        return True
+    row = repositories.inbox.get(entry.workspace_id, entry.recipient_id, entry.notification_id)
+    if row is None:
+        return False
+    return row.unread_at is not None or not entry.unread_when_held
+
+
+def _compose(
+    repositories: Repositories,
+    workspace_id: str,
+    recipient_id: str,
+    entries: list[DigestEntry],
+    *,
+    check_inbox: bool = True,
+) -> EmailMessage | None:
+    """The one email some held entries become, or `None` when nothing in them should still be mailed.
+
+    `check_inbox` drops entries whose inbox row was handled since; an immediate
+    send skips it, because its row was written a moment ago.
+    """
     from app.domains.views.consumers.notify import can_receive
 
     if not entries:
         return None
-    recipient = repositories.users.get(due.recipient_id)
+    recipient = repositories.users.get(recipient_id)
     if recipient is None or recipient.disabled:
         return None
-    workspace = repositories.workspaces.get(due.workspace_id)
+    workspace = repositories.workspaces.get(workspace_id)
     if workspace is None:
         return None
 
@@ -79,12 +105,28 @@ def _compose(repositories: Repositories, due: DueDigest, entries: list[DigestEnt
         if not recipient.wants_notification(entry.kind, "email"):
             continue
         if entry.team_id not in visible_teams:
-            visible_teams[entry.team_id] = can_receive(repositories, due.workspace_id, entry.team_id, due.recipient_id)
-        if visible_teams[entry.team_id]:
-            kept.append(entry)
+            visible_teams[entry.team_id] = can_receive(repositories, workspace_id, entry.team_id, recipient_id)
+        if not visible_teams[entry.team_id]:
+            continue
+        if check_inbox and not still_unhandled(repositories, entry):
+            continue
+        kept.append(entry)
     if not kept:
         return None
     return render_digest(kept, to=str(recipient.email), workspace_slug=workspace.slug, accent=workspace.accent_color)
+
+
+def _send(message: EmailMessage | None) -> bool:
+    """Hand one composed email to SES, answering whether there was one to send."""
+    if message is None:
+        return False
+    kind = message.tags.get("kind", "digest") if message.tags else "digest"
+    return deliver(message, event=f"views.notify.email.{kind}")
+
+
+def send_immediately(repositories: Repositories, entry: DigestEntry) -> bool:
+    """Mail one notification on its own now, for a person who chose immediate email."""
+    return _send(_compose(repositories, entry.workspace_id, entry.recipient_id, [entry], check_inbox=False))
 
 
 def flush_window(repositories: Repositories, due: DueDigest) -> bool:
@@ -99,14 +141,11 @@ def flush_window(repositories: Repositories, due: DueDigest) -> bool:
         return False
     try:
         entries = store.entries(due)
-        message = _compose(repositories, due, entries)
+        message = _compose(repositories, due.workspace_id, due.recipient_id, entries)
     except Exception:
         store.release(due)
         raise
-    sent = False
-    if message is not None:
-        kind = message.tags.get("kind", "digest") if message.tags else "digest"
-        sent = deliver(message, event=f"views.notify.email.{kind}")
+    sent = _send(message)
     store.clear(due, entries)
     return sent
 

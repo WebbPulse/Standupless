@@ -37,6 +37,7 @@ import {
   LuBuilding2,
   LuCalendar,
   LuChevronRight,
+  LuCircleAlert,
   LuCircleDashed,
   LuDiamond,
   LuGoal,
@@ -50,7 +51,14 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { deleteProject, updateProject } from '../../api/planning';
+import {
+  archiveProject,
+  deleteProject,
+  unarchiveProject,
+  updateProject,
+} from '../../api/planning';
+import { IMPORTANT_CUSTOMER } from '../../api/issues';
+import { ARCHIVE_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
 import {
   createView,
   updateView,
@@ -147,6 +155,7 @@ import {
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
+  CUSTOMER_PROJECT_ORDERINGS,
   DEFAULT_PROJECTS_DISPLAY,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
@@ -234,6 +243,7 @@ const HEADER_CLASSES: Record<GridColumn, string> = {
   target: cn(TIER_BLOCK[COLUMN_TIERS.target], 'px-2'),
   teams: TIER_BLOCK[COLUMN_TIERS.teams],
   issues: cn(TIER_BLOCK[COLUMN_TIERS.issues], 'text-right'),
+  important: cn(TIER_BLOCK[COLUMN_TIERS.important], 'text-right'),
   created: TIER_BLOCK[COLUMN_TIERS.created],
   updated: TIER_BLOCK[COLUMN_TIERS.updated],
   completed: TIER_BLOCK[COLUMN_TIERS.completed],
@@ -246,6 +256,7 @@ const HEADER_LABELS: Record<GridColumn, string> = {
   ...PROJECT_COLUMN_LABELS,
   start: 'Start',
   target: 'Target',
+  important: 'Important',
 };
 
 /** How a stored timestamp reads in a date column, or a dash when there is none. */
@@ -319,6 +330,8 @@ const flagParam = (value: string): FlagFilter =>
   value === 'true' || value === 'false' ? value : '';
 /** The customer filter value for projects no customer asked for. */
 const NO_CUSTOMER = 'none';
+/** The URL parameter that lists archived projects too. */
+const ARCHIVED_PARAM = 'archived';
 
 /** Props for ProjectRow: one project and what the row needs to edit it. */
 interface ProjectRowProps {
@@ -473,6 +486,11 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         >
           {project.name}
         </span>
+        {project.archived_at != null && (
+          <span className="shrink-0 rounded border border-line px-1 text-[11px] text-text-muted">
+            Archived
+          </span>
+        )}
         {has('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
@@ -637,6 +655,20 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         >
           <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
           <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
+        </span>
+      )}
+      {has('important') && (
+        <span
+          className={cn(
+            'pointer-events-none justify-end text-xs text-text-muted tabular-nums',
+            TIER_FLEX[COLUMN_TIERS.important]
+          )}
+        >
+          <span className="sr-only">Important customer requests </span>
+          {project.customer_important_count === null ||
+          project.customer_important_count === undefined
+            ? '-'
+            : String(project.customer_important_count)}
         </span>
       )}
       {(['created', 'updated', 'completed'] as const).map(
@@ -882,13 +914,25 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
         (field) => display[field] !== base.display[field]
       ));
 
-  const customerOrdering = isMember && ordering === 'customers';
+  const customerOrdering =
+    isMember &&
+    (CUSTOMER_PROJECT_ORDERINGS.has(ordering) ||
+      shownColumns.includes('important'));
+  const showArchived = params.get(ARCHIVED_PARAM) === '1';
   const narrowing = useMemo(
     () => ({
       ...(customerFilter === '' ? {} : { customer_id: [customerFilter] }),
-      ...(customerOrdering ? { sort: 'customer_requests_desc' as const } : {}),
+      ...(customerOrdering
+        ? {
+            sort:
+              ordering === 'important'
+                ? ('customer_important_desc' as const)
+                : ('customer_requests_desc' as const),
+          }
+        : {}),
+      ...(showArchived ? { include_archived: true } : {}),
     }),
-    [customerFilter, customerOrdering]
+    [customerFilter, customerOrdering, ordering, showArchived]
   );
   const { projects, error, isLoading, queryKey, refetch } =
     useWorkspaceProjects(
@@ -1025,10 +1069,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   const groups = useMemo(
     () =>
       directedGroups(
-        groupProjects(sorted, grouping, people, teams, { initiatives }),
+        groupProjects(sorted, grouping, people, teams, {
+          initiatives,
+          teamIds: leadTeamIds,
+        }),
         direction
       ),
-    [sorted, grouping, people, teams, initiatives, direction]
+    [sorted, grouping, people, teams, initiatives, leadTeamIds, direction]
   );
   const columns = useMemo(
     () =>
@@ -1038,6 +1085,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             groupProjects(sorted, grouping, people, teams, {
               initiatives,
               keepEmpty: true,
+              teamIds: leadTeamIds,
             }),
             direction
           ).filter((column) => {
@@ -1062,6 +1110,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       people,
       teams,
       initiatives,
+      leadTeamIds,
       direction,
       display.empty,
       scopedInitiatives,
@@ -1073,8 +1122,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     () =>
       layout !== 'board' || subGrouping === 'none'
         ? undefined
-        : groupProjects(sorted, subGrouping, people, teams, { initiatives }),
-    [layout, subGrouping, sorted, people, teams, initiatives]
+        : groupProjects(sorted, subGrouping, people, teams, {
+            initiatives,
+            teamIds: leadTeamIds,
+          }),
+    [layout, subGrouping, sorted, people, teams, initiatives, leadTeamIds]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
@@ -1090,9 +1142,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             ? null
             : groupProjects(group.rows, subGrouping, people, teams, {
                 initiatives,
+                teamIds: leadTeamIds,
               }).map((sub) => ({ sub, fold: `${group.key}/${sub.key}` })),
       })),
-    [groups, subGrouping, people, teams, initiatives]
+    [groups, subGrouping, people, teams, initiatives, leadTeamIds]
   );
   const { visible, starts } = useMemo(() => {
     const shown: ProjectRead[] = [];
@@ -1213,6 +1266,42 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       showErrorToast(`Could not delete ${plural(targets.length - done)}.`);
   };
   const deletable = selectedProjects.filter(canDelete);
+  const archivable = selectedProjects.filter((project) =>
+    canEditProject(workspace?.role, project, teams)
+  );
+  const allArchived =
+    archivable.length > 0 &&
+    archivable.every((project) => project.archived_at != null);
+  const toggleArchived = async (targets: ProjectRead[]): Promise<void> => {
+    const restore = targets.every((project) => project.archived_at != null);
+    const write = restore ? unarchiveProject : archiveProject;
+    const results = await Promise.allSettled(
+      targets.map((project) => write(workspaceId, project.project_id))
+    );
+    const done = results.filter(
+      (result) => result.status === 'fulfilled'
+    ).length;
+    invalidateQueries(queryKey);
+    clearSelection();
+    if (done > 0)
+      showToast(`${restore ? 'Restored' : 'Archived'} ${plural(done)}.`);
+    if (done < targets.length)
+      showErrorToast(
+        `Could not ${restore ? 'restore' : 'archive'} ${plural(targets.length - done)}.`
+      );
+  };
+  useShortcut({
+    keys: ARCHIVE_ISSUE_KEYS,
+    label: allArchived
+      ? 'Restore selected projects'
+      : 'Archive selected projects',
+    group: 'List',
+    enabled: archivable.length > 0 && deleting === null && bulk === null,
+    handler: (event) => {
+      event?.preventDefault();
+      void toggleArchived(archivable);
+    },
+  });
   useShortcut({
     keys: 'mod+backspace',
     label: 'Delete selected projects',
@@ -1447,6 +1536,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   ];
   const customerOptions: ComboboxOption[] = [
     { value: NO_CUSTOMER, label: 'No customer' },
+    {
+      value: IMPORTANT_CUSTOMER,
+      label: 'Important request',
+      icon: <LuCircleAlert className="h-3.5 w-3.5 text-warning" />,
+    },
     ...customers.map((customer) => ({
       value: customer.customer_id,
       label: customer.name,
@@ -1684,6 +1778,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               closed={closed}
               onClosedChange={(value) => {
                 changeDisplay({ closed: value });
+              }}
+              archived={showArchived}
+              onArchivedChange={(value) => {
+                const next = new URLSearchParams(params);
+                if (value) next.set(ARCHIVED_PARAM, '1');
+                else next.delete(ARCHIVED_PARAM);
+                setParams(next, { replace: true });
               }}
               {...(filteredTeam === undefined
                 ? {}
@@ -2147,6 +2248,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           count={selectedProjects.length}
           label="Selected projects"
           actions={bulkActions}
+          archived={allArchived}
+          onArchive={
+            archivable.length > 0
+              ? () => {
+                  void toggleArchived(archivable);
+                }
+              : undefined
+          }
           onDelete={
             deletable.length > 0
               ? () => {

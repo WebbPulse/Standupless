@@ -11,6 +11,7 @@
 import React, { useMemo, useState } from 'react';
 import type { IconType } from 'react-icons';
 import {
+  LuArchive,
   LuCalendar,
   LuCirclePlus,
   LuLayers,
@@ -68,6 +69,7 @@ const ICONS: Record<ProjectActivityIcon, IconType> = {
   labels: LuTag,
   milestone: LuMilestone,
   link: LuLink,
+  archive: LuArchive,
 };
 
 /** Props for ProjectActivityFeed. */

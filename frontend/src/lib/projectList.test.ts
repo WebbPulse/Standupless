@@ -125,6 +125,19 @@ describe('sortProjects', () => {
       'Undated',
     ]);
   });
+
+  it('orders by important customer requests, most first', () => {
+    const asked = [
+      project({ project_id: 'a', name: 'Few', customer_important_count: 1 }),
+      project({ project_id: 'b', name: 'None', customer_important_count: 0 }),
+      project({ project_id: 'c', name: 'Many', customer_important_count: 3 }),
+    ];
+    expect(names(sortProjects(asked, 'important'))).toEqual([
+      'Many',
+      'Few',
+      'None',
+    ]);
+  });
 });
 
 describe('groupProjects', () => {
@@ -159,6 +172,25 @@ describe('groupProjects', () => {
       [team('t1', 'Engine'), team('t2', 'Design'), team('t3', 'Empty')]
     );
     expect(groups.map((group) => group.label)).toEqual(['Engine', 'Design']);
+    expect(groups.map((group) => group.rows.length)).toEqual([1, 1]);
+  });
+
+  it('shows each project once under the filtered teams only', () => {
+    const groups = groupProjects(
+      [
+        project({ project_id: 'a', team_ids: ['t1', 't2'] }),
+        project({ project_id: 'b', team_ids: ['t3', 't2'] }),
+        project({ project_id: 'c', team_ids: ['t3'] }),
+      ],
+      'team',
+      [],
+      [team('t1', 'Engine'), team('t2', 'Design'), team('t3', 'Mobile')],
+      { teamIds: ['t2', 't3'] }
+    );
+    expect(groups.map((group) => group.label)).toEqual(['Design', 'Mobile']);
+    expect(
+      groups.map((group) => group.rows.map((row) => row.project_id))
+    ).toEqual([['a', 'b'], ['c']]);
   });
 
   it('leaves empty status groups out', () => {

@@ -22,8 +22,10 @@
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  LuArchive,
+  LuArchiveRestore,
   LuArrowRight,
   LuCalendar,
   LuCalendarCheck,
@@ -40,10 +42,12 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import {
+  archiveProject,
   createProjectLink,
   deleteProject,
   deleteProjectLink,
   getProject,
+  unarchiveProject,
   updateProject,
   updateProjectLink,
 } from '../../api/planning';
@@ -535,6 +539,27 @@ export const ProjectDetail: React.FC = () => {
     );
   };
 
+  const archived = project.archived_at != null;
+  const toggleArchived = (): void => {
+    (archived ? unarchiveProject : archiveProject)(workspaceId, projectId).then(
+      () => {
+        invalidateQueries(detailKey);
+        invalidateQueries(listKey);
+        showToast(`${archived ? 'Restored' : 'Archived'} ${project.name}`);
+      },
+      (failure: unknown) => {
+        showErrorToast(
+          errorMessage(
+            failure,
+            archived
+              ? 'Could not restore this project.'
+              : 'Could not archive this project.'
+          )
+        );
+      }
+    );
+  };
+
   const properties = (
     <div
       ref={propertiesRow}
@@ -710,7 +735,7 @@ export const ProjectDetail: React.FC = () => {
               New issue
             </Button>
           )}
-          {canDelete && (
+          {(canEdit || canDelete) && (
             <Menu
               label="Project actions"
               align="end"
@@ -720,15 +745,30 @@ export const ProjectDetail: React.FC = () => {
                 </IconButton>
               )}
             >
-              <MenuItem
-                danger
-                onSelect={() => {
-                  setIsConfirmingDelete(true);
-                }}
-              >
-                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                Delete project
-              </MenuItem>
+              {canEdit && (
+                <MenuItem onSelect={toggleArchived}>
+                  {archived ? (
+                    <LuArchiveRestore
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                    />
+                  ) : (
+                    <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
+                  )}
+                  {archived ? 'Restore project' : 'Archive project'}
+                </MenuItem>
+              )}
+              {canDelete && (
+                <MenuItem
+                  danger
+                  onSelect={() => {
+                    setIsConfirmingDelete(true);
+                  }}
+                >
+                  <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                  Delete project
+                </MenuItem>
+              )}
             </Menu>
           )}
         </div>
@@ -739,6 +779,22 @@ export const ProjectDetail: React.FC = () => {
           <ErrorAlert
             message={errorMessage(error, 'Could not refresh this project.')}
           />
+        </div>
+      )}
+      {archived && (
+        <div
+          role="status"
+          className="flex items-center gap-3 border-b border-line bg-raised px-4 py-2 text-sm text-text-muted lg:px-6"
+        >
+          <LuArchive aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            This project is archived. It is hidden from the projects list.
+          </span>
+          {canEdit && (
+            <Button variant="secondary" size="sm" onClick={toggleArchived}>
+              Restore
+            </Button>
+          )}
         </div>
       )}
       {tab === 'updates' ? (

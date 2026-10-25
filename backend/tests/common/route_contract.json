@@ -1346,6 +1346,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/archive"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/customer-requests"
   },
@@ -1462,6 +1468,12 @@
     "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/relations/{relation_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/unarchive"
   },
   {
     "auth": "workspace:read",

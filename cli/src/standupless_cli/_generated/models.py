@@ -587,6 +587,7 @@ class CycleRead(TypedDict):
 
 
 class CycleSettingsRead(TypedDict):
+    auto_add_completed: bool
     auto_add_started: bool
     cooldown_weeks: int
     duration_weeks: int
@@ -599,6 +600,7 @@ class CycleSettingsRead(TypedDict):
 
 
 class CycleSettingsUpdate(TypedDict):
+    auto_add_completed: NotRequired[bool | None]
     auto_add_started: NotRequired[bool | None]
     cooldown_weeks: NotRequired[int | None]
     duration_weeks: NotRequired[int | None]
@@ -1543,6 +1545,8 @@ ProjectActivityRead = TypedDict(
             "link_added",
             "link_removed",
             "link_changed",
+            "archived",
+            "unarchived",
         ],
         "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
@@ -1797,7 +1801,9 @@ class ProjectsDisplay(TypedDict):
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
     order: NotRequired[
-        Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"]
+        Literal[
+            "target", "start", "name", "priority", "progress", "created", "updated", "customers", "important", "manual"
+        ]
     ]
     rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
@@ -2878,6 +2884,7 @@ class UserPreferencesUpdate(TypedDict):
     auto_grant_new_scopes: NotRequired[bool | None]
     branch_copy_assigns: NotRequired[bool | None]
     branch_copy_starts: NotRequired[bool | None]
+    email_format: NotRequired[Literal["digest", "immediate"] | None]
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
@@ -2908,8 +2915,10 @@ class UserPreferencesUpdate(TypedDict):
         ]
         | None
     ]
+    pointer_cursors: NotRequired[bool | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
 
@@ -2928,6 +2937,7 @@ class UserRead(TypedDict):
     branch_copy_starts: NotRequired[bool]
     display_name: str
     email: str
+    email_format: NotRequired[Literal["digest", "immediate"]]
     email_notifications: bool
     email_verified: bool
     font_size: NotRequired[Literal["small", "default", "large"]]
@@ -2938,9 +2948,11 @@ class UserRead(TypedDict):
     initiatives_display_saved: NotRequired[bool]
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
+    pointer_cursors: NotRequired[bool]
     projects_display: NotRequired[ProjectsDisplay]
     projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
@@ -3955,6 +3967,7 @@ class ProjectLinkListRead(TypedDict):
 
 
 class ProjectRead(TypedDict):
+    archived_at: NotRequired[str | None]
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
     color: NotRequired[str | None]

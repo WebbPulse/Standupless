@@ -23,11 +23,13 @@ silently: a notification is not an authorization decision worth surfacing. Each
 recipient's own per kind preferences then decide whether the row lands unread in
 the inbox, whether it is mailed, or both.
 
-The inbox row is written at once. The email is held as a digest entry and mailed
-by the flush in `digest`, one message per recipient per five minute window, so a
-burst of activity on an issue becomes one email rather than one per change. The
-flush rides this consumer's own function, triggered by a scheduled synthetic
-record. One record reaches at most `MAX_RECIPIENTS_PER_EVENT` people.
+The inbox row is written at once. The email follows the recipient's notification
+format. With `digest`, the default, it is held as a digest entry and mailed by the
+flush in `digest`, one message per recipient per five minute window, so a burst of
+activity on an issue becomes one email rather than one per change; a notification
+about an urgent issue makes its window due on the next flush. With `immediate` it
+is mailed on its own at once. The flush rides this consumer's own function,
+triggered by a scheduled synthetic record. One record reaches at most `MAX_RECIPIENTS_PER_EVENT` people.
 
 Idempotency is the notification id. It is derived from the record rather than
 minted fresh, so a record redelivered by the event source mapping's partial-batch
@@ -61,11 +63,12 @@ from app.common.db.dynamo.inbox import (
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
+from app.common.db.dynamo.users import User
 from app.common.issue_keys import display_key
 from app.common.team_privacy import person_can_see_team
 from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
-from app.domains.views.consumers.digest import flush_due, is_digest_flush
+from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
 from app.domains.views.email import excerpt
 
 _log = logging.getLogger(__name__)
@@ -207,18 +210,43 @@ def digest_entry(row: Notification, **fields: Any) -> DigestEntry:
         initiative_id=row.initiative_id or "",
         initiative_name=row.initiative_name or "",
         due_state=row.due_state or "",
+        unread_when_held=row.unread_at is not None,
         created_at=row.created_at,
         **fields,
     )
 
 
-def hold_for_digest(repositories: Repositories, row: Notification, **fields: Any) -> None:
-    """Hold the email for one inbox row that was just written until its digest is flushed.
+URGENT_PRIORITY = "urgent"
+"""The issue priority whose notifications skip the rest of the digest window."""
 
-    Everything the email line needs is captured off the row now, so the flush reads
-    only the recipient and the workspace.
+
+def is_urgent(issue: Any) -> bool:
+    """Whether a notification about this subject should reach a digest reader sooner."""
+    return getattr(issue, "priority", "") == URGENT_PRIORITY
+
+
+def hold_for_digest(
+    repositories: Repositories,
+    row: Notification,
+    *,
+    recipient: User | None = None,
+    urgent: bool = False,
+    **fields: Any,
+) -> None:
+    """Send or hold the email for one inbox row that was just written, the way its recipient chose.
+
+    A recipient on immediate email is mailed now. Everyone else has the entry held
+    until their digest is flushed, and an `urgent` one makes that window due on the
+    next flush. Everything the email needs is captured off the row now, so neither
+    path reads the subject again. `recipient` saves a read when the caller has the
+    row already.
     """
-    repositories.inbox.digests.add(digest_entry(row, **fields))
+    entry = digest_entry(row, **fields)
+    person = recipient if recipient is not None else repositories.users.get(row.recipient_id)
+    if person is not None and person.immediate_email:
+        send_immediately(repositories, entry)
+        return
+    repositories.inbox.digests.add(entry, expedite=urgent)
 
 
 def write_notification(
@@ -255,8 +283,9 @@ def write_notification(
     The email hangs off the conditional put answering true, not off reaching this
     function, which is what makes the mail as idempotent as the badge: a redelivered
     record writes no row and so holds no second copy. It is held for the recipient's
-    next digest rather than sent here, so a burst of activity becomes one email, and
-    a linked chat account gets the same row in its own shorter batch.
+    next digest, so a burst of activity becomes one email, unless they chose
+    immediate email, and a linked chat account gets the same row in its own
+    shorter batch.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -293,7 +322,14 @@ def write_notification(
         return False
 
     if email:
-        hold_for_digest(repositories, row, headline_key=headline_key, excerpt=excerpt(comment_excerpt))
+        hold_for_digest(
+            repositories,
+            row,
+            recipient=recipient,
+            urgent=is_urgent(issue),
+            headline_key=headline_key,
+            excerpt=excerpt(comment_excerpt),
+        )
     if chat:
         hold_for_chat(repositories, row, headline_key=headline_key, excerpt=excerpt(comment_excerpt))
     return True
@@ -652,7 +688,7 @@ def write_project_update_notification(
         return False
 
     if email:
-        hold_for_digest(repositories, row, health=health, excerpt=excerpt(body))
+        hold_for_digest(repositories, row, recipient=recipient, health=health, excerpt=excerpt(body))
     if chat:
         hold_for_chat(repositories, row, health=health, excerpt=excerpt(body))
     return True

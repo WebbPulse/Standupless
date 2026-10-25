@@ -47,6 +47,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "email_verified": False,
         "email_notifications": True,
         "notification_preferences": {kind: ALL_ON for kind in NOTIFICATION_KINDS},
+        "email_format": "digest",
         "avatar_url": None,
         "two_factor": False,
         "timezone": None,
@@ -55,6 +56,8 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "week_start": "monday",
         "name_display": "username",
         "font_size": "default",
+        "theme": None,
+        "pointer_cursors": False,
         "activity_filter": "all",
         "projects_display": {
             "layout": "list",
@@ -121,6 +124,22 @@ def test_the_pulse_digest_defaults_off_and_takes_a_cadence(client: TestClient, r
 
     assert client.patch("/api/users/me/preferences", json={"pulse_digest": "hourly"}).status_code == 422
     assert client.patch("/api/users/me/preferences", json={"pulse_digest": "off"}).json()["pulse_digest"] == "off"
+
+
+def test_the_email_format_defaults_to_a_digest_and_takes_immediate(client: TestClient, repositories: Any) -> None:
+    """The format is a digest until the person picks immediate, and refuses a format it does not have."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["email_format"] == "digest"
+
+    response = client.patch("/api/users/me/preferences", json={"email_format": "immediate"})
+    assert response.status_code == 200
+    assert response.json()["email_format"] == "immediate"
+    assert repositories.users.get(OWNER).email_format == "immediate"
+
+    assert client.patch("/api/users/me/preferences", json={"email_format": "hourly"}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"email_format": "digest"}).json()["email_format"] == "digest"
 
 
 def test_interface_preferences_default_and_change_one_at_a_time(client: TestClient, repositories: Any) -> None:
@@ -204,6 +223,28 @@ def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, re
     assert client.get("/api/users/me").json()["home_view"] == "home"
 
     assert client.patch("/api/users/me/preferences", json={"branch_copy_starts": "sometimes"}).status_code == 422
+
+
+def test_theme_and_pointer_cursors_are_stored_on_the_account(client: TestClient, repositories: Any) -> None:
+    """The theme reads null until saved, then follows the account; pointer cursors start off and toggle."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+    assert (body["theme"], body["pointer_cursors"]) == (None, False)
+
+    body = client.patch("/api/users/me/preferences", json={"theme": "light", "pointer_cursors": True}).json()
+    assert (body["theme"], body["pointer_cursors"]) == ("light", True)
+    stored = repositories.users.get(OWNER)
+    assert (stored.theme, stored.pointer_cursors) == ("light", True)
+
+    body = client.patch("/api/users/me/preferences", json={"theme": "system"}).json()
+    assert (body["theme"], body["pointer_cursors"]) == ("system", True)
+
+    assert client.patch("/api/users/me/preferences", json={"theme": "sepia"}).status_code == 422
+
+    repositories.users.update(OWNER, theme="sepia")
+    assert client.get("/api/users/me").json()["theme"] is None
 
 
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:

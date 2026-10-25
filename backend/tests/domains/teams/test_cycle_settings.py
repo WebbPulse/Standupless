@@ -60,6 +60,7 @@ def test_unsaved_settings_read_as_the_defaults(client: TestClient, team: str) ->
         "start_weekday": 0,
         "upcoming_count": 2,
         "auto_add_started": True,
+        "auto_add_completed": False,
         "move_unfinished": True,
         "updated_at": None,
     }
@@ -160,3 +161,14 @@ def test_moving_unfinished_issues_can_be_turned_off(client: TestClient, team: st
     assert response.json()["move_unfinished"] is False
     assert response.json()["enabled"] is False
     assert client.get(URL).json()["move_unfinished"] is False
+
+
+def test_auto_adding_completed_issues_can_be_turned_on(client: TestClient, team: str) -> None:
+    """The completed auto-add setting is off by default and saves on its own."""
+    sign_in(client, ADMIN)
+    response = client.patch(URL, json={"auto_add_completed": True})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["auto_add_completed"] is True
+    assert response.json()["auto_add_started"] is True
+    assert client.get(URL).json()["auto_add_completed"] is True

@@ -314,6 +314,28 @@ export const updateProject = async (
   return response.data;
 };
 
+/** Archives a project, which hides it from the list until it is restored. */
+export const archiveProject = async (
+  workspaceId: string,
+  projectId: string
+): Promise<ProjectRead> => {
+  const response = await apiClient.post<ProjectRead>(
+    `${projectPath(workspaceId, projectId)}/archive`
+  );
+  return response.data;
+};
+
+/** Restores an archived project to the list. */
+export const unarchiveProject = async (
+  workspaceId: string,
+  projectId: string
+): Promise<ProjectRead> => {
+  const response = await apiClient.post<ProjectRead>(
+    `${projectPath(workspaceId, projectId)}/unarchive`
+  );
+  return response.data;
+};
+
 /** Deletes a project, which needs an admin of every one of its teams. */
 export const deleteProject = async (
   workspaceId: string,

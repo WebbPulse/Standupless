@@ -64,6 +64,7 @@ const updateProject =
   vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
 const deleteProject = vi.fn<(id: string) => Promise<void>>();
+const archiveProject = vi.fn<(id: string) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const createView =
   vi.fn<(body: Record<string, unknown>) => Promise<SavedViewDisplayRead>>();
@@ -118,6 +119,7 @@ vi.mock('../../api/planning', () => ({
   updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
     updateProject(id, patch),
   deleteProject: (_w: string, id: string) => deleteProject(id),
+  archiveProject: (_w: string, id: string) => archiveProject(id),
 }));
 
 const getDisplayDefaults = vi.fn<() => Promise<TeamDisplayDefaultsRead>>();
@@ -424,6 +426,38 @@ describe('Projects', () => {
       within(designGroup).getByRole('link', { name: 'Rebrand' })
     ).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'In progress' })).toBeNull();
+  });
+
+  it('repeats a project on two teams under each team without a team filter', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, team_ids: ['team-1', 'team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const designGroup = screen.getByRole('region', { name: 'Design' });
+    expect(
+      within(designGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows a project on two teams once under the filtered team', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, team_ids: ['team-2', 'team-1'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?team=ENG&group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Design' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Launch' })).toHaveLength(1);
   });
 
   it('orders the rows by the Display menu choice', async () => {
@@ -905,6 +939,29 @@ describe('Projects', () => {
       expect(deleteProject).toHaveBeenCalledWith('prj-1');
     });
     expect(deleteProject).toHaveBeenCalledWith('prj-2');
+  });
+
+  it('archives the selected projects from the bar', async () => {
+    const user = userEvent.setup();
+    archiveProject.mockImplementation((id) =>
+      Promise.resolve({
+        ...(id === launch.project_id ? launch : rebrand),
+        archived_at: '2026-10-24T00:00:00Z',
+      })
+    );
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Launch' })
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Select Rebrand' }));
+    const bar = screen.getByRole('toolbar', { name: 'Selected projects' });
+    await user.click(within(bar).getByRole('button', { name: /Archive/ }));
+
+    await waitFor(() => {
+      expect(archiveProject).toHaveBeenCalledWith('prj-1');
+    });
+    expect(archiveProject).toHaveBeenCalledWith('prj-2');
   });
 
   it('clears the selection from the bar', async () => {
