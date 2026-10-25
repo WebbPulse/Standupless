@@ -516,8 +516,8 @@ def http_error_message(exc: HTTPException) -> str:
         return NOT_VISIBLE
     if code in PLAN_REFUSAL_CODES:
         return f"{text} ({code})"
-    if code == BODY_CHANGED and isinstance(detail, Mapping) and isinstance(detail.get("details"), Mapping):
-        details = detail["details"]
+    details = detail.get("details") if isinstance(detail, Mapping) else None
+    if code == BODY_CHANGED and isinstance(details, Mapping):
         return (
             f"{text} ({code}). Merge with the current body and retry with base_body_version "
             f"{details.get('body_version', '')}. The current body:\n\n{details.get('body', '')}"
