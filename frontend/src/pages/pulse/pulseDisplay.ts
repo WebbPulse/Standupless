@@ -14,15 +14,19 @@ import type { PulseItemRead } from '../../types/Api';
 /** Where an entry links: the updates tab for an update, else the page; empty when it has nowhere. */
 export const entryHref = (slug: string, item: PulseItemRead): string => {
   if (item.subject_type === 'initiative' && item.initiative_id !== null) {
-    const base = initiativePath(slug, item.initiative_id);
+    const base = initiativePath(slug, {
+      initiative_id: item.initiative_id,
+      name: item.initiative_name,
+    });
     return item.event_type === 'initiative_update'
       ? `${base}?tab=updates`
       : base;
   }
   if (item.project_id === null) return '';
+  const project = { project_id: item.project_id, name: item.project_name };
   return item.event_type === 'project_update'
-    ? projectUpdatesTabPath(slug, item.project_id)
-    : projectPath(slug, item.project_id);
+    ? projectUpdatesTabPath(slug, project)
+    : projectPath(slug, project);
 };
 
 /** The name of what an entry is about. */

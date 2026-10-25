@@ -240,7 +240,9 @@ def project_update_candidates(
     message = ChannelMessage(
         event="project_update_posted",
         subject=project.name,
-        url=Links(repositories, workspace_id).project_update(project.project_id, str(new.get("update_id", ""))),
+        url=Links(repositories, workspace_id).project_update(
+            project.project_id, str(new.get("update_id", "")), project.name
+        ),
         summary=f"{actor} posted a project update.",
         actor=actor,
         detail="\n\n".join(part for part in (excerpt(str(new.get("body", ""))), report) if part),
@@ -369,7 +371,7 @@ def announce_project_update_due(
     message = ChannelMessage(
         event="project_update_due",
         subject=project.name,
-        url=f"{Links(repositories, workspace_id).project(project_id)}?tab=updates",
+        url=f"{Links(repositories, workspace_id).project(project_id, project.name)}?tab=updates",
         summary="A project update is due.",
         at=due_at,
     )

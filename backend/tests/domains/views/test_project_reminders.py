@@ -95,7 +95,7 @@ def test_the_lead_gets_one_reminder_however_many_passes_run(
     [message] = recorder.sent
     assert message.subject == "[Project] Launch"
     assert "A project update is due." in message.text
-    assert f"/projects/{PROJECT_ID}?tab=updates" in message.text
+    assert f"/projects/launch-{PROJECT_ID}?tab=updates" in message.text
     assert [event.project_id for event in heard] == [PROJECT_ID]
     assert heard[0].due_at == DUE
 

@@ -280,7 +280,7 @@ const Part: React.FC<{ part: ActivityPart; linker: Linker }> = ({
   }
   const to =
     part.kind === 'project'
-      ? projectPath(linker.slug, part.id)
+      ? projectPath(linker.slug, { project_id: part.id, name: part.name })
       : part.kind === 'cycle' && linker.teamKeyPrefix !== ''
         ? cyclePath(linker.slug, linker.teamKeyPrefix, part.id)
         : part.kind === 'issue'

@@ -66,7 +66,10 @@ const ProjectChip: React.FC<ResolvedChipProps> = ({
   );
   return (
     <Link
-      to={projectPath(slug, target.id)}
+      to={projectPath(slug, {
+        project_id: target.id,
+        name: project?.name,
+      })}
       title={project?.name}
       data-reference="project"
       data-md-href={href}

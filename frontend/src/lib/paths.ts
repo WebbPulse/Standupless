@@ -7,6 +7,8 @@
  * its issues. Nothing translates between the two layers.
  */
 
+import { readableId } from './readableIds';
+
 /**
  * The workspace picker. With a single workspace it forwards straight into
  * that workspace, which is where signing in and the home page send people.
@@ -117,17 +119,38 @@ export const teamSettingsSectionPath = (
 export const projectsPath = (slug: string): string =>
   `${workspacePath(slug)}/projects`;
 
+/** A project as a path is built from: its id alone, or its id and name. */
+export type ProjectRef =
+  string | { project_id: string; name?: string | null | undefined };
+
+/** An initiative as a path is built from: its id alone, or its id and name. */
+export type InitiativeRef =
+  string | { initiative_id: string; name?: string | null | undefined };
+
+/** The path segment a project is addressed by, readable when its name is known. */
+const projectSegment = (project: ProjectRef): string =>
+  typeof project === 'string'
+    ? project
+    : readableId(project.project_id, project.name);
+
+/** The path segment an initiative is addressed by, readable when its name is known. */
+const initiativeSegment = (initiative: InitiativeRef): string =>
+  typeof initiative === 'string'
+    ? initiative
+    : readableId(initiative.initiative_id, initiative.name);
+
 /**
- * One project. Projects are workspace level, so the id alone opens one; a
- * team's key prefix may still ride along in the query to keep the sidebar on
- * the team the reader came from.
+ * One project, as `<name-slug>-<id>` when the name is known. Projects are
+ * workspace level, so the id alone opens one and a page reached by a bare id
+ * rewrites itself to the readable form; a team's key prefix may still ride
+ * along in the query to keep the sidebar on the team the reader came from.
  */
 export const projectPath = (
   slug: string,
-  projectId: string,
+  project: ProjectRef,
   teamKeyPrefix?: string
 ): string =>
-  `${projectsPath(slug)}/${projectId}${
+  `${projectsPath(slug)}/${projectSegment(project)}${
     teamKeyPrefix === undefined || teamKeyPrefix === ''
       ? ''
       : `?team=${encodeURIComponent(teamKeyPrefix)}`
@@ -136,10 +159,10 @@ export const projectPath = (
 /** One project opened on its issues tab, filtered to one of its milestones. */
 export const projectMilestonePath = (
   slug: string,
-  projectId: string,
+  project: ProjectRef,
   milestoneId: string
 ): string =>
-  `${projectsPath(slug)}/${projectId}?${new URLSearchParams([
+  `${projectsPath(slug)}/${projectSegment(project)}?${new URLSearchParams([
     ['tab', 'issues'],
     ['f', `milestone.is:${milestoneId}`],
   ]).toString()}`;
@@ -151,16 +174,21 @@ export const documentPath = (slug: string, documentId: string): string =>
 /** One project opened on its Updates tab, where a notification about one lands. */
 export const projectUpdatesTabPath = (
   slug: string,
-  projectId: string
-): string => `${projectPath(slug, projectId)}?tab=updates`;
+  project: ProjectRef
+): string => `${projectPath(slug, project)}?tab=updates`;
 
 /** Every initiative in the workspace. */
 export const initiativesPath = (slug: string): string =>
   `${workspacePath(slug)}/initiatives`;
 
-/** One initiative, workspace level and reached by its id alone. */
-export const initiativePath = (slug: string, initiativeId: string): string =>
-  `${initiativesPath(slug)}/${initiativeId}`;
+/**
+ * One initiative, as `<name-slug>-<id>` when the name is known. It is
+ * workspace level, so the id alone opens it.
+ */
+export const initiativePath = (
+  slug: string,
+  initiative: InitiativeRef
+): string => `${initiativesPath(slug)}/${initiativeSegment(initiative)}`;
 
 /** Every customer of the workspace. */
 export const customersPath = (slug: string): string =>

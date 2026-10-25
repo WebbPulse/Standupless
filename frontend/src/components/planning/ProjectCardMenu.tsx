@@ -36,7 +36,7 @@ export const ProjectCardMenu: React.FC<ProjectCardMenuProps> = ({
   onEdit,
   onClose,
 }) => {
-  const path = projectPath(slug, project.project_id);
+  const path = projectPath(slug, project);
   return (
     <ContextMenu
       x={x}

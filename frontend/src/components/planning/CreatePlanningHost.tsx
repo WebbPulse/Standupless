@@ -118,7 +118,7 @@ export const CreatePlanningHost: React.FC<CreatePlanningHostProps> = ({
       onCreated={(project) => {
         onClose();
         invalidateQueries(projectsKey(workspaceId, '', ''));
-        void navigate(projectPath(slug, project.project_id));
+        void navigate(projectPath(slug, project));
       }}
     />
   );

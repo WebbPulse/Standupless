@@ -1259,7 +1259,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
               className="h-4 w-4"
             />
           ),
-          to: projectPath(slug, project.project_id),
+          to: projectPath(slug, project),
         })),
         deferred
       );

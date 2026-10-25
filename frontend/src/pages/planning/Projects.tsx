@@ -414,7 +414,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
     project.team_ids.includes(team.id)
   );
   const lead = people.find((person) => person.user_id === project.lead_id);
-  const href = projectPath(slug, project.project_id);
+  const href = projectPath(slug, project);
   const has = (column: ProjectColumn): boolean => shown.includes(column);
   const nameTip = useTruncationTooltip<HTMLSpanElement>();
 
@@ -1206,8 +1206,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   const onActivate = useCallback(
     (index: number) => {
       const project = visible[index];
-      if (project !== undefined)
-        void navigate(projectPath(slug, project.project_id));
+      if (project !== undefined) void navigate(projectPath(slug, project));
     },
     [visible, navigate, slug]
   );
@@ -2217,7 +2216,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             setCreating(null);
             invalidateQueries(queryKey);
             scope?.onCreated?.();
-            void navigate(projectPath(slug, project.project_id));
+            void navigate(projectPath(slug, project));
           }}
         />
       )}

@@ -277,7 +277,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         <ProjectIcon icon={project.icon} color={project.color} />
         <Link
           ref={nameTip.ref}
-          to={projectPath(slug, project.project_id)}
+          to={projectPath(slug, project)}
           draggable={false}
           data-hover="parent"
           {...nameTip.handlers}

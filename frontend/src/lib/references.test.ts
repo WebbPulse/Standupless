@@ -219,6 +219,27 @@ describe('linkedReference', () => {
     ).toEqual({ kind: 'project', slug: 'acme', id: 'prj-1' });
   });
 
+  it('writes a project link readably and reads its id back out', () => {
+    const id = '01M5SCBRDDWDSDX5WJDGTCV6CQ';
+    const href = referenceHref(ORIGIN, 'acme', {
+      kind: 'project',
+      id,
+      name: 'Launch Plan',
+      icon: null,
+      color: null,
+    });
+
+    expect(href).toBe(`${ORIGIN}/w/acme/projects/launch-plan-${id}`);
+    expect(linkedReference(href, ORIGIN)).toEqual({
+      kind: 'project',
+      slug: 'acme',
+      id,
+    });
+    expect(
+      linkedReference(`${ORIGIN}/w/acme/projects/old-name-${id}`, ORIGIN)
+    ).toEqual({ kind: 'project', slug: 'acme', id });
+  });
+
   it('leaves links to another origin or another page alone', () => {
     expect(
       linkedReference('https://elsewhere.example.com/w/acme/projects/p', ORIGIN)

@@ -39,12 +39,7 @@ import {
   LuPrinter,
   LuTrash2,
 } from 'react-icons/lu';
-import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   archiveProject,
   convertMilestoneToProject,
@@ -125,6 +120,10 @@ import {
 } from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPath, projectsPath } from '../../lib/paths';
+import {
+  useReadableAddress,
+  useRouteEntityId,
+} from '../../hooks/useReadableAddress';
 import { progressPercent, updateNudge } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
@@ -211,7 +210,7 @@ const convertDescription = (milestone: MilestoneRead): string => {
 
 /** One project's overview and its issues. */
 export const ProjectDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const projectId = useRouteEntityId();
   const [params, setParams] = useSearchParams();
   const { workspace } = useWorkspace();
   const slug = workspace?.slug ?? '';
@@ -224,7 +223,6 @@ export const ProjectDetail: React.FC = () => {
     error: teamsError,
     refetch: refetchTeams,
   } = useTeam(undefined);
-  const projectId = id ?? '';
   const tab = tabFrom(params.get('tab'));
   const [composing, setComposing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -254,6 +252,8 @@ export const ProjectDetail: React.FC = () => {
     queryKey: detailKey,
     auth,
   });
+
+  useReadableAddress(projectId, server?.name);
 
   const { value: project, update } = useOptimisticRecord<
     ProjectRead,
@@ -573,7 +573,7 @@ export const ProjectDetail: React.FC = () => {
         invalidateQueries(listKey);
         invalidateQueries(milestonesKey(workspaceId, projectId));
         showToast(`Converted ${target.name} into a project`);
-        void navigate(projectPath(slug, result.project.project_id));
+        void navigate(projectPath(slug, result.project));
       },
       () => {
         setIsConverting(false);

@@ -160,7 +160,7 @@ def test_the_email_links_to_the_projects_updates_and_quotes_the_body() -> None:
     )
 
     assert message.subject == "[Project] Launch"
-    assert f"{settings.frontend_base_url}/w/acme/projects/{PROJECT_ID}?tab=updates" in message.text
+    assert f"{settings.frontend_base_url}/w/acme/projects/launch-{PROJECT_ID}?tab=updates" in message.text
     assert "off track" in message.text
     assert "<b>late</b>" in message.text
     assert "&lt;b&gt;late&lt;/b&gt;" in (message.html or "")
