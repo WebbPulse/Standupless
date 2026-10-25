@@ -65,6 +65,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "create_milestone": {"project_id": project, "name": "Should not land"},
         "update_milestone": {"project_id": project, "milestone_id": milestone, "name": "Should not land"},
         "delete_milestone": {"project_id": project, "milestone_id": milestone},
+        "convert_milestone_to_project": {"project_id": project, "milestone_id": milestone},
         "delete_project": {"project_id": project},
         "archive_project": {"project_id": project},
         "unarchive_project": {"project_id": project},

@@ -1,4 +1,4 @@
-"""Project milestone routes: list, create, patch and delete, under one project.
+"""Project milestone routes: list, create, patch, delete and convert to a project, under one project.
 
 A milestone is reached through its project, so visibility and edit rights are the
 project's own: a caller who can read the project reads its milestones, and a
@@ -19,11 +19,13 @@ from fastapi import APIRouter, Depends, Path, Response, status
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.planning import (
+    MilestoneConversionRead,
     MilestoneCreate,
     MilestoneListRead,
     MilestoneRead,
     MilestoneUpdate,
 )
+from app.common.milestone_conversion import convert_milestone_to_project
 from app.common.milestone_writes import MILESTONES_MAX, sort_order_after
 from app.common.milestone_writes import create_milestone as create_milestone_row
 from app.common.milestone_writes import delete_milestone as delete_milestone_row
@@ -102,3 +104,23 @@ def delete_milestone(
     """
     delete_milestone_row(repositories, context, project_id, milestone_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}/convert-to-project",
+    response_model=MilestoneConversionRead,
+)
+def convert_milestone(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+    milestone_id: Annotated[str, Path()],
+) -> MilestoneConversionRead:
+    """Turn a milestone into a project of its own, moving its issues there and deleting the milestone.
+
+    The project takes the milestone's name, description and target date, and the
+    source project's teams, lead and priority.
+    """
+    project, moved = convert_milestone_to_project(repositories, context, project_id, milestone_id)
+    return MilestoneConversionRead(project=project, moved_issue_ids=[issue.issue_id for issue in moved])

@@ -13020,6 +13020,26 @@
         "title": "MilestoneBlueprint",
         "type": "object"
       },
+      "MilestoneConversionRead": {
+        "description": "What converting a milestone into a project answers with.\n\n`project` is the new project and `moved_issue_ids` the issues that left the\nmilestone for it, oldest first. The milestone itself is gone.",
+        "properties": {
+          "moved_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Moved Issue Ids",
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectRead"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "MilestoneConversionRead",
+        "type": "object"
+      },
       "MilestoneCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/milestones` takes.\n\n`sort_order` is optional: left out, the milestone is placed after the last one.",
         "properties": {
@@ -13883,6 +13903,8 @@
               "milestone_added",
               "milestone_removed",
               "milestone_changed",
+              "milestone_converted",
+              "converted_from_milestone",
               "link_added",
               "link_removed",
               "link_changed",
@@ -49498,6 +49520,73 @@
           }
         ],
         "summary": "Update Milestone",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/milestones/{milestone_id}/convert-to-project": {
+      "post": {
+        "description": "Turn a milestone into a project of its own, moving its issues there and deleting the milestone.\n\nThe project takes the milestone's name, description and target date, and the\nsource project's teams, lead and priority.",
+        "operationId": "convert_milestone_api_workspaces__workspace_id__projects__project_id__milestones__milestone_id__convert_to_project_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "milestone_id",
+            "required": true,
+            "schema": {
+              "title": "Milestone Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestoneConversionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Convert Milestone",
         "tags": [
           "planning"
         ]

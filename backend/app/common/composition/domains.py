@@ -542,6 +542,7 @@ _PLANNING_REPOSITORIES = (
 
 `issues`, `activity` and `subscriptions` are for completing or canceling a
 project, which can move or cancel its open issues through the issue patch path,
+for converting a milestone into a project, which moves its issues the same way,
 and for a project made from a template, whose issues go through the issue create
 path, which allocates their keys from `counters`. `audit` records an
 initiative's lead team changing.

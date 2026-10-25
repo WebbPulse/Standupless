@@ -5,11 +5,13 @@
  * place, and a click on a milestone's issue count opens the project's issues
  * narrowed to it. Alt with an arrow key moves the focused row a step, and
  * Alt+Shift with an arrow sends it to the top or bottom, so the order is not a
- * pointer-only control.
+ * pointer-only control. A milestone that outgrew its project converts into a
+ * project of its own from its menu.
  */
 
 import React, { useState } from 'react';
 import {
+  LuBox,
   LuCalendarCheck,
   LuEllipsis,
   LuGripVertical,
@@ -44,6 +46,8 @@ export interface MilestonesSectionProps {
   onCreate: (name: string) => Promise<unknown>;
   onUpdate: (milestoneId: string, patch: MilestoneUpdate) => void;
   onDelete: (milestone: MilestoneRead) => void;
+  /** Asks to turn one milestone into a project of its own. */
+  onConvert?: (milestone: MilestoneRead) => void;
   /** Opens the project's issues narrowed to one milestone. */
   onOpenIssues: (milestoneId: string) => void;
 }
@@ -58,6 +62,7 @@ interface MilestoneRowProps {
   dropTarget: boolean;
   onUpdate: (patch: MilestoneUpdate) => void;
   onDelete: () => void;
+  onConvert?: (() => void) | undefined;
   onOpenIssues: () => void;
   onMove: (to: number) => void;
   onDragStart: () => void;
@@ -76,6 +81,7 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
   dropTarget,
   onUpdate,
   onDelete,
+  onConvert,
   onOpenIssues,
   onMove,
   onDragStart,
@@ -213,6 +219,12 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
             >
               Move down
             </MenuItem>
+            {onConvert !== undefined && (
+              <MenuItem onSelect={onConvert}>
+                <LuBox aria-hidden="true" className="h-3.5 w-3.5" />
+                Convert to project
+              </MenuItem>
+            )}
             <MenuSeparator />
             <MenuItem danger onSelect={onDelete}>
               <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
@@ -282,6 +294,7 @@ export const MilestonesSection: React.FC<MilestonesSectionProps> = ({
   onCreate,
   onUpdate,
   onDelete,
+  onConvert,
   onOpenIssues,
 }) => {
   const [adding, setAdding] = useState(false);
@@ -339,6 +352,13 @@ export const MilestonesSection: React.FC<MilestonesSectionProps> = ({
               onDelete={() => {
                 onDelete(milestone);
               }}
+              onConvert={
+                onConvert === undefined
+                  ? undefined
+                  : () => {
+                      onConvert(milestone);
+                    }
+              }
               onOpenIssues={() => {
                 onOpenIssues(milestone.milestone_id);
               }}

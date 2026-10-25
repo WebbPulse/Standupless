@@ -18,6 +18,7 @@ import type {
   CycleRead,
   CycleStartTodayRead,
   CycleUpdate,
+  MilestoneConversionRead,
   MilestoneCreate,
   MilestoneListRead,
   MilestoneRead,
@@ -525,6 +526,21 @@ export const deleteMilestone = async (
   await apiClient.delete<void>(
     milestonePath(workspaceId, projectId, milestoneId)
   );
+};
+
+/**
+ * Turns a milestone into its own project. Its issues move into the new
+ * project and the milestone is deleted.
+ */
+export const convertMilestoneToProject = async (
+  workspaceId: string,
+  projectId: string,
+  milestoneId: string
+): Promise<MilestoneConversionRead> => {
+  const response = await apiClient.post<MilestoneConversionRead>(
+    `${milestonePath(workspaceId, projectId, milestoneId)}/convert-to-project`
+  );
+  return response.data;
 };
 
 /** Adds a Resources link, after the last one unless a `sort_order` is given. */

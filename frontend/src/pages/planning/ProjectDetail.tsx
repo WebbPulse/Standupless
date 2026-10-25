@@ -43,6 +43,7 @@ import {
 } from 'react-router-dom';
 import {
   archiveProject,
+  convertMilestoneToProject,
   createProjectLink,
   deleteProject,
   deleteProjectLink,
@@ -117,11 +118,12 @@ import {
   writeViewState,
 } from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectsPath } from '../../lib/paths';
+import { projectPath, projectsPath } from '../../lib/paths';
 import { progressPercent, updateNudge } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
   initiativesKey,
+  milestonesKey,
   projectDetailKey,
   projectsKey,
 } from '../../lib/queryKeys';
@@ -191,6 +193,16 @@ const TabBar: React.FC<TabBarProps> = ({ tab, issueCount, onChange }) => (
   </div>
 );
 
+/** What converting a milestone does, naming how many issues move with it. */
+const convertDescription = (milestone: MilestoneRead): string => {
+  const total = milestone.counts.total;
+  const issues =
+    total === 0
+      ? 'It has no issues to move'
+      : `Its ${total} ${total === 1 ? 'issue moves' : 'issues move'} into the new project`;
+  return `${issues}, the new project takes its name, description and target date, and the milestone is deleted.`;
+};
+
 /** One project's overview and its issues. */
 export const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -213,6 +225,9 @@ export const ProjectDetail: React.FC = () => {
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [deletingMilestone, setDeletingMilestone] =
     useState<MilestoneRead | null>(null);
+  const [convertingMilestone, setConvertingMilestone] =
+    useState<MilestoneRead | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
 
   const detailKey = projectDetailKey(workspaceId, projectId);
   const listKey = projectsKey(workspaceId, '', '');
@@ -534,6 +549,25 @@ export const ProjectDetail: React.FC = () => {
       },
       (failure: unknown) => {
         setDeleteError(failure);
+      }
+    );
+  };
+
+  const convertMilestone = (target: MilestoneRead): void => {
+    setIsConverting(true);
+    convertMilestoneToProject(workspaceId, projectId, target.milestone_id).then(
+      (result) => {
+        setIsConverting(false);
+        setConvertingMilestone(null);
+        invalidateQueries(detailKey);
+        invalidateQueries(listKey);
+        invalidateQueries(milestonesKey(workspaceId, projectId));
+        showToast(`Converted ${target.name} into a project`);
+        void navigate(projectPath(slug, result.project.project_id));
+      },
+      () => {
+        setIsConverting(false);
+        showErrorToast(`Could not convert ${target.name} into a project.`);
       }
     );
   };
@@ -917,6 +951,7 @@ export const ProjectDetail: React.FC = () => {
                   void milestones.update(milestoneId, patch);
                 }}
                 onDelete={setDeletingMilestone}
+                onConvert={setConvertingMilestone}
                 onOpenIssues={openMilestoneIssues}
               />
               <ProjectResources
@@ -1055,6 +1090,38 @@ export const ProjectDetail: React.FC = () => {
               }}
             >
               Delete milestone
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {convertingMilestone !== null && (
+        <Dialog
+          open
+          size="sm"
+          title={`Convert ${convertingMilestone.name} to a project`}
+          description={convertDescription(convertingMilestone)}
+          onClose={() => {
+            if (!isConverting) setConvertingMilestone(null);
+          }}
+        >
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              disabled={isConverting}
+              onClick={() => {
+                setConvertingMilestone(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isConverting}
+              onClick={() => {
+                convertMilestone(convertingMilestone);
+              }}
+            >
+              Convert to project
             </Button>
           </div>
         </Dialog>

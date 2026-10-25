@@ -1716,6 +1716,8 @@ ProjectActivityRead = TypedDict(
             "milestone_added",
             "milestone_removed",
             "milestone_changed",
+            "milestone_converted",
+            "converted_from_milestone",
             "link_added",
             "link_removed",
             "link_changed",
@@ -4968,6 +4970,11 @@ class LinkListRead(TypedDict):
 class MemberActivityListRead(TypedDict):
     activity: list[MemberActivityRead]
     next_cursor: NotRequired[str | None]
+
+
+class MilestoneConversionRead(TypedDict):
+    moved_issue_ids: NotRequired[list[str]]
+    project: ProjectRead
 
 
 class ProjectListRead(TypedDict):
