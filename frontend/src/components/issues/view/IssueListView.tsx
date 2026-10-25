@@ -6,7 +6,7 @@
  * or removes their parent issue, Cmd or Ctrl+Shift+M moves them to another
  * team, r renames the focused issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
- * or convert it into a project, M then B, X, R or D marks one issue as
+ * or convert it into a project, M then B, X, R or M marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
  * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
  * them, Cmd or Ctrl+Shift+C, D and L add them to the active cycle, clear

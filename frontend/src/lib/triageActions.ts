@@ -1,8 +1,8 @@
 /**
  * The ways an issue leaves the triage inbox, in the order Linear shows them:
- * 1 accepts, 2 declines, 3 marks as a duplicate, and H snoozes. The row
- * buttons, the toolbar, the keyboard help sheet and the command palette all
- * read this one list, so the number keys always match the order on screen.
+ * 1 accepts, 2 declines, 3 or M M marks as a duplicate, and H snoozes. The
+ * row buttons, the toolbar, the keyboard help sheet and the command palette
+ * all read this one list, so the number keys always match the order on screen.
  */
 
 import type { StatusRead } from '../types/Api';
@@ -14,6 +14,8 @@ export type TriageActionId = 'accept' | 'decline' | 'duplicate' | 'snooze';
 export interface TriageAction {
   id: TriageActionId;
   keys: string;
+  /** A second key sequence that runs the same action, as Linear's M M does. */
+  altKeys?: string;
   label: string;
   /** The shorter name the toolbar button shows. */
   short: string;
@@ -26,6 +28,7 @@ export const TRIAGE_ACTION: Readonly<Record<TriageActionId, TriageAction>> = {
   duplicate: {
     id: 'duplicate',
     keys: '3',
+    altKeys: 'm m',
     label: 'Mark as duplicate',
     short: 'Duplicate',
   },
