@@ -9,6 +9,9 @@
  * It also records the workspace as the one this browser last opened, which
  * the home page resumes for a signed in visitor, and the last page outside
  * settings, which Escape and Back to app return to from any settings page.
+ * It keeps the device copy of the workspace's lists on the signed in person
+ * and the open workspace, and shows the offline notice while the connection
+ * is down.
  *
  * Keeping these above the pages means a `g` pressed on one page completes on
  * the next, a palette opened anywhere is the same palette, and a dialog opened
@@ -22,7 +25,7 @@ import {
   invalidateQueries,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { listLabels, listStatuses, listTeamMembers } from '../../api/teams';
 import {
   CommandPaletteContext,
@@ -56,6 +59,7 @@ import { isFeatureOn } from '../../lib/features';
 import { activeTeams } from '../../lib/teamRetirement';
 import { emptyFilters } from '../../lib/issueFilters';
 import { rememberWorkspace } from '../../lib/lastWorkspace';
+import { useQueryPersistence } from '../../lib/queryPersistence';
 import { rememberAppRoute } from '../../lib/settingsReturn';
 import { showToast } from '../../lib/toast';
 import MentionDirectoryProvider from '../../contexts/MentionDirectoryContext';
@@ -85,6 +89,7 @@ import CreatePlanningHost, {
   type PlanningDialog,
 } from '../planning/CreatePlanningHost';
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
+import OfflineBanner from '../ui/offline-banner';
 import { Toaster } from '../ui/toast';
 import CustomizeSidebarDialog from './CustomizeSidebarDialog';
 import LeaveWorkspaceProvider from './LeaveWorkspaceProvider';
@@ -231,6 +236,7 @@ const WorkspaceOverlays: React.FC = () => {
   const { teams } = useTeam(undefined);
   const location = useLocation();
   const navigate = useNavigate();
+  const { slug: routeSlug } = useParams<{ slug: string }>();
   const { user, logout } = useAuth();
   const palette = useCommandPalette();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -260,6 +266,7 @@ const WorkspaceOverlays: React.FC = () => {
     rememberAppRoute(slug, location.pathname, location.search, location.hash);
   }, [slug, location.pathname, location.search, location.hash]);
   useWorkspaceSwitchCacheClear(workspaceId);
+  useQueryPersistence(user?.id, routeSlug, workspaceId);
   usePublishCustomEmoji(workspaceId);
 
   const writable = useMemo(
@@ -404,6 +411,7 @@ const WorkspaceOverlays: React.FC = () => {
                 <MentionDirectoryProvider workspaceId={workspaceId}>
                   <PeekProvider>
                     <Toaster />
+                    <OfflineBanner />
                     <RouteErrorBoundary fallback={WorkspaceRouteError}>
                       <Outlet />
                     </RouteErrorBoundary>

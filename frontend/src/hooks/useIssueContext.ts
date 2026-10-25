@@ -14,7 +14,7 @@
  * surfaces on the page already make and the shared client hands it over.
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { listCycles } from '../api/planning';
@@ -30,7 +30,6 @@ import type { IssueContext, ScopedLabel, ScopedStatus } from '../lib/issueView';
 import { labelColorFor } from '../lib/propertyOptions';
 import { withGroupNames } from '../lib/labelGroups';
 import { labelsKey } from '../lib/queryKeys';
-import { readCachedParts, writeCachedPart } from '../lib/issueContextCache';
 import { listAllProjects } from './useWorkspaceProjects';
 import { showErrorToast } from '../lib/toast';
 import type { CycleRead, LabelRead, ProjectRead } from '../types/Api';
@@ -141,23 +140,6 @@ const combine = (
   }));
 };
 
-/**
- * Writes each team's freshly read part to the browser cache, once per new
- * value of the query rather than on every render.
- */
-const useRemember = (
-  workspaceId: string,
-  part: 'statuses' | 'lists',
-  data: readonly { teamId: string }[] | null
-): void => {
-  useEffect(() => {
-    if (data === null || workspaceId === '') return;
-    for (const team of data) {
-      writeCachedPart(workspaceId, team.teamId, part, team);
-    }
-  }, [workspaceId, part, data]);
-};
-
 /** Joins several teams' lists, each person, project and cycle once. */
 const merge = (
   teams: TeamLists[],
@@ -194,8 +176,9 @@ const merge = (
 /**
  * Reads the lists for the given teams. Statuses and labels are one query and
  * people, projects and cycles another, so the rows' appearance never waits on
- * the slower planning reads. Both seed from the browser cache, so a reload
- * paints the last known lists and the polls refresh them in place.
+ * the slower planning reads. Both are kept in the device copy of the
+ * workspace's reads, so a reload paints the last known lists and the polls
+ * refresh them in place.
  */
 export const useIssueContext = (
   workspaceId: string,
@@ -219,15 +202,6 @@ export const useIssueContext = (
     [idsJson]
   );
 
-  const cachedAppearance = useMemo(
-    () => readCachedParts<TeamAppearance>(workspaceId, teamList, 'statuses'),
-    [workspaceId, teamList]
-  );
-  const cachedPlanning = useMemo(
-    () => readCachedParts<TeamPlanning>(workspaceId, teamList, 'lists'),
-    [workspaceId, teamList]
-  );
-
   const appearance = usePolledQuery(
     ({ signal }) =>
       Promise.all(
@@ -248,15 +222,11 @@ export const useIssueContext = (
     { intervalMs: POLL_MS, enabled, queryKey, auth }
   );
 
-  useRemember(workspaceId, 'statuses', appearance.data);
-  useRemember(workspaceId, 'lists', planning.data);
-
-  const data = useMemo(() => {
-    const shown = appearance.data ?? cachedAppearance;
-    return shown === null
-      ? null
-      : combine(shown, planning.data ?? cachedPlanning);
-  }, [appearance.data, cachedAppearance, planning.data, cachedPlanning]);
+  const data = useMemo(
+    () =>
+      appearance.data === null ? null : combine(appearance.data, planning.data),
+    [appearance.data, planning.data]
+  );
 
   const context = useMemo(
     () => merge(data ?? [], currentUserId),
@@ -298,7 +268,7 @@ export const useIssueContext = (
   return {
     context,
     forTeam,
-    isLoading: enabled && appearance.isLoading && cachedAppearance === null,
+    isLoading: enabled && appearance.isLoading,
     createLabel,
   };
 };
