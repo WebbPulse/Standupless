@@ -1,14 +1,14 @@
 /**
  * Tests for the Pulse page: entries newest first with their unread dot and
  * links, grouped under day headings, moved through with j/k and opened with
- * Enter, the read marker moved on view, the For me and Recent switch, the empty
- * states and older pages on request.
+ * Enter, the read marker moved on view, the For me, Popular and Recent switch
+ * kept in the URL, the empty states and older pages on request.
  */
 
 import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PulseQuery } from '../../api/pulse';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -117,12 +117,23 @@ const pageOf = (
   next_cursor: string | null = null
 ): PulseListRead => ({ items, next_cursor });
 
+/** Shows the current query string, so a test can read the tab from the URL. */
+const SearchProbe = () => <output data-testid="search">{useLocation().search}</output>;
+
 /** Renders the page on its route. */
-const renderPage = () =>
+const renderPage = (path = '/w/mine/pulse') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/pulse']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/w/:slug/pulse" element={<Pulse />} />
+        <Route
+          path="/w/:slug/pulse"
+          element={
+            <>
+              <Pulse />
+              <SearchProbe />
+            </>
+          }
+        />
         <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
       </Routes>
     </MemoryRouter>
@@ -240,6 +251,65 @@ describe('the Pulse page', () => {
     expect(
       within(show).getByRole('button', { name: 'Recent' })
     ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('shows For me, Popular and Recent in order and keeps the tab in the URL', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(pageOf([]));
+    renderPage();
+
+    const show = screen.getByRole('group', { name: 'Show' });
+    expect(
+      within(show)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual(['For me', 'Popular', 'Recent']);
+
+    await user.click(within(show).getByRole('button', { name: 'Popular' }));
+
+    expect(
+      await screen.findByText('No updates from the last two weeks yet.')
+    ).toBeInTheDocument();
+    expect(listPulse).toHaveBeenCalledWith('ws-1', { scope: 'popular' });
+    expect(screen.getByTestId('search')).toHaveTextContent('?tab=popular');
+
+    await user.click(within(show).getByRole('button', { name: 'For me' }));
+
+    expect(screen.getByTestId('search')).toHaveTextContent(/^$/);
+  });
+
+  it('opens on the tab the URL names and lists popular entries without day headings', async () => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    listPulse.mockResolvedValue(
+      pageOf([
+        entry({ event_id: 'ev-1', created_at: yesterday.toISOString() }),
+        entry({ event_id: 'ev-2', created_at: now.toISOString() }),
+      ])
+    );
+    renderPage('/w/mine/pulse?tab=popular');
+
+    expect(await screen.findAllByRole('article')).toHaveLength(2);
+    expect(listPulse).toHaveBeenCalledWith('ws-1', { scope: 'popular' });
+    expect(
+      within(screen.getByRole('group', { name: 'Show' })).getByRole('button', {
+        name: 'Popular',
+      })
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.queryByRole('region', { name: 'Today' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('falls back to For me for a tab it does not know', async () => {
+    listPulse.mockResolvedValue(pageOf([]));
+    renderPage('/w/mine/pulse?tab=trending');
+
+    await screen.findByText(
+      'No updates yet. Follow a project or initiative to see its updates here.'
+    );
+    expect(listPulse).toHaveBeenCalledWith('ws-1', { scope: 'for_me' });
   });
 
   it('shows older entries on request', async () => {

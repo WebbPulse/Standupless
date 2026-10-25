@@ -46,7 +46,7 @@ def _follow_json(state: PulseFollowRead, **subject: str) -> dict[str, Any]:
 
 
 def _list_pulse(call: ToolCall) -> Any:
-    """One page of the caller's Pulse, newest first."""
+    """One page of the caller's Pulse in the scope named."""
     _workspace_member(call)
     items, next_cursor = pulse_reads.list_pulse(
         call.repositories,
@@ -108,14 +108,15 @@ PULSE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_pulse",
         description=(
-            "One page of the caller's Pulse, newest first: project and initiative updates, health changes and "
-            "completed milestones. Scope for_me (the default) holds what the caller leads, is a member of, owns or "
-            "follows; recent holds everything they may read. Each entry says whether it is unread, and the answer "
-            "carries the unread count."
+            "One page of the caller's Pulse: project and initiative updates, health changes and completed "
+            "milestones. Scope for_me (the default) holds what the caller leads, is a member of, owns or follows, "
+            "newest first; recent holds everything they may read, newest first; popular ranks the project and "
+            "initiative updates they may read from the last 14 days by replies plus reactions, newest first among "
+            "equals. Each entry says whether it is unread, and the answer carries the unread count."
         ),
         scopes=("projects:read",),
         schema=object_schema(
-            {"scope": enum(pulse.PULSE_SCOPES, "Which feed: for_me or recent"), **page_properties()},
+            {"scope": enum(pulse.PULSE_SCOPES, "Which feed: for_me, popular or recent"), **page_properties()},
         ),
         handler=_list_pulse,
     ),

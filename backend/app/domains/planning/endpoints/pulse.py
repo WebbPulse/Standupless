@@ -35,7 +35,7 @@ def list_pulse(
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=pulse.MAX_LIMIT)] = pulse.DEFAULT_LIMIT,
 ) -> Any:
-    """One page of the caller's Pulse, newest first: what they follow, or everything they may read."""
+    """One page of the caller's Pulse: what they follow, everything they may read, or recent updates by engagement."""
     items, next_cursor = pulse_reads.list_pulse(repositories, context, scope=scope, cursor=cursor, limit=limit)
     return PulseListRead(items=items, next_cursor=next_cursor)
 

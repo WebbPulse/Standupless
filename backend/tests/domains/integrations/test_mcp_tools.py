@@ -658,6 +658,22 @@ def test_the_pulse_lists_followed_updates_and_follows_change_it(
     assert after_unfollow["items"] == []
 
 
+def test_the_popular_pulse_reads_through_the_tool(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """The popular scope lists an unfollowed project's update, and an unknown scope is refused."""
+    poster = mint_for(repositories, ADMIN, ("projects:write",))
+    reader = mint_for(repositories, MEMBER, ("projects:read",))
+    update = {"project_id": planning["project_id"], "body": "Shipped", "health": "on_track"}
+    answer(tool(client, poster, "create_project_update", update))
+
+    popular = answer(tool(client, reader, "list_pulse", {"scope": "popular"}))
+
+    assert [row["body"] for row in popular["items"]] == ["Shipped"]
+    assert popular["next_cursor"] is None
+    assert refusal(tool(client, reader, "list_pulse", {"scope": "trending"}))
+
+
 def test_a_guest_cannot_create_a_project_on_a_team_they_cannot_see(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
