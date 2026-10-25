@@ -8,7 +8,7 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import type { IssueContextState } from '../../../hooks/useIssueContext';
@@ -188,6 +188,12 @@ const changeFor = (id: string): IssueChange | null => {
 beforeEach(() => {
   update = vi.fn<IssueCollection['update']>();
   onStateChange = vi.fn<(state: ViewState) => void>();
+});
+
+afterEach(() => {
+  for (const ghost of document.querySelectorAll('[data-drag-ghost]')) {
+    ghost.remove();
+  }
 });
 
 describe('dragging list rows', () => {
