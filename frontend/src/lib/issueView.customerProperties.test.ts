@@ -16,6 +16,11 @@ import {
   type IssueContext,
 } from './issueView';
 
+const customerRequests = new Map([
+  ['iss-1', ['c-b', 'c-a', 'c-big', 'c-missing']],
+  ['iss-2', ['c-none']],
+]);
+
 const context: Pick<IssueContext, 'customers' | 'customerRequests'> = {
   customers: [
     { id: 'c-b', name: 'Beta', revenue: 500 },
@@ -23,10 +28,7 @@ const context: Pick<IssueContext, 'customers' | 'customerRequests'> = {
     { id: 'c-big', name: 'Big', revenue: 1200000 },
     { id: 'c-none', name: 'None', revenue: null },
   ],
-  customerRequests: new Map([
-    ['iss-1', ['c-b', 'c-a', 'c-big', 'c-missing']],
-    ['iss-2', ['c-none']],
-  ]),
+  customerRequests,
 };
 
 describe('customersOf', () => {
@@ -39,12 +41,7 @@ describe('customersOf', () => {
   });
 
   it('is empty without customers, as for a guest', () => {
-    expect(
-      customersOf(
-        { id: 'iss-1' },
-        { customerRequests: context.customerRequests }
-      )
-    ).toEqual([]);
+    expect(customersOf({ id: 'iss-1' }, { customerRequests })).toEqual([]);
   });
 
   it('is empty for an issue nobody asked for', () => {
