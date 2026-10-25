@@ -6,7 +6,6 @@
  */
 
 import { render, screen } from '@testing-library/react';
-import React from 'react';
 import { describe, expect, it } from 'vitest';
 import PageHeader, { FILTER_ROW_CLASS, FilterRow } from './page-header';
 
