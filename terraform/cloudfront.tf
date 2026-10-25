@@ -8,8 +8,9 @@
  * changes its hash, and the frontend CI build fails until this list matches:
  * frontend/cspHashes.ts hashes every inline script in the built documents.
  *
- * frame-src allows only the player origins of the four video providers the
- * editor embeds, matching VIDEO_EMBED_ORIGINS in frontend/src/lib/videoEmbeds.ts.
+ * frame-src allows only the player origins of the four video providers and
+ * the Figma embed origin the editor embeds, matching VIDEO_EMBED_ORIGINS in
+ * frontend/src/lib/videoEmbeds.ts.
  *
  * form-action allows GitHub because the GitHub App manifest flow posts the
  * signed manifest to github.com.
@@ -33,6 +34,7 @@ locals {
     "https://www.loom.com",
     "https://player.vimeo.com",
     "https://share.descript.com",
+    "https://www.figma.com",
   ]
 
   frontend_inline_script_hashes = [

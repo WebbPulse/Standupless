@@ -1,8 +1,8 @@
 /**
- * How a video embed looks in the editor: the provider's player, a menu with
- * "Open link" and "Convert to link" over its corner, and a "Keep as link"
- * choice under it while it is selected. A link that no longer parses shows as
- * its text, so a player is never built from anything but a checked id.
+ * How a video or Figma embed looks in the editor: the provider's frame, a
+ * menu with "Open link" and "Convert to link" over its corner, and a "Keep as
+ * link" choice under it while it is selected. A link that no longer parses
+ * shows as its text, so a frame is never built from anything but a checked id.
  */
 
 import type { ReactNodeViewProps } from '@tiptap/react';
@@ -24,6 +24,8 @@ export const VideoEmbedView: React.FC<ReactNodeViewProps> = ({
 }) => {
   const url = typeof node.attrs['url'] === 'string' ? node.attrs['url'] : '';
   const embed = parseVideoEmbed(url);
+  const actionsLabel =
+    embed?.provider === 'figma' ? 'Figma actions' : 'Video actions';
   const editable = editor.isEditable;
 
   const convert = (): void => {
@@ -62,10 +64,10 @@ export const VideoEmbedView: React.FC<ReactNodeViewProps> = ({
           )}
         >
           <Menu
-            label="Video actions"
+            label={actionsLabel}
             align="end"
             trigger={(props) => (
-              <IconButton label="Video actions" size="sm" {...props}>
+              <IconButton label={actionsLabel} size="sm" {...props}>
                 <LuEllipsis aria-hidden="true" className="h-3.5 w-3.5" />
               </IconButton>
             )}
