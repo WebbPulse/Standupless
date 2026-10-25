@@ -915,7 +915,6 @@ def handle_update_reply(repositories: Repositories, new_image: Mapping[str, Any]
                 actor_display=display,
                 created_at=created_at,
                 source=_text(new_image, "source") or None,
-                report=report,
             )
         )
     return written
