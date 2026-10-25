@@ -32,7 +32,6 @@ import { IssueHoverTrigger } from '../ui/IssueHoverCard';
 import { createIssue, type OrderedIssueRead } from '../../api/issues';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
 import { useOptimisticIssues } from '../../hooks/useOptimisticIssues';
-import { usePeekIssue } from '../../hooks/usePeekIssue';
 import { useTriageOn } from '../../hooks/useTriageTeams';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
@@ -104,10 +103,15 @@ export interface SubIssuesProps {
   currentUserId?: string;
   /**
    * Opens a row in place, as the peek pane does, on a plain click or Space.
-   * A modified click still follows the link to the full page. Without it a
-   * click navigates and Space peeks.
+   * A modified click still follows the link to the full page.
    */
   onOpenRow?: (issue: { id: string; key: string }) => void;
+  /**
+   * Peeks a focused row on Space when no `onOpenRow` is given. Passed in
+   * rather than read here, since the peek pane renders this section and
+   * reading the peek hook here would import the pane into itself.
+   */
+  onPeekRow?: (issue: { id: string; key: string }) => void;
   /** Says "No sub-issues" under an empty header. Defaults to true. */
   emptyHint?: boolean;
 }
@@ -477,10 +481,10 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
   canEdit = false,
   currentUserId,
   onOpenRow,
+  onPeekRow,
   emptyHint = true,
 }) => {
-  const { peekIssue } = usePeekIssue();
-  const openRow = onOpenRow ?? peekIssue;
+  const openRow = onOpenRow ?? onPeekRow;
   const triageOn = useTriageOn(parent.team_id);
   const [adding, setAdding] = useState(false);
   const [created, setCreated] = useState<IssueRead[]>([]);
@@ -817,7 +821,8 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                             onOpenRow({ id: child.id, key: child.key });
                           }}
                           onKeyDown={(event) => {
-                            if (event.key !== ' ') return;
+                            if (event.key !== ' ' || openRow === undefined)
+                              return;
                             event.preventDefault();
                             openRow({ id: child.id, key: child.key });
                           }}

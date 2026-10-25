@@ -86,6 +86,7 @@ import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useIssueChildren } from '../../hooks/useIssueChildren';
+import { usePeekIssue } from '../../hooks/usePeekIssue';
 import {
   DETAILS_PANEL_KEYS,
   detailsPanelLabel,
@@ -343,6 +344,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const links = useMemo(() => linkRows ?? [], [linkRows]);
 
   const children = useIssueChildren(workspaceId, issueId);
+  const { peekIssue } = usePeekIssue();
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const descriptionQuotes = useQuoteRequest(issue?.id ?? '');
@@ -1153,6 +1155,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       people={options.people}
                       canEdit={canAct}
                       currentUserId={currentUserId}
+                      onPeekRow={peekIssue}
                     />
                   )}
                 </div>
