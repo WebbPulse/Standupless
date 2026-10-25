@@ -26,6 +26,7 @@ from app.domains.integrations.mcp.toolkit import (
     nullable,
     object_schema,
     page_properties,
+    priority_hints,
     project_id_ref,
     string,
     string_list,
@@ -137,7 +138,8 @@ def _triage_issue(call: ToolCall) -> Any:
         if arguments.get("status_id") is not None:
             arguments["status_id"] = _accept_status(call, issue.team_id, str(arguments["status_id"]))
         payload = TriageAccept.model_validate(arguments)
-        return _answer(call, issue_triage.accept(repositories, context, issue.issue_id, payload))
+        accepted = issue_triage.accept(repositories, context, issue.issue_id, payload)
+        return {**_answer(call, accepted), "hints": priority_hints(accepted)}
     if action == "decline":
         payload_decline = TriageDecline.model_validate(given_arguments(call, ("reason",)))
         return _answer(call, issue_triage.decline(repositories, context, issue.issue_id, payload_decline))
@@ -204,7 +206,8 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Work one issue in triage. accept moves it into the team, in status_id or the first unstarted "
             "status, setting an optional priority and posting an optional comment as the caller; a team that "
-            "requires a priority refuses an accept that leaves the issue with none. decline moves it to the "
+            "requires a priority refuses an accept that leaves the issue with none, and an accept answer "
+            "carries hints, naming a priority still unset so it can be set next. decline moves it to the "
             "cancelled status, keeping an optional reason in its history. "
             "duplicate closes it as a duplicate of duplicate_of_id. snooze hides it until `until` (ISO 8601, "
             "1 minute to 90 days out), or null to bring it back. Needs team membership."

@@ -318,3 +318,33 @@ def test_an_agent_saves_triage_rules_and_they_run(client: TestClient, repositori
 
     cleared = answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "rules": []}))
     assert cleared["rules"] == []
+
+
+def test_triage_accept_and_create_hint_at_an_unset_priority(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An accept or a create that leaves priority none carries a hint, and one with a priority carries none."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    member = mint_for(repositories, MEMBER, SCOPES)
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+    bare = _file(client, member, "No priority")
+    ranked = _file(client, member, "Ranked", priority="medium")
+    later = _file(client, member, "Ranked on accept")
+
+    bare_accept = answer(tool(client, owner, "triage_issue", {"issue_id": bare["issue_key"], "action": "accept"}))
+    ranked_accept = answer(tool(client, owner, "triage_issue", {"issue_id": ranked["issue_key"], "action": "accept"}))
+    later_accept = answer(
+        tool(client, owner, "triage_issue", {"issue_id": later["issue_key"], "action": "accept", "priority": "low"})
+    )
+    nope = _file(client, member, "Nope")
+    declined = answer(tool(client, owner, "triage_issue", {"issue_id": nope["issue_key"], "action": "decline"}))
+
+    assert bare["hints"] and "Priority is unset" in bare["hints"][0]
+    assert ranked["hints"] == []
+    assert bare_accept["priority"] == "none" and bare_accept["hints"] == bare["hints"]
+    assert "update_issue" in bare_accept["hints"][0]
+    assert ranked_accept["hints"] == [] and later_accept["hints"] == []
+    assert "hints" not in declined
+    assert "hints" in TOOLS_BY_NAME["triage_issue"].descriptor()["description"]
+    assert "hints" in TOOLS_BY_NAME["create_issue"].descriptor()["description"]

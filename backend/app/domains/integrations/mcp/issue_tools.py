@@ -91,6 +91,7 @@ from app.domains.integrations.mcp.toolkit import (
     object_schema,
     one_or_many,
     page_properties,
+    priority_hints,
     resolve_user,
     string,
     string_list,
@@ -656,6 +657,7 @@ def _create_issue(call: ToolCall) -> Any:
         **_answer(call, created),
         "sub_issues": [{"issue_id": row.issue_id, "issue_key": row.key, "title": row.title} for row in sub_issues],
         "possible_duplicates": _safe_duplicates(call, created),
+        "hints": priority_hints(created),
     }
 
 
@@ -1371,7 +1373,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             "takes form_answers keyed by each field's key: required fields must be answered, a select takes one of "
             "its options, and the answers land in the body and send the issue to triage. A template's sub_issues "
             "are created under the new issue, all or none; template_sub_issue_keys keeps only those keys. "
-            "The answer lists the sub_issues created and possible_duplicates: open issues whose titles share its terms."
+            "The answer lists the sub_issues created, possible_duplicates: open issues whose titles share its terms, "
+            "and hints, naming a priority left unset so it can be set next."
         ),
         scopes=("issues:write",),
         schema=object_schema(
