@@ -2840,6 +2840,17 @@ class SlackLinkRead(TypedDict):
     slack_user_id: NotRequired[str | None]
 
 
+class SlackStatusPostsRead(TypedDict):
+    configured: bool
+    enabled: NotRequired[bool]
+    installed: bool
+    updated_at: NotRequired[str | None]
+
+
+class SlackStatusPostsWrite(TypedDict):
+    enabled: bool
+
+
 class SlackThread(TypedDict):
     channel_id: str
     permalink: NotRequired[str]
