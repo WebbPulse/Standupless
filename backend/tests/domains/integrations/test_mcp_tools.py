@@ -139,9 +139,12 @@ def foreign(repositories: Any, workspace: str) -> dict[str, str]:
     """A second workspace the owner also belongs to, with one of everything in it.
 
     Every row carries `SECRET_WORD` in its name, so an answer that leaked any of
-    them can be caught by text alone.
+    them can be caught by text alone. Both workspaces are on Business, so no plan
+    refusal answers a call before its workspace boundary does.
     """
+    repositories.workspaces.set_billing(WORKSPACE, plan="business")
     make_workspace(repositories, OTHER_WORKSPACE, "other", OWNER)
+    repositories.workspaces.set_billing(OTHER_WORKSPACE, plan="business")
     add_member(repositories, OTHER_WORKSPACE, OUTSIDER, "member")
     make_team(repositories, OTHER_WORKSPACE, FOREIGN_TEAM, "OTH")
     issue = seed_issue(repositories, OTHER_WORKSPACE, FOREIGN_TEAM, FOREIGN_ISSUE, "OTH", 1)
@@ -244,6 +247,7 @@ def test_get_insights_answers_the_routes_breakdown(client: TestClient, repositor
     """The tool groups the same issues the route would, with names resolved."""
     mine = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS5", "ABC", 2)
     repositories.issues.replace(mine.model_copy(update={"assignee_id": MEMBER, "priority": "high"}))
+    repositories.workspaces.set_billing(WORKSPACE, plan="business")
     secret = mint_for(repositories, MEMBER, ("issues:read",))
 
     found = answer(tool(client, secret, "get_insights", {"team_id": TEAM, "group_by": "priority"}))
@@ -254,6 +258,19 @@ def test_get_insights_answers_the_routes_breakdown(client: TestClient, repositor
 
     refused = tool(client, secret, "get_insights", {"group_by": "mood"}).json()
     assert refused["result"]["isError"] is True
+
+
+def test_get_insights_needs_business_beyond_the_plain_count(
+    client: TestClient, repositories: Any, issue: Issue
+) -> None:
+    """On Free the tool answers the status tally and refuses any other breakdown with the plan to move to."""
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    counted = answer(tool(client, secret, "get_insights", {"team_id": TEAM, "group_by": "status_category"}))
+    text = refusal(tool(client, secret, "get_insights", {"team_id": TEAM, "group_by": "priority"}))
+
+    assert counted["issue_count"] == 1
+    assert "Business" in text
 
 
 def test_get_issue_reads_by_key(client: TestClient, repositories: Any, issue: Issue) -> None:

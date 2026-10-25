@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
+
+pytestmark = pytest.mark.usefixtures("business_plan")
 
 
 def base(workspace: str) -> str:
