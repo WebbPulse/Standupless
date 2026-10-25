@@ -18,6 +18,7 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { createProject, updateProject } from '../../api/planning';
 import { listTeamTemplates } from '../../api/templates';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
+import { isCoarse } from '../../lib/dateResolution';
 import { errorMessage } from '../../lib/errors';
 import type { ProjectMove } from '../../lib/projectList';
 import { showToast } from '../../lib/toast';
@@ -27,6 +28,7 @@ import {
   type ProjectTemplatePrefill,
 } from '../../lib/projectTemplates';
 import type {
+  DateResolution,
   IssuePriority,
   ProjectCreate,
   ProjectHealth,
@@ -38,7 +40,8 @@ import type {
   TemplateListRead,
   TemplateRead,
 } from '../../types/Api';
-import { DatePicker, PriorityPicker } from '../issues/PropertyPickers';
+import PlanningDatePicker from './PlanningDatePicker';
+import { PriorityPicker } from '../issues/PropertyPickers';
 import { TemplatePicker } from '../issues/TemplatePicker';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
@@ -159,6 +162,11 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [teamIds, setTeamIds] = useState<string[]>(initialTeamIds);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState<string | null>(null);
+  const [startResolution, setStartResolution] = useState<DateResolution | null>(
+    null
+  );
+  const [targetResolution, setTargetResolution] =
+    useState<DateResolution | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [applied, setApplied] = useState<AppliedTemplate | null>(null);
@@ -199,6 +207,8 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     setColor(fill.color ?? null);
     setStartDate(fill.startDate ?? null);
     setTargetDate(fill.targetDate ?? null);
+    setStartResolution(null);
+    setTargetResolution(null);
     setApplied(next === null ? null : { id: next.id, fill });
   };
 
@@ -233,6 +243,14 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     if (fill.leadId !== leadId) body.lead_id = leadId;
     if (fill.startDate !== startDate) body.start_date = startDate;
     if (fill.targetDate !== targetDate) body.target_date = targetDate;
+    if (startDate !== null && isCoarse(startResolution)) {
+      body.start_date = startDate;
+      body.start_date_resolution = startResolution;
+    }
+    if (targetDate !== null && isCoarse(targetResolution)) {
+      body.target_date = targetDate;
+      body.target_date_resolution = targetResolution;
+    }
     if (fill.status !== status) body.status = status;
     if (statusId !== undefined && statusId !== status) {
       body.status = status;
@@ -372,19 +390,29 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
             teams={teams}
             onChange={setTeamIds}
           />
-          <DatePicker
+          <PlanningDatePicker
             variant="chip"
             field="Start date"
+            edge="start"
             value={startDate}
-            onChange={setStartDate}
+            resolution={startResolution}
+            onChange={(value, resolution) => {
+              setStartDate(value);
+              setStartResolution(resolution);
+            }}
             icon={<LuCalendar className="h-3.5 w-3.5" />}
             {...(targetDate === null ? {} : { max: targetDate })}
           />
-          <DatePicker
+          <PlanningDatePicker
             variant="chip"
             field="Target date"
+            edge="end"
             value={targetDate}
-            onChange={setTargetDate}
+            resolution={targetResolution}
+            onChange={(value, resolution) => {
+              setTargetDate(value);
+              setTargetResolution(resolution);
+            }}
             icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
             {...(startDate === null ? {} : { min: startDate })}
           />

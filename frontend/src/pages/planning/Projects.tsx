@@ -82,10 +82,8 @@ import {
   type ProjectBulkWrite,
 } from '../../components/planning/ProjectBulkCommand';
 import ProgressRing from '../../components/planning/ProgressRing';
-import {
-  DatePicker,
-  PriorityPicker,
-} from '../../components/issues/PropertyPickers';
+import { PriorityPicker } from '../../components/issues/PropertyPickers';
+import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
 import {
   HealthPicker,
   LeadPicker,
@@ -592,18 +590,23 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             TIER_BLOCK[COLUMN_TIERS.start]
           )}
         >
-          <DatePicker
+          <PlanningDatePicker
             variant="rail"
             field="Start date"
+            edge="start"
             icon={null}
             emptyLabel="No date"
             value={project.start_date}
+            resolution={project.start_date_resolution}
             disabled={!editable}
             {...(project.target_date === null
               ? {}
               : { max: project.target_date })}
-            onChange={(start) => {
-              void update({ start_date: start });
+            onChange={(start, resolution) => {
+              void update({
+                start_date: start,
+                start_date_resolution: resolution,
+              });
             }}
           />
         </div>
@@ -615,18 +618,23 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             TIER_BLOCK[COLUMN_TIERS.target]
           )}
         >
-          <DatePicker
+          <PlanningDatePicker
             variant="rail"
             field="Target date"
+            edge="end"
             icon={null}
             emptyLabel="No date"
             value={project.target_date}
+            resolution={project.target_date_resolution}
             disabled={!editable}
             {...(project.start_date === null
               ? {}
               : { min: project.start_date })}
-            onChange={(target) => {
-              void update({ target_date: target });
+            onChange={(target, resolution) => {
+              void update({
+                target_date: target,
+                target_date_resolution: resolution,
+              });
             }}
           />
         </div>

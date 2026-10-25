@@ -8,10 +8,15 @@
 import React, { useState } from 'react';
 import { LuCalendarCheck } from 'react-icons/lu';
 import { createInitiative } from '../../api/initiatives';
+import { isCoarse } from '../../lib/dateResolution';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import type { InitiativeRead, InitiativeStatus } from '../../types/Api';
-import { DatePicker } from '../issues/PropertyPickers';
+import type {
+  DateResolution,
+  InitiativeRead,
+  InitiativeStatus,
+} from '../../types/Api';
+import PlanningDatePicker from './PlanningDatePicker';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
@@ -44,6 +49,8 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
   const [status, setStatus] = useState<InitiativeStatus>('planned');
   const [ownerId, setOwnerId] = useState<string | null>(initialOwnerId);
   const [targetDate, setTargetDate] = useState<string | null>(null);
+  const [targetResolution, setTargetResolution] =
+    useState<DateResolution | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -59,6 +66,9 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
       owner_id: ownerId,
       status,
       target_date: targetDate,
+      ...(targetDate !== null && isCoarse(targetResolution)
+        ? { target_date_resolution: targetResolution }
+        : {}),
       ...(parent === null
         ? {}
         : { parent_initiative_id: parent.initiative_id }),
@@ -134,11 +144,16 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
             people={people}
             onChange={setOwnerId}
           />
-          <DatePicker
+          <PlanningDatePicker
             variant="chip"
             field="Target date"
+            edge="end"
             value={targetDate}
-            onChange={setTargetDate}
+            resolution={targetResolution}
+            onChange={(value, resolution) => {
+              setTargetDate(value);
+              setTargetResolution(resolution);
+            }}
             icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
           />
         </div>
