@@ -15,6 +15,11 @@ and a window with nothing left sends nothing, as in Linear.
 
 A person who chose immediate email skips the window: `send_immediately` mails
 each notification on its own as it is written.
+
+A person who paused notifications or is outside their working hours has their
+emails held instead, whichever format they chose. Every flush re-reads each held
+person, and once they may be reached again their held entries go out as one
+digest, so resuming early is honoured on the next run.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.notify_digests import DigestEntry, DueDigest
 from app.common.email import deliver, with_reply_to
 from app.common.email_replies import mint_reply_address
+from app.common.notification_pause import held_until
 from app.domains.views.email import render_digest
 
 _log = logging.getLogger(__name__)
@@ -189,14 +195,29 @@ def flush_window(repositories: Repositories, due: DueDigest) -> bool:
     return sent
 
 
+def released(repositories: Repositories, now: datetime) -> list[DueDigest]:
+    """The held windows whose people may be reached again at `now`, at most `FLUSH_BATCH` of them.
+
+    The people are read in one batch. Someone whose row is gone is released too,
+    so the compose step drops their entries rather than leaving them held.
+    """
+    held = repositories.inbox.digests.held()
+    if not held:
+        return []
+    people = repositories.users.get_many(sorted({due.recipient_id for due in held}))
+    ready = [due for due in held if (person := people.get(due.recipient_id)) is None or held_until(person, now) is None]
+    return ready[:FLUSH_BATCH]
+
+
 def flush_due(repositories: Repositories, now: datetime | None = None) -> FlushSummary:
-    """Mail every window that closed at least `FLUSH_GRACE` before `now`, oldest first.
+    """Mail every window that closed at least `FLUSH_GRACE` before `now`, oldest first, then every released hold.
 
     One window failing is logged and skipped, so it never holds up the rest.
     """
     moment = now or datetime.now(timezone.utc)
     summary = FlushSummary()
-    for due in repositories.inbox.digests.due(moment - FLUSH_GRACE, limit=FLUSH_BATCH):
+    windows = repositories.inbox.digests.due(moment - FLUSH_GRACE, limit=FLUSH_BATCH)
+    for due in [*windows, *released(repositories, moment)]:
         summary.windows += 1
         try:
             if flush_window(repositories, due):

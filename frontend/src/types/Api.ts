@@ -4,6 +4,18 @@
  * key, never a bare array.
  */
 
+/** A day a working hours schedule may name. */
+export type WorkingDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+/** The weekly hours a person takes notifications in, read in their own timezone. */
+export interface WorkingHours {
+  days: WorkingDay[];
+  /** The time each day starts, as HH:MM. */
+  start: string;
+  /** The time each day ends, as HH:MM, after `start`. */
+  end: string;
+}
+
 /** The signed in user, as the identity service reports it. */
 export interface UserRead {
   id: string;
@@ -25,6 +37,12 @@ export interface UserRead {
   priority_kinds?: InboxKind[];
   /** Whether notification emails are batched into a digest or sent one at a time. */
   email_format?: EmailFormat;
+  /** The end of a running notifications pause, or null when none is running. */
+  notifications_paused_until?: string | null;
+  /** The weekly hours email and desktop notifications reach the person in, or null for any time. */
+  working_hours?: WorkingHours | null;
+  /** Whether direct mentions and urgent assignments reach the person through a pause or outside working hours. */
+  urgent_bypasses_pause?: boolean;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
   /** The IANA zone due dates are judged in, or null when none is stored yet. */
@@ -235,6 +253,11 @@ export interface UserPreferencesUpdate {
   /** Replaces the whole set of kinds the Priority tab holds. */
   priority_kinds?: InboxKind[];
   email_format?: EmailFormat;
+  /** Pauses email and desktop notifications until this moment, and null resumes them. */
+  notifications_paused_until?: string | null;
+  /** Replaces the working hours schedule, and null clears it. */
+  working_hours?: WorkingHours | null;
+  urgent_bypasses_pause?: boolean;
   timezone?: string;
   pulse_digest?: PulseDigest;
   home_view?: HomeView;

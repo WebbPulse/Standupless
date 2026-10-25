@@ -35,7 +35,9 @@ format. With `digest`, the default, it is held as a digest entry and mailed by t
 flush in `digest`, one message per recipient per five minute window, so a burst of
 activity on an issue becomes one email rather than one per change; a notification
 about an urgent issue makes its window due on the next flush. With `immediate` it
-is mailed on its own at once. The flush rides this consumer's own function,
+is mailed on its own at once. While the recipient has paused notifications or is
+outside their working hours, either format is held until they may be reached and
+then goes out as one digest. The flush rides this consumer's own function,
 triggered by a scheduled synthetic record. One record reaches at most `MAX_RECIPIENTS_PER_EVENT` people.
 
 Idempotency is the notification id. It is derived from the record rather than
@@ -82,6 +84,7 @@ from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.notification_pause import bypasses_hold, held_until
 from app.common.project_update_report import report_for_item
 from app.common.team_privacy import person_can_see_initiative, person_can_see_team
 from app.common.trash_stream import touches_trash
@@ -273,14 +276,19 @@ def hold_for_digest(
 ) -> None:
     """Send or hold the email for one inbox row that was just written, the way its recipient chose.
 
-    A recipient on immediate email is mailed now. Everyone else has the entry held
-    until their digest is flushed, and an `urgent` one makes that window due on the
-    next flush. Everything the email needs is captured off the row now, so neither
-    path reads the subject again. `recipient` saves a read when the caller has the
-    row already.
+    A recipient who paused notifications or is outside their working hours has the
+    entry held until they may be reached again, unless they let urgent ones through
+    and this is a direct mention or an urgent assignment. A recipient on immediate
+    email is mailed now. Everyone else has the entry held until their digest is
+    flushed, and an `urgent` one makes that window due on the next flush.
+    Everything the email needs is captured off the row now, so no path reads the
+    subject again. `recipient` saves a read when the caller has the row already.
     """
     entry = digest_entry(row, **fields)
     person = recipient if recipient is not None else repositories.users.get(row.recipient_id)
+    if person is not None and held_until(person) is not None and not bypasses_hold(person, row.kind, urgent):
+        repositories.inbox.digests.hold(entry)
+        return
     if person is not None and person.immediate_email:
         send_immediately(repositories, entry)
         return

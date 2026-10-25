@@ -501,3 +501,128 @@ def test_a_project_update_line_names_the_health() -> None:
 
     assert "Project: Launch" in message.text
     assert "Ada posted a project update." in message.text
+
+
+def _pause(repositories: Any, user_id: str, until: datetime | None) -> None:
+    """Store a pause on one person the way the preferences route does."""
+    repositories.users.update(user_id, notifications_paused_until=until.isoformat() if until else None)
+
+
+def test_a_paused_person_still_gets_the_inbox_row_but_no_email(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """While paused the inbox fills and every flush leaves the email held."""
+    _pause(repositories, MEMBER, datetime.now(timezone.utc) + timedelta(days=1))
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Quiet please", assignee_id=MEMBER)
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    handle_record(repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01C000000000000000000009"))
+
+    assert len(inbox_of(repositories, workspace, MEMBER)) == 2
+    assert flush_digests(repositories).windows == 0
+    assert recorder.sent == []
+
+
+def test_resuming_sends_the_held_emails_as_one_digest(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """Clearing the pause early releases everything held in one message, and only once."""
+    _pause(repositories, MEMBER, datetime.now(timezone.utc) + timedelta(days=1))
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Back now", assignee_id=MEMBER)
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    handle_record(repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01C000000000000000000009"))
+    flush_digests(repositories)
+
+    _pause(repositories, MEMBER, None)
+    summary = flush_digests(repositories)
+
+    assert (summary.windows, summary.sent) == (1, 1)
+    [message] = recorder.sent
+    assert "You have 2 new notifications." in message.text
+    assert flush_digests(repositories).windows == 0
+
+
+def test_a_pause_that_runs_out_releases_on_the_next_flush(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """Nobody has to resume by hand: the flush after the pause's end sends the digest."""
+    until = datetime.now(timezone.utc) + timedelta(hours=3)
+    _pause(repositories, MEMBER, until)
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Later on", assignee_id=MEMBER)
+    handle_record(repositories, assignment(workspace, issue["id"]))
+
+    assert flush_due(repositories, now=until - timedelta(minutes=1)).sent == 0
+    assert flush_due(repositories, now=until + timedelta(minutes=1)).sent == 1
+    assert len(recorder.sent) == 1
+
+
+def test_outside_working_hours_the_email_waits_for_them_to_begin(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """A day off holds the email, and the next working morning releases it."""
+    from app.common.notification_pause import WEEKDAYS
+
+    now = datetime.now(timezone.utc)
+    days = [day for day in WEEKDAYS if day != WEEKDAYS[now.weekday()]]
+    repositories.users.update(MEMBER, timezone="UTC", working_hours={"days": days, "start": "09:00", "end": "17:00"})
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Day off", assignee_id=MEMBER)
+    handle_record(repositories, assignment(workspace, issue["id"]))
+
+    assert len(inbox_of(repositories, workspace, MEMBER)) == 1
+    assert flush_digests(repositories).sent == 0
+
+    tomorrow = (now + timedelta(days=1)).replace(hour=9, minute=30, second=0, microsecond=0)
+    assert flush_due(repositories, now=tomorrow).sent == 1
+    assert len(recorder.sent) == 1
+
+
+def test_an_urgent_assignment_may_bypass_a_pause(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """With the bypass on an urgent assignment is mailed as usual while a plain comment stays held."""
+    _pause(repositories, MEMBER, datetime.now(timezone.utc) + timedelta(days=1))
+    repositories.users.update(MEMBER, urgent_bypasses_pause=True)
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Pager", assignee_id=MEMBER, priority="urgent")
+
+    handle_record(repositories, assignment(workspace, issue["id"]))
+    handle_record(repositories, comment_record(repositories, workspace, issue["id"], OWNER, "01C000000000000000000009"))
+
+    assert flush_digests(repositories).sent == 1
+    [message] = recorder.sent
+    assert "You have" not in message.text
+    assert "commented" not in message.text
+
+
+def test_a_direct_mention_may_bypass_a_pause(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
+) -> None:
+    """A mention reaches a paused person who let urgent notifications through, and not one who did not."""
+    _pause(repositories, MEMBER, datetime.now(timezone.utc) + timedelta(days=1))
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Ping")
+
+    def mention(comment_id: str) -> "dict[str, Any]":
+        """One comment insert that mentions the member."""
+        return _record(
+            COMMENTS_ARN,
+            "INSERT",
+            new=_image(
+                workspace_id=workspace,
+                issue_id=issue["id"],
+                comment_id=comment_id,
+                author_id=OWNER,
+                mentions=[MEMBER],
+            ),
+        )
+
+    handle_record(repositories, mention("01C000000000000000000001"))
+    assert flush_digests(repositories).sent == 0
+
+    repositories.users.update(MEMBER, urgent_bypasses_pause=True)
+    handle_record(repositories, mention("01C000000000000000000002"))
+    assert flush_digests(repositories).sent == 1
