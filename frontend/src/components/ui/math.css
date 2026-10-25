@@ -1,0 +1,72 @@
+@reference '../../index.css';
+
+.math-inline {
+  @apply inline-block max-w-full overflow-x-auto overflow-y-hidden align-middle;
+}
+
+.math-block {
+  @apply block overflow-x-auto overflow-y-hidden rounded-md px-3 py-2 text-center;
+}
+
+.math-block .katex-display {
+  @apply m-0;
+}
+
+.math-inline[data-state='loading'],
+.math-block[data-state='loading'],
+.math-inline[data-state='error'],
+.math-block[data-state='error'] {
+  @apply font-mono text-[0.85em] whitespace-pre-wrap;
+}
+
+.math-inline[data-state='loading'],
+.math-block[data-state='loading'] {
+  @apply text-text-faint;
+}
+
+.math-inline[data-state='error'],
+.math-block[data-state='error'] {
+  @apply rounded-xs bg-danger-soft px-1 text-danger;
+}
+
+.math-block[data-state='error'] {
+  @apply text-left;
+}
+
+.math-inline[data-state='empty'],
+.math-block[data-state='empty'] {
+  @apply font-sans text-sm text-text-faint italic;
+}
+
+.rich-math[data-editable='true'] {
+  @apply cursor-pointer;
+}
+
+.rich-math[data-editable='true']:hover,
+.rich-math.ProseMirror-selectednode {
+  @apply bg-raised;
+}
+
+.rich-math.ProseMirror-selectednode {
+  @apply outline-1 outline-accent;
+}
+
+.rich-math-input {
+  @apply rounded-xs border border-line-strong bg-surface px-1 font-mono text-[0.85em] text-text outline-none focus:border-accent;
+}
+
+.rich-math-block-editor {
+  @apply block rounded-md border border-line bg-surface p-2 text-left;
+}
+
+.rich-math-block-editor textarea {
+  @apply block min-h-14 w-full resize-y border-0 bg-transparent p-0 font-mono text-xs leading-5 text-text outline-none;
+}
+
+.rich-math-block-editor .math-block {
+  @apply mt-2 border-t border-line pt-2;
+}
+
+.rich-math-hint {
+  @apply mt-1 block font-sans text-2xs text-text-faint;
+}
