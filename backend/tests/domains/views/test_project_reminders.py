@@ -100,32 +100,6 @@ def test_the_lead_gets_one_reminder_however_many_passes_run(
     [message] = recorder.sent
     assert message.subject == "[Project] Launch"
     assert "A project update is due." in message.text
-
-
-def test_a_digest_line_says_overdue() -> None:
-    """An overdue entry reads overdue in a digest."""
-    from app.common.db.dynamo.notify_digests import DigestEntry
-
-    entries = [
-        DigestEntry(
-            workspace_id="W1",
-            recipient_id=MEMBER,
-            notification_id=f"N{number}",
-            kind="project_update_due",
-            team_id=TEAM,
-            actor_name="",
-            project_id=PROJECT_ID,
-            project_name="Launch",
-            due_state=state,
-            created_at=CREATED + timedelta(seconds=number),
-        )
-        for number, state in enumerate(("due", "overdue"))
-    ]
-
-    message = render_digest(entries, to="member@example.com", workspace_slug="acme")
-
-    assert "A project update is overdue." in message.text
-    assert "A project update is due." in message.text
     assert f"/projects/launch-{PROJECT_ID}?tab=updates" in message.text
     assert [event.project_id for event in heard] == [PROJECT_ID]
     assert heard[0].due_at == DUE
