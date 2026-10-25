@@ -10,7 +10,7 @@ adopt_spans_log_group   = true
 
 billing_enabled                  = true
 plan_limit_e2e_exemption_enabled = true
-plan_limit_e2e_user_ids          = ["c52c681e-019c-4c31-9866-a4538997bd80"]
+identity_e2e_user_ids            = ["c52c681e-019c-4c31-9866-a4538997bd80"]
 
 github_app_slug       = "standupless-staging"
 github_queues_enabled = true

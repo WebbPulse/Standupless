@@ -12,7 +12,7 @@ from typing import Any, Iterator
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from webbpulse.identity.flows import EPHEMERAL_VIA
+from webbpulse.identity import E2E_USER_ATTRIBUTE
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
@@ -130,16 +130,15 @@ def test_a_paid_e2e_workspace_reads_its_own_plan(exemption_on: None) -> None:
     assert limit_for(workspace, LimitedResource.WEBHOOKS) == PLAN_LIMITS["standard"][LimitedResource.WEBHOOKS]
 
 
-def test_the_ephemeral_route_marks_its_user_and_no_other_flow_does(repositories: Any) -> None:
-    """Only the package's ephemeral e2e creation sets `e2e_user`; registration and OAuth leave it off."""
+def test_the_package_marker_reaches_the_row_and_nothing_else_does(repositories: Any) -> None:
+    """`create_user` keeps the reserved e2e marker only when it is exactly `True`, and no other privileged field."""
     hooks = StanduplessIdentityHooks(repositories.users)
 
-    registered = hooks.create_user(email="person@example.com", attributes={"e2e_user": True, "is_admin": True})
-    hooks.on_user_created(registered, "register")
+    registered = hooks.create_user(email="person@example.com", attributes={E2E_USER_ATTRIBUTE: "yes", "is_admin": True})
     oauth = hooks.create_user(email="social@example.com", attributes={})
-    hooks.on_user_created(oauth, "oauth")
-    ephemeral = hooks.create_user(email="e2e-run-1@e2e.invalid", attributes={"email_verified": True})
-    hooks.on_user_created(ephemeral, EPHEMERAL_VIA)
+    ephemeral = hooks.create_user(
+        email="e2e-run-1@e2e.invalid", attributes={"email_verified": True, E2E_USER_ATTRIBUTE: True}
+    )
 
     assert repositories.users.get(registered["id"]).e2e_user is False
     assert repositories.users.get(registered["id"]).is_admin is False
@@ -178,12 +177,35 @@ def test_a_workspace_an_ephemeral_e2e_user_creates_is_e2e_owned(client: TestClie
 def test_a_workspace_a_listed_durable_e2e_user_creates_is_e2e_owned(
     client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A durable e2e user named in `PLAN_LIMIT_E2E_USER_IDS` stamps its workspace too."""
-    monkeypatch.setattr(settings, "PLAN_LIMIT_E2E_USER_IDS", f"someone-else, {DURABLE}")
+    """A durable e2e user named in `IDENTITY_E2E_USER_IDS` stamps its workspace too."""
+    monkeypatch.setattr(settings, "IDENTITY_E2E_USER_IDS", ["someone-else", f" {DURABLE}"])
     make_user(repositories, DURABLE, "durable@example.com")
     repositories.users.update(DURABLE, email_verified=True)
 
     assert _create(client, repositories, DURABLE, "e2e-durable").e2e_owned is True
+
+
+def test_production_never_stamps_a_workspace_e2e_owned(
+    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In production neither the marker nor a listed id stamps a workspace."""
+    monkeypatch.setattr(settings, "APP_ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "IDENTITY_E2E_USER_IDS", [DURABLE])
+    make_user(repositories, DURABLE, "durable@example.com")
+    repositories.users.update(DURABLE, email_verified=True, e2e_user=True)
+
+    assert _create(client, repositories, DURABLE, "e2e-production").e2e_owned is False
+
+
+def test_settings_refuse_durable_e2e_user_ids_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A production deployment carrying `IDENTITY_E2E_USER_IDS` fails at startup."""
+    from app.common.core.config import Settings
+
+    monkeypatch.setenv("APP_ENVIRONMENT", "production")
+    monkeypatch.setenv("IDENTITY_E2E_USER_IDS", f'["{DURABLE}"]')
+
+    with pytest.raises(ValueError, match="IDENTITY_E2E_USER_IDS"):
+        Settings()
 
 
 def test_a_workspace_anyone_else_creates_is_not_e2e_owned(client: TestClient, repositories: Any) -> None:

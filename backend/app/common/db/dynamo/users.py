@@ -206,8 +206,9 @@ class User(BaseModel):
     assignments through regardless, off by default.
 
     `e2e_user` marks an account the identity package's admin-only ephemeral e2e
-    route created. Only `StanduplessIdentityHooks.on_user_created` sets it, on that
-    route's creation alone, so neither self sign-up nor any profile route can write it.
+    route created, under the package's reserved `E2E_USER_ATTRIBUTE`. Only that
+    route's `create_user` call sets it, so neither self sign-up nor any profile route
+    can write it. Read it with `webbpulse.identity.is_e2e_user`.
     """
 
     id: str = Field(default_factory=new_user_id)
