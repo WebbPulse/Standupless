@@ -33,7 +33,13 @@ import type {
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
+import type { OrderedIssueRead } from '../../api/issues';
 import { clearToasts } from '../../lib/toast';
+import { PeekContext, type PeekState } from '../../hooks/usePeek';
+import {
+  createShortcutRegistry,
+  ShortcutRegistryContext,
+} from '../../hooks/useShortcuts';
 import IssuePeek from './IssuePeek';
 
 const getIssue = vi.fn<(id: string) => Promise<IssueRead>>();
@@ -43,6 +49,10 @@ const listActivity = vi.fn<() => Promise<ActivityListRead>>();
 const listComments = vi.fn<() => Promise<CommentListRead>>();
 const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
 const listThreadTargets = vi.fn<() => Promise<GithubThreadTargetRead[]>>();
+const listChildren =
+  vi.fn<
+    (id: string) => Promise<{ issues: OrderedIssueRead[]; next_cursor: null }>
+  >();
 
 vi.mock('../../api/issues', async () => {
   const actual =
@@ -56,6 +66,7 @@ vi.mock('../../api/issues', async () => {
       updateIssue(id, body),
     listIssues: () => Promise.resolve({ issues: [], next_cursor: null }),
     listActivity: () => listActivity(),
+    listChildren: (_w: string, id: string) => listChildren(id),
   };
 });
 
@@ -260,6 +271,7 @@ beforeEach(() => {
     listComments,
     createComment,
     listThreadTargets,
+    listChildren,
     onClose,
   ])
     spy.mockReset();
@@ -497,5 +509,103 @@ describe('the peek activity feed', () => {
     fireEvent.keyDown(surface, { key: 'Escape' });
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('walking the issue tree from the peek', () => {
+  /** Mounts the peek inside a shortcut registry and a peek pane. */
+  const renderInPane = () => {
+    const registry = createShortcutRegistry();
+    const openPeek = vi.fn<PeekState['openPeek']>();
+    render(
+      <MemoryRouter>
+        <ShortcutRegistryContext.Provider value={registry}>
+          <PeekContext.Provider
+            value={{
+              content: { key: 'issue:ENG-7', label: 'Issue ENG-7', node: null },
+              openPeek,
+              closePeek: () => undefined,
+            }}
+          >
+            <IssuePeek issueId="iss-1" onClose={onClose} />
+          </PeekContext.Provider>
+        </ShortcutRegistryContext.Provider>
+      </MemoryRouter>
+    );
+    const press = (key: string): void => {
+      act(() => {
+        registry.handleKey(
+          new KeyboardEvent('keydown', {
+            key,
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      });
+    };
+    return { openPeek, press };
+  };
+
+  it('peeks the parent in place on Ctrl+Shift+Up', async () => {
+    const parent: IssueRead = {
+      ...issue,
+      id: 'iss-0',
+      key: 'ENG-6',
+      title: 'The parent',
+    };
+    getIssue.mockImplementation((id) =>
+      Promise.resolve(
+        id === 'iss-0' ? parent : { ...issue, parent_id: 'iss-0' }
+      )
+    );
+    const { openPeek, press } = renderInPane();
+    expect(await screen.findByText('Peek at me')).toBeInTheDocument();
+
+    press('ArrowUp');
+
+    await waitFor(() => {
+      expect(openPeek).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'issue:ENG-6' })
+      );
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('peeks the first sub-issue in place on Ctrl+Shift+Down', async () => {
+    getIssue.mockResolvedValue({
+      ...issue,
+      progress: { total: 2, completed: 0 },
+    });
+    listChildren.mockResolvedValue({
+      issues: [
+        { ...issue, id: 'iss-9', key: 'ENG-9', sort_order: 'b' },
+        { ...issue, id: 'iss-8', key: 'ENG-8', sort_order: 'a' },
+      ],
+      next_cursor: null,
+    });
+    const { openPeek, press } = renderInPane();
+    expect(await screen.findByText('Peek at me')).toBeInTheDocument();
+
+    press('ArrowDown');
+
+    await waitFor(() => {
+      expect(openPeek).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'issue:ENG-8' })
+      );
+    });
+    expect(listChildren).toHaveBeenCalledWith('iss-1');
+  });
+
+  it('does nothing without a parent or sub-issues', async () => {
+    const { openPeek, press } = renderInPane();
+    expect(await screen.findByText('Peek at me')).toBeInTheDocument();
+
+    press('ArrowUp');
+    press('ArrowDown');
+
+    expect(openPeek).not.toHaveBeenCalled();
+    expect(listChildren).not.toHaveBeenCalled();
   });
 });

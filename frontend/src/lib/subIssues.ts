@@ -173,3 +173,20 @@ export const subIssueDropKeys = (
     return null;
   }
 };
+
+/**
+ * The sub-issue shown first under the person's display settings: the first
+ * row in the chosen ordering, skipping completed rows while they are hidden,
+ * or the first row of all when every one is completed. Undefined for none.
+ */
+export const firstSubIssue = (
+  rows: readonly OrderedIssueRead[],
+  statuses: StatusRead[],
+  display: SubIssueDisplay = readSubIssueDisplay()
+): OrderedIssueRead | undefined => {
+  const ordered = sortSubIssues([...rows], display.ordering, statuses);
+  const shown = display.showCompleted
+    ? ordered
+    : ordered.filter((row) => !isDoneRow(row, statuses));
+  return shown[0] ?? ordered[0];
+};

@@ -859,6 +859,8 @@ export const IssueView: React.FC<IssueViewProps> = ({
           onDelete={removeIssue}
           deleting={deleting}
           onDeletingChange={setDeleting}
+          knownIssues={options.parents}
+          subIssues={children.rows}
         />
       )}
 

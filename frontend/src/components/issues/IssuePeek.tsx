@@ -5,7 +5,9 @@
  * the same pickers as the detail rail, applied optimistically, and the same
  * activity and comment feed as the page, newest last, with a comment box at
  * its foot, so a thread can be read and answered without leaving the list.
- * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard.
+ * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard, and
+ * Cmd or Ctrl+Shift+Up and Down peek its parent and its first sub-issue in
+ * place.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -16,6 +18,8 @@ import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
+import { useIssueTreeKeys } from '../../hooks/useIssueTreeKeys';
+import { usePeekIssue } from '../../hooks/usePeekIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -151,6 +155,15 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
       });
     });
   };
+
+  const { peekIssue } = usePeekIssue();
+  useIssueTreeKeys({
+    workspaceId,
+    issue,
+    statuses: options.statuses,
+    known: options.parents,
+    onOpen: peekIssue,
+  });
 
   const [parenting, setParenting] = useState(false);
   const canParent = canEdit && issue !== null;
