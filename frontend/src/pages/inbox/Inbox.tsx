@@ -314,12 +314,12 @@ const rowPath = (slug: string, row: NotificationRead): string =>
                 : isAppApprovalRow(row)
                   ? connectedAppsPath(slug)
                   : isStandupRow(row)
-                  ? `${teamStandupPath(slug, row.issue_key)}${
-                      row.standup_date
-                        ? `?date=${encodeURIComponent(row.standup_date)}`
-                        : ''
-                    }`
-                  : issuePath(slug, row.issue_key);
+                    ? `${teamStandupPath(slug, row.issue_key)}${
+                        row.standup_date
+                          ? `?date=${encodeURIComponent(row.standup_date)}`
+                          : ''
+                      }`
+                    : issuePath(slug, row.issue_key);
 
 /** Props for DocumentCommentPane: the selected row and how to leave it. */
 interface DocumentCommentPaneProps {
@@ -601,7 +601,9 @@ const JobNoticePane: React.FC<JobNoticePaneProps> = ({
         />
       )}
       <p className="text-sm text-text">
-        {isAppApprovalRow(row) ? (row.summary ?? row.issue_title) : row.issue_title}
+        {isAppApprovalRow(row)
+          ? (row.summary ?? row.issue_title)
+          : row.issue_title}
       </p>
       {row.kind === 'app_approval_requested' && row.new_value && (
         <p className="text-xs text-text-muted">{row.new_value}</p>

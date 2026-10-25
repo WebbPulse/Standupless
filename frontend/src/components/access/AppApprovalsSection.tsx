@@ -373,7 +373,10 @@ export const AppApprovalsSection: React.FC<AppApprovalsSectionProps> = ({
           </label>
           {pending !== null && actionError !== null && (
             <ErrorAlert
-              message={errorMessage(actionError, 'Could not save that decision.')}
+              message={errorMessage(
+                actionError,
+                'Could not save that decision.'
+              )}
             />
           )}
           <div className="flex justify-end gap-2">
@@ -382,7 +385,8 @@ export const AppApprovalsSection: React.FC<AppApprovalsSectionProps> = ({
               variant="danger"
               disabled={isMutating}
               onClick={() => {
-                if (pending !== null) run(pending.row, pending.decision, reason);
+                if (pending !== null)
+                  run(pending.row, pending.decision, reason);
               }}
             >
               {pending?.decision === 'revoke' ? 'Revoke app' : 'Deny request'}

@@ -71,8 +71,7 @@ def gate_consent(clients: "OAuthClientStore", consents: "ConsentStore", record: 
         return
     approval = MembershipRepository().get_app_approval(record.tenant_id, record.client_id)
     has_grant = any(
-        consent.tenant_id == record.tenant_id
-        for consent in consents.list_for_client(record.user_id, record.client_id)
+        consent.tenant_id == record.tenant_id for consent in consents.list_for_client(record.user_id, record.client_id)
     )
     if not needs_approval(True, False, approval, has_grant=has_grant):
         return

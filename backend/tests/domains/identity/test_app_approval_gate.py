@@ -174,9 +174,7 @@ def test_an_approved_app_issues_a_code(package: TestClient, repositories: Any, w
     assert "code" in parse_qs(urlsplit(response.headers["location"]).query)
 
 
-def test_a_denied_app_is_held_at_consent(
-    package: TestClient, repositories: Any, workspaces: None
-) -> None:
+def test_a_denied_app_is_held_at_consent(package: TestClient, repositories: Any, workspaces: None) -> None:
     """A denial holds every member's consent until an admin approves again."""
     repositories.workspaces.set_third_party_app_approvals(WORKSPACE_ONE, True)
     client_id = register_client(package)

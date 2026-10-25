@@ -291,6 +291,12 @@
     "auth": "workspace:admin",
     "domain": "identity",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/connected-apps/{client_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "identity",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/connected-apps/{user_id}/{client_id}"
   },
   {
@@ -358,6 +364,42 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/slack/oauth/callback"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/app-approvals"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/request"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/requests"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/{client_id}/approve"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/{client_id}/deny"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/app-approvals/{client_id}/revoke"
   },
   {
     "auth": "workspace:admin",

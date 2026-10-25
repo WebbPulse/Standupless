@@ -5,10 +5,7 @@
  * it is listed as approved and can be revoked like any other.
  */
 
-import type {
-  AppApprovalRead,
-  WorkspaceConnectedAppRead,
-} from '../types/Api';
+import type { AppApprovalRead, WorkspaceConnectedAppRead } from '../types/Api';
 
 /** One row of the list: an approval record, or an app authorized before approvals were required. */
 export interface ApprovalRow {
@@ -58,4 +55,3 @@ export const approvalRows = (
     a.approval.client_name.localeCompare(b.approval.client_name)
   );
 };
-

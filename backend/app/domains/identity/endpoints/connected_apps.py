@@ -336,7 +336,11 @@ def revoke_workspace_app(
     )
     member_ids = [membership.user_id for membership in repositories.memberships.list_members(context.workspace_id)]
     holders = sorted(
-        {grant.user_id for grant in grants_for_workspace(server.stores, member_ids, context.workspace_id) if grant.client_id == client_id}
+        {
+            grant.user_id
+            for grant in grants_for_workspace(server.stores, member_ids, context.workspace_id)
+            if grant.client_id == client_id
+        }
     )
     label = _client_label(server, client_id)
     for user_id in holders:
