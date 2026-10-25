@@ -55,6 +55,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "week_start": "monday",
         "name_display": "username",
         "font_size": "default",
+        "activity_filter": "all",
         "projects_display": {
             "layout": "list",
             "group": "status",
@@ -159,6 +160,23 @@ def test_interface_preferences_default_and_change_one_at_a_time(client: TestClie
         assert client.patch("/api/users/me/preferences", json={field: value}).status_code == 422
 
 
+def test_the_activity_filter_defaults_to_all_and_saves_comments_only(client: TestClient, repositories: Any) -> None:
+    """The issue activity filter starts on all activity, saves comments only and refuses a filter it does not have."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["activity_filter"] == "all"
+
+    response = client.patch("/api/users/me/preferences", json={"activity_filter": "comments"})
+    assert response.status_code == 200
+    assert response.json()["activity_filter"] == "comments"
+    assert repositories.users.get(OWNER).activity_filter == "comments"
+    assert client.get("/api/users/me").json()["activity_filter"] == "comments"
+
+    assert client.patch("/api/users/me/preferences", json={"activity_filter": "history"}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"activity_filter": "all"}).json()["activity_filter"] == "all"
+
+
 def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, repositories: Any) -> None:
     """Auto assign starts off and the branch copy switches start on; each turns on and off alone and is stored."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
@@ -191,11 +209,12 @@ def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, re
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:
     """A value written before a choice was withdrawn reads as the default rather than failing the read."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
-    repositories.users.update(OWNER, home_view="roadmap", font_size="tiny")
+    repositories.users.update(OWNER, home_view="roadmap", font_size="tiny", activity_filter="history")
     sign_in(client, OWNER)
     body = client.get("/api/users/me").json()
     assert body["home_view"] == "home"
     assert body["font_size"] == "default"
+    assert body["activity_filter"] == "all"
 
 
 def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: TestClient, repositories: Any) -> None:

@@ -2845,6 +2845,7 @@ class UrlAttachmentCreate(TypedDict):
 
 
 class UserPreferencesUpdate(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"] | None]
     auto_assign_to_self: NotRequired[bool | None]
     auto_grant_new_scopes: NotRequired[bool | None]
     branch_copy_assigns: NotRequired[bool | None]
@@ -2891,6 +2892,7 @@ class UserProfileUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"]]
     auto_assign_to_self: NotRequired[bool]
     auto_grant_new_scopes: NotRequired[bool]
     avatar_url: NotRequired[str | None]

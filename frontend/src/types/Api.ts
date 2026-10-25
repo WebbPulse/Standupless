@@ -33,6 +33,8 @@ export interface UserRead {
   name_display?: NameDisplay;
   /** The interface text size. */
   font_size?: FontSize;
+  /** Whether issue activity shows every change or only comments. */
+  activity_filter?: ActivityFilter;
   /** How the projects page is laid out, grouped, ordered and windowed. */
   projects_display?: ProjectsDisplayPreference;
   /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
@@ -104,6 +106,9 @@ export type NameDisplay = 'username' | 'full_name';
 /** The interface text size a person picked. */
 export type FontSize = 'small' | 'default' | 'large';
 
+/** Whether an issue's activity shows every change or only its comments. */
+export type ActivityFilter = 'all' | 'comments';
+
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
 
@@ -156,6 +161,7 @@ export interface UserPreferencesUpdate {
   week_start?: WeekStart;
   name_display?: NameDisplay;
   font_size?: FontSize;
+  activity_filter?: ActivityFilter;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
   /** Replaces the saved initiatives page arrangement whole, null forgets it. */

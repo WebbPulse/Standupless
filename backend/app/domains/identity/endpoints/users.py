@@ -29,11 +29,13 @@ from app.common.api.schemas.initiatives_display import InitiativesDisplay, store
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
+    ACTIVITY_FILTERS,
     FONT_SIZES,
     HOME_VIEWS,
     NAME_DISPLAYS,
     PULSE_DIGESTS,
     WEEK_STARTS,
+    ActivityFilterField,
     FontSizeField,
     HomeViewField,
     NameDisplayField,
@@ -106,6 +108,7 @@ class UserRead(BaseModel):
     week_start: WeekStartField = "monday"
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
+    activity_filter: ActivityFilterField = "all"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
     initiatives_display: InitiativesDisplay = Field(default_factory=InitiativesDisplay)
@@ -164,7 +167,8 @@ class UserPreferencesUpdate(BaseModel):
     digest email comes, `off` by default. `home_view`, `week_start`,
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
-    device. `projects_display` replaces how the projects list is arranged as a
+    device. `activity_filter` is whether issue activity shows every change or
+    only comments. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
     the workspace's default again, and `initiatives_display` does the same for
     the initiatives list. `auto_assign_to_self`, `branch_copy_starts`
@@ -184,6 +188,7 @@ class UserPreferencesUpdate(BaseModel):
     week_start: Optional[WeekStartField] = None
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
+    activity_filter: Optional[ActivityFilterField] = None
     projects_display: Optional[ProjectsDisplay] = None
     initiatives_display: Optional[InitiativesDisplay] = None
     auto_assign_to_self: Optional[bool] = None
@@ -256,6 +261,7 @@ def _as_read(user: "Any") -> UserRead:
         week_start=_known(user.week_start, WEEK_STARTS, "monday"),
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
+        activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
         initiatives_display=stored_initiatives_display(user.initiatives_display),
@@ -373,6 +379,7 @@ def update_current_user_preferences(
         "week_start",
         "name_display",
         "font_size",
+        "activity_filter",
         "auto_assign_to_self",
         "branch_copy_starts",
         "branch_copy_assigns",
