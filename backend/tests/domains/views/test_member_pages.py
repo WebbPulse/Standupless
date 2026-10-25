@@ -18,7 +18,7 @@ from app.common.db.dynamo.base import as_item, build_repository
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue
 from scripts.backfill_activity_actor_index import run as backfill
-from tests.domains.helpers import GUEST, MEMBER, OUTSIDER, OWNER, add_team_member, sign_in
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_team_member, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM
 
 OPEN_ISSUE = "01JB0000000000000000ISSUE1"
@@ -113,6 +113,27 @@ def test_the_profile_hides_teams_the_caller_cannot_see(client: TestClient, works
     )
     sign_in(client, GUEST)
     assert client.get(f"/api/workspaces/{workspace}/views/members/{MEMBER}").json()["team_ids"] == [TEAM]
+
+
+def test_the_profile_carries_the_members_timezone(client: TestClient, workspace: str, repositories: Any) -> None:
+    """The zone the member set comes back, and null for someone who set none."""
+    add_team_member(repositories, workspace, TEAM, MEMBER, "member")
+    repositories.users.update(MEMBER, timezone="Asia/Tokyo")
+    sign_in(client, OWNER)
+    assert client.get(f"/api/workspaces/{workspace}/views/members/{MEMBER}").json()["timezone"] == "Asia/Tokyo"
+    assert client.get(f"/api/workspaces/{workspace}/views/members/{ADMIN}").json()["timezone"] is None
+
+
+def test_a_guest_reads_no_timezone_for_someone_outside_their_teams(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """The timezone follows the status rule, so a guest sharing no team with the member sees none."""
+    add_team_member(repositories, workspace, OTHER_TEAM, MEMBER, "member")
+    repositories.users.update(MEMBER, timezone="Asia/Tokyo")
+    sign_in(client, GUEST)
+    body = client.get(f"/api/workspaces/{workspace}/views/members/{MEMBER}").json()
+    assert body["team_ids"] == []
+    assert body["timezone"] is None
 
 
 def test_me_is_the_caller(client: TestClient, workspace: str) -> None:

@@ -15,3 +15,18 @@ export const MentionMembersContext = createContext<
 /** The member a mention written as `handle` names, or undefined when none is known. */
 export const useMentionMember = (handle: string): MemberRead | undefined =>
   useContext(MentionMembersContext).get(handle.toLowerCase());
+
+/** Every workspace member keyed by user id, so an avatar or a name can open the person's card. */
+export const MembersByIdContext = createContext<
+  ReadonlyMap<string, MemberRead>
+>(new Map());
+
+/** The workspace member with `userId`, or undefined when none is known. */
+export const useMemberById = (
+  userId: string | null | undefined
+): MemberRead | undefined => {
+  const members = useContext(MembersByIdContext);
+  return userId === null || userId === undefined
+    ? undefined
+    : members.get(userId);
+};

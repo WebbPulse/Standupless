@@ -14102,7 +14102,7 @@
         "type": "object"
       },
       "MemberProfileRead": {
-        "description": "One workspace member as their page shows them.\n\n`team_ids` are the teams they belong to that the caller can see, so a private\nteam stays hidden from anyone outside it. `user_status` is their away status\nwhile it is in force, hidden from a guest who shares no team with them.",
+        "description": "One workspace member as their page shows them.\n\n`team_ids` are the teams they belong to that the caller can see, so a private\nteam stays hidden from anyone outside it. `user_status` is their away status\nwhile it is in force, hidden from a guest who shares no team with them.\n`timezone` is the IANA zone they set in their preferences, so a hover card\ncan show their local time; it follows the same rule as `user_status`, and is\nnull when they set none. No other preference is exposed.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -14145,6 +14145,17 @@
             },
             "title": "Team Ids",
             "type": "array"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
           },
           "user_id": {
             "title": "User Id",

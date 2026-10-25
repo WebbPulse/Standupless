@@ -4812,6 +4812,7 @@ class MemberProfileRead(TypedDict):
     joined_at: str
     role: Literal["owner", "admin", "member", "guest"]
     team_ids: NotRequired[list[str]]
+    timezone: NotRequired[str | None]
     user_id: str
     user_status: NotRequired[UserStatusRead | None]
 
