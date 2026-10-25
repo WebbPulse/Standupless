@@ -17,6 +17,7 @@ from webbpulse.identity import E2E_USER_ATTRIBUTE
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.core.config import settings
+from app.common.db.dynamo.users import User
 from app.common.db.dynamo.workspaces import Workspace
 from app.common.plan_limits import (
     FREE_TEAMS,
@@ -30,6 +31,7 @@ from app.common.plan_limits import (
     LimitedResource,
     check_guests,
     check_limit,
+    creates_e2e_workspaces,
     e2e_exempt,
     guests_per_seat_of,
     limit_for,
@@ -185,16 +187,15 @@ def test_a_workspace_a_listed_durable_e2e_user_creates_is_e2e_owned(
     assert _create(client, repositories, DURABLE, "e2e-durable").e2e_owned is True
 
 
-def test_production_never_stamps_a_workspace_e2e_owned(
-    client: TestClient, repositories: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """In production neither the marker nor a listed id stamps a workspace."""
-    monkeypatch.setattr(settings, "APP_ENVIRONMENT", "production")
+def test_production_never_counts_an_e2e_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In production neither the marker nor a listed id makes a creator's workspaces e2e owned."""
     monkeypatch.setattr(settings, "IDENTITY_E2E_USER_IDS", [DURABLE])
-    make_user(repositories, DURABLE, "durable@example.com")
-    repositories.users.update(DURABLE, email_verified=True, e2e_user=True)
+    marked = User(id=DURABLE, email="durable@example.com", e2e_user=True)
+    assert creates_e2e_workspaces(marked)
 
-    assert _create(client, repositories, DURABLE, "e2e-production").e2e_owned is False
+    monkeypatch.setattr(settings, "APP_ENVIRONMENT", "production")
+
+    assert not creates_e2e_workspaces(marked)
 
 
 def test_settings_refuse_durable_e2e_user_ids_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
