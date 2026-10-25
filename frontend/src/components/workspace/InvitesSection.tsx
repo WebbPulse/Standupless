@@ -4,6 +4,7 @@
  * never readable again, so it is held in state and surfaced until dismissed.
  * A member the workspace lets invite sees the form alone, offering member or
  * guest, because listing and revoking others' invites stays with admins.
+ * Whoever may invite also manages the workspace's reusable invite link.
  */
 
 import React, { useState } from 'react';
@@ -31,6 +32,7 @@ import Button from '../ui/button';
 import Field from '../ui/field';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import InviteLinkSection from './InviteLinkSection';
 
 /** Props for InvitesSection: the workspace whose invites are shown. */
 export interface InvitesSectionProps {
@@ -225,6 +227,8 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
           </div>
         </div>
       )}
+
+      <InviteLinkSection workspace={workspace} />
 
       {manages && <PendingInvites workspace={workspace} />}
 

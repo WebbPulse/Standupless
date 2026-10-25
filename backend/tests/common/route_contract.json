@@ -2742,6 +2742,18 @@
     "path": "/api/invites/accept"
   },
   {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/invites/link/join"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/invites/link/preview"
+  },
+  {
     "auth": "public",
     "domain": "workspaces",
     "method": "GET",
@@ -3046,6 +3058,24 @@
     "domain": "workspaces",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/icon/uploads"
+  },
+  {
+    "auth": "invite:create",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/invite-link"
+  },
+  {
+    "auth": "invite:create",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/invite-link"
+  },
+  {
+    "auth": "invite:create",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/invite-link"
   },
   {
     "auth": "workspace:admin",

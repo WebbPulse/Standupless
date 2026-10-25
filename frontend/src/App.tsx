@@ -44,6 +44,7 @@ import { ShellPublicRoute } from './components/routes/ShellRoutes';
 import WorkspaceLayout from './components/workspace/WorkspaceLayout';
 import WorkspaceProvider from './contexts/WorkspaceContext';
 import AcceptInvite from './pages/invites/AcceptInvite';
+import JoinWorkspace from './pages/invites/JoinWorkspace';
 import ForgotPassword from './pages/authentication/ForgotPassword';
 import Login from './pages/authentication/Login';
 import Register from './pages/authentication/Register';
@@ -162,6 +163,7 @@ const App: React.FC = () => (
     <Route path="/verify-email" element={<VerifyEmail />} />
     <Route path={VERIFY_EMAIL_CHANGE_PATH} element={<VerifyEmailChange />} />
     <Route path="/invites/accept" element={<AcceptInvite />} />
+    <Route path="/join" element={<JoinWorkspace />} />
 
     <Route element={<ProtectedRoute />}>
       <Route path="/workspaces" element={<Workspaces />} />

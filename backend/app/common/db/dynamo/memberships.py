@@ -42,6 +42,13 @@ membership it stands for. None of these rows carries a `user_id`, so the user
 index never meets them, and none starts with `user#` or `team#`, so no member or
 team membership read does either.
 
+`invite_link` holds the workspace's one reusable invite link, as the SHA-256 hash of
+its token and never the token. It sets `user_id = invite_link#<hash>`, so the user
+index doubles as the token index the way it does for approved domains: "which
+workspace does this link join" is one query that answers at most one row. Resetting
+the link rewrites the row with a new hash, which moves its index entry, and
+disabling it deletes the row, so an old token stops matching either way.
+
 `app_approval#<client_id>` records whether the workspace lets its members authorize
 one third-party OAuth app, read by the identity function's consent gate under the
 grant it already holds here. It carries no `user_id`, so the user index never meets it.
@@ -55,6 +62,7 @@ replaced the workspaces table's `owner_user_id-index`.
 
 from __future__ import annotations
 
+import hmac
 from datetime import datetime, timedelta
 from typing import Any, Literal, Mapping
 
@@ -110,6 +118,25 @@ class ApprovedDomain(BaseModel):
     domain: str
     added_by: str
     added_at: datetime = Field(default_factory=utc_now)
+
+
+INVITE_LINK_KEY = "invite_link"
+
+INVITE_LINK_INDEX_PREFIX = "invite_link#"
+
+
+def invite_link_index_key(token_hash: str) -> str:
+    """The user index key of the invite link whose token hashes to `token_hash`."""
+    return f"{INVITE_LINK_INDEX_PREFIX}{token_hash}"
+
+
+class InviteLink(BaseModel):
+    """A workspace's reusable invite link: the hash of its token, who minted it and when."""
+
+    workspace_id: str
+    token_hash: str
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 SignInMethod = Literal["password", "google", "github", "passkey"]
@@ -835,6 +862,47 @@ class MembershipRepository:
             return
         self._repository.delete({"workspace_id": workspace_id, "member_key": approved_domain_key(domain)})
 
+    def get_invite_link(self, workspace_id: str) -> InviteLink | None:
+        """The workspace's invite link read strongly consistently, or `None` while it is disabled."""
+        if not workspace_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": INVITE_LINK_KEY}, consistent=True)
+        return None if item is None else _as_invite_link(item)
+
+    def put_invite_link(self, workspace_id: str, token_hash: str, *, created_by: str) -> InviteLink:
+        """Store the workspace's invite link under a new token hash, replacing any earlier one."""
+        row = InviteLink(workspace_id=workspace_id, token_hash=token_hash, created_by=created_by)
+        self._repository.put(
+            as_item(row, member_key=INVITE_LINK_KEY, user_id=invite_link_index_key(token_hash)),
+        )
+        return row
+
+    def delete_invite_link(self, workspace_id: str) -> None:
+        """Disable the workspace's invite link. Idempotent."""
+        if not workspace_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": INVITE_LINK_KEY})
+
+    def find_invite_link(self, token_hash: str) -> InviteLink | None:
+        """The live invite link whose token hashes to `token_hash`, or `None`.
+
+        The user index names the workspace, and the row is then read again
+        strongly consistently and its hash compared in constant time, because an
+        index entry can trail a reset or a disable for a moment and the old token
+        must stop working at once.
+        """
+        if not token_hash:
+            return None
+        page = self._repository.query(
+            Key("user_id").eq(invite_link_index_key(token_hash)), index_name=USER_INDEX, limit=1
+        )
+        if not page.items:
+            return None
+        row = self.get_invite_link(str(page.items[0].get("workspace_id", "")))
+        if row is None or not hmac.compare_digest(row.token_hash, token_hash):
+            return None
+        return row
+
     def workspaces_approving_domain(self, domain: str, *, limit: int = 200) -> list[str]:
         """The ids of every workspace approving this email domain, through the user index.
 
@@ -1302,6 +1370,12 @@ class MembershipRepository:
         )
         rows = [AppApproval.model_validate(dict(item)) for item in items]
         return sorted(rows, key=lambda row: row.updated_at, reverse=True)
+
+
+def _as_invite_link(item: Mapping[str, Any]) -> InviteLink:
+    """One stored item as an `InviteLink`, ignoring the key and index attributes."""
+    fields = {key: value for key, value in item.items() if key not in ("member_key", "user_id")}
+    return InviteLink.model_validate(fields)
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:

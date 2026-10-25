@@ -448,7 +448,11 @@ const Login: React.FC = () => {
             <AuthRedirectLink
               text="No account yet?"
               linkText="Create one"
-              to="/register"
+              to={
+                searchParams.get('returnTo') === null
+                  ? '/register'
+                  : `/register?returnTo=${encodeURIComponent(returnTo)}`
+              }
             />
           </div>
         </>

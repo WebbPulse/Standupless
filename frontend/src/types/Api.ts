@@ -915,6 +915,29 @@ export interface InviteAccept {
   token: string;
 }
 
+/**
+ * Whether a workspace's reusable invite link is on. The token is stored only as
+ * a hash, so it is never read back after the enable or reset that minted it.
+ */
+export interface InviteLinkRead {
+  enabled: boolean;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+/** The enable or reset response, which carries the link's token exactly once. */
+export interface InviteLinkCreated extends InviteLinkRead {
+  token: string;
+}
+
+/** What a signed-in visitor sees of the workspace an invite link joins. */
+export interface InviteLinkPreview {
+  workspace_id: string;
+  name: string;
+  slug: string;
+  already_member: boolean;
+}
+
 /** How urgent an issue is. The contract fixes these five and defaults to none. */
 export type IssuePriority = 'none' | 'urgent' | 'high' | 'medium' | 'low';
 

@@ -424,6 +424,39 @@ class InviteAccept(BaseModel):
     token: str = Field(min_length=1)
 
 
+class InviteLinkRead(BaseModel):
+    """Whether the workspace's reusable invite link is on, and who minted the current one.
+
+    The token is stored only as a hash, so this shape never carries it. It is
+    shown once, in `InviteLinkCreated`, when the link is enabled or reset.
+    """
+
+    enabled: bool
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class InviteLinkCreated(InviteLinkRead):
+    """The 201 body of an enabled or reset invite link, carrying its token exactly once."""
+
+    token: str
+
+
+class InviteLinkToken(BaseModel):
+    """The body the invite link preview and join routes take."""
+
+    token: str = Field(min_length=1, max_length=256)
+
+
+class InviteLinkPreview(BaseModel):
+    """What a signed-in visitor sees before joining through an invite link."""
+
+    workspace_id: str
+    name: str
+    slug: str
+    already_member: bool
+
+
 def display_name_for(user: Optional[User]) -> str:
     """A renderable name for a user row, falling back to the email local part.
 

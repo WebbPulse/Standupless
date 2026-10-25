@@ -46,6 +46,12 @@ export const invitesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** Whether one workspace's reusable invite link is on. */
+export const inviteLinkKey = (workspaceId: string): QueryKey => [
+  'invite-link',
+  workspaceId,
+];
+
 /** One team's status list. */
 export const statusesKey = (teamId: string): QueryKey => ['statuses', teamId];
 
@@ -152,6 +158,10 @@ export const teamMembersKey = (teamId: string): QueryKey => [
   'team-members',
   teamId,
 ];
+
+/** Builds the reusable link anyone opens to join a workspace as a member. */
+export const workspaceJoinLink = (token: string): string =>
+  `${globalThis.location.origin}/join?token=${encodeURIComponent(token)}`;
 
 /** Builds the link an invited person opens to redeem their invite. */
 export const inviteLink = (token: string): string =>

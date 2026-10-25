@@ -20,6 +20,9 @@ import type {
   AuthPolicyUpdate,
   InviteCreate,
   InviteCreatedRead,
+  InviteLinkCreated,
+  InviteLinkPreview,
+  InviteLinkRead,
   InviteListRead,
   InviteRead,
   JoinableWorkspaceListRead,
@@ -48,6 +51,10 @@ export const WORKSPACES_PATH = '/workspaces';
 
 /** The route an invite is redeemed at. */
 export const INVITE_ACCEPT_PATH = '/invites/accept';
+
+/** The routes a reusable invite link is previewed and joined through. */
+export const INVITE_LINK_PREVIEW_PATH = '/invites/link/preview';
+export const INVITE_LINK_JOIN_PATH = '/invites/link/join';
 
 /** The route one workspace is read from. */
 export const workspacePath = (workspaceId: string): string =>
@@ -579,6 +586,59 @@ export const revokeInvite = async (
 /** Redeems an invite token. Idempotent for a user who is already a member. */
 export const acceptInvite = async (token: string): Promise<MemberRead> => {
   const response = await apiClient.post<MemberRead>(INVITE_ACCEPT_PATH, {
+    token,
+  });
+  return response.data;
+};
+
+/** The path of a workspace's reusable invite link. */
+const inviteLinkPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/invite-link`;
+
+/** Reads whether the workspace's invite link is on. The token is never returned here. */
+export const getInviteLink = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<InviteLinkRead> => {
+  const response = await apiClient.get<InviteLinkRead>(
+    inviteLinkPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Enables the invite link, or resets it so the old link stops working. The
+ * response carries the token once, so the caller must surface it immediately.
+ */
+export const resetInviteLink = async (
+  workspaceId: string
+): Promise<InviteLinkCreated> => {
+  const response = await apiClient.post<InviteLinkCreated>(
+    inviteLinkPath(workspaceId)
+  );
+  return response.data;
+};
+
+/** Disables the invite link. People who joined through it stay members. */
+export const disableInviteLink = async (workspaceId: string): Promise<void> => {
+  await apiClient.delete<void>(inviteLinkPath(workspaceId));
+};
+
+/** Names the workspace an invite link joins, for the join page. */
+export const previewInviteLink = async (
+  token: string
+): Promise<InviteLinkPreview> => {
+  const response = await apiClient.post<InviteLinkPreview>(
+    INVITE_LINK_PREVIEW_PATH,
+    { token }
+  );
+  return response.data;
+};
+
+/** Joins a workspace as a member through its invite link. Idempotent for a member. */
+export const joinInviteLink = async (token: string): Promise<MemberRead> => {
+  const response = await apiClient.post<MemberRead>(INVITE_LINK_JOIN_PATH, {
     token,
   });
   return response.data;
