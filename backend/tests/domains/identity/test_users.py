@@ -65,6 +65,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "lead_team": "all",
             "empty": "show",
             "zoom": "month",
+            "dependencies": "show",
             "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
         },
         "projects_display_saved": False,
@@ -175,6 +176,7 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
                 "closed": "month",
                 "lead_team": "lead",
                 "empty": "hide",
+                "dependencies": "hide",
             }
         },
     )
@@ -189,6 +191,7 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
         "lead_team": "lead",
         "empty": "hide",
         "zoom": "month",
+        "dependencies": "hide",
         "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
     }
     assert repositories.users.get(OWNER).projects_display["group"] == "health"
@@ -204,6 +207,7 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
         ("rows", "label"),
         ("lead_team", "yes"),
         ("empty", "true"),
+        ("dependencies", "off"),
         ("columns", "health,budget"),
     ):
         refused = client.patch("/api/users/me/preferences", json={"projects_display": {field: value}})

@@ -13,6 +13,8 @@
  * block the second, and dragging from the dot at its start makes it wait on
  * the second. Hovering a line lights it and clicking it offers to remove it,
  * and a focused bar opens the same links from its menu key or Shift+F10.
+ * A page can hide the lines and the dots that draw them, leaving the links
+ * themselves in the bar menu.
  * Each dated milestone draws as a diamond on its project's lane.
  */
 
@@ -170,6 +172,8 @@ interface TimelineRowProps {
   onReveal: (day: number) => void;
   /** This project is where the link being dragged would land. */
   linkTarget: boolean;
+  /** Whether the dots that drag out a new link show on the bar. */
+  linkable: boolean;
   onLinkStart: (
     projectId: string,
     side: LinkSide,
@@ -214,6 +218,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   refreshKey,
   onReveal,
   linkTarget,
+  linkable,
   onLinkStart,
   onLinkOver,
   onLinkOut,
@@ -487,6 +492,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
               </span>
             </div>
             {editable &&
+              linkable &&
               (['start', 'end'] as const).map((end) => (
                 <span
                   key={end}
@@ -652,6 +658,8 @@ export interface ProjectTimelineProps {
   people: Assignable[];
   workspaceRole: WorkspaceRole | undefined;
   zoom: TimelineZoom;
+  /** Whether the lines between blocking and blocked projects draw, true by default. */
+  showDependencies?: boolean;
   folded: string[];
   onToggleGroup: (key: string) => void;
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
@@ -671,6 +679,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   people,
   workspaceRole,
   zoom,
+  showDependencies = true,
   folded,
   onToggleGroup,
   refreshKey,
@@ -781,8 +790,9 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
     [shown]
   );
   const lines = useMemo(
-    () => dependencyLines(shown, folded, range, pxPerDay),
-    [shown, folded, range, pxPerDay]
+    () =>
+      showDependencies ? dependencyLines(shown, folded, range, pxPerDay) : [],
+    [showDependencies, shown, folded, range, pxPerDay]
   );
 
   const lanes = useRef<HTMLDivElement | null>(null);
@@ -1231,6 +1241,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
                       scrollToDay(day, 24);
                     }}
                     linkTarget={linkDrag?.targetId === project.project_id}
+                    linkable={showDependencies}
                     onLinkStart={startLink}
                     onLinkOver={overLink}
                     onLinkOut={outLink}
