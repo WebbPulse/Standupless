@@ -179,6 +179,46 @@ def test_marking_all_read_empties_the_badge(client: TestClient, workspace: str, 
     assert repositories.inbox.get(workspace, OWNER, "01N000000000000000000THEIR").unread is True
 
 
+def test_marking_all_read_keeps_to_the_kinds_named(client: TestClient, workspace: str, repositories: Any) -> None:
+    """`kinds` narrows mark all read to the list's filter, so hidden types stay unread."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", kind="mentioned")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", kind="assigned")
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", kind="commented")
+
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/read", json={"all": True, "kinds": ["mentioned", "commented"]}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 2
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000A000").unread is False
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000B000").unread is True
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000C000").unread is False
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 1
+
+
+def test_marking_all_read_refuses_an_unknown_kind(client: TestClient, workspace: str) -> None:
+    """A misspelt kind would otherwise mark nothing and look like success."""
+    sign_in(client, MEMBER)
+
+    response = client.post(f"/api/workspaces/{workspace}/inbox/read", json={"all": True, "kinds": ["nonsense"]})
+
+    assert response.status_code == 422
+
+
+def test_kinds_without_all_is_rejected(client: TestClient, workspace: str) -> None:
+    """`kinds` narrows a mark of everything, so beside ids it means nothing and is refused."""
+    sign_in(client, MEMBER)
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/read",
+        json={"notification_ids": ["01N0000000000000000000A000"], "kinds": ["mentioned"]},
+    )
+
+    assert response.status_code == 422
+
+
 def test_marking_read_with_neither_ids_nor_all_is_rejected(client: TestClient, workspace: str) -> None:
     """An empty request is a mistake rather than a silent no-op."""
     sign_in(client, MEMBER)

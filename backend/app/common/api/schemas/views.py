@@ -683,10 +683,15 @@ class InboxCountRead(BaseModel):
 
 
 class InboxReadRequest(BaseModel):
-    """The body a mark-read takes: either a list of ids or the whole inbox."""
+    """The body a mark-read takes: either a list of ids or the whole inbox.
+
+    `kinds` narrows `all` to those notification kinds, matching the list's filter,
+    so marking everything read under a filter leaves the hidden types alone.
+    """
 
     notification_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=INBOX_READ_MAX_IDS)
     all: bool = False
+    kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
 
 
 class InboxUnreadRequest(BaseModel):

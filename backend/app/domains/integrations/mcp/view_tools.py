@@ -303,9 +303,10 @@ def _mark_read(call: ToolCall) -> Any:
 
 
 def _mark_all_read(call: ToolCall) -> Any:
-    """Mark every one of the caller's notifications read."""
+    """Mark every one of the caller's notifications read, or only those of some kinds."""
     _workspace_member(call)
-    return {"updated": mark_read(call.repositories, call.context, InboxReadRequest(all=True))}
+    payload = InboxReadRequest(all=True, kinds=filter_values(call.optional("kinds")) or [])
+    return {"updated": mark_read(call.repositories, call.context, payload)}
 
 
 def _mark_unread(call: ToolCall) -> Any:
@@ -458,9 +459,13 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="mark_all_notifications_read",
-        description="Mark every notification in your inbox read. Answers how many changed.",
+        description=(
+            "Mark every notification in your inbox read, or only those of the given kinds. Answers how many changed."
+        ),
         scopes=("notifications:write",),
-        schema=object_schema({}),
+        schema=object_schema(
+            {"kinds": one_or_many("One notification kind or a list, ORed, to mark read: " + ", ".join(INBOX_KINDS))}
+        ),
         handler=_mark_all_read,
     ),
     Tool(

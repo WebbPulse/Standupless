@@ -1883,7 +1883,8 @@ export interface InboxCountRead {
 }
 
 /** What a mark-read call takes: named rows, or every row. */
-export type InboxReadWrite = { notification_ids: string[] } | { all: true };
+export type InboxReadWrite =
+  { notification_ids: string[] } | { all: true; kinds?: string[] };
 
 /** What a mark-unread call takes: the rows to bring back as unread. */
 export interface InboxUnreadWrite {

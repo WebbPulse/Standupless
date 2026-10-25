@@ -916,6 +916,7 @@ class InboxCountRead(TypedDict):
 
 class InboxReadRequest(TypedDict):
     all: NotRequired[bool]
+    kinds: NotRequired[list[str]]
     notification_ids: NotRequired[list[str] | None]
 
 
