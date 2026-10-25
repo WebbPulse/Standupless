@@ -14,6 +14,7 @@ import {
   writeIssueDraft,
   type IssueDraft,
 } from './issueDraft';
+import { pendingPath } from './draftUploads';
 
 const draft: IssueDraft = {
   teamId: 't-1',
@@ -70,7 +71,7 @@ describe('reading and writing', () => {
   it('takes out placeholders for files that never uploaded', () => {
     writeIssueDraft('ws-1', 'u-1', {
       ...draft,
-      body: 'Before\n\n![shot.png](pending-upload:file-1)\n\nAfter',
+      body: `Before\n\n![shot.png](${pendingPath('ws-1', 'file-1', 'image')})\n\nAfter`,
     });
     expect(readIssueDraft('ws-1', 'u-1')?.body).toBe('Before\n\nAfter');
   });

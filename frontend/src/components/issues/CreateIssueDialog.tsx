@@ -38,9 +38,16 @@
  * under the new one, carrying its project, milestone and cycle. A file
  * pasted, dropped or picked is held with a placeholder in the description
  * and uploaded once the issue exists, the placeholder becoming its embed.
+ *
+ * The description is the same rich Markdown surface as the issue page, with
+ * its slash menu, mentions, references, emoji and selection toolbar, loaded
+ * lazily so opening the dialog never waits on it. A held image or video shows
+ * inline at once from its local bytes.
  */
 
 import React, {
+  Suspense,
+  lazy,
   useCallback,
   useContext,
   useEffect,
@@ -61,8 +68,11 @@ import { uploadAttachment } from '../../api/discussion';
 import { createIssue, createLink, updateIssue } from '../../api/issues';
 import { listTeamTemplates } from '../../api/templates';
 import { getTriageSettings } from '../../api/triage';
+import {
+  DocumentLinkContext,
+  issueDocumentParent,
+} from '../../contexts/DocumentLinkContext';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
-import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useTriageOn } from '../../hooks/useTriageTeams';
 import { canWriteIssues } from '../../lib/capabilities';
@@ -78,12 +88,15 @@ import {
 import { usePreferences } from '../../lib/preferences';
 import {
   namesPending,
+  pendingAttachmentId,
+  pendingPath,
   pendingReference,
   resolvePending,
   stripPending,
 } from '../../lib/draftUploads';
 import { errorMessage } from '../../lib/errors';
 import { contentPath, mediaKindOf } from '../../lib/media';
+import { rememberPreview } from '../../lib/mediaContext';
 import type { Assignable } from '../../lib/issuePeople';
 import {
   templatePrefill,
@@ -119,6 +132,8 @@ import type {
   TemplateListRead,
   TemplateRead,
 } from '../../types/Api';
+import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
+import type { UploadFile } from '../editor/mediaNodes';
 import { ErrorAlert } from '../ui/alert';
 import Button, { IconButton } from '../ui/button';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
@@ -153,6 +168,11 @@ import {
   previewLabels,
   previewPriority,
 } from '../../lib/formMapping';
+
+const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
+
+/** The words an empty description shows. */
+const BODY_PLACEHOLDER = 'Add description...';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -555,8 +575,27 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const focusRow = useRef<string | null>(null);
   const filePicker = useRef<HTMLInputElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
-  const bodyInput = useRef<HTMLTextAreaElement>(null);
-  useAutoGrow(bodyInput, expanded ? 640 : 320);
+  const bodyEditor = useRef<RichMarkdownHandle>(null);
+  const bodyFocused = useRef(false);
+  const replacingBody = useRef(false);
+  const [focusBodyOnLoad, setFocusBodyOnLoad] = useState(false);
+  const latestBody = useRef(body);
+  latestBody.current = body;
+
+  const replaceBody = (text: string): void => {
+    replacingBody.current = true;
+    try {
+      bodyEditor.current?.setMarkdown(text);
+    } finally {
+      replacingBody.current = false;
+    }
+    setBody(text);
+  };
+
+  const focusBody = (): void => {
+    if (bodyEditor.current === null) setFocusBodyOnLoad(true);
+    else bodyEditor.current.focus();
+  };
 
   const { data: teams } = useTeams();
   const writable = (teams ?? []).filter((team) =>
@@ -678,7 +717,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       setTitle(text.title);
     }
     if (body.trim() === '' || body === templateText.body) {
-      setBody(text.body);
+      replaceBody(text.body);
     }
     setTemplateText(text);
     setConfirming(false);
@@ -703,7 +742,15 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setTemplateText(text);
     setDraft((held) => withTemplate(held, fill));
     setTitle((held) => (held.trim() === '' ? text.title : held));
-    setBody((held) => (held.trim() === '' ? text.body : held));
+    if (latestBody.current.trim() === '') {
+      replacingBody.current = true;
+      try {
+        bodyEditor.current?.setMarkdown(text.body);
+      } finally {
+        replacingBody.current = false;
+      }
+      setBody(text.body);
+    }
   }, [activeTeamId, templateList, teamStatuses, teamLabels, teamPeople]);
 
   const stored: IssueDraft = {
@@ -811,7 +858,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setTemplateText({ title: held.templateTitle, body: held.templateBody });
     setAnswers(held.answers);
     setTitle(held.title);
-    setBody(held.body);
+    replaceBody(held.body);
     setDraft(draftOfStored(held));
     setSubIssues(rowsOfStored(held, `${localId('sub-saved-')}-`));
     setAttached([]);
@@ -866,11 +913,34 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     const index = subIssues.findIndex((row) => row.id === id);
     const before = subIssues[index - 1];
     setSubIssues((rows) => rows.filter((row) => row.id !== id));
-    if (before === undefined) bodyInput.current?.focus();
+    if (before === undefined) focusBody();
     else focusRow.current = before.id;
   };
 
+  const holdFile = useCallback<UploadFile>(
+    (file, onProgress) => {
+      nextId.current += 1;
+      const id = `file-${String(nextId.current)}`;
+      const kind = mediaKindOf(file.type);
+      rememberPreview(pendingAttachmentId(id), file);
+      setAttached((current) => [...current, { id, file }]);
+      setConfirming(false);
+      onProgress(1);
+      return Promise.resolve({
+        src: pendingPath(workspaceId, id, kind),
+        kind,
+      });
+    },
+    [workspaceId]
+  );
+
   const holdFiles = (files: File[]): void => {
+    const surface = bodyEditor.current;
+    if (surface !== null) {
+      if (!bodyFocused.current) surface.focus();
+      surface.insertFiles(files);
+      return;
+    }
     const accepted: HeldFile[] = [];
     for (const file of files) {
       const refusal = describeUploadRefusal(file);
@@ -881,31 +951,36 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       accepted.push({ id: localId('file-'), file });
     }
     if (accepted.length === 0) return;
-    const field = bodyInput.current;
-    const atCaret = field !== null && document.activeElement === field;
-    const start = atCaret ? field.selectionStart : body.length;
-    const end = atCaret ? field.selectionEnd : body.length;
-    const before = body.slice(0, start);
-    const after = body.slice(end);
-    const lead = before === '' || before.endsWith('\n') ? '' : '\n';
-    const trail = after.startsWith('\n') ? '' : '\n';
+    for (const item of accepted) {
+      rememberPreview(pendingAttachmentId(item.id), item.file);
+    }
     const references = accepted
-      .map((item) => pendingReference(item.id, item.file))
-      .join('\n');
-    setBody(`${before}${lead}${references}${trail}${after}`);
+      .map((item) => pendingReference(workspaceId, item.id, item.file))
+      .join('\n\n');
+    setBody((current) =>
+      current.trim() === '' ? references : `${current}\n\n${references}`
+    );
     setAttached((current) => [...current, ...accepted]);
     setConfirming(false);
   };
 
   const dropFile = (id: string): void => {
     setAttached((current) => current.filter((item) => item.id !== id));
-    setBody((current) =>
-      namesPending(current, id)
-        ? resolvePending(current, (other) =>
-            other === id ? null : `pending-upload:${other}`
-          )
-        : current
-    );
+    if (namesPending(body, id)) {
+      replaceBody(
+        resolvePending(body, (other) =>
+          other === id
+            ? null
+            : pendingPath(
+                workspaceId,
+                other,
+                mediaKindOf(
+                  attached.find((item) => item.id === other)?.file.type ?? ''
+                )
+              )
+        )
+      );
+    }
   };
 
   const uploadHeld = async (
@@ -923,6 +998,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             issue.id,
             item.file
           );
+          rememberPreview(attachment.attachment_id, item.file);
           paths.set(
             item.id,
             contentPath(
@@ -1015,7 +1091,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         }
         setLastCreated(issue);
         setTitle(templateText.title);
-        setBody(templateText.body);
+        replaceBody(templateText.body);
         setAnswers({});
         setAttached([]);
         setSubIssues([]);
@@ -1044,6 +1120,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLFormElement>): void => {
+    if (event.defaultPrevented) return;
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
@@ -1060,6 +1137,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
         return;
       }
+      setDragging(false);
+    },
+    onDropCapture: () => {
       setDragging(false);
     },
     onDrop: (event: React.DragEvent) => {
@@ -1104,7 +1184,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               setTemplateId(null);
               setAnswers({});
               if (title === templateText.title) setTitle('');
-              if (body === templateText.body) setBody('');
+              if (body === templateText.body) replaceBody('');
               setTemplateText(NO_TEXT);
             }}
           />
@@ -1193,7 +1273,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
                 event.preventDefault();
-                bodyInput.current?.focus();
+                focusBody();
               }
             }}
             className="w-full bg-transparent text-lg font-semibold text-text outline-none placeholder:text-text-faint"
@@ -1207,27 +1287,51 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             duplicateOfId={duplicateOf?.issue_id ?? null}
             onMarkDuplicate={setDuplicateOf}
           />
-          <textarea
-            ref={bodyInput}
-            aria-label="Description"
-            placeholder="Add description..."
-            rows={3}
-            value={body}
-            onChange={(event) => {
-              setBody(event.target.value);
-              setConfirming(false);
-            }}
-            onPaste={(event) => {
-              const files = filesFrom(event.clipboardData);
-              if (files.length === 0) return;
-              event.preventDefault();
-              holdFiles(files);
-            }}
-            className={cn(
-              'block w-full resize-none bg-transparent text-sm text-text outline-none placeholder:text-text-faint',
-              expanded ? 'min-h-64' : 'min-h-16'
-            )}
-          />
+          <Suspense
+            fallback={
+              <p
+                className={cn(
+                  'cursor-text text-sm leading-6 text-text-faint',
+                  expanded ? 'min-h-64' : 'min-h-16'
+                )}
+                onClick={() => {
+                  setFocusBodyOnLoad(true);
+                }}
+              >
+                {body.trim() === '' ? BODY_PLACEHOLDER : body}
+              </p>
+            }
+          >
+            <DocumentLinkContext.Provider
+              value={issueDocumentParent(draft.projectId)}
+            >
+              <RichMarkdownEditor
+                ref={bodyEditor}
+                value={body}
+                editable
+                ariaLabel="Description"
+                placeholder={BODY_PLACEHOLDER}
+                autoFocus={focusBodyOnLoad}
+                className={cn(
+                  'text-sm leading-6 text-text',
+                  expanded ? 'min-h-64' : 'min-h-16'
+                )}
+                mentionPeople={teamPeople}
+                uploadFile={holdFile}
+                onCommit={() => true}
+                onChange={(markdown) => {
+                  if (replacingBody.current) return;
+                  setBody(markdown);
+                  setConfirming(false);
+                }}
+                onSubmit={submit}
+                onCancel={requestClose}
+                onFocusChange={(focused) => {
+                  bodyFocused.current = focused;
+                }}
+              />
+            </DocumentLinkContext.Provider>
+          </Suspense>
           {formTemplate !== null && (
             <FormQuestions
               fields={formFields}
