@@ -1,7 +1,7 @@
 /**
  * Following a saved view, as in Linear: a follower hears in their inbox each
- * time an issue newly matches the view, while the issues already in it stay
- * quiet. The header button shows whether the caller follows the view and how
+ * time an issue, or on a project view a project, newly matches the view, while
+ * the rows already in it stay quiet. The header button shows whether the caller follows the view and how
  * many members do, and the count also sits beside the views list's menu item.
  */
 
@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { LuBell, LuBellOff } from 'react-icons/lu';
 import {
+  listsProjects,
   setViewSubscription,
   type SavedViewDisplayRead,
 } from '../../../api/views';
@@ -47,7 +48,7 @@ export interface ViewSubscribeButtonProps {
   view: SavedViewDisplayRead;
 }
 
-/** The header toggle that follows or unfollows one issue view. */
+/** The header toggle that follows or unfollows one issue or project view. */
 export const ViewSubscribeButton: React.FC<ViewSubscribeButtonProps> = ({
   workspaceId,
   view,
@@ -55,6 +56,7 @@ export const ViewSubscribeButton: React.FC<ViewSubscribeButtonProps> = ({
   const [busy, setBusy] = useState(false);
   const subscribed = view.subscribed === true;
   const count = view.subscriber_count ?? 0;
+  const rows = listsProjects(view) ? 'projects' : 'issues';
 
   const toggle = async (): Promise<void> => {
     setBusy(true);
@@ -84,8 +86,8 @@ export const ViewSubscribeButton: React.FC<ViewSubscribeButtonProps> = ({
       aria-pressed={subscribed}
       title={
         subscribed
-          ? 'You hear when issues are added to this view'
-          : 'Hear when issues are added to this view'
+          ? `You hear when ${rows} are added to this view`
+          : `Hear when ${rows} are added to this view`
       }
       onClick={() => void toggle()}
     >

@@ -1085,6 +1085,44 @@ describe('inbox', () => {
     );
   });
 
+  it('says which view a project entered and opens the project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-10',
+          kind: 'view_project_added',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-1',
+          project_name: 'Public beta',
+          new_value: 'In flight',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Public beta/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Public beta was added to In flight');
+
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-1'
+    );
+    expect(screen.getByLabelText('location')).not.toHaveTextContent(
+      'tab=updates'
+    );
+  });
+
   it('shows a review request and opens its pull request on enter', async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, 'open').mockReturnValue(null);

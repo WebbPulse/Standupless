@@ -46,6 +46,7 @@ CHAT_KINDS: frozenset[str] = frozenset(
         "priority_urgent",
         "blocking_changed",
         "team_issue_created",
+        "view_project_added",
     }
 )
 """The notification kinds a chat direct message carries.

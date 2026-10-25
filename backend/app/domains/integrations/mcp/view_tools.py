@@ -287,7 +287,7 @@ def _delete_view(call: ToolCall) -> Any:
 
 
 def _subscribe_to_view(call: ToolCall) -> Any:
-    """Follow an issue view, to hear about each issue that newly matches it, as the subscription route does."""
+    """Follow a view, to hear about each issue or project that newly matches it, as the subscription route does."""
     _workspace_member(call)
     view = set_view_subscription(call.repositories, call.context, view_ref(call, call.require("view_id")).view_id, True)
     return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
@@ -502,9 +502,10 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="subscribe_to_view",
         description=(
-            "Subscribe to a saved issue view you can read: from now on you get a view_issue_added notification "
-            "each time an issue newly matches its filter. Issues already in the view do not notify, nor do your "
-            "own changes or issues you cannot see. Project views cannot be subscribed to. Repeating is a no-op."
+            "Subscribe to a saved view you can read. On an issue view you get a view_issue_added notification "
+            "each time an issue newly matches its filter; on a project view a view_project_added notification "
+            "each time a project enters it, again if it left and came back. Rows already in the view do not "
+            "notify, nor do your own changes or rows you cannot see. Repeating is a no-op."
         ),
         scopes=("views:write",),
         schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
@@ -513,7 +514,10 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="unsubscribe_from_view",
-        description="Stop getting notified about issues entering a saved view. A no-op when you were not subscribed.",
+        description=(
+            "Stop getting notified about issues or projects entering a saved view. "
+            "A no-op when you were not subscribed."
+        ),
         scopes=("views:write",),
         schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
         handler=_unsubscribe_from_view,

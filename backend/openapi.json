@@ -26019,7 +26019,8 @@
                     "priority_urgent",
                     "blocking_changed",
                     "document_comment",
-                    "team_issue_created"
+                    "team_issue_created",
+                    "view_project_added"
                   ]
                 },
                 "type": "object"
@@ -26058,7 +26059,7 @@
                 "items": {
                   "type": "string"
                 },
-                "maxItems": 32,
+                "maxItems": 33,
                 "type": "array"
               },
               {
@@ -41074,7 +41075,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 32,
+              "maxItems": 33,
               "title": "Kind",
               "type": "array"
             }
@@ -63424,7 +63425,7 @@
         ]
       },
       "put": {
-        "description": "Follow an issue view the caller may read, to hear about each issue that newly matches it.\n\nIssues already in the view stay quiet. A project view answers 422.",
+        "description": "Follow a view the caller may read, to hear about each issue, or project, that newly matches it.\n\nRows already in the view stay quiet. A project view notifies with\n`view_project_added` each time a project enters it, again after it left.",
         "operationId": "subscribe_view_api_workspaces__workspace_id__views__view_id__subscription_put",
         "parameters": [
           {

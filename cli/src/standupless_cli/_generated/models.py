@@ -3313,6 +3313,7 @@ class UserPreferencesUpdate(TypedDict):
                 "blocking_changed",
                 "document_comment",
                 "team_issue_created",
+                "view_project_added",
             ],
             NotificationChannelsUpdate,
         ]

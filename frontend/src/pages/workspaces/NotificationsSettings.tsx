@@ -148,6 +148,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'An issue newly matches a saved view you subscribed to. Issues already in the view stay quiet.',
   },
+  view_project_added: {
+    title: 'Projects added to views you follow',
+    detail:
+      'A project newly matches a saved project view you subscribed to, again each time it comes back. Projects already in the view stay quiet.',
+  },
   reaction: {
     title: 'Reactions',
     detail:
@@ -219,6 +224,7 @@ const KIND_SECTIONS: readonly KindSection[] = [
       'triage_new',
       'team_issue_created',
       'view_issue_added',
+      'view_project_added',
       'standup_digest',
     ],
   },

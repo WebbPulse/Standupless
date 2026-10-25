@@ -56,6 +56,7 @@ _HEADLINES: Mapping[str, str] = {
     "reminder": "You asked to be reminded about this issue.",
     "triage_new": "A new issue is waiting in triage for your team.",
     "view_issue_added": "An issue was added to a view you follow.",
+    "view_project_added": "A project was added to a view you follow.",
     "reaction": "$actor reacted to your comment.",
     "issue_completed": "$actor completed this issue.",
     "issue_cancelled": "$actor canceled this issue.",
@@ -101,6 +102,10 @@ _COMMENT_REASON = (
 )
 _PROJECT_REASON = (
     "You are receiving this because you lead or are a member of this project. "
+    "Turn these off in your {product} notification settings."
+)
+_VIEW_PROJECT_REASON = (
+    "You are receiving this because you subscribed to a view this project now matches. "
     "Turn these off in your {product} notification settings."
 )
 _DIGEST_REASON = (
@@ -302,6 +307,41 @@ def render_project_update_notification(
     )
 
 
+VIEW_PROJECT_ADDED = "view_project_added"
+
+
+def project_page_url(workspace_slug: str, project_id: str, project_name: str = "") -> str:
+    """The SPA link to one project's overview, or to the workspace list when the slug is gone."""
+    if not workspace_slug:
+        return f"{settings.frontend_base_url}/workspaces"
+    return project_web_url(workspace_slug, project_id, project_name)
+
+
+def render_view_project_added_notification(
+    *, to: str, project_id: str, project_name: str, workspace_slug: str, accent: str | None = None
+) -> EmailMessage:
+    """Render the email a project view's subscriber gets when a project enters the view.
+
+    The subject is `[Project] Name`, so it threads with the project's other mail.
+    """
+    title = project_name.strip() or "Untitled project"
+    line = _HEADLINES[VIEW_PROJECT_ADDED]
+    return render(
+        to=to,
+        subject=f"[Project] {title}",
+        preheader=f"{title}: {line}",
+        blocks=[
+            Heading(title),
+            Paragraph(line),
+            Button("Open project", project_page_url(workspace_slug, project_id, project_name), show_url=True),
+        ],
+        footer_note=_VIEW_PROJECT_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": VIEW_PROJECT_ADDED},
+        accent=accent,
+    )
+
+
 PROJECT_UPDATE_DUE = "project_update_due"
 
 _DUE_REASON = (
@@ -417,14 +457,19 @@ def _entry_line(entry: DigestEntry) -> str:
     return Template(template).substitute(actor=actor)
 
 
+PROJECT_KINDS: frozenset[str] = frozenset({"project_update", PROJECT_UPDATE_DUE, VIEW_PROJECT_ADDED})
+"""The kinds about a project rather than an issue, grouped and linked under the project."""
+
+
 def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str]:
     """The group one entry is listed under: its grouping key, its label and its link."""
-    if entry.kind in ("project_update", PROJECT_UPDATE_DUE):
+    if entry.kind in PROJECT_KINDS:
         name = entry.project_name.strip() or "Untitled project"
+        link = project_page_url if entry.kind == VIEW_PROJECT_ADDED else project_url
         return (
             f"project#{entry.project_id}",
             f"Project: {name}",
-            project_url(workspace_slug, entry.project_id, entry.project_name),
+            link(workspace_slug, entry.project_id, entry.project_name),
         )
     if entry.kind == INITIATIVE_UPDATE_DUE:
         name = entry.initiative_name.strip() or "Untitled initiative"
@@ -461,6 +506,14 @@ def render_single(
             initiative_id=entry.initiative_id,
             initiative_name=entry.initiative_name,
             due_state=entry.due_state,
+            workspace_slug=workspace_slug,
+            accent=accent,
+        )
+    if entry.kind == VIEW_PROJECT_ADDED:
+        return render_view_project_added_notification(
+            to=to,
+            project_id=entry.project_id,
+            project_name=entry.project_name,
             workspace_slug=workspace_slug,
             accent=accent,
         )
@@ -517,7 +570,7 @@ def render_digest(
         groups.setdefault(key, (label, link, []))[2].append(entry)
 
     subjects = {_entry_group(entry, workspace_slug)[0] for entry in ordered}
-    if len(subjects) == 1 and ordered[0].kind not in ("project_update", PROJECT_UPDATE_DUE, INITIATIVE_UPDATE_DUE):
+    if len(subjects) == 1 and ordered[0].kind not in (*PROJECT_KINDS, INITIATIVE_UPDATE_DUE):
         title = ordered[0].issue_title.strip() or "Untitled issue"
         subject = f"[{ordered[0].issue_key}] {title}" if ordered[0].issue_key else title
     else:

@@ -615,7 +615,9 @@ class Project(BaseModel):
     written before custom statuses, which reads as its category's seeded default.
     `start_date_resolution` and `target_date_resolution` widen a date to its
     month, quarter, half or year, the date held at that period's first or last
-    day; None is an exact day.
+    day; None is an exact day. `updated_by` is the person whose edit last changed
+    the project, None on a row only its creator or a background rollup wrote, so
+    the notify consumer can leave that person out of what the change announces.
     """
 
     workspace_id: str
@@ -649,6 +651,7 @@ class Project(BaseModel):
     sort_order: str | None = None
     archived_at: datetime | None = None
     created_by: str
+    updated_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
@@ -1031,6 +1034,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "sort_order",
     "archived_at",
     "import_batch_id",
+    "updated_by",
 )
 """The project attributes a null value removes from the row rather than storing."""
 
