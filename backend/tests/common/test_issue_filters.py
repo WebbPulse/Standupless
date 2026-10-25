@@ -8,14 +8,14 @@ unset field, `me` is the caller, and a `_not` field excludes.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 import pytest
 
 from app.common.customer_index import CustomerIndex, CustomerProfile
 from app.common.db.dynamo.issues import Issue
-from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
+from app.common.issue_filters import IssueFilter, InvalidFilterValue, UnknownStatusCategory, build_issue_filter
 
 CALLER = "01JB0000000000000000CALLER"
 
@@ -433,3 +433,52 @@ def test_customer_field_filters_move_the_fingerprint_and_the_index_does_not() ->
         wanted = build_issue_filter(user_id=CALLER, **values)
         assert wanted.fingerprint() != plain.fingerprint()
         assert wanted.fingerprint() == replace(wanted, customer_index=_customer_index()).fingerprint()
+
+
+def test_relative_bounds_resolve_against_the_request_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`-2w` keeps the last fortnight of whatever day the list runs, so a saved view keeps rolling."""
+    monkeypatch.setattr("app.common.relative_days.utc_today", lambda: date(2026, 10, 25))
+    wanted = build_issue_filter(user_id=CALLER, created_after="-2w")
+
+    assert wanted.created_after == "2026-10-11"
+    assert not wanted.matches(_issue(created_at=datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)))
+    assert wanted.matches(_issue(created_at=datetime(2026, 10, 12, 0, 1, tzinfo=timezone.utc)))
+
+    monkeypatch.setattr("app.common.relative_days.utc_today", lambda: date(2026, 11, 1))
+    assert build_issue_filter(user_id=CALLER, created_after="-2w").created_after == "2026-10-18"
+
+
+def test_relative_due_bounds_resolve_both_ways(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Due within a week and overdue are both relative to the request day."""
+    monkeypatch.setattr("app.common.relative_days.utc_today", lambda: date(2026, 10, 25))
+    wanted = build_issue_filter(user_id=CALLER, due_before="+1w", due_after="today")
+
+    assert wanted.due_before == "2026-11-01"
+    assert wanted.due_after == "2026-10-25"
+    assert wanted.matches(_issue(due_date="2026-10-31"))
+    assert not wanted.matches(_issue(due_date="2026-10-25"))
+    assert build_issue_filter(user_id=CALLER, completed_before="-1m").completed_before == "2026-09-25"
+    assert build_issue_filter(user_id=CALLER, updated_after="-1d").updated_after == "2026-10-24"
+
+
+def test_relative_bounds_resolve_inside_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A condition group's date bound resolves the same way as the top level's."""
+    monkeypatch.setattr("app.common.relative_days.utc_today", lambda: date(2026, 10, 25))
+    wanted = build_issue_filter(user_id=CALLER, groups=[{"created_after": "-7d"}])
+
+    assert wanted.groups[0].created_after == "2026-10-18"
+
+
+def test_absolute_due_bounds_are_untouched() -> None:
+    """A stored absolute due bound behaves exactly as it did before relative bounds."""
+    wanted = build_issue_filter(user_id=CALLER, due_before="2026-02-01T00:00:00Z")
+
+    assert wanted.due_before == "2026-02-01T00:00:00Z"
+
+
+def test_a_malformed_relative_bound_is_refused() -> None:
+    """A typo in a relative bound is a 422, not a filter that silently keeps nothing."""
+    with pytest.raises(InvalidFilterValue):
+        build_issue_filter(user_id=CALLER, created_after="-2weeks")
+    with pytest.raises(InvalidFilterValue):
+        build_issue_filter(user_id=CALLER, due_before="tomorrow")

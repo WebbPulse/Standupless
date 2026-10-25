@@ -11,7 +11,7 @@ healths and priorities stay equal to the schema's.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any, get_args
 
 from fastapi.testclient import TestClient
@@ -93,6 +93,20 @@ def test_the_list_filters_by_start_and_target_date(client: TestClient, workspace
     assert _names(client, workspace, target_date_after="2026-03-01", target_date_before="2026-10-01") == {"Late"}
     assert _names(client, workspace, start_date_after="2025-01-01") == {"Early", "Late"}
     response = client.get(f"/api/workspaces/{workspace}/projects", params={"start_date_before": "June"})
+    assert response.status_code == 422
+
+
+def test_relative_date_bounds_resolve_against_today(client: TestClient, workspace: str, monkeypatch: Any) -> None:
+    """A relative bound resolves against the current UTC day, so a saved bound keeps rolling."""
+    monkeypatch.setattr("app.common.project_filters.utc_today", lambda: date(2026, 5, 1))
+    sign_in(client, ADMIN)
+    seed_project(client, workspace, name="Early", start_date="2026-01-10", target_date="2026-03-01")
+    seed_project(client, workspace, name="Late", start_date="2026-06-01", target_date="2026-09-30")
+    assert _names(client, workspace, start_date_before="today") == {"Early"}
+    assert _names(client, workspace, start_date_after="+1w") == {"Late"}
+    assert _names(client, workspace, target_date_after="-2m") == {"Late"}
+    assert _names(client, workspace, target_date_after="-4m") == {"Early", "Late"}
+    response = client.get(f"/api/workspaces/{workspace}/projects", params={"start_date_before": "+2weeks"})
     assert response.status_code == 422
 
 

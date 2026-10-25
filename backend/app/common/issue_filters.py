@@ -22,6 +22,7 @@ from app.common.db.dynamo.relations import LINK_TYPES
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
 from app.common.estimates import is_unestimated
 from app.common.issue_rules import TRIAGE_STATUS_ID, shown_status_id
+from app.common.relative_days import RELATIVE_SYNTAX, resolve_day_bound
 from app.common.sla import SLA_STATUSES
 from app.common.sla import sla_status as issue_sla_status
 
@@ -689,11 +690,29 @@ def _within(moment: datetime, after: Optional[str], before: Optional[str]) -> bo
     return True
 
 
-def _day(value: Optional[str]) -> Optional[str]:
-    """A date bound reduced to its `YYYY-MM-DD` day, so a full timestamp bound still compares by day."""
+def _resolved(name: str, value: object) -> Optional[str]:
+    """A date bound with a relative offset resolved against the request day, `None` when absent.
+
+    An absolute bound comes back as it was sent. A bound that looks relative but
+    does not parse is refused with `InvalidFilterValue`.
+    """
     if not value:
         return None
-    text = str(value).strip()[:10]
+    try:
+        return resolve_day_bound(str(value))
+    except ValueError:
+        raise InvalidFilterValue(f"{name} must be {RELATIVE_SYNTAX}") from None
+
+
+def _day(name: str, value: object) -> Optional[str]:
+    """A date bound reduced to its `YYYY-MM-DD` day, so a full timestamp bound still compares by day.
+
+    A relative bound such as `-14d` or `today` resolves to its day first.
+    """
+    resolved = _resolved(name, value)
+    if not resolved:
+        return None
+    text = resolved.strip()[:10]
     return text or None
 
 
@@ -838,7 +857,10 @@ def build_issue_filter(
     `false` the rest. A bound that is not a whole number from 0 is refused with
     `InvalidFilterValue`. `release_id` keeps the issues that shipped in one of the named
     releases and `release_id_not` drops them, `none` standing for an issue in no
-    release. `my_teams` in a team filter stands for the teams `user_id` belongs
+    release. Every date bound takes a day or an offset relative to the request
+    day, `today`, `-14d`, `+1w`, `-1m` or `+1y`, resolved here by calendar; a bound
+    that looks relative but does not parse is refused with `InvalidFilterValue`.
+    `my_teams` in a team filter stands for the teams `user_id` belongs
     to. Relative cycles, `my_teams`, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
@@ -875,14 +897,14 @@ def build_issue_filter(
         estimates=_estimates(estimate),
         estimates_not=_estimates(estimate_not),
         sla_statuses=_sla_statuses(sla_status),
-        due_before=due_before or None,
-        due_after=due_after or None,
-        created_before=_day(created_before),
-        created_after=_day(created_after),
-        updated_before=_day(updated_before),
-        updated_after=_day(updated_after),
-        completed_before=_day(completed_before),
-        completed_after=_day(completed_after),
+        due_before=_resolved("due_before", due_before),
+        due_after=_resolved("due_after", due_after),
+        created_before=_day("created_before", created_before),
+        created_after=_day("created_after", created_after),
+        updated_before=_day("updated_before", updated_before),
+        updated_after=_day("updated_after", updated_after),
+        completed_before=_day("completed_before", completed_before),
+        completed_after=_day("completed_after", completed_after),
         content=_text(content),
         content_not=_text(content_not),
         query=q or None,

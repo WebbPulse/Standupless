@@ -11,6 +11,7 @@
  */
 
 import type { ProjectViewFilter } from '../api/views';
+import { isDayBound, resolveDayBound, utcToday } from './filterDays';
 import type { ProjectRead } from '../types/Api';
 
 /** The property filters as the page holds them, each empty when unset. */
@@ -114,8 +115,6 @@ const HEALTHS = new Set(['on_track', 'at_risk', 'off_track', NO_VALUE]);
 
 const PRIORITIES = new Set(['none', 'urgent', 'high', 'medium', 'low']);
 
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
 const WHOLE_DAYS = /^[1-9]\d{0,3}$/;
 
 /** The widest update age a filter takes, the route's own ceiling. */
@@ -147,7 +146,7 @@ const cleanScalar = (key: PropertyScalarKey, value: string): string => {
       ? value
       : '';
   }
-  return DAY.test(value) ? value : '';
+  return isDayBound(value) ? value : '';
 };
 
 /** One filter's value as URL text, a list joined by commas. */
@@ -300,10 +299,25 @@ export const matchesPropertyFilters = (
       filters.member.some((member) => held.includes(member));
     if (!kept) return false;
   }
-  if (!within(project.start_date, filters.startAfter, filters.startBefore)) {
+  const today = utcToday(now);
+  const bound = (value: string): string =>
+    value === '' ? '' : resolveDayBound(value, today);
+  if (
+    !within(
+      project.start_date,
+      bound(filters.startAfter),
+      bound(filters.startBefore)
+    )
+  ) {
     return false;
   }
-  if (!within(project.target_date, filters.targetAfter, filters.targetBefore)) {
+  if (
+    !within(
+      project.target_date,
+      bound(filters.targetAfter),
+      bound(filters.targetBefore)
+    )
+  ) {
     return false;
   }
   return updateAgeMatches(

@@ -149,6 +149,22 @@ describe('matchesPropertyFilters', () => {
     ).toBe(false);
   });
 
+  it('resolves a relative bound against the UTC day of now', () => {
+    expect(keeps({ targetBefore: '+1w' })).toBe(false);
+    expect(keeps({ targetBefore: '+2w' })).toBe(true);
+    expect(keeps({ startAfter: '-2m' })).toBe(true);
+    expect(keeps({ startAfter: '-1m' })).toBe(false);
+    expect(keeps({ targetAfter: 'today' })).toBe(true);
+  });
+
+  it('reads a relative bound from the URL as written', () => {
+    expect(
+      readPropertyFilters(
+        new URLSearchParams('target_before=%2B2w&start_after=-2weeks')
+      )
+    ).toEqual(filters({ targetBefore: '+2w' }));
+  });
+
   it('measures update age from the newest project update', () => {
     expect(keeps({ updatedWithin: '7' })).toBe(true);
     expect(keeps({ updatedWithin: '1' })).toBe(false);

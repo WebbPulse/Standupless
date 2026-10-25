@@ -110,7 +110,12 @@ import {
   BlockingIcon,
 } from '../RelationGlyphs';
 import { useShortcut } from '../../../hooks/useShortcuts';
-import { dayFromToday, dayLabel } from '../../../lib/filterDays';
+import {
+  dayBoundChip,
+  dayLabel,
+  resolveDayBound,
+  type DayPreset,
+} from '../../../lib/filterDays';
 
 const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   status: <LuCircleDashed className="h-3.5 w-3.5" />,
@@ -171,23 +176,27 @@ const useChoiceContext = (
   field: FilterField
 ): IssueContext => useMilestoneContext(context, field === 'milestone');
 
-/** The relative days a date filter offers, past ones for most fields, both ways for due. */
-const datePresets = (field: FilterField): { label: string; days: number }[] => {
-  const past = [
-    { label: '1 day ago', days: -1 },
-    { label: '1 week ago', days: -7 },
-    { label: '2 weeks ago', days: -14 },
-    { label: '1 month ago', days: -30 },
-    { label: '3 months ago', days: -90 },
-    { label: '6 months ago', days: -180 },
+/**
+ * The relative bounds a date filter offers, past ones for most fields, both
+ * ways for due. Each stores its offset, such as `-2w`, so a saved view keeps
+ * rolling with today.
+ */
+const datePresets = (field: FilterField): DayPreset[] => {
+  const past: DayPreset[] = [
+    { label: '1 day ago', value: '-1d' },
+    { label: '1 week ago', value: '-1w' },
+    { label: '2 weeks ago', value: '-2w' },
+    { label: '1 month ago', value: '-1m' },
+    { label: '3 months ago', value: '-3m' },
+    { label: '6 months ago', value: '-6m' },
   ];
   if (field !== 'due') return past;
   return [
-    { label: 'Today', days: 0 },
-    { label: 'Tomorrow', days: 1 },
-    { label: 'In 1 week', days: 7 },
-    { label: 'In 2 weeks', days: 14 },
-    { label: 'In 1 month', days: 30 },
+    { label: 'Today', value: 'today' },
+    { label: 'Tomorrow', value: '+1d' },
+    { label: 'In 1 week', value: '+1w' },
+    { label: 'In 2 weeks', value: '+2w' },
+    { label: 'In 1 month', value: '+1m' },
     ...past.slice(0, 3),
   ];
 };
@@ -714,9 +723,9 @@ const chosen = (
       );
 
 /**
- * A date field's day picker: relative presets resolved to a fixed day when
- * picked, so a saved view keeps the day it was saved with, and a calendar
- * input for any other day.
+ * A date field's day picker: relative presets stored as their offset, so a
+ * saved view keeps rolling with today, and a calendar input that stores the
+ * absolute day it names.
  */
 const DateList: React.FC<{
   field: FilterField;
@@ -733,16 +742,16 @@ const DateList: React.FC<{
       label={`${FILTER_LABELS[field]} ${op}`}
       placeholder={`${FILTER_LABELS[field]} ${op}...`}
       options={presets.map((preset) => ({
-        value: String(preset.days),
+        value: preset.value,
         label: preset.label,
         icon: <LuCalendar className="h-3.5 w-3.5 text-text-muted" />,
-        detail: dayLabel(dayFromToday(preset.days)),
+        detail: dayLabel(resolveDayBound(preset.value)),
       }))}
       selected={presets
-        .filter((preset) => dayFromToday(preset.days) === held)
-        .map((preset) => String(preset.days))}
+        .filter((preset) => preset.value === held)
+        .map((preset) => preset.value)}
       onSelect={(value) => {
-        onChange(setDateBound(filters, field, op, dayFromToday(Number(value))));
+        onChange(setDateBound(filters, field, op, value));
       }}
       footer={
         <label className="flex items-center gap-2 border-t border-line px-2 py-2 text-xs text-text-muted">
@@ -751,7 +760,7 @@ const DateList: React.FC<{
             type="date"
             aria-label={`${FILTER_LABELS[field]} ${op} date`}
             className="flex-1"
-            value={held ?? ''}
+            value={held === undefined ? '' : resolveDayBound(held)}
             onChange={(event) => {
               const day = event.target.value;
               if (day !== '') onChange(setDateBound(filters, field, op, day));
@@ -999,7 +1008,9 @@ const nextOp = (clause: FilterClause): FilterClause['op'] => {
 /** How a chip's verb reads. */
 const verbOf = (clause: FilterClause): string => {
   const many = clause.values.length > 1;
-  if (clause.op === 'before' || clause.op === 'after') return clause.op;
+  if (clause.op === 'before' || clause.op === 'after') {
+    return dayBoundChip(clause.op, clause.values[0] ?? '').verb;
+  }
   if (clause.op === 'at_least') return 'at least';
   if (clause.op === 'at_most') return 'at most';
   if (isTextField(clause.field)) {
@@ -1039,19 +1050,20 @@ const FilterChip: React.FC<{
       ? []
       : filterChoices(clause.field, choiceContext, triage);
   const names = chosen(clause, choices).map((choice) => choice.option.label);
-  const summary = dated
-    ? dayLabel(clause.values[0] ?? '')
-    : bounded
-      ? numberLabel(clause.field, clause.values[0] ?? '')
-      : text
-        ? `"${clause.values[0] ?? ''}"`
-        : names.length === 0
-          ? clause.values.length === 1
-            ? '1 value'
-            : `${String(clause.values.length)} values`
-          : names.length <= 2
-            ? names.join(', ')
-            : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
+  const summary =
+    clause.op === 'before' || clause.op === 'after'
+      ? dayBoundChip(clause.op, clause.values[0] ?? '').summary
+      : bounded
+        ? numberLabel(clause.field, clause.values[0] ?? '')
+        : text
+          ? `"${clause.values[0] ?? ''}"`
+          : names.length === 0
+            ? clause.values.length === 1
+              ? '1 value'
+              : `${String(clause.values.length)} values`
+            : names.length <= 2
+              ? names.join(', ')
+              : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
   const flipped = nextOp(clause);
   const flipTaken = filters.some(
     (item) =>

@@ -153,6 +153,17 @@ def test_a_project_view_keeps_the_property_filters(client: TestClient, workspace
     assert response.json()["filter"] == {**sent, "updated_within_days": "30"}
 
 
+def test_a_project_view_keeps_relative_date_bounds_as_written(client: TestClient, workspace: str) -> None:
+    """A relative bound is stored as sent, so the view keeps rolling instead of freezing to a day."""
+    sign_in(client, MEMBER)
+    sent = {"start_date_after": "-1m", "target_date_before": "+2w", "target_date_after": "today"}
+
+    response = _create(client, workspace, entity="projects", filter=sent)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["filter"] == sent
+
+
 def test_a_project_view_refuses_malformed_property_filters(client: TestClient, workspace: str) -> None:
     """An unknown health or priority, a non day bound or an out of range age is `INVALID_FILTER`."""
     sign_in(client, MEMBER)
@@ -161,6 +172,7 @@ def test_a_project_view_refuses_malformed_property_filters(client: TestClient, w
         {"health": ["sunny"]},
         {"priority": "p0"},
         {"start_date_before": "soon"},
+        {"start_date_after": "-2weeks"},
         {"target_date_after": ["2026-01-01"]},
         {"updated_within_days": "0"},
         {"not_updated_within_days": "forever"},

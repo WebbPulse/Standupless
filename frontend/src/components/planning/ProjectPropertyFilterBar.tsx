@@ -3,8 +3,9 @@
  * start and target dates, and last update age. A Filter button lists the
  * fields and opens one field's values; every set filter then shows as a chip
  * reading field, verb and value, whose value reopens the picker and whose X
- * removes that filter alone. Date presets resolve to a fixed day when picked,
- * as the issue filter bar's do, so a saved view keeps the day it was saved with.
+ * removes that filter alone. Date presets store an offset relative to today,
+ * as the issue filter bar's do, so a saved view keeps rolling; a custom date
+ * stores the day it names.
  */
 
 import React, { useState } from 'react';
@@ -20,7 +21,12 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
-import { dayFromToday, dayLabel } from '../../lib/filterDays';
+import {
+  dayBoundChip,
+  dayLabel,
+  resolveDayBound,
+  type DayPreset,
+} from '../../lib/filterDays';
 import { PRIORITY_LABELS } from '../../lib/issueDisplay';
 import {
   personAvatar,
@@ -81,16 +87,16 @@ const PRIORITY_ROWS: readonly IssuePriority[] = [
   'none',
 ];
 
-/** The day presets a start or target bound offers, ahead and behind. */
-const DATE_PRESETS: readonly { label: string; days: number }[] = [
-  { label: 'Today', days: 0 },
-  { label: 'In 1 week', days: 7 },
-  { label: 'In 2 weeks', days: 14 },
-  { label: 'In 1 month', days: 30 },
-  { label: 'In 3 months', days: 90 },
-  { label: '1 week ago', days: -7 },
-  { label: '1 month ago', days: -30 },
-  { label: '3 months ago', days: -90 },
+/** The relative bounds a start or target bound offers, ahead and behind, each stored as its offset. */
+const DATE_PRESETS: readonly DayPreset[] = [
+  { label: 'Today', value: 'today' },
+  { label: 'In 1 week', value: '+1w' },
+  { label: 'In 2 weeks', value: '+2w' },
+  { label: 'In 1 month', value: '+1m' },
+  { label: 'In 3 months', value: '+3m' },
+  { label: '1 week ago', value: '-1w' },
+  { label: '1 month ago', value: '-1m' },
+  { label: '3 months ago', value: '-3m' },
 ];
 
 /** The update age windows offered, in days. */
@@ -238,16 +244,16 @@ const DatePicker: React.FC<{
         label={name}
         placeholder={`${name}...`}
         options={DATE_PRESETS.map((preset) => ({
-          value: String(preset.days),
+          value: preset.value,
           label: preset.label,
           icon: <LuCalendar className="h-3.5 w-3.5 text-text-muted" />,
-          detail: dayLabel(dayFromToday(preset.days)),
+          detail: dayLabel(resolveDayBound(preset.value)),
         }))}
-        selected={DATE_PRESETS.filter(
-          (preset) => dayFromToday(preset.days) === held
-        ).map((preset) => String(preset.days))}
+        selected={DATE_PRESETS.filter((preset) => preset.value === held).map(
+          (preset) => preset.value
+        )}
         onSelect={(value) => {
-          set(dayFromToday(Number(value)));
+          set(value);
           onDone();
         }}
         footer={
@@ -257,7 +263,7 @@ const DatePicker: React.FC<{
               type="date"
               aria-label={`${name} date`}
               className="flex-1"
-              value={held}
+              value={held === '' ? '' : resolveDayBound(held)}
               onChange={(event) => {
                 if (event.target.value !== '') set(event.target.value);
               }}
@@ -399,12 +405,13 @@ const chipsOf = (
       const key = BOUND_KEYS[field][op];
       const day = filters[key];
       if (day === '') continue;
+      const { verb, summary } = dayBoundChip(op, day);
       chips.push({
         id: key,
         field,
-        verb: op,
+        verb,
         op,
-        summary: dayLabel(day),
+        summary,
         clear: (held) => ({ ...held, [key]: '' }),
       });
     }

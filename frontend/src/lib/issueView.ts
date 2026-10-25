@@ -33,6 +33,7 @@ import type {
   StatusRead,
   ViewGroupBy,
 } from '../types/Api';
+import { isDayBound, resolveDayBound, utcToday } from './filterDays';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
 import {
   allowsMultiple,
@@ -980,7 +981,7 @@ const parseClause = (raw: string): FilterClause | null => {
   if (values.length === 0) return null;
   if (isDateField(field)) {
     const day = values[0] ?? '';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    if (!isDayBound(day)) return null;
     return { field, op: op === 'before' ? 'before' : 'after', values: [day] };
   }
   if (isNumberField(field)) {
@@ -1419,7 +1420,7 @@ const clauseHolds = (
   }
   const held = issueFilterValues(issue, clause.field);
   if (clause.op === 'before' || clause.op === 'after') {
-    const bound = clause.values[0] ?? '';
+    const bound = resolveDayBound(clause.values[0] ?? '', utcToday());
     const day = held[0];
     if (day === undefined) return false;
     return clause.op === 'before' ? day < bound : day > bound;

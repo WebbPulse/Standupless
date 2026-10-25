@@ -1,7 +1,8 @@
 /**
  * The Filter button: that F opens its field list from anywhere in the view,
  * as Linear's does, and that the key stands down while the list is open. The
- * chips: that team and date clauses read and flip like the others. The
+ * chips: that team and date clauses read and flip like the others, that a
+ * relative date reads as a rolling window and a preset stores its offset. The
  * removal keys: that Shift F drops the newest filter and Alt Shift F clears
  * them all, as Linear's do, and that neither binds with nothing to remove.
  * My teams: that the chip names it and the hint names the platform modifier.
@@ -114,6 +115,47 @@ describe('FilterChips', () => {
 
     expect(onChange).toHaveBeenCalledWith([
       { field: 'created', op: 'after', values: ['2026-10-01'] },
+    ]);
+  });
+
+  it('reads a relative date clause as a rolling window', () => {
+    render(
+      <FilterChips
+        filters={[
+          { field: 'created', op: 'after', values: ['-2w'] },
+          { field: 'due', op: 'before', values: ['+1w'] },
+        ]}
+        context={context}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Created after, switch' })
+    ).toHaveTextContent('in the last');
+    expect(screen.getByRole('button', { name: '2 weeks' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Due date before, switch' })
+    ).toHaveTextContent('within');
+    expect(screen.getByRole('button', { name: '1 week' })).toBeInTheDocument();
+  });
+
+  it('stores a date preset as its relative offset', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <FilterChips
+        filters={[{ field: 'created', op: 'after', values: ['2026-10-01'] }]}
+        context={context}
+        onChange={onChange}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /2026/ }));
+    await user.click(screen.getByRole('option', { name: /^1 month ago/ }));
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'created', op: 'after', values: ['-1m'] },
     ]);
   });
 

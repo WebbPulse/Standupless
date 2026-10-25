@@ -156,13 +156,15 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
                 "customer_revenue_min, customer_revenue_max, customer_size_min, customer_size_max, "
                 "customer_request_count_min and customer_request_count_max as whole numbers, plus is_blocked, "
                 "is_blocking, has_sub_issues and customer_important as true or false). Values are ids or lists "
-                "of ids; assignee_id, creator_id and subscriber_id may be 'me'. match is all (default) or any, "
+                "of ids; assignee_id, creator_id and subscriber_id may be 'me'. A date bound is a day, YYYY-MM-DD, or "
+                "relative to today as today, -14d, +7d, -2w, -1m or +1y, stored as written so the view keeps rolling. match is all (default) or any, "
                 "and groups is a list of condition "
                 "objects with these same keys and their own match, each counting as one condition, and a group may "
                 "hold groups of its own, two levels at most. A project view's filter instead takes team_id, status "
                 "(project statuses such as planned or in_progress), lead_id (user ids, 'none' for no lead), "
                 "customer_id and customer_id_not (customer ids, 'none' for no customer request), and sub_teams, "
-                "is_blocked and is_blocking, each as true or false."
+                "is_blocked and is_blocking, each as true or false, plus start_date_before, start_date_after, "
+                "target_date_before and target_date_after as a day or an offset relative to today."
             ),
         },
         "sort": enum(SORTS, "Sort order"),
