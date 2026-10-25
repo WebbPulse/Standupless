@@ -134,11 +134,9 @@ const fixedGroups = (): HelpGroup[] => {
       name: 'Search',
       local: false,
       rows: [
-        fixedRow(
-          'fixed-search-escape',
-          'Clear the search, then leave search',
-          [fromKeys('escape')]
-        ),
+        fixedRow('fixed-search-escape', 'Clear the search, then leave search', [
+          fromKeys('escape'),
+        ]),
       ],
     },
     {
