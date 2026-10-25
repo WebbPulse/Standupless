@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectStatusRead } from '../types/Api';
 import {
+  type ScopedEntry,
   isOfferedTo,
   isWorkspaceEntry,
   offeredToTeams,
@@ -14,11 +15,16 @@ import {
 } from './projectScopes';
 import { defaultStatusFor, orderProjectStatuses } from './projectStatuses';
 
-const shared = { id: 'shared', team_id: null };
-const legacy = { id: 'legacy' };
-const mine = { id: 'mine', team_id: 'team-a' };
-const theirs = { id: 'theirs', team_id: 'team-b' };
-const entries = [shared, legacy, mine, theirs];
+/** A scoped entry with an id to name it by. */
+interface Entry extends ScopedEntry {
+  id: string;
+}
+
+const shared: Entry = { id: 'shared', team_id: null };
+const legacy: Entry = { id: 'legacy' };
+const mine: Entry = { id: 'mine', team_id: 'team-a' };
+const theirs: Entry = { id: 'theirs', team_id: 'team-b' };
+const entries: Entry[] = [shared, legacy, mine, theirs];
 
 /** One status row with only the fields ordering reads set apart. */
 const status = (
