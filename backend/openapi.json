@@ -16908,7 +16908,10 @@
               "priority",
               "initiative",
               "lead",
+              "member",
               "team",
+              "start_date",
+              "target_date",
               "none"
             ],
             "title": "Group",
@@ -16958,7 +16961,10 @@
               "priority",
               "initiative",
               "lead",
+              "member",
               "team",
+              "start_date",
+              "target_date",
               "none"
             ],
             "title": "Rows",

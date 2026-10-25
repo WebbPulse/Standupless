@@ -10,7 +10,8 @@
  * dragging, and can drop columns that hold nothing; the timeline draws them
  * as bars from start to target date with the chosen properties beside each
  * name, stepping earlier or later a screen at a time. Rows group by status, health, priority,
- * initiative, lead or team in either direction, the list can group again
+ * initiative, lead, member, team, start date or target date in either
+ * direction, the list can group again
  * inside each group, rows order by date, name, priority or progress, and
  * closed projects show for all time, a recent window or not at all. Filters
  * narrow by status, lead, team, and whether an open blocker holds a project

@@ -2073,7 +2073,11 @@ class ProjectsDisplay(TypedDict):
     dependencies: NotRequired[Literal["show", "hide"]]
     direction: NotRequired[Literal["asc", "desc"]]
     empty: NotRequired[Literal["show", "hide"]]
-    group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
+    group: NotRequired[
+        Literal[
+            "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+        ]
+    ]
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
     order: NotRequired[
@@ -2081,7 +2085,11 @@ class ProjectsDisplay(TypedDict):
             "target", "start", "name", "priority", "progress", "created", "updated", "customers", "important", "manual"
         ]
     ]
-    rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
+    rows: NotRequired[
+        Literal[
+            "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+        ]
+    ]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
 
