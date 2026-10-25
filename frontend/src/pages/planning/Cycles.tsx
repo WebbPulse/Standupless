@@ -107,7 +107,7 @@ interface CycleRowProps {
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
-  onStartToday?: (cycle: CycleRead) => void;
+  onStartToday?: ((cycle: CycleRead) => void) | undefined;
   isActive: boolean;
   rowRef: (node: HTMLElement | null) => void;
   onPointerEnter: () => void;
@@ -121,7 +121,7 @@ interface CycleMenuProps {
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
   /** Present only on the next upcoming cycle, the one that may start today. */
-  onStartToday?: (cycle: CycleRead) => void;
+  onStartToday?: ((cycle: CycleRead) => void) | undefined;
 }
 
 /**
@@ -362,7 +362,7 @@ interface CycleGroupProps {
   onDelete: (cycle: CycleRead) => void;
   /** The one cycle of the group that may start today, if any. */
   startableId?: string | null;
-  onStartToday?: (cycle: CycleRead) => void;
+  onStartToday?: ((cycle: CycleRead) => void) | undefined;
   /** The keyboard position of the group's first row. */
   start: number;
   activeIndex: number;

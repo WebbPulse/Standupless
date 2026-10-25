@@ -42,8 +42,8 @@ from app.common.api.schemas.planning import (
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
-from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_rollover import start_cycle_today_read
+from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_conversion import convert_to_project
