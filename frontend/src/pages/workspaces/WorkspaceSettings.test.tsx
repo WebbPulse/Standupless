@@ -22,6 +22,9 @@ import type {
 import WorkspaceSettings from './WorkspaceSettings';
 
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const listMemberDirectory =
+  vi.fn<(statuses: readonly string[]) => Promise<MemberRead[]>>();
+const suspendMember = vi.fn<(userId: string) => Promise<unknown>>();
 const updateMember =
   vi.fn<(userId: string, body: unknown) => Promise<unknown>>();
 const removeMember = vi.fn<(userId: string) => Promise<void>>();
@@ -76,6 +79,11 @@ vi.mock('../../hooks/useAuth', () => ({
 
 vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
+  listMemberDirectory: (_workspaceId: string, statuses: readonly string[]) =>
+    listMemberDirectory(statuses),
+  suspendMember: (_workspaceId: string, userId: string) =>
+    suspendMember(userId),
+  reactivateMember: () => Promise.resolve({}),
   updateMember: (_workspaceId: string, userId: string, body: unknown) =>
     updateMember(userId, body),
   removeMember: (_workspaceId: string, userId: string) => removeMember(userId),
@@ -160,6 +168,8 @@ const renderPage = () =>
 
 beforeEach(() => {
   listMembers.mockReset();
+  listMemberDirectory.mockReset();
+  suspendMember.mockReset();
   updateMember.mockReset();
   removeMember.mockReset();
   listInvites.mockReset();
@@ -172,6 +182,7 @@ beforeEach(() => {
   stepUp.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
   listMembers.mockResolvedValue([member]);
+  listMemberDirectory.mockResolvedValue([member]);
   listInvites.mockResolvedValue([invite]);
 });
 
@@ -286,15 +297,28 @@ describe('the project updates section', () => {
 });
 
 describe('the member section', () => {
-  it('lists the members', async () => {
+  /** Opens the overflow menu on the row for Other. */
+  const openRowMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Other' })
+    );
+    return screen.getByRole('menu');
+  };
+
+  it('lists the members, invites and suspensions included', async () => {
     renderPage();
 
     expect(await screen.findByText('Other')).toBeInTheDocument();
     expect(screen.getByText('other@example.com')).toBeInTheDocument();
+    expect(listMemberDirectory).toHaveBeenCalledWith([
+      'active',
+      'invited',
+      'suspended',
+    ]);
   });
 
   it('surfaces a failed read', async () => {
-    listMembers.mockRejectedValue(new Error('boom'));
+    listMemberDirectory.mockRejectedValue(new Error('boom'));
     renderPage();
 
     expect(
@@ -302,15 +326,13 @@ describe('the member section', () => {
     ).toBeInTheDocument();
   });
 
-  it('changes a role through the roster select', async () => {
+  it('changes a role from the row menu', async () => {
     updateMember.mockResolvedValue(member);
     const user = userEvent.setup();
     renderPage();
 
-    await user.selectOptions(
-      await screen.findByLabelText('Role for other@example.com'),
-      'admin'
-    );
+    const menu = await openRowMenu(user);
+    await user.click(within(menu).getByRole('menuitem', { name: 'Admin' }));
 
     await waitFor(() => {
       expect(updateMember).toHaveBeenCalledWith('user-2', { role: 'admin' });
@@ -319,15 +341,39 @@ describe('the member section', () => {
 
   it('offers owner only to an owner, since only an owner may grant it', async () => {
     useWorkspaceMock.mockReturnValue(resolved('admin'));
+    const user = userEvent.setup();
     renderPage();
 
-    const select = await screen.findByLabelText('Role for other@example.com');
+    const menu = await openRowMenu(user);
     expect(
-      within(select).queryByRole('option', { name: 'Owner' })
+      within(menu).queryByRole('menuitem', { name: 'Owner' })
     ).not.toBeInTheDocument();
     expect(
-      within(select).getByRole('option', { name: 'Admin' })
+      within(menu).getByRole('menuitem', { name: 'Admin' })
     ).toBeInTheDocument();
+  });
+
+  it('suspends a member after a confirmation', async () => {
+    suspendMember.mockResolvedValue({ ...member, status: 'suspended' });
+    const user = userEvent.setup();
+    renderPage();
+
+    const menu = await openRowMenu(user);
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Suspend user' })
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Suspend Other' });
+    expect(
+      within(dialog).getByText(/lose access to Mine at once/)
+    ).toBeInTheDocument();
+    expect(suspendMember).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Suspend user' })
+    );
+
+    await waitFor(() => {
+      expect(suspendMember).toHaveBeenCalledWith('user-2');
+    });
   });
 
   it('removes a member and surfaces a refusal', async () => {
@@ -335,11 +381,10 @@ describe('the member section', () => {
     const user = userEvent.setup();
     renderPage();
 
-    const [firstRemove] = await screen.findAllByRole('button', {
-      name: 'Remove',
-    });
-    if (firstRemove === undefined) throw new Error('no remove button rendered');
-    await user.click(firstRemove);
+    const menu = await openRowMenu(user);
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Remove from workspace' })
+    );
 
     await waitFor(() => {
       expect(removeMember).toHaveBeenCalledWith('user-2');
