@@ -7,7 +7,8 @@
  * part of it, and on that one issue otherwise.
  */
 
-import React from 'react';
+import React, { useContext } from 'react';
+import { useInRouterContext } from 'react-router-dom';
 import type { IconType } from 'react-icons';
 import {
   LuArchive,
@@ -41,6 +42,8 @@ import {
   COPY_ISSUE_URL_KEYS,
 } from '../../../lib/copyIssue';
 import type { LinkType } from '../../../types/Api';
+import { WorkspaceContext } from '../../../contexts/WorkspaceContextDefinition';
+import { memberPath } from '../../../lib/paths';
 import {
   ContextMenu,
   MenuItem,
@@ -153,6 +156,15 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   keys = PROPERTY_KEYS,
 }) => {
   const single = issues.length === 1 ? issues[0] : undefined;
+  const workspace = useContext(WorkspaceContext)?.workspace ?? null;
+  const routed = useInRouterContext();
+  const assigneePage =
+    routed &&
+    workspace !== null &&
+    single !== undefined &&
+    single.assignee_id !== null
+      ? memberPath(workspace.slug, single.assignee_id)
+      : null;
   const restoring = allArchived(issues);
   const properties = PROPERTY_ITEMS.filter(
     (item) =>
@@ -195,6 +207,12 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
               <LuEye aria-hidden="true" className="h-3.5 w-3.5" />
               Peek
               <MenuShortcut keys="space" />
+            </MenuItem>
+          )}
+          {assigneePage !== null && (
+            <MenuItem to={assigneePage}>
+              <LuUserRound aria-hidden="true" className="h-3.5 w-3.5" />
+              Open assignee page
             </MenuItem>
           )}
           <MenuSeparator />

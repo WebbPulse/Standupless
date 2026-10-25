@@ -252,6 +252,15 @@ export type EmptyColumnsChoice = 'show' | 'hide';
 /** The empty column choices, for reading URL values. */
 export const EMPTY_COLUMNS_CHOICES: EmptyColumnsChoice[] = ['show', 'hide'];
 
+/** Whether the timeline draws the lines between blocking and blocked projects. */
+export type DependencyLinesChoice = 'show' | 'hide';
+
+/** The dependency line choices, for reading URL values. */
+export const DEPENDENCY_LINES_CHOICES: DependencyLinesChoice[] = [
+  'show',
+  'hide',
+];
+
 /** The whole projects display, as the account stores it. */
 export interface ProjectsDisplay {
   layout: ProjectLayout;
@@ -264,6 +273,8 @@ export interface ProjectsDisplay {
   lead_team: LeadTeamChoice;
   empty: EmptyColumnsChoice;
   zoom: TimelineZoom;
+  /** Whether the timeline draws its dependency lines. */
+  dependencies: DependencyLinesChoice;
   /** The shown list columns, comma separated in drawing order. */
   columns: string;
 }
@@ -279,6 +290,7 @@ export const DEFAULT_PROJECTS_DISPLAY: ProjectsDisplay = {
   lead_team: 'all',
   empty: 'show',
   zoom: 'month',
+  dependencies: 'show',
   columns: DEFAULT_PROJECT_COLUMNS,
 };
 
@@ -296,6 +308,7 @@ const DISPLAY_CHOICES: { [K in ChoiceField]: readonly string[] } = {
   lead_team: LEAD_TEAM_CHOICES,
   empty: EMPTY_COLUMNS_CHOICES,
   zoom: TIMELINE_ZOOMS,
+  dependencies: DEPENDENCY_LINES_CHOICES,
 };
 
 /** The display fields, in the order they are written to the URL. */
@@ -347,6 +360,7 @@ export const resolveDisplay = (
     lead_team: pick('lead_team'),
     empty: pick('empty'),
     zoom: pick('zoom'),
+    dependencies: pick('dependencies'),
     columns: pick('columns'),
   };
 };

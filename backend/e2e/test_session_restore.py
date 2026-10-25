@@ -24,9 +24,7 @@ UNSUFFIXED_ENVIRONMENTS = frozenset({"production", "prod", "local", "test"})
 
 
 @WRITES
-def test_a_page_load_restores_the_session_beside_a_production_cookie(
-    anon: Any, credentials: Any, e2e_env: Any
-) -> None:
+def test_a_page_load_restores_the_session_beside_a_production_cookie(anon: Any, credentials: Any, e2e_env: Any) -> None:
     """A cookie-only refresh, with a production cookie alongside, returns a working access token.
 
     Marked as writing because it signs in as the durable e2e user, which production does not

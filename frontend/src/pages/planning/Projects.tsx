@@ -136,6 +136,7 @@ import {
   sortProjects,
   withinClosedWindow,
   withinLeadTeams,
+  type DependencyLinesChoice,
   type EmptyColumnsChoice,
   type LeadTeamChoice,
   type ProjectColumn,
@@ -1500,6 +1501,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                     },
                   }
                 : {})}
+              {...(layout === 'timeline'
+                ? {
+                    dependencies: display.dependencies,
+                    onDependenciesChange: (value: DependencyLinesChoice) => {
+                      changeDisplay({ dependencies: value });
+                    },
+                  }
+                : {})}
               {...(layout !== 'timeline'
                 ? {
                     columns: shownColumns,
@@ -1828,6 +1837,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           people={people}
           workspaceRole={workspace?.role}
           zoom={zoom}
+          showDependencies={display.dependencies === 'show'}
           folded={folded}
           onToggleGroup={toggleFolded}
           refreshKey={queryKey}

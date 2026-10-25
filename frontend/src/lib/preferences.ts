@@ -1,7 +1,8 @@
 /**
  * The signed in person's interface preferences, held where any part of the
  * interface can read them without a hook: the people labels, the date
- * shortcuts and the timeline are plain functions called from many places.
+ * shortcuts, the timeline and copying a git branch name are plain functions
+ * called from many places.
  *
  * The account row is the source of truth, so the choices follow the person to
  * every device. The auth provider copies them in here whenever the profile
@@ -20,6 +21,12 @@ export interface InterfacePreferences {
   weekStart: WeekStart;
   nameDisplay: NameDisplay;
   fontSize: FontSize;
+  /** Whether an issue the person creates starts assigned to them. */
+  autoAssignToSelf: boolean;
+  /** Whether copying a git branch name moves a not yet started issue to the team's first started status. */
+  branchCopyStarts: boolean;
+  /** Whether copying a git branch name assigns an unassigned, not yet started issue to the person. */
+  branchCopyAssigns: boolean;
 }
 
 /** What a profile with nothing stored reads as, matching the server defaults. */
@@ -28,6 +35,9 @@ export const DEFAULT_PREFERENCES: InterfacePreferences = {
   weekStart: 'monday',
   nameDisplay: 'username',
   fontSize: 'default',
+  autoAssignToSelf: false,
+  branchCopyStarts: true,
+  branchCopyAssigns: true,
 };
 
 /** The storage key the pre-paint script in index.html reads too. */
@@ -80,6 +90,9 @@ export interface StoredPreferences {
   week_start?: WeekStart | undefined;
   name_display?: NameDisplay | undefined;
   font_size?: FontSize | undefined;
+  auto_assign_to_self?: boolean | undefined;
+  branch_copy_starts?: boolean | undefined;
+  branch_copy_assigns?: boolean | undefined;
 }
 
 /** The preferences a profile carries, with the defaults for any it leaves out. */
@@ -90,6 +103,12 @@ export const preferencesOf = (
   weekStart: user?.week_start ?? DEFAULT_PREFERENCES.weekStart,
   nameDisplay: user?.name_display ?? DEFAULT_PREFERENCES.nameDisplay,
   fontSize: user?.font_size ?? DEFAULT_PREFERENCES.fontSize,
+  autoAssignToSelf:
+    user?.auto_assign_to_self ?? DEFAULT_PREFERENCES.autoAssignToSelf,
+  branchCopyStarts:
+    user?.branch_copy_starts ?? DEFAULT_PREFERENCES.branchCopyStarts,
+  branchCopyAssigns:
+    user?.branch_copy_assigns ?? DEFAULT_PREFERENCES.branchCopyAssigns,
 });
 
 /**
@@ -98,14 +117,8 @@ export const preferencesOf = (
  * same profile never re-renders anything.
  */
 export const setPreferences = (next: InterfacePreferences): void => {
-  if (
-    next.homeView === current.homeView &&
-    next.weekStart === current.weekStart &&
-    next.nameDisplay === current.nameDisplay &&
-    next.fontSize === current.fontSize
-  ) {
-    return;
-  }
+  const keys = Object.keys(next) as (keyof InterfacePreferences)[];
+  if (keys.every((key) => next[key] === current[key])) return;
   const resized = next.fontSize !== current.fontSize;
   current = next;
   if (resized) paintFontSize(next.fontSize);

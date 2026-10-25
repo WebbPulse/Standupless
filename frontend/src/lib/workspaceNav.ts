@@ -30,7 +30,7 @@ export const routeTeam = (
     : teams.find((team) => team.key_prefix === prefix);
 
 /**
- * Where G then V lands: the views of the team the route is inside, or the
+ * Where G then Shift+V lands: the views of the team the route is inside, or the
  * workspace views page anywhere else.
  */
 export const viewsLanding = (

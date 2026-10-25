@@ -127,6 +127,7 @@ import PreferencesSettings from './pages/workspaces/PreferencesSettings';
 import ProfileSettings from './pages/workspaces/ProfileSettings';
 import AccountSecuritySettings from './pages/workspaces/AccountSecuritySettings';
 import { VERIFY_EMAIL_CHANGE_PATH } from '@webbpulse/auth';
+import MemberDetail from './pages/members/MemberDetail';
 
 /** Maps every path this application serves onto its page. */
 const App: React.FC = () => (
@@ -259,6 +260,7 @@ const App: React.FC = () => (
           <Route path="views" element={<Views />} />
           <Route path="views/new" element={<NewView />} />
           <Route path="views/:viewId" element={<ViewDetail />} />
+          <Route path="members/:userId" element={<MemberDetail />} />
 
           <Route path="p/:keyPrefix" element={<LegacyTeamRedirect />} />
           <Route

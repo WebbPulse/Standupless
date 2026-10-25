@@ -24,8 +24,8 @@ from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.github import IssueBacklink, TeamSync, backlink_key, team_sync_key
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Label, label_key
+from app.common.discussion_reads import authors_for
 from app.common.team_purge import Deadline, PurgeJob
-from app.domains.discussion.service import authors_for
 from app.domains.integrations import github_issues, issue_sync
 from app.domains.integrations.consumers import dispatch, events, purge, stream
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, sign_in

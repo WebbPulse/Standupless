@@ -981,6 +981,70 @@ describe('Projects', () => {
     expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
   });
 
+  describe('timeline dependency lines', () => {
+    beforeEach(() => {
+      listProjects.mockResolvedValue({
+        projects: [
+          {
+            ...launch,
+            start_date: '2026-09-01',
+            blocking_project_ids: ['prj-2'],
+          },
+          {
+            ...rebrand,
+            start_date: '2026-10-15',
+            blocked_by_project_ids: ['prj-1'],
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    const drawn = (): Element | null =>
+      document.querySelector('[data-dependency="prj-1:prj-2"]');
+
+    it('hides and shows the lines from the Display menu', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/projects?layout=timeline');
+      await screen.findByTestId('projects-timeline');
+      await waitFor(() => {
+        expect(drawn()).not.toBeNull();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Display' }));
+      const toggle = screen.getByRole('switch', { name: 'Show dependencies' });
+      expect(toggle).toBeChecked();
+      await user.click(toggle);
+
+      expect(drawn()).toBeNull();
+      expect(document.querySelector('[data-link-handle]')).toBeNull();
+
+      await user.click(toggle);
+      expect(drawn()).not.toBeNull();
+      expect(document.querySelector('[data-link-handle]')).not.toBeNull();
+    });
+
+    it('draws no lines when the URL hides them', async () => {
+      renderPage('/w/mine/projects?layout=timeline&dependencies=hide');
+      await screen.findByTestId('projects-timeline');
+      await screen.findAllByRole('link', { name: 'Launch' });
+
+      expect(drawn()).toBeNull();
+      expect(document.querySelector('[data-link-handle]')).toBeNull();
+    });
+
+    it('offers the switch only on the timeline layout', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/projects');
+      await screen.findByRole('link', { name: 'Launch' });
+
+      await user.click(screen.getByRole('button', { name: 'Display' }));
+      expect(
+        screen.queryByRole('switch', { name: 'Show dependencies' })
+      ).toBeNull();
+    });
+  });
+
   it('groups by health and priority from the URL', async () => {
     listProjects.mockResolvedValue({
       projects: [launch, { ...rebrand, health: 'at_risk', priority: 'high' }],

@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domains.discussion.schemas.discussion import REACTION_EMOJI, is_single_emoji
+from app.common.discussion_reads import is_single_emoji
+from app.domains.discussion.schemas.discussion import REACTION_EMOJI
 from scripts.export_reactions import REACTIONS_JSON, rendered
 from tests.domains.helpers import ADMIN, MEMBER, sign_in
 

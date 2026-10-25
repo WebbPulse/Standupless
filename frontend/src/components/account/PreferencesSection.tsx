@@ -1,7 +1,9 @@
 /**
  * The person's interface preferences: where a workspace opens, the first day
  * of the week, whether people read by full name or username, the text size
- * and the colour theme.
+ * and the colour theme, and the workflow switches: assigning new issues to
+ * themselves, and starting and assigning an issue when its git branch name is
+ * copied.
  *
  * Everything but the theme is stored on the account, so it follows the person
  * to every device and workspace. Each choice saves as soon as it changes and
@@ -16,6 +18,7 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import { updatePreferences } from '../../api/notifications';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { preferencesOf } from '../../lib/preferences';
 import { CURRENT_USER_KEY } from '../../lib/queryKeys';
@@ -123,6 +126,60 @@ const PreferenceRow = <T extends string>({
   );
 };
 
+/** Props for ToggleRow: the label, the help text and the switch state. */
+interface ToggleRowProps {
+  label: string;
+  detail: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+/** One labelled switch with a line saying what it changes. */
+const ToggleRow: React.FC<ToggleRowProps> = ({
+  label,
+  detail,
+  checked,
+  disabled = false,
+  onChange,
+}) => {
+  const id = useId();
+  return (
+    <div className="space-y-1 border-b border-line p-3 last:border-b-0">
+      <div className="flex items-center justify-between gap-3">
+        <span id={id} className="text-sm font-medium text-text">
+          {label}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-labelledby={id}
+          disabled={disabled}
+          onClick={() => {
+            onChange(!checked);
+          }}
+          className={cn(
+            'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-transparent transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+            checked
+              ? 'bg-accent enabled:hover:bg-accent-strong'
+              : 'bg-line-strong enabled:hover:bg-text-faint'
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'inline-block h-3 w-3 rounded-full bg-bg shadow-sm transition-transform duration-100',
+              checked ? 'translate-x-3' : 'translate-x-0'
+            )}
+          />
+        </button>
+      </div>
+      <p className="text-xs text-text-faint">{detail}</p>
+    </div>
+  );
+};
+
 /** Renders the caller's interface preferences and saves each change. */
 export const PreferencesSection: React.FC = () => {
   const { user, login } = useAuth();
@@ -198,6 +255,39 @@ export const PreferencesSection: React.FC = () => {
             disabled={saving}
             onChange={(value) => {
               save({ name_display: value });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-text-muted">Workflow</h3>
+        <div className="rounded-md border border-line">
+          <ToggleRow
+            label="Auto-assign to self"
+            detail="New issues you create start assigned to you. You can still change or clear the assignee before creating."
+            checked={preferences.autoAssignToSelf}
+            disabled={saving}
+            onChange={(on) => {
+              save({ auto_assign_to_self: on });
+            }}
+          />
+          <ToggleRow
+            label="On git branch copy, move issue to started status"
+            detail="Copying the branch name of a backlog or unstarted issue moves it to the team's first started status."
+            checked={preferences.branchCopyStarts}
+            disabled={saving}
+            onChange={(on) => {
+              save({ branch_copy_starts: on });
+            }}
+          />
+          <ToggleRow
+            label="On git branch copy, assign to me"
+            detail="Copying the branch name of an unassigned backlog or unstarted issue assigns it to you."
+            checked={preferences.branchCopyAssigns}
+            disabled={saving}
+            onChange={(on) => {
+              save({ branch_copy_assigns: on });
             }}
           />
         </div>

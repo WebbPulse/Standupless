@@ -19,11 +19,12 @@ export const byMilestoneOrder = (
       : 0;
 
 /**
- * The key a milestone takes when it moves to `to` among the others, read off
- * the neighbours it lands between. Answers null when it would not move.
+ * The key a milestone, or any row in a manual order, takes when it moves to
+ * `to` among the others, read off the neighbours it lands between. Answers
+ * null when it would not move.
  */
 export const reorderKey = (
-  milestones: MilestoneRead[],
+  milestones: readonly { sort_order: string }[],
   from: number,
   to: number
 ): string | null => {

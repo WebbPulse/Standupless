@@ -90,6 +90,12 @@ class User(BaseModel):
     layout, grouping, ordering, closed window and timeline zoom, kept as plain
     strings that the read falls back from when a choice is retired.
 
+    `auto_assign_to_self`, `branch_copy_starts` and `branch_copy_assigns` are the
+    workflow preferences: whether an issue the person creates defaults to them as
+    assignee, off by default, and whether copying an issue's git branch name moves
+    a backlog or unstarted issue to its team's first started status and assigns an
+    unassigned one to them, both on by default as in Linear.
+
     `auto_grant_new_scopes` is the person's opt-in, off by default, to have a scope
     the product adds later join every connected app grant that took every scope on
     offer when it was given, at that app's next token refresh.
@@ -111,6 +117,9 @@ class User(BaseModel):
     name_display: str = "username"
     font_size: str = "default"
     projects_display: dict[str, str] = Field(default_factory=dict)
+    auto_assign_to_self: bool = False
+    branch_copy_starts: bool = True
+    branch_copy_assigns: bool = True
     auto_grant_new_scopes: bool = False
     disabled: bool = False
     is_admin: bool = False

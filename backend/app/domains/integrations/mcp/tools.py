@@ -43,6 +43,7 @@ from app.domains.integrations.mcp.template_tools import TEMPLATE_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
 from app.domains.integrations.mcp.transition_tools import TRANSITION_TOOLS
 from app.domains.integrations.mcp.triage_tools import TRIAGE_TOOLS
+from app.domains.integrations.mcp.update_thread_tools import UPDATE_THREAD_TOOLS
 from app.domains.integrations.mcp.view_tools import VIEW_TOOLS
 from app.domains.integrations.mcp.workflow_tools import WORKFLOW_TOOLS
 from app.domains.integrations.mcp.workspace_tools import WORKSPACE_TOOLS
@@ -59,6 +60,7 @@ TOOLS: tuple[Tool, ...] = (
     *CHANNEL_TOOLS,
     *STANDUP_TOOLS,
     *PLANNING_TOOLS,
+    *UPDATE_THREAD_TOOLS,
     *PROJECT_LABEL_TOOLS,
     *INITIATIVE_TOOLS,
     *PULSE_TOOLS,

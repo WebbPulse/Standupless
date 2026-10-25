@@ -3,7 +3,7 @@
  * projects group and in which direction, the grouping inside each group,
  * what order they run in, which closed projects stay, whether a team page
  * keeps only the projects it leads, whether the board keeps empty columns,
- * and which properties show. It reads like the issue list's Display menu so
+ * whether the timeline draws its dependency lines, and which properties show. It reads like the issue list's Display menu so
  * every list is arranged the same way, and it writes nothing itself. A page
  * leaves out the choices it does not offer.
  */
@@ -34,6 +34,7 @@ import {
   PROJECT_COLUMN_LABELS,
   parseDisplayField,
   type ClosedWindow,
+  type DependencyLinesChoice,
   type EmptyColumnsChoice,
   type GroupDirection,
   type LeadTeamChoice,
@@ -81,6 +82,9 @@ export interface ProjectsDisplayMenuProps {
   /** Whether empty board columns show, left out off the board. */
   empty?: EmptyColumnsChoice;
   onEmptyChange?: (empty: EmptyColumnsChoice) => void;
+  /** Whether the timeline draws its dependency lines, left out off the timeline. */
+  dependencies?: DependencyLinesChoice;
+  onDependenciesChange?: (dependencies: DependencyLinesChoice) => void;
   /** The shown properties, left out where the layout draws no columns. */
   columns?: readonly ProjectColumn[];
   onColumnsChange?: (columns: ProjectColumn[]) => void;
@@ -215,6 +219,8 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   onLeadTeamChange,
   empty,
   onEmptyChange,
+  dependencies,
+  onDependenciesChange,
   layout,
   ordering,
   closed,
@@ -344,6 +350,16 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
           checked={empty === 'show'}
           onChange={(checked) => {
             onEmptyChange(checked ? 'show' : 'hide');
+          }}
+        />
+      )}
+      {dependencies !== undefined && onDependenciesChange !== undefined && (
+        <SwitchRow
+          id="projects-dependencies"
+          label="Show dependencies"
+          checked={dependencies === 'show'}
+          onChange={(checked) => {
+            onDependenciesChange(checked ? 'show' : 'hide');
           }}
         />
       )}

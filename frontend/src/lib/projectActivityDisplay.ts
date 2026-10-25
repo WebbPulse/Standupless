@@ -29,7 +29,8 @@ export type ProjectActivityIcon =
   | 'teams'
   | 'initiative'
   | 'labels'
-  | 'milestone';
+  | 'milestone'
+  | 'link';
 
 /** One piece of a sentence: plain words, a named thing, or a status or health with its glyph. */
 export type ProjectActivityPart =
@@ -299,6 +300,54 @@ const describeMilestone = (
   };
 };
 
+/** The hostname of a URL, or the URL itself when it does not parse. */
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname || url;
+  } catch {
+    return url;
+  }
+};
+
+const describeLink = (row: ProjectActivityRead): ProjectActivityDescription => {
+  const from = asString(row.from);
+  const to = asString(row.to);
+  if (row.kind === 'link_added') {
+    return { icon: 'link', parts: [text('added link '), name(to ?? 'a link')] };
+  }
+  if (row.kind === 'link_removed') {
+    return {
+      icon: 'link',
+      parts: [text('removed link '), name(from ?? 'a link')],
+    };
+  }
+  if (row.field === 'url') {
+    return {
+      icon: 'link',
+      parts:
+        to === null
+          ? [text('changed the URL of a link')]
+          : [text('pointed a link at '), name(hostOf(to))],
+    };
+  }
+  if (to === null) {
+    return {
+      icon: 'link',
+      parts:
+        from === null
+          ? [text('removed the title of a link')]
+          : [text('removed the title of link '), name(from)],
+    };
+  }
+  return {
+    icon: 'link',
+    parts:
+      from === null
+        ? [text('titled a link '), name(to)]
+        : [text('renamed link '), name(from), text(' to '), name(to)],
+  };
+};
+
 /** How one activity row reads after its actor's name. */
 export const describeProjectActivity = (
   row: ProjectActivityRead,
@@ -308,5 +357,6 @@ export const describeProjectActivity = (
     return { icon: 'created', parts: [text('created the project')] };
   }
   if (row.kind === 'field_changed') return describeField(row, lookups);
+  if (row.kind.startsWith('link_')) return describeLink(row);
   return describeMilestone(row, lookups);
 };

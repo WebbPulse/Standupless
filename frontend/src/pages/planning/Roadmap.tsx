@@ -1,8 +1,8 @@
 /**
  * The workspace roadmap: every project as a bar from its start to its target
  * date on a scrolling timeline, drawn by the shared project timeline. The
- * team filter, grouping and zoom live in the URL so an arranged roadmap can
- * be shared, and lanes can be grouped under pinned group headers.
+ * team filter, grouping, zoom and whether dependency lines show live in the
+ * URL so an arranged roadmap can be shared, and lanes can be grouped under pinned group headers.
  */
 
 import React, { useMemo, useRef, useState } from 'react';
@@ -27,7 +27,12 @@ import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { errorMessage } from '../../lib/errors';
-import { groupProjects, parseGrouping } from '../../lib/projectList';
+import {
+  groupProjects,
+  parseDisplayField,
+  parseGrouping,
+  type DependencyLinesChoice,
+} from '../../lib/projectList';
 import { TIMELINE_ZOOMS, type TimelineZoom } from '../../lib/timeline';
 import type { ProjectRead } from '../../types/Api';
 import { teamTree } from '../../lib/teamOrder';
@@ -62,6 +67,8 @@ export const Roadmap: React.FC = () => {
     ? (zoomParam as TimelineZoom)
     : 'month';
   const grouping = parseGrouping(params.get('group'), 'none');
+  const dependencies: DependencyLinesChoice =
+    parseDisplayField('dependencies', params.get('dependencies')) ?? 'show';
   const [folded, setFolded] = useState<string[]>([]);
   const timeline = useRef<ProjectTimelineHandle | null>(null);
 
@@ -161,6 +168,10 @@ export const Roadmap: React.FC = () => {
               onGroupingChange={(value) => {
                 setParam('group', value === 'none' ? '' : value);
               }}
+              dependencies={dependencies}
+              onDependenciesChange={(value) => {
+                setParam('dependencies', value === 'show' ? '' : value);
+              }}
             />
             <TimelineControls {...controls} />
           </div>
@@ -195,6 +206,7 @@ export const Roadmap: React.FC = () => {
           people={people}
           workspaceRole={workspace?.role}
           zoom={zoom}
+          showDependencies={dependencies === 'show'}
           folded={folded}
           onToggleGroup={(key) => {
             setFolded((held) =>

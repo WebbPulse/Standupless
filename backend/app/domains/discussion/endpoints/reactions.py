@@ -21,16 +21,15 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.reactions import build_reaction
+from app.common.discussion_reads import group_reactions, normalize_emoji
 from app.domains.discussion.schemas.discussion import (
     ReactionGroupRead,
     ReactionListRead,
     ReactionWrite,
     TargetKindQuery,
-    normalize_emoji,
 )
 from app.domains.discussion.service import (
     forbidden,
-    group_reactions,
     load_visible_issue,
     not_found,
     require_team_member,

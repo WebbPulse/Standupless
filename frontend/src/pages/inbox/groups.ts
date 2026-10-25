@@ -33,6 +33,7 @@ const STANDALONE_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
 /** Kinds about a project rather than an issue. */
 const PROJECT_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
   'project_update',
+  'project_update_comment',
   'project_update_due',
 ]);
 
@@ -125,7 +126,12 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   {
     id: 'projects',
     label: 'Projects and initiatives',
-    kinds: ['project_update', 'project_update_due', 'initiative_update_due'],
+    kinds: [
+      'project_update',
+      'project_update_comment',
+      'project_update_due',
+      'initiative_update_due',
+    ],
   },
   { id: 'due', label: 'Due dates', kinds: ['due_soon', 'overdue'] },
   { id: 'reminders', label: 'Reminders', kinds: ['reminder'] },

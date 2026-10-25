@@ -106,6 +106,9 @@ class UserRead(BaseModel):
     font_size: FontSizeField = "default"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
+    auto_assign_to_self: bool = False
+    branch_copy_starts: bool = True
+    branch_copy_assigns: bool = True
     auto_grant_new_scopes: bool = False
 
 
@@ -159,7 +162,10 @@ class UserPreferencesUpdate(BaseModel):
     Preferences page sets, kept on the row so they follow the person to every
     device. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
-    the workspace's default again. `auto_grant_new_scopes` lets scopes the product adds later reach the
+    the workspace's default again. `auto_assign_to_self`, `branch_copy_starts`
+    and `branch_copy_assigns` are the Workflow group: assigning issues the person
+    creates to them, and starting and assigning an issue when its git branch name
+    is copied. `auto_grant_new_scopes` lets scopes the product adds later reach the
     connected apps that were given every scope. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
@@ -174,6 +180,9 @@ class UserPreferencesUpdate(BaseModel):
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
     projects_display: Optional[ProjectsDisplay] = None
+    auto_assign_to_self: Optional[bool] = None
+    branch_copy_starts: Optional[bool] = None
+    branch_copy_assigns: Optional[bool] = None
     auto_grant_new_scopes: Optional[bool] = None
 
     @field_validator("timezone")
@@ -243,6 +252,9 @@ def _as_read(user: "Any") -> UserRead:
         font_size=_known(user.font_size, FONT_SIZES, "default"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
+        auto_assign_to_self=bool(user.auto_assign_to_self),
+        branch_copy_starts=bool(user.branch_copy_starts),
+        branch_copy_assigns=bool(user.branch_copy_assigns),
         auto_grant_new_scopes=bool(user.auto_grant_new_scopes),
     )
 
@@ -348,7 +360,16 @@ def update_current_user_preferences(
         changes["timezone"] = payload.timezone
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
-    for field in ("home_view", "week_start", "name_display", "font_size", "auto_grant_new_scopes"):
+    for field in (
+        "home_view",
+        "week_start",
+        "name_display",
+        "font_size",
+        "auto_assign_to_self",
+        "branch_copy_starts",
+        "branch_copy_assigns",
+        "auto_grant_new_scopes",
+    ):
         value = getattr(payload, field)
         if value is not None and value != getattr(user, field):
             changes[field] = value

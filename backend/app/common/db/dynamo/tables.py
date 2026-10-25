@@ -279,10 +279,16 @@ ACTIVITY = TableSpec(
             hash_key=KeyAttribute("ws_team"),
             range_key=KeyAttribute("created_at"),
         ),
+        IndexSpec(
+            name="ws_actor-created_at-index",
+            hash_key=KeyAttribute("ws_actor"),
+            range_key=KeyAttribute("created_at"),
+        ),
     ),
 )
 """Partitioned per issue rather than per team, because an issue's history is what
-grows without bound and only the newest page is ever read."""
+grows without bound and only the newest page is ever read. The actor index is
+sparse, carried by a person's own changes only, for the member page."""
 
 COMMENTS = TableSpec(
     suffix="comments",

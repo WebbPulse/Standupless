@@ -1,7 +1,8 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
  * `G` then a letter to go somewhere: the team's active issues, backlog,
- * board, archive, cycles and current cycle among them,
+ * board, archive, cycles and, as in Linear, `G` then `V` for its current
+ * cycle among them, with `G` then Shift+V for views,
  * `O` then a letter to open a favorite, project, cycle, team or view from a
  * picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
  * list of every shortcut. Registered through the
@@ -182,7 +183,7 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     enabled: team !== undefined,
   });
   useShortcut({
-    keys: 'g shift+c',
+    keys: 'g v',
     label: 'Go to current cycle',
     group: NAVIGATION,
     handler: go(
@@ -203,7 +204,7 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     handler: go(settingsLanding(workspace)),
   });
   useShortcut({
-    keys: 'g v',
+    keys: 'g shift+v',
     label: insideTeam === undefined ? 'Go to views' : 'Go to team views',
     group: NAVIGATION,
     handler: go(viewsLanding(slug, insideTeam)),

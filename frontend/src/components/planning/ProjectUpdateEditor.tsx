@@ -11,6 +11,8 @@
  * replaces the text with a template's body, so a team's usual headings are a
  * click away. The composer may also open on a default template's body.
  *
+ * A reply on an update uses the same editor with the health row left out.
+ *
  * The editor is its own lazily loaded chunk, so a stand in with the same shape
  * shows until it arrives.
  */
@@ -92,6 +94,8 @@ export interface ProjectUpdateEditorProps {
   clearOnSubmit?: boolean;
   /** The document templates the menu offers; the menu hides when empty. */
   templates?: TemplateRead[];
+  /** Shows the health chooser; a reply has no health of its own. */
+  withHealth?: boolean;
 }
 
 /** A Markdown box and a health chooser that submit together. */
@@ -108,6 +112,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
   onCancel,
   clearOnSubmit = false,
   templates = [],
+  withHealth = true,
 }) => {
   const [draft, setDraft] = useState(initialBody);
   const [health, setHealth] = useState<ProjectHealth>(initialHealth);
@@ -140,7 +145,10 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     (template) => (template.body ?? '').trim() !== ''
   );
 
-  const textClass = 'min-h-24 px-3 pt-3 pb-1 text-sm leading-5.5';
+  const textClass = cn(
+    withHealth ? 'min-h-24' : 'min-h-14',
+    'px-3 pt-3 pb-1 text-sm leading-5.5'
+  );
 
   return (
     <div
@@ -174,7 +182,9 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
         />
       </Suspense>
       <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
-        <HealthChooser value={health} onChange={setHealth} disabled={busy} />
+        {withHealth && (
+          <HealthChooser value={health} onChange={setHealth} disabled={busy} />
+        )}
         {usable.length > 0 && (
           <Menu
             label="Update templates"

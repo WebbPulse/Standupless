@@ -82,6 +82,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Project updates',
     detail: 'Someone posts an update on a project you lead or are a member of.',
   },
+  project_update_comment: {
+    title: 'Replies on project updates',
+    detail:
+      'Someone replies to an update you wrote or replied to, or mentions you in a reply. These stay in your inbox.',
+  },
   project_update_due: {
     title: 'Project update reminders',
     detail: 'An update is due on a project you lead.',
@@ -123,12 +128,14 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
 
 /** The kinds that only ever reach the inbox, so their email switch is off and locked. */
 const IN_APP_ONLY: ReadonlySet<NotificationKind> = new Set([
+  'project_update_comment',
   'review_requested',
 ]);
 
 /** The kinds a chat direct message never carries: the standup digest is a digest already, and review requests stay in the inbox. */
 const NOT_IN_CHAT: ReadonlySet<NotificationKind> = new Set([
   'standup_digest',
+  'project_update_comment',
   'review_requested',
 ]);
 

@@ -85,6 +85,7 @@ import Markdown from '../ui/markdown';
 import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
 import ViaSource from '../ui/via-source';
+import MemberLink from '../members/MemberLink';
 import AttachmentList from './AttachmentChips';
 import CommentComposer from './CommentComposer';
 import ReactionBar from './ReactionBar';
@@ -241,8 +242,15 @@ const CommentItem: React.FC<CommentItemProps> = ({
       className="group/comment px-4 py-3"
     >
       <header className="flex items-center gap-2">
-        <Avatar name={author} src={comment.author.avatar_url} size="sm" />
-        <span className="truncate text-sm font-medium text-text">{author}</span>
+        <MemberLink
+          userId={comment.author.user_id}
+          className="flex min-w-0 items-center gap-2"
+        >
+          <Avatar name={author} src={comment.author.avatar_url} size="sm" />
+          <span className="truncate text-sm font-medium text-text">
+            {author}
+          </span>
+        </MemberLink>
         <RelativeTime value={comment.created_at} />
         <ViaSource source={comment.source} />
         {comment.edited_at !== null && (

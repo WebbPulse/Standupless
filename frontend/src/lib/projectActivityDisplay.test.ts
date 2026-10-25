@@ -143,4 +143,40 @@ describe('describeProjectActivity', () => {
       })
     ).toBe('removed the target date of milestone Beta');
   });
+
+  it('reads a Resources link added, retitled, repointed and removed', () => {
+    const description = describeProjectActivity(
+      row({ kind: 'link_added', to: 'docs.example.com', link_id: 'lnk-1' }),
+      lookups
+    );
+    expect(description.icon).toBe('link');
+    expect(sentence({ kind: 'link_added', to: 'docs.example.com' })).toBe(
+      'added link docs.example.com'
+    );
+    expect(sentence({ kind: 'link_removed', from: 'Spec' })).toBe(
+      'removed link Spec'
+    );
+    expect(
+      sentence({ kind: 'link_changed', field: 'title', from: null, to: 'Spec' })
+    ).toBe('titled a link Spec');
+    expect(
+      sentence({
+        kind: 'link_changed',
+        field: 'title',
+        from: 'Spec',
+        to: 'Design spec',
+      })
+    ).toBe('renamed link Spec to Design spec');
+    expect(
+      sentence({ kind: 'link_changed', field: 'title', from: 'Spec', to: null })
+    ).toBe('removed the title of link Spec');
+    expect(
+      sentence({
+        kind: 'link_changed',
+        field: 'url',
+        from: 'https://a.example.com',
+        to: 'https://figma.com/file/1',
+      })
+    ).toBe('pointed a link at figma.com');
+  });
 });

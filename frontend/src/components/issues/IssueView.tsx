@@ -705,7 +705,19 @@ export const IssueView: React.FC<IssueViewProps> = ({
           </MenuItem>
           <MenuItem
             onSelect={() => {
-              if (issue !== null) copyBranchName(issue.key, issue.title);
+              if (issue === null) return;
+              copyBranchName(
+                issue.key,
+                issue.title,
+                canAct
+                  ? {
+                      issue,
+                      statuses: options.statuses,
+                      currentUserId,
+                      apply: onUpdate,
+                    }
+                  : undefined
+              );
             }}
           >
             <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
@@ -861,6 +873,8 @@ export const IssueView: React.FC<IssueViewProps> = ({
           onDelete={removeIssue}
           deleting={deleting}
           onDeletingChange={setDeleting}
+          knownIssues={options.parents}
+          subIssues={children.rows}
         />
       )}
 

@@ -163,7 +163,18 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the team the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, drafts, favorites, home, inbox, insights, search, share_links, views
+    from app.domains.views.endpoints import (
+        board,
+        drafts,
+        favorites,
+        home,
+        inbox,
+        insights,
+        members,
+        search,
+        share_links,
+        views,
+    )
 
     return [
         (favorites.router, "/workspaces", ("views",)),
@@ -171,6 +182,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
         (board.router, "/workspaces", ("views",)),
         (insights.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
+        (members.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),
@@ -429,6 +441,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         initiatives,
         milestones,
         project_labels,
+        project_links,
         project_updates,
         projects,
         pulse,
@@ -440,6 +453,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         (projects.router, "/workspaces", ("planning",)),
         (project_labels.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
+        (project_links.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
         (documents.router, "/workspaces", ("planning",)),
         (customers.router, "/workspaces", ("planning",)),

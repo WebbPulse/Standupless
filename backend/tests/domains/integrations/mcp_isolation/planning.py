@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.common.db.dynamo.planning import ProjectLabel, ProjectUpdateRow, project_update_key
+from app.common.db.dynamo.planning import ProjectLabel, ProjectLink, ProjectUpdateRow, project_update_key
 from tests.domains.helpers import OWNER
 
 ANSWERS_AT_HOME: frozenset[str] = frozenset({"list_project_labels", "create_project_label"})
 
 
 def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
-    """A status update on the other workspace's project and a project label, so their ids can be named."""
+    """A status update, a Resources link and a project label in the other workspace, so their ids can be named."""
     project = repositories.planning.list_projects(workspace_id)[0]
     update = ProjectUpdateRow(
         workspace_id=workspace_id,
@@ -25,7 +25,16 @@ def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
     repositories.planning.create_project_update(update)
     label = ProjectLabel(workspace_id=workspace_id, name="Foreign label", color="#5e6ad2", created_by=OWNER)
     repositories.planning.put_project_label(label, create=True)
-    return {"update_id": update.update_id, "project_label_id": label.label_id}
+    link = ProjectLink(
+        workspace_id=workspace_id,
+        project_id=project.project_id,
+        url="https://example.com/foreign",
+        title="Foreign link",
+        sort_order="V",
+        created_by=OWNER,
+    )
+    repositories.planning.put_project_link(link, create=True)
+    return {"update_id": update.update_id, "project_label_id": label.label_id, "link_id": link.link_id}
 
 
 def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, Any]]:
@@ -54,6 +63,16 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "update_milestone": {"project_id": project, "milestone_id": milestone, "name": "Should not land"},
         "delete_milestone": {"project_id": project, "milestone_id": milestone},
         "delete_project": {"project_id": project},
+        "create_project_link": {"project_id": project, "url": "https://example.com/should-not-land"},
+        "update_project_link": {"project_id": project, "link_id": foreign["link_id"], "title": "Should not land"},
+        "delete_project_link": {"project_id": project, "link_id": foreign["link_id"]},
         "update_project_update": {"project_id": project, "update_id": foreign["update_id"], "body": "Should not land"},
         "delete_project_update": {"project_id": project, "update_id": foreign["update_id"]},
+        "list_project_update_comments": {"project_id": project, "update_id": foreign["update_id"]},
+        "add_project_update_comment": {
+            "project_id": project,
+            "update_id": foreign["update_id"],
+            "body": "Should not land",
+        },
+        "react_to_project_update": {"project_id": project, "update_id": foreign["update_id"], "emoji": "👍"},
     }
