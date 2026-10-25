@@ -36,6 +36,9 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPatch } from '../../lib/milestones';
 import { issuePath, projectMilestonePath, projectPath } from '../../lib/paths';
 import { activityKey, issueKey } from '../../lib/queryKeys';
+import { fullTimestamp } from '../../lib/relativeTime';
+import { enteredStatusAt, timeInStatusSentence } from '../../lib/timeInStatus';
+import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import type { IssueRead, IssueUpdate } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
@@ -104,6 +107,12 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
     parents: true,
   });
   const team = teams?.find((item) => item.id === teamId);
+  const peekStatusName =
+    issue === null
+      ? undefined
+      : issue.in_triage === true
+        ? TRIAGE_STATUS.name
+        : options.statuses.find((item) => item.id === issue.status_id)?.name;
   const canEdit = canWriteIssues(workspace?.role, team?.role);
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const parents = options.parents.filter(
@@ -346,6 +355,14 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                   </PropertySection>
                 )}
 
+                {peekStatusName !== undefined && (
+                  <p
+                    className="text-xs text-text-faint"
+                    title={fullTimestamp(enteredStatusAt(issue))}
+                  >
+                    {timeInStatusSentence(peekStatusName, issue)}
+                  </p>
+                )}
                 <p className="text-xs text-text-faint">
                   Last updated {timestampLabel(issue.updated_at)}
                 </p>

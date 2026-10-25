@@ -68,7 +68,8 @@ export type ViewVisibleProperty =
   | 'milestone'
   | 'links'
   | 'created_at'
-  | 'updated_at';
+  | 'updated_at'
+  | 'time_in_status';
 
 /** One stored group of conditions, combined under its own `match`, holding groups of its own at most one level down. */
 export interface SavedViewFilterGroup {

@@ -790,6 +790,7 @@ class DisplayOptionsBody(TypedDict):
                 "links",
                 "created_at",
                 "updated_at",
+                "time_in_status",
             ]
         ]
         | None
@@ -3330,6 +3331,7 @@ class ViewCreate(TypedDict):
                 "links",
                 "created_at",
                 "updated_at",
+                "time_in_status",
             ]
         ]
         | None
@@ -3452,6 +3454,7 @@ class ViewUpdate(TypedDict):
                 "links",
                 "created_at",
                 "updated_at",
+                "time_in_status",
             ]
         ]
         | None
@@ -3683,6 +3686,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     started_at: NotRequired[str | None]
+    status_changed_at: NotRequired[str | None]
     status_id: str
     team_id: str
     title: str

@@ -67,6 +67,7 @@ VisiblePropertyField = Literal[
     "links",
     "created_at",
     "updated_at",
+    "time_in_status",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 

@@ -646,6 +646,7 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'due_date',
   'created_at',
   'updated_at',
+  'time_in_status',
   'assignee',
 ];
 
@@ -668,6 +669,7 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   links: 'Links',
   created_at: 'Created',
   updated_at: 'Updated',
+  time_in_status: 'Time in status',
 };
 
 /** The properties a row shows until someone changes them. */

@@ -5123,11 +5123,12 @@
                     "milestone",
                     "links",
                     "created_at",
-                    "updated_at"
+                    "updated_at",
+                    "time_in_status"
                   ],
                   "type": "string"
                 },
-                "maxItems": 17,
+                "maxItems": 18,
                 "type": "array"
               },
               {
@@ -25364,11 +25365,12 @@
                     "milestone",
                     "links",
                     "created_at",
-                    "updated_at"
+                    "updated_at",
+                    "time_in_status"
                   ],
                   "type": "string"
                 },
-                "maxItems": 17,
+                "maxItems": 18,
                 "type": "array"
               },
               {
@@ -25922,11 +25924,12 @@
                     "milestone",
                     "links",
                     "created_at",
-                    "updated_at"
+                    "updated_at",
+                    "time_in_status"
                   ],
                   "type": "string"
                 },
-                "maxItems": 17,
+                "maxItems": 18,
                 "type": "array"
               },
               {
@@ -27501,6 +27504,19 @@
             ],
             "description": "When the issue first landed in a started status, null until then.",
             "title": "Started At"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the issue entered its current status, for time in status.",
+            "title": "Status Changed At"
           },
           "status_id": {
             "title": "Status Id",

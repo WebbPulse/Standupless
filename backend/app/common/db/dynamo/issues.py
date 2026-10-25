@@ -98,6 +98,7 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "cancelled_at",
     "triage_entered_at",
     "triaged_at",
+    "status_changed_at",
     "external_ref",
     "import_batch_id",
 )
@@ -306,10 +307,32 @@ class Issue(BaseModel):
     cancelled_at: datetime | None = None
     triage_entered_at: datetime | None = None
     triaged_at: datetime | None = None
+    status_changed_at: datetime | None = None
     external_ref: str | None = None
     import_batch_id: str | None = None
 
     _revision: int | None = PrivateAttr(default=None)
+
+    def entered_status_at(self) -> datetime:
+        """When the issue entered its current status.
+
+        Rows written before `status_changed_at` existed fall back to the latest
+        lifecycle stamp they carry, so no backfill is needed.
+        """
+        if self.status_changed_at is not None:
+            return self.status_changed_at
+        stamps = [
+            stamp
+            for stamp in (
+                self.started_at,
+                self.completed_at,
+                self.cancelled_at,
+                self.triage_entered_at,
+                self.triaged_at,
+            )
+            if stamp is not None
+        ]
+        return max([self.created_at, *stamps])
 
     def read_revision(self) -> int | None:
         """The stored revision this issue was read at, or `None` when it was built rather than read."""
@@ -393,6 +416,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "cancelled_at",
         "triage_entered_at",
         "triaged_at",
+        "status_changed_at",
         "external_ref",
         "import_batch_id",
         PULL_REQUEST_SUMMARY,

@@ -35,6 +35,8 @@ import {
 import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
 import { shortDateLabel } from '../../../lib/propertyOptions';
+import { fullTimestamp } from '../../../lib/relativeTime';
+import { compactDuration, enteredStatusAt } from '../../../lib/timeInStatus';
 import { shownStatusId, triageStatusFor } from '../../../lib/triageStatus';
 import { isPastDue } from '../../../lib/viewerTimezone';
 import Avatar from '../../ui/avatar';
@@ -710,6 +712,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           className={cn('w-14 text-right text-2xs text-text-faint', hide)}
         >
           {dayOf(issue.updated_at)}
+        </span>
+      )}
+      {shows('time_in_status') && (
+        <span
+          title={`In status since ${fullTimestamp(enteredStatusAt(issue))}`}
+          className={cn('w-10 text-right text-2xs text-text-faint', hide)}
+        >
+          {compactDuration(enteredStatusAt(issue))}
         </span>
       )}
     </>
