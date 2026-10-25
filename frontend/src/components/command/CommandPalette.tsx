@@ -21,8 +21,8 @@
  * dialog for each over the page in view, and a project or initiative page adds
  * its own "Create document".
  *
- * The favorite, project, cycle, team, view, member, template and workspace pickers
- * are nested lists a row opens, and the `O` then letter shortcuts and Alt+C
+ * The favorite, project, initiative, customer, cycle, team, view, member,
+ * template and workspace pickers are nested lists a row opens, and the `O` then letter shortcuts and Alt+C
  * open the palette straight onto one of them through the `picker` prop. A
  * team with no templates offers a row to its template settings instead. The
  * workspace picker leaves out the workspace in view and ends on Create
@@ -38,7 +38,10 @@
  *
  * The issues the viewer opened most recently in this workspace head the top
  * level, so an empty palette is one Enter away from the issue seen a minute
- * ago, and a typed term narrows them along with everything else. With an issue
+ * ago, and a typed term narrows them along with everything else. A typed term
+ * also finds initiatives and customers by name, as Linear's palette does,
+ * among the ones the viewer's reads return; a guest, who has neither page,
+ * sees neither. With an issue
  * in view its own actions come first and the recent issues follow them, so
  * Enter runs the first action rather than leaving the issue.
  *
@@ -122,6 +125,8 @@ import { useCreatePlanning } from '../../hooks/useCreatePlanning';
 import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
 import { useLeaveWorkspace } from '../../hooks/useLeaveWorkspace';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
+import { useCustomers } from '../../hooks/useCustomers';
+import { useInitiatives } from '../../hooks/useInitiatives';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
@@ -133,10 +138,12 @@ import {
   NEW_WORKSPACE_PATH,
   accountSecuritySettingsPath,
   cliSetupPath,
+  customerPath,
   customersPath,
   cyclePath,
   documentPath,
   inboxPath,
+  initiativePath,
   initiativesPath,
   issuePath,
   mcpSetupPath,
@@ -221,6 +228,9 @@ const RESULT_LIMIT = 20;
 /** How many documents a term lists, since the rest are a narrower term away. */
 const DOCUMENT_LIMIT = 8;
 
+/** How many initiatives or customers a term lists, since the rest are a narrower term away. */
+const ENTITY_LIMIT = 8;
+
 /** How many property values a term lists, since the rest are a narrower term away. */
 const VALUE_LIMIT = 8;
 
@@ -295,6 +305,8 @@ const PAGE_COPY: Record<
   views: { back: 'Open view', placeholder: 'Open a saved view' },
   favorites: { back: 'Open favorite', placeholder: 'Open a favorite' },
   projects: { back: 'Open project', placeholder: 'Open a project' },
+  initiatives: { back: 'Open initiative', placeholder: 'Open an initiative' },
+  customers: { back: 'Open customer', placeholder: 'Open a customer' },
   cycles: { back: 'Open cycle', placeholder: 'Open a cycle' },
   members: { back: 'Open member', placeholder: 'Open a member' },
   'sub-team': {
@@ -534,6 +546,17 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const members = useWorkspaceMembers(
     workspaceId,
     (page === 'root' && deferred !== '') || page === 'members'
+  );
+
+  const planner = workspace.role !== 'guest';
+  const searching = page === 'root' && deferred !== '';
+  const { initiatives } = useInitiatives(
+    workspaceId,
+    planner && (searching || page === 'initiatives')
+  );
+  const { customers } = useCustomers(
+    workspaceId,
+    planner && (searching || page === 'customers')
   );
 
   const { data: savedViews } = usePolledQuery(
@@ -832,6 +855,24 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuTarget className={ICON} />,
         page: 'projects',
       },
+      ...(workspace.role === 'guest'
+        ? []
+        : [
+            {
+              id: 'action-open-initiative',
+              label: 'Open initiative',
+              keywords: 'go goal strategy',
+              icon: <LuGoal className={ICON} />,
+              page: 'initiatives' as const,
+            },
+            {
+              id: 'action-open-customer',
+              label: 'Open customer',
+              keywords: 'go account company',
+              icon: <LuBuilding2 className={ICON} />,
+              page: 'customers' as const,
+            },
+          ]),
       {
         id: 'action-open-member',
         label: 'Open member',
@@ -879,6 +920,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     workspaces,
     onLogOut,
     currentUserId,
+    workspace.role,
   ]);
 
   const places = useMemo<Command[]>(() => {
@@ -1166,6 +1208,37 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     [team, slug]
   );
 
+  const initiativeRows = useMemo<Command[]>(
+    () =>
+      [...initiatives]
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((initiative) => ({
+          id: `initiative-${initiative.initiative_id}`,
+          label: initiative.name,
+          keywords: (initiative.ancestors ?? [])
+            .map((ancestor) => ancestor.name)
+            .join(' '),
+          icon: <LuGoal className={ICON} />,
+          to: initiativePath(slug, initiative),
+        })),
+    [initiatives, slug]
+  );
+
+  const customerRows = useMemo<Command[]>(
+    () =>
+      [...customers]
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((customer) => ({
+          id: `customer-${customer.customer_id}`,
+          label: customer.name,
+          keywords: [...customer.domains, customer.tier ?? ''].join(' '),
+          ...(customer.tier === null ? {} : { hint: customer.tier }),
+          icon: <LuBuilding2 className={ICON} />,
+          to: customerPath(slug, customer.customer_id),
+        })),
+    [customers, slug]
+  );
+
   const groups = useMemo<CommandGroup[]>(() => {
     if (page === 'teams') {
       const rows = rank(
@@ -1266,6 +1339,20 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         deferred
       );
       return rows.length === 0 ? [] : [{ heading: 'Projects', commands: rows }];
+    }
+
+    if (page === 'initiatives') {
+      const rows = rank(initiativeRows, deferred);
+      return rows.length === 0
+        ? []
+        : [{ heading: 'Initiatives', commands: rows }];
+    }
+
+    if (page === 'customers') {
+      const rows = rank(customerRows, deferred);
+      return rows.length === 0
+        ? []
+        : [{ heading: 'Customers', commands: rows }];
     }
 
     if (page === 'cycles') {
@@ -1497,6 +1584,17 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
 
     if (!isKey && deferred !== '') {
+      const goals = rank(initiativeRows, deferred).slice(0, ENTITY_LIMIT);
+      if (goals.length > 0) {
+        built.push({ heading: 'Initiatives', commands: goals });
+      }
+      const accounts = rank(customerRows, deferred).slice(0, ENTITY_LIMIT);
+      if (accounts.length > 0) {
+        built.push({ heading: 'Customers', commands: accounts });
+      }
+    }
+
+    if (!isKey && deferred !== '') {
       const found = rank(
         (documents ?? []).map((row) => ({
           id: `document-${row.document_id}`,
@@ -1568,6 +1666,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     savedViews,
     favorites,
     projectList,
+    initiativeRows,
+    customerRows,
     cycleList,
     templateList,
     team,

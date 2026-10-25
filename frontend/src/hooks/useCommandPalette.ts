@@ -24,6 +24,8 @@ import {
 export type PalettePicker =
   | 'favorites'
   | 'projects'
+  | 'initiatives'
+  | 'customers'
   | 'cycles'
   | 'teams'
   | 'views'
