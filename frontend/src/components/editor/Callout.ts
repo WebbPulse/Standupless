@@ -176,14 +176,13 @@ export const Callout = Node.create({
       {
         tag: `div[data-type="${CALLOUT}"]`,
         contentElement: (element) =>
-          (element as HTMLElement).querySelector<HTMLElement>(
-            ':scope > .callout-body'
-          ) ?? (element as HTMLElement),
+          element.querySelector<HTMLElement>(':scope > .callout-body') ??
+          element,
       },
       {
         tag: 'div.markdown-alert',
         contentElement: (element) => {
-          const body = (element as HTMLElement).cloneNode(true) as HTMLElement;
+          const body = element.cloneNode(true) as HTMLElement;
           body.querySelector('.markdown-alert-title')?.remove();
           return body;
         },
