@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from typing import TypedDict
 
 from webbpulse.identity.crypto import SealedSecret, SecretMasterKeyCipher
 from webbpulse.security import expand_key
@@ -54,15 +55,24 @@ def _context(workspace_id: str, connection_id: str) -> str:
     return f"{workspace_id}:{connection_id}"
 
 
-def sealed_fields(workspace_id: str, connection_id: str, token: str) -> dict[str, str]:
+class SealedFields(TypedDict):
+    """The four connection attributes one sealed access token is stored in."""
+
+    token_ciphertext: str
+    token_nonce: str
+    token_salt: str
+    token_scheme: str
+
+
+def sealed_fields(workspace_id: str, connection_id: str, token: str) -> SealedFields:
     """The connection attributes that store one sealed access token."""
     sealed = _cipher().seal(token.encode(), user_id=_context(workspace_id, connection_id), purpose=SEAL_PURPOSE)
-    return {
-        "token_ciphertext": sealed.ciphertext,
-        "token_nonce": sealed.nonce,
-        "token_salt": sealed.wrapped_key,
-        "token_scheme": sealed.scheme,
-    }
+    return SealedFields(
+        token_ciphertext=sealed.ciphertext,
+        token_nonce=sealed.nonce,
+        token_salt=sealed.wrapped_key,
+        token_scheme=sealed.scheme,
+    )
 
 
 def open_token(connection: GitlabConnection) -> str:
