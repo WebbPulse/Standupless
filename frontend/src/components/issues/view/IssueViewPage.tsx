@@ -80,7 +80,8 @@ import {
   type ViewState,
 } from '../../../lib/issueView';
 import { viewPath, viewsPath } from '../../../lib/paths';
-import { teamFilterTeams } from '../../../lib/teamRetirement';
+import { canWriteIssues } from '../../../lib/capabilities';
+import { isRetired, teamFilterTeams } from '../../../lib/teamRetirement';
 import ShareButton from '../../access/ShareButton';
 import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
@@ -663,6 +664,17 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     (teamId: string) => teams.find((team) => team.id === teamId)?.name,
     [teams]
   );
+  const workspaceRole = workspace?.role;
+  const canEditIssue = useCallback(
+    (issue: { team_id: string }) => {
+      const team = teams.find((item) => item.id === issue.team_id);
+      return (
+        team === undefined ||
+        (!isRetired(team) && canWriteIssues(workspaceRole, team.role))
+      );
+    },
+    [teams, workspaceRole]
+  );
 
   const menuTeamId = homeTeam?.id ?? '';
   const { data: teamViews } = usePolledQuery(
@@ -1037,6 +1049,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             estimateOptionsFor={estimateOptionsFor}
             {...(teams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}
+            {...(teams.length > 1 ? { canEditIssue } : {})}
             createTeamId={homeTeam?.id}
             folds={folds}
             {...(emptyMessage === undefined ? {} : { emptyMessage })}

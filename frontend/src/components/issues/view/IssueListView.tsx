@@ -182,6 +182,11 @@ export interface IssueListViewProps {
   estimateOptionsFor?: (teamId: string) => EstimateOptions;
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
+  /**
+   * Whether the viewer may edit one issue, for a view spanning teams where
+   * they write to some and not others. Left out, every issue follows `canEdit`.
+   */
+  canEditIssue?: ((issue: OrderedIssueRead) => boolean) | undefined;
   /** The team a group's create button files into, when the view has one team. */
   createTeamId?: string | undefined;
   /** The project new issues are filed into, when the view is one project's. */
@@ -281,6 +286,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   estimateOptionsFor,
   teamNameFor,
   canEdit,
+  canEditIssue,
   createTeamId,
   createProjectId,
   createCycleId,
@@ -1322,6 +1328,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       ...(estimateOptionsFor === undefined ? {} : { estimateOptionsFor }),
       ...(teamNameFor === undefined ? {} : { teamNameFor }),
       canEdit,
+      ...(canEditIssue === undefined ? {} : { canEditIssue }),
       update,
       ...(byCustomer && workspaceId !== '' ? { moveCustomer } : {}),
       createLabel,
@@ -1348,6 +1355,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       estimateOptionsFor,
       teamNameFor,
       canEdit,
+      canEditIssue,
       update,
       byCustomer,
       workspaceId,
