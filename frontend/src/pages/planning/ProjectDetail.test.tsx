@@ -1115,6 +1115,7 @@ describe('ProjectDetail', () => {
             status: 409,
             statusText: 'Conflict',
             body: {
+              success: false,
               error_code: 'BODY_CHANGED',
               message: 'Someone else edited this since you opened it',
               details: { body: 'Theirs', body_version: 'v9' },
@@ -1205,7 +1206,9 @@ describe('ProjectDetail', () => {
       );
       await keysBound('r');
 
-      await user.click(description);
+      act(() => {
+        description.focus();
+      });
       await user.keyboard('r');
 
       expect(description).toHaveFocus();
