@@ -5,7 +5,9 @@
  * while Escape puts the saved text back, that an unchanged document saves
  * nothing, that a click on a link follows it, that a pasted image uploads
  * behind a progress bar and lands in the text by its content path, that any
- * other file lands as a link, and that a reader gets the same surface read only.
+ * other file lands as a link, that a reader gets the same surface read only,
+ * and that Enter, ArrowDown, Backspace and ArrowUp move the caret between the
+ * title and the description.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -320,5 +322,107 @@ describe('the description', () => {
     expect(
       screen.getByRole('heading', { name: 'Cache the token' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('moving between the title and the description', () => {
+  /** The title field. */
+  const titleField = (): HTMLTextAreaElement =>
+    screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Issue title' });
+
+  it.each([['Enter'], ['ArrowDown']])(
+    'saves the title and puts the caret at the start of the description on %s',
+    async (key) => {
+      renderBody();
+      const surface = await findSurface();
+      const field = titleField();
+
+      act(() => {
+        field.focus();
+        fireEvent.change(field, { target: { value: 'Cache the token now' } });
+      });
+      act(() => {
+        field.setSelectionRange(field.value.length, field.value.length);
+        fireEvent.keyDown(field, { key });
+      });
+
+      await waitFor(() => {
+        expect(updateIssue).toHaveBeenCalledWith('iss-1', {
+          title: 'Cache the token now',
+        });
+      });
+      await waitFor(() => {
+        expect(document.activeElement).toBe(surface);
+      });
+      expect(editorOf(surface).state.selection.from).toBe(1);
+    }
+  );
+
+  it('keeps the caret in the title on ArrowDown before its end', async () => {
+    renderBody();
+    await findSurface();
+    const field = titleField();
+
+    act(() => {
+      field.focus();
+      field.setSelectionRange(0, 0);
+      fireEvent.keyDown(field, { key: 'ArrowDown' });
+    });
+
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('ignores Shift Enter in the title', async () => {
+    renderBody();
+    await findSurface();
+    const field = titleField();
+
+    act(() => {
+      field.focus();
+      fireEvent.keyDown(field, { key: 'Enter', shiftKey: true });
+    });
+
+    expect(document.activeElement).toBe(field);
+    expect(updateIssue).not.toHaveBeenCalled();
+  });
+
+  it('puts the caret at the end of the title on ArrowUp at the very start', async () => {
+    renderBody();
+    const surface = await findSurface();
+
+    act(() => {
+      surface.focus();
+      editorOf(surface).commands.setTextSelection(1);
+    });
+    act(() => {
+      fireEvent.keyDown(surface, { key: 'ArrowUp' });
+    });
+
+    const field = titleField();
+    expect(document.activeElement).toBe(field);
+    expect(field.selectionStart).toBe(field.value.length);
+  });
+
+  it('puts the caret at the end of the title on Backspace in an empty description', async () => {
+    render(
+      <IssueBody
+        workspaceId="ws-1"
+        issue={{ ...issue, body: null }}
+        canEdit
+        onSaved={vi.fn()}
+      />
+    );
+    const surface = await findSurface();
+
+    act(() => {
+      surface.focus();
+    });
+    act(() => {
+      fireEvent.keyDown(surface, { key: 'Backspace' });
+    });
+
+    const field = titleField();
+    expect(document.activeElement).toBe(field);
+    expect(field.selectionStart).toBe(field.value.length);
   });
 });

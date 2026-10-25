@@ -41,6 +41,7 @@
 
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
+import type { EditorState } from '@tiptap/pm/state';
 import { LuCalendar } from 'react-icons/lu';
 import React, {
   useCallback,
@@ -122,8 +123,8 @@ import './richMarkdown.css';
 
 /** What a parent can do to the editor from outside. */
 export interface RichMarkdownHandle {
-  /** Puts the caret in the document, at the end. */
-  focus: () => void;
+  /** Puts the caret in the document, at the end unless told the start. */
+  focus: (at?: 'start' | 'end') => void;
   /** The document as Markdown right now, committed or not. */
   getMarkdown: () => string;
   /** Replaces the document and takes it as committed, as after a post. */
@@ -180,6 +181,11 @@ export interface RichMarkdownEditorProps {
   mentionPeople?: Assignable[];
   /** Told when focus enters or leaves the surface. */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * Backspace in an empty document, or ArrowUp at the very start of its first
+   * text block, calls this to hand the caret to the field above.
+   */
+  onExitTop?: () => void;
   /** The comment threads pinned to passages of this document, highlighted. */
   commentAnchors?: CommentAnchorsBinding;
   /**
@@ -250,6 +256,35 @@ const currentHref = (editor: Editor): string => {
   return typeof attrs.href === 'string' ? attrs.href : '';
 };
 
+/** Whether the document is one empty text block, as a fresh one is. */
+const isEmptyDocument = (state: EditorState): boolean => {
+  const only = state.doc.firstChild;
+  return (
+    state.doc.childCount === 1 &&
+    only !== null &&
+    only.isTextblock &&
+    only.content.size === 0
+  );
+};
+
+/** Whether a collapsed caret sits at the very start of the first text block. */
+const isAtDocumentStart = (state: EditorState): boolean => {
+  const { selection } = state;
+  if (!selection.empty) return false;
+  const { $from } = selection;
+  if (!$from.parent.isTextblock || $from.parentOffset !== 0) return false;
+  let first = -1;
+  state.doc.descendants((node, pos) => {
+    if (first >= 0) return false;
+    if (node.isTextblock) {
+      first = pos;
+      return false;
+    }
+    return true;
+  });
+  return $from.before() === first;
+};
+
 /** The rich Markdown surface. */
 export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   value,
@@ -267,6 +302,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   onCancel,
   mentionPeople,
   onFocusChange,
+  onExitTop,
   commentAnchors,
   selectionIssue,
   ref,
@@ -286,6 +322,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     onChange,
     onSubmit,
     onCancel,
+    onExitTop,
     tokens,
   });
   handlers.current = {
@@ -296,6 +333,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     onChange,
     onSubmit,
     onCancel,
+    onExitTop,
     tokens,
   };
 
@@ -511,6 +549,20 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               setMention(null);
               return true;
             }
+          }
+          const exitTop = handlers.current.onExitTop;
+          if (
+            exitTop !== undefined &&
+            view.editable &&
+            !mod &&
+            !event.shiftKey &&
+            !event.altKey &&
+            ((event.key === 'Backspace' && isEmptyDocument(view.state)) ||
+              (event.key === 'ArrowUp' && isAtDocumentStart(view.state)))
+          ) {
+            event.preventDefault();
+            exitTop();
+            return true;
           }
           if (mod && event.key === 'Enter') {
             event.preventDefault();
@@ -863,8 +915,8 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => {
-        editor.commands.focus('end');
+      focus: (at = 'end') => {
+        editor.commands.focus(at);
       },
       getMarkdown: () => readMarkdown(editor),
       setMarkdown: (markdown: string) => {

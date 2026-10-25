@@ -4,7 +4,10 @@
  * heading's type, and the description is a rich Markdown surface that looks
  * the same whether or not a caret is in it. Both save when focus leaves them,
  * the description also on Ctrl or Cmd Enter, and Escape puts back what was
- * saved.
+ * saved. The two edit like one document: Enter or ArrowDown at the end of the
+ * title moves the caret to the start of the description, and Backspace in an
+ * empty description or ArrowUp at its very start moves it back to the end of
+ * the title.
  *
  * The editor is its own lazily loaded chunk. Until it arrives the description
  * renders through the static Markdown renderer in the same type, so the first
@@ -53,7 +56,7 @@ import PassageComposer from '../discussion/PassageComposer';
 import SelectionQuote from '../discussion/SelectionQuote';
 import { ErrorAlert } from '../ui/alert';
 import Markdown from '../ui/markdown';
-import IssueTitle from './IssueTitle';
+import IssueTitle, { type IssueTitleHandle } from './IssueTitle';
 
 const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
 
@@ -130,6 +133,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   const [error, setError] = useState<unknown>(null);
   const [bodyError, setBodyError] = useState<string | null>(null);
   const editor = useRef<RichMarkdownHandle>(null);
+  const titleField = useRef<IssueTitleHandle>(null);
   const { refresh } = useMedia();
   const issueId = issue.id;
   const passages = usePassageThreads();
@@ -260,6 +264,12 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
 
   const showBody = canEdit || body !== '';
 
+  const focusBodyStart = (): void => {
+    const surface = editor.current;
+    if (surface === null) setFocusOnLoad(true);
+    else surface.focus('start');
+  };
+
   return (
     <section className="space-y-6">
       {error !== null && (
@@ -269,9 +279,11 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
       )}
 
       <IssueTitle
+        ref={titleField}
         title={issue.title}
         canEdit={canEdit}
         onSave={(title) => save({ title })}
+        {...(canEdit ? { onExitDown: focusBodyStart } : {})}
       />
 
       <div className={cn('space-y-2', dropClass)} {...dropProps}>
@@ -304,6 +316,13 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
                   className={BODY_CLASS}
                   onCommit={saveBody}
                   onFocusChange={setBodyFocused}
+                  {...(canEdit
+                    ? {
+                        onExitTop: () => {
+                          titleField.current?.focusEnd();
+                        },
+                      }
+                    : {})}
                   {...(passages === null
                     ? {}
                     : {

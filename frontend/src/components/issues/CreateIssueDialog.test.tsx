@@ -3,7 +3,8 @@
  * setting only what was chosen, Cmd or Ctrl and Enter submitting, Escape
  * keeping typed text as a saved draft, or guarding it when no draft can be
  * stored, the saved draft being restored, discarded and cleared on create
- * and left alone by a preset dialog, "Create more" keeping the
+ * and left alone by a preset dialog, Enter and Backspace moving the caret
+ * between the title and the description, "Create more" keeping the
  * dialog open with the properties held, and a team switch clearing the team
  * scoped choices, the similar issues strip offering to open a possible
  * duplicate or mark the new issue as one, and the auto-assign preference
@@ -407,6 +408,26 @@ describe('filing an issue', () => {
       { timeout: EDITOR_LOAD_MS }
     );
     expect(createIssue).not.toHaveBeenCalled();
+  });
+
+  it('moves back to the end of the title on Backspace in an empty description', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const title = screen.getByRole<HTMLInputElement>('textbox', {
+      name: 'Title',
+    });
+
+    await user.type(title, 'Fix login');
+    const description = await findDescription();
+    act(() => {
+      description.focus();
+    });
+    act(() => {
+      fireEvent.keyDown(description, { key: 'Backspace' });
+    });
+
+    expect(title).toHaveFocus();
+    expect(title.selectionStart).toBe('Fix login'.length);
   });
 
   it('keeps the create button off until there is a title', () => {

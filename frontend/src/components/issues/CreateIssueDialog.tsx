@@ -645,9 +645,16 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setBody(text);
   };
 
-  const focusBody = (): void => {
+  const focusBody = (at: 'start' | 'end' = 'end'): void => {
     if (bodyEditor.current === null) setFocusBodyOnLoad(true);
-    else bodyEditor.current.focus();
+    else bodyEditor.current.focus(at);
+  };
+
+  const focusTitleEnd = (): void => {
+    const input = titleInput.current;
+    if (input === null) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
   };
 
   const { data: teams } = useTeams();
@@ -1405,9 +1412,24 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               setConfirming(false);
             }}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              const input = event.currentTarget;
+              const atEnd =
+                input.selectionStart === input.value.length &&
+                input.selectionEnd === input.value.length;
+              const plain =
+                !event.shiftKey &&
+                !event.altKey &&
+                !event.metaKey &&
+                !event.ctrlKey;
               if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
                 event.preventDefault();
-                focusBody();
+                if (!event.shiftKey) focusBody('start');
+                return;
+              }
+              if (event.key === 'ArrowDown' && plain && atEnd) {
+                event.preventDefault();
+                focusBody('start');
               }
             }}
             className="w-full bg-transparent text-lg font-semibold text-text outline-none placeholder:text-text-faint"
@@ -1463,6 +1485,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 onFocusChange={(focused) => {
                   bodyFocused.current = focused;
                 }}
+                onExitTop={focusTitleEnd}
               />
             </DocumentLinkContext.Provider>
           </Suspense>

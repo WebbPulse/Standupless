@@ -2,11 +2,13 @@
  * An issue's title, edited as the heading itself. Someone who may edit sees a
  * borderless field set in the heading's own type, so clicking the title puts
  * a caret in it and nothing moves; a reader sees the plain heading. Enter or
- * leaving the field saves, and Escape puts the saved title back. R, or the
+ * leaving the field saves, and Escape puts the saved title back. When the
+ * description below may be edited, Enter, or ArrowDown at the end of the
+ * title, saves and moves the caret to the start of the description. R, or the
  * palette's Rename issue, puts the caret in the field with the title selected.
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useImperativeHandle, useRef, useState } from 'react';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useKeyboardFocus } from '../../hooks/useKeyboardFocus';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -15,12 +17,25 @@ import { validateTitle } from '../../lib/validation';
 import { ErrorAlert } from '../ui/alert';
 import { RENAME_ISSUE_KEYS } from './view/propertyKeys';
 
+/** What a parent can do to the title from outside. */
+export interface IssueTitleHandle {
+  /** Puts the caret at the end of the title. */
+  focusEnd: () => void;
+}
+
 /** Props for IssueTitle: the saved title, whether it may change, and the save. */
 export interface IssueTitleProps {
   title: string;
   canEdit: boolean;
   /** Persists a changed title. Resolves true once it lands. */
   onSave: (title: string) => Promise<boolean>;
+  /**
+   * Moves the caret into the description, at its start. Unset, as for a read
+   * only description, Enter saves and leaves the field instead.
+   */
+  onExitDown?: () => void;
+  /** Receives the imperative handle. */
+  ref?: React.Ref<IssueTitleHandle>;
 }
 
 /** The heading's type, shared by the field so editing looks like reading. */
@@ -32,6 +47,8 @@ export const IssueTitle: React.FC<IssueTitleProps> = ({
   title,
   canEdit,
   onSave,
+  onExitDown,
+  ref,
 }) => {
   const [draft, setDraft] = useState(title);
   const [focused, setFocused] = useState(false);
@@ -40,6 +57,19 @@ export const IssueTitle: React.FC<IssueTitleProps> = ({
   const reverting = useRef(false);
   const { keyboardFocused, focusProps } = useKeyboardFocus();
   useAutoGrow(field);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusEnd: () => {
+        const input = field.current;
+        if (input === null) return;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      },
+    }),
+    []
+  );
 
   useShortcut({
     keys: RENAME_ISSUE_KEYS,
@@ -82,6 +112,11 @@ export const IssueTitle: React.FC<IssueTitleProps> = ({
     });
   };
 
+  const exitDown = (input: HTMLTextAreaElement): void => {
+    onExitDown?.();
+    if (document.activeElement === input) input.blur();
+  };
+
   return (
     <div className="space-y-2">
       <h2 className={cn('min-w-0', TITLE_CLASS)}>
@@ -115,9 +150,27 @@ export const IssueTitle: React.FC<IssueTitleProps> = ({
             setProblem(null);
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+            const input = event.currentTarget;
+            const composing = event.nativeEvent.isComposing;
+            if (event.key === 'Enter' && !composing) {
               event.preventDefault();
-              event.currentTarget.blur();
+              if (event.shiftKey) return;
+              exitDown(input);
+              return;
+            }
+            if (
+              event.key === 'ArrowDown' &&
+              !composing &&
+              onExitDown !== undefined &&
+              !event.shiftKey &&
+              !event.altKey &&
+              !event.metaKey &&
+              !event.ctrlKey &&
+              input.selectionStart === input.value.length &&
+              input.selectionEnd === input.value.length
+            ) {
+              event.preventDefault();
+              exitDown(input);
               return;
             }
             if (event.key === 'Escape') {
