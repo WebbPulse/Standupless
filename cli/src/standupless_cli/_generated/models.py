@@ -969,6 +969,10 @@ class DocumentVersionRead(TypedDict):
     version_id: str
 
 
+class DocumentVersionRestore(TypedDict):
+    base_body_version: NotRequired[str | None]
+
+
 class DownloadRead(TypedDict):
     expires_at: str
     url: str

@@ -3,7 +3,7 @@
  * same rich Markdown surface issues use, and both save as they are written.
  * Every write carries the `updated_at` the page last saw, so an edit made over
  * someone else's newer one is refused and the page offers their version
- * rather than silently replacing it. Earlier versions open in a dialog, and
+ * rather than silently replacing it. Earlier versions open in a dialog that diffs and restores them, and
  * the issues the text names are listed and linked under it. The title takes
  * an icon or an emoji, an outline of the headings sits beside the text on a
  * wide screen, and Move files the document under another project, initiative
@@ -47,10 +47,10 @@ import {
 import {
   deleteDocument,
   getDocument,
-  listDocumentVersions,
   updateDocument,
 } from '../../api/documents';
 import type { RichMarkdownHandle } from '../../components/editor/RichMarkdownEditor';
+import DocumentHistoryDialog from '../../components/planning/DocumentHistoryDialog';
 import DocumentIcon from '../../components/planning/DocumentIcon';
 import DocumentIconPicker from '../../components/planning/DocumentIconPicker';
 import DocumentOutline from '../../components/planning/DocumentOutline';
@@ -84,7 +84,7 @@ import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
 import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { CONFLICT, errorMessage, hasStatus } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import { personLabel } from '../../lib/issuePeople';
 import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import {
   documentPath,
@@ -96,7 +96,6 @@ import {
 } from '../../lib/paths';
 import {
   documentKey,
-  documentVersionsKey,
   favoritesKey,
   issueDocumentsKey,
   subscribersKey,
@@ -157,73 +156,6 @@ const parentLink = (
   return team === undefined
     ? workspacePath(slug)
     : teamDocumentsPagePath(slug, team.key_prefix);
-};
-
-/** The dialog listing a document's earlier versions, each readable in full. */
-const VersionsDialog: React.FC<{
-  workspaceId: string;
-  documentId: string;
-  people: Assignable[];
-  onClose: () => void;
-}> = ({ workspaceId, documentId, people, onClose }) => {
-  const auth = useQueryAuth();
-  const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listDocumentVersions(workspaceId, documentId, signal),
-    {
-      intervalMs: POLL_MS,
-      queryKey: documentVersionsKey(workspaceId, documentId),
-      auth,
-    }
-  );
-  const versions = data ?? [];
-  return (
-    <Dialog open size="lg" title="Version history" onClose={onClose}>
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not load the history.')}
-        />
-      )}
-      {isLoading && data === null && <SkeletonRows label="Loading versions" />}
-      {data !== null && versions.length === 0 && (
-        <p className="text-sm text-text-muted">
-          No earlier versions yet. A version is kept when someone else edits the
-          document, or after a pause in editing.
-        </p>
-      )}
-      {versions.length > 0 && (
-        <ol
-          aria-label="Versions"
-          className="max-h-[60vh] space-y-1 overflow-y-auto"
-        >
-          {versions.map((version) => (
-            <li key={version.version_id}>
-              <details className="group rounded-md border border-line">
-                <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-text hover:bg-surface">
-                  <span className="truncate font-medium">{version.title}</span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-text-muted">
-                    {personLabel(
-                      people.find(
-                        (person) => person.user_id === version.edited_by
-                      )
-                    )}
-                    <span aria-hidden="true">·</span>
-                    <RelativeTime value={version.edited_at} />
-                  </span>
-                </summary>
-                <div className="border-t border-line px-3 py-3">
-                  {version.body === '' ? (
-                    <p className="text-sm text-text-muted">Empty.</p>
-                  ) : (
-                    <Markdown source={version.body} className={BODY_CLASS} />
-                  )}
-                </div>
-              </details>
-            </li>
-          ))}
-        </ol>
-      )}
-    </Dialog>
-  );
 };
 
 /** How many followers the actions menu names before summing up the rest. */
@@ -410,6 +342,20 @@ export const DocumentDetail: React.FC = () => {
       .catch((problem: unknown) => {
         setSaveError(problem);
       });
+  };
+
+  const restored = (fresh: DocumentRead): void => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    pendingBody.current = null;
+    conflicted.current = false;
+    base.current = fresh.updated_at;
+    savedBody.current = fresh.body;
+    setLocal(fresh);
+    setLiveBody(null);
+    setSaveError(null);
+    setSaveState('saved');
+    editor.current?.setMarkdown(fresh.body);
   };
 
   useShortcut({
@@ -800,10 +746,11 @@ export const DocumentDetail: React.FC = () => {
       </div>
 
       {showVersions && (
-        <VersionsDialog
+        <DocumentHistoryDialog
           workspaceId={workspaceId}
-          documentId={page.document_id}
+          document={page}
           people={people}
+          onRestored={restored}
           onClose={() => {
             setShowVersions(false);
           }}

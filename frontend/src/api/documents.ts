@@ -15,6 +15,7 @@ import type {
   DocumentSummaryRead,
   DocumentVersionListRead,
   DocumentVersionRead,
+  DocumentVersionRestore,
 } from '../types/Api';
 
 const signalOptions = (
@@ -70,6 +71,14 @@ export const documentVersionsPath = (
   workspaceId: string,
   documentId: string
 ): string => `${documentApiPath(workspaceId, documentId)}/versions`;
+
+/** The route one kept version of a document is restored on. */
+export const documentVersionRestorePath = (
+  workspaceId: string,
+  documentId: string,
+  versionId: string
+): string =>
+  `${documentVersionsPath(workspaceId, documentId)}/${versionId}/restore`;
 
 /** The route the documents mentioning one issue are listed on. */
 export const issueDocumentsPath = (
@@ -176,4 +185,24 @@ export const listDocumentVersions = async (
   );
   const body = response.data;
   return Array.isArray(body?.versions) ? body.versions : [];
+};
+
+/**
+ * Puts a kept version's body back as an edit, keeping the body it replaces as
+ * a version. `baseBodyVersion` is the body the restore was chosen against, so
+ * a body changed since then is a `BODY_CHANGED` 409 rather than overwritten.
+ */
+export const restoreDocumentVersion = async (
+  workspaceId: string,
+  documentId: string,
+  versionId: string,
+  baseBodyVersion?: string
+): Promise<DocumentRead> => {
+  const body: DocumentVersionRestore =
+    baseBodyVersion === undefined ? {} : { base_body_version: baseBodyVersion };
+  const response = await apiClient.post<DocumentRead>(
+    documentVersionRestorePath(workspaceId, documentId, versionId),
+    body
+  );
+  return response.data;
 };

@@ -10,7 +10,7 @@ documents and updates may start from, which `app.common.document_templates` read
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, Path, Response, status
 
@@ -23,6 +23,7 @@ from app.common.api.schemas.documents import (
     DocumentPatch,
     DocumentRead,
     DocumentVersionListRead,
+    DocumentVersionRestore,
 )
 from app.common.api.schemas.templates import DocumentTemplateListRead, TemplateRead
 from app.common.documents import (
@@ -34,6 +35,7 @@ from app.common.documents import (
     list_issue_documents,
     list_workspace_documents,
     load_parent,
+    restore_document_version,
     update_document,
 )
 from app.common.initiative_writes import initiative_template_offer
@@ -219,6 +221,22 @@ def list_versions(
 ) -> Any:
     """A document's earlier versions, newest first."""
     return DocumentVersionListRead(items=list_document_versions(repositories, context, document_id), next_cursor=None)
+
+
+@router.post(
+    "/{workspace_id}/documents/{document_id}/versions/{version_id}/restore",
+    response_model=DocumentRead,
+)
+def restore_version(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    document_id: Annotated[str, Path()],
+    version_id: Annotated[str, Path(min_length=1)],
+    payload: Optional[DocumentVersionRestore] = None,
+) -> DocumentRead:
+    """Make one earlier version's body the document's current body; a stale `base_body_version` is a 409."""
+    return restore_document_version(repositories, context, document_id, version_id, payload)
 
 
 @router.get("/{workspace_id}/issues/{issue_id}/documents", response_model=DocumentListRead)

@@ -142,6 +142,22 @@ class DocumentPatch(BaseModel):
         return _check_body(value)
 
 
+class DocumentVersionRestore(BaseModel):
+    """The body a version restore takes, all of it optional.
+
+    `base_body_version` is the `body_version` the restorer was looking at. When
+    the body changed since, the restore is a `BODY_CHANGED` 409 carrying the
+    current body, the same guard a body save is held to.
+    """
+
+    base_body_version: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="The body_version the restore was chosen against; a stale one is a 409.",
+    )
+
+
 class DocumentMentionRead(BaseModel):
     """One issue a document mentions, as its key was written."""
 
