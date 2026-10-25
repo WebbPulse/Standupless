@@ -6,9 +6,9 @@
  *
  * Triage runs from the keyboard in Linear's order: J and K move, 1 accepts, 2
  * declines with an optional reason, 3 or M M marks as a duplicate of another
- * issue, and H snoozes until a chosen moment. Accept opens a small popover with an
- * optional comment and the status to land in, defaulting to the team's first
- * unstarted one, and Enter confirms it at once. The buttons, the help sheet
+ * issue, and H snoozes until a chosen moment. Accept opens a small popover
+ * with an optional comment and the status to land in, defaulting to the team's
+ * first unstarted one, and Enter confirms it at once. The buttons, the help sheet
  * and the command palette list the actions in that same order. A snoozed
  * issue leaves the list and the badge and comes back by itself; the Snoozed
  * tab lists what is still waiting and offers to bring one back now.
