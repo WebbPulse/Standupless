@@ -5,7 +5,9 @@
  * that deleting is offered to an admin and returns to the list, that the
  * updates tab speaks of an initiative rather than a project, and that
  * sub-initiatives show as breadcrumbs, a parent picker, a list of children,
- * rolled-up projects and a progress graph.
+ * rolled-up projects and a progress graph, and that the Projects tab lays the
+ * initiative's projects out through the projects page, with or without the
+ * projects of sub-initiatives.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -99,7 +101,35 @@ vi.mock('../../api/initiatives', () => ({
 
 vi.mock('../../api/planning', () => ({
   listProjects: () => listProjects(),
+  createProject: vi.fn(),
+  updateProject: vi.fn(),
 }));
+
+vi.mock('../../api/projectLabels', () => ({
+  projectLabelsPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-labels`,
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
+}));
+
+vi.mock('../../api/customers', async () => {
+  const actual = await vi.importActual<typeof import('../../api/customers')>(
+    '../../api/customers'
+  );
+  return {
+    ...actual,
+    listCustomers: () => Promise.resolve([]),
+  };
+});
+
+vi.mock('../../api/notifications', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../api/notifications')
+  >('../../api/notifications');
+  return { ...actual, updatePreferences: vi.fn(() => Promise.resolve({})) };
+});
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
@@ -528,6 +558,64 @@ describe('InitiativeDetail', () => {
           { parent_initiative_id: null },
           'ini-1'
         );
+      });
+    });
+
+    it('lays out the projects tab with sub-initiative projects by default', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/initiatives/ini-1?tab=projects');
+
+      expect(
+        await screen.findByRole('tab', { name: 'Projects' })
+      ).toHaveAttribute('aria-selected', 'true');
+      expect(
+        await screen.findByRole('link', { name: 'Berlin office' })
+      ).toHaveAttribute('href', '/w/mine/projects/prj-3');
+      expect(screen.getByRole('link', { name: 'Launch' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Display' })
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('sub-initiative-roll-up'));
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('link', { name: 'Berlin office' })
+        ).not.toBeInTheDocument();
+      });
+      expect(screen.getByRole('link', { name: 'Launch' })).toBeInTheDocument();
+      expect(screen.getByTestId('sub-initiative-roll-up')).toHaveTextContent(
+        'This initiative only'
+      );
+    });
+
+    it('adds a project from the projects tab', async () => {
+      listProjects.mockResolvedValue({
+        projects: [
+          project('prj-1', 'Launch', { initiative_id: 'ini-1' }),
+          project('prj-2', 'Search'),
+        ],
+        next_cursor: null,
+      });
+      addInitiativeProject.mockResolvedValue(
+        project('prj-2', 'Search', { initiative_id: 'ini-1' })
+      );
+      const user = userEvent.setup();
+      renderPage('/w/mine/initiatives/ini-1?tab=projects');
+
+      expect(
+        await screen.findByRole('link', { name: 'Launch' })
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'Search' })
+      ).not.toBeInTheDocument();
+      await user.click(
+        await screen.findByRole('button', { name: 'Add project' })
+      );
+      await user.click(await screen.findByRole('option', { name: /Search/ }));
+
+      await waitFor(() => {
+        expect(addInitiativeProject).toHaveBeenCalledWith('prj-2');
       });
     });
 
