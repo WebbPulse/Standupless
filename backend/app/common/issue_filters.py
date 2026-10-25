@@ -31,6 +31,9 @@ NONE = "none"
 ME = "me"
 """The value that means the caller, resolved from the authorization context."""
 
+MY_TEAMS = "my_teams"
+"""The team filter value that means the viewer's own teams, resolved from their memberships."""
+
 CATEGORY_ALIASES: dict[str, str] = {"canceled": "cancelled"}
 """Spellings accepted for a category, because clients carry both and neither is wrong."""
 
@@ -255,7 +258,8 @@ class IssueFilter:
     `groups` is a nested filter with its own `match`, counted as one condition of
     this one, which is how "status is Todo and (label is Bug or priority is
     Urgent)" is said. Visibility, archived and triage, is decided only here, at
-    the top, so a group never brings back an issue the list hides.
+    the top, so a group never brings back an issue the list hides. `viewer_id`
+    is whose teams `my_teams` names until `resolve_issue_filter` swaps it out.
     """
 
     team_ids: FilterValues = field(default_factory=frozenset)
@@ -312,12 +316,19 @@ class IssueFilter:
     relation_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     subscribed_issue_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     customer_index: Optional[CustomerIndex] = field(default=None, compare=False)
+    viewer_id: Optional[str] = field(default=None, compare=False)
 
     @property
     def named_team_ids(self) -> frozenset[str]:
         """Every team a team filter asks for by name, in this filter or any of its groups."""
-        own = frozenset(team_id for team_id in self.team_ids if team_id is not None)
+        own = frozenset(team_id for team_id in self.team_ids if team_id is not None and team_id != MY_TEAMS)
         return own.union(*(group.named_team_ids for group in self.groups))
+
+    @property
+    def needs_memberships(self) -> bool:
+        """Whether a team condition here or in a group names `my_teams`, which costs one membership read."""
+        own = MY_TEAMS in self.team_ids or MY_TEAMS in self.team_ids_not
+        return own or any(group.needs_memberships for group in self.groups)
 
     @property
     def needs_categories(self) -> bool:
@@ -378,7 +389,7 @@ class IssueFilter:
         """The filter as plain JSON values, groups included, for the fingerprint."""
         canonical: dict[str, Any] = {}
         for item in fields(self):
-            if item.name in ("relation_ids", "subscribed_issue_ids", "customer_index"):
+            if item.name in ("relation_ids", "subscribed_issue_ids", "customer_index", "viewer_id"):
                 continue
             value = getattr(self, item.name)
             if isinstance(value, frozenset):
@@ -663,7 +674,8 @@ def build_issue_filter(
     `InvalidFilterValue` otherwise. `customer_id` keeps the issues one of the
     named customers asked for, and `customer_id_not` drops them, `none` standing
     for an issue no customer asked for and `important` for one with an important
-    request. Relative cycles, the link index and the
+    request. `my_teams` in a team filter stands for the teams `user_id` belongs
+    to. Relative cycles, `my_teams`, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
     each built by these same names plus its own `match`; a group naming a key
@@ -721,6 +733,7 @@ def build_issue_filter(
         customer_ids_not=_values(customer_id_not),
         match=_match_mode(match),
         groups=tuple(_group_filter(user_id, item) for item in parse_groups(groups)),
+        viewer_id=user_id,
     )
 
 

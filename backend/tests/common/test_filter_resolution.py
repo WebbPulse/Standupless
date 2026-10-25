@@ -2,7 +2,8 @@
 
 `current`, `next` and `previous` name a different cycle in each team and on each
 day, so a saved view follows the schedule. A cycle value naming nothing is refused
-with a 400 that names it rather than quietly matching no issue.
+with a 400 that names it rather than quietly matching no issue. `my_teams` becomes
+the viewer's own teams.
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ from fastapi import HTTPException
 
 from app.common.cycle_schedule import relative_cycle
 from app.common.db.dynamo.planning import Cycle, cycle_key
-from app.common.filter_resolution import NO_CYCLE_MATCH, _resolve_cycles
+from app.common.filter_resolution import NO_CYCLE_MATCH, NO_TEAM_MATCH, _resolve_cycles, _resolve_teams
+from app.common.issue_filters import MY_TEAMS, build_issue_filter
 
 TODAY = date(2026, 3, 10)
 
@@ -79,3 +81,25 @@ def test_an_unknown_cycle_is_a_400_naming_it() -> None:
     assert caught.value.status_code == 400
     assert caught.value.detail["value"] == "nope"
     assert "nope" in caught.value.detail["message"]
+
+
+def test_my_teams_becomes_the_viewers_teams() -> None:
+    """The sentinel is swapped for the memberships and any named team is kept beside them."""
+    assert _resolve_teams(frozenset({MY_TEAMS, "T3"}), frozenset({"T1", "T2"}), keep=True) == frozenset(
+        {"T1", "T2", "T3"}
+    )
+
+
+def test_my_teams_with_no_team_matches_nothing_when_kept() -> None:
+    """An empty kept set would select every team, so a sentinel no issue carries stands in."""
+    assert _resolve_teams(frozenset({MY_TEAMS}), frozenset(), keep=True) == frozenset({NO_TEAM_MATCH})
+    assert _resolve_teams(frozenset({MY_TEAMS}), frozenset(), keep=False) == frozenset()
+
+
+def test_my_teams_is_not_a_named_team() -> None:
+    """The sentinel never keeps a retired team in reach, and it marks the filter as needing memberships."""
+    wanted = build_issue_filter(user_id="u1", team_id_in=[MY_TEAMS, "T1"])
+
+    assert wanted.named_team_ids == frozenset({"T1"})
+    assert wanted.needs_memberships
+    assert wanted.viewer_id == "u1"

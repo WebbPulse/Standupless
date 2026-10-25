@@ -249,8 +249,10 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "has_relation": one_or_many(
             "Holding a link of any of these types: blocks, blocked_by, relates_to, duplicate_of"
         ),
-        "team_id_in": one_or_many("In any of these teams, among the teams the list already covers"),
-        "team_id_not": one_or_many("In none of these teams"),
+        "team_id_in": one_or_many(
+            "In any of these teams, among the teams the list already covers; 'my_teams' is the caller's teams"
+        ),
+        "team_id_not": one_or_many("In none of these teams; 'my_teams' is the caller's teams"),
         "creator_id": one_or_many("Created by any of these people; 'me' is the caller"),
         "creator_id_not": one_or_many("Created by none of these people"),
         "subscriber_id": one_or_many("Subscribed to by any of these people; 'me' is the caller"),

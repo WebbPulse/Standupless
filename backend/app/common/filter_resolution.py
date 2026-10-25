@@ -4,7 +4,8 @@
 it can run anywhere a filter is parsed. Some parts of a filter cannot be decided
 from the row alone: a relative cycle such as `current` names a different cycle in
 each team and on each day, a relation filter needs the workspace's links, and a
-subscriber filter needs each named person's subscriptions. Every
+subscriber filter needs each named person's subscriptions, and `my_teams` needs
+the viewer's team memberships. Every
 list, export, insight and share read runs the filter through here once, after it
 knows which teams it fans out over, so they all agree on what a filter selects.
 """
@@ -20,7 +21,7 @@ from fastapi import HTTPException, status
 from app.common.customer_index import CUSTOMER_SORTS, REVENUE_SORT, CustomerIndex, load_customer_index
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.planning import Cycle
-from app.common.issue_filters import FilterValues, IssueFilter
+from app.common.issue_filters import MY_TEAMS, FilterValues, IssueFilter
 
 if TYPE_CHECKING:
     from app.common.api.dependencies.repositories import Repositories
@@ -31,6 +32,9 @@ NO_CYCLE_MATCH = "\x00no-cycle"
 Kept in the set rather than dropping the value, because an empty set means the
 filter is absent and would select every issue instead of none.
 """
+
+NO_TEAM_MATCH = "\x00no-team"
+"""A team id no issue carries, standing in for `my_teams` when the viewer belongs to no team."""
 
 TEAM_CYCLE_LIMIT = 500
 """The most cycles one team's read takes, far past any schedule a team keeps."""
@@ -72,6 +76,24 @@ def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], today
     return frozenset(resolved)
 
 
+def _resolve_teams(values: FilterValues, mine: frozenset[str], *, keep: bool) -> FilterValues:
+    """One team set with `my_teams` swapped for the viewer's teams; a kept set that empties matches nothing."""
+    if MY_TEAMS not in values:
+        return values
+    resolved = (values - {MY_TEAMS}) | mine
+    if keep and not resolved:
+        return frozenset({NO_TEAM_MATCH})
+    return resolved
+
+
+def viewer_team_ids(repositories: Repositories, workspace_id: str, viewer_id: Optional[str]) -> frozenset[str]:
+    """The teams one person holds an explicit membership of, empty for no person."""
+    if not viewer_id:
+        return frozenset()
+    rows = repositories.memberships.list_team_memberships_for_user(workspace_id, viewer_id)
+    return frozenset(row.team_id for row in rows if row.team_id is not None)
+
+
 def resolve_issue_filter(
     repositories: Repositories,
     workspace_id: str,
@@ -81,7 +103,7 @@ def resolve_issue_filter(
     today: Optional[date] = None,
     sort: Optional[str] = None,
 ) -> IssueFilter:
-    """The filter with relative cycles named and the link, subscription and customer indexes attached.
+    """The filter with relative cycles and `my_teams` named and the link, subscription and customer indexes attached.
 
     The customer index is read when the filter names a customer or `sort` orders
     by customer requests, so a list sorting that way finds the counts on the
@@ -95,8 +117,10 @@ def resolve_issue_filter(
     """
     people = wanted.subscribers
     needs_customers = wanted.needs_customers or sort in CUSTOMER_SORTS
-    if not (wanted.needs_cycles or wanted.needs_relations or people or needs_customers):
+    needs_memberships = wanted.needs_memberships
+    if not (wanted.needs_cycles or wanted.needs_relations or people or needs_customers or needs_memberships):
         return wanted
+    mine = viewer_team_ids(repositories, workspace_id, wanted.viewer_id) if needs_memberships else None
     by_team: Optional[dict[str, list[Cycle]]] = None
     if wanted.needs_cycles:
         by_team = {}
@@ -115,7 +139,7 @@ def resolve_issue_filter(
     customers: Optional[CustomerIndex] = None
     if needs_customers:
         customers = load_customer_index(repositories, workspace_id, with_revenue=sort == REVENUE_SORT)
-    return _attach(wanted, by_team, today or date.today(), relation_ids, subscribed, customers)
+    return _attach(wanted, by_team, today or date.today(), relation_ids, subscribed, customers, mine)
 
 
 def _attach(
@@ -125,18 +149,27 @@ def _attach(
     relation_ids: Optional[Mapping[str, frozenset[str]]],
     subscribed: Optional[Mapping[str, frozenset[str]]],
     customers: Optional[CustomerIndex] = None,
+    mine: Optional[frozenset[str]] = None,
 ) -> IssueFilter:
     """One filter and each of its groups with the reads `resolve_issue_filter` took applied."""
     cycle_ids, cycle_ids_not = wanted.cycle_ids, wanted.cycle_ids_not
     if by_team is not None:
         cycle_ids = _resolve_cycles(cycle_ids, by_team, day)
         cycle_ids_not = _resolve_cycles(cycle_ids_not, by_team, day)
+    team_ids, team_ids_not = wanted.team_ids, wanted.team_ids_not
+    if mine is not None:
+        team_ids = _resolve_teams(team_ids, mine, keep=True)
+        team_ids_not = _resolve_teams(team_ids_not, mine, keep=False)
     return replace(
         wanted,
+        team_ids=team_ids,
+        team_ids_not=team_ids_not,
         cycle_ids=cycle_ids,
         cycle_ids_not=cycle_ids_not,
         relation_ids=relation_ids if relation_ids is not None else wanted.relation_ids,
         subscribed_issue_ids=subscribed if subscribed is not None else wanted.subscribed_issue_ids,
         customer_index=customers if customers is not None else wanted.customer_index,
-        groups=tuple(_attach(group, by_team, day, relation_ids, subscribed, customers) for group in wanted.groups),
+        groups=tuple(
+            _attach(group, by_team, day, relation_ids, subscribed, customers, mine) for group in wanted.groups
+        ),
     )
