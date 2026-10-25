@@ -443,6 +443,8 @@ _INTEGRATIONS_REPOSITORIES = (
     "team_config",
     "issues",
     "comments",
+    "reactions",
+    "attachments",
     "counters",
     "activity",
     "planning",
@@ -464,9 +466,10 @@ _INTEGRATIONS_REPOSITORIES = (
 
 Everything past `github` is for the MCP tools, which create and edit issues,
 projects, cycles, teams, members, invites, saved views and the caller's inbox
-through the same shared write paths the product routes use, and record and read
-the workspace audit log as those paths do, and the caller's own agent profiles
-with the trail each save, restore and delete leaves.
+through the same shared write paths the product routes use. They edit, delete and
+react to comments and manage an issue's URL links as the discussion routes do,
+record and read the workspace audit log as those paths do, and keep the caller's
+own agent profiles with the trail each save, restore and delete leaves.
 """
 
 _INTEGRATIONS_READ_REPOSITORIES = (

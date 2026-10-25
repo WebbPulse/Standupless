@@ -5,9 +5,11 @@ run, so an agent's issue carries the same key allocation, validation, activity r
 and subscriptions as a person's, and a field the route refuses the tool refuses
 too. There is no MCP-shaped write path, which is what keeps the two from drifting.
 
-There is no tool that deletes an issue or a comment: an agent that can create and
-update but never destroy history is a different risk from one that can do both.
-It can still list a team's deleted issues and restore one from the trash.
+There is no tool that deletes an issue: an agent that can create and update but
+never destroy an issue's history is a different risk from one that can do both.
+It can still list a team's deleted issues and restore one from the trash. Editing
+and deleting a comment live in `comment_tools`, under the author and team admin
+rule the UI holds.
 Removing a relation is offered, marked destructive, because the link is all it loses.
 """
 
