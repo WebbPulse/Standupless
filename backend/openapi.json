@@ -6322,6 +6322,27 @@
         "title": "DocumentVersionRead",
         "type": "object"
       },
+      "DocumentVersionRestore": {
+        "description": "The body a version restore takes, all of it optional.\n\n`base_body_version` is the `body_version` the restorer was looking at. When\nthe body changed since, the restore is a `BODY_CHANGED` 409 carrying the\ncurrent body, the same guard a body save is held to.",
+        "properties": {
+          "base_body_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body_version the restore was chosen against; a stale one is a 409.",
+            "title": "Base Body Version"
+          }
+        },
+        "title": "DocumentVersionRestore",
+        "type": "object"
+      },
       "DownloadRead": {
         "description": "A presigned GET and when it stops working.\n\nMinted per request and never stored or logged, so the window is the whole\nguard on a URL that is a bearer credential until it expires.",
         "properties": {
@@ -40557,6 +40578,91 @@
           }
         ],
         "summary": "List Versions",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "Make one earlier version's body the document's current body; a stale `base_body_version` is a 409.",
+        "operationId": "restore_version_api_workspaces__workspace_id__documents__document_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DocumentVersionRestore"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Restore Version",
         "tags": [
           "planning"
         ]

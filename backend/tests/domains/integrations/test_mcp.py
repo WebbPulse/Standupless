@@ -349,6 +349,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_document",
         "update_document",
         "delete_document",
+        "list_document_versions",
+        "restore_document_version",
         "list_customers",
         "list_customer_statuses",
         "list_customer_tiers",

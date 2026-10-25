@@ -5981,6 +5981,8 @@ export interface DocumentMentionRead {
 /** One document with its Markdown and the visible issues it mentions. */
 export interface DocumentRead extends DocumentSummaryRead {
   body: string;
+  /** The body's version, sent back as `base_body_version` when editing or restoring it. */
+  body_version?: string;
   mentions: DocumentMentionRead[];
 }
 
@@ -6006,6 +6008,14 @@ export interface DocumentPatch {
   parent_kind?: DocumentParentKind;
   parent_id?: string;
   base_updated_at?: string;
+  /** The `body_version` the body edit started from; a stale one is a `BODY_CHANGED` 409. */
+  base_body_version?: string;
+}
+
+/** The body a document version restore takes. */
+export interface DocumentVersionRestore {
+  /** The `body_version` the restore was chosen against; a stale one is a `BODY_CHANGED` 409. */
+  base_body_version?: string;
 }
 
 /** A list of documents, most recently edited first. */

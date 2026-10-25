@@ -4,19 +4,28 @@ Every tool runs the same `app.common.documents` path the document routes do, so
 the rights, the version history and the issue mentions match HTTP exactly. A
 document is listed and created through its parent, named by id or by a unique
 name, and reached afterwards by its own id. `update_document` also moves one to
-another parent.
+another parent. `list_document_versions` reads its kept versions, and
+`restore_document_version` puts one back as an edit by the caller.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.common.api.schemas.documents import DocumentCreate, DocumentPatch, DocumentRead, DocumentSummaryRead
+from app.common.api.schemas.documents import (
+    DocumentCreate,
+    DocumentPatch,
+    DocumentRead,
+    DocumentSummaryRead,
+    DocumentVersionRestore,
+)
 from app.common.documents import (
     create_document,
     delete_document,
     get_document,
+    list_document_versions,
     list_documents,
+    restore_document_version,
     update_document,
 )
 from app.domains.integrations.mcp.toolkit import (
@@ -150,6 +159,24 @@ def _delete_document(call: ToolCall) -> Any:
     return {"deleted": True, "document_id": document_id}
 
 
+def _list_document_versions(call: ToolCall) -> Any:
+    """A document's kept earlier versions, newest first; the current body is the document's own."""
+    document_id = str(call.require("document_id"))
+    versions = list_document_versions(call.repositories, call.context, document_id)
+    return {"versions": [version.model_dump(mode="json") for version in versions]}
+
+
+def _restore_document_version(call: ToolCall) -> Any:
+    """Make one earlier version's body the document's current body, as an edit by the caller."""
+    document_id = str(call.require("document_id"))
+    base = call.optional("base_body_version")
+    payload = DocumentVersionRestore.model_validate({} if base is None else {"base_body_version": base})
+    restored = restore_document_version(
+        call.repositories, call.context, document_id, str(call.require("version_id")), payload
+    )
+    return _document_json(restored)
+
+
 DOCUMENT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_documents",
@@ -218,5 +245,36 @@ DOCUMENT_TOOLS: tuple[Tool, ...] = (
         schema=object_schema({"document_id": string("The document id")}, required=("document_id",)),
         handler=_delete_document,
         destructive=True,
+    ),
+    Tool(
+        name="list_document_versions",
+        description=(
+            "A document's saved earlier versions, newest first; the current body is the document's own. "
+            "Rapid edits by one author are kept as one version."
+        ),
+        scopes=("projects:read",),
+        schema=object_schema({"document_id": string("The document id")}, required=("document_id",)),
+        handler=_list_document_versions,
+    ),
+    Tool(
+        name="restore_document_version",
+        description=(
+            "Replace a document's body with one earlier version from list_document_versions. "
+            "Recorded as a document edit by the caller; the replaced body is kept as a version, so a restore "
+            "can itself be restored."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "document_id": string("The document id"),
+                "version_id": string("The version_id to restore"),
+                "base_body_version": string(
+                    "The body_version the restore was chosen against; when the body changed since, the restore "
+                    "is refused with the current body and version instead of overwriting it"
+                ),
+            },
+            required=("document_id", "version_id"),
+        ),
+        handler=_restore_document_version,
     ),
 )

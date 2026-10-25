@@ -296,6 +296,8 @@ EXPECTED_TOOLS = frozenset(
         "create_document",
         "update_document",
         "delete_document",
+        "list_document_versions",
+        "restore_document_version",
         "list_customers",
         "list_customer_statuses",
         "list_customer_tiers",

@@ -14,6 +14,7 @@ import {
   listDocuments,
   listIssueDocuments,
   listWorkspaceDocuments,
+  restoreDocumentVersion,
   updateDocument,
 } from './documents';
 
@@ -117,6 +118,27 @@ describe('document routes', () => {
     expect(read.body).toBe('Hi');
     expect(get).toHaveBeenCalledWith(
       '/workspaces/ws-1/documents/d1',
+      undefined
+    );
+  });
+
+  it('restores a version by its id, carrying the body version when it has one', async () => {
+    post.mockResolvedValue({ data: { document_id: 'd1', body: 'Old' } });
+
+    const restored = await restoreDocumentVersion(WS, 'd1', 'v1', 'bv-1');
+    await restoreDocumentVersion(WS, 'd1', 'v2');
+
+    expect(restored.body).toBe('Old');
+    expect(post).toHaveBeenNthCalledWith(
+      1,
+      '/workspaces/ws-1/documents/d1/versions/v1/restore',
+      { base_body_version: 'bv-1' },
+      undefined
+    );
+    expect(post).toHaveBeenNthCalledWith(
+      2,
+      '/workspaces/ws-1/documents/d1/versions/v2/restore',
+      {},
       undefined
     );
   });

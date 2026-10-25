@@ -42,4 +42,6 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "create_document": {"project_id": project, "title": "Should not land"},
         "update_document": {"document_id": document, "title": "Should not land"},
         "delete_document": {"document_id": document},
+        "list_document_versions": {"document_id": document},
+        "restore_document_version": {"document_id": document, "version_id": "01M0000000000000000000000"},
     }
