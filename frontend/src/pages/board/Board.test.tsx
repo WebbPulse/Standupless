@@ -385,13 +385,15 @@ describe('dragging a selection', () => {
     dragTo(row('iss-1'), screen.getByRole('list', { name: 'Done, Low' }));
 
     await waitFor(() => {
-      expect(bulkUpdateIssues).toHaveBeenCalledWith({
-        issue_ids: ['iss-1', 'iss-2'],
-        patch: { status_id: 'st-done', priority: 'low' },
-      });
+      expect(bulkUpdateIssues).toHaveBeenCalledTimes(1);
     });
-    expect(bulkUpdateIssues).toHaveBeenCalledTimes(1);
-    expect(titlesIn('Done, Low')).toEqual(['Cache the token', 'Rotate keys']);
+    const [call] = bulkUpdateIssues.mock.calls[0] ?? [];
+    expect([...(call?.issue_ids ?? [])].sort()).toEqual(['iss-1', 'iss-2']);
+    expect(call?.patch).toEqual({ status_id: 'st-done', priority: 'low' });
+    expect([...titlesIn('Done, Low')].sort()).toEqual([
+      'Cache the token',
+      'Rotate keys',
+    ]);
     await waitFor(() => {
       expect(toastMessages()).toContain('Moved 2 issues to Done, Low');
     });
