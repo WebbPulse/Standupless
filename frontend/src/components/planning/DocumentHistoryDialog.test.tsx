@@ -7,7 +7,7 @@
  * says so, and that a reader who may not edit sees no Restore.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DocumentRead, DocumentVersionRead } from '../../types/Api';
@@ -226,7 +226,9 @@ describe('DocumentHistoryDialog', () => {
     expect(workspaceId).toBe('ws-1');
     expect(message).toBe('Restored Launch plan');
 
-    await revert?.();
+    await act(async () => {
+      await revert?.();
+    });
     expect(updateDocument).toHaveBeenCalledWith('ws-1', 'doc-1', {
       body: 'Ship on Friday\nTell support',
       base_body_version: 'restored-version',
