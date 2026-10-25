@@ -119,4 +119,23 @@ describe('preferences', () => {
       false
     );
   });
+
+  it('paints link underlines only when turned on', () => {
+    expect(readPreferences().underlineLinks).toBe(false);
+    expect(document.documentElement.hasAttribute('data-underline-links')).toBe(
+      false
+    );
+
+    setPreferences({ ...DEFAULT_PREFERENCES, underlineLinks: true });
+
+    expect(document.documentElement.hasAttribute('data-underline-links')).toBe(
+      true
+    );
+
+    setPreferences(DEFAULT_PREFERENCES);
+
+    expect(document.documentElement.hasAttribute('data-underline-links')).toBe(
+      false
+    );
+  });
 });

@@ -3182,6 +3182,7 @@ class UserPreferencesUpdate(TypedDict):
     ]
     theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
+    underline_links: NotRequired[bool | None]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
 
 
@@ -3239,6 +3240,7 @@ class UserRead(TypedDict):
     theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
+    underline_links: NotRequired[bool]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
 
 

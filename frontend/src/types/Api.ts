@@ -43,6 +43,8 @@ export interface UserRead {
   theme?: Theme | null;
   /** Whether interactive elements show the pointer cursor. */
   pointer_cursors?: boolean;
+  /** Whether links in rich text and inline text links are underlined at rest. */
+  underline_links?: boolean;
   /** Whether the editor turns typed emoticons such as `:)` into emoji. */
   convert_emoticons?: boolean;
   /** Whether issue activity shows every change or only comments. */
@@ -212,6 +214,7 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   theme?: Theme;
   pointer_cursors?: boolean;
+  underline_links?: boolean;
   convert_emoticons?: boolean;
   activity_filter?: ActivityFilter;
   /** Moves the named sidebar items, leaving the others where they are. */
