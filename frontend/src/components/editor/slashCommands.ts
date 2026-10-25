@@ -17,6 +17,7 @@ import {
   LuHeading2,
   LuHeading3,
   LuImage,
+  LuInfo,
   LuList,
   LuListCollapse,
   LuListOrdered,
@@ -133,6 +134,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     hint: '>>>',
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).setCollapsibleSection().run();
+    },
+  },
+  {
+    id: 'callout',
+    label: 'Callout',
+    icon: LuInfo,
+    keywords: ['note', 'tip', 'warning', 'info', 'alert', 'admonition'],
+    hint: '> [!NOTE]',
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).setCallout().run();
     },
   },
   {

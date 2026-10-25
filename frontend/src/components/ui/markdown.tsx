@@ -8,7 +8,8 @@
  * links to attached files, load through the page's media tokens. Fenced code
  * is highlighted, once the highlighter loads, and carries a copy button.
  * A collapsible section is a native `<details>`, closed until it is opened,
- * so it toggles from the keyboard as well as the caret.
+ * so it toggles from the keyboard as well as the caret. A GitHub alert such
+ * as `> [!NOTE]` is a callout in its kind's tone, as the editor draws it.
  */
 
 import React, { useMemo } from 'react';
@@ -25,6 +26,7 @@ import {
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
 import HighlightedCode from './highlighted-code';
 import IssueChip from './IssueChip';
+import MarkdownCallout from './markdown-callout';
 import ReferenceChip from './ReferenceChip';
 
 /**
@@ -183,6 +185,14 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
             renderBlock(child, `${key}-${String(index)}`)
           )}
         </blockquote>
+      );
+    case 'callout':
+      return (
+        <MarkdownCallout key={key} kind={block.kind}>
+          {block.children.map((child, index) =>
+            renderBlock(child, `${key}-${String(index)}`)
+          )}
+        </MarkdownCallout>
       );
     case 'rule':
       return <hr key={key} className="border-line" />;

@@ -2,7 +2,8 @@
  * A small Markdown parser for issue descriptions and comments. It covers what
  * people write in a tracker (paragraphs, headings, lists and task lists,
  * quotes, fenced code, inline code, emphasis, links, embedded images and
- * videos, @mentions, issue keys and `<details>` collapsible sections) and
+ * videos, @mentions, issue keys, `<details>` collapsible sections and
+ * GitHub alert callouts such as `> [!NOTE]`) and
  * nothing that would need raw HTML: the output is a tree the renderer turns
  * into React elements, so no string from a comment is ever parsed as markup.
  *
@@ -11,6 +12,7 @@
  * link. An embed loads only from https or a content path.
  */
 
+import { calloutFromQuote, type CalloutKind } from './callouts';
 import { isContentPath, isEmbeddableSrc, isVideoSrc } from './media';
 
 /** One inline run. */
@@ -38,6 +40,7 @@ export type BlockNode =
   | { type: 'quote'; children: BlockNode[] }
   | { type: 'list'; ordered: boolean; start: number; items: ListItem[] }
   | { type: 'details'; summary: string; children: BlockNode[] }
+  | { type: 'callout'; kind: CalloutKind; children: BlockNode[] }
   | { type: 'rule' };
 
 /** The schemes a link may point at. */
@@ -375,7 +378,16 @@ export const parseMarkdown = (source: string): BlockNode[] => {
         body.push(quoted[1] ?? '');
         index += 1;
       }
-      blocks.push({ type: 'quote', children: parseMarkdown(body.join('\n')) });
+      const callout = calloutFromQuote(body);
+      blocks.push(
+        callout === null
+          ? { type: 'quote', children: parseMarkdown(body.join('\n')) }
+          : {
+              type: 'callout',
+              kind: callout.kind,
+              children: parseMarkdown(callout.body),
+            }
+      );
       continue;
     }
 

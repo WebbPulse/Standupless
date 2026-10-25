@@ -293,3 +293,78 @@ describe('collapsible sections', () => {
     expect(writeSummary('  two\n lines ')).toBe('two lines');
   });
 });
+
+describe('callouts', () => {
+  const text = (value: string) => ({
+    type: 'paragraph',
+    children: [{ type: 'text', value }],
+  });
+
+  it.each([
+    ['NOTE', 'note'],
+    ['TIP', 'tip'],
+    ['IMPORTANT', 'important'],
+    ['WARNING', 'warning'],
+    ['CAUTION', 'danger'],
+  ])('reads a [!%s] alert as a %s callout', (marker, kind) => {
+    expect(parseMarkdown(`> [!${marker}]\n> body`)).toEqual([
+      { type: 'callout', kind, children: [text('body')] },
+    ]);
+  });
+
+  it('reads a lowercase marker and text on the marker line', () => {
+    expect(parseMarkdown('> [!tip] Use the CLI\n> today')).toEqual([
+      {
+        type: 'callout',
+        kind: 'tip',
+        children: [
+          {
+            type: 'paragraph',
+            children: [
+              { type: 'text', value: 'Use the CLI' },
+              { type: 'break' },
+              { type: 'text', value: 'today' },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('holds several blocks and stops at the first unquoted line', () => {
+    expect(parseMarkdown('> [!WARNING]\n> first\n>\n> - one\n\nafter')).toEqual(
+      [
+        {
+          type: 'callout',
+          kind: 'warning',
+          children: [
+            text('first'),
+            {
+              type: 'list',
+              ordered: false,
+              start: 1,
+              items: [
+                { checked: null, children: [{ type: 'text', value: 'one' }] },
+              ],
+            },
+          ],
+        },
+        text('after'),
+      ]
+    );
+  });
+
+  it('reads an empty alert as an empty callout', () => {
+    expect(parseMarkdown('> [!NOTE]')).toEqual([
+      { type: 'callout', kind: 'note', children: [] },
+    ]);
+  });
+
+  it('leaves a quote without a marker, or with an unknown one, a quote', () => {
+    expect(parseMarkdown('> plain')).toEqual([
+      { type: 'quote', children: [text('plain')] },
+    ]);
+    expect(parseMarkdown('> [!OTHER]')[0]?.type).toBe('quote');
+    expect(parseMarkdown('> body\n> [!NOTE]')[0]?.type).toBe('quote');
+  });
+});

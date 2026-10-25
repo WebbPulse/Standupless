@@ -67,6 +67,7 @@ describe('filterSlashCommands', () => {
       'blockquote',
       'codeBlock',
       'collapsible',
+      'callout',
       'divider',
       'table',
     ]);
@@ -103,6 +104,9 @@ describe('filterSlashCommands', () => {
     expect(ids('div')).toEqual(['divider']);
     expect(ids('toggle')).toEqual(['collapsible']);
     expect(ids('details')).toEqual(['collapsible']);
+    expect(ids('callout')).toEqual(['callout']);
+    expect(ids('warning')).toEqual(['callout']);
+    expect(ids('tip')).toEqual(['callout']);
   });
 });
 
@@ -116,6 +120,7 @@ const WRITES: [string, string][] = [
   ['blockquote', '> Plan'],
   ['codeBlock', '```\nPlan\n```'],
   ['collapsible', '<details>\n<summary>Plan</summary>\n\n</details>'],
+  ['callout', '> [!NOTE]\n> Plan'],
   ['divider', '---\n\nPlan'],
 ];
 

@@ -42,6 +42,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
+import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
 import { EditorShortcuts } from './editorShortcuts';
@@ -322,6 +323,7 @@ export const markdownExtensions = (
     MediaImage.configure({ inline: false, allowBase64: false }),
     MediaUpload,
     CollapsibleSectionKit,
+    Callout,
     EditorShortcuts,
     MentionChips,
     EmojiSuggestion,
