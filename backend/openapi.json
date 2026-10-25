@@ -25217,6 +25217,17 @@
             "description": "Why the authentication policy refuses the caller's session, when it does.",
             "title": "Auth Policy Reason"
           },
+          "branch_format": {
+            "default": "key_title",
+            "description": "How copied git branch names are built: key_title, user_key_title or key",
+            "enum": [
+              "key_title",
+              "user_key_title",
+              "key"
+            ],
+            "title": "Branch Format",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -25347,7 +25358,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color and the default project update cadence are\neditable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence and the git\nbranch name format are editable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -25360,6 +25371,23 @@
             ],
             "description": "The accent as #rrggbb, or null for the default",
             "title": "Accent Color"
+          },
+          "branch_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "key_title",
+                  "user_key_title",
+                  "key"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How copied git branch names are built: key_title, user_key_title or key",
+            "title": "Branch Format"
           },
           "name": {
             "anyOf": [
@@ -28635,7 +28663,7 @@
         ]
       },
       "patch": {
-        "description": "Rename a workspace or set its accent color. The slug is fixed.",
+        "description": "Rename a workspace, set its accent color, project update cadence or branch format. The slug is fixed.",
         "operationId": "update_workspace_api_workspaces__workspace_id__patch",
         "parameters": [
           {

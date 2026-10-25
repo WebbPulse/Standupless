@@ -1,7 +1,8 @@
 /**
  * The workspace integrations page, where a workspace admin connects Slack and
- * Discord once for every team and manages the workspace channels that post
- * activity from all teams, or a chosen few, to one place.
+ * Discord once for every team, manages the workspace channels that post
+ * activity from all teams, or a chosen few, to one place, and picks the git
+ * branch name format every member copies.
  *
  * Teams still add their own channels in team settings once an App is
  * connected. Only an owner or admin may install an App or read the workspace
@@ -13,6 +14,7 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import ChannelsPanel from '../../components/team/ChannelsPanel';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
+import BranchFormatSection from '../../components/workspace/BranchFormatSection';
 import ChatAppConnectionRow from '../../components/workspace/ChatAppConnectionRow';
 import {
   discordRowCopy,
@@ -26,13 +28,15 @@ import {
   getDiscordInstallUrl,
   getSlackInstallUrl,
 } from '../../api/integrations';
+import { useAuth } from '../../hooks/useAuth';
 import { useChatApps } from '../../hooks/useChatApps';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { canManageMembers } from '../../lib/capabilities';
+import { branchHandle } from '../../lib/gitBranch';
 import { channelsKey } from '../../lib/queryKeys';
-import type { MemberRead } from '../../types/Api';
+import type { MemberRead, WorkspaceRead } from '../../types/Api';
 
 /** Who added an App, by display name, or a neutral word when they left. */
 const installerName = (
@@ -45,12 +49,19 @@ const installerName = (
   return member.display_name ?? 'a workspace member';
 };
 
-/** The Slack and Discord connections and the workspace channels, for an admin. */
-const Integrations: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+/**
+ * The Slack and Discord connections, the workspace channels and the git branch
+ * name format, for an admin.
+ */
+const Integrations: React.FC<{ workspace: WorkspaceRead }> = ({
+  workspace,
+}) => {
+  const workspaceId = workspace.id;
   const { slack, discord, refetchSlack, refetchDiscord } =
     useChatApps(workspaceId);
   const members = useWorkspaceMembers(workspaceId);
   const { data: teams } = useTeams();
+  const { user } = useAuth();
   const slackInstalled = slack?.installed === true;
   const discordInstalled = discord?.installed === true;
 
@@ -134,13 +145,18 @@ const Integrations: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
                 'Connect Slack or Discord first to add a workspace channel.',
             })}
       />
+      <BranchFormatSection
+        workspace={workspace}
+        handle={branchHandle(user ?? undefined)}
+        exampleKey={`${teams?.[0]?.key_prefix ?? 'ENG'}-123`}
+      />
       <SlackReturnToast />
       <DiscordReturnToast />
     </div>
   );
 };
 
-/** Renders the workspace's Slack and Discord integrations for an admin. */
+/** Renders the workspace's integrations and branch name format for an admin. */
 const IntegrationsSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
@@ -153,7 +169,7 @@ const IntegrationsSettings: React.FC = () => {
     >
       {workspace !== null &&
         (canManageMembers(workspace.role) ? (
-          <Integrations workspaceId={workspace.id} />
+          <Integrations workspace={workspace} />
         ) : (
           <div className="max-w-2xl">
             <p className="text-sm text-text-muted">

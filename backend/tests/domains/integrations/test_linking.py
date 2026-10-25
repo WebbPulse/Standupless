@@ -124,6 +124,22 @@ def test_the_branch_the_title_and_a_magic_word_move_the_status(branch: str, titl
     assert found[0].moves_status is True
 
 
+@pytest.mark.parametrize("branch", ["abc-1-fix-login", "user/abc-1-fix-login", "abc-1"])
+def test_every_branch_format_links_and_moves(branch: str) -> None:
+    """Each branch name format a workspace can copy, the handle prefixed one included, names the issue."""
+    found = linking.extract(PREFIXES, branch=branch, title="A change")
+
+    assert [row.key for row in found] == ["ABC-1"]
+    assert found[0].moves_status is True
+
+
+def test_a_user_prefixed_branch_links_its_issue() -> None:
+    """`user/stup-1-x`, the handle and slash Linear can put first, still links STUP-1."""
+    found = linking.extract({"p-stup": "STUP"}, branch="user/stup-1-x")
+
+    assert [(row.team_id, row.key) for row in found] == [("p-stup", "STUP-1")]
+
+
 @pytest.mark.parametrize("word", ["Refs", "ref", "References", "Part of", "Related to", "Contributes to", "Towards"])
 def test_a_reference_word_moves_the_status_without_closing(word: str) -> None:
     """A non-closing word ties the key to the pull request so it moves, and a merge does not close it."""

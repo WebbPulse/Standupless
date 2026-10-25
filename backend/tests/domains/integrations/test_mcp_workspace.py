@@ -116,6 +116,17 @@ def test_update_workspace_renames_it(client: TestClient, repositories: Any, work
     assert repositories.workspaces.get(WORKSPACE).name == "Acme Labs"
 
 
+def test_update_workspace_sets_the_branch_format(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin picks the branch name format through the tool, and an unknown one is refused."""
+    secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
+
+    updated = answer(tool(client, secret, "update_workspace", {"branch_format": "user_key_title"}))
+
+    assert updated["branch_format"] == "user_key_title"
+    assert repositories.workspaces.get(WORKSPACE).branch_format == "user_key_title"
+    assert "branch_format" in refusal(tool(client, secret, "update_workspace", {"branch_format": "title"}))
+
+
 def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member cannot carry admin, a blank name is refused, and the slug is not a field."""
     scope_refused(
@@ -129,6 +140,7 @@ def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, rep
         "name",
         "accent_color",
         "project_update_interval_days",
+        "branch_format",
     }
     assert "required" in refusal(tool(client, secret, "update_workspace", {}))
 

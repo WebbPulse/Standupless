@@ -3481,6 +3481,7 @@ class WorkspaceRead(TypedDict):
     auth_policy_allowed_methods: NotRequired[list[str] | None]
     auth_policy_blocked: NotRequired[bool]
     auth_policy_reason: NotRequired[Literal["two_factor", "sign_in_method", "sso"] | None]
+    branch_format: NotRequired[Literal["key_title", "user_key_title", "key"]]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
@@ -3503,6 +3504,7 @@ class WorkspaceSummaryRead(TypedDict):
 
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
+    branch_format: NotRequired[Literal["key_title", "user_key_title", "key"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
 

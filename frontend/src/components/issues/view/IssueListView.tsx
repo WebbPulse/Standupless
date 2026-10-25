@@ -44,6 +44,7 @@ import {
   useCreateIssue,
   type CreateIssueOptions,
 } from '../../../hooks/useCreateIssue';
+import { useBranchNaming } from '../../../hooks/useBranchNaming';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useStoredSet } from '../../../hooks/useStoredSet';
@@ -773,6 +774,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const me = context.people.find(
     (person) => person.user_id === context.currentUserId
   );
+  const branchNaming = useBranchNaming(context.people, context.currentUserId);
   const openCommand = (
     property: CommandProperty,
     issues: readonly OrderedIssueRead[]
@@ -956,7 +958,12 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     handler: (event) => {
       event?.preventDefault();
       if (single !== undefined) {
-        copyBranchName(single.key, single.title, branchStart(single));
+        copyBranchName(
+          single.key,
+          single.title,
+          branchStart(single),
+          branchNaming
+        );
       }
     },
   });
@@ -1565,7 +1572,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
                   copyBranchName(
                     menuSingle.key,
                     menuSingle.title,
-                    branchStart(menuSingle)
+                    branchStart(menuSingle),
+                    branchNaming
                   );
                 }
           }

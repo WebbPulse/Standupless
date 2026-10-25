@@ -130,6 +130,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "auth_policy_blocked",
         "auth_policy_reason",
         "auth_policy_allowed_methods",
+        "branch_format",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
@@ -766,3 +767,23 @@ def test_an_admin_sets_the_project_update_cadence(client: TestClient, repositori
     assert response.json()["name"] == repositories.workspaces.get(WORKSPACE).name
     assert client.patch(path, json={"project_update_interval_days": 10}).status_code == 422
     assert client.patch(path, json={"project_update_interval_days": 0}).json()["project_update_interval_days"] == 0
+
+
+def test_an_admin_sets_the_branch_format(client: TestClient, repositories: Any) -> None:
+    """The branch format starts as key and title, only an admin changes it, and only the offered formats are taken."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    path = f"/api/workspaces/{WORKSPACE}"
+
+    sign_in(client, MEMBER)
+    assert client.get(path).json()["branch_format"] == "key_title"
+    assert client.patch(path, json={"branch_format": "key"}).status_code == 403
+
+    sign_in(client, ADMIN)
+    response = client.patch(path, json={"branch_format": "user_key_title"})
+    assert response.status_code == 200
+    assert response.json()["branch_format"] == "user_key_title"
+    assert repositories.workspaces.get(WORKSPACE).branch_format == "user_key_title"
+    assert client.patch(path, json={"branch_format": "title"}).status_code == 422
+    assert client.patch(path, json={"name": "Renamed"}).json()["branch_format"] == "user_key_title"

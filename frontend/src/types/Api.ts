@@ -235,6 +235,9 @@ export type EstimateScale =
 export type StatusCategory =
   'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
 
+/** How a workspace builds the git branch names its members copy. */
+export type BranchFormat = 'key_title' | 'user_key_title' | 'key';
+
 /** One workspace the signed in user belongs to. */
 export interface WorkspaceRead {
   id: string;
@@ -260,6 +263,8 @@ export interface WorkspaceRead {
   auth_policy_blocked?: boolean;
   /** Why the policy refuses the session, when it does. */
   auth_policy_reason?: AuthPolicyReason | null;
+  /** How every member's copied git branch names are built. */
+  branch_format?: BranchFormat;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -511,6 +516,7 @@ export interface WorkspaceUpdate {
   /** The accent as #rrggbb, or null to return to the Standupless default. */
   accent_color?: string | null;
   project_update_interval_days?: ProjectUpdateInterval;
+  branch_format?: BranchFormat;
 }
 
 /** One member of a workspace. */
