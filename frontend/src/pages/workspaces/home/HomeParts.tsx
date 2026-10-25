@@ -439,6 +439,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   sla_at_risk: 'SLA at risk',
   sla_breached: 'SLA breached',
   review_requested: 'requested your review',
+  triage_new: 'New in triage',
 };
 
 /** One unread notification. */

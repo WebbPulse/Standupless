@@ -124,6 +124,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'Someone asks you to review a pull request. These stay in your inbox and are not emailed.',
   },
+  triage_new: {
+    title: 'New in triage',
+    detail:
+      'An issue enters the triage inbox of a team where you are on triage duty.',
+  },
 };
 
 /** The kinds that only ever reach the inbox, so their email switch is off and locked. */

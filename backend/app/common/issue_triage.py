@@ -1,4 +1,4 @@
-"""A team's triage inbox: its switch, its list and the four ways an issue leaves it.
+"""A team's triage inbox: its settings, its list and the four ways an issue leaves it.
 
 Held in `common` because the issue routes, the team routes and the MCP tools in
 the integrations image all run it, and that image may not import another
@@ -11,11 +11,12 @@ the same patch path a person's edit does, so the history reads the same.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
@@ -33,6 +34,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue, IssueWriteConflict
 from app.common.db.dynamo.team_config import TriageSettings, default_triage_settings
+from app.common.db.dynamo.teams import Team
 from app.common.issue_keys import current_all
 from app.common.issue_links import create_link
 from app.common.issue_rules import (
@@ -48,6 +50,7 @@ from app.common.issue_rules import (
 from app.common.issue_writes import apply_patch, store_patch
 from app.common.plan_features import Feature, enforce_feature
 from app.common.relation_effects import cancelled_status
+from app.common.triage_duty import can_be_on_duty, require_priority
 
 SNOOZE_MIN = timedelta(minutes=1)
 
@@ -57,25 +60,44 @@ TRIAGE_READ_CAP = 1000
 """The most waiting issues one team's inbox reads, far past any inbox worked by hand."""
 
 
+AUDITED_FIELDS: tuple[str, ...] = ("enabled", "responsible_user_ids", "responsibility_action", "require_priority")
+"""The triage settings a change to is recorded in the audit log."""
+
+
 def triage_settings(repositories: Repositories, workspace_id: str, team_id: str) -> TriageSettings:
-    """A team's triage switch, off when the team never saved one."""
+    """A team's triage settings, off with nobody on duty when the team never saved any."""
     stored = repositories.team_config.get_triage_settings(workspace_id, team_id)
     return stored or default_triage_settings(workspace_id, team_id)
 
 
+def _audited(settings: TriageSettings) -> dict[str, Any]:
+    """The audited fields of one settings row, as the audit log stores them."""
+    return {name: getattr(settings, name) for name in AUDITED_FIELDS}
+
+
 def update_triage_settings(
-    repositories: Repositories, workspace_id: str, team_id: str, payload: TriageSettingsUpdate
+    repositories: Repositories, context: AuthzContext, team: Team, payload: TriageSettingsUpdate
 ) -> TriageSettings:
-    """Turn a team's triage inbox on or off; issues already waiting stay until worked.
+    """Change a team's triage settings; issues already waiting stay until worked.
 
     Turning it on needs a plan that includes triage. Turning it off never does, so
-    a downgrade never traps a team with an inbox it cannot switch off.
+    a downgrade never traps a team with an inbox it cannot switch off. Everyone
+    put on duty must be a workspace member other than a guest who can see the
+    team, since duty may assign them issues there. The change is audited.
     """
-    current = triage_settings(repositories, workspace_id, team_id)
+    workspace_id = context.workspace_id
+    current = triage_settings(repositories, workspace_id, team.team_id)
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     if changes.get("enabled") is True and not current.enabled:
         enforce_feature(repositories, workspace_id, Feature.TRIAGE)
-    return repositories.team_config.put_triage_settings(current.model_copy(update=changes))
+    for user_id in changes.get("responsible_user_ids", []):
+        if user_id not in current.responsible_user_ids and not can_be_on_duty(
+            repositories, workspace_id, team.team_id, user_id
+        ):
+            raise unprocessable("Everyone on triage duty must be a member who can see this team")
+    saved = repositories.team_config.put_triage_settings(current.model_copy(update=changes))
+    audit.record_triage_change(repositories, context, team, _audited(current), _audited(saved))
+    return saved
 
 
 def is_snoozed(issue: Issue, now: datetime) -> bool:
@@ -140,9 +162,21 @@ def _waiting(repositories: Repositories, context: AuthzContext, issue_id: str) -
     return issue
 
 
-def _leave(repositories: Repositories, context: AuthzContext, issue: Issue, status_id: str, outcome: str) -> Issue:
-    """Move one waiting issue to `status_id` and out of triage, recording `outcome`."""
-    updated = apply_patch(repositories, context, issue, {"status_id": status_id})
+def _leave(
+    repositories: Repositories,
+    context: AuthzContext,
+    issue: Issue,
+    status_id: str,
+    outcome: str,
+    extra: Optional[dict[str, Any]] = None,
+) -> Issue:
+    """Move one waiting issue to `status_id` and out of triage, recording `outcome`.
+
+    `extra` names further fields the same write sets, such as the priority an
+    accept carries. Only an accept is held to the team's require-priority rule.
+    """
+    attributes = {"status_id": status_id, **(extra or {})}
+    updated = apply_patch(repositories, context, issue, attributes, accepting=outcome == "accepted")
     updated.in_triage = False
     updated.snoozed_until = None
     return store_patch(repositories, context, issue, updated, triage_outcome=outcome)
@@ -162,13 +196,18 @@ def accept(repositories: Repositories, context: AuthzContext, issue_id: str, pay
     never fails for want of a column. A comment rides along as an ordinary
     comment by the person accepting, posted after the move so the thread reads
     the accept first, with the same mentions and subscriptions a typed one gets.
+    A priority is set in the same write, and a team that requires one refuses an
+    accept that leaves the issue without it, whatever status it names.
     """
     issue = _waiting(repositories, context, issue_id)
     if payload.status_id:
         target = check_status(repositories, context.workspace_id, issue.team_id, payload.status_id).status_id
     else:
         target = first_unstarted(repositories, context.workspace_id, issue.team_id) or issue.status_id
-    stored = _leave(repositories, context, issue, target, "accepted")
+    extra = {"priority": payload.priority} if payload.priority is not None else {}
+    if (payload.priority or issue.priority) == "none":
+        require_priority(repositories, context.workspace_id, issue.team_id, "none")
+    stored = _leave(repositories, context, issue, target, "accepted", extra)
     if payload.comment:
         create_comment(repositories, context, stored.issue_id, payload.comment)
     return stored

@@ -2762,6 +2762,7 @@ class TransitionUpdate(TypedDict, closed=True):
 
 class TriageAccept(TypedDict):
     comment: NotRequired[str | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
     status_id: NotRequired[str | None]
 
 
@@ -2775,12 +2776,18 @@ class TriageDuplicate(TypedDict):
 
 class TriageSettingsRead(TypedDict):
     enabled: bool
+    require_priority: NotRequired[bool]
+    responsibility_action: NotRequired[Literal["notify", "assign"]]
+    responsible_user_ids: NotRequired[list[str]]
     team_id: str
     updated_at: NotRequired[str | None]
 
 
 class TriageSettingsUpdate(TypedDict):
     enabled: NotRequired[bool | None]
+    require_priority: NotRequired[bool | None]
+    responsibility_action: NotRequired[Literal["notify", "assign"] | None]
+    responsible_user_ids: NotRequired[list[str] | None]
 
 
 class TriageSnooze(TypedDict):
@@ -2850,6 +2857,7 @@ class UserPreferencesUpdate(TypedDict):
                 "sla_breached",
                 "review_requested",
                 "reminder",
+                "triage_new",
             ],
             NotificationChannelsUpdate,
         ]

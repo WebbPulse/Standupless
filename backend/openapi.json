@@ -21257,7 +21257,7 @@
         "type": "object"
       },
       "TriageAccept": {
-        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.\n\n`comment` is posted on the issue by the person accepting, in the same request,\nso a note such as why it was taken in lands beside the accept in the thread.",
+        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.\n\n`comment` is posted on the issue by the person accepting, in the same request,\nso a note such as why it was taken in lands beside the accept in the thread.\n`priority` is set in the same write, which is how an accept meets a team's\nrule that an issue leaves triage only with a priority.",
         "properties": {
           "comment": {
             "anyOf": [
@@ -21269,6 +21269,24 @@
               }
             ],
             "title": "Comment"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "status_id": {
             "anyOf": [
@@ -21320,11 +21338,32 @@
         "type": "object"
       },
       "TriageSettingsRead": {
-        "description": "A team's triage setting as the API returns it.",
+        "description": "A team's triage settings as the API returns them.",
         "properties": {
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "require_priority": {
+            "default": false,
+            "title": "Require Priority",
+            "type": "boolean"
+          },
+          "responsibility_action": {
+            "default": "notify",
+            "enum": [
+              "notify",
+              "assign"
+            ],
+            "title": "Responsibility Action",
+            "type": "string"
+          },
+          "responsible_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Responsible User Ids",
+            "type": "array"
           },
           "team_id": {
             "title": "Team Id",
@@ -21351,7 +21390,7 @@
         "type": "object"
       },
       "TriageSettingsUpdate": {
-        "description": "The body a team's triage settings patch takes.",
+        "description": "The body a team's triage settings patch takes; only the fields sent change.\n\n`responsible_user_ids` names the team members on triage duty, deduplicated in\nthe order given, and an empty list takes everyone off it.",
         "properties": {
           "enabled": {
             "anyOf": [
@@ -21363,6 +21402,47 @@
               }
             ],
             "title": "Enabled"
+          },
+          "require_priority": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Require Priority"
+          },
+          "responsibility_action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "notify",
+                  "assign"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Action"
+          },
+          "responsible_user_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible User Ids"
           }
         },
         "title": "TriageSettingsUpdate",
@@ -21705,7 +21785,8 @@
                     "sla_at_risk",
                     "sla_breached",
                     "review_requested",
-                    "reminder"
+                    "reminder",
+                    "triage_new"
                   ]
                 },
                 "type": "object"
@@ -33678,7 +33759,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 21,
+              "maxItems": 22,
               "title": "Kind",
               "type": "array"
             }
@@ -50063,7 +50144,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings": {
       "get": {
-        "description": "Whether the team routes issues filed from outside it into its triage inbox, off by default.",
+        "description": "The team's triage switch, who is on duty for its inbox and whether accepting needs a priority.",
         "operationId": "read_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_get",
         "parameters": [
           {
@@ -50110,7 +50191,7 @@
         ]
       },
       "patch": {
-        "description": "Turn the team's triage inbox on or off; issues already waiting stay until someone works them.",
+        "description": "Change the team's triage settings; issues already waiting stay until someone works them.",
         "operationId": "update_triage_settings_api_workspaces__workspace_id__teams__team_id__triage_settings_patch",
         "parameters": [
           {

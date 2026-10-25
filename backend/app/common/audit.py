@@ -91,6 +91,7 @@ EVENTS: dict[str, str] = {
     "team.deleted": "Team deleted",
     "team.parent_changed": "Team parent changed",
     "team.privacy_changed": "Team privacy changed",
+    "team.triage_changed": "Team triage settings changed",
     "team_member.added": "Team member added",
     "team_member.removed": "Team member removed",
     "team_member.role_changed": "Team member role changed",
@@ -242,6 +243,29 @@ def record_privacy_change(
         target_label=team.name,
         before={"private": bool(before)},
         after={"private": bool(after)},
+    )
+
+
+def record_triage_change(
+    repositories: Repositories,
+    context: AuthzContext,
+    team: Team,
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+) -> AuditEvent | None:
+    """Record a change to a team's triage settings with only the fields that moved, and nothing when none did."""
+    moved = [name for name in after if before.get(name) != after.get(name)]
+    if not moved:
+        return None
+    return record(
+        repositories,
+        context,
+        "team.triage_changed",
+        target_type="team",
+        target_id=team.team_id,
+        target_label=team.name,
+        before={name: before.get(name) for name in moved},
+        after={name: after.get(name) for name in moved},
     )
 
 

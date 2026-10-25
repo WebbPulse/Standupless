@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
-from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_team_member
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member
 from tests.domains.integrations.conftest import TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
@@ -83,9 +83,15 @@ def test_the_switch_routes_outside_issues_into_triage(client: TestClient, reposi
     listed = answer(tool(client, admin, "list_triage_issues", {"team_id": "ABC"}))
     summary = answer(tool(client, admin, "get_triage_summary", {}))
 
-    assert switched == {"team_id": TEAM, "enabled": True}
+    settings = {
+        "enabled": True,
+        "responsible_user_ids": [],
+        "responsibility_action": "notify",
+        "require_priority": False,
+    }
+    assert switched == {"team_id": TEAM, **settings}
     assert filed["in_triage"] is True
-    assert team["triage_settings"] == {"enabled": True}
+    assert team["triage_settings"] == settings
     assert [row["issue_id"] for row in listed["issues"]] == [filed["issue_id"]]
     assert summary == {"teams": [{"team_id": TEAM, "count": 1}]}
 
@@ -210,3 +216,76 @@ def test_triage_status_is_refused_where_triage_is_off(client: TestClient, reposi
     refused = refusal(tool(client, owner, "create_issue", {"team_id": "ABC", "title": "A", "status_id": "triage"}))
 
     assert "triage" in refused
+
+
+def test_duty_and_the_priority_rule_are_set_through_the_tool(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An admin puts people on duty by id or me, assign hands them new issues, and accept then needs a priority."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    add_team_member(repositories, WORKSPACE, TEAM, ADMIN, "admin")
+    admin = mint_for(repositories, ADMIN, SCOPES)
+    member = mint_for(repositories, MEMBER, SCOPES)
+
+    saved = answer(
+        tool(
+            client,
+            admin,
+            "update_team_triage_settings",
+            {
+                "team_id": "ABC",
+                "enabled": True,
+                "responsible_user_ids": ["me"],
+                "responsibility_action": "assign",
+                "require_priority": True,
+            },
+        )
+    )
+    filed = _file(client, member, "Needs an owner")
+    refused = refusal(tool(client, admin, "triage_issue", {"issue_id": filed["issue_key"], "action": "accept"}))
+    accepted = answer(
+        tool(client, admin, "triage_issue", {"issue_id": filed["issue_key"], "action": "accept", "priority": "high"})
+    )
+
+    assert saved["responsible_user_ids"] == [ADMIN]
+    assert saved["responsibility_action"] == "assign" and saved["require_priority"] is True
+    assert filed["assignee_id"] == ADMIN
+    assert "requires a priority" in refused
+    assert accepted["in_triage"] is False and accepted["priority"] == "high"
+
+
+def test_update_issue_out_of_triage_is_held_to_the_priority_rule(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Naming a real status accepts, so it needs a priority too, while a cancelled status declines freely."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    member = mint_for(repositories, MEMBER, SCOPES)
+    answer(
+        tool(
+            client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True, "require_priority": True}
+        )
+    )
+    first = _file(client, member, "First")
+    second = _file(client, member, "Second")
+
+    refused = refusal(tool(client, owner, "update_issue", {"issue_id": first["issue_key"], "status_id": "Todo"}))
+    moved = answer(
+        tool(client, owner, "update_issue", {"issue_id": first["issue_key"], "status_id": "Todo", "priority": "low"})
+    )
+    cancelled = answer(tool(client, owner, "update_issue", {"issue_id": second["issue_key"], "status_id": "Cancelled"}))
+
+    assert "requires a priority" in refused
+    assert moved["in_triage"] is False and moved["priority"] == "low"
+    assert cancelled["in_triage"] is False
+
+
+def test_a_guest_cannot_be_put_on_duty(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Duty may assign issues, so only members who can see the team hold it."""
+    admin = mint_for(repositories, ADMIN, SCOPES)
+
+    refused = refusal(
+        tool(client, admin, "update_team_triage_settings", {"team_id": "ABC", "responsible_user_ids": [GUEST]})
+    )
+
+    assert "triage duty" in refused

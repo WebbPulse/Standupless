@@ -567,11 +567,20 @@ def default_team_display_defaults(workspace_id: str, team_id: str) -> TeamDispla
     return TeamDisplayDefaults(workspace_id=workspace_id, config_key=display_defaults_key(team_id), team_id=team_id)
 
 
+TriageAction = Literal["notify", "assign"]
+"""What triage responsibility does when an issue enters a team's inbox."""
+
+MAX_TRIAGE_RESPONSIBLE = 25
+"""The most members one team may put on triage duty."""
+
+
 class TriageSettings(BaseModel):
-    """Whether a team routes issues filed by people outside it into its triage inbox.
+    """A team's triage inbox: its switch, who is on duty for it and what accepting needs.
 
     Off until a team turns it on, so a team that never saved the row behaves as
-    it always has.
+    it always has. `responsible_user_ids` are notified, or one of them assigned,
+    each time an issue enters the inbox, and `require_priority` holds an accept
+    until the issue has a priority.
     """
 
     workspace_id: str
@@ -579,6 +588,9 @@ class TriageSettings(BaseModel):
     team_id: str
     kind: str = TRIAGE_SETTINGS
     enabled: bool = False
+    responsible_user_ids: list[str] = Field(default_factory=list)
+    responsibility_action: TriageAction = "notify"
+    require_priority: bool = False
     updated_at: datetime | None = None
 
 

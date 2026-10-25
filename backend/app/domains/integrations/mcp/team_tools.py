@@ -461,8 +461,12 @@ def _get_team(call: ToolCall) -> Any:
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
     body["sla_settings"] = _sla_settings_json(team_writes.sla_settings(call.repositories, workspace_id, team.team_id))
+    triage = issue_triage.triage_settings(call.repositories, workspace_id, team.team_id)
     body["triage_settings"] = {
-        "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
+        "enabled": triage.enabled,
+        "responsible_user_ids": list(triage.responsible_user_ids),
+        "responsibility_action": triage.responsibility_action,
+        "require_priority": triage.require_priority,
     }
     body["display_defaults"] = _display_defaults_json(call, team.team_id)
     return body

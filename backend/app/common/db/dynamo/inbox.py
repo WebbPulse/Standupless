@@ -50,6 +50,7 @@ NotificationKind = Literal[
     "sla_breached",
     "review_requested",
     "reminder",
+    "triage_new",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -69,6 +70,7 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "sla_breached",
     "review_requested",
     "reminder",
+    "triage_new",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -79,6 +81,9 @@ ISSUE_REMINDER = "reminder"
 
 REVIEW_REQUESTED = "review_requested"
 """The kind a GitHub review request takes in the requested member's inbox, in app only."""
+
+TRIAGE_NEW = "triage_new"
+"""The kind that tells each member on a team's triage duty an issue entered its inbox."""
 
 REMINDER_PREFIX = "reminder#"
 """The partition prefix reminder markers live under, which no inbox can name.

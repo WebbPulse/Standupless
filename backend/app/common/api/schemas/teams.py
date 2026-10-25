@@ -26,6 +26,7 @@ from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
     MAX_SLA_PAUSED_STATUSES,
+    MAX_TRIAGE_RESPONSIBLE,
     MAX_UPCOMING_CYCLES,
     ArchiveSettings,
     AutoCloseSettings,
@@ -629,23 +630,51 @@ class SlaSettingsRead(BaseModel):
         )
 
 
+TriageActionField = Literal["notify", "assign"]
+
+
 class TriageSettingsUpdate(BaseModel):
-    """The body a team's triage settings patch takes."""
+    """The body a team's triage settings patch takes; only the fields sent change.
+
+    `responsible_user_ids` names the team members on triage duty, deduplicated in
+    the order given, and an empty list takes everyone off it.
+    """
 
     enabled: Optional[StrictBool] = None
+    responsible_user_ids: Optional[list[str]] = Field(default=None, max_length=MAX_TRIAGE_RESPONSIBLE)
+    responsibility_action: Optional[TriageActionField] = None
+    require_priority: Optional[StrictBool] = None
+
+    @field_validator("responsible_user_ids")
+    @classmethod
+    def dedupe_responsible(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop blank and repeated ids, keeping the first place each one held."""
+        if value is None:
+            return None
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
 
 
 class TriageSettingsRead(BaseModel):
-    """A team's triage setting as the API returns it."""
+    """A team's triage settings as the API returns them."""
 
     team_id: str
     enabled: bool
+    responsible_user_ids: list[str] = Field(default_factory=list)
+    responsibility_action: TriageActionField = "notify"
+    require_priority: bool = False
     updated_at: Optional[datetime] = None
 
     @classmethod
     def from_row(cls, settings: TriageSettings) -> "TriageSettingsRead":
         """Build the response from a stored or default settings row."""
-        return cls(team_id=settings.team_id, enabled=settings.enabled, updated_at=settings.updated_at)
+        return cls(
+            team_id=settings.team_id,
+            enabled=settings.enabled,
+            responsible_user_ids=list(settings.responsible_user_ids),
+            responsibility_action=settings.responsibility_action,
+            require_priority=settings.require_priority,
+            updated_at=settings.updated_at,
+        )
 
 
 DisplayGroupField = Union[GroupByField, Literal["none"]]
