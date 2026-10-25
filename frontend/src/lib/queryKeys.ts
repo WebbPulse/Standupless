@@ -33,6 +33,13 @@ export const membersKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** One workspace's member list as the Members settings section reads it, invites and suspensions included. */
+export const memberDirectoryKey = (workspaceId: string): QueryKey => [
+  'members',
+  workspaceId,
+  'directory',
+];
+
 /** One workspace's invite list. */
 export const invitesKey = (workspaceId: string): QueryKey => [
   'invites',

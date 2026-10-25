@@ -297,7 +297,14 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         id: 'members',
         title: 'Members',
-        synonyms: ['people', 'roles', 'seats', 'remove member'],
+        synonyms: [
+          'people',
+          'roles',
+          'seats',
+          'remove member',
+          'suspend member',
+          'export members',
+        ],
         anchor: settingsAnchorId('members'),
       },
       {
