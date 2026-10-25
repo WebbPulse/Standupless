@@ -2,7 +2,8 @@
  * The shared dropdown menu. Covers typeahead filtering: typing hides items
  * that do not match and focuses the first match, Enter picks it, Backspace
  * edits the filter, a page shortcut never sees the typed letters, a filter
- * that matches nothing says so, and Escape closes the menu.
+ * that matches nothing says so, and Escape closes the menu. Also covers the
+ * open and close notices a page uses to stand its own keys down.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -186,5 +187,42 @@ describe('ContextMenu typeahead', () => {
     );
     await user.keyboard('de{Enter}');
     expect(onSelect).toHaveBeenCalledWith('delete');
+  });
+});
+
+describe('Menu onOpenChange', () => {
+  it('hears the menu open and close, and close again when it unmounts open', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn<(open: boolean) => void>();
+    const tree = (shown: boolean) => (
+      <MemoryRouter>
+        {shown && (
+          <Menu
+            label="Entry actions"
+            onOpenChange={onOpenChange}
+            trigger={(props) => (
+              <button type="button" {...props}>
+                Actions
+              </button>
+            )}
+          >
+            <MenuItem>Copy link</MenuItem>
+          </Menu>
+        )}
+      </MemoryRouter>
+    );
+    const { rerender } = render(tree(true));
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Actions' }));
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    await user.keyboard('{Escape}');
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+
+    await user.click(screen.getByRole('button', { name: 'Actions' }));
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    rerender(tree(false));
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(onOpenChange).toHaveBeenCalledTimes(4);
   });
 });

@@ -5,7 +5,9 @@
  * "Popular" the last two weeks' updates ranked by replies plus reactions, and
  * "Recent" everything they may read. The tab lives in the URL, so a link lands
  * on it. Opening the page reads the feed, so the entries that were new keep
- * their dot for this visit while the sidebar badge clears.
+ * their dot for this visit while the sidebar badge clears. Each entry's menu
+ * follows or unfollows what it is about; unfollowing drops that source from
+ * For me at once and offers Undo, which follows it again.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,21 +15,27 @@ import { LuActivity } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
-import { listPulse, markPulseRead } from '../../api/pulse';
+import { listPulse, markPulseRead, setFollow } from '../../api/pulse';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { pulseCountKey, pulseKey } from '../../lib/queryKeys';
+import { pulseCountKey, pulseFollowKey, pulseKey } from '../../lib/queryKeys';
 import { dayHeading, localDay } from '../../lib/relativeTime';
+import { showErrorToast, showToast } from '../../lib/toast';
 import type { PulseItemRead, PulseScope } from '../../types/Api';
 import PulseEntry from './PulseEntry';
-import { entryHref } from './pulseDisplay';
+import PulseEntryMenu, {
+  ENTRY_MENU_ATTRIBUTE,
+  entrySubject,
+} from './PulseEntryMenu';
+import { entryHref, subjectName } from './pulseDisplay';
 
 /** How often the first page is read again while the page is open. */
 const POLL_MS = 60000;
@@ -52,6 +60,12 @@ const EMPTY_MESSAGES: Record<PulseScope, string> = {
     'No updates yet. Follow a project or initiative to see its updates here.',
   popular: 'No updates from the last two weeks yet.',
   recent: 'No project or initiative updates yet.',
+};
+
+/** The key an entry's source is dropped by: its subject kind and id, or empty when it names none. */
+const sourceKey = (item: PulseItemRead): string => {
+  const target = entrySubject(item);
+  return target === null ? '' : `${target.subject}:${target.subjectId}`;
 };
 
 /** One day's run of entries, under the heading the feed shows for it. */
@@ -99,6 +113,9 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<unknown>(null);
   const markedFor = useRef<string | null>(null);
+  const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const feed = useRef<HTMLDivElement>(null);
 
   const query = usePolledQuery(
     ({ signal }) => listPulse(workspaceId, { scope }, signal),
@@ -128,10 +145,56 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
   const nextCursor =
     cursor === undefined ? (first?.next_cursor ?? null) : cursor;
   const seen = new Set((first?.items ?? []).map((item) => item.event_id));
-  const items = [
+  const loaded = [
     ...(first?.items ?? []),
     ...older.filter((item) => !seen.has(item.event_id)),
   ];
+  const items =
+    scope === 'for_me' && dropped.size > 0
+      ? loaded.filter((item) => !dropped.has(sourceKey(item)))
+      : loaded;
+
+  const changeFollow = (item: PulseItemRead, following: boolean): void => {
+    const target = entrySubject(item);
+    if (target === null) return;
+    const key = sourceKey(item);
+    const name = subjectName(item);
+    const keep = (): void => {
+      setDropped((current) => {
+        if (!current.has(key)) return current;
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    };
+    if (following) keep();
+    else setDropped((current) => new Set(current).add(key));
+    setFollow(workspaceId, target.subject, target.subjectId, following).then(
+      () => {
+        invalidateQueries([
+          pulseKey(workspaceId, 'for_me'),
+          pulseCountKey(workspaceId),
+          pulseFollowKey(workspaceId, target.subject, target.subjectId),
+        ]);
+        if (following) {
+          showToast(`Following ${name} in Pulse`);
+          return;
+        }
+        showToast(`Unfollowed ${name}`, 'info', {
+          action: {
+            label: 'Undo',
+            run: () => {
+              changeFollow(item, true);
+            },
+          },
+        });
+      },
+      (failure: unknown) => {
+        if (!following) keep();
+        showErrorToast(errorMessage(failure, 'Could not change the follow.'));
+      }
+    );
+  };
 
   const navigate = useNavigate();
   const activate = useCallback(
@@ -147,6 +210,31 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
     count: items.length,
     onActivate: activate,
     resetKey: scope,
+    enabled: !menuOpen,
+  });
+
+  const openMenu = (event?: KeyboardEvent): void => {
+    const trigger = feed.current?.querySelector<HTMLElement>(
+      `article[aria-current="true"] [${ENTRY_MENU_ATTRIBUTE}]`
+    );
+    if (trigger === null || trigger === undefined) return;
+    event?.preventDefault();
+    trigger.click();
+  };
+  const menuShortcut = activeIndex !== -1 && !menuOpen;
+  useShortcut({
+    keys: 'shift+f10',
+    label: 'Open entry menu',
+    group: 'List',
+    enabled: menuShortcut,
+    handler: openMenu,
+  });
+  useShortcut({
+    keys: 'contextmenu',
+    label: 'Open entry menu',
+    group: 'List',
+    enabled: menuShortcut,
+    handler: openMenu,
   });
 
   const renderEntry = (item: PulseItemRead, index: number): React.ReactNode => (
@@ -157,8 +245,25 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
       active={activeIndex === index}
       entryRef={registerItem(index)}
       onPointerEnter={() => {
-        setActiveIndex(index);
+        if (!menuOpen) setActiveIndex(index);
       }}
+      menu={
+        <PulseEntryMenu
+          workspaceId={workspaceId}
+          slug={slug}
+          item={item}
+          onUnfollow={(target) => {
+            changeFollow(target, false);
+          }}
+          onFollow={(target) => {
+            changeFollow(target, true);
+          }}
+          onOpenChange={(open) => {
+            setMenuOpen(open);
+            if (open) setActiveIndex(index);
+          }}
+        />
+      }
     />
   );
 
@@ -193,7 +298,7 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
     return <EmptyState icon={<LuActivity />} message={EMPTY_MESSAGES[scope]} />;
   }
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={feed} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 pb-10 sm:px-6">
         <section
           aria-label={SCOPES.find((option) => option.id === scope)?.label}
