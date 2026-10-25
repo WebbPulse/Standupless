@@ -4,7 +4,7 @@
  * because posting or removing the newest update moves its health.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   createInitiativeUpdate,
@@ -12,6 +12,7 @@ import {
   listInitiativeUpdates,
   updateInitiativeUpdate,
 } from '../api/initiatives';
+import type { UpdateDraftTarget } from '../api/drafts';
 import {
   initiativeDetailKey,
   initiativeUpdatesKey,
@@ -104,6 +105,11 @@ export const useInitiativeUpdates = (
     [workspaceId, initiativeId, refresh]
   );
 
+  const draftTarget = useMemo<UpdateDraftTarget>(
+    () => ({ workspaceId, kind: 'initiative', id: initiativeId }),
+    [workspaceId, initiativeId]
+  );
+
   return {
     updates: pages.rows,
     latest: pages.rows[0] ?? null,
@@ -115,6 +121,7 @@ export const useInitiativeUpdates = (
     create,
     edit,
     remove,
+    draftTarget,
   };
 };
 

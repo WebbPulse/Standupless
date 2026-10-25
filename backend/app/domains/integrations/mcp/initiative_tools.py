@@ -42,6 +42,7 @@ from app.common.initiative_writes import (
 )
 from app.common.project_cadence import INTERVAL_OPTIONS
 from app.common.readable_ids import initiative_web_url
+from app.common.update_drafts import clear_posted_update_draft
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
@@ -273,7 +274,16 @@ def _create_update(call: ToolCall) -> Any:
     payload = InitiativeUpdateCreate.model_validate(
         {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
     )
-    return _update_json(create_initiative_update(call.repositories, call.context, initiative_id, payload))
+    created = create_initiative_update(call.repositories, call.context, initiative_id, payload)
+    clear_posted_update_draft(
+        call.repositories,
+        call.context.workspace_id,
+        created.author_id,
+        "initiative",
+        created.initiative_id,
+        created.created_at,
+    )
+    return _update_json(created)
 
 
 def _update_update(call: ToolCall) -> Any:

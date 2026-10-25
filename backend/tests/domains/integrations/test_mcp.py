@@ -240,6 +240,9 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_comment_draft",
         "list_comment_drafts",
         "delete_comment_draft",
+        "set_update_draft",
+        "get_update_draft",
+        "delete_update_draft",
         "save_issue_draft",
         "get_issue_draft",
         "list_issue_drafts",
@@ -389,7 +392,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_issue_link",
         "delete_issue_link",
     }
-    assert len(TOOLS) == 275
+    assert len(TOOLS) == 278
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

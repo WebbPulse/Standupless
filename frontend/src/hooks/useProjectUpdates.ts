@@ -7,7 +7,7 @@
  * last update time on the server, and the page shows both.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   createProjectUpdate,
@@ -15,6 +15,7 @@ import {
   listProjectUpdates,
   updateProjectUpdate,
 } from '../api/planning';
+import type { UpdateDraftTarget } from '../api/drafts';
 import {
   projectDetailKey,
   projectsKey,
@@ -53,6 +54,8 @@ export interface StatusUpdateFeed<
   edit: (updateId: string, body: ProjectUpdateEdit) => Promise<T>;
   /** Deletes an update. Rejects when the write failed. */
   remove: (updateId: string) => Promise<void>;
+  /** Where the caller's unposted update on this project or initiative is kept. */
+  draftTarget?: UpdateDraftTarget;
 }
 
 /** What {@link useProjectUpdates} hands back. */
@@ -135,6 +138,11 @@ export const useProjectUpdates = (
     [workspaceId, projectId, refresh]
   );
 
+  const draftTarget = useMemo<UpdateDraftTarget>(
+    () => ({ workspaceId, kind: 'project', id: projectId }),
+    [workspaceId, projectId]
+  );
+
   return {
     updates: pages.rows,
     latest: pages.rows[0] ?? null,
@@ -146,6 +154,7 @@ export const useProjectUpdates = (
     create,
     edit,
     remove,
+    draftTarget,
   };
 };
 

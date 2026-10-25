@@ -16,12 +16,19 @@
  * A project update's editor also offers "Hide details", which keeps the
  * progress report the server attaches to the update out of sight for everyone.
  *
+ * Given a draft target, the composer keeps the caller's unposted text and
+ * health on the server: it restores them when it opens, saves after a pause,
+ * and clears them once the update posts. Editing a posted update or writing a
+ * reply passes no target and keeps no draft.
+ *
  * The editor is its own lazily loaded chunk, so a stand in with the same shape
  * shows until it arrives.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
 import { LuChevronDown, LuFileText } from 'react-icons/lu';
+import type { UpdateDraftTarget } from '../../api/drafts';
+import { useUpdateDraft } from '../../hooks/useUpdateDraft';
 import { cn } from '../../lib/cn';
 import type { Assignable } from '../../lib/issuePeople';
 import { submitKeysLabel } from '../../lib/platform';
@@ -108,6 +115,8 @@ export interface ProjectUpdateEditorProps {
   withDetailsToggle?: boolean;
   /** Whether Hide details starts on. */
   initialHideDetails?: boolean;
+  /** The project or initiative whose server side draft the composer keeps; none keeps no draft. */
+  draftTarget?: UpdateDraftTarget;
 }
 
 /** A Markdown box and a health chooser that submit together. */
@@ -127,6 +136,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
   withHealth = true,
   withDetailsToggle = false,
   initialHideDetails = false,
+  draftTarget,
 }) => {
   const [draft, setDraft] = useState(initialBody);
   const [health, setHealth] = useState<ProjectHealth>(initialHealth);
@@ -134,6 +144,19 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
   const [busy, setBusy] = useState(false);
   const [focused, setFocused] = useState(false);
   const editor = useRef<RichMarkdownHandle>(null);
+  const serverDraft = useUpdateDraft(draftTarget, editor, {
+    initialBody,
+    onRestore: (saved) => {
+      setDraft(saved.body);
+      const restoredHealth = saved.health ?? null;
+      if (withHealth && restoredHealth !== null) setHealth(restoredHealth);
+    },
+  });
+
+  const pickHealth = (picked: ProjectHealth): void => {
+    setHealth(picked);
+    serverDraft.pickHealth(picked);
+  };
 
   const canSubmit = !busy && draft.trim() !== '';
 
@@ -143,6 +166,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     setBusy(true);
     void onSubmit(body, health, hideDetails).then((saved) => {
       setBusy(false);
+      if (saved) serverDraft.clear();
       if (saved && clearOnSubmit) {
         editor.current?.setMarkdown('');
         setDraft('');
@@ -155,6 +179,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     const body = template.body ?? '';
     editor.current?.setMarkdown(body);
     setDraft(body);
+    serverDraft.save(body);
   };
 
   const usable = templates.filter(
@@ -179,7 +204,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
         }
       >
         <RichMarkdownEditor
-          ref={editor}
+          ref={serverDraft.ref}
           value={initialBody}
           editable
           ariaLabel={ariaLabel}
@@ -191,6 +216,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
           onCommit={() => false}
           onChange={(markdown) => {
             setDraft(markdown);
+            serverDraft.save(markdown);
           }}
           onSubmit={submit}
           onFocusChange={setFocused}
@@ -199,7 +225,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
       </Suspense>
       <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
         {withHealth && (
-          <HealthChooser value={health} onChange={setHealth} disabled={busy} />
+          <HealthChooser value={health} onChange={pickHealth} disabled={busy} />
         )}
         {usable.length > 0 && (
           <Menu

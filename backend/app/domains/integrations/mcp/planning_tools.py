@@ -80,6 +80,7 @@ from app.common.project_writes import (
 )
 from app.common.readable_ids import project_web_url
 from app.common.team_time import team_today
+from app.common.update_drafts import clear_posted_update_draft
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.project_status_tools import (
     STATUS_HELP,
@@ -882,7 +883,16 @@ def _create_project_update(call: ToolCall) -> Any:
     payload = ProjectUpdateCreate.model_validate(
         {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
     )
-    return _project_update_json(create_project_update(call.repositories, call.context, project_id, payload))
+    created = create_project_update(call.repositories, call.context, project_id, payload)
+    clear_posted_update_draft(
+        call.repositories,
+        call.context.workspace_id,
+        created.author_id,
+        "project",
+        created.project_id,
+        created.created_at,
+    )
+    return _project_update_json(created)
 
 
 def _update_project_update(call: ToolCall) -> Any:

@@ -6109,6 +6109,33 @@ export interface DraftWrite {
   body: string;
 }
 
+/** What a status update draft sits on: a project or an initiative. */
+export type UpdateDraftTargetKind = 'project' | 'initiative';
+
+/** The caller's unposted status update on one project or initiative. */
+export interface UpdateDraftRead {
+  target_kind: UpdateDraftTargetKind;
+  project_id?: string | null;
+  initiative_id?: string | null;
+  target_name?: string | null;
+  body: string;
+  /** The health picked so far, or null while none is. */
+  health?: ProjectHealth | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's status update drafts, newest saved first. */
+export interface UpdateDraftListRead {
+  drafts: UpdateDraftRead[];
+}
+
+/** What a status update draft save takes, replacing what the draft held. */
+export interface UpdateDraftWrite {
+  body: string;
+  health?: ProjectHealth | null;
+}
+
 /** Everything a new issue draft save takes, replacing what the draft held. */
 export interface IssueDraftWrite {
   team_id: string;
