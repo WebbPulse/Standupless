@@ -21,10 +21,12 @@
  * dialog for each over the page in view, and a project or initiative page adds
  * its own "Create document".
  *
- * The favorite, project, cycle, team, view and template pickers are nested
- * lists a row opens, and the `O` then letter shortcuts and Alt+C open the
- * palette straight onto one of them through the `picker` prop. A team with no
- * templates offers a row to its template settings instead.
+ * The favorite, project, cycle, team, view, template and workspace pickers
+ * are nested lists a row opens, and the `O` then letter shortcuts and Alt+C
+ * open the palette straight onto one of them through the `picker` prop. A
+ * team with no templates offers a row to its template settings instead. The
+ * workspace picker leaves out the workspace in view and ends on Create
+ * workspace, and Log out sits among the actions.
  *
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
@@ -71,10 +73,12 @@ import {
   LuLayoutList,
   LuLink,
   LuList,
+  LuLogOut,
   LuMap,
   LuMaximize2,
   LuMonitor,
   LuMoon,
+  LuPlus,
   LuRefreshCcw,
   LuRocket,
   LuSearch,
@@ -118,6 +122,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
 import { cn } from '../../lib/cn';
 import {
+  NEW_WORKSPACE_PATH,
   accountSecuritySettingsPath,
   cliSetupPath,
   customersPath,
@@ -155,6 +160,7 @@ import {
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { favoriteHref } from '../../lib/favorites';
+import { homeViewPath } from '../../lib/preferences';
 import { isFormTemplate } from '../../lib/issueTemplates';
 import ProjectIcon from '../planning/ProjectIcon';
 import DocumentIcon from '../planning/DocumentIcon';
@@ -221,6 +227,10 @@ export interface CommandPaletteProps {
   picker?: PalettePicker | null;
   /** The viewer, whose recently opened issues head the top level. */
   currentUserId?: string | undefined;
+  /** Every workspace the viewer belongs to, for Switch workspace. */
+  workspaces?: readonly Pick<WorkspaceRead, 'id' | 'slug' | 'name'>[];
+  /** Signs the viewer out. Without it no Log out row shows. */
+  onLogOut?: () => void;
 }
 
 /**
@@ -260,6 +270,10 @@ const PAGE_COPY: Record<
   { back: string; placeholder: string }
 > = {
   teams: { back: 'Switch team', placeholder: 'Switch to a team' },
+  workspaces: {
+    back: 'Switch workspace',
+    placeholder: 'Switch to a workspace',
+  },
   views: { back: 'Open view', placeholder: 'Open a saved view' },
   favorites: { back: 'Open favorite', placeholder: 'Open a favorite' },
   projects: { back: 'Open project', placeholder: 'Open a project' },
@@ -394,6 +408,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   onShowShortcuts,
   picker = null,
   currentUserId,
+  workspaces,
+  onLogOut,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -659,6 +675,25 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         page: 'teams',
       });
     }
+    if (workspaces !== undefined) {
+      built.push({
+        id: 'action-switch-workspace',
+        label: 'Switch workspace',
+        keywords: 'change open organization',
+        hint: 'O then W',
+        icon: <LuBuilding2 className={ICON} />,
+        page: 'workspaces',
+      });
+    }
+    if (onLogOut !== undefined) {
+      built.push({
+        id: 'action-log-out',
+        label: 'Log out',
+        keywords: 'sign out signout logout leave',
+        icon: <LuLogOut className={ICON} />,
+        run: onLogOut,
+      });
+    }
     for (const option of THEMES) {
       if (option.theme === theme) continue;
       built.push({
@@ -745,6 +780,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     onShowShortcuts,
     canUndo,
     undo,
+    workspaces,
+    onLogOut,
   ]);
 
   const places = useMemo<Command[]>(() => {
@@ -1029,6 +1066,36 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       return rows.length === 0
         ? []
         : [{ heading: 'Switch team', commands: rows }];
+    }
+
+    if (page === 'workspaces') {
+      const rows = (workspaces ?? [])
+        .filter((row) => row.id !== workspaceId)
+        .map((row) => ({
+          id: `workspace-${row.id}`,
+          label: row.name,
+          keywords: row.slug,
+          icon: <LuBuilding2 className={ICON} />,
+          to: homeViewPath(row.slug),
+        }))
+        .filter((command) => matches(command, deferred));
+      const create = [
+        {
+          id: 'workspace-create',
+          label: 'Create workspace',
+          keywords: 'new add join',
+          icon: <LuPlus className={ICON} />,
+          to: NEW_WORKSPACE_PATH,
+        },
+      ].filter((command) => matches(command, deferred));
+      return [
+        ...(rows.length === 0
+          ? []
+          : [{ heading: 'Switch workspace', commands: rows }]),
+        ...(create.length === 0
+          ? []
+          : [{ heading: 'Workspace', commands: create }]),
+      ];
     }
 
     if (page === 'favorites') {
@@ -1350,6 +1417,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     return built;
   }, [
     page,
+    workspaces,
     savedViews,
     favorites,
     projectList,

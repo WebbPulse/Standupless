@@ -1,10 +1,10 @@
 /**
- * The `O` then letter shortcuts: each opens the command palette straight onto
+ * The `O` then letter shortcuts, Switch workspace among them: each opens the command palette straight onto
  * its picker, the picker lists what it names and opens the chosen row, and the
  * keys do nothing while someone is typing in a field.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type React from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -23,6 +23,7 @@ import type {
   WorkspaceRead,
 } from '../../types/Api';
 import GlobalShortcuts from '../shortcuts/GlobalShortcuts';
+import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CommandPalette from './CommandPalette';
 
@@ -108,7 +109,7 @@ const cycle = (
   }) as CycleRead;
 
 /** The palette state and global shortcuts wired the way the workspace shell does. */
-const Shell: React.FC = () => {
+const Shell: React.FC<{ help?: boolean }> = ({ help = false }) => {
   const palette = useCommandPalette();
   return (
     <CommandPaletteContext.Provider value={palette}>
@@ -124,23 +125,28 @@ const Shell: React.FC = () => {
         workspace={workspace}
         teams={[engine]}
         picker={palette.picker}
+        workspaces={[
+          { id: 'ws-1', slug: 'mine', name: 'Mine' },
+          { id: 'ws-2', slug: 'acme', name: 'Acme' },
+        ]}
       />
+      {help && <ShortcutHelp open onClose={() => undefined} />}
       <BoundKeys />
     </CommandPaletteContext.Provider>
   );
 };
 
 /** Renders the shell on the given route and waits for the open keys to bind. */
-const renderShell = async (path = '/w/mine/team/ENG') => {
+const renderShell = async (path = '/w/mine/team/ENG', help = false) => {
   const user = userEvent.setup();
   render(
     <MemoryRouter initialEntries={[path]}>
       <ShortcutProvider>
-        <Shell />
+        <Shell help={help} />
       </ShortcutProvider>
     </MemoryRouter>
   );
-  await keysBound('o f', 'o p', 'o c', 'o t', 'o v');
+  await keysBound('o f', 'o p', 'o c', 'o t', 'o v', 'o w');
   return user;
 };
 
@@ -241,6 +247,26 @@ describe('the open pickers', () => {
     expect(
       await screen.findByRole('combobox', { name: 'Open a saved view' })
     ).toBeInTheDocument();
+  });
+
+  it('opens the workspace switcher on O then W', async () => {
+    const user = await renderShell();
+
+    await user.keyboard('ow');
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Switch to a workspace' })
+    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('option', { name: /Acme/ }));
+
+    expect(navigate).toHaveBeenCalledWith('/w/acme');
+  });
+
+  it('lists the workspace switcher under Open in the shortcut sheet', async () => {
+    await renderShell('/w/mine/team/ENG', true);
+
+    const open = screen.getByRole('region', { name: 'Open' });
+    expect(within(open).getByText('Switch workspace')).toBeInTheDocument();
   });
 
   it('stays shut while someone is typing in a field', async () => {

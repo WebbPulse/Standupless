@@ -128,6 +128,8 @@ interface HarnessProps {
   role?: WorkspaceRole;
   issueAction?: () => void;
   pageAction?: () => void;
+  workspaces?: { id: string; slug: string; name: string }[];
+  onLogOut?: () => void;
 }
 
 /** Registers one focused-issue shortcut, as an issue page would. */
@@ -166,6 +168,8 @@ const Harness: React.FC<HarnessProps> = ({
   role = 'owner',
   issueAction,
   pageAction,
+  workspaces,
+  onLogOut,
 }) => {
   const { open, closePalette } = useCommandPalette();
   let tree: React.ReactNode = (
@@ -178,6 +182,8 @@ const Harness: React.FC<HarnessProps> = ({
         onClose={closePalette}
         workspace={{ id: 'ws-1', slug: 'mine', role }}
         teams={teams}
+        {...(workspaces === undefined ? {} : { workspaces })}
+        {...(onLogOut === undefined ? {} : { onLogOut })}
       />
     </>
   );
@@ -721,6 +727,64 @@ describe('the actions', () => {
     await user.click(screen.getByRole('option', { name: /Design/ }));
 
     expect(navigate).toHaveBeenCalledWith('/w/mine/team/DES/cycles');
+  });
+
+  it('switches workspace through a nested page that leaves out the current one', async () => {
+    const user = renderPalette({
+      workspaces: [
+        { id: 'ws-1', slug: 'mine', name: 'Mine' },
+        { id: 'ws-2', slug: 'acme', name: 'Acme' },
+        { id: 'ws-3', slug: 'globex', name: 'Globex' },
+      ],
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Switch workspace/ })
+    );
+
+    const field = await screen.findByRole('combobox', {
+      name: 'Switch to a workspace',
+    });
+    expect(
+      screen.queryByRole('option', { name: /^Mine/ })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Globex/ })).toBeInTheDocument();
+    await user.type(field, 'acm');
+    expect(
+      screen.queryByRole('option', { name: /Globex/ })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /Acme/ }));
+
+    expect(navigate).toHaveBeenCalledWith('/w/acme');
+  });
+
+  it('offers to create a workspace when the viewer has only this one', async () => {
+    const user = renderPalette({
+      workspaces: [{ id: 'ws-1', slug: 'mine', name: 'Mine' }],
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Switch workspace/ })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /Create workspace/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/workspaces/new');
+  });
+
+  it('logs out by name', async () => {
+    const onLogOut = vi.fn();
+    const user = renderPalette({ onLogOut });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(await screen.findByRole('option', { name: /Log out/ }));
+
+    await waitFor(() => {
+      expect(onLogOut).toHaveBeenCalled();
+    });
   });
 
   it('opens the new view composer for "Create view"', async () => {

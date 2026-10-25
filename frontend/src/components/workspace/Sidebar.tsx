@@ -28,6 +28,9 @@
  * to every device; a hidden item is still reached by its shortcut and the
  * command palette.
  *
+ * The workspace menu lists every workspace the caller belongs to, the current
+ * one checked, so switching is one pick, and ends on Log out.
+ *
  * The footer's sign-out button carries the same `sign-out` test id as the
  * account shell's, because signing in lands a person with one workspace inside
  * it, and the post-deploy suite signs out through that one id wherever it lands.
@@ -35,6 +38,7 @@
 
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -43,6 +47,7 @@ import React, {
 import {
   LuActivity,
   LuBuilding2,
+  LuCheck,
   LuChevronRight,
   LuChevronsUpDown,
   LuCircleDot,
@@ -69,6 +74,7 @@ import {
 import type { IconType } from 'react-icons';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { setTeamOrder } from '../../api/teams';
+import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
@@ -79,6 +85,7 @@ import { cn } from '../../lib/cn';
 import { useTriageSummary } from '../../hooks/useSidebarData';
 import {
   ALL_WORKSPACES_PATH,
+  NEW_WORKSPACE_PATH,
   PRIVACY_PATH,
   TERMS_PATH,
   inboxPath,
@@ -116,6 +123,7 @@ import {
   nestTeams,
   siblingIndex,
 } from '../../lib/teamOrder';
+import { homeViewPath } from '../../lib/preferences';
 import { settingsLanding } from '../../lib/workspaceNav';
 import {
   PERSONAL_ITEMS,
@@ -133,7 +141,12 @@ import type {
 } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
-import Menu, { ContextMenu, MenuItem, MenuSeparator } from '../ui/menu';
+import Menu, {
+  ContextMenu,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+} from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import { TruncatedText } from '../ui/truncated-text';
@@ -573,6 +586,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const createIssue = useCreateIssue();
   const createTeam = useCreateTeam();
+  const memberships = useContext(WorkspaceContext)?.workspaces;
+  const switchable =
+    memberships === undefined || memberships.length === 0
+      ? [workspace]
+      : memberships;
   const slug = workspace.slug;
   const onProjectsPage = /^\/w\/[^/]+\/projects\/?$/.test(location.pathname);
   const projectsTeam = onProjectsPage
@@ -886,7 +904,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
           )}
           <MenuItem onSelect={customize.open}>Customize sidebar</MenuItem>
-          <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuItem to={profileSettingsPath(workspace.slug)}>
             Edit profile
           </MenuItem>
@@ -900,7 +917,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <MenuItem to={PRIVACY_PATH}>Privacy Policy</MenuItem>
           <MenuItem to={TERMS_PATH}>Terms of Service</MenuItem>
           <MenuSeparator />
-          <MenuItem onSelect={() => void logout()}>Sign out</MenuItem>
+          <MenuLabel>Switch workspace</MenuLabel>
+          {switchable.map((row) => (
+            <MenuItem
+              key={row.id}
+              to={homeViewPath(row.slug)}
+              textValue={row.name}
+            >
+              <TruncatedText className="min-w-0 flex-1">
+                {row.name}
+              </TruncatedText>
+              {row.id === workspace.id && (
+                <>
+                  <span className="sr-only"> (current)</span>
+                  <LuCheck
+                    className="h-3.5 w-3.5 shrink-0 text-accent"
+                    aria-hidden="true"
+                  />
+                </>
+              )}
+            </MenuItem>
+          ))}
+          <MenuItem to={NEW_WORKSPACE_PATH}>Create workspace</MenuItem>
+          <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
+          <MenuSeparator />
+          <MenuItem onSelect={() => void logout()}>Log out</MenuItem>
         </Menu>
         <IconButton
           label="Search issues"
