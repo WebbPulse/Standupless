@@ -15119,6 +15119,19 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team that owns the label, or null for a workspace label",
+            "title": "Team Id"
           }
         },
         "required": [
@@ -15181,6 +15194,18 @@
             "description": "Projects of the workspace that carry the label",
             "title": "Project Count",
             "type": "integer"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team that owns the label, or null for a workspace label",
+            "title": "Team Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -16162,6 +16187,19 @@
               }
             ],
             "title": "Position"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team that owns the status, or null for a workspace status",
+            "title": "Team Id"
           }
         },
         "required": [
@@ -16253,6 +16291,18 @@
             "description": "Projects the caller can see that sit in the status",
             "title": "Project Count",
             "type": "integer"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team that owns the status, or null for a workspace status",
+            "title": "Team Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -48937,7 +48987,7 @@
     },
     "/api/workspaces/{workspace_id}/project-labels": {
       "get": {
-        "description": "Every project label by name, each with how many projects the caller can see carry it.",
+        "description": "The workspace's project labels with one team's, or every team's the caller finds, by name.\n\nEach carries how many projects the caller can see carry it.",
         "operationId": "list_labels_api_workspaces__workspace_id__project_labels_get",
         "parameters": [
           {
@@ -48948,6 +48998,23 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           }
         ],
@@ -48984,7 +49051,7 @@
         ]
       },
       "post": {
-        "description": "Add a project label, as a workspace admin; a taken name answers 409.",
+        "description": "Add a workspace project label, or one of `team_id`'s; a taken name answers 409.",
         "operationId": "add_label_api_workspaces__workspace_id__project_labels_post",
         "parameters": [
           {
@@ -49043,7 +49110,7 @@
     },
     "/api/workspaces/{workspace_id}/project-labels/{label_id}": {
       "delete": {
-        "description": "Delete a project label and take it off every project, as a workspace admin.",
+        "description": "Delete a project label and take it off every project.",
         "operationId": "remove_label_api_workspaces__workspace_id__project_labels__label_id__delete",
         "parameters": [
           {
@@ -49092,7 +49159,7 @@
         ]
       },
       "patch": {
-        "description": "Rename, recolour or redescribe a project label, as a workspace admin.",
+        "description": "Rename, recolour or redescribe a project label.",
         "operationId": "edit_label_api_workspaces__workspace_id__project_labels__label_id__patch",
         "parameters": [
           {
@@ -49160,7 +49227,7 @@
     },
     "/api/workspaces/{workspace_id}/project-statuses": {
       "get": {
-        "description": "Every project status by category then position, each with how many projects the caller can see sit in it.",
+        "description": "The workspace's project statuses with one team's, or every team's the caller finds, by category then position.\n\nEach carries how many projects the caller can see sit in it.",
         "operationId": "list_statuses_api_workspaces__workspace_id__project_statuses_get",
         "parameters": [
           {
@@ -49171,6 +49238,23 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           }
         ],
@@ -49207,7 +49291,7 @@
         ]
       },
       "post": {
-        "description": "Add a project status to a category, as a workspace admin; a taken name answers 409.",
+        "description": "Add a project status to a category of the workspace, or of `team_id`; a taken name answers 409.",
         "operationId": "add_status_api_workspaces__workspace_id__project_statuses_post",
         "parameters": [
           {
@@ -49266,7 +49350,7 @@
     },
     "/api/workspaces/{workspace_id}/project-statuses/{status_id}": {
       "delete": {
-        "description": "Delete a project status and move its projects onto a replacement in the same category, as a workspace admin.",
+        "description": "Delete a project status and move its projects onto a replacement in the same category.",
         "operationId": "remove_status_api_workspaces__workspace_id__project_statuses__status_id__delete",
         "parameters": [
           {
@@ -49332,7 +49416,7 @@
         ]
       },
       "patch": {
-        "description": "Rename, recolour, redescribe or reorder a project status, as a workspace admin.",
+        "description": "Rename, recolour, redescribe or reorder a project status.",
         "operationId": "edit_status_api_workspaces__workspace_id__project_statuses__status_id__patch",
         "parameters": [
           {

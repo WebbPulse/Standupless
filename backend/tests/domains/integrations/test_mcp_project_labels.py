@@ -1,8 +1,9 @@
 """The project label MCP tools and labels on projects through the project tools.
 
 They run the routes' `project_labels` functions and capability checks, so these
-hold that an admin manages the set, a member cannot, a project takes labels by
-name, the project list filters by them and a project is found by its short id.
+hold that an admin manages the set, a member cannot touch the workspace's, a
+team admin keeps their team's own, a project takes labels by name, the project
+list filters by them and a project is found by its short id.
 """
 
 from __future__ import annotations
@@ -11,8 +12,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
-from tests.domains.helpers import ADMIN, MEMBER
+from tests.domains.helpers import ADMIN, MEMBER, add_team_member
 from tests.domains.integrations.conftest import TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
@@ -37,12 +37,35 @@ def test_an_admin_manages_project_labels(client: TestClient, repositories: Any, 
 
 
 def test_a_member_cannot_write_project_labels(client: TestClient, repositories: Any, workspace: str) -> None:
-    """Project label writes need `admin` beside the write scope."""
+    """A workspace project label needs a workspace admin, and a team's one an admin of that team."""
     member = mint_for(repositories, MEMBER, ("labels:write",))
-    body = {"name": "Q3", "color": "#5e6ad2"}
 
-    assert tool(client, member, "create_project_label", body).json()["error"]["code"] == INSUFFICIENT_SCOPE
+    workspace_wide = refusal(tool(client, member, "create_project_label", {"name": "Q3", "color": "#5e6ad2"}))
+    team_owned = refusal(
+        tool(client, member, "create_project_label", {"name": "Q3", "color": "#5e6ad2", "team_id": TEAM})
+    )
+
+    assert workspace_wide
+    assert team_owned
     assert repositories.planning.list_project_labels(WORKSPACE) == []
+
+
+def test_a_team_admin_keeps_their_teams_project_labels(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A team admin creates a label for their team, and lists it beside the workspace's."""
+    admin = mint_for(repositories, ADMIN, ("labels:write", "projects:read", "admin"))
+    shared = answer(tool(client, admin, "create_project_label", {"name": "Shared", "color": "#5e6ad2"}))
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+    lead = mint_for(repositories, MEMBER, ("labels:write", "projects:read"))
+
+    own = answer(tool(client, lead, "create_project_label", {"name": "Mobile", "color": "#5e6ad2", "team_id": "ABC"}))
+    renamed = answer(tool(client, lead, "update_project_label", {"label": "mobile", "name": "iOS"}))
+    listed = answer(tool(client, lead, "list_project_labels", {"team_id": TEAM}))
+    refused = refusal(tool(client, lead, "update_project_label", {"label": "Shared", "name": "X"}))
+
+    assert own["team_id"] == TEAM
+    assert renamed["name"] == "iOS"
+    assert {row["label_id"] for row in listed["labels"]} == {shared["label_id"], own["label_id"]}
+    assert refused
 
 
 def test_projects_take_labels_and_answer_a_short_id(client: TestClient, repositories: Any, workspace: str) -> None:

@@ -673,6 +673,12 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
     synonyms: ['team labels', 'tags'],
   },
   {
+    id: 'projects',
+    title: 'Projects',
+    paletteLabel: 'Project labels and statuses',
+    synonyms: ['team project labels', 'project statuses'],
+  },
+  {
     id: 'templates',
     title: 'Templates',
     paletteLabel: 'Templates',

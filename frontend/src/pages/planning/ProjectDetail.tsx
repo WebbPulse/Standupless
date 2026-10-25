@@ -650,6 +650,7 @@ export const ProjectDetail: React.FC = () => {
         variant="chip"
         value={project.status}
         statusId={project.status_id}
+        teamIds={project.team_ids}
         percent={percent}
         disabled={!canEdit}
         onChange={closePrompt.changeStatus}
@@ -692,6 +693,7 @@ export const ProjectDetail: React.FC = () => {
         variant="chip"
         value={project.label_ids ?? []}
         labels={projectLabels.labels}
+        teamIds={project.team_ids}
         disabled={!canEdit}
         onChange={(labelIds) => {
           void update({ label_ids: labelIds });

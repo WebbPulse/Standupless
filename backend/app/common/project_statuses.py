@@ -8,10 +8,17 @@ defaults whose ids are the category names, so a project row written before
 custom statuses already points at its default and no row is migrated. The
 first edit stores the defaults, then applies itself.
 
-Each category keeps at least one status. Deleting one moves its projects onto a
-replacement in the same category. A bare category value, or the legacy `done`,
-resolves to the category's default: the seeded status when it is still there,
-otherwise the first status of the category.
+A status belongs to the workspace or to one team, as Linear's do. A workspace
+status is offered to every project; a team status only to the projects on that
+team, and that team's admins change it as well as the workspace's. The seeded
+defaults are always workspace statuses, and a team adding its own does not
+store them.
+
+Each category keeps at least one workspace status. Deleting one moves its
+projects onto a replacement in the same category, and deleting a team status
+moves them onto the category's workspace default. A bare category value, or the
+legacy `done`, resolves to the category's default: the seeded status when it is
+still there, otherwise the first workspace status of the category.
 """
 
 from __future__ import annotations
@@ -40,6 +47,14 @@ from app.common.db.dynamo.planning import (
 )
 from app.common.labels import name_key
 from app.common.planning_rules import not_found, unprocessable, visible_project_teams, visible_team_ids
+from app.common.project_scopes import (
+    clashing,
+    findable_team_ids,
+    listed,
+    offered,
+    require_listed_team,
+    require_scope_admin,
+)
 
 DEFAULT_PROJECT_STATUS_NAMES: dict[str, str] = {
     "backlog": "Backlog",
@@ -88,16 +103,38 @@ def default_project_statuses(workspace_id: str) -> list[ProjectStatusRow]:
     ]
 
 
+def _ordered(rows: Iterable[ProjectStatusRow]) -> list[ProjectStatusRow]:
+    """Statuses by category, the workspace's before each team's, then position, as the table lists them."""
+    order = {category: index for index, category in enumerate(PROJECT_STATUSES)}
+    return sorted(
+        rows,
+        key=lambda row: (
+            order.get(row.category, len(order)),
+            row.team_id is not None,
+            row.team_id or "",
+            row.position,
+            row.status_id,
+        ),
+    )
+
+
+def _has_workspace_rows(rows: Iterable[ProjectStatusRow]) -> bool:
+    """Whether the workspace has stored its own statuses, rather than only some team's."""
+    return any(row.team_id is None for row in rows)
+
+
 def workspace_project_statuses(repositories: Repositories, workspace_id: str) -> list[ProjectStatusRow]:
-    """The workspace's project statuses by category then position, the seeded defaults before any edit."""
+    """Every project status of the workspace and its teams, the seeded defaults standing in before any edit."""
     stored = repositories.planning.list_project_statuses(workspace_id)
-    return stored or default_project_statuses(workspace_id)
+    if _has_workspace_rows(stored):
+        return stored
+    return _ordered([*default_project_statuses(workspace_id), *stored])
 
 
 def _materialised(repositories: Repositories, workspace_id: str) -> list[ProjectStatusRow]:
-    """The workspace's stored project statuses, storing the seeded defaults first when none are."""
+    """Every stored project status, storing the seeded defaults first when the workspace has none of its own."""
     stored = repositories.planning.list_project_statuses(workspace_id)
-    if stored:
+    if _has_workspace_rows(stored):
         return stored
     for row in default_project_statuses(workspace_id):
         try:
@@ -115,8 +152,12 @@ def category_of(value: str) -> Optional[str]:
 
 
 def default_status_for(statuses: Iterable[ProjectStatusRow], category: str) -> Optional[ProjectStatusRow]:
-    """The status a bare category lands on: the seeded one when kept, else the category's first."""
-    within = [row for row in statuses if row.category == category]
+    """The status a bare category lands on: the seeded one when kept, else the category's first workspace status.
+
+    A team status is never a default, so a project lands the same way whichever
+    teams it is on.
+    """
+    within = [row for row in statuses if row.category == category and row.team_id is None]
     for row in within:
         if row.status_id == category:
             return row
@@ -124,7 +165,7 @@ def default_status_for(statuses: Iterable[ProjectStatusRow], category: str) -> O
 
 
 def find_status(statuses: Iterable[ProjectStatusRow], status_id: str) -> Optional[ProjectStatusRow]:
-    """The workspace status with this id, or None."""
+    """The status with this id among those given, or None."""
     for row in statuses:
         if row.status_id == status_id:
             return row
@@ -164,18 +205,21 @@ def choose_project_status(
     *,
     status_value: Optional[str],
     status_id: Optional[str],
+    team_ids: Iterable[str],
     current: Optional[Project] = None,
 ) -> Optional[tuple[str, str]]:
     """The category and status id a create or patch lands on, or None when it names neither.
 
-    `status_id` must name a workspace status, and a `status` sent alongside must be
-    its category. A bare `status` is a category: a patch that keeps the project in
-    its current category keeps its status, and otherwise the category's default
-    is taken. Either answers 422 on a value the workspace does not know.
+    `status_id` must name a status offered to a project on `team_ids`, the
+    workspace's or one of those teams', and a `status` sent alongside must be its
+    category. A bare `status` is a category: a patch that keeps the project in its
+    current category keeps its status while it is still offered, and otherwise
+    the category's default is taken. Either answers 422 on a value the project
+    is not offered.
     """
     if status_id is None and status_value is None:
         return None
-    statuses = workspace_project_statuses(repositories, workspace_id)
+    statuses = offered(workspace_project_statuses(repositories, workspace_id), team_ids)
     if status_value is None or status_id is not None:
         row = find_status(statuses, status_id or "")
         if row is None:
@@ -242,8 +286,16 @@ def _read(statuses: list[ProjectStatusRow], row: ProjectStatusRow, counts: dict[
     return ProjectStatusRead.from_row(row, is_default=is_default, project_count=counts.get(row.status_id, 0))
 
 
-def list_project_statuses(repositories: Repositories, context: AuthzContext) -> ProjectStatusListRead:
-    """Every project status of the workspace, each with how many projects the caller can see sit in it."""
+def list_project_statuses(
+    repositories: Repositories, context: AuthzContext, team_id: Optional[str] = None
+) -> ProjectStatusListRead:
+    """The workspace's project statuses with those of one team, or of every team the caller finds.
+
+    Each carries how many projects the caller can see sit in it. A team the
+    caller cannot find answers a 404.
+    """
+    if team_id is not None:
+        require_listed_team(repositories, context, team_id)
     statuses = workspace_project_statuses(repositories, context.workspace_id)
     visible = set(visible_team_ids(repositories, context))
     counts: dict[str, int] = {}
@@ -253,7 +305,8 @@ def list_project_statuses(repositories: Repositories, context: AuthzContext) -> 
         row = status_of_project(statuses, project)
         if row is not None:
             counts[row.status_id] = counts.get(row.status_id, 0) + 1
-    return ProjectStatusListRead(statuses=[_read(statuses, row, counts) for row in statuses])
+    shown = listed(statuses, findable_team_ids(repositories, context), team_id)
+    return ProjectStatusListRead(statuses=[_read(statuses, row, counts) for row in shown])
 
 
 def _check_unique(statuses: Iterable[ProjectStatusRow], name: str, exclude_status_id: Optional[str] = None) -> None:
@@ -270,8 +323,16 @@ def _place(
     moved: ProjectStatusRow,
     position: Optional[int],
 ) -> ProjectStatusRow:
-    """Put a status at a position within its category, renumbering the category's others to stay in order."""
-    others = [row for row in statuses if row.category == moved.category and row.status_id != moved.status_id]
+    """Put a status at a position within its category and scope, renumbering the others there to stay in order.
+
+    The workspace's statuses and each team's are numbered apart, so a team
+    reordering its own never moves the workspace's.
+    """
+    others = [
+        row
+        for row in statuses
+        if row.category == moved.category and row.team_id == moved.team_id and row.status_id != moved.status_id
+    ]
     index = len(others) if position is None else max(0, min(position, len(others)))
     ordered = [*others[:index], moved, *others[index:]]
     now = utc_now()
@@ -290,9 +351,16 @@ def _place(
 def create_project_status(
     repositories: Repositories, context: AuthzContext, payload: ProjectStatusCreate
 ) -> ProjectStatusRead:
-    """Add a project status to one category, or 409 when its name is taken."""
-    statuses = _materialised(repositories, context.workspace_id)
-    _check_unique(statuses, payload.name)
+    """Add a project status to one category of the workspace or of one team, or 409 when its name is taken there."""
+    team_id = payload.team_id
+    if team_id is not None:
+        require_listed_team(repositories, context, team_id)
+    require_scope_admin(repositories, context, team_id)
+    if team_id is None:
+        statuses = _materialised(repositories, context.workspace_id)
+    else:
+        statuses = workspace_project_statuses(repositories, context.workspace_id)
+    _check_unique(clashing(statuses, team_id), payload.name)
     status_id = new_planning_id()
     row = ProjectStatusRow(
         workspace_id=context.workspace_id,
@@ -302,6 +370,7 @@ def create_project_status(
         category=payload.category,
         color=payload.color,
         description=(payload.description or "").strip() or None,
+        team_id=team_id,
         created_by=context.user_id,
     )
     row = _place(repositories, statuses, row, payload.position)
@@ -315,16 +384,16 @@ def create_project_status(
 def update_project_status(
     repositories: Repositories, context: AuthzContext, status_id: str, payload: ProjectStatusUpdate
 ) -> ProjectStatusRead:
-    """Rename, recolour, redescribe or reorder a project status, or 404; a null colour or description clears it."""
-    statuses = _materialised(repositories, context.workspace_id)
-    existing = find_status(statuses, status_id)
-    if existing is None:
-        raise not_found()
+    """Rename, recolour, redescribe or reorder a project status, or 404; a null colour or description clears it.
+
+    The caller must administer the status's scope, the workspace or its team.
+    """
+    statuses, existing = _editable(repositories, context, status_id)
     given = payload.model_dump(exclude_unset=True)
     changes: dict[str, object] = {}
     if given.get("name") is not None and given["name"] != existing.name:
         if name_key(given["name"]) != name_key(existing.name):
-            _check_unique(statuses, given["name"], status_id)
+            _check_unique(clashing(statuses, existing.team_id), given["name"], status_id)
         changes["name"] = given["name"]
     if "color" in given and given["color"] != existing.color:
         changes["color"] = given["color"]
@@ -346,6 +415,67 @@ def update_project_status(
     return _read(refreshed, updated, {})
 
 
+def _editable(
+    repositories: Repositories, context: AuthzContext, status_id: str
+) -> tuple[list[ProjectStatusRow], ProjectStatusRow]:
+    """Every status with the one about to change, once the caller is held to its scope, or a 404.
+
+    Changing a workspace status stores the seeded defaults first, so the row
+    being changed exists; changing a team status leaves them unstored.
+    """
+    statuses = workspace_project_statuses(repositories, context.workspace_id)
+    existing = find_status(statuses, status_id)
+    if existing is None:
+        raise not_found()
+    require_scope_admin(repositories, context, existing.team_id)
+    if existing.team_id is not None:
+        return statuses, existing
+    statuses = _materialised(repositories, context.workspace_id)
+    stored = find_status(statuses, status_id)
+    if stored is None:
+        raise not_found()
+    return statuses, stored
+
+
+def _replacement_for(
+    statuses: list[ProjectStatusRow], existing: ProjectStatusRow, replacement_status_id: Optional[str]
+) -> ProjectStatusRow:
+    """The status a deleted one's projects move onto, or a 422.
+
+    A workspace status is replaced by another workspace status of its category,
+    the first by default, and the last one there cannot go. A team status is
+    replaced by the category's workspace default, or by a named workspace status
+    or other status of the same team in the category.
+    """
+    if existing.team_id is None:
+        candidates = [
+            row
+            for row in statuses
+            if row.category == existing.category and row.team_id is None and row.status_id != existing.status_id
+        ]
+        if not candidates:
+            raise unprocessable("Each category keeps at least one project status")
+        if replacement_status_id is None:
+            return candidates[0]
+    else:
+        candidates = [
+            row
+            for row in statuses
+            if row.category == existing.category
+            and row.team_id in (None, existing.team_id)
+            and row.status_id != existing.status_id
+        ]
+        if replacement_status_id is None:
+            default = default_status_for(statuses, existing.category)
+            if default is None:
+                raise unprocessable("Each category keeps at least one project status")
+            return default
+    found = find_status(candidates, replacement_status_id)
+    if found is None:
+        raise unprocessable("replacement_status_id must name another project status in the same category")
+    return found
+
+
 def delete_project_status(
     repositories: Repositories,
     context: AuthzContext,
@@ -354,24 +484,13 @@ def delete_project_status(
 ) -> int:
     """Delete a project status and move its projects onto a replacement, answering how many moved.
 
-    The replacement must sit in the same category, and defaults to the first other
-    status there. The last status of a category cannot be deleted. Every project
-    of the workspace in the status is moved, seen by the caller or not.
+    The replacement must sit in the same category, as `_replacement_for` picks
+    it. The last workspace status of a category cannot be deleted. Every project
+    of the workspace in the status is moved, seen by the caller or not. The
+    caller must administer the status's scope, the workspace or its team.
     """
-    statuses = _materialised(repositories, context.workspace_id)
-    existing = find_status(statuses, status_id)
-    if existing is None:
-        raise not_found()
-    siblings = [row for row in statuses if row.category == existing.category and row.status_id != status_id]
-    if not siblings:
-        raise unprocessable("Each category keeps at least one project status")
-    if replacement_status_id is None:
-        replacement = siblings[0]
-    else:
-        found = find_status(siblings, replacement_status_id)
-        if found is None:
-            raise unprocessable("replacement_status_id must name another project status in the same category")
-        replacement = found
+    statuses, existing = _editable(repositories, context, status_id)
+    replacement = _replacement_for(statuses, existing, replacement_status_id)
     remaining = [row for row in statuses if row.status_id != status_id]
     moved = 0
     for project in repositories.planning.list_projects(context.workspace_id):
@@ -385,7 +504,9 @@ def delete_project_status(
             continue
         moved += 1
     repositories.planning.delete_project_status(context.workspace_id, status_id)
-    for number, row in enumerate(row for row in remaining if row.category == existing.category):
+    for number, row in enumerate(
+        row for row in remaining if row.category == existing.category and row.team_id == existing.team_id
+    ):
         if row.position != number:
             repositories.planning.put_project_status(row.model_copy(update={"position": number}), create=False)
     return moved

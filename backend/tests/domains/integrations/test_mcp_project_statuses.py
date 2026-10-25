@@ -2,8 +2,8 @@
 
 They hold that the list answers the seeded defaults, that a project takes a
 status by id, by name or by category, that the legacy enum values still resolve
-to their category's default, and that the project list filters by a status or a
-whole category.
+to their category's default, that the project list filters by a status or a
+whole category, and that a team admin creates their team's own status.
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.schemas.project_statuses import ProjectStatusCreate
 from app.common.project_statuses import create_project_status
-from tests.domains.helpers import ADMIN
-from tests.domains.integrations.conftest import TEAM
+from tests.domains.helpers import ADMIN, MEMBER, add_team_member
+from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
@@ -96,3 +96,42 @@ def test_the_project_list_filters_by_status_or_category(client: TestClient, repo
         reviewing["project_id"],
         building["project_id"],
     }
+
+
+def test_a_team_admin_creates_their_teams_project_status(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The status lands on the team, lists beside the defaults and is offered to that team's projects alone."""
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+    lead = mint_for(repositories, MEMBER, ("statuses:write", "projects:write", "projects:read"))
+
+    created = answer(
+        tool(client, lead, "create_project_status", {"name": "QA", "category": "in_progress", "team_id": "ABC"})
+    )
+    listed = answer(tool(client, lead, "list_project_statuses", {"team_id": TEAM}))["statuses"]
+    workspace_wide = refusal(tool(client, lead, "create_project_status", {"name": "X", "category": "planned"}))
+    project = answer(tool(client, lead, "create_project", {"name": "Q", "team_ids": [TEAM], "status": "QA"}))
+
+    assert (created["team_id"], created["category"], created["is_default"]) == (TEAM, "in_progress", False)
+    assert created["status_id"] in {row["status_id"] for row in listed}
+    assert workspace_wide
+    assert project["status_id"] == created["status_id"]
+
+
+def test_a_team_status_is_refused_for_another_teams_project(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A project on another team cannot take a team's own status by id."""
+    admin = mint_for(repositories, ADMIN, ("statuses:write", "projects:write", "projects:read", "admin"))
+    created = answer(
+        tool(client, admin, "create_project_status", {"name": "QA", "category": "in_progress", "team_id": TEAM})
+    )
+
+    refused = refusal(
+        tool(
+            client,
+            admin,
+            "create_project",
+            {"name": "Elsewhere", "team_ids": [OTHER_TEAM], "status_id": created["status_id"]},
+        )
+    )
+
+    assert refused

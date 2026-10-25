@@ -1,11 +1,12 @@
 """Project label list, create, patch and delete, shared by the project label routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
-code. Project labels are one set for the whole workspace, as Linear's are: any
-reader of the workspace sees them, only its admins change them, and the caller
-has already been held to that. A label name is unique among project labels,
-compared trimmed and case folded. A deleted label is taken off every project
-that carried it.
+code. Project labels belong to the workspace or to one team, as Linear's do: a
+workspace label is offered to every project and changed by a workspace admin,
+a team label is offered only to the projects on that team and changed by its
+admins too. A label name is unique among the labels a project could be offered
+beside it, compared trimmed and case folded. A deleted label is taken off every
+project that carried it.
 """
 
 from __future__ import annotations
@@ -27,6 +28,14 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Project, ProjectLabel, new_planning_id, project_label_key
 from app.common.labels import name_key
 from app.common.planning_rules import not_found, unprocessable, visible_project_teams, visible_team_ids
+from app.common.project_scopes import (
+    clashing,
+    findable_team_ids,
+    listed,
+    offered,
+    require_listed_team,
+    require_scope_admin,
+)
 
 NO_LABEL = "none"
 """The label filter value that keeps the projects carrying no label."""
@@ -59,13 +68,25 @@ def _visible_projects(repositories: Repositories, context: AuthzContext) -> list
     return [row for row in projects if visible_project_teams(row, visible)]
 
 
-def list_project_labels(repositories: Repositories, context: AuthzContext) -> ProjectLabelListRead:
-    """Every project label of the workspace by name, each with how many projects the caller can see carry it."""
+def list_project_labels(
+    repositories: Repositories, context: AuthzContext, team_id: Optional[str] = None
+) -> ProjectLabelListRead:
+    """The workspace's project labels with those of one team, or of every team the caller finds, by name.
+
+    Each carries how many projects the caller can see carry it. A team the
+    caller cannot find answers a 404.
+    """
+    if team_id is not None:
+        require_listed_team(repositories, context, team_id)
     counts: dict[str, int] = {}
     for project in _visible_projects(repositories, context):
         for label_id in project.label_ids:
             counts[label_id] = counts.get(label_id, 0) + 1
-    labels = repositories.planning.list_project_labels(context.workspace_id)
+    labels = listed(
+        repositories.planning.list_project_labels(context.workspace_id),
+        findable_team_ids(repositories, context),
+        team_id,
+    )
     return ProjectLabelListRead(
         labels=[ProjectLabelRead.from_row(label, counts.get(label.label_id, 0)) for label in labels]
     )
@@ -74,8 +95,12 @@ def list_project_labels(repositories: Repositories, context: AuthzContext) -> Pr
 def create_project_label(
     repositories: Repositories, context: AuthzContext, payload: ProjectLabelCreate
 ) -> ProjectLabelRead:
-    """Add a project label to the workspace, or 409 when its name is taken."""
-    _check_unique(repositories.planning.list_project_labels(context.workspace_id), payload.name)
+    """Add a project label to the workspace or to one team, or 409 when its name is taken in that scope."""
+    team_id = payload.team_id
+    if team_id is not None:
+        require_listed_team(repositories, context, team_id)
+    require_scope_admin(repositories, context, team_id)
+    _check_unique(clashing(repositories.planning.list_project_labels(context.workspace_id), team_id), payload.name)
     label_id = new_planning_id()
     label = ProjectLabel(
         workspace_id=context.workspace_id,
@@ -84,6 +109,7 @@ def create_project_label(
         name=payload.name,
         color=payload.color,
         description=(payload.description or "").strip() or None,
+        team_id=team_id,
         created_by=context.user_id,
     )
     try:
@@ -96,15 +122,23 @@ def create_project_label(
 def update_project_label(
     repositories: Repositories, context: AuthzContext, label_id: str, payload: ProjectLabelUpdate
 ) -> ProjectLabelRead:
-    """Rename, recolour or redescribe a project label, or 404; a null or empty description clears it."""
+    """Rename, recolour or redescribe a project label, or 404; a null or empty description clears it.
+
+    The caller must administer the label's scope, the workspace or its team.
+    """
     existing = repositories.planning.get_project_label(context.workspace_id, label_id)
     if existing is None:
         raise not_found()
+    require_scope_admin(repositories, context, existing.team_id)
     given = payload.model_dump(exclude_unset=True)
     changes: dict[str, object] = {}
     if given.get("name") is not None and given["name"] != existing.name:
         if name_key(given["name"]) != name_key(existing.name):
-            _check_unique(repositories.planning.list_project_labels(context.workspace_id), given["name"], label_id)
+            _check_unique(
+                clashing(repositories.planning.list_project_labels(context.workspace_id), existing.team_id),
+                given["name"],
+                label_id,
+            )
         changes["name"] = given["name"]
     if given.get("color") is not None and given["color"] != existing.color:
         changes["color"] = given["color"]
@@ -127,9 +161,12 @@ def delete_project_label(repositories: Repositories, context: AuthzContext, labe
 
     A missing label is a no-op. Every project of the workspace is cleared, seen by
     the caller or not, since an admin removing the label removes it everywhere.
+    The caller must administer the label's scope, the workspace or its team.
     """
-    if repositories.planning.get_project_label(context.workspace_id, label_id) is None:
+    existing = repositories.planning.get_project_label(context.workspace_id, label_id)
+    if existing is None:
         return 0
+    require_scope_admin(repositories, context, existing.team_id)
     cleared = 0
     for project in repositories.planning.list_projects(context.workspace_id):
         if label_id not in project.label_ids:
@@ -146,12 +183,18 @@ def delete_project_label(repositories: Repositories, context: AuthzContext, labe
     return cleared
 
 
-def require_project_labels(repositories: Repositories, workspace_id: str, label_ids: Iterable[str]) -> None:
-    """Refuse with a 422 a label id that names no project label of the workspace."""
+def require_project_labels(
+    repositories: Repositories, workspace_id: str, label_ids: Iterable[str], team_ids: Iterable[str]
+) -> None:
+    """Refuse with a 422 a label id that names no project label offered to a project on these teams.
+
+    A project is offered the workspace's labels and those of its own teams, so
+    another team's label is as unknown to it as a made up id.
+    """
     wanted = list(label_ids)
     if not wanted:
         return
-    known = {label.label_id for label in repositories.planning.list_project_labels(workspace_id)}
+    known = {label.label_id for label in offered(repositories.planning.list_project_labels(workspace_id), team_ids)}
     unknown = [label_id for label_id in wanted if label_id not in known]
     if unknown:
         raise unprocessable(f"Unknown project label: {unknown[0]}")

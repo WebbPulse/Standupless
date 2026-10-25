@@ -1,9 +1,12 @@
-"""The MCP tool for project statuses, the workspace's own stages inside the six fixed categories.
+"""The MCP tools for project statuses, the workspace's and each team's own stages inside the six fixed categories.
 
-A project status is named by its id, its name case-insensitively, or a category
+A workspace admin adds a workspace status and a team admin one of their team's,
+decided against the status's scope rather than by the token's `admin` scope. A
+project status is named by its id, its name case-insensitively, or a category
 (`backlog`, `planned`, `in_progress` or `started`, `paused`, `completed`,
 `canceled`, or the legacy `done`), which lands on that category's default
-status. The project tools take a status the same way.
+status. The project tools take a status the same way, among the statuses of
+the workspace and the teams the caller finds.
 """
 
 from __future__ import annotations
@@ -11,17 +14,19 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.common.api.dependencies.authz import Capability, check_capability
-from app.common.api.schemas.project_statuses import ProjectStatusRead
-from app.common.db.dynamo.planning import ProjectStatusRow
+from app.common.api.schemas.project_statuses import ProjectStatusCreate, ProjectStatusRead
+from app.common.db.dynamo.planning import PROJECT_STATUSES, ProjectStatusRow
+from app.common.project_scopes import findable_team_ids, offered
 from app.common.project_statuses import (
     CATEGORY_FILTER_PREFIX,
     category_of,
+    create_project_status,
     find_status,
     list_project_statuses,
     resolve_status,
     workspace_project_statuses,
 )
-from app.domains.integrations.mcp.toolkit import Tool, ToolCall, object_schema
+from app.domains.integrations.mcp.toolkit import Tool, ToolCall, enum, object_schema, string
 from app.domains.integrations.mcp.transport import ToolError
 
 STATUS_HELP = (
@@ -39,14 +44,16 @@ def _status_json(row: ProjectStatusRead) -> dict[str, Any]:
         "color": row.color,
         "description": row.description,
         "position": row.position,
+        "team_id": row.team_id,
         "is_default": row.is_default,
         "project_count": row.project_count,
     }
 
 
 def project_statuses(call: ToolCall) -> list[ProjectStatusRow]:
-    """The workspace's project statuses, the seeded defaults before any edit."""
-    return workspace_project_statuses(call.repositories, call.context.workspace_id)
+    """The project statuses a reference may name: the workspace's, defaults before any edit, and findable teams'."""
+    rows = workspace_project_statuses(call.repositories, call.context.workspace_id)
+    return offered(rows, findable_team_ids(call.repositories, call.context))
 
 
 def project_status_ref(call: ToolCall, value: Any, rows: Optional[list[ProjectStatusRow]] = None) -> ProjectStatusRow:
@@ -101,21 +108,69 @@ def status_names(call: ToolCall) -> dict[str, str]:
 
 
 def _list(call: ToolCall) -> Any:
-    """Every project status by category then position, with how many visible projects sit in each."""
+    """The workspace's project statuses with one team's or every team's, with how many visible projects sit in each."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_READ)
-    listed = list_project_statuses(call.repositories, call.context)
+    listed = list_project_statuses(call.repositories, call.context, call.optional("team_id"))
     return {"statuses": [_status_json(row) for row in listed.statuses]}
+
+
+def _create(call: ToolCall) -> Any:
+    """Add a project status to one category of the workspace, or of the team named."""
+    category = category_of(str(call.require("category")))
+    if category is None:
+        raise ToolError(f"No project status category is named {call.require('category')}")
+    payload = ProjectStatusCreate.model_validate(
+        {
+            "name": call.require("name"),
+            "category": category,
+            "color": call.optional("color"),
+            "description": call.optional("description"),
+            "position": call.optional("position"),
+            "team_id": call.optional("team_id"),
+        }
+    )
+    return _status_json(create_project_status(call.repositories, call.context, payload))
 
 
 PROJECT_STATUS_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_project_statuses",
         description=(
-            "The workspace's project statuses by category then position, each with its category, colour, "
-            "whether it is the category's default and how many visible projects sit in it."
+            "The workspace's project statuses and each team's own by category then position, each with its "
+            "category, colour, team_id (null for a workspace status), whether it is the category's default and how "
+            "many visible projects sit in it. Give team_id for the workspace's statuses and that team's only, the "
+            "set a project on the team is offered."
         ),
         scopes=("projects:read",),
-        schema=object_schema({}),
+        schema=object_schema(
+            {"team_id": string("A team by id, key or name, to list the workspace's statuses with that team's only")}
+        ),
         handler=_list,
+    ),
+    Tool(
+        name="create_project_status",
+        description=(
+            "Add a project status to one category. Without team_id it is a workspace status, which needs workspace "
+            "admin; with team_id it belongs to that team, which needs team admin, and only projects on the team are "
+            "offered it. Names are unique, ignoring case, among the workspace's statuses and the team's. It lands "
+            "last in its category unless a position is given."
+        ),
+        scopes=("statuses:write",),
+        schema=object_schema(
+            {
+                "name": string("The status name"),
+                "category": enum(
+                    (*PROJECT_STATUSES, "started"), "The category the status sits in; started means in_progress"
+                ),
+                "color": string("A hex colour such as #5e6ad2"),
+                "description": string("A short description, up to 100 characters"),
+                "position": {"type": "integer", "minimum": 0, "description": "Its place within the category, from 0"},
+                "team_id": string(
+                    "The team that owns the status, by id, key or name; leave out for a workspace status"
+                ),
+            },
+            required=("name", "category"),
+        ),
+        handler=_create,
     ),
 )
