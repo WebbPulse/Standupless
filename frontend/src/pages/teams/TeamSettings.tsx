@@ -314,6 +314,8 @@ const TeamSettings: React.FC = () => {
               onMakeRecurring={(template) => {
                 makeRecurring(template.id);
               }}
+              slug={slug ?? ''}
+              teamKey={team.key_prefix}
             />
           )}
           {frame(

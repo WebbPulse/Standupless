@@ -2,8 +2,8 @@
  * The template editor on team settings: creating a template sends only what
  * was filled, moving one rewrites the positions that changed, deleting asks
  * first, inherited templates are listed read only with where they come from,
- * a caller who may not edit sees no controls, and sub-issues are added,
- * reordered and removed.
+ * a caller who may not edit sees no controls, any row can copy a link that
+ * creates an issue from it, and sub-issues are added, reordered and removed.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -167,6 +167,53 @@ describe('the template editor', () => {
       'tp-1',
       'tp-2',
     ]);
+  });
+
+  it('offers a copy create URL button on every row, even read only', async () => {
+    const user = userEvent.setup();
+    const onCopyCreateUrl = vi.fn<(template: TemplateRead) => void>();
+    render(
+      <TemplateEditor
+        templates={[
+          template({}),
+          template({
+            id: 'tp-2',
+            name: 'Workspace review',
+            scope: 'workspace',
+          }),
+        ]}
+        scope="team"
+        canEdit={false}
+        options={{ statuses: [], labels: [] }}
+        actions={actions}
+        onCopyCreateUrl={onCopyCreateUrl}
+      />
+    );
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Copy URL to create issue from template Bug report',
+      })
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Copy URL to create issue from template Workspace review',
+      })
+    );
+
+    expect(onCopyCreateUrl.mock.calls.map(([row]) => row.id)).toEqual([
+      'tp-1',
+      'tp-2',
+    ]);
+  });
+
+  it('shows no copy create URL button without the callback', () => {
+    renderEditor([template({})]);
+    expect(
+      screen.queryByRole('button', {
+        name: 'Copy URL to create issue from template Bug report',
+      })
+    ).not.toBeInTheDocument();
   });
 
   it('shows no make recurring button without the callback', () => {

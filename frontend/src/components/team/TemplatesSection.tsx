@@ -6,7 +6,8 @@
  * parent's. A second default covers people outside the team, so requests
  * filed by other teams open in a request shape; left unset, they open with the
  * members' default. The team's project and document templates follow, kept the
- * same way.
+ * same way. Each issue template's row can copy a link that opens the create
+ * dialog with that template applied.
  */
 
 import React, { useId } from 'react';
@@ -25,7 +26,9 @@ import {
 } from '../../api/templates';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { errorMessage } from '../../lib/errors';
+import { absoluteUrl, newIssuePath } from '../../lib/newIssueUrl';
 import { templateSettingsKey, templatesKey } from '../../lib/queryKeys';
+import { showErrorToast, showToast } from '../../lib/toast';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   EstimateScale,
@@ -52,6 +55,9 @@ export interface TemplatesSectionProps {
   canSetDefault: boolean;
   /** Opens a recurring schedule for a template, from its row. */
   onMakeRecurring?: (template: TemplateRead) => void;
+  /** The workspace slug and team key that copied create links point at. */
+  slug?: string;
+  teamKey?: string;
 }
 
 /** How often the list is re-read while the settings page is open. */
@@ -66,6 +72,8 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
   canEdit,
   canSetDefault,
   onMakeRecurring,
+  slug,
+  teamKey,
 }) => {
   const auth = useQueryAuth();
   const selectId = useId();
@@ -119,6 +127,26 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
       }),
     keys
   );
+
+  const copyCreateUrl =
+    slug === undefined
+      ? undefined
+      : (template: TemplateRead): void => {
+          globalThis.navigator.clipboard
+            .writeText(
+              absoluteUrl(
+                newIssuePath(slug, { template: template.id }, teamKey)
+              )
+            )
+            .then(
+              () => {
+                showToast('Copied URL to create issue from template');
+              },
+              () => {
+                showErrorToast('Could not copy the template URL.');
+              }
+            );
+        };
 
   const templates = data?.templates ?? [];
   const effective = data?.default_template_id ?? null;
@@ -233,6 +261,9 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
               }}
               actions={{ create, update, remove }}
               {...(onMakeRecurring === undefined ? {} : { onMakeRecurring })}
+              {...(copyCreateUrl === undefined
+                ? {}
+                : { onCopyCreateUrl: copyCreateUrl })}
             />
           </>
         )}

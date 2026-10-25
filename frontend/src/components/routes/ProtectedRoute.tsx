@@ -6,6 +6,7 @@ import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePinnedViewport } from '../../hooks/usePinnedViewport';
+import { isNewIssuePath } from '../../lib/newIssueUrl';
 import BootSplash from '../layout/BootSplash';
 
 /**
@@ -27,6 +28,9 @@ import BootSplash from '../layout/BootSplash';
  * as tall as the shell and has no room to scroll, and `usePinnedViewport`
  * returns the document to its origin if script or the on screen keyboard
  * moves it anyway, so the top bar is never left above the screen on a phone.
+ *
+ * A prefilled new issue link sends the visitor to sign in with the link in
+ * `returnTo`, so they land back on the dialog with its fields set.
  */
 const ProtectedRoute: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -38,6 +42,16 @@ const ProtectedRoute: React.FC = () => {
   }
 
   if (!isAuthenticated) {
+    if (isNewIssuePath(location.pathname)) {
+      const back = `${location.pathname}${location.search}`;
+      return (
+        <Navigate
+          to={`/login?returnTo=${encodeURIComponent(back)}`}
+          state={{ from: location }}
+          replace
+        />
+      );
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

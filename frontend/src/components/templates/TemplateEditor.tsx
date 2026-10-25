@@ -23,6 +23,7 @@ import React, { useState } from 'react';
 import {
   LuArrowDown,
   LuArrowUp,
+  LuLink,
   LuPencil,
   LuRepeat,
   LuTrash2,
@@ -100,6 +101,11 @@ export interface TemplateEditorProps {
   defaultTemplateId?: string | null;
   /** Opens a recurring schedule for a template; the button shows when set. */
   onMakeRecurring?: (template: TemplateRead) => void;
+  /**
+   * Copies a link that opens the create dialog with a template applied; the
+   * button shows on every issue template row when set, to anyone who can see it.
+   */
+  onCopyCreateUrl?: (template: TemplateRead) => void;
   /** What the templates fill: a new issue, or a new document or update. */
   kind?: EditorKind;
 }
@@ -502,11 +508,24 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   actions,
   defaultTemplateId = null,
   onMakeRecurring,
+  onCopyCreateUrl,
   kind = 'issue',
 }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const copyButton = (template: TemplateRead): React.ReactNode =>
+    onCopyCreateUrl === undefined || kind !== 'issue' ? null : (
+      <IconButton
+        size="sm"
+        label={`Copy URL to create issue from template ${template.name}`}
+        onClick={() => {
+          onCopyCreateUrl(template);
+        }}
+      >
+        <LuLink className="h-3.5 w-3.5" />
+      </IconButton>
+    );
   const own = templates.filter(
     (template) => scope === 'workspace' || template.scope === 'team'
   );
@@ -612,6 +631,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </p>
                   )}
                 </div>
+                {confirming !== template.id && copyButton(template)}
                 {canEdit &&
                   (confirming === template.id ? (
                     <div
@@ -746,6 +766,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 )}
                 {isFormTemplate(template) && <Badge>Form</Badge>}
                 <Badge>{TEMPLATE_GROUPS[template.scope]}</Badge>
+                {copyButton(template)}
                 {canEdit && recurrable(template) && (
                   <IconButton
                     size="sm"
