@@ -12,7 +12,7 @@ import {
   type WorkspaceContextType,
 } from '../../contexts/WorkspaceContextDefinition';
 import type { TeamOptions } from '../../hooks/useTeamOptions';
-import type { IssueRead, WorkspaceRead } from '../../types/Api';
+import type { WorkspaceRead } from '../../types/Api';
 import { IssuePreview } from './IssueHoverCard';
 
 const polled = vi.fn<() => { data: unknown; isLoading: boolean }>();
@@ -114,7 +114,7 @@ describe('IssuePreview', () => {
         label_ids: ['lb-1'],
         project_id: 'prj-1',
         cycle_id: 'cy-1',
-      } as IssueRead,
+      },
     });
     renderPreview();
 
