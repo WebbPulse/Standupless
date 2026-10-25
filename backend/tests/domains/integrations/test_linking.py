@@ -140,13 +140,87 @@ def test_a_user_prefixed_branch_links_its_issue() -> None:
     assert [(row.team_id, row.key) for row in found] == [("p-stup", "STUP-1")]
 
 
-@pytest.mark.parametrize("word", ["Refs", "ref", "References", "Part of", "Related to", "Contributes to", "Towards"])
+@pytest.mark.parametrize(
+    "word", ["Refs", "ref", "References", "Part of", "Contributes to", "Toward", "Towards", "Update", "Updates"]
+)
 def test_a_reference_word_moves_the_status_without_closing(word: str) -> None:
     """A non-closing word ties the key to the pull request so it moves, and a merge does not close it."""
     found = linking.extract(PREFIXES, title="A change", body=f"{word} ABC-1")
 
     assert found[0].moves_status is True
     assert found[0].magic_word is None
+
+
+@pytest.mark.parametrize("word", ["Related to", "Relates to", "relates  to", "Relates to:"])
+def test_a_related_word_links_without_moving(word: str) -> None:
+    """A key after `Relates to` or `Related to` links the pull request and moves nothing on any event."""
+    found = linking.extract(PREFIXES, title="A change", body=f"{word} ABC-1")
+
+    assert [row.key for row in found] == ["ABC-1"]
+    assert found[0].moves_status is False
+    assert found[0].magic_word is None
+    assert found[0].holds_on_merge is False
+
+
+def test_a_related_word_governs_every_key_in_its_list() -> None:
+    """A list after a related word links each key without moving any."""
+    found = linking.extract(PREFIXES, title="A change", body="Relates to ABC-1, ABC-2 and XYZ-3")
+
+    assert {row.key: row.moves_status for row in found} == {"ABC-1": False, "ABC-2": False, "XYZ-3": False}
+
+
+def test_a_related_word_wins_over_the_branch_and_title() -> None:
+    """Saying a pull request only relates to an issue keeps it still, even when the branch and title carry the key."""
+    found = linking.extract(PREFIXES, branch="abc-1-side", title="ABC-1 Side change", body="Relates to ABC-1")
+
+    assert found[0].moves_status is False
+    assert found[0].magic_word is None
+
+
+def test_a_closing_word_wins_over_a_related_word() -> None:
+    """A key both fixed and related closes, as the strongest word wins."""
+    found = linking.extract(PREFIXES, title="Fixes ABC-1", body="Relates to ABC-1")
+
+    assert found[0].magic_word == "fixes"
+    assert found[0].moves_status is True
+    assert found[0].holds_on_merge is False
+
+
+def test_a_contributing_word_wins_over_a_related_word() -> None:
+    """A key both updated and related moves on open and holds on merge."""
+    found = linking.extract(PREFIXES, title="A change", body="Updates ABC-1. Related to ABC-1.")
+
+    assert found[0].moves_status is True
+    assert found[0].holds_on_merge is True
+
+
+def test_a_mixed_body_sorts_each_key_by_its_word() -> None:
+    """Closing, contributing, related and bare keys in one body each take their own class."""
+    body = "Fixes ABC-1, updates ABC-2, relates to ABC-3.\n\nABC-4 is nearby."
+    found = {row.key: row for row in linking.extract(PREFIXES, title="A change", body=body)}
+
+    assert found["ABC-1"].magic_word == "fixes"
+    assert (found["ABC-2"].moves_status, found["ABC-2"].holds_on_merge) == (True, True)
+    assert (found["ABC-3"].moves_status, found["ABC-3"].holds_on_merge) == (False, False)
+    assert found["ABC-4"].moves_status is False
+
+
+def test_a_related_word_in_a_commit_quiets_that_commits_subject_only() -> None:
+    """A commit that says `Relates to` keeps its key still, and another commit's subject still moves it."""
+    alone = linking.extract(PREFIXES, commit_messages=["ABC-1 Side change (#4)\n\nRelates to ABC-1"])
+    paired = linking.extract(
+        PREFIXES, commit_messages=["ABC-1 Side change (#4)\n\nRelates to ABC-1", "ABC-1 Real work (#5)"]
+    )
+
+    assert alone[0].moves_status is False
+    assert paired[0].moves_status is True
+
+
+def test_moving_commit_keys_leaves_out_a_related_key() -> None:
+    """Release stage automation follows the same rule, so a related commit key moves nothing."""
+    moving = moving_commit_keys(["XYZ-2 Ship it (#9)\n\nRelated to ABC-1, fixes XYZ-2"], PREFIXES)
+
+    assert [row.key for row in moving] == ["XYZ-2"]
 
 
 def test_a_magic_word_does_not_carry_to_a_later_bare_mention() -> None:

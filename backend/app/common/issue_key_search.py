@@ -7,8 +7,8 @@ whose prefix it carries, so matching is per team rather than one global pattern.
 
 Which keys move an issue is decided here too, in `extract`, so that a pull request
 merge and release stage automation apply the same rule: a key in a commit's subject
-line or after a closing or `Refs` style word moves, and a key a commit's body only
-mentions in prose moves nothing.
+line or after a closing or `Refs` style word moves, a key a commit's body only
+mentions in prose moves nothing, and a key named after `Relates to` only links.
 """
 
 from __future__ import annotations
@@ -28,7 +28,8 @@ class FoundKey:
     `key` is always written under the team's current prefix, even when the text
     named a retired one, so a link row and a write-back comment show the key the
     issue carries today. `moves_status` is false for a key the pull request only
-    mentions in passing, which links the issue without moving its status.
+    mentions in passing or names after a related word such as `Relates to`, which
+    links the issue without moving its status.
     `holds_on_merge` is true for a key named only after a non-closing word such as
     `Refs`, which moves as the pull request opens but stays put when it merges.
     """
@@ -119,23 +120,34 @@ REFERENCE_WORDS: tuple[str, ...] = (
     "refs",
     "references",
     "part of",
-    "related to",
-    "relates to",
     "contributes to",
     "toward",
     "towards",
+    "update",
+    "updates",
 )
-"""The words that tie an issue to a pull request without closing it, as in Linear."""
+"""The words that mark a pull request as contributing to an issue: it moves as the pull request opens, never closes."""
 
-_MAGIC_PATTERN = re.compile(
-    r"\b(" + "|".join(MAGIC_WORDS) + r")\b[\s:]+(?=[A-Za-z])",
-    re.IGNORECASE,
+RELATED_WORDS: tuple[str, ...] = (
+    "related to",
+    "relates to",
 )
+"""The words that mark a pull request as only related to an issue, which links it and never moves its status."""
 
-_REFERENCE_PATTERN = re.compile(
-    r"\b(" + "|".join(word.replace(" ", r"\s+") for word in REFERENCE_WORDS) + r")\b[\s:]+(?=[A-Za-z])",
-    re.IGNORECASE,
-)
+
+def _word_pattern(words: Sequence[str]) -> re.Pattern[str]:
+    """The pattern matching any of `words` right before a key, spaces matching any whitespace."""
+    return re.compile(
+        r"\b(" + "|".join(word.replace(" ", r"\s+") for word in words) + r")\b[\s:]+(?=[A-Za-z])",
+        re.IGNORECASE,
+    )
+
+
+_MAGIC_PATTERN = _word_pattern(MAGIC_WORDS)
+
+_REFERENCE_PATTERN = _word_pattern(REFERENCE_WORDS)
+
+_RELATED_PATTERN = _word_pattern(RELATED_WORDS)
 
 
 _LIST_SEPARATOR = re.compile(r"\s*(?:,\s*(?:and\s+|&\s*)?|\s+and\s+|\s*&\s*)")
@@ -198,6 +210,15 @@ def find_referencing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str
     return _keys_after(_REFERENCE_PATTERN, text, prefixes)
 
 
+def find_related(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
+    """Which issues this text names after a related word such as `Relates to`.
+
+    Such a key links the issue and moves nothing on any pull request event, unless
+    a closing or contributing word names it too, since the strongest word wins.
+    """
+    return _keys_after(_RELATED_PATTERN, text, prefixes)
+
+
 _MERGE_COMMIT_SUBJECT = re.compile(r"^Merge pull request #\d+\b")
 """The first line GitHub writes for a merge commit, whose next line is the pull request's title."""
 
@@ -241,6 +262,11 @@ def extract(
     commit's body only links. A key that a `Refs` style word names and no closing
     word does holds on merge, even when the title or branch also carries it, because
     `Refs` is how a pull request says it is only part of the work.
+
+    A key a related word such as `Relates to` names only links, even when the
+    branch, the title or a commit's subject carries it, unless a closing or
+    contributing word names it too. A related word in the title or body governs the
+    whole pull request, and one in a commit governs that commit alone.
     """
     closing = {**find_closing(title, prefixes), **find_closing(body, prefixes)}
     referencing = {**find_referencing(title, prefixes), **find_referencing(body, prefixes)}
@@ -249,18 +275,24 @@ def extract(
         closed_anywhere |= set(find_closing(message, prefixes))
         referencing.update(find_referencing(message, prefixes))
     held = set(referencing) - closed_anywhere
+    related = {*find_related(title, prefixes), *find_related(body, prefixes)}
 
     keys: dict[tuple[str, int], FoundKey] = {}
     moving: set[tuple[str, int]] = closed_anywhere | set(referencing)
-    sources = [(branch, True), (title, True), (body, False)]
+    sources: list[tuple[str, bool, set[tuple[str, int]]]] = [
+        (branch, True, related),
+        (title, True, related),
+        (body, False, related),
+    ]
     for message in commit_messages:
         subject, rest = commit_subject(message)
-        sources.extend([(subject, True), (rest, False)])
-    for text, moves in sources:
+        quiet = related | set(find_related(message, prefixes))
+        sources.extend([(subject, True, quiet), (rest, False, quiet)])
+    for text, moves, quiet in sources:
         for found in find_keys(text, prefixes):
             ident = (found.team_id, found.number)
             keys.setdefault(ident, found)
-            if moves:
+            if moves and ident not in quiet:
                 moving.add(ident)
 
     return [
@@ -281,7 +313,8 @@ def moving_commit_keys(messages: Sequence[str], prefixes: Prefixes) -> list[Foun
 
     A key moves when `extract` says it does: in a commit's subject line, a merge
     commit's title, or after a closing or `Refs` style word. A key only a commit's
-    body mentions in prose is left out.
+    body mentions in prose, or one a related word such as `Relates to` names, is
+    left out.
     """
     moving = {(row.team_id, row.number) for row in extract(prefixes, commit_messages=messages) if row.moves_status}
     ordered: dict[tuple[str, int], FoundKey] = {}
