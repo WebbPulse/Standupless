@@ -124,7 +124,7 @@ UPDATE_WORKSPACE_ARGUMENTS = (
 
 
 def _update_workspace(call: ToolCall) -> Any:
-    """Rename the workspace or set its slug, accent, update cadence, branch format, permissions or features, as PATCH does.
+    """Rename the workspace or set its slug, accent, cadence, branch format, permissions or features, as PATCH does.
 
     An absent argument is left alone and a null `accent_color` returns the
     accent to the default, so the tool patches exactly what the caller named.

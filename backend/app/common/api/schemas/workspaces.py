@@ -196,7 +196,9 @@ class SlugAvailabilityRead(BaseModel):
     available: bool
     reason: Optional[Literal["invalid", "reserved", "taken", "current"]] = Field(
         default=None,
-        description="Why the slug is unavailable: invalid, reserved, taken, or current when it is already this workspace's",
+        description=(
+            "Why the slug is unavailable: invalid, reserved, taken, or current when it is already this workspace's"
+        ),
     )
 
 
