@@ -113,6 +113,7 @@ GroupByProperty = Literal[
     "parent",
     "team",
     "sla",
+    "customer",
 ]
 """The properties a view may group or sub-group its rows by."""
 

@@ -43,6 +43,8 @@ export interface UserRead {
   theme?: Theme | null;
   /** Whether interactive elements show the pointer cursor. */
   pointer_cursors?: boolean;
+  /** Whether links in rich text and inline text links are underlined at rest. */
+  underline_links?: boolean;
   /** Whether the editor turns typed emoticons such as `:)` into emoji. */
   convert_emoticons?: boolean;
   /** Whether issue activity shows every change or only comments. */
@@ -212,6 +214,7 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   theme?: Theme;
   pointer_cursors?: boolean;
+  underline_links?: boolean;
   convert_emoticons?: boolean;
   activity_filter?: ActivityFilter;
   /** Moves the named sidebar items, leaving the others where they are. */
@@ -779,6 +782,8 @@ export interface LabelRead {
   inherited_name?: string | null;
   /** Whether this is a label group, which holds labels and never sits on an issue. */
   is_group?: boolean;
+  /** Whether an issue may carry several labels of this group rather than one. */
+  allow_multiple?: boolean;
   /** The group this label sits in, or null outside one. */
   parent_id?: string | null;
   /** A short description, carried to linked GitHub repositories. */
@@ -811,6 +816,8 @@ export interface LabelCreate {
   color: string;
   /** Makes a label group. Set only at creation. */
   is_group?: boolean;
+  /** For a group, lets an issue carry several of its labels. */
+  allow_multiple?: boolean;
   /** The group to put the label in, of the same scope. */
   parent_id?: string | null;
   /** A short description, up to 100 characters. */
@@ -825,6 +832,8 @@ export interface LabelUpdate {
   parent_id?: string | null;
   /** A short description, or null to clear it. */
   description?: string | null;
+  /** For a group, whether an issue may carry several of its labels. */
+  allow_multiple?: boolean;
 }
 
 /**
@@ -1477,10 +1486,11 @@ export interface LinkCreate {
 
 /**
  * Which client a change came through, read off the credential that made it.
- * The web app, GitHub and jobs render unlabelled; the rest show "via MCP" and
- * the like.
+ * The web app, GitHub and jobs render unlabelled; the rest show "via MCP",
+ * "via email" and the like.
  */
-export type ChangeSource = 'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system';
+export type ChangeSource =
+  'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system' | 'email';
 
 /** One entry in an issue's history. */
 export interface ActivityRead {
@@ -1852,6 +1862,7 @@ export type ViewGroupBy =
   | 'parent'
   | 'team'
   | 'sla'
+  | 'customer'
   | `label_group:${string}`;
 
 /** Which saved views a list read asks for. */
@@ -3023,6 +3034,12 @@ export interface MilestoneListRead {
   next_cursor: string | null;
 }
 
+/** A milestone turned into its own project: the new project and the issues moved into it. */
+export interface MilestoneConversionRead {
+  project: ProjectRead;
+  moved_issue_ids: string[];
+}
+
 /** A new milestone. Without a `sort_order` it lands after the last one. */
 export interface MilestoneCreate {
   name: string;
@@ -3149,6 +3166,8 @@ export type ProjectActivityKind =
   | 'milestone_added'
   | 'milestone_removed'
   | 'milestone_changed'
+  | 'milestone_converted'
+  | 'converted_from_milestone'
   | 'link_added'
   | 'link_removed'
   | 'link_changed'
@@ -3653,6 +3672,32 @@ export interface TeamSyncRead {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One live create by email address of a team, or of one of its templates. */
+export interface EmailIntakeRead {
+  team_id: string;
+  /** The template the address files with, or null for the team's own address. */
+  template_id: string | null;
+  /** Where mail is sent: `<team key>-<token>@<intake domain>`. */
+  address: string;
+  /** Who turned the address on; the issues it files are created as them. */
+  enabled_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A team's live create by email addresses, its own first. */
+export interface EmailIntakeList {
+  team_id: string;
+  /** Whether this deployment takes intake mail at all. */
+  available: boolean;
+  addresses: EmailIntakeRead[];
+}
+
+/** Which address a change names: a template's, or the team's when absent. */
+export interface EmailIntakeWrite {
+  template_id?: string | null;
 }
 
 /** What a team admin sets when linking a team to a repository. */

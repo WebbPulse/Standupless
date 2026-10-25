@@ -285,6 +285,7 @@ jobs:
                   "integrations-stream-consumer",
                   "integrations-purge-consumer",
                   "integrations-import-consumer",
+                  "integrations-email-consumer",
               ],
               "discussion": ["discussion-purge-consumer"],
               "issues": ["issues-purge-consumer"],

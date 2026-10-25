@@ -155,6 +155,7 @@ import { TruncatedText } from '../ui/truncated-text';
 import InboxBadge from '../views/InboxBadge';
 import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
+import AddToFavoriteFolder from './AddToFavoriteFolder';
 import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { activeTeams } from '../../lib/teamRetirement';
@@ -475,6 +476,12 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         >
           Copy link
         </MenuItem>
+        <AddToFavoriteFolder
+          workspaceId={workspaceId}
+          target={{ kind: 'team', target_id: team.id }}
+          title={team.name}
+          preview={{ team_key_prefix: team.key_prefix }}
+        />
         {onCreateSubTeam !== undefined && (
           <MenuItem onSelect={onCreateSubTeam}>Create sub-team</MenuItem>
         )}

@@ -351,6 +351,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         asana_imports,
         channels,
         discord,
+        email_intake,
         imports,
         install,
         jira_imports,
@@ -378,6 +379,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (threads.router, "/workspaces", ("integrations",)),
         (standup.router, "/workspaces", ("integrations",)),
         (release_backfill.router, "/workspaces", ("integrations",)),
+        (email_intake.router, "/workspaces", ("integrations",)),
         (imports.router, "/workspaces", ("integrations",)),
         (asana_imports.router, "/workspaces", ("integrations",)),
         (jira_imports.router, "/workspaces", ("integrations",)),
@@ -540,6 +542,7 @@ _PLANNING_REPOSITORIES = (
 
 `issues`, `activity` and `subscriptions` are for completing or canceling a
 project, which can move or cancel its open issues through the issue patch path,
+for converting a milestone into a project, which moves its issues the same way,
 and for a project made from a template, whose issues go through the issue create
 path, which allocates their keys from `counters`. `audit` records an
 initiative's lead team changing.

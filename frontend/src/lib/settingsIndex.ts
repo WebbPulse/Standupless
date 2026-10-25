@@ -297,7 +297,14 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         id: 'members',
         title: 'Members',
-        synonyms: ['people', 'roles', 'seats', 'remove member'],
+        synonyms: [
+          'people',
+          'roles',
+          'seats',
+          'remove member',
+          'suspend member',
+          'export members',
+        ],
         anchor: settingsAnchorId('members'),
       },
       {
@@ -724,6 +731,12 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
     title: 'Triage',
     paletteLabel: 'Triage settings',
     synonyms: ['team triage', 'intake', 'inbox'],
+  },
+  {
+    id: 'email',
+    title: 'Create by email',
+    paletteLabel: 'Create by email settings',
+    synonyms: ['email', 'intake address', 'forward', 'mail to issue'],
   },
   {
     id: 'sla',

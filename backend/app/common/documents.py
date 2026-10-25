@@ -286,17 +286,34 @@ def document_terms(title: str, body: str) -> list[str]:
 def search_documents(
     repositories: Repositories, context: AuthzContext, query: SearchQuery, limit: int
 ) -> list[DocumentSummaryRead]:
-    """Readable documents whose title and body terms match the query, most recently edited first."""
+    """Readable documents whose own terms, or those terms with their parent's name, match the query.
+
+    Documents matching on their own terms come first, then those that need the
+    parent's name, each group most recently edited first. Parent names are
+    tokenized at query time, so a renamed parent matches straight away.
+    """
     if not query:
         return []
     parents = readable_parents(repositories, context)
     rights = Rights(repositories, context)
-    hits = [
-        row
-        for row in repositories.documents.list_for_workspace(context.workspace_id)
-        if (row.parent_kind, row.parent_id) in parents and query.matches(row.terms)
-    ]
-    hits.sort(key=lambda row: row.updated_at, reverse=True)
+    parent_terms: dict[tuple[str, str], set[str]] = {}
+    own: list[Document] = []
+    through_parent: list[Document] = []
+    for row in repositories.documents.list_for_workspace(context.workspace_id):
+        key = (row.parent_kind, row.parent_id)
+        parent = parents.get(key)
+        if parent is None:
+            continue
+        if query.matches(row.terms):
+            own.append(row)
+            continue
+        if key not in parent_terms:
+            parent_terms[key] = ranked_terms(parent.name)
+        if query.matches([*row.terms, *parent_terms[key]]):
+            through_parent.append(row)
+    own.sort(key=lambda row: row.updated_at, reverse=True)
+    through_parent.sort(key=lambda row: row.updated_at, reverse=True)
+    hits = [*own, *through_parent]
     return [_summary(rights, parents[(row.parent_kind, row.parent_id)], row) for row in hits[:limit]]
 
 

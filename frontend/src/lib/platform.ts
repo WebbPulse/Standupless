@@ -25,6 +25,10 @@ export const isApplePlatform = (
 export const modKeyLabel = (apple: boolean = isApplePlatform()): string =>
   apple ? '⌘' : 'Ctrl';
 
+/** The label for the Control key: its symbol on Apple, else the word. */
+export const ctrlKeyLabel = (apple: boolean = isApplePlatform()): string =>
+  apple ? '⌃' : 'Ctrl';
+
 /** The label for the Shift key: its symbol on Apple, else the word. */
 export const shiftKeyLabel = (apple: boolean = isApplePlatform()): string =>
   apple ? '⇧' : 'Shift';

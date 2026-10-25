@@ -161,7 +161,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -2937,7 +2938,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -3910,7 +3912,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -5252,7 +5255,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -5384,7 +5388,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -5738,7 +5743,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -5845,7 +5851,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -6112,6 +6119,100 @@
           "body"
         ],
         "title": "DraftWrite",
+        "type": "object"
+      },
+      "EmailIntakeList": {
+        "description": "A team's create by email addresses.\n\n`available` is false when this deployment has no intake mail domain, so no\naddress can be turned on.",
+        "properties": {
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/EmailIntakeRead"
+            },
+            "title": "Addresses",
+            "type": "array"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "available",
+          "addresses"
+        ],
+        "title": "EmailIntakeList",
+        "type": "object"
+      },
+      "EmailIntakeRead": {
+        "description": "One live create by email address, of the team itself or of one of its templates.\n\nMail sent to `address` files an issue in the team, into Triage when the team\nhas triage on, with the template applied when `template_id` is set.",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled_by": {
+            "title": "Enabled By",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "address",
+          "enabled_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EmailIntakeRead",
+        "type": "object"
+      },
+      "EmailIntakeWrite": {
+        "additionalProperties": false,
+        "description": "Which address to turn on or regenerate: the team's own, or one template's.",
+        "properties": {
+          "template_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          }
+        },
+        "title": "EmailIntakeWrite",
         "type": "object"
       },
       "ErrorResponse": {
@@ -8493,7 +8594,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -9760,7 +9862,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -11896,8 +11999,13 @@
         "type": "object"
       },
       "LabelCreate": {
-        "description": "The body a label create takes.\n\n`is_group` makes a label group, which holds child labels and is never put on\nan issue itself. `parent_id` puts the new label in an existing group of the\nsame scope. A group cannot sit in another group. `description` is what a\nrepository the team syncs with shows beside the label.",
+        "description": "The body a label create takes.\n\n`is_group` makes a label group, which holds child labels and is never put on\nan issue itself. `parent_id` puts the new label in an existing group of the\nsame scope. A group cannot sit in another group. `allow_multiple` lets an\nissue carry several labels of a new group rather than one. `description` is\nwhat a repository the team syncs with shows beside the label.",
         "properties": {
+          "allow_multiple": {
+            "default": false,
+            "title": "Allow Multiple",
+            "type": "boolean"
+          },
           "color": {
             "title": "Color",
             "type": "string"
@@ -12021,8 +12129,13 @@
         "type": "object"
       },
       "LabelRead": {
-        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.\n\n`is_group` marks a label group and `parent_id` names the group a label is in.",
+        "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.\n\n`is_group` marks a label group, `allow_multiple` a group whose labels an issue\nmay carry several of, and `parent_id` names the group a label is in.",
         "properties": {
+          "allow_multiple": {
+            "default": false,
+            "title": "Allow Multiple",
+            "type": "boolean"
+          },
           "color": {
             "title": "Color",
             "type": "string"
@@ -12139,8 +12252,19 @@
         "type": "object"
       },
       "LabelUpdate": {
-        "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group, and an explicit null or empty `description`\nclears it. A field left out keeps its current value.",
+        "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group, and an explicit null or empty `description`\nclears it. `allow_multiple` switches a group between one label per issue and\nseveral. A field left out keeps its current value.",
         "properties": {
+          "allow_multiple": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Multiple"
+          },
           "color": {
             "anyOf": [
               {
@@ -12898,6 +13022,26 @@
         "title": "MilestoneBlueprint",
         "type": "object"
       },
+      "MilestoneConversionRead": {
+        "description": "What converting a milestone into a project answers with.\n\n`project` is the new project and `moved_issue_ids` the issues that left the\nmilestone for it, oldest first. The milestone itself is gone.",
+        "properties": {
+          "moved_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Moved Issue Ids",
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectRead"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "MilestoneConversionRead",
+        "type": "object"
+      },
       "MilestoneCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/milestones` takes.\n\n`sort_order` is optional: left out, the milestone is placed after the last one.",
         "properties": {
@@ -13420,7 +13564,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -13760,6 +13905,8 @@
               "milestone_added",
               "milestone_removed",
               "milestone_changed",
+              "milestone_converted",
+              "converted_from_milestone",
               "link_added",
               "link_removed",
               "link_changed",
@@ -13804,7 +13951,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -16126,7 +16274,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -16353,7 +16502,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -16823,7 +16973,8 @@
                   "cli",
                   "api",
                   "github",
-                  "system"
+                  "system",
+                  "email"
                 ],
                 "type": "string"
               },
@@ -24707,7 +24858,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `email_format`\npicks a digest or one email per notification. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `theme` is the interface theme and `pointer_cursors` whether\ninteractive elements show the pointer cursor. `convert_emoticons` is\nwhether the editor turns typed emoticons into emoji. `activity_filter` is\nwhether issue activity shows every change or only comments.\n`sidebar_items` moves the named sidebar items, leaving the others where\nthey are, and `sidebar_badge_style` picks a count or a dot for the unread\nbadges. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. `priority_inbox` turns the\nsplit inbox on or off, and `priority_kinds` replaces the whole set of kinds\nits Priority tab holds. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `email_format`\npicks a digest or one email per notification. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `theme` is the interface theme and `pointer_cursors` whether\ninteractive elements show the pointer cursor. `underline_links` underlines\nlinks in rich text at rest. `convert_emoticons` is\nwhether the editor turns typed emoticons into emoji. `activity_filter` is\nwhether issue activity shows every change or only comments.\n`sidebar_items` moves the named sidebar items, leaving the others where\nthey are, and `sidebar_badge_style` picks a count or a dot for the unread\nbadges. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. `priority_inbox` turns the\nsplit inbox on or off, and `priority_kinds` replaces the whole set of kinds\nits Priority tab holds. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "activity_filter": {
             "anyOf": [
@@ -25048,6 +25199,17 @@
             ],
             "title": "Timezone"
           },
+          "underline_links": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underline Links"
+          },
           "week_start": {
             "anyOf": [
               {
@@ -25332,6 +25494,11 @@
             "title": "Two Factor",
             "type": "boolean"
           },
+          "underline_links": {
+            "default": false,
+            "title": "Underline Links",
+            "type": "boolean"
+          },
           "week_start": {
             "default": "monday",
             "enum": [
@@ -25569,7 +25736,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -25731,7 +25899,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -26123,7 +26292,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -26325,7 +26495,8 @@
                   "cycle",
                   "parent",
                   "team",
-                  "sla"
+                  "sla",
+                  "customer"
                 ],
                 "type": "string"
               },
@@ -34026,6 +34197,55 @@
           }
         ],
         "summary": "Add Customer",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/requests": {
+      "get": {
+        "description": "Every request whose issue or project the caller can see, newest first.\n\nA list grouped by customer reads this once to place each issue under every\ncustomer that asked for it. Declared before `/customers/{customer_id}` so\n`requests` is not swallowed as an id.",
+        "operationId": "list_all_requests_api_workspaces__workspace_id__customers_requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List All Requests",
         "tags": [
           "planning"
         ]
@@ -44257,7 +44477,8 @@
                     "cli",
                     "api",
                     "github",
-                    "system"
+                    "system",
+                    "email"
                   ],
                   "type": "string"
                 },
@@ -49359,6 +49580,73 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/milestones/{milestone_id}/convert-to-project": {
+      "post": {
+        "description": "Turn a milestone into a project of its own, moving its issues there and deleting the milestone.\n\nThe project takes the milestone's name, description and target date, and the\nsource project's teams, lead and priority.",
+        "operationId": "convert_milestone_api_workspaces__workspace_id__projects__project_id__milestones__milestone_id__convert_to_project_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "milestone_id",
+            "required": true,
+            "schema": {
+              "title": "Milestone Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestoneConversionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Convert Milestone",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/projects/{project_id}/relations": {
       "get": {
         "description": "Every dependency of one project, read from its side, whose other end the caller may see.\n\nA project holds few dependencies, so the list is answered whole and never pages.",
@@ -53577,6 +53865,268 @@
         "summary": "Create Team Document",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake": {
+      "delete": {
+        "description": "Turn the team's address, or one template's, off, or 404 when it was not on.",
+        "operationId": "delete_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Email Intake",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "The team's live create by email addresses, its own and its templates'.",
+        "operationId": "get_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIntakeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Email Intake",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Turn the team's address, or one template's, on; an address already on is answered unchanged.\n\nMail to it files issues as the admin who turned it on, so the 409 for a\ndeployment without an intake domain and the 404 for an unknown template\ncome before anything is written.",
+        "operationId": "put_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailIntakeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIntakeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Email Intake",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake/regenerate": {
+      "post": {
+        "description": "Give a live address a fresh token, revoking the old address at once.",
+        "operationId": "regenerate_email_intake_api_workspaces__workspace_id__teams__team_id__email_intake_regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailIntakeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIntakeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Regenerate Email Intake",
+        "tags": [
+          "integrations"
         ]
       }
     },

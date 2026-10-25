@@ -41,9 +41,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import {
+  createCustomerRequest,
+  deleteCustomerRequest,
+} from '../../../api/customers';
+import {
   useCreateIssue,
   type CreateIssueOptions,
 } from '../../../hooks/useCreateIssue';
+import type { CustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useBranchNaming } from '../../../hooks/useBranchNaming';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
@@ -65,10 +70,12 @@ import {
   filterValuesFor,
   groupIssues,
   hiddenColumnKey,
+  manualEdgeKeys,
   manualMoveKeys,
   narrowFilters,
   parentsIn,
   shownIssues,
+  type CustomerMove,
   sortIssues,
   statusGroupKey,
   type FilterField,
@@ -103,6 +110,11 @@ import { rememberTrail } from '../../../lib/issueTrail';
 import { showToast } from '../../../lib/toast';
 import { foldedParentKey, parentRefOf, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
+import {
+  customersKey,
+  targetCustomerRequestsKey,
+  workspaceCustomerRequestsKey,
+} from '../../../lib/queryKeys';
 import type { EstimateOptions } from '../../../lib/validation';
 import type {
   EstimateScale,
@@ -126,6 +138,7 @@ import { Button } from '../../ui/button';
 import EmptyState from '../../ui/empty-state';
 import { SkeletonRows } from '../../ui/skeleton';
 import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
+import ConfirmRemoveCustomerRequestDialog from '../ConfirmRemoveCustomerRequestDialog';
 import BoardLayout from './BoardLayout';
 import BulkBar, { type BulkBarMenuItem } from './BulkBar';
 import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
@@ -188,6 +201,11 @@ export interface IssueListViewProps {
    * columns outside them are left out. Left out, every category shows.
    */
   statusCategories?: readonly StatusCategory[] | undefined;
+  /**
+   * Which customers requested each issue, read by the page while the view
+   * groups by customer. Left out, customer groups hold no issue.
+   */
+  customerRequests?: CustomerRequestMap | undefined;
 }
 
 /** The palette label of each property command. */
@@ -258,6 +276,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   collapseKey,
   filterFields,
   statusCategories,
+  customerRequests,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -268,12 +287,25 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const { context: listContext, forTeam, createLabel } = lists;
   const { update, queryKey } = collection;
   const byParent = state.groupBy === 'parent' || state.subGroupBy === 'parent';
+  const byCustomer =
+    customerRequests !== undefined &&
+    listContext.customers !== undefined &&
+    (state.groupBy === 'customer' || state.subGroupBy === 'customer');
   const context = useMemo(
-    () =>
-      byParent
-        ? { ...listContext, parents: parentsIn(collection.issues) }
-        : listContext,
-    [byParent, listContext, collection.issues]
+    () => ({
+      ...listContext,
+      ...(byParent ? { parents: parentsIn(collection.issues) } : {}),
+      ...(byCustomer && customerRequests !== undefined
+        ? { customerRequests: customerRequests.byIssue }
+        : {}),
+    }),
+    [
+      byParent,
+      byCustomer,
+      listContext,
+      collection.issues,
+      customerRequests?.byIssue,
+    ]
   );
 
   const [collapsed, onToggle] = useStoredSet(
@@ -294,6 +326,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
+  const [withdrawing, setWithdrawing] = useState<{
+    issue: OrderedIssueRead;
+    customerId: string;
+  } | null>(null);
   const [moving, setMoving] = useState<string[] | null>(null);
   const scrollOnFocus = useRef(false);
 
@@ -595,6 +631,38 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     for (const { id, sort_order } of placements) update([id], { sort_order });
   };
 
+  const reorderToEdge = (edge: 'top' | 'bottom'): void => {
+    if (focused === null) return;
+    if (state.ordering !== 'manual') {
+      showToast('Switch ordering to Manual to move issues', 'info');
+      return;
+    }
+    const ids =
+      liveSelected.size > 0 ? targets.map((issue) => issue.id) : [focused];
+    const keys = new Map<string, string>();
+    const handled = new Set<string>();
+    for (const id of ids) {
+      if (handled.has(id)) continue;
+      const siblings = siblingsOf(id);
+      const movers = siblings.filter((issue) => ids.includes(issue.id));
+      for (const issue of movers) handled.add(issue.id);
+      handled.add(id);
+      const placements = manualEdgeKeys(
+        siblings,
+        movers.map((issue) => issue.id),
+        edge,
+        state.reverse
+      );
+      for (const { id: placed, sort_order } of placements ?? [])
+        keys.set(placed, sort_order);
+    }
+    if (keys.size === 0) return;
+    update([...keys.keys()], (issue) => {
+      const sort_order = keys.get(issue.id);
+      return sort_order === undefined ? null : { sort_order };
+    });
+  };
+
   const focusedNode = focused === null ? undefined : tree.get(focused);
   const onTree =
     board === null &&
@@ -693,6 +761,24 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: canReorder,
     handler: () => {
       reorder(1);
+    },
+  });
+  useShortcut({
+    keys: 'alt+shift+arrowup',
+    label: 'Move issue to top',
+    group: 'List',
+    enabled: canReorder,
+    handler: () => {
+      reorderToEdge('top');
+    },
+  });
+  useShortcut({
+    keys: 'alt+shift+arrowdown',
+    label: 'Move issue to bottom',
+    group: 'List',
+    enabled: canReorder,
+    handler: () => {
+      reorderToEdge('bottom');
     },
   });
   const onBoard = board !== null && hasRows;
@@ -1136,6 +1222,63 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.visible.includes('milestone')
   );
   const milestones = named.milestones;
+  const refreshCustomers = useCallback(
+    (issueId: string): void => {
+      invalidateQueries(workspaceCustomerRequestsKey(workspaceId));
+      invalidateQueries(customersKey(workspaceId));
+      invalidateQueries(
+        targetCustomerRequestsKey(workspaceId, 'issue', issueId)
+      );
+    },
+    [workspaceId]
+  );
+
+  const moveCustomer = useCallback(
+    (issue: OrderedIssueRead, move: CustomerMove): void => {
+      if (move.add !== undefined) {
+        createCustomerRequest(workspaceId, 'issue', issue.id, {
+          customer_id: move.add,
+        })
+          .then(() => {
+            refreshCustomers(issue.id);
+          })
+          .catch((caught: unknown) => {
+            showToast(
+              errorMessage(caught, 'Could not add the customer request.'),
+              'error'
+            );
+          });
+      }
+      if (move.remove !== undefined) {
+        setWithdrawing({ issue, customerId: move.remove });
+      }
+    },
+    [workspaceId, refreshCustomers]
+  );
+
+  const withdrawRequest = async (
+    issue: OrderedIssueRead,
+    customerId: string
+  ): Promise<void> => {
+    const held = (customerRequests?.requests ?? []).filter(
+      (request) =>
+        request.target_id === issue.id && request.customer_id === customerId
+    );
+    try {
+      await Promise.all(
+        held.map((request) =>
+          deleteCustomerRequest(workspaceId, customerId, request.request_id)
+        )
+      );
+    } catch (caught) {
+      showToast(
+        errorMessage(caught, 'Could not remove the customer request.'),
+        'error'
+      );
+    }
+    refreshCustomers(issue.id);
+  };
+
   const env = useMemo<IssueViewEnv>(
     () => ({
       slug,
@@ -1148,6 +1291,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       ...(teamNameFor === undefined ? {} : { teamNameFor }),
       canEdit,
       update,
+      ...(byCustomer && workspaceId !== '' ? { moveCustomer } : {}),
       createLabel,
       focusedId: focused,
       selected: liveSelected,
@@ -1173,6 +1317,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       teamNameFor,
       canEdit,
       update,
+      byCustomer,
+      workspaceId,
+      moveCustomer,
       createLabel,
       focused,
       liveSelected,
@@ -1532,6 +1679,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             });
             await remove(ids);
           }}
+        />
+      )}
+      {withdrawing !== null && (
+        <ConfirmRemoveCustomerRequestDialog
+          issue={withdrawing.issue}
+          customerName={
+            context.customers?.find(
+              (customer) => customer.id === withdrawing.customerId
+            )?.name ?? 'this customer'
+          }
+          onClose={() => {
+            setWithdrawing(null);
+          }}
+          onConfirm={() =>
+            withdrawRequest(withdrawing.issue, withdrawing.customerId)
+          }
         />
       )}
       {menu !== null && menuIssues.length > 0 && (

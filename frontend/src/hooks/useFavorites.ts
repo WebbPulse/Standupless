@@ -179,6 +179,40 @@ export const useFavoritesState = (
     [favorites, isFavorite, settle, workspaceId]
   );
 
+  const place = useCallback(
+    async (
+      ref: FavoriteRef,
+      title: string,
+      folderId: string | null,
+      preview: FavoritePreview = {}
+    ): Promise<boolean> => {
+      const current = favorites ?? [];
+      const existing = current.find((row) =>
+        sameFavorite(row, ref.kind, ref.target_id)
+      );
+      const rows =
+        existing === undefined
+          ? [
+              ...current,
+              {
+                ...preview,
+                kind: ref.kind,
+                target_id: ref.target_id,
+                team_id: ref.team_id ?? null,
+                title,
+                folder_id: folderId,
+              },
+            ]
+          : current.map((row) =>
+              row === existing ? { ...row, folder_id: folderId } : row
+            );
+      return settle({ rows }, () =>
+        addFavorite(workspaceId, { ...ref, folder_id: folderId })
+      );
+    },
+    [favorites, settle, workspaceId]
+  );
+
   const reorder = useCallback(
     async (next: FavoriteRead[]): Promise<void> => {
       await settle({ rows: next }, () =>
@@ -257,6 +291,7 @@ export const useFavoritesState = (
       favorites,
       isFavorite,
       toggle,
+      place,
       remove,
       reorder,
       folders,
@@ -269,6 +304,7 @@ export const useFavoritesState = (
       favorites,
       isFavorite,
       toggle,
+      place,
       remove,
       reorder,
       folders,

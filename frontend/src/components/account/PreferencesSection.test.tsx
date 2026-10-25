@@ -146,6 +146,22 @@ describe('PreferencesSection interface', () => {
     await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
   });
 
+  it('turns link underlines on, off by default', async () => {
+    const saved = { ...base, underline_links: true };
+    updatePreferences.mockResolvedValue(saved);
+    const user = userEvent.setup();
+    render(<PreferencesSection />);
+
+    expect(toggle('Always underline links')).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    await user.click(toggle('Always underline links'));
+
+    expect(updatePreferences).toHaveBeenCalledWith({ underline_links: true });
+    await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
+  });
+
   it('turns emoticon conversion off, on by default', async () => {
     const saved = { ...base, convert_emoticons: false };
     updatePreferences.mockResolvedValue(saved);

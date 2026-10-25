@@ -493,3 +493,38 @@ class GithubThreadRead(BaseModel):
     comment_id: str
     issue_id: str
     github_thread: GithubThread | None = None
+
+
+class EmailIntakeRead(BaseModel):
+    """One live create by email address, of the team itself or of one of its templates.
+
+    Mail sent to `address` files an issue in the team, into Triage when the team
+    has triage on, with the template applied when `template_id` is set.
+    """
+
+    team_id: str
+    template_id: str | None = None
+    address: str
+    enabled_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EmailIntakeList(BaseModel):
+    """A team's create by email addresses.
+
+    `available` is false when this deployment has no intake mail domain, so no
+    address can be turned on.
+    """
+
+    team_id: str
+    available: bool
+    addresses: list[EmailIntakeRead]
+
+
+class EmailIntakeWrite(BaseModel):
+    """Which address to turn on or regenerate: the team's own, or one template's."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str | None = Field(default=None, min_length=1)

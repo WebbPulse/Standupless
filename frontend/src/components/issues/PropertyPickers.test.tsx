@@ -200,14 +200,16 @@ describe('LabelsPicker', () => {
   const Harness = ({
     onCreate,
     onChange,
+    choices = labels,
   }: {
     onCreate?: (name: string) => Promise<LabelRead | null>;
     onChange: (ids: string[]) => void;
+    choices?: LabelRead[];
   }) => {
     const [value, setValue] = useState<string[]>([]);
     return (
       <LabelsPicker
-        labels={labels}
+        labels={choices}
         value={value}
         {...(onCreate === undefined ? {} : { onCreate })}
         onChange={(ids) => {
@@ -249,6 +251,37 @@ describe('LabelsPicker', () => {
     await waitFor(() => {
       expect(onChange).toHaveBeenLastCalledWith(['lb-9']);
     });
+  });
+
+  it('swaps in an exclusive group and adds in a multi-select one', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const grouped: LabelRead[] = [
+      { id: 'size', name: 'Size', color: '#000', is_group: true },
+      { id: 'small', name: 'Small', color: '#000', parent_id: 'size' },
+      { id: 'large', name: 'Large', color: '#000', parent_id: 'size' },
+      {
+        id: 'area',
+        name: 'Area',
+        color: '#000',
+        is_group: true,
+        allow_multiple: true,
+      },
+      { id: 'web', name: 'Web', color: '#000', parent_id: 'area' },
+      { id: 'api', name: 'API', color: '#000', parent_id: 'area' },
+    ];
+    render(<Harness onChange={onChange} choices={grouped} />);
+    await user.click(screen.getByRole('button', { name: /Labels/ }));
+    const small = screen.getByRole('option', { name: 'Small' });
+    const web = screen.getByRole('option', { name: 'Web' });
+    expect(small.querySelector('[data-mark="radio"]')).not.toBeNull();
+    expect(web.querySelector('[data-mark="checkbox"]')).not.toBeNull();
+    await user.click(small);
+    await user.click(screen.getByRole('option', { name: 'Large' }));
+    expect(onChange).toHaveBeenLastCalledWith(['large']);
+    await user.click(web);
+    await user.click(screen.getByRole('option', { name: 'API' }));
+    expect(onChange).toHaveBeenLastCalledWith(['large', 'web', 'api']);
   });
 
   it('offers no create row without a create handler', async () => {

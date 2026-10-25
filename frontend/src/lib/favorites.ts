@@ -43,6 +43,16 @@ export interface FavoritesState {
     title: string,
     preview?: FavoritePreview
   ) => Promise<boolean>;
+  /**
+   * Stars a target into a folder, or the top level for null, or moves it there
+   * when it is already starred. Resolves to whether the write succeeded.
+   */
+  place: (
+    ref: FavoriteRef,
+    title: string,
+    folderId: string | null,
+    preview?: FavoritePreview
+  ) => Promise<boolean>;
   /** Unstars one favorite. */
   remove: (kind: FavoriteKind, targetId: string) => Promise<void>;
   /** Puts the favorites in a new order, each in the folder its row names, shown at once. */
@@ -64,6 +74,7 @@ export const EMPTY_FAVORITES: FavoritesState = {
   favorites: null,
   isFavorite: () => false,
   toggle: () => Promise.resolve(false),
+  place: () => Promise.resolve(false),
   remove: () => Promise.resolve(),
   reorder: () => Promise.resolve(),
   folders: null,

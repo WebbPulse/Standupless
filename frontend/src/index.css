@@ -454,6 +454,18 @@
   cursor: default;
 }
 
+:root[data-underline-links] .rich-markdown a,
+:root[data-underline-links] a.interactive-link {
+  text-decoration-line: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+}
+
+:root[data-underline-links] .rich-markdown a:has(.rich-reference),
+:root[data-underline-links] .rich-markdown .rich-reference a {
+  text-decoration-line: none;
+}
+
 @property --interactive-tint {
   syntax: '<color>';
   inherits: false;

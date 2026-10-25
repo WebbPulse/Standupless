@@ -328,7 +328,7 @@ def sample(member_email: str, *, prefix: str = "ENG", tag: str = "") -> FakeLine
         "milestones": milestones,
         "updates": updates,
     }
-    label_group = {"id": f"label-type{tag}", "name": "Type", "color": "#5e6ad2"}
+    label_group = {"id": f"label-type{tag}", "name": "Type", "color": "#5e6ad2", "groupType": "multiSelect"}
     bug = {"id": f"label-bug{tag}", "name": "Bug", "color": "#eb5757", "parent": label_group}
     frontend = {"id": f"label-frontend{tag}", "name": "Frontend", "color": "not-a-colour", "parent": None}
 

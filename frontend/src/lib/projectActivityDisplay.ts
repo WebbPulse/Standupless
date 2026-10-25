@@ -297,6 +297,28 @@ const describeMilestone = (
       parts: [text('removed milestone '), name(from ?? 'Untitled')],
     };
   }
+  if (row.kind === 'milestone_converted') {
+    return {
+      icon: 'milestone',
+      parts: [
+        text('converted milestone '),
+        name(from ?? 'Untitled'),
+        text(' into project '),
+        name(to ?? 'Untitled'),
+      ],
+    };
+  }
+  if (row.kind === 'converted_from_milestone') {
+    return {
+      icon: 'created',
+      parts: [
+        text('created the project from milestone '),
+        name(from ?? 'Untitled'),
+        text(' of '),
+        name(to ?? 'a project'),
+      ],
+    };
+  }
   if (row.field === 'name') {
     return {
       icon: 'milestone',

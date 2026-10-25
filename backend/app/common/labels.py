@@ -5,7 +5,8 @@ code, and a label an agent creates must be the same row a team admin's is.
 
 A label group is a label with `is_group` set, holding the labels that name it in
 `parent_id`, as in Linear. Groups nest one level, a group and its children share
-a scope, and an issue carries at most one label of each group.
+a scope, and an issue carries at most one label of each group unless the group
+sets `allow_multiple`, Linear's multi-select group.
 
 A label name is unique, ignoring case, among the labels a team sees in the same
 place: the top level, or one group. A team sees its own labels, its parent
@@ -31,6 +32,8 @@ GITHUB_LABEL_MAX = 50
 GROUP_IN_GROUP = "A label group cannot sit inside another group."
 
 NOT_A_GROUP = "No such label group: {parent_id}"
+
+MULTIPLE_NOT_GROUP = "Only a label group can allow multiple labels."
 
 DUPLICATE_NAME = "A label named {name} already exists{where}. Use that label or choose another name."
 
@@ -83,9 +86,8 @@ def create_label(
     by the tool, because the label set is a team setting every issue draws on.
     `can_see` keeps a name clash in a sub-team the caller cannot read anonymous.
     """
+    check_group_fields(payload)
     if payload.parent_id is not None:
-        if payload.is_group:
-            raise unprocessable(GROUP_IN_GROUP)
         team_group(repositories, workspace_id, team_id, payload.parent_id)
     team_ids = family(repositories, workspace_id, team_id)
     check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id, can_see=can_see)
@@ -100,9 +102,23 @@ def create_label(
             color=payload.color,
             description=(payload.description or "").strip() or None,
             is_group=payload.is_group,
+            allow_multiple=payload.is_group and payload.allow_multiple,
             parent_id=payload.parent_id,
         )
     )
+
+
+def check_group_fields(payload: LabelCreate) -> None:
+    """Refuse with a 422 a new group inside a group, or `allow_multiple` on a label that is not a group."""
+    if payload.parent_id is not None and payload.is_group:
+        raise unprocessable(GROUP_IN_GROUP)
+    if payload.allow_multiple and not payload.is_group:
+        raise unprocessable(MULTIPLE_NOT_GROUP)
+
+
+def multi_select_groups(labels: Iterable[Label]) -> set[str]:
+    """The ids of the groups an issue may carry several labels of."""
+    return {row.label_id for row in labels if row.is_group and row.allow_multiple}
 
 
 def name_key(name: str) -> str:
@@ -191,7 +207,10 @@ def check_move_into_group(
     Linear refuses the same move, because otherwise the one-label rule would hold
     for new writes only and every later label edit of those issues would fail.
     Issues in a team `can_see` refuses still block the move but are not counted.
+    A group that allows multiple labels takes any move.
     """
+    if group.allow_multiple:
+        return
     count = 0
     hidden = False
     for team_id in dict.fromkeys(team_ids):
@@ -266,15 +285,16 @@ def github_label_names(labels: Sequence[Label]) -> dict[str, str]:
 
 
 def one_per_group(labels: Sequence[Label], label_ids: Iterable[str]) -> list[str]:
-    """The label ids with groups dropped and only the first label of each group kept."""
+    """The label ids with groups dropped and only the first label of each exclusive group kept."""
     by_id = {label.label_id: label for label in labels}
+    multiple = multi_select_groups(labels)
     kept: list[str] = []
     seen: set[str] = set()
     for label_id in dict.fromkeys(label_ids):
         row = by_id.get(label_id)
         if row is None or row.is_group:
             continue
-        if row.parent_id:
+        if row.parent_id and row.parent_id not in multiple:
             if row.parent_id in seen:
                 continue
             seen.add(row.parent_id)
@@ -283,13 +303,19 @@ def one_per_group(labels: Sequence[Label], label_ids: Iterable[str]) -> list[str
 
 
 def replace_group_siblings(labels: Sequence[Label], kept: Sequence[str], added: Sequence[str]) -> list[str]:
-    """`kept` plus `added`, where an added grouped label replaces the label of its group already kept.
+    """`kept` plus `added`, where an added label of an exclusive group replaces the label of its group already kept.
 
     This is how picking a second label of a group behaves in Linear: it swaps
-    rather than failing, which is what a bulk add of one label wants.
+    rather than failing, which is what a bulk add of one label wants. A group
+    that allows multiple labels keeps them all.
     """
     by_id = {label.label_id: label for label in labels}
-    groups = {row.parent_id for label_id in added if (row := by_id.get(label_id)) is not None and row.parent_id}
+    multiple = multi_select_groups(labels)
+    groups = {
+        row.parent_id
+        for label_id in added
+        if (row := by_id.get(label_id)) is not None and row.parent_id and row.parent_id not in multiple
+    }
     remaining = [
         label_id
         for label_id in kept

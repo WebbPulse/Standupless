@@ -4,6 +4,8 @@
  * retires the static splash index.html painted in the same commit. A preload
  * that fails because a deploy pruned the chunk reloads the tab once, and a
  * tab left open across a deploy loads the new build at its next navigation.
+ * The print stylesheet loads after the app's own, so a print is black on
+ * white whatever the theme.
  */
 
 import { StrictMode } from 'react';
@@ -18,12 +20,16 @@ import DesktopShellBridge from './components/desktop/DesktopShellBridge';
 import MobileShellBridge from './components/mobile/MobileShellBridge';
 import { AuthProvider } from './contexts/AuthContext';
 import { reloadOnceForChunkError } from './lib/chunkReload';
+import { installPrintExpansion } from './lib/print';
 import './index.css';
+import './styles/print.css';
 
 const rootElement = document.getElementById('root');
 if (rootElement === null) {
   throw new Error('Root element not found');
 }
+
+installPrintExpansion();
 
 window.addEventListener('vite:preloadError', (event) => {
   if (reloadOnceForChunkError()) event.preventDefault();

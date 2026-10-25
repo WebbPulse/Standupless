@@ -927,7 +927,7 @@ class TestPlanningDomain:
     def test_a_project_round_trips(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """A project created by this run reads back, lists, updates, holds a milestone and then deletes."""
+        """A project created by this run reads back, lists, updates, holds a milestone, converts one into a project and then deletes."""
         path = f"/api/workspaces/{workspace['id']}/projects"
         scope = {"team_id": team["id"]}
         body = {
@@ -964,6 +964,15 @@ class TestPlanningDomain:
 
         removed = api.delete(milestone_path)
         assert removed.status_code in (200, 204), removed.text[:400]
+
+        stage = _created(api.post(milestones_path, json={"name": run_scope.name("stage")}), "milestone")
+        converted = api.post(f"{milestones_path}/{stage['id']}/convert-to-project")
+        assert converted.status_code == 200, converted.text[:400]
+        spun_off = converted.json()["project"]
+        assert spun_off["name"] == run_scope.name("stage")
+        assert api.get(milestones_path).json()["milestones"] == []
+        dropped = api.delete(f"{path}/{spun_off['project_id']}", params=scope)
+        assert dropped.status_code in (200, 204), dropped.text[:400]
 
         deleted = api.delete(project_path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]

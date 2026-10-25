@@ -669,6 +669,30 @@
     "auth": "team:admin",
     "domain": "integrations",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake"
+  },
+  {
+    "auth": "team:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/email-intake/regenerate"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/github-sync"
   },
   {
@@ -1160,6 +1184,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/customers/requests"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/customers/{customer_id}"
   },
@@ -1618,6 +1648,12 @@
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/milestones/{milestone_id}/convert-to-project"
   },
   {
     "auth": "workspace:read",

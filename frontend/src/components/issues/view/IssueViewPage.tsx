@@ -44,6 +44,7 @@ import { useIssueCollection } from '../../../hooks/useIssueCollection';
 import { useIssueContext } from '../../../hooks/useIssueContext';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
+import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useCustomers } from '../../../hooks/useCustomers';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
@@ -519,6 +520,11 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
   const isMember = workspace !== null && workspace.role !== 'guest';
   const { customers } = useCustomers(workspaceId, isMember);
+  const customerRequests = useCustomerRequestMap(
+    workspaceId,
+    isMember &&
+      (state.groupBy === 'customer' || state.subGroupBy === 'customer')
+  );
   const namedTeams = useMemo(() => namedTeamIds(state), [state]);
   const filterContext = useMemo(
     () => ({
@@ -534,6 +540,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             customers: customers.map((customer) => ({
               id: customer.customer_id,
               name: customer.name,
+              revenue: customer.revenue,
+              requestCount: customer.request_count,
             })),
           }
         : {}),
@@ -957,6 +965,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             {...(emptyMessage === undefined ? {} : { emptyMessage })}
             filterFields={filterFields}
             statusCategories={statusCategories}
+            {...(isMember ? { customerRequests } : {})}
           />
         </div>
         {insightsOpen && (

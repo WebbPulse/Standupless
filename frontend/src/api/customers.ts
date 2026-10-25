@@ -32,6 +32,10 @@ const requestRows = (
 export const customersApiPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/customers`;
 
+/** The route every visible request of the workspace is listed on. */
+export const workspaceCustomerRequestsPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/customers/requests`;
+
 /** The route one customer is read, edited and deleted through. */
 export const customerApiPath = (
   workspaceId: string,
@@ -161,6 +165,18 @@ export const listCustomerRequests = async (
 ): Promise<CustomerRequestRead[]> => {
   const response = await apiClient.get<CustomerRequestListRead>(
     customerRequestsPath(workspaceId, customerId),
+    signalOptions(signal)
+  );
+  return requestRows(response.data);
+};
+
+/** Lists every request the caller can see across customers, newest first. */
+export const listWorkspaceRequests = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<CustomerRequestRead[]> => {
+  const response = await apiClient.get<CustomerRequestListRead>(
+    workspaceCustomerRequestsPath(workspaceId),
     signalOptions(signal)
   );
   return requestRows(response.data);

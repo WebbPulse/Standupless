@@ -1,6 +1,7 @@
 /**
  * The `[[` picker's list: recent documents for an empty query, every typed
  * word matched in the title, titles starting with the query ranked first,
+ * then documents that need their parent's name,
  * and the title a created document gets.
  */
 
@@ -14,12 +15,16 @@ import {
 } from './documentLinks';
 
 /** A document summary with the given id and title. */
-const doc = (id: string, title: string): DocumentSummaryRead => ({
+const doc = (
+  id: string,
+  title: string,
+  parentName = 'Launch'
+): DocumentSummaryRead => ({
   document_id: id,
   workspace_id: 'ws-1',
   parent_kind: 'project',
   parent_id: 'p-1',
-  parent_name: 'Launch',
+  parent_name: parentName,
   title,
   author_id: 'u-1',
   updated_by: 'u-1',
@@ -58,6 +63,20 @@ describe('documentLinkMatches', () => {
       },
     ]);
     expect(documentLinkMatches(rows, 'nothing')).toEqual([]);
+  });
+
+  it('matches through the parent name after title matches', () => {
+    const scoped = [
+      doc('runbook', 'Runbook', 'Billing'),
+      doc('titled', 'Billing runbook'),
+      doc('other', 'Retro notes', 'Billing'),
+    ];
+    expect(
+      documentLinkMatches(scoped, 'billing runbook').map((row) => row.id)
+    ).toEqual(['titled', 'runbook']);
+    expect(documentLinkMatches(scoped, 'billing').map((row) => row.id)).toEqual(
+      ['titled', 'runbook', 'other']
+    );
   });
 
   it('caps the list', () => {

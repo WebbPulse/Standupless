@@ -1,7 +1,9 @@
 /**
  * The `[[` document picker's list. Documents arrive most recently edited
  * first, so an empty query shows the recent ones; a typed query keeps the
- * documents whose title holds every word, titles that start with it first.
+ * documents whose title, or title with parent name, holds every word: titles
+ * that start with it first, then other title matches, then those that need
+ * the parent's name.
  */
 
 import type { DocumentSummaryRead } from '../types/Api';
@@ -32,17 +34,26 @@ export const documentLinkMatches = (
 ): DocumentReference[] => {
   const typed = query.trim().toLowerCase();
   const terms = typed.split(/\s+/).filter((term) => term !== '');
-  const hits = documents.filter((document) => {
+  const titled: DocumentSummaryRead[] = [];
+  const parented: DocumentSummaryRead[] = [];
+  documents.forEach((document) => {
     const title = document.title.toLowerCase();
-    return terms.every((term) => title.includes(term));
+    const parent = document.parent_name.toLowerCase();
+    if (terms.every((term) => title.includes(term))) {
+      titled.push(document);
+    } else if (
+      terms.every((term) => title.includes(term) || parent.includes(term))
+    ) {
+      parented.push(document);
+    }
   });
-  const leading = hits.filter((document) =>
+  const leading = titled.filter((document) =>
     document.title.toLowerCase().startsWith(typed)
   );
-  const rest = hits.filter(
+  const rest = titled.filter(
     (document) => !document.title.toLowerCase().startsWith(typed)
   );
-  return [...leading, ...rest].slice(0, limit).map(documentItem);
+  return [...leading, ...rest, ...parented].slice(0, limit).map(documentItem);
 };
 
 /** The title the create row would give a new document. */

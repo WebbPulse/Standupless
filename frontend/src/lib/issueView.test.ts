@@ -17,6 +17,7 @@ import {
   filterValuesFor,
   GROUP_FIELDS,
   groupIssues,
+  manualEdgeKeys,
   manualMoveKeys,
   matchesFilters,
   moveChange,
@@ -820,6 +821,96 @@ describe('moving and ordering', () => {
 
     const key = manualMoveKeys(rows, 'a', -1, true)?.[0]?.sort_order ?? '';
     expect(key > 'a2' && key < 'a4').toBe(true);
+  });
+
+  const applied = (
+    rows: OrderedIssueRead[],
+    placements: { id: string; sort_order: string }[] | null
+  ): OrderedIssueRead[] =>
+    rows.map((row) => {
+      const placed = placements?.find((each) => each.id === row.id);
+      return placed === undefined
+        ? row
+        : { ...row, sort_order: placed.sort_order };
+    });
+
+  it('sends one placed issue to the top or bottom with one key', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'c', sort_order: 'a4' }),
+    ];
+
+    const top = manualEdgeKeys(rows, ['c'], 'top');
+    expect(top?.map((each) => each.id)).toEqual(['c']);
+    expect((top?.[0]?.sort_order ?? '') < 'a0').toBe(true);
+
+    const bottom = manualEdgeKeys(rows, ['a'], 'bottom');
+    expect(bottom?.map((each) => each.id)).toEqual(['a']);
+    expect((bottom?.[0]?.sort_order ?? '') > 'a4').toBe(true);
+  });
+
+  it('keeps several moving issues in their relative order', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'c', sort_order: 'a4' }),
+      issue({ id: 'd', sort_order: 'a6' }),
+    ];
+
+    const top = manualEdgeKeys(rows, ['d', 'b'], 'top');
+    expect(
+      sortIssues(applied(rows, top), 'manual').map((row) => row.id)
+    ).toEqual(['b', 'd', 'a', 'c']);
+
+    const bottom = manualEdgeKeys(rows, ['c', 'a'], 'bottom');
+    expect(
+      sortIssues(applied(rows, bottom), 'manual').map((row) => row.id)
+    ).toEqual(['b', 'd', 'a', 'c']);
+  });
+
+  it('places the unplaced rows left behind on a move to the bottom', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: null }),
+      issue({ id: 'c', sort_order: null }),
+    ];
+
+    const bottom = manualEdgeKeys(rows, ['a'], 'bottom');
+    expect(bottom?.map((each) => each.id)).toEqual(['b', 'c', 'a']);
+    expect(
+      sortIssues(applied(rows, bottom), 'manual').map((row) => row.id)
+    ).toEqual(['b', 'c', 'a']);
+
+    const top = manualEdgeKeys(rows, ['c'], 'top');
+    expect(top?.map((each) => each.id)).toEqual(['c']);
+    expect(
+      sortIssues(applied(rows, top), 'manual').map((row) => row.id)
+    ).toEqual(['c', 'a', 'b']);
+  });
+
+  it('answers null when nothing would move', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+    ];
+
+    expect(manualEdgeKeys(rows, ['a'], 'top')).toBeNull();
+    expect(manualEdgeKeys(rows, ['b'], 'bottom')).toBeNull();
+    expect(manualEdgeKeys(rows, ['x'], 'top')).toBeNull();
+  });
+
+  it('writes keys the other way when the manual order is reversed', () => {
+    const rows = [
+      issue({ id: 'c', sort_order: 'a4' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'a', sort_order: 'a0' }),
+    ];
+
+    const top = manualEdgeKeys(rows, ['a'], 'top', true);
+    expect((top?.[0]?.sort_order ?? '') > 'a4').toBe(true);
+    const bottom = manualEdgeKeys(rows, ['c'], 'bottom', true);
+    expect((bottom?.[0]?.sort_order ?? '') < 'a0').toBe(true);
   });
 });
 

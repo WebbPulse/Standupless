@@ -18,6 +18,9 @@
  * update cadence, its own or the workspace default; once an update is due the
  * header, the overview and the updates tab say so, with a way straight to the
  * composer, and the command palette offers the same.
+ *
+ * Print, on the overview from the menu, the palette or Cmd or Ctrl+P, prints
+ * the name, the property chips, the description and the sections under it.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -33,6 +36,7 @@ import {
   LuEllipsis,
   LuPencilLine,
   LuPlus,
+  LuPrinter,
   LuTrash2,
 } from 'react-icons/lu';
 import {
@@ -43,6 +47,7 @@ import {
 } from 'react-router-dom';
 import {
   archiveProject,
+  convertMilestoneToProject,
   createProjectLink,
   deleteProject,
   deleteProjectLink,
@@ -86,7 +91,7 @@ import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import LoadError from '../../components/ui/load-error';
-import Menu, { MenuItem } from '../../components/ui/menu';
+import Menu, { MenuItem, MenuShortcut } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
@@ -101,11 +106,13 @@ import { useProjectDependencies } from '../../hooks/useProjectDependencies';
 import { useProjectHistory } from '../../hooks/useProjectHistory';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useProjectUpdates } from '../../hooks/useProjectUpdates';
+import { usePrintCommand } from '../../hooks/usePrintCommand';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
+import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import { cn } from '../../lib/cn';
 import { errorMessage, hasStatus, NOT_FOUND } from '../../lib/errors';
 import type { BreakdownField } from '../../lib/cycleBreakdown';
@@ -117,11 +124,12 @@ import {
   writeViewState,
 } from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectsPath } from '../../lib/paths';
+import { projectPath, projectsPath } from '../../lib/paths';
 import { progressPercent, updateNudge } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
   initiativesKey,
+  milestonesKey,
   projectDetailKey,
   projectsKey,
 } from '../../lib/queryKeys';
@@ -191,6 +199,16 @@ const TabBar: React.FC<TabBarProps> = ({ tab, issueCount, onChange }) => (
   </div>
 );
 
+/** What converting a milestone does, naming how many issues move with it. */
+const convertDescription = (milestone: MilestoneRead): string => {
+  const total = milestone.counts.total;
+  const issues =
+    total === 0
+      ? 'It has no issues to move'
+      : `Its ${total} ${total === 1 ? 'issue moves' : 'issues move'} into the new project`;
+  return `${issues}, the new project takes its name, description and target date, and the milestone is deleted.`;
+};
+
 /** One project's overview and its issues. */
 export const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -213,6 +231,9 @@ export const ProjectDetail: React.FC = () => {
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [deletingMilestone, setDeletingMilestone] =
     useState<MilestoneRead | null>(null);
+  const [convertingMilestone, setConvertingMilestone] =
+    useState<MilestoneRead | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
 
   const detailKey = projectDetailKey(workspaceId, projectId);
   const listKey = projectsKey(workspaceId, '', '');
@@ -328,6 +349,10 @@ export const ProjectDetail: React.FC = () => {
       event?.preventDefault();
       createIssue();
     },
+  });
+  usePrintCommand({
+    group: 'Project',
+    enabled: project !== null && tab === 'overview',
   });
 
   const setTab = useCallback(
@@ -534,6 +559,25 @@ export const ProjectDetail: React.FC = () => {
       },
       (failure: unknown) => {
         setDeleteError(failure);
+      }
+    );
+  };
+
+  const convertMilestone = (target: MilestoneRead): void => {
+    setIsConverting(true);
+    convertMilestoneToProject(workspaceId, projectId, target.milestone_id).then(
+      (result) => {
+        setIsConverting(false);
+        setConvertingMilestone(null);
+        invalidateQueries(detailKey);
+        invalidateQueries(listKey);
+        invalidateQueries(milestonesKey(workspaceId, projectId));
+        showToast(`Converted ${target.name} into a project`);
+        void navigate(projectPath(slug, result.project.project_id));
+      },
+      () => {
+        setIsConverting(false);
+        showErrorToast(`Could not convert ${target.name} into a project.`);
       }
     );
   };
@@ -749,7 +793,7 @@ export const ProjectDetail: React.FC = () => {
               New issue
             </Button>
           )}
-          {(canEdit || canDelete) && (
+          {(tab === 'overview' || canEdit || canDelete) && (
             <Menu
               label="Project actions"
               align="end"
@@ -759,6 +803,13 @@ export const ProjectDetail: React.FC = () => {
                 </IconButton>
               )}
             >
+              {tab === 'overview' && (
+                <MenuItem onSelect={printPage}>
+                  <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
+                  {PRINT_LABEL}
+                  <MenuShortcut keys={PRINT_KEYS} />
+                </MenuItem>
+              )}
               {canEdit && (
                 <MenuItem onSelect={toggleArchived}>
                   {archived ? (
@@ -842,7 +893,7 @@ export const ProjectDetail: React.FC = () => {
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
+          <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
               <div className="space-y-3">
                 <ProjectLookPicker
@@ -917,6 +968,7 @@ export const ProjectDetail: React.FC = () => {
                   void milestones.update(milestoneId, patch);
                 }}
                 onDelete={setDeletingMilestone}
+                onConvert={setConvertingMilestone}
                 onOpenIssues={openMilestoneIssues}
               />
               <ProjectResources
@@ -1055,6 +1107,38 @@ export const ProjectDetail: React.FC = () => {
               }}
             >
               Delete milestone
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
+      {convertingMilestone !== null && (
+        <Dialog
+          open
+          size="sm"
+          title={`Convert ${convertingMilestone.name} to a project`}
+          description={convertDescription(convertingMilestone)}
+          onClose={() => {
+            if (!isConverting) setConvertingMilestone(null);
+          }}
+        >
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              disabled={isConverting}
+              onClick={() => {
+                setConvertingMilestone(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isConverting}
+              onClick={() => {
+                convertMilestone(convertingMilestone);
+              }}
+            >
+              Convert to project
             </Button>
           </div>
         </Dialog>

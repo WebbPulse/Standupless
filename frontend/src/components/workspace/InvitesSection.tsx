@@ -15,7 +15,11 @@ import {
 import { createInvite, listInvites, revokeInvite } from '../../api/workspaces';
 import { canManageMembers, roleLabel } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
-import { inviteLink, invitesKey } from '../../lib/queryKeys';
+import {
+  inviteLink,
+  invitesKey,
+  memberDirectoryKey,
+} from '../../lib/queryKeys';
 import type {
   InviteCreatedRead,
   InviteRole,
@@ -68,7 +72,7 @@ const PendingInvites: React.FC<InvitesSectionProps> = ({ workspace }) => {
 
   const { mutate: revoke, error: revokeError } = useMutationWithRefetch(
     (inviteId: string) => revokeInvite(workspace.id, inviteId),
-    queryKey
+    [queryKey, memberDirectoryKey(workspace.id)]
   );
 
   return (
@@ -154,7 +158,7 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
   } = useMutationWithRefetch(
     (body: { email: string; role: InviteRole }) =>
       createInvite(workspace.id, body),
-    queryKey
+    [queryKey, memberDirectoryKey(workspace.id)]
   );
 
   const canSubmit = email.trim() !== '' && !isMutating;

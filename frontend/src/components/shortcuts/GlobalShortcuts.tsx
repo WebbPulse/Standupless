@@ -5,7 +5,8 @@
  * `G` then a letter to go somewhere: the team's active issues, backlog,
  * board, archive, cycles and, as in Linear, `G` then `V` for its current
  * cycle and `G` then `W` for its upcoming one among them, with `G` then
- * Shift+V for views, `O` then `M` for the viewer's own member page,
+ * Shift+V for views, Ctrl+Shift+1 to 9 for the teams in sidebar order,
+ * `O` then `M` for the viewer's own member page,
  * `O` then a letter to open a favorite, project, cycle, team, view, member or
  * workspace from a picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
  * list of every shortcut. Registered through the
@@ -53,6 +54,12 @@ import {
 } from '../../lib/paths';
 import { openUpcomingCycle } from '../../lib/currentCycle';
 import { teamScopePath } from '../../lib/teamIssueScope';
+import {
+  TEAM_SHORTCUT_COUNT,
+  TEAM_SHORTCUT_LABEL,
+  teamAtPosition,
+  teamShortcutKeys,
+} from '../../lib/teamShortcuts';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
 /** Props for GlobalShortcuts. */
@@ -87,7 +94,40 @@ const focusSearch = (go: () => void): void => {
   field.select();
 };
 
-/** Registers the workspace-wide shortcuts. Renders nothing. */
+/** The 1-based sidebar positions that have a team shortcut. */
+const TEAM_POSITIONS = Array.from(
+  { length: TEAM_SHORTCUT_COUNT },
+  (_, index) => index + 1
+);
+
+/** Props for TeamShortcut. */
+interface TeamShortcutProps {
+  slug: string;
+  teams: readonly TeamRead[];
+  position: number;
+}
+
+/** Binds Ctrl+Shift and one digit to the team at that sidebar position. */
+const TeamShortcut: React.FC<TeamShortcutProps> = ({
+  slug,
+  teams,
+  position,
+}) => {
+  const navigate = useNavigate();
+  const team = teamAtPosition(teams, position);
+  useShortcut({
+    keys: teamShortcutKeys(position),
+    label: TEAM_SHORTCUT_LABEL,
+    group: NAVIGATION,
+    handler: () => {
+      if (team !== undefined) void navigate(teamPath(slug, team.key_prefix));
+    },
+    enabled: team !== undefined,
+  });
+  return null;
+};
+
+/** Registers the workspace-wide shortcuts. Renders nothing visible. */
 export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   workspace,
   teams,
@@ -339,7 +379,18 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     handler: onShowHelp,
   });
 
-  return null;
+  return (
+    <>
+      {TEAM_POSITIONS.map((position) => (
+        <TeamShortcut
+          key={position}
+          slug={slug}
+          teams={teams}
+          position={position}
+        />
+      ))}
+    </>
+  );
 };
 
 export default GlobalShortcuts;

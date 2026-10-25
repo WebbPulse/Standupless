@@ -6,6 +6,7 @@
  *
  * Every page of the thread is read, oldest first, so a long discussion reads
  * whole, and a `#comment-` link scrolls to its comment once it has loaded.
+ * A print leaves the thread out and lists its open threads as endnotes.
  */
 
 import React, { useCallback, useEffect, useId, useMemo, useRef } from 'react';
@@ -19,6 +20,7 @@ import { commentsKey } from '../../lib/queryKeys';
 import type { CommentRead } from '../../types/Api';
 import CommentCard from '../discussion/CommentCard';
 import CommentComposer from '../discussion/CommentComposer';
+import PrintEndnotes from '../print/PrintEndnotes';
 import { ErrorAlert } from '../ui/alert';
 import { SkeletonRows } from '../ui/skeleton';
 
@@ -101,50 +103,56 @@ export const DocumentThread: React.FC<DocumentThreadProps> = ({
   }, [hash, comments.rows]);
 
   return (
-    <section
-      aria-labelledby={headingId}
-      className="space-y-3 border-t border-line pt-6"
-    >
-      <h2 id={headingId} className="text-sm font-semibold text-text">
-        Comments
-      </h2>
-      {comments.error !== null && (
-        <ErrorAlert
-          message={errorMessage(comments.error, 'Could not load the comments.')}
-        />
-      )}
-      {isLoading && comments.rows.length === 0 ? (
-        <SkeletonRows label="Loading comments" />
-      ) : threads.length === 0 ? (
-        <p className="text-xs text-text-faint">No comments yet</p>
-      ) : (
-        <ol aria-label="Comments" className="space-y-3">
-          {threads.map((thread) => (
-            <li key={thread.id}>
-              <CommentCard
-                comment={thread.comment}
-                replies={thread.replies}
-                people={people}
-                workspaceId={workspaceId}
-                issueId={documentId}
-                documentId={documentId}
-                currentUserId={currentUserId}
-                canComment={canComment}
-                isAdmin={canModerate}
-              />
-            </li>
-          ))}
-        </ol>
-      )}
-      {canComment && (
-        <CommentComposer
-          workspaceId={workspaceId}
-          issueId={documentId}
-          documentId={documentId}
-          people={people}
-        />
-      )}
-    </section>
+    <>
+      <section
+        aria-labelledby={headingId}
+        className="screen-only space-y-3 border-t border-line pt-6"
+      >
+        <h2 id={headingId} className="text-sm font-semibold text-text">
+          Comments
+        </h2>
+        {comments.error !== null && (
+          <ErrorAlert
+            message={errorMessage(
+              comments.error,
+              'Could not load the comments.'
+            )}
+          />
+        )}
+        {isLoading && comments.rows.length === 0 ? (
+          <SkeletonRows label="Loading comments" />
+        ) : threads.length === 0 ? (
+          <p className="text-xs text-text-faint">No comments yet</p>
+        ) : (
+          <ol aria-label="Comments" className="space-y-3">
+            {threads.map((thread) => (
+              <li key={thread.id}>
+                <CommentCard
+                  comment={thread.comment}
+                  replies={thread.replies}
+                  people={people}
+                  workspaceId={workspaceId}
+                  issueId={documentId}
+                  documentId={documentId}
+                  currentUserId={currentUserId}
+                  canComment={canComment}
+                  isAdmin={canModerate}
+                />
+              </li>
+            ))}
+          </ol>
+        )}
+        {canComment && (
+          <CommentComposer
+            workspaceId={workspaceId}
+            issueId={documentId}
+            documentId={documentId}
+            people={people}
+          />
+        )}
+      </section>
+      <PrintEndnotes comments={comments.rows} />
+    </>
   );
 };
 

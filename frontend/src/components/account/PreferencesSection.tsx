@@ -323,6 +323,15 @@ export const PreferencesSection: React.FC = () => {
             }}
           />
           <ToggleRow
+            label="Always underline links"
+            detail="Underline links in descriptions, comments and updates, not only on hover."
+            checked={preferences.underlineLinks}
+            disabled={saving}
+            onChange={(on) => {
+              save({ underline_links: on });
+            }}
+          />
+          <ToggleRow
             label="Turn emoticons into emoji"
             detail="Typing an emoticon such as :) or <3 followed by a space or punctuation turns it into the emoji while you write."
             checked={preferences.convertEmoticons}

@@ -1,7 +1,7 @@
 /**
  * The label group helpers: sections lay groups out under the loose labels,
- * picking a label of a group swaps out its sibling, and a bulk add names the
- * siblings it replaces.
+ * picking a label of a group swaps out its sibling unless the group allows
+ * multiple labels, and a bulk add names the siblings it replaces.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -71,6 +71,16 @@ describe('label groups', () => {
   it('names the siblings a bulk add replaces', () => {
     expect(replacedSiblings(labels, ['web', 'bug'], ['api'])).toEqual(['web']);
     expect(replacedSiblings(labels, ['web'], ['bug'])).toEqual([]);
+  });
+
+  it('adds rather than swaps in a group that allows multiple labels', () => {
+    const multi = [{ ...area, allow_multiple: true }, web, api, bug];
+    expect(toggleLabel(multi, ['web', 'bug'], 'api')).toEqual([
+      'web',
+      'bug',
+      'api',
+    ]);
+    expect(replacedSiblings(multi, ['web', 'bug'], ['api'])).toEqual([]);
   });
 
   it('carries the group name for merged lists', () => {

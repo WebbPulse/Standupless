@@ -60,6 +60,9 @@ PROJECTS_WRITE = ("projects:write",)
 ISSUES_PROJECTS_WRITE = ("issues:write", "projects:write")
 """Converting an issue into a project, which writes both an issue and a new project."""
 
+MILESTONES_PROJECTS_WRITE = ("milestones:write", "projects:write", "issues:write")
+"""Converting a milestone into a project, which removes a milestone, creates a project and moves issues."""
+
 MILESTONES_READ = ("milestones:read",)
 
 MILESTONES_WRITE = ("milestones:write",)
@@ -360,6 +363,10 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/projects/{project_id}/milestones"): MILESTONES_WRITE,
     ("PATCH", "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"): MILESTONES_WRITE,
     ("DELETE", "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}"): MILESTONES_WRITE,
+    (
+        "POST",
+        "/{workspace_id}/projects/{project_id}/milestones/{milestone_id}/convert-to-project",
+    ): MILESTONES_PROJECTS_WRITE,
     ("GET", "/{workspace_id}/projects/{project_id}/links"): PROJECTS_READ,
     ("POST", "/{workspace_id}/projects/{project_id}/links"): PROJECTS_WRITE,
     ("PATCH", "/{workspace_id}/projects/{project_id}/links/{link_id}"): PROJECTS_WRITE,
@@ -413,6 +420,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/issues/{issue_id}/documents"): PROJECTS_READ,
     ("GET", "/{workspace_id}/customers"): PROJECTS_READ,
     ("POST", "/{workspace_id}/customers"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/customers/requests"): PROJECTS_READ,
     ("GET", "/{workspace_id}/customers/{customer_id}"): PROJECTS_READ,
     ("PATCH", "/{workspace_id}/customers/{customer_id}"): PROJECTS_WRITE,
     ("DELETE", "/{workspace_id}/customers/{customer_id}"): PROJECTS_WRITE,
@@ -526,6 +534,10 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/teams/{team_id}/github-sync"): TEAMS_READ,
     ("PUT", "/{workspace_id}/teams/{team_id}/github-sync"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/teams/{team_id}/github-sync"): NO_KEY_ACCESS,
+    ("GET", "/{workspace_id}/teams/{team_id}/email-intake"): TEAMS_READ,
+    ("PUT", "/{workspace_id}/teams/{team_id}/email-intake"): TEAMS_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/email-intake/regenerate"): TEAMS_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/email-intake"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/issues/{issue_id}/github-sync"): ISSUES_READ,
     ("GET", "/{workspace_id}/issues/{issue_id}/github-sync/thread-targets"): ISSUES_READ,
     ("PUT", "/{workspace_id}/issues/{issue_id}/github-sync/threads/{comment_id}"): COMMENTS_WRITE,

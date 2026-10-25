@@ -125,6 +125,7 @@ def test_guests_reach_no_customer_data(client: TestClient, issues_client: TestCl
     assert client.get(f"{_base(workspace)}/customers").status_code == 403
     assert client.post(f"{_base(workspace)}/customers", json={"name": "Nope"}).status_code == 403
     assert client.get(f"{_base(workspace)}/customers/{customer_id}").status_code == 403
+    assert client.get(f"{_base(workspace)}/customers/requests").status_code == 403
     assert client.get(f"{_base(workspace)}/issues/{issue['id']}/customer-requests").status_code == 403
     filed = client.post(f"{_base(workspace)}/issues/{issue['id']}/customer-requests", json={"customer_id": customer_id})
     assert filed.status_code == 403
@@ -162,6 +163,30 @@ def test_requests_list_on_the_target_and_the_customer(
     assert [row["request_id"] for row in project_rows] == [on_project["request_id"]]
     assert [row["request_id"] for row in customer_rows] == [on_project["request_id"], on_issue["request_id"]]
     assert client.get(f"{_base(workspace)}/customers/{customer_id}").json()["request_count"] == 2
+
+
+def test_the_workspace_request_list_spans_every_customer(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Every visible request across customers lists once, so a list can group issues by customer."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    acme = _customer(client, workspace)["customer_id"]
+    beta = _customer(client, workspace, name="Beta")["customer_id"]
+    shared = seed_issue(issues_client, workspace, title="Shared ask")
+    gone = seed_issue(issues_client, workspace, title="Removed")
+    _request(client, workspace, "issue", shared["id"], acme)
+    _request(client, workspace, "issue", shared["id"], beta)
+    _request(client, workspace, "issue", gone["id"], beta)
+
+    repositories.issues.delete(workspace, gone["id"])
+
+    response = client.get(f"{_base(workspace)}/customers/requests")
+    assert response.status_code == 200, response.text
+    rows = response.json()["requests"]
+    assert sorted((row["target_id"], row["customer_id"]) for row in rows) == sorted(
+        [(shared["id"], acme), (shared["id"], beta)]
+    )
 
 
 def test_a_request_names_a_real_customer(client: TestClient, issues_client: TestClient, workspace: str) -> None:

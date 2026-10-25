@@ -300,9 +300,22 @@ export interface IssueContext {
   parents?: ReadonlyMap<string, ParentRef>;
   /**
    * The workspace's customers. Guests may not read customers, so a list
-   * offers the customer filter only when this is set.
+   * offers the customer filter and grouping only when this is set.
    */
-  customers?: { id: string; name: string }[];
+  customers?: IssueCustomer[];
+  /**
+   * The customers that requested each issue, by issue id, so a grouping by
+   * customer places an issue under every customer that asked for it.
+   */
+  customerRequests?: ReadonlyMap<string, readonly string[]>;
+}
+
+/** A customer as a list groups and filters by it. */
+export interface IssueCustomer {
+  id: string;
+  name: string;
+  revenue?: number | null;
+  requestCount?: number;
 }
 
 /** How a parent issue heads its group: its key and title. */
@@ -341,13 +354,14 @@ export const GROUP_FIELDS: GroupField[] = [
   'parent',
   'team',
   'sla',
+  'customer',
   'none',
 ];
 
 /**
  * The groupings a board column can be dragged into, because the property is
- * one an issue's own fields hold. A parent, team or SLA column only shows
- * where an issue sits.
+ * one an issue's own fields hold or, for a customer, a request the drop files.
+ * A parent, team or SLA column only shows where an issue sits.
  */
 export const MOVABLE_GROUP_FIELDS: ReadonlySet<GroupProperty> = new Set([
   'status',
@@ -357,6 +371,7 @@ export const MOVABLE_GROUP_FIELDS: ReadonlySet<GroupProperty> = new Set([
   'project',
   'milestone',
   'cycle',
+  'customer',
 ]);
 
 /** Whether a board column of this grouping can be dragged into; a label group's always can. */
@@ -366,16 +381,18 @@ export const isMovableGroupField = (field: GroupField): boolean =>
 /**
  * The fields a list with this context can be grouped or filtered by. A
  * milestone only means something inside one project, so it is left out
- * wherever the context carries no milestones.
+ * wherever the context carries no milestones, and a customer only where the
+ * reader may see customers.
  */
 export const fieldsFor = <T extends string>(
   fields: readonly T[],
-  context: Pick<IssueContext, 'milestones' | 'teams'>
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'customers'>
 ): T[] =>
   fields.filter(
     (field) =>
       (field !== 'milestone' || context.milestones !== undefined) &&
-      (field !== 'team' || (context.teams ?? []).length > 1)
+      (field !== 'team' || (context.teams ?? []).length > 1) &&
+      (field !== 'customer' || context.customers !== undefined)
   );
 
 /**
@@ -407,6 +424,7 @@ export const GROUP_LABELS: Record<GroupProperty, string> = {
   parent: 'Parent issue',
   team: 'Team',
   sla: 'SLA status',
+  customer: 'Customer',
   none: 'No grouping',
 };
 
@@ -481,7 +499,7 @@ export const labelGroupFields = (
  * group follows the plain label grouping, as in Linear.
  */
 export const groupFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels'>
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels' | 'customers'>
 ): GroupField[] => {
   const groups = labelGroupFields(context);
   return fieldsFor(GROUP_FIELDS, context).flatMap((field) =>
@@ -1568,6 +1586,8 @@ export interface IssueGroup {
   progress?: number;
   /** The milestone itself, for a milestone group's progress glyph. */
   milestone?: MilestoneRead;
+  /** How many requests the customer has made, for a customer group's header. */
+  requests?: number;
   issues: OrderedIssueRead[];
 }
 
@@ -1735,6 +1755,10 @@ export const groupKeysOf = (
       return [issue.team_id];
     case 'sla':
       return [liveSlaStatus(issue)];
+    case 'customer': {
+      const keys = [...new Set(context.customerRequests?.get(issue.id) ?? [])];
+      return keys.length === 0 ? [NONE] : keys;
+    }
     default: {
       if (!isLabelGroupField(field)) return ['all'];
       const members = new Set(
@@ -1807,6 +1831,8 @@ const fallbackLabel = (
       return (
         context.teams?.find((team) => team.id === key)?.name ?? 'Unknown team'
       );
+    case 'customer':
+      return 'Unknown customer';
     default:
       return key;
   }
@@ -1980,6 +2006,24 @@ const groupShells = (
         field,
         label: SLA_STATUS_LABELS[status],
       }));
+    case 'customer':
+      return [
+        ...[...(context.customers ?? [])]
+          .sort(
+            (left, right) =>
+              (right.revenue ?? 0) - (left.revenue ?? 0) ||
+              left.name.localeCompare(right.name)
+          )
+          .map((customer) => ({
+            key: customer.id,
+            field,
+            label: customer.name,
+            ...(customer.requestCount === undefined
+              ? {}
+              : { requests: customer.requestCount }),
+          })),
+        { key: NONE, field, label: 'No customer' },
+      ];
     default:
       return isLabelGroupField(field)
         ? labelGroupShells(field, context)
@@ -2475,11 +2519,40 @@ export const moveChange = (
     case 'team':
     case 'sla':
       return null;
+    case 'customer':
+      return {};
     default:
       return isLabelGroupField(field)
         ? labelGroupMove(issue, field, toKey, context)
         : {};
   }
+};
+
+/** The requests a drop between customer columns files and withdraws. */
+export interface CustomerMove {
+  /** The customer a request is filed for, when the issue lacks one. */
+  add?: string;
+  /** The customer whose request the drop withdraws, once confirmed. */
+  remove?: string;
+}
+
+/**
+ * What dragging an issue from one customer column to another asks for: a
+ * request for the target customer unless one is held, and the withdrawal of
+ * the source customer's request. No customer files and withdraws nothing.
+ */
+export const customerMove = (
+  issue: Pick<OrderedIssueRead, 'id'>,
+  fromKey: string,
+  toKey: string,
+  context: Pick<IssueContext, 'customerRequests'>
+): CustomerMove => {
+  if (fromKey === toKey) return {};
+  const held = context.customerRequests?.get(issue.id) ?? [];
+  return {
+    ...(toKey === NONE || held.includes(toKey) ? {} : { add: toKey }),
+    ...(fromKey === NONE || !held.includes(fromKey) ? {} : { remove: fromKey }),
+  };
 };
 
 /**
@@ -2563,6 +2636,57 @@ export const manualMoveKeys = (
       bound = reverse
         ? orderBetween(null, bound)
         : orderBetween(bound, undefined);
+      placements.push({ id: issue.id, sort_order: bound });
+    }
+    return placements;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The manual positions that send issues to the top or bottom of the rows they
+ * sit among, in display order, keeping their relative order. Moving to the top
+ * keys only the moving issues, just ahead of the first other row. Moving to the
+ * bottom also places every unplaced row left behind, in its shown order, since
+ * unplaced rows always sort last. `reverse` is a manual order read backwards,
+ * where keys fall down the list. Null when nothing would move or no key fits.
+ */
+export const manualEdgeKeys = (
+  rows: readonly OrderedIssueRead[],
+  movingIds: readonly string[],
+  edge: 'top' | 'bottom',
+  reverse = false
+): ManualPlacement[] | null => {
+  const ids = new Set(movingIds);
+  const moving = rows.filter((issue) => ids.has(issue.id));
+  if (moving.length === 0) return null;
+  const others = rows.filter((issue) => !ids.has(issue.id));
+  const moved =
+    edge === 'top' ? [...moving, ...others] : [...others, ...moving];
+  if (moved.every((issue, at) => issue.id === rows[at]?.id)) return null;
+  const down = (bound: string | null): string =>
+    reverse ? orderBetween(null, bound) : orderBetween(bound, undefined);
+  const up = (bound: string | null): string =>
+    reverse ? orderBetween(bound, undefined) : orderBetween(null, bound);
+  try {
+    if (edge === 'top') {
+      let bound = others[0]?.sort_order ?? null;
+      const placements: ManualPlacement[] = [];
+      for (const issue of [...moving].reverse()) {
+        bound = up(bound);
+        placements.unshift({ id: issue.id, sort_order: bound });
+      }
+      return placements;
+    }
+    const firstLoose = others.findIndex(
+      (issue) => (issue.sort_order ?? null) === null
+    );
+    const start = firstLoose < 0 ? others.length : firstLoose;
+    let bound = others[start - 1]?.sort_order ?? null;
+    const placements: ManualPlacement[] = [];
+    for (const issue of moved.slice(start)) {
+      bound = down(bound);
       placements.push({ id: issue.id, sort_order: bound });
     }
     return placements;

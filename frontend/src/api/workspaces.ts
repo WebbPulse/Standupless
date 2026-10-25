@@ -26,6 +26,7 @@ import type {
   JoinableWorkspaceRead,
   MemberListRead,
   MemberRead,
+  MemberStatus,
   MemberUpdate,
   ScimSettingsRead,
   ScimTokenCreated,
@@ -461,6 +462,48 @@ export function listMembers(
     (body) => (Array.isArray(body?.members) ? body.members : [])
   );
 }
+
+/**
+ * Lists a workspace's members with the given statuses, which the route reads
+ * as any of. Pending invites answer only to an admin. Handed a polled query's
+ * context, the read is conditional on the held ETag.
+ */
+export const listMemberDirectory = (
+  workspaceId: string,
+  statuses: readonly MemberStatus[],
+  context: PolledQueryContext
+): Promise<MemberRead[] | PolledResponse<MemberRead[]>> =>
+  conditionalGet<MemberListRead, MemberRead[]>(
+    membersPath(workspaceId),
+    (signal) => ({
+      query: { status: [...statuses] },
+      ...(signal === undefined ? {} : { signal }),
+    }),
+    context,
+    (body) => (Array.isArray(body?.members) ? body.members : [])
+  );
+
+/** Suspends a member, who keeps their role and teams but loses access at once. */
+export const suspendMember = async (
+  workspaceId: string,
+  userId: string
+): Promise<MemberRead> => {
+  const response = await apiClient.post<MemberRead>(
+    `${membersPath(workspaceId)}/${userId}/suspend`
+  );
+  return response.data;
+};
+
+/** Reactivates a suspended member with the role and teams they held. */
+export const reactivateMember = async (
+  workspaceId: string,
+  userId: string
+): Promise<MemberRead> => {
+  const response = await apiClient.post<MemberRead>(
+    `${membersPath(workspaceId)}/${userId}/reactivate`
+  );
+  return response.data;
+};
 
 /** Changes one member's role. */
 export const updateMember = async (

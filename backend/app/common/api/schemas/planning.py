@@ -1294,6 +1294,8 @@ ProjectActivityKindField = Literal[
     "milestone_added",
     "milestone_removed",
     "milestone_changed",
+    "milestone_converted",
+    "converted_from_milestone",
     "link_added",
     "link_removed",
     "link_changed",
@@ -1468,6 +1470,17 @@ class MilestoneRead(BaseModel):
             created_at=milestone.created_at,
             updated_at=milestone.updated_at,
         )
+
+
+class MilestoneConversionRead(BaseModel):
+    """What converting a milestone into a project answers with.
+
+    `project` is the new project and `moved_issue_ids` the issues that left the
+    milestone for it, oldest first. The milestone itself is gone.
+    """
+
+    project: ProjectRead
+    moved_issue_ids: list[str] = Field(default_factory=list)
 
 
 MilestoneListRead = cursor_page(MilestoneRead, "milestones", model_name="MilestoneListRead")

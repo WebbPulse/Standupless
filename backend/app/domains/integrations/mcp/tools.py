@@ -25,6 +25,7 @@ from app.domains.integrations.mcp.customer_tools import CUSTOMER_TOOLS
 from app.domains.integrations.mcp.dashboard_tools import DASHBOARD_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
 from app.domains.integrations.mcp.draft_tools import DRAFT_TOOLS
+from app.domains.integrations.mcp.email_intake_tools import EMAIL_INTAKE_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
 from app.domains.integrations.mcp.import_tools import IMPORT_TOOLS
@@ -59,6 +60,7 @@ TOOLS: tuple[Tool, ...] = (
     *RECURRING_TOOLS,
     *TRANSITION_TOOLS,
     *SYNC_TOOLS,
+    *EMAIL_INTAKE_TOOLS,
     *CHANNEL_TOOLS,
     *STANDUP_TOOLS,
     *PLANNING_TOOLS,

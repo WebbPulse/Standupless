@@ -23,6 +23,8 @@ export interface InterfacePreferences {
   fontSize: FontSize;
   /** Whether buttons, menu items, rows and other interactive elements show the pointer cursor. */
   pointerCursors: boolean;
+  /** Whether links in rich text and inline text links are underlined at rest. */
+  underlineLinks: boolean;
   /** Whether the editor turns typed emoticons such as `:)` into emoji. */
   convertEmoticons: boolean;
   /** Whether an issue the person creates starts assigned to them. */
@@ -40,6 +42,7 @@ export const DEFAULT_PREFERENCES: InterfacePreferences = {
   nameDisplay: 'username',
   fontSize: 'default',
   pointerCursors: false,
+  underlineLinks: false,
   convertEmoticons: true,
   autoAssignToSelf: false,
   branchCopyStarts: true,
@@ -100,6 +103,16 @@ export const paintPointerCursors = (on: boolean): void => {
   }
 };
 
+/** Sets the document attribute the stylesheet underlines links under. */
+export const paintUnderlineLinks = (on: boolean): void => {
+  const root = globalThis.document.documentElement;
+  if (on) {
+    root.setAttribute('data-underline-links', '');
+  } else {
+    root.removeAttribute('data-underline-links');
+  }
+};
+
 /** The preference fields a profile may carry, any of them missing. */
 export interface StoredPreferences {
   home_view?: HomeView | undefined;
@@ -107,6 +120,7 @@ export interface StoredPreferences {
   name_display?: NameDisplay | undefined;
   font_size?: FontSize | undefined;
   pointer_cursors?: boolean | undefined;
+  underline_links?: boolean | undefined;
   convert_emoticons?: boolean | undefined;
   auto_assign_to_self?: boolean | undefined;
   branch_copy_starts?: boolean | undefined;
@@ -122,6 +136,7 @@ export const preferencesOf = (
   nameDisplay: user?.name_display ?? DEFAULT_PREFERENCES.nameDisplay,
   fontSize: user?.font_size ?? DEFAULT_PREFERENCES.fontSize,
   pointerCursors: user?.pointer_cursors ?? DEFAULT_PREFERENCES.pointerCursors,
+  underlineLinks: user?.underline_links ?? DEFAULT_PREFERENCES.underlineLinks,
   convertEmoticons:
     user?.convert_emoticons ?? DEFAULT_PREFERENCES.convertEmoticons,
   autoAssignToSelf:
@@ -134,7 +149,7 @@ export const preferencesOf = (
 
 /**
  * Takes the preferences in force and tells the subscribers, repainting the
- * text size and the cursors when they moved. Unchanged values are a no-op, so a re-read of the
+ * text size, the cursors and the link underlines when they moved. Unchanged values are a no-op, so a re-read of the
  * same profile never re-renders anything.
  */
 export const setPreferences = (next: InterfacePreferences): void => {
@@ -142,9 +157,11 @@ export const setPreferences = (next: InterfacePreferences): void => {
   if (keys.every((key) => next[key] === current[key])) return;
   const resized = next.fontSize !== current.fontSize;
   const recursored = next.pointerCursors !== current.pointerCursors;
+  const relinked = next.underlineLinks !== current.underlineLinks;
   current = next;
   if (resized) paintFontSize(next.fontSize);
   if (recursored) paintPointerCursors(next.pointerCursors);
+  if (relinked) paintUnderlineLinks(next.underlineLinks);
   for (const listener of [...listeners]) listener();
 };
 

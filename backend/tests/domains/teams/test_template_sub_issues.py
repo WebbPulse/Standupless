@@ -190,12 +190,12 @@ def test_a_failed_sub_issue_removes_everything_the_create_wrote(
     real = issue_writes._create_one
     calls: list[str] = []
 
-    def failing(repositories: Any, context: Any, payload: Any, fresh: Any) -> Any:
+    def failing(repositories: Any, context: Any, payload: Any, fresh: Any, **kwargs: Any) -> Any:
         """Create as usual, failing the third sub-issue."""
         calls.append(payload.title)
         if payload.title == "Announce it":
             raise HTTPException(status_code=422, detail={"error_code": "UNPROCESSABLE", "message": "No room."})
-        return real(repositories, context, payload, fresh)
+        return real(repositories, context, payload, fresh, **kwargs)
 
     monkeypatch.setattr(issue_writes, "_create_one", failing)
 

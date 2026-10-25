@@ -88,7 +88,7 @@ export const Toaster: React.FC = () => {
   if (owner !== id) return null;
 
   return (
-    <div className="pointer-events-none fixed right-4 bottom-4 z-[70] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+    <div className="screen-only pointer-events-none fixed right-4 bottom-4 z-[70] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}

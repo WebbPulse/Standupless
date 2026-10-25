@@ -64,6 +64,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "font_size": "default",
         "theme": None,
         "pointer_cursors": False,
+        "underline_links": False,
         "convert_emoticons": True,
         "activity_filter": "all",
         "sidebar_items": {item: "show" for item in SIDEBAR_ITEMS},
@@ -314,6 +315,23 @@ def test_theme_and_pointer_cursors_are_stored_on_the_account(client: TestClient,
 
     repositories.users.update(OWNER, theme="sepia")
     assert client.get("/api/users/me").json()["theme"] is None
+
+
+def test_underline_links_starts_off_and_toggles(client: TestClient, repositories: Any) -> None:
+    """Link underlines read off for a new account and follow the account once turned on."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["underline_links"] is False
+
+    body = client.patch("/api/users/me/preferences", json={"underline_links": True}).json()
+    assert body["underline_links"] is True
+    assert repositories.users.get(OWNER).underline_links is True
+
+    body = client.patch("/api/users/me/preferences", json={"font_size": "large"}).json()
+    assert body["underline_links"] is True
+
+    assert client.patch("/api/users/me/preferences", json={"underline_links": "sometimes"}).status_code == 422
 
 
 def test_emoticon_conversion_starts_on_and_toggles(client: TestClient, repositories: Any) -> None:
