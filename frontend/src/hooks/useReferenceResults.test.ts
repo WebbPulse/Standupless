@@ -55,13 +55,13 @@ afterEach(() => {
 
 describe('useReferenceResults', () => {
   it('sends nothing for a query search cannot answer', () => {
-    const { result } = renderHook(() => useReferenceResults('ws-1', 'ro'));
+    const { result } = renderHook(() => useReferenceResults('ws-1', 'r'));
     act(() => {
       vi.advanceTimersByTime(REFERENCE_DEBOUNCE_MS * 2);
     });
 
     expect(searchAll).not.toHaveBeenCalled();
-    expect(result.current).toEqual({ query: 'ro', items: [], loading: false });
+    expect(result.current).toEqual({ query: 'r', items: [], loading: false });
   });
 
   it('sends nothing outside a workspace', () => {

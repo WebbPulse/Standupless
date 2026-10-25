@@ -263,7 +263,7 @@ describe('search page', () => {
     expect(
       await screen.findByRole('link', { name: 'Go to ENG-1' })
     ).toHaveAttribute('href', '/w/mine/issues/ENG-1');
-    expect(search).not.toHaveBeenCalled();
+    expect(search.mock.calls.map((call) => call[0])).not.toContain('ENG-1');
   });
 
   it('does not search the half typed states a key passes through', async () => {
@@ -273,7 +273,7 @@ describe('search page', () => {
     await user.type(screen.getByLabelText('Search'), 'ENG-');
 
     await waitFor(() => {
-      expect(search).not.toHaveBeenCalled();
+      expect(search.mock.calls.map((call) => call[0])).not.toContain('ENG-');
     });
   });
 

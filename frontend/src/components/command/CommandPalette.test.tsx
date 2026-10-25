@@ -41,7 +41,7 @@ import { THEME_STORAGE_KEY } from '../../lib/theme';
 import type { SavedViewDisplayRead } from '../../api/views';
 import CommandPalette from './CommandPalette';
 
-const search = vi.fn<() => Promise<SearchResultRead[]>>();
+const search = vi.fn<(q?: string) => Promise<SearchResultRead[]>>();
 const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 const navigate = vi.fn();
 const listTeamTemplates =
@@ -58,7 +58,7 @@ vi.mock('../../api/documents', () => ({
 }));
 
 vi.mock('../../api/views', () => ({
-  search: () => search(),
+  search: (_w: string, q: string) => search(q),
   listViews: () => listViews(),
 }));
 
@@ -488,7 +488,7 @@ describe('what a term resolves to', () => {
     expect(
       await screen.findByRole('option', { name: /Go to ENG-12/ })
     ).toBeInTheDocument();
-    expect(search).not.toHaveBeenCalled();
+    expect(search.mock.calls.map((call) => call[0])).not.toContain('eng-12');
 
     await user.keyboard('{Enter}');
     expect(navigate).toHaveBeenCalledWith('/w/mine/issues/ENG-12');
@@ -511,7 +511,7 @@ describe('what a term resolves to', () => {
     const user = renderPalette();
 
     await user.keyboard('{Control>}k{/Control}');
-    await user.keyboard('z');
+    await user.keyboard('~');
 
     await waitFor(() => {
       expect(screen.getByText(/at least 2 characters/)).toBeInTheDocument();

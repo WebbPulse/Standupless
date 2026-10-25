@@ -182,7 +182,10 @@ def prefix_term(prefix: str) -> str:
 
 
 def prefix_terms(words: Iterable[str], cap: int = PREFIX_CAP) -> set[str]:
-    """The prefix terms of some words in order, `PREFIX_MIN` to `PREFIX_MAX` long, shorter than the word, at most `cap`."""
+    """The prefix terms of some words in order, three to six characters and shorter than the word, at most `cap`.
+
+    Earlier words claim the cap first, so title prefixes are always posted.
+    """
     kept: dict[str, None] = {}
     for word in words:
         for length in range(PREFIX_MIN, min(len(word) - 1, PREFIX_MAX) + 1):
