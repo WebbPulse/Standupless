@@ -9,13 +9,17 @@
  * Notifications about one issue, project or initiative fold into one row that
  * reads the newest change, who made it and how many there are, and opening
  * the row marks every one of them read. Filter narrows the list to chosen
- * notification types, and Display decides whether read and snoozed rows stay.
+ * notification types, and Display decides whether read and snoozed rows stay
+ * and whether unread rows sort first. Ctrl F, or Cmd F on a Mac, opens quick
+ * search in the header instead of the browser's find bar; it narrows the
+ * loaded rows as the reader types, and Escape clears and closes it.
  *
  * Triage runs from the keyboard the way Linear's does: U toggles read and
- * unread, H snoozes until a chosen moment, Backspace removes, and Shift R
- * marks everything read. A snoozed row leaves the list and the badge and comes
- * back unread on its own when its time comes; Show snoozed lists what is still
- * waiting, and H on a snoozed row offers to unsnooze it now.
+ * unread, H snoozes until a chosen moment, Backspace removes, Shift R marks
+ * everything read and Shift Backspace offers to delete every read row. A
+ * snoozed row leaves the list and the badge and comes back unread on its own
+ * when its time comes; Show snoozed lists what is still waiting, and H on a
+ * snoozed row offers to unsnooze it now.
  *
  * Every row also offers its actions to the mouse: hover or select it for
  * quick buttons, or right click it, or press its "more" button, for the full
@@ -59,6 +63,7 @@ import {
   LuGoal,
   LuInbox,
   LuMailOpen,
+  LuSearch,
   LuTarget,
   LuTrash2,
   LuTriangleAlert,
@@ -92,8 +97,10 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  MenuShortcut,
 } from '../../components/ui/menu';
 import EmptyState from '../../components/ui/empty-state';
+import { CONTROL_CLASS } from '../../components/ui/input';
 import Spinner from '../../components/ui/spinner';
 import Tooltip from '../../components/ui/tooltip';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -127,7 +134,10 @@ import {
   groupIds,
   groupNotifications,
   groupSnoozedUntil,
+  kindLabel,
+  orderGroups,
   parseView,
+  searchGroups,
   snoozedIds,
   unreadIds,
   viewQuery,
@@ -155,34 +165,6 @@ const PAGE_SIZE = 50;
 
 /** The URL parameter holding the selected notification. */
 const SELECTED_PARAM = 'n';
-
-/** How each kind of notification reads in the interface. */
-const KIND_LABELS: Record<InboxKind, string> = {
-  assigned: 'Assigned to you',
-  mentioned: 'Mentioned you',
-  commented: 'New comment',
-  status_changed: 'Status changed',
-  subscribed: 'Subscribed you',
-  project_update: 'Project update',
-  project_update_comment: 'Reply on update',
-  project_update_due: 'Update due',
-  initiative_update_due: 'Initiative update due',
-  due_soon: 'Due soon',
-  overdue: 'Overdue',
-  reminder: 'Reminder',
-  standup_digest: 'Standup digest',
-  sla_at_risk: 'SLA at risk',
-  sla_breached: 'SLA breached',
-  channel_disabled: 'Channel turned off',
-  export_ready: 'Export ready',
-  export_failed: 'Export failed',
-  import_ready: 'Import finished',
-  import_failed: 'Import failed',
-  review_requested: 'Review requested',
-};
-
-/** Names a notification's kind, falling back for one added after this build. */
-const kindLabel = (kind: InboxKind): string => KIND_LABELS[kind] ?? 'Update';
 
 /** Whether a row is about a project update rather than an issue. */
 const isProjectRow = (row: NotificationRead): boolean =>
@@ -919,7 +901,15 @@ const emptyMessage = (view: InboxView): string =>
       ? 'Nothing here yet.'
       : 'Nothing unread.';
 
-/** Lists the caller's notifications, one row per subject, beside the selected one's issue. */
+/** What the list says when quick search leaves nothing. */
+const NO_MATCH_MESSAGE = 'No notifications match your search.';
+
+/** The keys that open quick search, as Linear binds them. */
+const SEARCH_KEYS = 'mod+f';
+
+/** The keys that offer to delete every read notification, as Linear binds them. */
+const DELETE_READ_KEYS = 'shift+backspace';
+
 /** Which rows a bulk delete removes: the read ones or every one. */
 type ClearScope = 'read' | 'all';
 
@@ -944,6 +934,7 @@ const deletedLabel = (deleted: number): string =>
     ? 'Deleted 1 notification'
     : `Deleted ${String(deleted)} notifications`;
 
+/** Lists the caller's notifications, one row per subject, beside the selected one's issue. */
 export const Inbox: React.FC = () => {
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
@@ -959,6 +950,10 @@ export const Inbox: React.FC = () => {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(
     () => new Set<string>()
   );
+  const [searching, setSearching] = useState(false);
+  const [search, setSearch] = useState('');
+  const [heldUnread, setHeldUnread] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const holds = useRef(new Map<number, HeldRemoval>());
   const nextHold = useRef(1);
 
@@ -1008,24 +1003,41 @@ export const Inbox: React.FC = () => {
     loadMore,
   } = useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
 
-  const groups = useMemo(
+  const allGroups = useMemo(
     () =>
       keepPinned(
-        groupNotifications(
-          fetched.flatMap((row) => {
-            if (hidden.has(row.notification_id)) return [];
-            const held = unreadOverrides[row.notification_id];
-            return [
-              held === undefined || held.was !== row.unread
-                ? row
-                : { ...row, unread: held.unread },
-            ];
-          })
+        orderGroups(
+          groupNotifications(
+            fetched.flatMap((row) => {
+              if (hidden.has(row.notification_id)) return [];
+              const held = unreadOverrides[row.notification_id];
+              return [
+                held === undefined || held.was !== row.unread
+                  ? row
+                  : { ...row, unread: held.unread },
+              ];
+            })
+          ),
+          view.unreadFirst,
+          heldUnread
         ),
         pinned,
         selectedId
       ),
-    [fetched, hidden, unreadOverrides, pinned, selectedId]
+    [
+      fetched,
+      hidden,
+      unreadOverrides,
+      pinned,
+      selectedId,
+      view.unreadFirst,
+      heldUnread,
+    ]
+  );
+
+  const groups = useMemo(
+    () => searchGroups(allGroups, search),
+    [allGroups, search]
   );
 
   const setUnread = useCallback(
@@ -1171,10 +1183,10 @@ export const Inbox: React.FC = () => {
     () =>
       selectedId === null
         ? null
-        : (groups.find((group) =>
+        : (allGroups.find((group) =>
             group.rows.some((row) => row.notification_id === selectedId)
           ) ?? null),
-    [groups, selectedId]
+    [allGroups, selectedId]
   );
   const selectedIndex = selected === null ? -1 : groups.indexOf(selected);
 
@@ -1184,7 +1196,9 @@ export const Inbox: React.FC = () => {
       if (group === null) {
         next.delete(SELECTED_PARAM);
         setPinned(null);
+        setHeldUnread(null);
       } else {
+        setHeldUnread(group.unread ? group.key : null);
         next.set(SELECTED_PARAM, group.latest.notification_id);
         setPinned({
           group: {
@@ -1193,14 +1207,14 @@ export const Inbox: React.FC = () => {
             latest: { ...group.latest, unread: false },
             rows: group.rows.map((row) => ({ ...row, unread: false })),
           },
-          index: Math.max(0, groups.indexOf(group)),
+          index: Math.max(0, allGroups.indexOf(group)),
         });
         const ids = unreadIds(group);
         if (ids.length > 0) void readMany(ids).catch(() => undefined);
       }
       setParams(next, { replace: true });
     },
-    [params, setParams, readMany, groups]
+    [params, setParams, readMany, allGroups]
   );
 
   const step = (delta: number): void => {
@@ -1389,8 +1403,34 @@ export const Inbox: React.FC = () => {
       .catch(() => undefined);
   };
 
+  const openSearch = (): void => {
+    setSearching(true);
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  };
+
+  const closeSearch = (): void => {
+    setSearch('');
+    setSearching(false);
+  };
+
   const hasRows = groups.length > 0;
   const current = selected?.latest ?? null;
+  useShortcut({
+    keys: SEARCH_KEYS,
+    label: 'Search notifications',
+    group: 'Inbox',
+    handler: openSearch,
+  });
+  useShortcut({
+    keys: DELETE_READ_KEYS,
+    label: 'Delete all read notifications',
+    group: 'Inbox',
+    enabled: !isClearing,
+    handler: () => {
+      setClearing('read');
+    },
+  });
   useShortcut({
     keys: 'j',
     label: 'Next notification',
@@ -1440,11 +1480,12 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: 'escape',
-    label: 'Close notification',
+    label: selected === null ? 'Close search' : 'Close notification',
     group: 'Inbox',
-    enabled: selected !== null,
+    enabled: selected !== null || searching,
     handler: () => {
-      select(null);
+      if (selected !== null) select(null);
+      else closeSearch();
     },
   });
   useShortcut({
@@ -1488,7 +1529,7 @@ export const Inbox: React.FC = () => {
     keys: 'shift+r',
     label: readAllLabel,
     group: 'Inbox',
-    enabled: hasRows && !isReadingAll,
+    enabled: allGroups.length > 0 && !isReadingAll,
     handler: () => {
       readEverything();
     },
@@ -1529,6 +1570,52 @@ export const Inbox: React.FC = () => {
       flush
       actions={
         <div className="flex items-center gap-1.5">
+          {searching ? (
+            <div className="relative">
+              <LuSearch
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-text-faint"
+              />
+              <input
+                ref={searchRef}
+                type="search"
+                autoFocus
+                aria-label="Search notifications"
+                placeholder="Search"
+                value={search}
+                className={cn(CONTROL_CLASS, 'h-7 w-40 pl-7 sm:w-56')}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeSearch();
+                  } else if (
+                    (event.ctrlKey || event.metaKey) &&
+                    event.key.toLowerCase() === 'f'
+                  ) {
+                    event.preventDefault();
+                    event.currentTarget.select();
+                  }
+                }}
+                onBlur={() => {
+                  if (search.trim() === '') setSearching(false);
+                }}
+              />
+            </div>
+          ) : (
+            <Tooltip text={actionTip('Search', SEARCH_KEYS)}>
+              <IconButton
+                label="Search notifications"
+                size="sm"
+                onClick={openSearch}
+              >
+                <LuSearch className="h-3.5 w-3.5" aria-hidden="true" />
+              </IconButton>
+            </Tooltip>
+          )}
           <InboxFilterMenu view={view} onChange={changeView} />
           <InboxDisplayMenu view={view} onChange={changeView} />
           <Menu
@@ -1541,7 +1628,7 @@ export const Inbox: React.FC = () => {
             )}
           >
             <MenuItem
-              disabled={isReadingAll || groups.length === 0}
+              disabled={isReadingAll || allGroups.length === 0}
               onSelect={readEverything}
             >
               <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1557,6 +1644,7 @@ export const Inbox: React.FC = () => {
             >
               <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
               Delete all read notifications
+              <MenuShortcut keys={DELETE_READ_KEYS} />
             </MenuItem>
             <MenuItem
               danger
@@ -1591,9 +1679,13 @@ export const Inbox: React.FC = () => {
             <div className="p-6">
               <Spinner label="Loading inbox" />
             </div>
-          ) : groups.length === 0 ? (
+          ) : allGroups.length === 0 ? (
             <div className="p-6 lg:hidden">
               <EmptyState icon={<LuInbox />} message={emptyMessage(view)} />
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="p-6">
+              <EmptyState icon={<LuSearch />} message={NO_MATCH_MESSAGE} />
             </div>
           ) : (
             <ul>
@@ -1645,7 +1737,7 @@ export const Inbox: React.FC = () => {
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-text-faint">
               <LuInbox aria-hidden="true" className="h-8 w-8" />
               <p>
-                {groups.length === 0
+                {allGroups.length === 0
                   ? 'You are all caught up.'
                   : 'Select a notification to see its issue.'}
               </p>

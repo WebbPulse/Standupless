@@ -14,7 +14,9 @@
  * removal is held until its window lapses or the page goes, and undoing a
  * snooze unsnoozes and keeps read rows read. Each row's menu, from a right
  * click or its "more" button, offers the issue-only entries only on issue
- * rows, and unsubscribing from it, or with Shift S, offers Undo.
+ * rows, and unsubscribing from it, or with Shift S, offers Undo. Ctrl F
+ * opens quick search over the loaded rows, Show unread first reorders them
+ * without a new read, and Shift Backspace offers to delete every read row.
  */
 
 import {
@@ -1033,6 +1035,157 @@ describe('inbox', () => {
     await waitFor(() => {
       expect(markAllRead).toHaveBeenCalled();
     });
+  });
+
+  it('opens a quick search with ctrl f that narrows the rows and clears on escape', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue(twoRows());
+    renderPage();
+
+    await screen.findByText('Retry the upload');
+    await keysBound('mod+f');
+    press('f', { ctrlKey: true });
+    const field = await screen.findByRole('searchbox', {
+      name: 'Search notifications',
+    });
+    await waitFor(() => {
+      expect(field).toHaveFocus();
+    });
+    await user.type(field, 'eng-2');
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(screen.getByText('Retry the upload')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(
+      screen.queryByRole('searchbox', { name: 'Search notifications' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
+    expect(listInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches the type label and the actor in quick search', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue(twoRows());
+    renderPage();
+
+    await screen.findByText('Retry the upload');
+    await user.click(
+      screen.getByRole('button', { name: 'Search notifications' })
+    );
+    const field = screen.getByRole('searchbox', {
+      name: 'Search notifications',
+    });
+    await user.type(field, 'assigned grace');
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(screen.getByText('Retry the upload')).toBeInTheDocument();
+  });
+
+  it('says so when quick search matches nothing', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(
+      screen.getByRole('button', { name: 'Search notifications' })
+    );
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Search notifications' }),
+      'nothing like it'
+    );
+
+    expect(
+      screen.getByText('No notifications match your search.')
+    ).toBeInTheDocument();
+  });
+
+  it('moves through only the matching rows with j', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue(twoRows());
+    renderPage();
+
+    await screen.findByText('Retry the upload');
+    await user.click(
+      screen.getByRole('button', { name: 'Search notifications' })
+    );
+    await user.type(
+      screen.getByRole('searchbox', { name: 'Search notifications' }),
+      'retry'
+    );
+    act(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    await keysBound('j');
+    press('j');
+
+    expect(await screen.findByLabelText('Peek iss-2')).toBeInTheDocument();
+  });
+
+  it('sorts unread rows first when Show unread first is on, and remembers it', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-3',
+          issue_id: 'iss-3',
+          issue_key: 'ENG-3',
+          issue_title: 'Newest and read',
+          unread: false,
+        }),
+        notification({
+          notification_id: 'n-2',
+          issue_id: 'iss-2',
+          issue_key: 'ENG-2',
+          issue_title: 'Older and unread',
+        }),
+        notification({ unread: false }),
+      ],
+      next_cursor: null,
+    });
+    const titles = (): string[] =>
+      within(screen.getByRole('region', { name: 'Notifications' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent ?? '');
+    const first = renderPage();
+
+    await screen.findByText('Older and unread');
+    expect(titles()[0]).toContain('Newest and read');
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Show unread first' })
+    );
+
+    await waitFor(() => {
+      expect(titles()[0]).toContain('Older and unread');
+    });
+    expect(titles()[1]).toContain('Newest and read');
+    expect(titles()[2]).toContain('Cache the token');
+    expect(listInbox).toHaveBeenCalledTimes(1);
+
+    first.unmount();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Display' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Show unread first' })
+    ).toBeChecked();
+  });
+
+  it('offers to delete every read row with shift backspace', async () => {
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await keysBound('shift+backspace');
+    press('Backspace', { shiftKey: true });
+
+    expect(
+      await screen.findByRole('dialog', {
+        name: 'Delete all read notifications',
+      })
+    ).toBeInTheDocument();
+    expect(clearInbox).not.toHaveBeenCalled();
+    expect(deleteNotification).not.toHaveBeenCalled();
   });
 });
 
