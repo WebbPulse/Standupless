@@ -26,12 +26,15 @@ the launch limits without a comp grant changing the plan it reads.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from fastapi import HTTPException, status
 
 from app.common.core.config import settings
 from app.common.db.dynamo.workspaces import DEFAULT_PLAN, Plan, Workspace
+
+if TYPE_CHECKING:  # pragma: no cover
+    from app.common.db.dynamo.users import User
 
 PLAN_LIMIT_REACHED = "PLAN_LIMIT_REACHED"
 
@@ -151,6 +154,18 @@ def plan_of(workspace: Workspace | str | None) -> str:
     """
     plan = workspace.effective_plan() if isinstance(workspace, Workspace) else workspace
     return plan if plan in PLAN_LIMITS else DEFAULT_PLAN
+
+
+def creates_e2e_workspaces(user: User) -> bool:
+    """Whether a workspace this person creates is stamped `e2e_owned`.
+
+    Decided by the identity package's `is_e2e_user`: the marker its admin-only
+    ephemeral e2e route sets, or a durable id in `IDENTITY_E2E_USER_IDS`. Neither is
+    something the person can write, and it is always false in production.
+    """
+    from webbpulse.identity import is_e2e_user
+
+    return is_e2e_user(user, settings.e2e_identity_settings)
 
 
 def e2e_exempt(workspace: Workspace | str | None) -> bool:

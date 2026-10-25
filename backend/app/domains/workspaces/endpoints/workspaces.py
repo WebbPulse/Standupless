@@ -29,13 +29,12 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.billing import sync_seats
-from app.common.core.config import settings
 from app.common.db.dynamo.invites import hash_token
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
 from app.common.email import deliver
-from app.common.plan_limits import LimitedResource
+from app.common.plan_limits import LimitedResource, creates_e2e_workspaces
 from app.common.workspace_members import NOT_FOUND
 from app.domains.workspaces.email import render_workspace_deletion
 from app.domains.workspaces.schemas.workspace import (
@@ -92,16 +91,6 @@ def refuse_deleted_caller(repositories: Repositories, subject: str) -> User:
     if user is None or user.is_deleted:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ACCOUNT_DELETED)
     return user
-
-
-def is_e2e_user(user: User) -> bool:
-    """Whether this account is an e2e user: one the ephemeral e2e route created, or a listed durable one.
-
-    Neither source is something the person can write. `e2e_user` is set only by the
-    identity hooks on the admin-only ephemeral route, and the durable ids come from
-    deployment config.
-    """
-    return user.e2e_user or user.id in settings.plan_limit_e2e_user_ids
 
 
 @router.get("/health", include_in_schema=False)
@@ -171,7 +160,7 @@ def create_workspace(
         id=new_workspace_id(),
         name=payload.name,
         slug=payload.slug,
-        e2e_owned=is_e2e_user(creator),
+        e2e_owned=creates_e2e_workspaces(creator),
     )
     try:
         created = repositories.workspaces.create(workspace)

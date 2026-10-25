@@ -268,10 +268,15 @@ variable "plan_limit_e2e_exemption_enabled" {
   }
 }
 
-variable "plan_limit_e2e_user_ids" {
-  description = "Ids of the durable e2e users, whose new workspaces count as e2e owned for plan_limit_e2e_exemption_enabled. Ephemeral e2e users are marked by the identity hooks and need no entry."
+variable "identity_e2e_user_ids" {
+  description = "Ids of the durable e2e users, which the identity package's is_e2e_user counts as e2e users alongside the ephemeral ones its e2e route marks. Their new workspaces count as e2e owned for plan_limit_e2e_exemption_enabled. Sets IDENTITY_E2E_USER_IDS as a JSON array on the identity and workspaces functions. Staging only: production must leave it empty, and the backend refuses it there at startup."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = length(var.identity_e2e_user_ids) == 0 || var.environment != "production"
+    error_message = "identity_e2e_user_ids must stay empty in production."
+  }
 }
 
 variable "billing_business_enabled" {

@@ -299,7 +299,7 @@ locals {
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
       name == "workspaces" ? {
         BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled)
-        PLAN_LIMIT_E2E_USER_IDS  = join(",", var.plan_limit_e2e_user_ids)
+        IDENTITY_E2E_USER_IDS    = jsonencode(var.identity_e2e_user_ids)
       } : {},
 
       contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users, local.issue_import_object_users, local.email_intake_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
@@ -399,6 +399,8 @@ locals {
         IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
 
         IDENTITY_DESKTOP_HANDOFF_SCHEMES = jsonencode(var.desktop_handoff_schemes)
+
+        IDENTITY_E2E_USER_IDS = jsonencode(var.identity_e2e_user_ids)
         },
 
       module.identity.identity_environment) : {},
