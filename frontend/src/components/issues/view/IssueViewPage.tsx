@@ -49,6 +49,7 @@ import {
 } from '../../../hooks/useListFolds';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
+import { useOffline } from '../../../hooks/useOffline';
 import { isFeatureOn } from '../../../lib/features';
 import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useCustomerFields } from '../../../hooks/useCustomerFields';
@@ -449,7 +450,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   base,
   view,
   composing = false,
-  canEdit,
+  canEdit: permitted,
   homeTeam,
   emptyMessage,
   hideFilterFields,
@@ -464,6 +465,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const navigate = useNavigate();
   const { user } = useAuth();
   const { workspace } = useWorkspace();
+  const offline = useOffline();
+  const canEdit = permitted && !offline;
   const creator = useCreateIssue();
   const [params, setParams] = useSearchParams();
   const [saving, setSaving] = useState<Saving>(null);
@@ -694,11 +697,12 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     (issue: { team_id: string }) => {
       const team = teams.find((item) => item.id === issue.team_id);
       return (
-        team === undefined ||
-        (!isRetired(team) && canWriteIssues(workspaceRole, team.role))
+        !offline &&
+        (team === undefined ||
+          (!isRetired(team) && canWriteIssues(workspaceRole, team.role)))
       );
     },
-    [teams, workspaceRole]
+    [teams, workspaceRole, offline]
   );
 
   const menuTeamId = homeTeam?.id ?? '';

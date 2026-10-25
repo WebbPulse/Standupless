@@ -2,17 +2,18 @@
  * The slim notice that the app has lost its connection. It sits at the foot
  * of the window, away from the toast stack, says the lists are the copy kept
  * on this device and that changes will not save until the connection is
- * back, and leaves as soon as any request gets an answer again.
+ * back, and leaves as soon as any request gets an answer again. A session
+ * refresh that failed for the network shows it too, rather than signing out.
  */
 
 import React from 'react';
 import { LuCloudOff } from 'react-icons/lu';
-import { useOnline } from '@webbpulse/api-client/react';
+import { useOffline } from '../../hooks/useOffline';
 
 /** Shows the offline notice while the app cannot reach the server. */
 export const OfflineBanner: React.FC = () => {
-  const online = useOnline();
-  if (online) return null;
+  const offline = useOffline();
+  if (!offline) return null;
 
   return (
     <div

@@ -10,6 +10,7 @@ import {
   useAuth as usePackageAuth,
   type AnyAuthClient,
 } from '@webbpulse/auth/react';
+import { ApiNetworkError } from '@webbpulse/api-client';
 import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
@@ -29,6 +30,7 @@ import {
   AuthExtrasContext,
   type AuthExtrasContextType,
 } from './AuthContextDefinition';
+import { SessionOfflineContext } from './SessionOfflineContext';
 
 /**
  * Keeps the viewer's due date zone in step with the profile, and stores the
@@ -204,7 +206,9 @@ const useSignedOutCacheClear = (
 /**
  * Supplies the session calls `@webbpulse/auth` does not own. Mounted inside the
  * package provider so `useAuth` resolves, and holding no user of its own: the
- * package store is the single source of truth.
+ * package store is the single source of truth. A refresh that failed because
+ * the network was down keeps the person signed in, and is handed on as the
+ * session offline signal rather than read as a sign out.
  */
 const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -217,7 +221,9 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
     isAuthenticated,
     isLoading,
     user,
+    error,
   } = usePackageAuth<UserRead>();
+  const sessionOffline = isAuthenticated && error instanceof ApiNetworkError;
 
   useSignedInHint(isAuthenticated, isLoading);
   useSignedOutCacheClear(isAuthenticated, isLoading);
@@ -262,7 +268,9 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
 
   return (
     <AuthExtrasContext.Provider value={value}>
-      {children}
+      <SessionOfflineContext.Provider value={sessionOffline}>
+        {children}
+      </SessionOfflineContext.Provider>
     </AuthExtrasContext.Provider>
   );
 };

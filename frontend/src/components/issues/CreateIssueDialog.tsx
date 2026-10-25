@@ -165,6 +165,7 @@ import {
 import { DraftParentPicker, type DraftParent } from './DraftParentPicker';
 import { IssueMilestonePicker } from './PlanningPickers';
 import { useTeams } from '../../hooks/useTeams';
+import { useOffline } from '../../hooks/useOffline';
 import { activeTeams } from '../../lib/teamRetirement';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
 import { teamTree } from '../../lib/teamOrder';
@@ -618,6 +619,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const auth = useQueryAuth();
+  const offline = useOffline();
   const { autoAssignToSelf } = usePreferences();
   const selfAssignee = selfFor(
     preset,
@@ -787,7 +789,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     unanswered.length === 0 &&
     dateError === null &&
     subIssueError === null &&
-    !isSaving;
+    !isSaving &&
+    !offline;
   const dirty =
     title.trim() !== templateText.title.trim() ||
     body.trim() !== templateText.body.trim() ||

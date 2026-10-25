@@ -37,6 +37,7 @@ import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
+import { useWritable } from '../../hooks/useOffline';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { recordPatch } from '../../lib/issueUndo';
@@ -196,7 +197,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
       : issue.in_triage === true
         ? TRIAGE_STATUS.name
         : options.statuses.find((item) => item.id === issue.status_id)?.name;
-  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const canEdit = useWritable(canWriteIssues(workspace?.role, team?.role));
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const parents = options.parents.filter(
     (candidate) =>

@@ -97,6 +97,7 @@ import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
+import { useWritable } from '../../hooks/useOffline';
 import { cn } from '../../lib/cn';
 import { cycleTitle } from '../../lib/cycleBreakdown';
 import { readRolledUpCycles, rollUpCycles } from '../../lib/cycleRollUp';
@@ -721,7 +722,7 @@ export const Cycles: React.FC = () => {
     queryKey
   );
 
-  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const canEdit = useWritable(canWriteIssues(workspace?.role, team?.role));
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const dateError = validateCycleDates(startDate, endDate);
   const canAdd =

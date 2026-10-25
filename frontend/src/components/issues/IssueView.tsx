@@ -106,6 +106,7 @@ import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
+import { useWritable } from '../../hooks/useOffline';
 import {
   COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
@@ -391,7 +392,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const remindKeys = embedded ? '' : REMIND_ME_KEYS;
 
   const team = teams?.find((item) => item.id === teamId);
-  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const canEdit = useWritable(canWriteIssues(workspace?.role, team?.role));
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const currentUserId = user?.id ?? '';
   const branchNaming = useBranchNaming(options.people, currentUserId);

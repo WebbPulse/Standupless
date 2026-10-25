@@ -56,6 +56,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
+import { useWritable } from '../../hooks/useOffline';
 import { errorMessage, hasStatus } from '../../lib/errors';
 import { issuePath, releasePath, teamReleasesPath } from '../../lib/paths';
 import {
@@ -500,7 +501,7 @@ export const ReleaseDetail: React.FC = () => {
     [queryKey, listKey]
   );
 
-  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const canEdit = useWritable(canWriteIssues(workspace?.role, team?.role));
 
   const onAdvance = useCallback(
     (stage: TimelineStage): void => {

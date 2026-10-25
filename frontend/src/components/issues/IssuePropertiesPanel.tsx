@@ -29,6 +29,7 @@ import type { IssueSubscription } from '../../hooks/useIssueSubscription';
 import { useTriageOn } from '../../hooks/useTriageTeams';
 import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { OFFLINE_WRITE_HINT, useOffline } from '../../hooks/useOffline';
 import { isFeatureOn } from '../../lib/features';
 import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
@@ -212,6 +213,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
   const branchNaming = useBranchNaming(people, currentUserId);
   const isMember = workspace !== null && workspace.role !== 'guest';
   const disabled = !canEdit;
+  const offline = useOffline();
   const projectRef = projects.find(
     (row) => row.project_id === issue.project_id
   );
@@ -321,6 +323,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
     <aside
       ref={panel}
       aria-label="Properties"
+      {...(offline ? { title: OFFLINE_WRITE_HINT } : {})}
       className={cn(
         'w-full shrink-0 rounded-lg border border-line bg-surface p-2 text-sm',
         className

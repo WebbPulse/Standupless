@@ -1,24 +1,30 @@
 /**
- * The copy of the issue lists and the sidebar this device keeps between
- * sessions, so a reload paints the last lists before the network answers and
- * a lost connection still has something to show.
+ * The copy of the workspace this device keeps between sessions, so a reload
+ * paints the last lists, issues and sidebar before the network answers and a
+ * lost connection still has something to show.
  *
- * Only the reads named in {@link persistedQueryPrefixes} are stored, in
- * IndexedDB through the shared polled query persister, under a namespace of
- * the signed in person and the open workspace. Nothing from auth, tokens or
- * settings is ever on that list. Opening another workspace deletes every other
- * namespace this browser holds, and signing out deletes them all.
+ * Only the reads named in {@link persistedQueryPrefixes}, less those in
+ * {@link persistedQueryExclusions}, are stored, in IndexedDB through the
+ * shared polled query persister, under a namespace of the signed in person
+ * and the open workspace. Nothing from auth, tokens or settings is ever on
+ * that list. Of the issues read, only the {@link PERSISTED_ISSUE_LIMIT} most
+ * recently opened are kept, so hover cards and chips do not crowd out the
+ * issues a person actually looked at. Opening another workspace deletes every
+ * other namespace this browser holds, and signing out deletes them all.
  *
- * The browser's local storage holds two small indexes beside it: the
- * namespaces written, so a sign out can find each one, and the workspace id
- * each slug last resolved to, so a reload starts the persister before the
+ * The browser's local storage holds one small index beside it: the workspace
+ * id each slug last resolved to, so a reload starts the persister before the
  * workspace list has been read.
  */
 
 import { useEffect } from 'react';
 import {
+  clearAllPersistedPolledQueries,
   clearPersistedPolledQueries,
+  createIndexedDbQueryStore,
+  listPersistedNamespaces,
   persistPolledQueryCache,
+  serializeQueryKey,
   type PolledQueryPersistence,
   type QueryCacheStore,
   type QueryKey,
@@ -28,6 +34,9 @@ import {
   favoritesKey,
   inboxCountKey,
   inboxCountsKey,
+  issueKey,
+  memberDirectoryKey,
+  membersKey,
   pulseCountKey,
   reviewsKey,
   teamsKey,
@@ -41,25 +50,35 @@ export const PERSISTED_QUERY_VERSION = 1;
 /** The largest read stored, in characters of its JSON, which fits a full 500 row list. */
 export const PERSISTED_QUERY_MAX_ENTRY_CHARS = 4_000_000;
 
-/** Where the namespaces this browser has written are listed. */
-export const PERSISTED_NAMESPACES_STORAGE_KEY =
-  'standupless.queryCache.v1.namespaces';
+/** How many reads one namespace keeps, room for the lists, the issues and every team's lookups. */
+export const PERSISTED_QUERY_MAX_ENTRIES = 300;
+
+/** How many opened issues one namespace keeps. */
+export const PERSISTED_ISSUE_LIMIT = 50;
+
+/** The local storage key the namespace index used to live under, removed on sign out. */
+const LEGACY_NAMESPACES_STORAGE_KEY = 'standupless.queryCache.v1.namespaces';
 
 /** Where the workspace id each slug last resolved to is held. */
 export const PERSISTED_WORKSPACE_IDS_STORAGE_KEY =
   'standupless.queryCache.v1.workspaceIds';
 
+/** What every namespace this app writes starts with. */
+const NAMESPACE_PREFIX = 'standupless:';
+
 /** The namespace one person's copy of one workspace is stored under. */
 export const persistedNamespace = (
   userId: string,
   workspaceId: string
-): string => `standupless:${userId}:${workspaceId}`;
+): string => `${NAMESPACE_PREFIX}${userId}:${workspaceId}`;
 
 /**
  * The key prefixes stored for one workspace: the workspace list, the team
  * list, every issue list and board with the statuses, labels and people its
- * rows resolve against, the inbox, and the sidebar's views, favorites and
- * badges.
+ * rows resolve against, the issues opened, the workspace's members, each
+ * team's statuses and labels, the inbox, and the sidebar's views, favorites
+ * and badges. Statuses and labels are keyed by team alone, which the
+ * workspace namespace already scopes.
  */
 export const persistedQueryPrefixes = (workspaceId: string): QueryKey[] => [
   WORKSPACES_KEY,
@@ -67,6 +86,10 @@ export const persistedQueryPrefixes = (workspaceId: string): QueryKey[] => [
   ['issue-collection', workspaceId],
   ['issue-appearance', workspaceId],
   ['issue-context', workspaceId],
+  ['issue', workspaceId],
+  membersKey(workspaceId),
+  ['statuses'],
+  ['labels'],
   ['inbox', workspaceId],
   inboxCountKey(workspaceId),
   inboxCountsKey(workspaceId),
@@ -76,6 +99,87 @@ export const persistedQueryPrefixes = (workspaceId: string): QueryKey[] => [
   pulseCountKey(workspaceId),
   favoritesKey(workspaceId),
 ];
+
+/**
+ * The keys under those prefixes never stored: the admin member directory,
+ * which carries invites, suspensions and email addresses.
+ */
+export const persistedQueryExclusions = (workspaceId: string): QueryKey[] => [
+  memberDirectoryKey(workspaceId),
+];
+
+/** Whether a stored record holds one issue. */
+const isIssueRecord = (key: string): boolean => {
+  try {
+    const parts: unknown = JSON.parse(key);
+    return Array.isArray(parts) && parts[0] === 'issue';
+  } catch {
+    return false;
+  }
+};
+
+/** A store that keeps only the most recently opened issues, and the call that opens one. */
+interface IssueLimitedStore {
+  store: QueryCacheStore;
+  workspaceId: string;
+  open: (key: string) => void;
+}
+
+/**
+ * Wraps a store so that, of the issue records in one namespace, only the
+ * {@link PERSISTED_ISSUE_LIMIT} most recently opened are written and kept.
+ * Records already stored count as opened, newest first, so the list survives
+ * a reload. Other namespaces and every other record pass straight through.
+ */
+const withIssueLimit = (
+  base: QueryCacheStore,
+  namespace: string,
+  workspaceId: string
+): IssueLimitedStore => {
+  let recent: string[] = [];
+  const trim = (): string[] => {
+    const dropped = recent.slice(PERSISTED_ISSUE_LIMIT);
+    recent = recent.slice(0, PERSISTED_ISSUE_LIMIT);
+    return dropped;
+  };
+  const listNamespaces = base.listNamespaces?.bind(base);
+  const clearAll = base.clearAll?.bind(base);
+  const store: QueryCacheStore = {
+    load: async (ns) => {
+      const records = await base.load(ns);
+      if (ns !== namespace) return records;
+      const stored = records
+        .filter((record) => isIssueRecord(record.key))
+        .sort((a, b) => b.fetchedAt - a.fetchedAt)
+        .map((record) => record.key);
+      recent = [...new Set([...recent, ...stored])];
+      const dropped = new Set(trim());
+      if (dropped.size > 0) await base.remove(ns, [...dropped]);
+      return records.filter((record) => !dropped.has(record.key));
+    },
+    save: (ns, queries) =>
+      base.save(
+        ns,
+        ns !== namespace
+          ? queries
+          : queries.filter(
+              (query) => !isIssueRecord(query.key) || recent.includes(query.key)
+            )
+      ),
+    remove: (ns, keys) => base.remove(ns, keys),
+    clear: (ns) => base.clear(ns),
+    ...(listNamespaces === undefined ? {} : { listNamespaces }),
+    ...(clearAll === undefined ? {} : { clearAll }),
+  };
+  const open = (key: string): void => {
+    recent = [key, ...recent.filter((held) => held !== key)];
+    const dropped = trim();
+    if (dropped.length > 0) {
+      void base.remove(namespace, dropped).catch(() => undefined);
+    }
+  };
+  return { store, workspaceId, open };
+};
 
 /** Reads a JSON value from local storage, or the fallback when absent or unreadable. */
 const readStored = <T>(
@@ -102,15 +206,6 @@ const writeStored = (key: string, value: unknown): void => {
     return;
   }
 };
-
-/** The namespaces this browser has written and not yet deleted. */
-export const readPersistedNamespaces = (): string[] =>
-  readStored<string[]>(
-    PERSISTED_NAMESPACES_STORAGE_KEY,
-    [],
-    (value) =>
-      Array.isArray(value) && value.every((item) => typeof item === 'string')
-  );
 
 /** The workspace ids slugs last resolved to. */
 const readWorkspaceIds = (): Record<string, string> =>
@@ -144,6 +239,30 @@ export const rememberWorkspaceId = (
 /** The persister this tab is running, with the namespace it writes. */
 let running: PolledQueryPersistence | null = null;
 
+/** The running persister's store, which tracks the issues opened. */
+let opened: IssueLimitedStore | null = null;
+
+/**
+ * Deletes every namespace of this app except the one kept, skipping any that
+ * became the running one in the meantime. Never rejects.
+ */
+const clearOtherNamespaces = async (
+  keep: string,
+  store?: QueryCacheStore
+): Promise<void> => {
+  const held = await listPersistedNamespaces(store);
+  await Promise.all(
+    held
+      .filter(
+        (namespace) =>
+          namespace !== keep &&
+          namespace.startsWith(NAMESPACE_PREFIX) &&
+          running?.namespace !== namespace
+      )
+      .map((namespace) => clearPersistedPolledQueries(namespace, store))
+  );
+};
+
 /**
  * Starts persisting one person's reads of one workspace, and deletes every
  * other namespace this browser holds, so a workspace switch leaves only the
@@ -158,42 +277,51 @@ export const startQueryPersistence = (
   if (userId === '' || workspaceId === '') return null;
   const namespace = persistedNamespace(userId, workspaceId);
   if (running?.namespace === namespace) return running;
+  const base = store ?? createIndexedDbQueryStore();
+  opened =
+    base === undefined ? null : withIssueLimit(base, namespace, workspaceId);
   running = persistPolledQueryCache({
     namespace,
     prefixes: persistedQueryPrefixes(workspaceId),
+    exclude: persistedQueryExclusions(workspaceId),
     version: PERSISTED_QUERY_VERSION,
+    maxEntries: PERSISTED_QUERY_MAX_ENTRIES,
     maxEntryBytes: PERSISTED_QUERY_MAX_ENTRY_CHARS,
-    ...(store === undefined ? {} : { store }),
+    ...(opened === null ? {} : { store: opened.store }),
   });
-  const others = readPersistedNamespaces().filter((held) => held !== namespace);
-  writeStored(PERSISTED_NAMESPACES_STORAGE_KEY, [namespace]);
-  for (const held of others) void clearPersistedPolledQueries(held, store);
+  void clearOtherNamespaces(namespace, store);
   return running;
 };
 
 /**
+ * Marks an issue as opened, so its read is kept on this device among the
+ * {@link PERSISTED_ISSUE_LIMIT} most recent. The ref is the id or key the
+ * view read the issue by. Does nothing for another workspace than the one
+ * persisting.
+ */
+export const recordOpenedIssue = (
+  workspaceId: string,
+  issueRef: string
+): void => {
+  if (workspaceId === '' || issueRef === '') return;
+  if (opened === null || opened.workspaceId !== workspaceId) return;
+  opened.open(serializeQueryKey(issueKey(workspaceId, issueRef)));
+};
+
+/**
  * Stops persisting and deletes every namespace this browser holds, for a
- * session that ended. Writes stop before anything is deleted, so a read
- * settling during sign out is not written back. Never rejects.
+ * session that ended. The upstream clear stops writes before anything is
+ * deleted, so a read settling during sign out is not written back. Never
+ * rejects.
  */
 export const clearQueryPersistence = async (
   store?: QueryCacheStore
 ): Promise<void> => {
-  const held = running;
   running = null;
-  const namespaces = new Set(readPersistedNamespaces());
-  if (held !== null) namespaces.add(held.namespace);
-  writeStored(PERSISTED_NAMESPACES_STORAGE_KEY, null);
+  opened = null;
   writeStored(PERSISTED_WORKSPACE_IDS_STORAGE_KEY, null);
-  const pending: Promise<void>[] = [];
-  if (held !== null) {
-    pending.push(held.clear());
-    namespaces.delete(held.namespace);
-  }
-  for (const namespace of namespaces) {
-    pending.push(clearPersistedPolledQueries(namespace, store));
-  }
-  await Promise.all(pending);
+  writeStored(LEGACY_NAMESPACES_STORAGE_KEY, null);
+  await clearAllPersistedPolledQueries(store);
 };
 
 /**
