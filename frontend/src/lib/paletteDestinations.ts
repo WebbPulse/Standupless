@@ -9,6 +9,7 @@
  * palette never opens a page that would only say the caller may not see it.
  */
 
+import { fuzzyMatch } from './fuzzyMatch';
 import { teamSettingsSectionPath } from './paths';
 import { TEAM_SETTINGS_SECTIONS, visibleSettingsPages } from './settingsIndex';
 import type { WorkspaceRead } from '../types/Api';
@@ -70,19 +71,10 @@ export const teamSettingsDestinations = (
   }));
 
 /**
- * Whether every word of the term appears in one of the texts, case blind, so
+ * Whether every word of the term lands in one of the texts, case blind, so
  * "team sla" finds a row whose label says SLA and whose keywords say team.
- * Matching is a plain substring per word, deterministic by design.
+ * The first text is the label; matching is the palette's deterministic fuzzy
+ * scorer, so "notif" and "ntoif" both find Notification settings.
  */
-export const matchesTerm = (
-  texts: readonly string[],
-  term: string
-): boolean => {
-  const words = term
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((word) => word !== '');
-  if (words.length === 0) return true;
-  const haystack = texts.join(' ').toLowerCase();
-  return words.every((word) => haystack.includes(word));
-};
+export const matchesTerm = (texts: readonly string[], term: string): boolean =>
+  fuzzyMatch(texts[0] ?? '', texts.slice(1), term).score > 0;
