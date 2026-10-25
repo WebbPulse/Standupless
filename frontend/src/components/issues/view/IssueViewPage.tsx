@@ -28,7 +28,7 @@ import {
   LuPlus,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { IssueListFilters } from '../../../api/issues';
+import type { IssueListFilters, OrderedIssueRead } from '../../../api/issues';
 import {
   VIEW_COLORS,
   createView,
@@ -47,7 +47,7 @@ import {
   takeLegacyFolds,
   useListFolds,
 } from '../../../hooks/useListFolds';
-import { useShortcut } from '../../../hooks/useShortcuts';
+import { displayKeys, useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { useOffline } from '../../../hooks/useOffline';
 import { isFeatureOn } from '../../../lib/features';
@@ -136,6 +136,13 @@ export interface ViewDetails {
   /** True for a view everyone at its location sees, false for the caller's own. */
   shared: boolean;
 }
+
+/** The keys that save the list or board in view as a new view, Option or Alt+V as in Linear. */
+export const SAVE_VIEW_KEYS = 'alt+v';
+
+/** The Save as view button's tooltip, naming its key. */
+export const saveViewTitle = (): string =>
+  `Save as view (${displayKeys(SAVE_VIEW_KEYS)[0] ?? ''})`;
 
 /** Props for SaveViewDialog. */
 export interface SaveViewDialogProps {
@@ -423,6 +430,15 @@ export interface IssueViewPageProps {
   notice?: ReactNode;
   /** True on My issues > Assigned, the one list that offers the Focus grouping. */
   focusGrouping?: boolean;
+  /** Positions by issue id the manual ordering follows, such as a key list's order. */
+  rank?: ReadonlyMap<string, number> | undefined;
+  /**
+   * The scope a new view saves over, when it differs from the one the page
+   * reads under, such as the issue ids a one-off key list resolved to.
+   */
+  saveScope?: IssueListFilters | undefined;
+  /** Told the rows each settled read holds, for a page that labels or orders by them. */
+  onRowsRead?: ((issues: readonly OrderedIssueRead[]) => void) | undefined;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -461,6 +477,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   statusCategories,
   notice,
   focusGrouping = false,
+  rank,
+  saveScope,
+  onRowsRead,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -596,6 +615,10 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
+  useEffect(() => {
+    if (onRowsRead !== undefined && !collection.isLoading)
+      onRowsRead(collection.issues);
+  }, [onRowsRead, collection.isLoading, collection.issues]);
   const customersShown =
     workspace !== null &&
     workspace.role !== 'guest' &&
@@ -732,10 +755,11 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       return;
     }
     const teamId = details.teamId;
+    const savedOver = saveScope ?? scope;
     const runsOver =
-      teamId === undefined || typeof scope.team_id === 'string'
-        ? scope
-        : { ...scope, team_id: teamId };
+      teamId === undefined || typeof savedOver.team_id === 'string'
+        ? savedOver
+        : { ...savedOver, team_id: teamId };
     try {
       const created = await createView(
         workspaceId,
@@ -806,7 +830,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   };
 
   useShortcut({
-    keys: 'shift+v',
+    keys: SAVE_VIEW_KEYS,
     label: 'Save as view',
     scope: 'page',
     group: 'View',
@@ -831,6 +855,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         size="sm"
         variant="ghost"
         className="gap-1.5"
+        title={saveViewTitle()}
         onClick={openSaveNew}
       >
         <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -1087,6 +1112,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             filterFields={filterFields}
             statusCategories={statusCategories}
             {...(customersShown ? { customerRequests } : {})}
+            rank={rank}
           />
         </div>
         {insightsOpen && (

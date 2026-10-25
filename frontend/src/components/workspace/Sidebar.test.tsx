@@ -36,6 +36,12 @@ import {
 } from '../../hooks/useCreateTeam';
 import { CustomizeSidebarContext } from '../../hooks/useCustomizeSidebar';
 import { triageSummaryKey } from '../../lib/queryKeys';
+import {
+  endIssueDrag,
+  ISSUE_DRAG_TYPE,
+  startIssueDrag,
+} from '../../lib/issueDrag';
+import type { OrderedIssueRead } from '../../api/issues';
 import type {
   CycleSettingsRead,
   FavoriteRead,
@@ -92,6 +98,23 @@ vi.mock('../../api/teams', () => ({
   setTeamOrder: (workspaceId: string, teamIds: string[]) =>
     setTeamOrder(workspaceId, teamIds),
   getCycleSettings: (_w: string, teamId: string) => getCycleSettings(teamId),
+  listStatuses: () => listStatuses(),
+  listLabels: () => listLabels(),
+}));
+
+const listStatuses = vi.fn<() => Promise<{ id: string }[]>>();
+const listLabels = vi.fn<() => Promise<{ id: string }[]>>();
+const moveIssues = vi.fn<(...args: unknown[]) => Promise<unknown[]>>();
+const getProject = vi.fn<() => Promise<{ name: string; team_ids: string[] }>>();
+
+vi.mock('../../lib/bulkIssueActions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/bulkIssueActions')>()),
+  moveIssues: (...args: unknown[]) => moveIssues(...args),
+}));
+
+vi.mock('../../api/planning', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/planning')>()),
+  getProject: () => getProject(),
 }));
 
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
@@ -298,6 +321,14 @@ const dragData = (): { dataTransfer: Partial<DataTransfer> } => ({
 });
 
 beforeEach(() => {
+  endIssueDrag();
+  listStatuses.mockReset();
+  listStatuses.mockResolvedValue([{ id: 'st-1' }]);
+  listLabels.mockReset();
+  listLabels.mockResolvedValue([]);
+  moveIssues.mockReset();
+  moveIssues.mockResolvedValue([]);
+  getProject.mockReset();
   listMembers.mockReset();
   listMembers.mockResolvedValue([]);
   listTeams.mockReset();
@@ -1410,5 +1441,185 @@ describe('opening Customize sidebar', () => {
     );
 
     expect(open).toHaveBeenCalled();
+  });
+});
+
+/** An issue in Engine, ready to drag out of a list. */
+const dragged: OrderedIssueRead = {
+  id: 'iss-1',
+  workspace_id: 'ws-1',
+  team_id: 'proj-1',
+  key: 'ENG-1',
+  number: 1,
+  title: 'Cache the token',
+  body: null,
+  status_id: 'st-1',
+  priority: 'high',
+  assignee_id: null,
+  label_ids: [],
+  estimate: null,
+  start_date: null,
+  due_date: null,
+  parent_id: null,
+  cycle_id: null,
+  project_id: null,
+  progress: { total: 0, completed: 0 },
+  created_by: 'user-1',
+  created_at: '2026-09-17T00:00:00Z',
+  updated_at: '2026-09-17T00:00:00Z',
+};
+
+/** Starts a drag of `issues` from a view whose write is `update`. */
+const dragIssues = (
+  update = vi.fn(),
+  issues: OrderedIssueRead[] = [dragged]
+): ReturnType<typeof vi.fn> => {
+  startIssueDrag(null, {
+    issues,
+    canEdit: () => true,
+    update,
+    queryKey: ['issues', 'proj-1'],
+  });
+  return update;
+};
+
+/** A drag event body for a drag of issues, which names the issue type. */
+const issueDragData = (): { dataTransfer: Partial<DataTransfer> } => ({
+  dataTransfer: {
+    types: ['text/plain', ISSUE_DRAG_TYPE],
+    dropEffect: 'none',
+  },
+});
+
+describe('dropping issues on the sidebar', () => {
+  it('lights a team while issues hover it and moves them there on drop', async () => {
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Design/ });
+    const section = screen.getByTestId('team-section-proj-2');
+    dragIssues();
+
+    fireEvent.dragEnter(section, issueDragData());
+    fireEvent.dragOver(section, issueDragData());
+    expect(toggle).toHaveAttribute('data-issue-drop', 'over');
+
+    fireEvent.drop(section, issueDragData());
+
+    expect(toggle).not.toHaveAttribute('data-issue-drop');
+    await waitFor(() => {
+      expect(moveIssues).toHaveBeenCalledWith('ws-1', [dragged], design, {
+        invalidate: [['issues', 'proj-1']],
+      });
+    });
+    expect(setTeamOrder).not.toHaveBeenCalled();
+    expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
+  });
+
+  it('asks first when the team would remap a status', async () => {
+    const user = userEvent.setup();
+    listStatuses.mockResolvedValue([{ id: 'st-other' }]);
+    renderSidebar();
+    await screen.findByRole('button', { name: /Design/ });
+    const section = screen.getByTestId('team-section-proj-2');
+    dragIssues();
+
+    fireEvent.dragOver(section, issueDragData());
+    fireEvent.drop(section, issueDragData());
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Move ENG-1 to Design?',
+    });
+    expect(dialog).toHaveTextContent(
+      '1 issue takes the closest status Design has.'
+    );
+    expect(moveIssues).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Move' }));
+
+    await waitFor(() => {
+      expect(moveIssues).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('leaves a team the issues are already in as it is', async () => {
+    renderSidebar();
+    await screen.findByRole('button', { name: /Engine/ });
+    const section = screen.getByTestId('team-section-proj-1');
+    dragIssues();
+
+    fireEvent.dragOver(section, issueDragData());
+    fireEvent.drop(section, issueDragData());
+
+    await waitFor(() => {
+      expect(listStatuses).not.toHaveBeenCalled();
+    });
+    expect(moveIssues).not.toHaveBeenCalled();
+  });
+
+  it('sets the cycle of a favorited cycle on every dragged issue', async () => {
+    listFavorites.mockResolvedValue([
+      {
+        kind: 'cycle',
+        target_id: 'cycle-1',
+        title: 'Cycle 4',
+        team_id: 'proj-1',
+        team_key_prefix: 'ENG',
+      },
+    ]);
+    renderSidebar();
+    const link = await screen.findByRole('link', { name: /Cycle 4/ });
+    const row = screen.getByTestId('favorite-cycle-cycle-1');
+    const second = { ...dragged, id: 'iss-2', key: 'ENG-2' };
+    const update = dragIssues(vi.fn(), [dragged, second]);
+
+    fireEvent.dragOver(row, issueDragData());
+    expect(link).toHaveAttribute('data-issue-drop', 'over');
+    fireEvent.drop(row, issueDragData());
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      ['iss-1', 'iss-2'],
+      { cycle_id: 'cycle-1' },
+      { message: 'Moved 2 issues to Cycle 4' }
+    );
+  });
+
+  it('sets the project of a favorited project on the team it is on', async () => {
+    listFavorites.mockResolvedValue([
+      { kind: 'project', target_id: 'proj-x', title: 'Billing' },
+    ]);
+    getProject.mockResolvedValue({ name: 'Billing', team_ids: ['proj-1'] });
+    renderSidebar();
+    await screen.findByRole('link', { name: /Billing/ });
+    const row = screen.getByTestId('favorite-project-proj-x');
+    const update = dragIssues();
+
+    fireEvent.dragOver(row, issueDragData());
+    fireEvent.drop(row, issueDragData());
+
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith(
+        ['iss-1'],
+        { project_id: 'proj-x' },
+        { message: 'Moved ENG-1 to Billing' }
+      );
+    });
+  });
+
+  it('neither lights nor lands a drop on a favorited view', async () => {
+    listFavorites.mockResolvedValue([
+      { kind: 'view', target_id: 'view-1', title: 'My bugs' },
+    ]);
+    renderSidebar();
+    const link = await screen.findByRole('link', { name: /My bugs/ });
+    const row = screen.getByTestId('favorite-view-view-1');
+    const update = dragIssues();
+    const data = issueDragData();
+
+    fireEvent.dragOver(row, data);
+    expect(link).not.toHaveAttribute('data-issue-drop');
+    expect(data.dataTransfer.dropEffect).toBe('none');
+    fireEvent.drop(row, data);
+
+    expect(update).not.toHaveBeenCalled();
   });
 });

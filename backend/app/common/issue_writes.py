@@ -29,6 +29,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import (
     PRIORITY_ORDER,
     Issue,
+    IssueRequester,
     IssueWriteConflict,
     issue_key,
     new_issue_id,
@@ -451,9 +452,12 @@ def create_issue(
     fresh: Optional[FreshRows] = None,
     origin_ref: Optional[str] = None,
     inherit: bool = True,
+    requester: Optional[IssueRequester] = None,
 ) -> Issue:
     """Create an issue and the sub-issues its template adds, answering the issue."""
-    return create_issue_tree(repositories, context, payload, fresh=fresh, origin_ref=origin_ref, inherit=inherit)[0]
+    return create_issue_tree(
+        repositories, context, payload, fresh=fresh, origin_ref=origin_ref, inherit=inherit, requester=requester
+    )[0]
 
 
 def create_issue_tree(
@@ -464,6 +468,7 @@ def create_issue_tree(
     fresh: Optional[FreshRows] = None,
     origin_ref: Optional[str] = None,
     inherit: bool = True,
+    requester: Optional[IssueRequester] = None,
 ) -> tuple[Issue, list[Issue]]:
     """Create an issue and the sub-issues its template adds, all of them or none.
 
@@ -476,9 +481,13 @@ def create_issue_tree(
     `origin_ref` is kept on the issue's created activity, such as the Message-ID
     of the mail that filed it. `inherit` off keeps a sub-issue from taking its
     parent's cycle and assignee, for a blueprint that already plans both.
+    `requester` is who asked, for an issue an intake files on someone's behalf,
+    and is kept on the issue alone, never on its sub-issues.
     """
     fresh = fresh or FreshRows()
-    issue, template, filled = _create_one(repositories, context, payload, fresh, origin_ref=origin_ref, inherit=inherit)
+    issue, template, filled = _create_one(
+        repositories, context, payload, fresh, origin_ref=origin_ref, inherit=inherit, requester=requester
+    )
     created: list[Issue] = []
     try:
         team = repositories.teams.get(context.workspace_id, issue.team_id)
@@ -540,6 +549,7 @@ def _create_one(
     *,
     origin_ref: Optional[str] = None,
     inherit: bool = True,
+    requester: Optional[IssueRequester] = None,
 ) -> tuple[Issue, Optional[IssueTemplate], IssueCreate]:
     """Create one issue, allocating its key from the team's counter, and answer the template and the filled create.
 
@@ -635,6 +645,7 @@ def _create_one(
         updated_source=context.source,
         mentioned_user_ids=mentions,
         in_triage=in_triage,
+        requester=requester,
     )
     apply_sla(repositories, None, issue)
     try:

@@ -240,6 +240,27 @@ class Progress(BaseModel):
     completed: int = 0
 
 
+class IssueRequester(BaseModel):
+    """Who asked for an issue an intake filed on their behalf, whether or not they hold a seat.
+
+    Slack and email intake write an issue as a member, the reactor or the admin
+    who turned intake on, so `created_by` alone would hide the person who asked.
+    This keeps what the intake already knew about them: the source, their name,
+    a Slack handle, user id and avatar, or an email address masked before it is
+    stored, so no reader ever sees the full address. `user_id` names the
+    workspace member behind them when one matched, and the requester is then
+    shown as that member.
+    """
+
+    source: str
+    name: str = ""
+    handle: str | None = None
+    masked_email: str | None = None
+    avatar_url: str | None = None
+    external_id: str | None = None
+    user_id: str | None = None
+
+
 class PullRequestSummaryEntry(BaseModel):
     """One linked pull request as a list row's chip shows it."""
 
@@ -316,6 +337,7 @@ class Issue(BaseModel):
     status_changed_at: datetime | None = None
     external_ref: str | None = None
     import_batch_id: str | None = None
+    requester: IssueRequester | None = None
 
     _revision: int | None = PrivateAttr(default=None)
 
@@ -427,6 +449,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "status_changed_at",
         "external_ref",
         "import_batch_id",
+        "requester",
         PULL_REQUEST_SUMMARY,
     )
     for attachment in (*optional, *SLA_FIELDS):

@@ -274,6 +274,9 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "set_issue_reminder",
         "list_issue_reminders",
         "cancel_issue_reminder",
+        "set_reminder",
+        "list_reminders",
+        "cancel_reminder",
         "get_team_notification_subscription",
         "set_team_notification_subscription",
         "snooze_notification",
@@ -394,7 +397,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_issue_link",
         "delete_issue_link",
     }
-    assert len(TOOLS) == 280
+    assert len(TOOLS) == 283
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

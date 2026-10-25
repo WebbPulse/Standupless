@@ -21,7 +21,7 @@ from app.common.body_versions import body_version
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity, DescriptionVersion
-from app.common.db.dynamo.issues import Issue, PullRequestSummary
+from app.common.db.dynamo.issues import Issue, IssueRequester, PullRequestSummary
 from app.common.db.dynamo.relations import Relation
 from app.common.db.dynamo.team_config import SlaCalendar
 from app.common.sla import sla_status
@@ -370,6 +370,37 @@ class PullRequestSummaryRead(BaseModel):
         )
 
 
+class IssueRequesterRead(BaseModel):
+    """Who asked for an issue Slack or email intake filed, shown even when they hold no seat."""
+
+    source: Literal["slack", "email"] = Field(description="The intake the request came through.")
+    name: str = Field(default="", description="The requester's name, empty when the intake knew none.")
+    handle: Optional[str] = Field(default=None, description="The requester's Slack display name.")
+    masked_email: Optional[str] = Field(
+        default=None, description="The sender's address, masked as `j***@example.com`; the full address is never kept."
+    )
+    avatar_url: Optional[str] = Field(default=None, description="The requester's Slack avatar.")
+    external_id: Optional[str] = Field(default=None, description="The requester's Slack user id.")
+    user_id: Optional[str] = Field(
+        default=None, description="The workspace member behind the requester, when one matched."
+    )
+
+    @classmethod
+    def from_requester(cls, requester: Optional[IssueRequester]) -> Optional["IssueRequesterRead"]:
+        """The response shape of a stored requester, or `None` for an issue nobody asked for through an intake."""
+        if requester is None or requester.source not in ("slack", "email"):
+            return None
+        return cls(
+            source="slack" if requester.source == "slack" else "email",
+            name=requester.name,
+            handle=requester.handle,
+            masked_email=requester.masked_email,
+            avatar_url=requester.avatar_url,
+            external_id=requester.external_id,
+            user_id=requester.user_id,
+        )
+
+
 class IssueRead(BaseModel):
     """One issue as the API returns it."""
 
@@ -439,6 +470,10 @@ class IssueRead(BaseModel):
         description="When the issue joined its current cycle, null with no cycle or when the moment is unknown.",
     )
     external_ref: Optional[str] = None
+    requester: Optional[IssueRequesterRead] = Field(
+        default=None,
+        description="Who asked, for an issue Slack or email intake filed on someone's behalf, seat or no seat.",
+    )
 
     @classmethod
     def from_row(cls, issue: Issue, parent: Optional[Issue] = None) -> "IssueRead":
@@ -496,6 +531,7 @@ class IssueRead(BaseModel):
             status_changed_at=issue.entered_status_at(),
             cycle_added_at=issue.cycle_added_at if issue.cycle_id else None,
             external_ref=issue.external_ref,
+            requester=IssueRequesterRead.from_requester(issue.requester),
         )
 
 

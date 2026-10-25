@@ -4,7 +4,8 @@
  * lands, the rollback when a write fails, the rail sections for the parent,
  * sub-issues, relations and links, the issue menu that adds them, the unified
  * timeline, following issue links within and across teams, and the
- * capability gate that hides every control.
+ * capability gate that hides every control, and the phone layout that folds
+ * the properties behind a toggle.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -1325,5 +1326,42 @@ describe('the details panel', () => {
     expect(
       await screen.findByRole('complementary', { name: 'Properties' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('on a phone', () => {
+  it('folds the properties behind a toggle below the sm breakpoint and leaves desktop alone', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'Properties',
+    });
+    const toggle = screen.getByRole('button', { name: 'Show properties' });
+    expect(toggle).toHaveClass('sm:hidden');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveClass('max-sm:hidden');
+    expect(panel.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+
+    await user.click(toggle);
+
+    expect(
+      screen.getByRole('button', { name: 'Hide properties' })
+    ).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      screen.getByRole('complementary', { name: 'Properties' })
+    ).not.toHaveClass('max-sm:hidden');
+  });
+
+  it('keeps the title and description ahead of the properties', async () => {
+    renderPage();
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'Properties',
+    });
+    const title = screen.getByText('Cache the token');
+    expect(
+      title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

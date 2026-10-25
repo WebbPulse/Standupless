@@ -40,11 +40,12 @@ from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
 from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
-from app.common.db.dynamo.comments import Comment
+from app.common.db.dynamo.comments import Comment, CommentAnchor
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.document_comments import create_document_comment, document_comment_page
+from app.common.documents import get_document
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
@@ -806,17 +807,7 @@ def _add_comment(call: ToolCall) -> Any:
         return _add_document_comment(call)
     issue = issue_ref(call, call.require("issue_id"))
     parent = call.optional("parent_comment_id")
-    quote = call.optional("quote")
-    anchor = None
-    if quote is not None:
-        if parent:
-            raise ToolError("quote pins a new thread, so it cannot go on a reply")
-        text = str(quote).strip()
-        if not text or len(text) > ANCHOR_QUOTE_MAX:
-            raise ToolError(f"quote must be between 1 and {ANCHOR_QUOTE_MAX} characters")
-        anchor = anchor_from_quote(issue.body or "", text)
-        if anchor is None:
-            raise ToolError("quote must be text the issue description shows")
+    anchor = _quote_anchor(call, issue.body or "", "the issue description")
     sync = call.optional("sync_to_github") is True
     if sync and parent:
         _sync_root(call, issue, str(parent))
@@ -889,18 +880,47 @@ def _document_target(call: ToolCall) -> bool:
     return named_document
 
 
+def _quote_anchor(call: ToolCall, text: str, where: str) -> CommentAnchor | None:
+    """The anchor a call's `quote` names in `text`, `None` without one, or a refusal.
+
+    Refused on a reply, past the cap, or when `text` does not show the quote, with
+    `where` naming the text in the refusal.
+    """
+    quote = call.optional("quote")
+    if quote is None:
+        return None
+    if call.optional("parent_comment_id"):
+        raise ToolError("quote pins a new thread, so it cannot go on a reply")
+    wanted = str(quote).strip()
+    if not wanted or len(wanted) > ANCHOR_QUOTE_MAX:
+        raise ToolError(f"quote must be between 1 and {ANCHOR_QUOTE_MAX} characters")
+    anchor = anchor_from_quote(text, wanted)
+    if anchor is None:
+        raise ToolError(f"quote must be text {where} shows")
+    return anchor
+
+
 def _add_document_comment(call: ToolCall) -> Any:
-    """Add a comment, or a reply to a top level comment, to a document through the route's path."""
-    for name in ("quote", "sync_to_github", "github_target"):
+    """Add a comment, or a reply to a top level comment, to a document through the route's path.
+
+    `quote` pins a new thread to the first place the document's body shows that text.
+    """
+    for name in ("sync_to_github", "github_target"):
         if call.optional(name) is not None:
             raise ToolError(f"{name} is for issue comments only")
+    document_id = str(call.require("document_id"))
+    anchor = None
+    if call.optional("quote") is not None:
+        document = get_document(call.repositories, call.context, document_id)
+        anchor = _quote_anchor(call, document.body or "", "the document")
     parent = call.optional("parent_comment_id")
     created = create_document_comment(
         call.repositories,
         call.context,
-        str(call.require("document_id")),
+        document_id,
         str(call.require("body")),
         parent_comment_id=str(parent) if parent else None,
+        anchor=anchor,
     )
     return _comment_json(created)
 
@@ -1615,8 +1635,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "body": string("The comment body, in Markdown; @mentions notify"),
                 "parent_comment_id": string("A top level comment on the same issue or document to reply to"),
                 "quote": string(
-                    "Pin a new thread to this passage of the issue description, copied as it reads; the "
-                    "description highlights it. Not for replies"
+                    "Pin a new thread to this passage of the issue description or the document, copied as "
+                    "it reads; the page highlights it. Not for replies"
                 ),
                 "sync_to_github": boolean(
                     "Also sync the thread to a pull request or GitHub issue linked to this issue, so the App "

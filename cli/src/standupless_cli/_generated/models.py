@@ -887,6 +887,7 @@ class DisplayOptionsBody(TypedDict):
 
 
 class DocumentCommentCreate(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     body: str
     parent_comment_id: NotRequired[str | None]
 
@@ -976,11 +977,17 @@ class DownloadRead(TypedDict):
 class DraftRead(TypedDict):
     body: str
     created_at: str
-    issue_id: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
+    initiative_id: NotRequired[str | None]
+    issue_id: NotRequired[str | None]
     issue_key: NotRequired[str | None]
     issue_title: NotRequired[str | None]
     parent_comment_id: NotRequired[str | None]
-    team_id: str
+    parent_kind: NotRequired[Literal["issue", "document", "project_update", "initiative_update"]]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+    update_id: NotRequired[str | None]
     updated_at: str
 
 
@@ -1515,6 +1522,16 @@ class IssueReminderRead(TypedDict):
 
 class IssueReminderWrite(TypedDict):
     remind_at: str
+
+
+class IssueRequesterRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    external_id: NotRequired[str | None]
+    handle: NotRequired[str | None]
+    masked_email: NotRequired[str | None]
+    name: NotRequired[str]
+    source: Literal["slack", "email"]
+    user_id: NotRequired[str | None]
 
 
 class IssueSyncRead(TypedDict):
@@ -2453,6 +2470,16 @@ class ReleaseUpdate(TypedDict):
     name: NotRequired[str | None]
     url: NotRequired[str | None]
     version: NotRequired[str | None]
+
+
+class ReminderRead(TypedDict):
+    created_at: str
+    entity_id: str
+    entity_type: Literal["issue", "project", "initiative", "document"]
+    issue_key: NotRequired[str | None]
+    remind_at: str
+    team_id: NotRequired[str]
+    title: str
 
 
 class RepositoryReleaseSourceRead(TypedDict):
@@ -4155,6 +4182,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     project_milestone_id: NotRequired[str | None]
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     relation_count: NotRequired[int]
+    requester: NotRequired[IssueRequesterRead | None]
     sla_breaches_at: NotRequired[str | None]
     sla_calendar: NotRequired[Literal["calendar", "business_days"]]
     sla_paused_at: NotRequired[str | None]
@@ -5059,6 +5087,10 @@ class ReleaseRead(TypedDict):
     url: NotRequired[str | None]
     version: NotRequired[str | None]
     workspace_id: str
+
+
+class ReminderListRead(TypedDict):
+    reminders: NotRequired[list[ReminderRead]]
 
 
 class RepositoryLinkWrite(TypedDict):

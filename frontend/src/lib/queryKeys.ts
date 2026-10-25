@@ -363,6 +363,13 @@ export const issueReminderKey = (
   issueId: string
 ): QueryKey => ['issue-reminder', workspaceId, issueId];
 
+/** The caller's pending reminder on one project, initiative or document. */
+export const entityReminderKey = (
+  workspaceId: string,
+  entityType: string,
+  entityId: string
+): QueryKey => ['entity-reminder', workspaceId, entityType, entityId];
+
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',

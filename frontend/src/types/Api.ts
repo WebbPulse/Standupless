@@ -1107,6 +1107,22 @@ export interface PullRequestSummaryRead {
 }
 
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
+/** Who asked for an issue that came in through Slack or email intake. */
+export interface IssueRequester {
+  source: 'slack' | 'email';
+  /** The person's name as Slack or the mail sender gave it, empty when only an address was known. */
+  name: string;
+  /** The Slack handle, without the at sign. */
+  handle?: string | null;
+  /** The sender's address masked to its first character and domain. */
+  masked_email?: string | null;
+  avatar_url?: string | null;
+  /** The Slack user id. */
+  external_id?: string | null;
+  /** The member the requester is, when their verified address names one. */
+  user_id?: string | null;
+}
+
 export interface IssueRead {
   id: string;
   workspace_id: string;
@@ -1200,6 +1216,12 @@ export interface IssueRead {
    * a Linear or Jira key. Null for issues created in Standupless.
    */
   external_ref?: string | null;
+  /**
+   * Who asked for the issue through Slack or email intake, kept even when they
+   * hold no seat. Null for issues created in Standupless. The address is
+   * already masked, so no response carries a full one.
+   */
+  requester?: IssueRequester | null;
   /**
    * When the issue first landed in a started status, kept after it moves on.
    * Optional so a row read before it was stamped reads as none.
@@ -1759,9 +1781,9 @@ export interface ReactionGroup {
 }
 
 /**
- * The passage of the issue description a root comment is pinned to: the
- * quoted text and a little of the text either side, which finds it again
- * among repeats. The description itself is never rewritten.
+ * The passage of the issue description or the document a root comment is
+ * pinned to: the quoted text and a little of the text either side, which finds it again
+ * among repeats. The text itself is never rewritten.
  */
 export interface CommentAnchor {
   quote: string;
@@ -1796,7 +1818,7 @@ export interface CommentRead {
   slack_thread?: SlackThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
-  /** The description passage a root comment is pinned to, when it is. */
+  /** The passage of the description or document a root comment is pinned to, when it is. */
   anchor?: CommentAnchor | null;
   /** The document the comment was written on; null on an issue's comment. */
   document_id?: string | null;
@@ -2439,6 +2461,30 @@ export interface IssueReminderRead {
 /** The caller's pending reminders, soonest first. */
 export interface IssueReminderListRead {
   reminders: IssueReminderRead[];
+}
+
+/** What a reminder can be set on. */
+export type ReminderEntityType =
+  'issue' | 'project' | 'initiative' | 'document';
+
+/**
+ * One pending reminder the caller set on an issue, a project, an initiative or
+ * a document, with the subject's title as it reads now. `issue_key` is set for
+ * an issue only, and `team_id` is empty for a subject with no single team.
+ */
+export interface ReminderRead {
+  entity_type: ReminderEntityType;
+  entity_id: string;
+  title: string;
+  issue_key?: string | null;
+  team_id: string;
+  remind_at: string;
+  created_at: string;
+}
+
+/** The caller's pending reminders on every kind of subject, soonest first. */
+export interface ReminderListRead {
+  reminders: ReminderRead[];
 }
 
 /** How many rows a mark-read call changed. */
@@ -6115,15 +6161,25 @@ export interface FavoriteListRead {
   folders?: FavoriteFolderRead[];
 }
 
-/** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
+/** What a comment draft sits on. */
+export type CommentDraftParentKind =
+  'issue' | 'document' | 'project_update' | 'initiative_update';
+
+/** One of the caller's unposted comment drafts, on an issue, a document or an update thread, or one reply thread of them. */
 export interface DraftRead {
-  issue_id: string;
-  /** The root comment a reply draft answers, or null for a draft on the issue itself. */
+  parent_kind?: CommentDraftParentKind;
+  issue_id?: string | null;
+  document_id?: string | null;
+  update_id?: string | null;
+  project_id?: string | null;
+  initiative_id?: string | null;
+  /** The root comment a reply draft answers, or null for a draft on the parent itself. */
   parent_comment_id?: string | null;
-  team_id: string;
+  team_id?: string | null;
   body: string;
   issue_key?: string | null;
   issue_title?: string | null;
+  document_title?: string | null;
   created_at: string;
   updated_at: string;
 }

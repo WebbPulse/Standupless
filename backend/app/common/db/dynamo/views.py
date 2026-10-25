@@ -241,34 +241,62 @@ def draft_user_prefix(user_id: str) -> str:
     return f"{DRAFT_PREFIX}{user_id}#"
 
 
+CommentDraftParent = Literal["issue", "document", "project_update", "initiative_update"]
+"""What a comment draft is written on: an issue, a document, or a project or initiative update's thread."""
+
+
 def draft_issue_prefix(user_id: str, issue_id: str) -> str:
-    """The sort key prefix every draft one member holds on one issue shares."""
+    """The sort key prefix every draft one member holds on one issue, document or update shares.
+
+    Issues, documents and updates all carry ULIDs, so the three share this one
+    key space without colliding.
+    """
     return f"{draft_user_prefix(user_id)}{issue_id}#"
 
 
 def draft_key(user_id: str, issue_id: str, parent_comment_id: str | None = None) -> str:
-    """The sort key of one member's draft on an issue, or on one reply thread of it."""
+    """The sort key of one member's draft on an issue, document or update, or on one reply thread of it."""
     return f"{draft_issue_prefix(user_id, issue_id)}{parent_comment_id or DRAFT_ISSUE_THREAD}"
 
 
 class CommentDraft(BaseModel):
-    """One member's unposted comment on an issue, or a reply to one root comment.
+    """One member's unposted comment on an issue, a document or an update thread, or a reply to one root comment.
 
     Stored beside saved views because the table has no stream, so writing a
     draft can never notify anyone, and its key starts with the author, so a
     member reads only their own. One row per member per thread: saving again
     replaces the body.
+
+    `parent_kind` says what the draft sits on. An issue draft sets `issue_id`;
+    a document draft sets `document_id`; an update thread draft sets
+    `update_id` with the `project_id` or `initiative_id` it belongs to. Rows
+    saved before other kinds existed read as issue drafts. `team_id` is empty
+    when the parent sits under no one team.
     """
 
     workspace_id: str
     view_key: str
     user_id: str
-    issue_id: str
-    team_id: str
+    parent_kind: CommentDraftParent = "issue"
+    issue_id: str = ""
+    document_id: str | None = None
+    update_id: str | None = None
+    project_id: str | None = None
+    initiative_id: str | None = None
+    team_id: str = ""
     parent_comment_id: str | None = None
     body: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @property
+    def thread_id(self) -> str:
+        """The issue, document or update id the draft's key is filed under."""
+        if self.parent_kind == "document":
+            return self.document_id or ""
+        if self.parent_kind in ("project_update", "initiative_update"):
+            return self.update_id or ""
+        return self.issue_id
 
 
 ISSUE_DRAFT_PREFIX = "issuedraft#"

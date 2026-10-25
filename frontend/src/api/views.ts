@@ -30,6 +30,9 @@ import type {
   NotificationListRead,
   NotificationRead,
   ProjectsDisplayPreference,
+  ReminderEntityType,
+  ReminderListRead,
+  ReminderRead,
   SavedViewCreate,
   SavedViewRead,
   SavedViewUpdate,
@@ -93,6 +96,7 @@ export interface ViewFilterNegations {
   subscriber_id_not?: string | string[];
   label_id_all?: string | string[];
   parent_id_not?: string | string[];
+  issue_id?: string | string[];
   has_sub_issues?: 'true' | 'false';
   completed_after?: string;
   completed_before?: string;
@@ -431,6 +435,18 @@ export const remindersPath = (workspaceId: string): string =>
 /** The route the caller's reminder on one issue is set and cancelled through. */
 export const reminderPath = (workspaceId: string, issueId: string): string =>
   `${remindersPath(workspaceId)}/${encodeURIComponent(issueId)}`;
+
+/** The route the caller's reminders on every kind of subject are listed on. */
+export const entityRemindersPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/entity-reminders`;
+
+/** The route the caller's reminder on one subject is set and cancelled through. */
+export const entityReminderPath = (
+  workspaceId: string,
+  entityType: ReminderEntityType,
+  entityId: string
+): string =>
+  `${entityRemindersPath(workspaceId)}/${entityType}/${encodeURIComponent(entityId)}`;
 
 /** The route one notification is deleted through. */
 export const notificationPath = (
@@ -905,6 +921,53 @@ export const cancelReminder = async (
   issueId: string
 ): Promise<void> => {
   await apiClient.delete<void>(reminderPath(workspaceId, issueId));
+};
+
+/**
+ * Lists the caller's pending reminders on every kind of subject, soonest
+ * first, optionally on one kind or one subject alone. A reminder on a subject
+ * the caller can no longer see is left out.
+ */
+export const listEntityReminders = async (
+  workspaceId: string,
+  entityType?: ReminderEntityType,
+  entityId?: string,
+  signal?: AbortSignal
+): Promise<ReminderRead[]> => {
+  const response = await apiClient.get<ReminderListRead>(
+    entityRemindersPath(workspaceId),
+    listOptions({ entity_type: entityType, entity_id: entityId }, signal)
+  );
+  const reminders = response.data?.reminders;
+  return Array.isArray(reminders) ? reminders : [];
+};
+
+/**
+ * Reminds the caller about one project, initiative, document or issue at a
+ * moment, replacing any reminder they already set on it.
+ */
+export const setEntityReminder = async (
+  workspaceId: string,
+  entityType: ReminderEntityType,
+  entityId: string,
+  remindAt: string
+): Promise<ReminderRead> => {
+  const response = await apiClient.put<ReminderRead>(
+    entityReminderPath(workspaceId, entityType, entityId),
+    { remind_at: remindAt }
+  );
+  return response.data;
+};
+
+/** Cancels the caller's pending reminder on one subject. */
+export const cancelEntityReminder = async (
+  workspaceId: string,
+  entityType: ReminderEntityType,
+  entityId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    entityReminderPath(workspaceId, entityType, entityId)
+  );
 };
 
 /** Deletes one notification. */

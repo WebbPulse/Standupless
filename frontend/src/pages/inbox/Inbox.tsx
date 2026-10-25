@@ -45,6 +45,10 @@
  *
  * A project update row names its project rather than an issue, and its pane
  * offers the project's Updates tab, since there is no issue to peek.
+ *
+ * Below the `lg` breakpoint the list and the pane stack: the list fills the
+ * page until a row opens, then the pane takes its place. On a phone the page
+ * bar carries a back arrow to the list while a row is open.
  */
 
 import React, {
@@ -61,6 +65,7 @@ import {
 } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
+  LuArrowLeft,
   LuBan,
   LuCheck,
   LuCheckCheck,
@@ -217,10 +222,21 @@ const isProjectRoleRow = (row: NotificationRead): boolean =>
   row.kind === 'project_lead_assigned' || row.kind === 'project_member_added';
 
 /**
+ * Whether a row is a reminder the reader set on a project, an initiative or a
+ * document rather than an issue. Its issue fields are blank and the subject's
+ * id and name carry what it is about.
+ */
+const isEntityReminderRow = (row: NotificationRead): boolean =>
+  row.kind === 'reminder' &&
+  row.issue_id === '' &&
+  Boolean(row.project_id || row.initiative_id || row.document_id);
+
+/**
  * Whether a row is about a project rather than an issue: one of its updates,
- * its entering a view, or a role on it handed to the reader.
+ * its entering a view, a role on it handed to the reader, or a reminder on it.
  */
 const isProjectRow = (row: NotificationRead): boolean =>
+  (isEntityReminderRow(row) && Boolean(row.project_id)) ||
   ((row.kind === 'project_update' ||
     row.kind === 'project_update_comment' ||
     row.kind === 'project_update_due' ||
@@ -235,6 +251,7 @@ const isProjectRow = (row: NotificationRead): boolean =>
  * issue fields are blank; `initiative_name` and `due_state` carry what it says.
  */
 const isInitiativeRow = (row: NotificationRead): boolean =>
+  (isEntityReminderRow(row) && Boolean(row.initiative_id)) ||
   row.kind === 'initiative_update_due' ||
   row.kind === 'initiative_owner_assigned' ||
   isInitiativeReplyRow(row);
@@ -297,7 +314,8 @@ const isReviewRow = (row: NotificationRead): boolean =>
  * and `document_id` and `document_title` carry what it is about.
  */
 const isDocumentRow = (row: NotificationRead): boolean =>
-  row.kind === 'document_comment';
+  row.kind === 'document_comment' ||
+  (isEntityReminderRow(row) && Boolean(row.document_id));
 
 /**
  * Whether a row is about one issue, so it offers the issue-only actions:
@@ -332,49 +350,117 @@ const subjectName = (row: NotificationRead): string =>
             ? `${row.issue_title} standup`
             : row.issue_key;
 
+/** Where a reminder on a project, an initiative or a document opens: the subject's own page. */
+const reminderSubjectPath = (slug: string, row: NotificationRead): string =>
+  row.document_id
+    ? documentPath(slug, row.document_id)
+    : row.project_id
+      ? projectPath(slug, {
+          project_id: row.project_id,
+          name: row.project_name,
+        })
+      : initiativePath(slug, {
+          initiative_id: row.initiative_id ?? '',
+          name: row.initiative_name,
+        });
+
+/** What a reminder's subject is called in its pane and its open button. */
+const reminderNoun = (row: NotificationRead): string =>
+  row.document_id ? 'document' : row.project_id ? 'project' : 'initiative';
+
 /** Where opening a row goes: its issue, its project's or initiative's updates, team settings, the standup or Reviews. */
 const rowPath = (slug: string, row: NotificationRead): string =>
-  isDocumentRow(row)
-    ? documentPath(slug, row.document_id ?? '')
-    : isReviewRow(row)
-      ? reviewsPath(slug)
-      : row.kind === 'view_project_added' || isProjectRoleRow(row)
-        ? projectPath(slug, {
-            project_id: row.project_id ?? '',
-            name: row.project_name,
-          })
-        : isProjectRow(row)
-          ? projectUpdatesTabPath(slug, {
+  isEntityReminderRow(row)
+    ? reminderSubjectPath(slug, row)
+    : isDocumentRow(row)
+      ? documentPath(slug, row.document_id ?? '')
+      : isReviewRow(row)
+        ? reviewsPath(slug)
+        : row.kind === 'view_project_added' || isProjectRoleRow(row)
+          ? projectPath(slug, {
               project_id: row.project_id ?? '',
               name: row.project_name,
             })
-          : row.kind === 'initiative_owner_assigned'
-            ? initiativePath(slug, {
-                initiative_id: row.initiative_id ?? '',
-                name: row.initiative_name,
+          : isProjectRow(row)
+            ? projectUpdatesTabPath(slug, {
+                project_id: row.project_id ?? '',
+                name: row.project_name,
               })
-            : isInitiativeRow(row)
-              ? initiativeUpdatesTabPath(slug, {
+            : row.kind === 'initiative_owner_assigned'
+              ? initiativePath(slug, {
                   initiative_id: row.initiative_id ?? '',
                   name: row.initiative_name,
                 })
-              : isChannelRow(row)
-                ? row.issue_key
-                  ? teamSettingsPath(slug, row.issue_key)
-                  : integrationsSettingsPath(slug)
-                : isExportRow(row)
-                  ? exportSettingsPath(slug)
-                  : isImportRow(row)
-                    ? importSettingsPath(slug)
-                    : isAppApprovalRow(row)
-                      ? connectedAppsPath(slug)
-                      : isStandupRow(row)
-                        ? `${teamStandupPath(slug, row.issue_key)}${
-                            row.standup_date
-                              ? `?date=${encodeURIComponent(row.standup_date)}`
-                              : ''
-                          }`
-                        : issuePath(slug, row.issue_key);
+              : isInitiativeRow(row)
+                ? initiativeUpdatesTabPath(slug, {
+                    initiative_id: row.initiative_id ?? '',
+                    name: row.initiative_name,
+                  })
+                : isChannelRow(row)
+                  ? row.issue_key
+                    ? teamSettingsPath(slug, row.issue_key)
+                    : integrationsSettingsPath(slug)
+                  : isExportRow(row)
+                    ? exportSettingsPath(slug)
+                    : isImportRow(row)
+                      ? importSettingsPath(slug)
+                      : isAppApprovalRow(row)
+                        ? connectedAppsPath(slug)
+                        : isStandupRow(row)
+                          ? `${teamStandupPath(slug, row.issue_key)}${
+                              row.standup_date
+                                ? `?date=${encodeURIComponent(row.standup_date)}`
+                                : ''
+                            }`
+                          : issuePath(slug, row.issue_key);
+
+/** Props for ReminderPane: the selected row and how to leave it. */
+interface ReminderPaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a reminder the reader set on a project, an initiative or a document, which opens the subject. */
+const ReminderPane: React.FC<ReminderPaneProps> = ({ row, slug, onClose }) => {
+  const navigate = useNavigate();
+  const noun = reminderNoun(row);
+  return (
+    <aside
+      aria-label="Reminder"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      {noun === 'document' ? (
+        <LuFileText aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      ) : noun === 'project' ? (
+        <LuTarget aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      ) : (
+        <LuGoal aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      )}
+      <p className="text-sm text-text">
+        You asked to be reminded about{' '}
+        <span className="font-medium">{subjectName(row)}</span>
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          {`Open ${noun}`}
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 /** Props for DocumentCommentPane: the selected row and how to leave it. */
 interface DocumentCommentPaneProps {
@@ -2012,6 +2098,18 @@ export const Inbox: React.FC = () => {
     <WorkspaceShell
       title="Inbox"
       flush
+      leading={
+        selected === null ? undefined : (
+          <IconButton
+            label="Back to notifications"
+            size="sm"
+            className="sm:hidden"
+            onClick={closePane}
+          >
+            <LuArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        )
+      }
       toolbar={
         priority.enabled ? (
           <div
@@ -2281,6 +2379,13 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isEntityReminderRow(current) ? (
+            <ReminderPane
+              key={current.notification_id}
+              row={current}
+              slug={slug}
+              onClose={closePane}
+            />
           ) : isDocumentRow(current) ? (
             <DocumentCommentPane
               key={current.notification_id}

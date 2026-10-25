@@ -232,6 +232,8 @@ export interface IssueListViewProps {
    * groups hold no issue and rows show no customers.
    */
   customerRequests?: CustomerRequestMap | undefined;
+  /** Positions by issue id the manual ordering follows, as {@link SortOptions} reads them. */
+  rank?: ReadonlyMap<string, number> | undefined;
 }
 
 /**
@@ -357,6 +359,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   filterFields,
   statusCategories,
   customerRequests,
+  rank,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -426,9 +429,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       sortIssues(
         shownIssues(loaded, { showSubIssues, completed }, context),
         state.ordering,
-        { reverse: state.reverse, context }
+        { reverse: state.reverse, context, rank }
       ),
-    [loaded, state.ordering, state.reverse, showSubIssues, completed, context]
+    [
+      loaded,
+      state.ordering,
+      state.reverse,
+      showSubIssues,
+      completed,
+      context,
+      rank,
+    ]
   );
   const byId = useMemo(
     () => new Map(sorted.map((issue) => [issue.id, issue])),
@@ -1424,6 +1435,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       canEdit,
       ...(canEditIssue === undefined ? {} : { canEditIssue }),
       update,
+      queryKey,
       ...(byCustomer && workspaceId !== '' ? { moveCustomer } : {}),
       createLabel,
       selected: liveSelected,
@@ -1451,6 +1463,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       canEdit,
       canEditIssue,
       update,
+      queryKey,
       byCustomer,
       workspaceId,
       moveCustomer,

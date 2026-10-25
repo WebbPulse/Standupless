@@ -7,7 +7,8 @@
  * Move to team gives the issue a new key, and an old key that still resolves
  * is replaced in the address with the current one. The page holds the threads
  * pinned to passages of the description, so the description and the timeline
- * share them.
+ * share them. A segment naming several comma-separated keys opens the
+ * one-off list of those issues instead.
  */
 
 import React from 'react';
@@ -15,14 +16,20 @@ import { useParams } from 'react-router-dom';
 import IssueView from '../../components/issues/IssueView';
 import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import IssueKeyList, { parseIssueKeys } from './IssueKeyList';
 
-/** The full page for one issue. */
+/** The full page for one issue, or the list of several named by key. */
 export const IssueDetail: React.FC = () => {
   const { key } = useParams<{ key: string }>();
+  const keys = parseIssueKeys(key ?? '');
+  if (keys.length > 1) {
+    const joined = keys.join(',');
+    return <IssueKeyList key={joined} keys={keys} />;
+  }
   return (
     <PassageThreadsProvider key={key}>
       <IssueView
-        issueRef={key ?? ''}
+        issueRef={key?.includes(',') === true ? (keys[0] ?? '') : (key ?? '')}
         frame={({ title, label, titleAccessory, actions, content }) => (
           <WorkspaceShell
             flush

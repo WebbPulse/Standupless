@@ -40,7 +40,7 @@ describe('RemindMeDialog', () => {
     render(
       <RemindMeDialog
         open
-        issueKey="ENG-1"
+        subject="ENG-1"
         reminder={reminder}
         onClose={onClose}
       />
@@ -61,7 +61,7 @@ describe('RemindMeDialog', () => {
     render(
       <RemindMeDialog
         open
-        issueKey="ENG-1"
+        subject="ENG-1"
         reminder={reminder}
         onClose={vi.fn()}
       />
@@ -88,7 +88,7 @@ describe('RemindMeDialog', () => {
     render(
       <RemindMeDialog
         open
-        issueKey="ENG-1"
+        subject="ENG-1"
         reminder={reminder}
         onClose={onClose}
       />
@@ -114,7 +114,7 @@ describe('RemindMeDialog', () => {
     render(
       <RemindMeDialog
         open
-        issueKey="ENG-1"
+        subject="ENG-1"
         reminder={reminder}
         onClose={onClose}
       />

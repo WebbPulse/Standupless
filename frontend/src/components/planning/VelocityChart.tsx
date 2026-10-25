@@ -4,6 +4,10 @@
  * dashed rule across. Plain SVG drawn in real pixels at a fixed height across
  * the width of its container, so the text stays at the app's small size at
  * any window width, summed up in words for a reader who cannot see it.
+ *
+ * Hovering a column, or focusing the chart and stepping with the arrow keys,
+ * highlights that cycle and shows a readout of what it completed against its
+ * scope at close, announced through a live region.
  */
 
 import React from 'react';
@@ -11,6 +15,7 @@ import { useElementWidth } from '../../hooks/useElementWidth';
 import type { PlanningMeasure } from '../../lib/planningModel';
 import type { VelocityCycleRead } from '../../types/Api';
 import { axisTicks } from './BurnUpChart';
+import { ChartReadout, formatValue, useChartCursor } from './ChartReadout';
 
 /** Props for VelocityChart: the closed cycles oldest first and the measure. */
 export interface VelocityChartProps {
@@ -74,10 +79,29 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
       : `Completed ${unit} per cycle: ${rows
           .map((row) => `${row.cycle.name} ${String(row.completed)}`)
           .join(', ')}. Average ${String(average)}.`;
+  const cursor = useChartCursor(
+    rows.length,
+    (offset) => Math.floor((offset - PAD_LEFT) / slot),
+    rows.length - 1
+  );
+  const activeRow = cursor.active === null ? undefined : rows[cursor.active];
+  const activeCentre =
+    cursor.active === null ? 0 : PAD_LEFT + slot * cursor.active + slot / 2;
+  const activeText =
+    activeRow === undefined
+      ? ''
+      : `${activeRow.cycle.name}: ${formatValue(activeRow.completed)} of ${formatValue(activeRow.scope)} ${unit} completed.`;
 
   return (
     <figure className="space-y-2">
-      <div ref={measureRef} className="w-full">
+      <div
+        ref={measureRef}
+        className="relative w-full rounded-sm focus-visible:outline-2 focus-visible:outline-accent"
+        role="group"
+        aria-label="Velocity chart cycles. Use the left and right arrow keys to read each cycle."
+        data-testid="velocity-frame"
+        {...cursor.frameProps}
+      >
         <svg
           width={width}
           height={HEIGHT}
@@ -112,8 +136,22 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
           {rows.map((row, index) => {
             const centre = PAD_LEFT + slot * index + slot / 2;
             return (
-              <g key={row.cycle.cycle_id} data-testid="velocity-bar">
-                <title>{`${row.cycle.name}: ${String(row.completed)} of ${String(row.scope)} ${unit} completed`}</title>
+              <g
+                key={row.cycle.cycle_id}
+                data-testid="velocity-bar"
+                data-active={cursor.active === index ? 'true' : undefined}
+              >
+                {cursor.active === index && (
+                  <rect
+                    x={PAD_LEFT + slot * index}
+                    y={PAD_TOP}
+                    width={slot}
+                    height={plotHeight}
+                    fill="var(--line)"
+                    opacity="0.5"
+                    pointerEvents="none"
+                  />
+                )}
                 <rect
                   x={centre - bar / 2}
                   y={y(row.scope)}
@@ -164,6 +202,33 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
             />
           )}
         </svg>
+        {activeRow !== undefined && (
+          <ChartReadout
+            anchor={
+              activeCentre + (bar / 2) * (activeCentre <= width / 2 ? 1 : -1)
+            }
+            width={width}
+            top={PAD_TOP}
+            title={activeRow.cycle.name}
+            caption={`In ${unit}`}
+            rows={[
+              {
+                label: 'Completed',
+                value: formatValue(activeRow.completed),
+                swatch: 'bg-accent',
+              },
+              {
+                label: 'Scope at close',
+                value: formatValue(activeRow.scope),
+                swatch: 'bg-text-faint',
+              },
+            ]}
+            testId="velocity-readout"
+          />
+        )}
+        <p className="sr-only" aria-live="polite" data-testid="velocity-live">
+          {activeText}
+        </p>
       </div>
       <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
         <span className="inline-flex items-center gap-1.5">

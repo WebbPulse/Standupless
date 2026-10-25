@@ -1469,6 +1469,27 @@ def clear_update_draft(repositories: Repositories, record: Mapping[str, Any]) ->
     return clear_posted_update_draft(repositories, workspace_id, author_id, target_kind, target_id, posted_at)
 
 
+def clear_update_reply_draft(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Clear the author's reply draft on the update thread a new reply was posted to.
+
+    The update thread counterpart of `clear_comment_draft`: a reply's draft is
+    filed under the update's id, and one saved after the reply was posted is
+    kept. A bulk import clears nothing.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+        return False
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image or _text(new_image, "kind") not in (PROJECT_UPDATE_COMMENT, INITIATIVE_UPDATE_COMMENT):
+        return False
+    workspace_id = _text(new_image, "workspace_id")
+    update_id = _text(new_image, "update_id")
+    author_id = _text(new_image, "author_id")
+    posted_at = _stamped_at({"created_at": new_image.get("created_at")})
+    if not workspace_id or not update_id or not author_id or posted_at is None:
+        return False
+    return clear_posted_draft(repositories, workspace_id, author_id, update_id, None, posted_at)
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
@@ -1520,6 +1541,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     elif physical == table_name("planning", prefix):
         written = handle_planning_record(repositories, record)
         clear_update_draft(repositories, record)
+        clear_update_reply_draft(repositories, record)
     elif physical == table_name("reactions", prefix):
         written = handle_reaction_record(repositories, record)
     elif physical == table_name("relations", prefix):

@@ -17,6 +17,7 @@ import {
   LuCalendar,
   LuCalendarCheck,
   LuChevronRight,
+  LuClock,
   LuEllipsis,
   LuGoal,
   LuPlus,
@@ -101,6 +102,10 @@ import {
 import { showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FollowButton from '../../components/planning/FollowButton';
+import {
+  REMIND_ME_MENU_LABEL,
+  useRemindMe,
+} from '../../components/planning/RemindMe';
 import { Projects, type ProjectsScope } from './Projects';
 import type {
   HealthBreakdownRead,
@@ -463,6 +468,13 @@ export const InitiativeDetail: React.FC = () => {
   const propertiesRow = useRef<HTMLDivElement>(null);
   const loaded = isMember && initiative !== null;
   const onOverview = tab === 'overview';
+  const remindMe = useRemindMe({
+    workspaceId,
+    entityType: 'initiative',
+    entityId: isMember ? (initiative?.initiative_id ?? '') : '',
+    subject: initiative?.name ?? 'This initiative',
+    group: 'Initiative',
+  });
 
   useShortcut({
     keys: RENAME_INITIATIVE_KEYS,
@@ -874,7 +886,7 @@ export const InitiativeDetail: React.FC = () => {
             subject="initiative"
             subjectId={initiative.initiative_id}
           />
-          {canDelete && (
+          {isMember && (
             <Menu
               label="Initiative actions"
               align="end"
@@ -884,20 +896,30 @@ export const InitiativeDetail: React.FC = () => {
                 </IconButton>
               )}
             >
-              <MenuItem
-                danger
-                onSelect={() => {
-                  setIsConfirmingDelete(true);
-                }}
-              >
-                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                Delete initiative
+              <MenuItem onSelect={remindMe.open}>
+                <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+                {REMIND_ME_MENU_LABEL}
               </MenuItem>
+              {canDelete && (
+                <MenuItem
+                  danger
+                  onSelect={() => {
+                    setIsConfirmingDelete(true);
+                  }}
+                >
+                  <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                  Delete initiative
+                </MenuItem>
+              )}
             </Menu>
           )}
         </div>
       }
     >
+      {remindMe.dialog}
+      {remindMe.banner !== null && (
+        <div className="px-4 pt-3 lg:px-6">{remindMe.banner}</div>
+      )}
       {error !== null && (
         <div className="px-4 pt-3 lg:px-6">
           <ErrorAlert

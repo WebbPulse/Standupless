@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
+from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_rules import unprocessable
 from app.domains.issues.export import DEFAULT_ROWS, MAX_ROWS, export_page
 
@@ -76,6 +77,8 @@ def export_issues(
     due_after: Annotated[Optional[str], Query()] = None,
     team_id_in: Values = None,
     team_id_not: Values = None,
+    issue_id: Values = None,
+    key: Values = None,
     created_after: Annotated[Optional[str], Query()] = None,
     created_before: Annotated[Optional[str], Query()] = None,
     updated_after: Annotated[Optional[str], Query()] = None,
@@ -157,6 +160,7 @@ def export_issues(
             due_after=due_after,
             team_id_in=team_id_in,
             team_id_not=team_id_not,
+            issue_id=issue_ids_for_keys(repositories, context, issue_id, key),
             created_after=created_after,
             created_before=created_before,
             updated_after=updated_after,
