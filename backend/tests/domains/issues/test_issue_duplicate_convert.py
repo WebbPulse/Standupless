@@ -13,7 +13,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common import issue_conversion
-
 from app.common.db.dynamo.planning import Project, ProjectMilestone, milestone_key, project_key
 from app.common.db.dynamo.team_config import Label, label_key, new_config_id
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
@@ -156,7 +155,7 @@ def test_a_duplicate_leaves_sub_issues_behind_by_default(client: TestClient, wor
 def test_a_duplicate_with_sub_issues_copies_the_whole_tree(
     client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """Open and closed sub-issues, at every depth, are copied in order under the copy by the same rules."""
+    """Open and closed sub-issues are copied in order under the copy by the same rules."""
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Checklist")
     later = create_issue(client, workspace, title="Later", parent_id=parent["id"], sort_order="b")
@@ -170,7 +169,6 @@ def test_a_duplicate_with_sub_issues_copies_the_whole_tree(
         priority="high",
         status_id=statuses["completed"].status_id,
     )
-    create_issue(client, workspace, title="Nested", parent_id=later["id"])
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues/{parent['id']}/duplicate", json={"include_sub_issues": True}
@@ -188,8 +186,6 @@ def test_a_duplicate_with_sub_issues_copies_the_whole_tree(
     assert copied_first.priority == "high"
     assert copied_first.assignee_id is None
     assert copied_first.status_id == default_status
-    nested = _children(repositories, workspace, copied[1].issue_id)
-    assert [row.title for row in nested] == ["Nested"]
     assert [row.title for row in _children(repositories, workspace, parent["id"])] == ["Later", "First"]
 
 
@@ -200,9 +196,8 @@ def test_a_duplicate_above_the_sub_issue_cap_is_refused_before_anything_is_writt
     monkeypatch.setattr(issue_conversion, "DUPLICATE_SUB_ISSUES_MAX", 2)
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Checklist")
-    child = create_issue(client, workspace, title="One", parent_id=parent["id"])
-    create_issue(client, workspace, title="Two", parent_id=parent["id"])
-    create_issue(client, workspace, title="Deep", parent_id=child["id"])
+    for title in ("One", "Two", "Three"):
+        create_issue(client, workspace, title=title, parent_id=parent["id"])
 
     response = client.post(
         f"/api/workspaces/{workspace}/issues/{parent['id']}/duplicate", json={"include_sub_issues": True}

@@ -1426,14 +1426,14 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             "Copy an issue into a new issue in the same team. The copy keeps the title with a (copy) suffix, "
             "the body, labels, priority, estimate, parent, project and milestone, and starts in the team's "
             "default status, unassigned, outside any cycle and with no dates or relations. With "
-            "include_sub_issues every sub-issue, at every depth, is copied under the copy by the same rules, "
-            f"keeping its title and order; a tree above {DUPLICATE_SUB_ISSUES_MAX} sub-issues is refused."
+            "include_sub_issues every sub-issue is copied under the copy by the same rules, "
+            f"keeping its title and order; more than {DUPLICATE_SUB_ISSUES_MAX} sub-issues is refused."
         ),
         scopes=("issues:write",),
         schema=object_schema(
             {
                 "issue_id": string(ISSUE_REF),
-                "include_sub_issues": boolean("Copy the issue's sub-issue tree under the copy too; default false"),
+                "include_sub_issues": boolean("Copy the issue's sub-issues under the copy too; default false"),
             },
             required=("issue_id",),
         ),

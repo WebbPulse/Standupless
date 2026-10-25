@@ -10,8 +10,8 @@ carrying what describes the work, its title with a copy suffix, description,
 labels, priority, estimate, parent, project and milestone, and nothing that
 describes progress on it: it starts in the team's default status, unassigned,
 outside any cycle and with no dates, relations or comments. Asked to, a duplicate
-also copies its whole sub-issue tree under the copy by the same rules, keeping
-each sub-issue's title and order. A conversion creates a
+also copies its sub-issues under the copy by the same rules, keeping each one's
+title and order. A conversion creates a
 project on the issue's team named after it, with its description, priority,
 assignee as lead and dates as the plan, moves its sub-issues out from under it and
 into the project, then points the issue at the project and closes it.
@@ -45,7 +45,7 @@ PROJECT_STATUS_BY_CATEGORY: dict[str, ProjectStatusField] = {"started": "in_prog
 """The project status a converted issue's status category maps to; any other category starts in backlog."""
 
 DUPLICATE_SUB_ISSUES_MAX = TEMPLATE_SUB_ISSUE_KEYS_MAX
-"""How many sub-issues, at every depth, one duplicate may copy; the cap a template create already holds."""
+"""How many sub-issues one duplicate may copy; the cap a template create already holds."""
 
 CLOSING_CATEGORIES: tuple[str, ...] = ("completed", "cancelled")
 """The status categories a converted issue may close into, in order of preference."""
@@ -56,35 +56,23 @@ def duplicate_title(title: str) -> str:
     return title[: TITLE_MAX - len(COPY_SUFFIX)].rstrip() + COPY_SUFFIX
 
 
-type SubIssueTree = list[tuple[Issue, SubIssueTree]]
-"""An issue's live sub-issues in display order, each with its own sub-issues."""
-
-
 def _child_order(issue: Issue) -> tuple[bool, str, str, str]:
     """The order sub-issues show in: manual order first, then creation."""
     return (issue.sort_order is None, issue.sort_order or "", issue.created_at.isoformat(), issue.issue_id)
 
 
-def sub_issue_tree(repositories: Repositories, workspace_id: str, issue: Issue) -> SubIssueTree:
-    """Every live sub-issue below one issue, open and closed, read before anything is copied.
+def sub_issues_to_copy(repositories: Repositories, workspace_id: str, issue: Issue) -> list[Issue]:
+    """Every live sub-issue of one issue, open and closed, in display order, read before anything is copied.
 
-    A tree above `DUPLICATE_SUB_ISSUES_MAX` is refused with a 422, so a refused
-    duplicate writes nothing. Each level reads at most one row past the cap.
+    Sub-issues are one level deep, so the direct children are the whole tree. More
+    than `DUPLICATE_SUB_ISSUES_MAX` is refused with a 422, so a refused duplicate
+    writes nothing, and the read stops one row past the cap.
     """
-    seen = {issue.issue_id}
-    count = 0
-
-    def children_of(parent: Issue) -> SubIssueTree:
-        nonlocal count
-        rows = repositories.issues.iter_children(workspace_id, parent.issue_id, max_items=DUPLICATE_SUB_ISSUES_MAX + 1)
-        live = sorted((row for row in rows if row.deleted_at is None and row.issue_id not in seen), key=_child_order)
-        count += len(live)
-        if count > DUPLICATE_SUB_ISSUES_MAX:
-            raise unprocessable(f"A duplicate can copy at most {DUPLICATE_SUB_ISSUES_MAX} sub-issues")
-        seen.update(row.issue_id for row in live)
-        return [(row, children_of(row)) for row in live]
-
-    return children_of(issue)
+    rows = repositories.issues.iter_children(workspace_id, issue.issue_id, max_items=DUPLICATE_SUB_ISSUES_MAX + 1)
+    live = sorted((row for row in rows if row.deleted_at is None), key=_child_order)
+    if len(live) > DUPLICATE_SUB_ISSUES_MAX:
+        raise unprocessable(f"A duplicate can copy at most {DUPLICATE_SUB_ISSUES_MAX} sub-issues")
+    return live
 
 
 def _copy_payload(issue: Issue, *, title: str, parent_id: str | None, sort_order: str | None) -> IssueCreate:
@@ -103,14 +91,6 @@ def _copy_payload(issue: Issue, *, title: str, parent_id: str | None, sort_order
     )
 
 
-def _copy_tree(repositories: Repositories, context: AuthzContext, tree: SubIssueTree, parent_id: str) -> None:
-    """Copy each sub-issue in `tree` under `parent_id`, then its own sub-issues under that copy."""
-    for child, grandchildren in tree:
-        payload = _copy_payload(child, title=child.title, parent_id=parent_id, sort_order=child.sort_order)
-        copy = create_issue(repositories, context, payload)
-        _copy_tree(repositories, context, grandchildren, copy.issue_id)
-
-
 def duplicate_issue(
     repositories: Repositories, context: AuthzContext, issue: Issue, *, include_sub_issues: bool = False
 ) -> Issue:
@@ -119,13 +99,14 @@ def duplicate_issue(
     The caller must be able to write in the team, as for any new issue. The copy
     never asks for triage, though a caller the team would send there still lands
     there, as their own new issue would. With `include_sub_issues` every live
-    sub-issue, at every depth, is copied under the copy in the same order,
-    keeping its own title.
+    sub-issue is copied under the copy in the same order, keeping its own title.
     """
-    tree = sub_issue_tree(repositories, context.workspace_id, issue) if include_sub_issues else []
+    children = sub_issues_to_copy(repositories, context.workspace_id, issue) if include_sub_issues else []
     payload = _copy_payload(issue, title=duplicate_title(issue.title), parent_id=issue.parent_id, sort_order=None)
     copy = create_issue(repositories, context, payload)
-    _copy_tree(repositories, context, tree, copy.issue_id)
+    for child in children:
+        child_payload = _copy_payload(child, title=child.title, parent_id=copy.issue_id, sort_order=child.sort_order)
+        create_issue(repositories, context, child_payload)
     return copy
 
 

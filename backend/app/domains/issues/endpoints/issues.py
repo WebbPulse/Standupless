@@ -438,8 +438,8 @@ def duplicate(
     The copy carries the title with a copy suffix, the description, labels,
     priority, estimate, parent, project and milestone, and starts in the team's
     default status, unassigned and outside any cycle, as in Linear. With
-    `include_sub_issues` its sub-issue tree is copied under it too, and a tree
-    above the cap is refused with a 422.
+    `include_sub_issues` its sub-issues are copied under it too, and more than
+    the cap is refused with a 422.
     """
     issue = load_visible_issue(repositories, context, issue_id)
     include = payload is not None and payload.include_sub_issues

@@ -1193,8 +1193,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const commandIssues = command === null ? [] : resolve(command.ids);
   const parentIssues = parenting === null ? [] : resolve(parenting);
   const [convertIssue] = converting === null ? [] : resolve([converting]);
-  const [duplicateTarget] =
-    duplicating === null ? [] : resolve([duplicating]);
+  const [duplicateTarget] = duplicating === null ? [] : resolve([duplicating]);
   const [renameIssue] = renaming === null ? [] : resolve([renaming]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const movingIssues = moving === null ? [] : resolve(moving);
