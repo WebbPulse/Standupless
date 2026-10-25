@@ -71,6 +71,7 @@ import {
   LuSearch,
   LuSettings,
   LuSlidersHorizontal,
+  LuSquareKanban,
   LuSquarePen,
   LuStar,
   LuSun,
@@ -128,6 +129,7 @@ import {
   settingsTeamsPath,
   viewPath,
   teamArchivePath,
+  teamBoardPath,
   teamCyclesPath,
   teamPath,
   teamReleasesPath,
@@ -779,18 +781,26 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       built.push({
         id: 'nav-team-active',
         label: 'Go to active issues',
-        keywords: `${team.name} active started unstarted in progress todo`,
-        hint: team.key_prefix,
+        keywords: `${team.name} ${team.key_prefix} active started unstarted in progress todo`,
+        hint: 'G then A',
         icon: <LuList className={ICON} />,
         to: teamScopePath(slug, team.key_prefix, 'active'),
       });
       built.push({
         id: 'nav-team-backlog',
         label: 'Go to backlog',
-        keywords: `${team.name} backlog`,
-        hint: team.key_prefix,
+        keywords: `${team.name} ${team.key_prefix} backlog`,
+        hint: 'G then B',
         icon: <LuList className={ICON} />,
         to: teamScopePath(slug, team.key_prefix, 'backlog'),
+      });
+      built.push({
+        id: 'nav-board',
+        label: `${team.name} board`,
+        keywords: 'board kanban columns go to board',
+        hint: 'G then D',
+        icon: <LuSquareKanban className={ICON} />,
+        to: teamBoardPath(slug, team.key_prefix),
       });
       built.push({
         id: 'nav-cycles',
@@ -819,6 +829,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-archive',
         label: `${team.name} archived issues`,
         keywords: 'archive archived restore',
+        hint: 'G then X',
         icon: <LuArchive className={ICON} />,
         to: teamArchivePath(slug, team.key_prefix),
       });

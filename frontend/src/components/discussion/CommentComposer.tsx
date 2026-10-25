@@ -4,7 +4,8 @@
  * files placed right in the text by the paperclip, by dropping them on the box
  * or by pasting a screenshot. An image or video shows inline behind a progress
  * bar while it uploads and as itself once it lands, and any other file becomes
- * a link to it. Ctrl or Cmd Enter posts.
+ * a link to it. Ctrl or Cmd Enter posts. The issue's own composer also takes
+ * Ctrl or Cmd+M, which scrolls to it and puts the caret in it.
  *
  * Files upload as soon as they are added and are held out of the issue's rail
  * until the comment posts. Posting links the files the text still names to
@@ -29,6 +30,7 @@ import { createComment } from '../../api/discussion';
 import { syncThread } from '../../api/integrations';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
 import { useCommentDraft } from '../../hooks/useCommentDraft';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -47,6 +49,7 @@ import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
 import type { GithubThreadTargetRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
+import { COMMENT_ISSUE_KEYS } from '../issues/view/propertyKeys';
 import Button, { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 
@@ -70,6 +73,8 @@ export interface CommentComposerProps {
   compact?: boolean;
   /** Where a new thread may be synced on GitHub; empty offers no sync. */
   threadTargets?: GithubThreadTargetRead[];
+  /** Binds Ctrl or Cmd+M to jumping here, for the issue's new thread box. */
+  jumpShortcut?: boolean;
 }
 
 /** Props for ThreadSyncToggle. */
@@ -176,6 +181,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   placeholder = 'Leave a comment...',
   compact = false,
   threadTargets = [],
+  jumpShortcut = false,
 }) => {
   const [draft, setDraft] = useState('');
   const [chosenKey, setChosenKey] = useState<string | null>(null);
@@ -184,6 +190,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   const [focused, setFocused] = useState(false);
   const editor = useRef<RichMarkdownHandle>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const uploads = useAttachmentUploads(workspaceId, issueId);
   const commentDraft = useCommentDraft(
     workspaceId,
@@ -193,6 +200,22 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
+
+  useShortcut({
+    keys: COMMENT_ISSUE_KEYS,
+    label: 'Add a comment',
+    scope: 'issue',
+    group: 'Issue',
+    enabled: jumpShortcut,
+    handler: (event) => {
+      event?.preventDefault();
+      const node = box.current;
+      if (node !== null && typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ block: 'center' });
+      }
+      editor.current?.focus();
+    },
+  });
 
   const { mutate: post, isMutating } = useMutationWithRefetch(
     (body: string, attachmentIds: string[]) =>
@@ -281,6 +304,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
 
   return (
     <div
+      ref={box}
       className={cn(
         'relative rounded-lg border bg-surface transition-colors duration-100',
         focused ? 'border-line-strong' : 'border-line',
