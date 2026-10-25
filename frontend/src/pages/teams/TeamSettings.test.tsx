@@ -400,6 +400,7 @@ describe('the general section', () => {
         status: 409,
         statusText: 'Conflict',
         body: {
+          success: false,
           error_code: 'TEAM_HAS_OPEN_ISSUES',
           message:
             'Team ENG still has 2 open issues. Complete, cancel or move them before retiring it.',

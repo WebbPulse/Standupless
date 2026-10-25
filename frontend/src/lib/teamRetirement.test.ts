@@ -51,7 +51,7 @@ describe('teamRetirement', () => {
       new ApiError({
         status: 409,
         statusText: 'Conflict',
-        body: { error_code: code, message: 'No', details },
+        body: { success: false, error_code: code, message: 'No', details },
         url: '/api/workspaces/w/teams/t/retire',
         method: 'POST',
       });
