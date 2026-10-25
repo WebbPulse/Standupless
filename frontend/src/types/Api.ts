@@ -2959,6 +2959,8 @@ export interface ProjectRead {
   team_ids: string[];
   name: string;
   description: string | null;
+  /** The description's version, sent back as `base_body_version` when editing it. */
+  body_version?: string;
   lead_id: string | null;
   start_date: string | null;
   start_date_resolution?: DateResolution | null;
@@ -3214,6 +3216,8 @@ export interface ProjectUpdate {
   team_ids?: string[];
   name?: string;
   description?: string | null;
+  /** The `body_version` the description edit started from; a stale one is a `BODY_CHANGED` 409. */
+  base_body_version?: string;
   lead_id?: string | null;
   start_date?: string | null;
   start_date_resolution?: DateResolution | null;

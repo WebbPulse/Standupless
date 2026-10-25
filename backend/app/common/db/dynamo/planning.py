@@ -2213,23 +2213,30 @@ class PlanningRepository:
         stored = self._replace_fields(_marked(as_cycle_item(cycle), keep_import_batch), (IMPORT_BATCH_ATTRIBUTE,))
         return as_cycle(stored)
 
-    def replace_project(self, project: Project, *, keep_import_batch: bool = False) -> Project:
+    def replace_project(self, project: Project, *, keep_import_batch: bool = False, condition: Any = None) -> Project:
         """Write one project's fields over an existing row, its stored counters kept.
 
         A cleared optional field is removed rather than written as a null, so an
-        undated project really does leave the sparse index. Raises
-        `ConditionFailed` when the row is gone. The bulk import marker is cleared
-        unless `keep_import_batch` says this is the importer's own re-run.
+        undated project really does leave the sparse index. `condition` is ANDed
+        onto the write, so a description save guarded on the text it read leaves
+        the row alone once the text moved on. Raises `ConditionFailed` when the
+        row is gone or no longer meets `condition`. The bulk import marker is
+        cleared unless `keep_import_batch` says this is the importer's own re-run.
         """
-        stored = self._replace_fields(_marked(as_project_item(project), keep_import_batch), PROJECT_OPTIONAL_FIELDS)
+        stored = self._replace_fields(
+            _marked(as_project_item(project), keep_import_batch), PROJECT_OPTIONAL_FIELDS, condition=condition
+        )
         return as_project(stored)
 
-    def _replace_fields(self, item: Mapping[str, Any], optional: tuple[str, ...]) -> Mapping[str, Any]:
+    def _replace_fields(
+        self, item: Mapping[str, Any], optional: tuple[str, ...], *, condition: Any = None
+    ) -> Mapping[str, Any]:
         """Set every non-counter attribute of one row and remove the cleared optional ones.
 
         An update expression rather than a whole-item put, because a put would
         write back the counters the caller read and lose any move the consumer
-        made in between. Returns the stored row after the write.
+        made in between. `condition`, when given, is ANDed onto the row's
+        existence check. Returns the stored row after the write.
         """
         names: dict[str, str] = {}
         values: dict[str, Any] = {}
@@ -2249,12 +2256,13 @@ class PlanningRepository:
         expression = "SET " + ", ".join(sets)
         if removes:
             expression += " REMOVE " + ", ".join(removes)
+        exists = Attr("planning_key").exists()
         stored = self._repository.update(
             {"workspace_id": item["workspace_id"], "planning_key": item["planning_key"]},
             update_expression=expression,
             expression_names=names,
             expression_values=values,
-            condition=Attr("planning_key").exists(),
+            condition=exists if condition is None else exists & condition,
             return_values="ALL_NEW",
         )
         return stored if stored is not None else item

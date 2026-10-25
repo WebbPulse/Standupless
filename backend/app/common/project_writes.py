@@ -25,6 +25,7 @@ from app.common.api.schemas.planning import (
     ProjectSortField,
     ProjectUpdate,
 )
+from app.common.body_versions import body_changed, body_condition, is_stale
 from app.common.customer_index import (
     CUSTOMER_SORTS,
     IMPORTANT_SORT,
@@ -491,12 +492,23 @@ def update_project(
     issues still open in it, read from the issues rather than the counters the
     consumer has yet to move. `open_issues` then keeps, moves or cancels those
     issues, and is refused on a patch that leaves the project open.
+
+    `base_body_version` holds a patch that changes the description to the
+    version the editor read: a stale one is the `BODY_CHANGED` 409, and the
+    write is conditioned on the description still being the one read.
     """
     existing, teams = load_readable_project(repositories, context, project_id, payload.team_id)
     require_project_editor(repositories, context, teams)
 
     choice = payload.open_issues
-    fields: dict[str, Any] = payload.model_dump(exclude_unset=True, exclude={"team_id", "open_issues"})
+    fields: dict[str, Any] = payload.model_dump(
+        exclude_unset=True, exclude={"team_id", "open_issues", "base_body_version"}
+    )
+    base = payload.base_body_version
+    before = existing.description or ""
+    guarded = base is not None and "description" in fields and (fields["description"] or "") != before
+    if guarded and is_stale(base, existing.description):
+        raise body_changed(existing.description)
     for name in NOT_NULLABLE:
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
@@ -561,8 +573,14 @@ def update_project(
             planned = plan_open_issues(repositories, context, project_id, open_issues, choice)
 
     try:
-        stored = repositories.planning.replace_project(updated)
+        stored = repositories.planning.replace_project(
+            updated, condition=body_condition(existing.description, "description") if guarded else None
+        )
     except ConditionFailed as exc:
+        if guarded:
+            current = repositories.planning.get_project(context.workspace_id, project_id)
+            if current is not None and is_stale(base, current.description):
+                raise body_changed(current.description) from exc
         raise not_found() from exc
     project_activity.record_project_changes(repositories, context, existing, stored)
     if "health" in fields:
