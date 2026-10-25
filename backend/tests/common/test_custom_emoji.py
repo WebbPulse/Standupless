@@ -157,8 +157,8 @@ def test_a_large_image_is_resized_and_animation_is_kept(client: TestClient, buck
         assert image.size == (EMOJI_SIZE, EMOJI_SIZE)
         assert getattr(image, "n_frames", 1) == 3
 
-    assert _add(client, bucket, "wave", _image("WEBP", size=200), "image/webp").status_code == 201
-    with Image.open(io.BytesIO(_stored(bucket, "wave", client))) as image:
+    assert _add(client, bucket, "tide-pool", _image("WEBP", size=200), "image/webp").status_code == 201
+    with Image.open(io.BytesIO(_stored(bucket, "tide-pool", client))) as image:
         assert image.format == "WEBP"
         assert max(image.size) == EMOJI_SIZE
 
