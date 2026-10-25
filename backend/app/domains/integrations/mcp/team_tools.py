@@ -1352,7 +1352,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_team_members",
-        description="Everyone explicitly added to a team, with team roles. team_id: id, key such as ENG, or name.",
+        description="Everyone explicitly added to a team, with team roles and any user_status in force. "
+        "team_id: id, key such as ENG, or name.",
         scopes=("members:read",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_list_team_members,
@@ -1602,8 +1603,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_users",
         description=(
-            "Workspace members with id, display name, email and workspace role, "
-            "or one team's members and team roles with team_id. Use the user_id as an assignee."
+            "Workspace members with id, display name, email, workspace role and user_status (emoji, text, away "
+            "and until) while one is in force, or one team's members and team roles with team_id. Use the user_id "
+            "as an assignee."
         ),
         scopes=("members:read",),
         schema=object_schema({"team_id": string("Narrow to one team's members: id, key such as ENG, or name")}),
