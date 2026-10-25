@@ -98,12 +98,27 @@ workspaces keep working without a reinstall. Until then a member's link works bu
 the first message marks it broken with `messages_tab_disabled`, and linking again
 after the update resumes delivery.
 
-`scripts/apply_slack_manifest.py` does the same through the manifest API. It needs
-an App configuration token, which only a person can mint: on
-https://api.slack.com/apps, under **Your App Configuration Tokens**, press
-**Generate Token** for the WebbPulse workspace and store the access token with
-`webbpulse-config ... secret set SLACK_CONFIG_TOKEN`. It lasts 12 hours. Then, with
-the App ID from **Basic Information**:
+`scripts/apply_slack_manifest.py` does the same through the manifest API with an
+App configuration token. Agents hold standing access through a refresh token
+stored once, as `SLACK_CONFIG_REFRESH_TOKEN` in `standupless-production/app`, for
+both environments. Each run rotates it with `tooling.tokens.rotate`, merges the new
+refresh token back into that key before applying, and exits 4 without applying when
+the write-back fails. A refresh token works once, so never keep a second copy. Run
+it from `backend/` with the App ID from **Basic Information**:
+
+```sh
+AWS_PROFILE=Standupless-Production/AdministratorAccess \
+  uv run --no-sync python ../scripts/apply_slack_manifest.py staging --app-id <APP_ID>
+AWS_PROFILE=Standupless-Production/AdministratorAccess \
+  uv run --no-sync python ../scripts/apply_slack_manifest.py production --app-id <APP_ID>
+```
+
+To seed or replace the refresh token, a person mints one on
+https://api.slack.com/apps under **Your App Configuration Tokens** with **Generate
+Token** for the WebbPulse workspace, and stores the refresh token with
+`uv run webbpulse-config --region us-west-2 --prefix standupless-production secret set SLACK_CONFIG_REFRESH_TOKEN`.
+A 12-hour access token in `SLACK_CONFIG_TOKEN` still works as a fallback and skips
+the rotation:
 
 ```sh
 SLACK_CONFIG_TOKEN='{{resolve:secretsmanager:standupless-staging/app:SecretString:SLACK_CONFIG_TOKEN}}' \
