@@ -2,7 +2,7 @@
  * A small Markdown parser for issue descriptions and comments. It covers what
  * people write in a tracker (paragraphs, headings, lists and task lists,
  * quotes, fenced code, inline code, emphasis, links, embedded images and
- * videos, @mentions, issue keys, `<details>` collapsible sections and
+ * videos, @mentions, issue keys, date chips, `<details>` collapsible sections and
  * GitHub alert callouts such as `> [!NOTE]`) and
  * nothing that would need raw HTML: the output is a tree the renderer turns
  * into React elements, so no string from a comment is ever parsed as markup.
@@ -15,6 +15,7 @@
  */
 
 import { calloutFromQuote, type CalloutKind } from './callouts';
+import { isChipDate } from './dateChips';
 import { isContentPath, isEmbeddableSrc, isVideoSrc } from './media';
 import { videoEmbedOfLine, type VideoEmbed } from './videoEmbeds';
 
@@ -26,6 +27,7 @@ export type InlineNode =
   | { type: 'strong' | 'em' | 'del'; children: InlineNode[] }
   | { type: 'mention'; handle: string }
   | { type: 'issue'; key: string }
+  | { type: 'date'; value: string }
   | { type: 'image' | 'video'; src: string; alt: string }
   | { type: 'break' };
 
@@ -61,11 +63,11 @@ export const isLinkTarget = (href: string): boolean =>
  * The inline grammar, tried left to right at each position. The groups are,
  * in order: an embed, a code span, a link, a bare URL, strong, strong with underscores,
  * strikethrough, emphasis, emphasis with underscores, a mention, an issue
- * key such as `ENG-12`, and a backslash escape, which the rich editor writes when literal text would
- * otherwise read as formatting.
+ * key such as `ENG-12`, a backslash escape, which the rich editor writes when literal text would
+ * otherwise read as formatting, and a date chip such as `<2026-10-01>`.
  */
 const INLINE =
-  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])|\\([!-/:-@[-`{-~])/g;
+  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])|\\([!-/:-@[-`{-~])|<(\d{4}-\d{2}-\d{2})>/g;
 
 /** Appends text, merging it into a text node already at the end. */
 const pushText = (out: InlineNode[], value: string): void => {
@@ -114,6 +116,7 @@ export const parseInline = (source: string): InlineNode[] => {
       mention,
       issueRef,
       escaped,
+      dateValue,
     ] = match;
     if (embedAlt !== undefined && embedSrc !== undefined) {
       if (isEmbeddableSrc(embedSrc)) {
@@ -158,6 +161,8 @@ export const parseInline = (source: string): InlineNode[] => {
       out.push({ type: 'issue', key: issueRef });
     } else if (escaped !== undefined) {
       pushText(out, escaped);
+    } else if (dateValue !== undefined && isChipDate(dateValue)) {
+      out.push({ type: 'date', value: dateValue });
     } else {
       pushText(out, whole);
     }

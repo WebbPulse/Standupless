@@ -178,6 +178,14 @@
   @apply text-text no-underline;
 }
 
+.rich-markdown .rich-date-chip {
+  @apply cursor-default rounded-xs bg-raised px-1 font-medium text-text;
+}
+
+.rich-markdown .rich-date-chip.ProseMirror-selectednode {
+  @apply outline-1 outline-focus;
+}
+
 .rich-markdown .rich-issue-ref {
   @apply font-mono text-[0.9em];
 }

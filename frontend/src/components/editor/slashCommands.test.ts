@@ -195,6 +195,25 @@ describe('running a command', () => {
     expect(readMarkdown(editor)).toBe('Ask @');
   });
 
+  it('offers /date only where the surface has a date picker', () => {
+    expect(ids('date')).toEqual([]);
+    expect(ids('date', { pickDate: () => undefined })).toEqual(['date']);
+    expect(ids('tomorrow', { pickDate: () => undefined })).toEqual(['date']);
+  });
+
+  it('clears the slash and opens the date picker for /date', () => {
+    const pickDate = vi.fn();
+    const editor = editorTyping('Due /date');
+    command('date').run(editor, { from: 5, to: 10 }, { pickDate });
+    expect(pickDate).toHaveBeenCalledTimes(1);
+    expect(readMarkdown(editor).trimEnd()).toBe('Due');
+  });
+
+  it('starts the diagram as a top down graph', () => {
+    expect(MERMAID_STARTER.split('\n')[0]).toBe('graph TD');
+    expect(ids('chart')).toEqual(['diagram']);
+  });
+
   it('clears the slash and opens the file picker for an upload', () => {
     const pickFiles = vi.fn();
     const editor = editorTyping('/image');
