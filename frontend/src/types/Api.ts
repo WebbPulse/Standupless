@@ -5114,6 +5114,8 @@ export interface SlackIntakeRead {
   reinstall: boolean;
   emoji: string | null;
   channel_ids: string[];
+  /** The channels, among `channel_ids`, where every top-level message is filed. */
+  message_channel_ids: string[];
   updated_at: string | null;
 }
 
@@ -5121,6 +5123,8 @@ export interface SlackIntakeRead {
 export interface SlackIntakeWrite {
   emoji: string;
   channel_ids: string[];
+  /** The picked channels that file every top-level message, not only reacted ones. */
+  message_channel_ids?: string[];
 }
 
 /** Whether this environment has a Discord App and whether this workspace added it to a server. */
