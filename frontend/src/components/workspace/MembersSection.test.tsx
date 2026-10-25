@@ -335,3 +335,50 @@ describe('MembersSection', () => {
     );
   });
 });
+
+describe('MembersSection last active column', () => {
+  it('shows an admin when each member was last active, and Never for one never seen', async () => {
+    listMemberDirectory.mockResolvedValue([
+      { ...members[0]!, last_active_at: '2026-09-10T12:00:00Z' },
+      { ...members[1]!, last_active_at: null },
+    ]);
+    renderAt();
+
+    expect(
+      await screen.findByRole('columnheader', { name: 'Last active' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Never')).toBeInTheDocument();
+    expect(
+      document.querySelector('time[datetime="2026-09-10T12:00:00Z"]')
+    ).not.toBeNull();
+  });
+
+  it('sorts by last active from the column header', async () => {
+    const user = userEvent.setup();
+    listMemberDirectory.mockResolvedValue([
+      { ...members[0]!, last_active_at: '2026-09-10T12:00:00Z' },
+      { ...members[1]!, last_active_at: null },
+    ]);
+    renderAt();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Last active' })
+    );
+    expect(screen.getByTestId('search')).toHaveTextContent(
+      'member_sort=active'
+    );
+  });
+
+  it('leaves the column out for a member who is not an admin', async () => {
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <MembersSection workspace={{ ...workspace, role: 'member' }} />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Ada')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Last active' })
+    ).not.toBeInTheDocument();
+  });
+});

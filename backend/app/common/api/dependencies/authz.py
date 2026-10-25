@@ -633,7 +633,14 @@ def _creator_of(claims: Any) -> str:
     return str(claims.get(CREATOR_CLAIM, "") or "").strip()
 
 
-def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, creator: str = "") -> Optional[str]:
+def _role_for(
+    repositories: RepositoryBundle,
+    workspace_id: str,
+    user_id: str,
+    creator: str = "",
+    *,
+    record_activity: bool = False,
+) -> Optional[str]:
     """The role this subject holds in the workspace, or `None` if they hold none.
 
     A service principal has no membership row of its own, so it resolves to the fixed
@@ -646,7 +653,10 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, c
     are untouched.
 
     Both callers go through here so the path a key authenticates on cannot drift from
-    the path a session does.
+    the path a session does. `record_activity` stamps the person's last active time
+    from the row just read, so a request pays a write at most once per interval and
+    never a read; a workspace key's creator is not stamped, because the key acts as
+    the workspace rather than as them.
     """
     from app.common.db.dynamo.api_keys import is_service_subject
 
@@ -661,12 +671,16 @@ def _role_for(repositories: RepositoryBundle, workspace_id: str, user_id: str, c
     membership = repositories.memberships.get(workspace_id, user_id)
     if membership is None or membership.role not in WORKSPACE_ROLES or membership.is_suspended:
         return None
+    if record_activity:
+        from app.common.last_active import record_activity as stamp
+
+        stamp(repositories, membership)
     return membership.role
 
 
 def _membership_role(repositories: RepositoryBundle, workspace_id: str, user_id: str, creator: str = "") -> str:
     """The caller's role, or a 404 on the workspace itself."""
-    role = _role_for(repositories, workspace_id, user_id, creator)
+    role = _role_for(repositories, workspace_id, user_id, creator, record_activity=True)
     if role is None:
         raise _not_found()
     return role
@@ -1170,7 +1184,7 @@ def resolve_context(
     if bound and bound != workspace_id:
         return None
 
-    role = _role_for(repositories, workspace_id, user_id, _creator_of(claims))
+    role = _role_for(repositories, workspace_id, user_id, _creator_of(claims), record_activity=True)
     if role is None:
         return None
     if blocked_by_auth_policy(repositories, workspace_id, claims, role=role):

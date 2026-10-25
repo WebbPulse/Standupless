@@ -216,7 +216,8 @@ def list_members(
     With no filter the answer holds active and suspended members, so a person chip
     on old issues and comments still resolves a suspended author. Pending invites
     answer only when `invited` is asked for, and only to an admin, because the
-    invites list is admin only.
+    invites list is admin only. Each member's last active time is likewise answered
+    only to an admin, who is the one deciding which seats to clean up.
     """
     wanted = set(statuses) if statuses else set(DEFAULT_MEMBER_STATUSES)
     memberships = [
@@ -226,8 +227,11 @@ def list_members(
     ]
     users = repositories.users.get_many([membership.user_id for membership in memberships])
     visible = member_status.visible_user_ids(repositories, context)
-    members = [MemberRead.from_rows(m, users.get(m.user_id), visible=visible) for m in memberships]
-    if "invited" in wanted and context.acts_as_workspace_admin:
+    admin = context.acts_as_workspace_admin
+    members = [
+        MemberRead.from_rows(m, users.get(m.user_id), visible=visible, include_activity=admin) for m in memberships
+    ]
+    if "invited" in wanted and admin:
         invites = repositories.invites.list_for_workspace(context.workspace_id)
         members.extend(MemberRead.from_invite(invite) for invite in invites if not invite.is_expired())
     return MemberListRead(members=members)

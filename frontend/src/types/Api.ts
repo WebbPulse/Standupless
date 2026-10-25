@@ -666,6 +666,8 @@ export interface MemberRead {
   invite_id?: string | null;
   /** The member's status while it is in force, or null when none is set or the caller may not see it. */
   user_status?: UserStatusRead | null;
+  /** When the member was last active here, to within a quarter hour; null when never seen or for a caller who is not an admin. */
+  last_active_at?: string | null;
 }
 
 /** A change to the caller's own name or handle. Fields left out keep their value. */

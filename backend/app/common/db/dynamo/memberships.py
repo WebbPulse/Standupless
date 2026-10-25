@@ -54,7 +54,9 @@ one third-party OAuth app, read by the identity function's consent gate under th
 grant it already holds here. It carries no `user_id`, so the user index never meets it.
 
 The workspace membership also carries the person's own sidebar team order,
-because it is the one row that is already per person and per workspace.
+because it is the one row that is already per person and per workspace. For the
+same reason it carries `last_active_at`, stamped by authorization at most once per
+`ACTIVITY_INTERVAL`, so admins can see which seats are in use.
 
 `user_id-workspace_id-index` answers "my workspaces" without a scan, which is what
 replaced the workspaces table's `owner_user_id-index`.
@@ -82,6 +84,14 @@ TeamRole = Literal["admin", "member"]
 WORKSPACE_ROLES: tuple[str, ...] = ("owner", "admin", "member", "guest")
 
 TEAM_ROLES: tuple[str, ...] = ("admin", "member")
+
+ACTIVITY_INTERVAL = timedelta(minutes=15)
+"""How stale `last_active_at` must be before a request stamps it again.
+
+Coarse on purpose: the members page answers "is this seat in use", which a
+quarter hour of precision serves, and it keeps the stamp to at most one write per
+member per interval however busy they are.
+"""
 
 
 def workspace_member_key(user_id: str) -> str:
@@ -432,6 +442,7 @@ class Membership(BaseModel):
     suspended_at: datetime | None = None
     suspended_by: str | None = None
     user_status: StoredUserStatus | None = None
+    last_active_at: datetime | None = None
 
     @property
     def is_team_membership(self) -> bool:
@@ -646,6 +657,35 @@ class MembershipRepository:
         )
         rows = (_as_membership(item) for item in items)
         return {row.user_id: row for row in rows}
+
+    def touch_last_active(self, workspace_id: str, user_id: str, *, now: datetime | None = None) -> bool:
+        """Stamp a workspace member's `last_active_at`, unless it is already within `ACTIVITY_INTERVAL`.
+
+        One conditional update with no read first: the condition carries the
+        throttle, so concurrent requests write at most once per interval, and it
+        requires the row to exist, so a stamp can never create a membership.
+        Answers whether a write landed.
+        """
+        if not workspace_id or not user_id:
+            return False
+        moment = now or utc_now()
+        cutoff = (moment - ACTIVITY_INTERVAL).isoformat()
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)},
+                update_expression="SET #at = :at",
+                expression_names={"#at": "last_active_at"},
+                expression_values={":at": moment.isoformat()},
+                condition=Attr("member_key").exists()
+                & (
+                    Attr("last_active_at").not_exists()
+                    | Attr("last_active_at").attribute_type("NULL")
+                    | Attr("last_active_at").lt(cutoff)
+                ),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def set_team_role(self, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
         """Grant or change a team role, creating the row when it is absent."""
