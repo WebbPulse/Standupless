@@ -28,9 +28,9 @@ from app.common.api.schemas.insights import (
     InsightPoint,
     InsightsRead,
 )
-from app.common.db.dynamo.base import utc_now
 from app.common.api.schemas.views import FILTER_FIELDS
 from app.common.customer_index import require_customer_list_reader
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, status_order
 from app.common.estimates import estimate_points

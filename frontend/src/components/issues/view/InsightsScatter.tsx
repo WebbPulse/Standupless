@@ -203,7 +203,7 @@ export const InsightsScatter: React.FC<InsightsScatterProps> = ({
               cy={y(point.hours)}
               r={3.5}
               fill={colorOf(point.group, point.segment)}
-              className="cursor-pointer focus:outline-none focus-visible:stroke-accent"
+              className="cursor-pointer hover:stroke-accent focus:outline-none focus-visible:stroke-accent"
               strokeWidth={2}
               onClick={open}
               onKeyDown={(event) => {
