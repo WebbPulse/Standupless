@@ -3,9 +3,10 @@
  * projects group and in which direction, the grouping inside each group,
  * what order they run in, which closed projects stay, whether a team page
  * keeps only the projects it leads, whether the board keeps empty columns,
- * whether the timeline draws its dependency lines, and which properties show. It reads like the issue list's Display menu so
- * every list is arranged the same way, and it writes nothing itself. A page
- * leaves out the choices it does not offer.
+ * how far the timeline is zoomed, whether it draws its dependency lines, and
+ * which properties show. It reads like the issue list's Display menu so every
+ * list is arranged the same way, and it writes nothing itself. A page leaves
+ * out the choices it does not offer.
  */
 
 import React from 'react';
@@ -43,6 +44,11 @@ import {
   type ProjectLayout,
   type ProjectOrdering,
 } from '../../lib/projectList';
+import {
+  TIMELINE_ZOOMS,
+  TIMELINE_ZOOM_LABELS,
+  type TimelineZoom,
+} from '../../lib/timeline';
 import type { ProjectsDefaultActions } from '../../hooks/useProjectsDisplayDefault';
 import Button from '../ui/button';
 import { Popover } from '../ui/popover';
@@ -82,6 +88,9 @@ export interface ProjectsDisplayMenuProps {
   /** Whether empty board columns show, left out off the board. */
   empty?: EmptyColumnsChoice;
   onEmptyChange?: (empty: EmptyColumnsChoice) => void;
+  /** How far the timeline is zoomed, left out off the timeline. */
+  zoom?: TimelineZoom;
+  onZoomChange?: (zoom: TimelineZoom) => void;
   /** Whether the timeline draws its dependency lines, left out off the timeline. */
   dependencies?: DependencyLinesChoice;
   onDependenciesChange?: (dependencies: DependencyLinesChoice) => void;
@@ -91,6 +100,8 @@ export interface ProjectsDisplayMenuProps {
   /** The shown properties, left out where the layout draws no columns. */
   columns?: readonly ProjectColumn[];
   onColumnsChange?: (columns: ProjectColumn[]) => void;
+  /** The properties offered as chips, every one by default. */
+  chips?: readonly ProjectColumn[];
   /** Puts every choice back to the page's own, or undefined when they match. */
   onReset?: (() => void) | undefined;
   /** Saving or clearing the default for everyone, left out for a non-admin and on a view. */
@@ -222,6 +233,8 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   onLeadTeamChange,
   empty,
   onEmptyChange,
+  zoom,
+  onZoomChange,
   dependencies,
   onDependenciesChange,
   archived,
@@ -235,6 +248,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   onClosedChange,
   columns,
   onColumnsChange,
+  chips = PROJECT_COLUMN_CHIPS,
   onReset,
   defaultActions,
   customerOrdering = false,
@@ -328,6 +342,16 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
           onChange={onOrderingChange}
         />
       )}
+      {zoom !== undefined && onZoomChange !== undefined && (
+        <ChoiceRow
+          id="projects-zoom"
+          label="Zoom"
+          value={zoom}
+          choices={TIMELINE_ZOOMS}
+          labels={TIMELINE_ZOOM_LABELS}
+          onChange={onZoomChange}
+        />
+      )}
       {closed !== undefined && onClosedChange !== undefined && (
         <ChoiceRow
           id="projects-closed"
@@ -381,36 +405,38 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>
         <div className="flex flex-wrap gap-1.5">
-          {PROJECT_COLUMN_CHIPS.filter(
-            (column) =>
-              customerOrdering ||
-              column !== 'important' ||
-              columns.includes(column)
-          ).map((column) => {
-            const on = columns.includes(column);
-            return (
-              <button
-                key={column}
-                type="button"
-                aria-pressed={on}
-                onClick={() => {
-                  onColumnsChange(
-                    PROJECT_COLUMNS.filter((item) =>
-                      item === column ? !on : columns.includes(item)
-                    )
-                  );
-                }}
-                className={cn(
-                  'h-6 rounded-full border px-2 text-2xs focus-visible:outline-2 focus-visible:outline-accent',
-                  on
-                    ? 'border-line-strong bg-raised text-text'
-                    : 'border-line text-text-faint hover:text-text-muted'
-                )}
-              >
-                {PROJECT_COLUMN_LABELS[column]}
-              </button>
-            );
-          })}
+          {chips
+            .filter(
+              (column) =>
+                customerOrdering ||
+                column !== 'important' ||
+                columns.includes(column)
+            )
+            .map((column) => {
+              const on = columns.includes(column);
+              return (
+                <button
+                  key={column}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => {
+                    onColumnsChange(
+                      PROJECT_COLUMNS.filter((item) =>
+                        item === column ? !on : columns.includes(item)
+                      )
+                    );
+                  }}
+                  className={cn(
+                    'h-6 rounded-full border px-2 text-2xs focus-visible:outline-2 focus-visible:outline-accent',
+                    on
+                      ? 'border-line-strong bg-raised text-text'
+                      : 'border-line text-text-faint hover:text-text-muted'
+                  )}
+                >
+                  {PROJECT_COLUMN_LABELS[column]}
+                </button>
+              );
+            })}
         </div>
       </div>
     )}
