@@ -167,15 +167,16 @@ export class MermaidControls {
     }
     if (this.face !== 'preview') return;
     this.root ??= createRoot(this.preview);
+    const source = this.node.textContent;
     this.root.render(
-      createElement(MermaidPreview, {
-        source: this.node.textContent,
-        onActivate: this.editor.isEditable
-          ? () => {
+      this.editor.isEditable
+        ? createElement(MermaidPreview, {
+            source,
+            onActivate: () => {
               this.edit();
-            }
-          : undefined,
-      })
+            },
+          })
+        : createElement(MermaidPreview, { source })
     );
   }
 
