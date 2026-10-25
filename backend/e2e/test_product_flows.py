@@ -2808,7 +2808,7 @@ class TestSlackApp:
         assert "slack=invalid_state" in response.headers.get("location", ""), response.headers.get("location")
 
     def test_signed_requests_are_answered_on_a_local_stack(self) -> None:
-        """A signed challenge is echoed and a signed command from an unknown Slack team is turned away politely."""
+        """A signed challenge is echoed, and signed commands and request forms from an unknown team are turned away."""
         secret = os.environ.get(SLACK_SIGNING_ENV, "")
         base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
         if not secret or not base_url:
@@ -2832,6 +2832,22 @@ class TestSlackApp:
             assert replied.status_code == 200, replied.text[:400]
             assert replied.json()["response_type"] == "ephemeral", replied.json()
             assert "not connected" in replied.json()["text"], replied.json()
+
+            for interaction in (
+                {"type": "shortcut", "callback_id": "submit_request", "team": {"id": "TE2EUNKNOWN"}},
+                {
+                    "type": "view_submission",
+                    "team": {"id": "TE2EUNKNOWN"},
+                    "view": {"callback_id": "standupless_request_form", "state": {"values": {}}},
+                },
+            ):
+                signed = urlencode({"payload": json.dumps(interaction)}).encode()
+                ignored = client.post(
+                    "/api/slack/interactions",
+                    content=signed,
+                    headers={"content-type": "application/x-www-form-urlencoded", **_slack_signed(secret, signed)},
+                )
+                assert ignored.status_code == 200, ignored.text[:400]
 
             stale = client.post(
                 "/api/slack/events",

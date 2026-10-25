@@ -384,7 +384,7 @@ async def receive_slack_command(request: Request, repositories: Bundle) -> Respo
 
 @public_router.post("/slack/interactions", responses=SIGNED_RESPONSES)
 async def receive_slack_interaction(request: Request, repositories: Bundle) -> Response:
-    """Verify one interactivity request: the message shortcut, or the create issue form being submitted."""
+    """Verify one interactivity request: a shortcut, or the create issue or request form being submitted."""
     _require_configured()
     body = await _verified_body(request)
     if body is None:

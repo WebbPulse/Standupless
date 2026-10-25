@@ -322,3 +322,33 @@ describe('template sub-issues', () => {
     });
   });
 });
+
+describe('form templates in Slack', () => {
+  it('offers a saved form in Slack from the editor', async () => {
+    const user = userEvent.setup();
+    renderEditor([
+      template({
+        name: 'Bug report',
+        form_fields: [
+          {
+            key: 'happened',
+            label: 'What happened?',
+            type: 'long_text',
+            required: true,
+            description: null,
+            options: [],
+          },
+        ],
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Edit Bug report' }));
+    await user.click(screen.getByLabelText('Offer this form in Slack'));
+    await user.click(screen.getByRole('button', { name: /^Save/ }));
+
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(1);
+    });
+    expect(update.mock.calls[0]?.[1]).toMatchObject({ in_slack: true });
+  });
+});

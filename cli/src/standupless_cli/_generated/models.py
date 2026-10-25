@@ -5218,6 +5218,7 @@ class TemplateCreate(TypedDict):
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
     form_fields: NotRequired[list[FormField]]
+    in_slack: NotRequired[bool]
     kind: NotRequired[Literal["issue", "project", "document"]]
     label_ids: NotRequired[list[str]]
     name: str
@@ -5240,6 +5241,7 @@ class TemplateRead(TypedDict):
     estimate: NotRequired[str | None]
     form_fields: NotRequired[list[FormFieldBlueprint]]
     id: str
+    in_slack: NotRequired[bool]
     kind: NotRequired[Literal["issue", "project", "document"]]
     label_ids: NotRequired[list[str]]
     name: str
@@ -5262,6 +5264,7 @@ class TemplateUpdate(TypedDict):
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
     form_fields: NotRequired[list[FormField] | None]
+    in_slack: NotRequired[bool | None]
     label_ids: NotRequired[list[str] | None]
     name: NotRequired[str | None]
     position: NotRequired[int | None]

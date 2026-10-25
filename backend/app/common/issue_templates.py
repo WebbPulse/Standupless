@@ -368,6 +368,8 @@ def _create(
         raise unprocessable("form_fields is for an issue template")
     if kind != ISSUE_TEMPLATE and payload.sub_issues:
         raise unprocessable("sub_issues is for an issue template")
+    if kind != ISSUE_TEMPLATE and payload.in_slack:
+        raise unprocessable("in_slack is for an issue template")
     if kind == PROJECT_TEMPLATE:
         if _issue_fields_sent(fields):
             raise unprocessable("A project template fills project, not the issue fields")
@@ -432,7 +434,9 @@ def _update(
         if existing.kind != ISSUE_TEMPLATE and payload.sub_issues:
             raise unprocessable("sub_issues is for an issue template")
         fields["sub_issues"] = _check_items(repositories, workspace_id, team, payload.sub_issues or [])
-    for name in ("name", "position"):
+    if existing.kind != ISSUE_TEMPLATE and fields.get("in_slack"):
+        raise unprocessable("in_slack is for an issue template")
+    for name in ("name", "position", "in_slack"):
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
     for name in LIST_FIELDS:
