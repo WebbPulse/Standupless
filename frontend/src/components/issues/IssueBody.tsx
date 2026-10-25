@@ -155,8 +155,8 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
       : (event: React.MouseEvent) => {
           const target = event.target as HTMLElement;
           const mark = target.closest<HTMLElement>('[data-comment-anchor]');
-          const id = mark?.dataset.commentAnchor;
-          if (id === undefined) return;
+          const id = mark?.getAttribute('data-comment-anchor') ?? null;
+          if (id === null) return;
           if (document.getSelection()?.isCollapsed === false) return;
           passages.showThread(id);
         };

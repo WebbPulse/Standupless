@@ -19,9 +19,9 @@ from webbpulse.http import cursor_page
 from webbpulse.storage import UPLOAD_CONTENT_TYPES, disposition_for
 
 from app.common.change_source import ChangeSource
+from app.common.comment_anchors import ANCHOR_CONTEXT_MAX, ANCHOR_QUOTE_MAX
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
-from app.common.comment_anchors import ANCHOR_CONTEXT_MAX, ANCHOR_QUOTE_MAX
 from app.common.db.dynamo.comments import Comment, CommentAnchor, GithubThread, ThreadResolution
 from app.common.discussion_reads import AuthorRead, ReactionGroupRead, check_emoji
 
