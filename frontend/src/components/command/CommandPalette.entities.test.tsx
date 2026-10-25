@@ -10,13 +10,13 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SavedViewDisplayRead } from '../../api/views';
 import { cyclePath } from '../../lib/paths';
 import type {
   CustomerRead,
   CycleRead,
   InitiativeRead,
   ProjectRead,
-  SavedViewDisplayRead,
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
