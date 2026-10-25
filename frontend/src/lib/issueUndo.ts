@@ -351,20 +351,41 @@ export const recordMove = (
   message: string,
   options: Omit<RecordOptions, 'message'> = {}
 ): void => {
+  recordMoves(workspaceId, [before], message, options);
+};
+
+/**
+ * Records a move of several issues as one undo entry. The issues go back in
+ * the order given, so a parent listed before its sub-issues takes them home
+ * with it before their own dropped values are put back.
+ */
+export const recordMoves = (
+  workspaceId: string,
+  befores: readonly IssueRead[],
+  message: string,
+  options: Omit<RecordOptions, 'message'> = {}
+): void => {
+  if (befores.length === 0) return;
   pushUndo(workspaceId, message, async () => {
+    const restored: IssueRead[] = [];
     try {
-      const back = await moveIssue(workspaceId, before.id, before.team_id);
-      const revert = revertBetween(before, back);
-      const restored =
-        revert === null
-          ? back
-          : await updateIssue(workspaceId, before.id, revert.patch);
-      options.onReverted?.([restored]);
+      for (const before of befores) {
+        const back = await moveIssue(workspaceId, before.id, before.team_id);
+        const revert = revertBetween(before, back);
+        restored.push(
+          revert === null
+            ? back
+            : await updateIssue(workspaceId, before.id, revert.patch)
+        );
+      }
+      options.onReverted?.(restored);
     } finally {
       invalidateQueries([
         ...(options.invalidate ?? []),
-        issueKey(workspaceId, before.id),
-        activityKey(before.id),
+        ...befores.flatMap((before) => [
+          issueKey(workspaceId, before.id),
+          activityKey(before.id),
+        ]),
       ]);
     }
   });

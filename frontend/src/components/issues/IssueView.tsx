@@ -1109,12 +1109,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
               open={moving}
               workspaceId={workspaceId}
               workspaceRole={workspace?.role}
-              issue={issue}
+              issues={[issue]}
               teams={teams ?? []}
               onClose={() => {
                 setMoving(false);
               }}
-              onMoved={onMoved}
+              onMoved={([moved]) => {
+                if (moved !== undefined) onMoved(moved);
+              }}
             />
             <RemindMeDialog
               open={reminding}
