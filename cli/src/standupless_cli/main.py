@@ -1447,7 +1447,8 @@ def workspace_status(
         output.success("Cleared your status.")
         return
     shown = " ".join(part for part in (current["emoji"], current["text"]) if part)
-    ending = f" until {current['until']}" if current.get("until") else ""
+    ends = current.get("until")
+    ending = f" until {ends}" if ends else ""
     output.success(f"Your status is {shown}{ending}.")
 
 

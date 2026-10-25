@@ -97,7 +97,7 @@ const StatusForm: React.FC<Omit<UserStatusDialogProps, 'open'>> = ({
   const customMoment = fromLocalInput(custom, zone);
   const customProblem =
     clearAfter === CUSTOM
-      ? reminderProblem(customMoment, new Date(), STATUS_MAX_DAYS)
+      ? reminderProblem(customMoment, now, STATUS_MAX_DAYS)
       : null;
   const empty = emoji.trim() === '' && text.trim() === '';
 

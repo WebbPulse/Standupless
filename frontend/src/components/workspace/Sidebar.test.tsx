@@ -95,12 +95,10 @@ vi.mock('../../api/teams', () => ({
 }));
 
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
-const setMyStatus = vi.fn();
 
 vi.mock('../../api/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/workspaces')>()),
   listMembers: () => listMembers(),
-  setMyStatus: (...args: unknown[]) => setMyStatus(...args),
 }));
 
 vi.mock('../../api/views', () => ({
@@ -482,7 +480,7 @@ describe('the sign-out affordance', () => {
 
 describe('the status the caller set', () => {
   it('shows the away dot and emoji in the footer and opens the status dialog from it and from the menu', async () => {
-    auth.user.id = 'me-1';
+    auth.user['id'] = 'me-1';
     listMembers.mockResolvedValue([
       {
         user_id: 'me-1',
@@ -513,7 +511,7 @@ describe('the status the caller set', () => {
       ).toBeInTheDocument();
       expect(screen.getByLabelText('Status')).toHaveValue('On vacation');
     } finally {
-      delete auth.user.id;
+      delete auth.user['id'];
     }
   });
 
