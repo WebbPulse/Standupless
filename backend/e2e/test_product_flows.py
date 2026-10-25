@@ -1527,6 +1527,33 @@ class TestIssueDetail:
         assert children.status_code == 200, children.text[:400]
 
     @WRITES
+    def test_an_earlier_description_is_listed_and_restored(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A description edit keeps the earlier text as a version that restores it."""
+        path = f"/api/workspaces/{workspace['id']}/issues"
+        created = _created(
+            api.post(path, json={"team_id": team["id"], "title": run_scope.name("history"), "body": "first draft"}),
+            "issue",
+        )
+        try:
+            base = f"{path}/{created['id']}"
+            edited = api.patch(base, json={"body": "second draft"})
+            assert edited.status_code == 200, edited.text[:400]
+
+            listed = api.get(f"{base}/description-versions")
+            assert listed.status_code == 200, listed.text[:400]
+            versions = listed.json()["versions"]
+            assert [version["body"] for version in versions][-1] == "first draft", versions
+            assert versions[0]["body"] == "second draft", versions
+
+            restored = api.post(f"{base}/description-versions/{versions[-1]['version_id']}/restore")
+            assert restored.status_code == 200, restored.text[:400]
+            assert restored.json()["body"] == "first draft"
+        finally:
+            api.delete(f"{path}/{created['id']}")
+
+    @WRITES
     def test_subscribing_to_an_issue_round_trips(
         self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:

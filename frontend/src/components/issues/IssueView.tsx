@@ -52,6 +52,7 @@ import {
   LuEllipsis,
   LuGitBranch,
   LuHexagon,
+  LuHistory,
   LuLink2,
   LuListTree,
   LuMaximize2,
@@ -144,6 +145,9 @@ import { useTruncationTooltip } from '../ui/truncated-text';
 import { Toaster } from '../ui/toast';
 import AddLinkDialog from './AddLinkDialog';
 import AddRelationDialog from './AddRelationDialog';
+import DescriptionHistoryDialog, {
+  DESCRIPTION_HISTORY_LABEL,
+} from './DescriptionHistoryDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
@@ -374,6 +378,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [parenting, setParenting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [reminding, setReminding] = useState(false);
+  const [history, setHistory] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -720,6 +725,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
             {`${REMIND_ME_LABEL}…`}
             {remindKeys !== '' && <MenuShortcut keys={remindKeys} />}
           </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setHistory(true);
+            }}
+          >
+            <LuHistory aria-hidden="true" className="h-3.5 w-3.5" />
+            {`${DESCRIPTION_HISTORY_LABEL}…`}
+          </MenuItem>
           <MenuSeparator />
           <MenuItem onSelect={copyIssueId}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
@@ -812,6 +825,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
         enabled={issue !== null}
         onRun={() => {
           setReminding(true);
+        }}
+      />
+      <IssueCommand
+        keys=""
+        label={`${DESCRIPTION_HISTORY_LABEL}…`}
+        enabled={issue !== null}
+        onRun={() => {
+          setHistory(true);
         }}
       />
       <IssueCommand
@@ -1127,6 +1148,21 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 setReminding(false);
               }}
             />
+            {history && (
+              <DescriptionHistoryDialog
+                workspaceId={workspaceId}
+                issue={issue}
+                people={options.people}
+                canEdit={canAct}
+                onRestored={(saved) => {
+                  receive(saved);
+                  invalidateQueries([issueKey(workspaceId, issueRef)]);
+                }}
+                onClose={() => {
+                  setHistory(false);
+                }}
+              />
+            )}
             <AddLinkDialog
               workspaceId={workspaceId}
               issueId={issue.id}

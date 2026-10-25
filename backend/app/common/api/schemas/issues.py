@@ -19,7 +19,7 @@ from webbpulse.http import cursor_page
 from app.common.api.schemas.planning import ProjectRead
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
-from app.common.db.dynamo.activity import Activity
+from app.common.db.dynamo.activity import Activity, DescriptionVersion
 from app.common.db.dynamo.issues import Issue, PullRequestSummary
 from app.common.db.dynamo.relations import Relation
 from app.common.sla import sla_status
@@ -714,6 +714,35 @@ class ActivityRead(BaseModel):
 
 ActivityListRead = cursor_page(ActivityRead, "activity", model_name="ActivityListRead")
 """The body the activity list route answers with, newest first, items under `activity`."""
+
+
+class IssueDescriptionVersionRead(BaseModel):
+    """One saved version of an issue's description: the text, who wrote it and when."""
+
+    version_id: str
+    issue_id: str
+    body: str
+    edited_by: str
+    edited_at: datetime
+    source: Optional[ChangeSource] = None
+
+    @classmethod
+    def from_row(cls, version: DescriptionVersion) -> "IssueDescriptionVersionRead":
+        """Build the response shape from a stored version."""
+        return cls(
+            version_id=version.version_id,
+            issue_id=version.issue_id,
+            body=version.body,
+            edited_by=version.edited_by,
+            edited_at=version.edited_at,
+            source=version.source,  # pyright: ignore[reportArgumentType]
+        )
+
+
+class IssueDescriptionVersionListRead(BaseModel):
+    """An issue's description versions, newest first, the newest being the current text."""
+
+    versions: list[IssueDescriptionVersionRead]
 
 
 class SubscriberRead(BaseModel):

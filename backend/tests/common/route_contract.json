@@ -932,6 +932,18 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions/{version_id}/restore"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/duplicate"
   },

@@ -176,6 +176,12 @@ export const linksKey = (issueId: string): QueryKey => ['links', issueId];
 /** One issue's activity. */
 export const activityKey = (issueId: string): QueryKey => ['activity', issueId];
 
+/** One issue's kept description versions. */
+export const descriptionVersionsKey = (issueId: string): QueryKey => [
+  'descriptionVersions',
+  issueId,
+];
+
 /** The candidate parents offered by one issue's parent picker. */
 export const parentsKey = (teamId: string): QueryKey => ['parents', teamId];
 

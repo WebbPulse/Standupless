@@ -731,6 +731,8 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "unresolve_comment_thread": {"issue_id": issue, "comment_id": "01M0000000000000000000000"},
         "list_issue_relations": {"issue_id": issue},
         "list_issue_activity": {"issue_id": issue},
+        "list_issue_description_versions": {"issue_id": issue},
+        "restore_issue_description": {"issue_id": issue, "version_id": "01M0000000000000000000000"},
         "create_issue_relation": {"issue_id": home_issue, "type": "blocks", "target_issue_id": issue},
         "list_teams": {},
         "get_team": {"team_id": team},

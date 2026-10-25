@@ -23,6 +23,7 @@ from app.common.api.schemas.issues import (
     ActivityRead,
     IssueBulkUpdate,
     IssueCreate,
+    IssueDescriptionVersionRead,
     IssueUpdate,
     LinkCreate,
     LinkRead,
@@ -44,6 +45,7 @@ from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_conversion import duplicate_issue
+from app.common.issue_descriptions import list_description_versions
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
@@ -56,6 +58,7 @@ from app.common.issue_writes import (
     create_issue_tree,
     descending,
     list_issues,
+    restore_description,
     sort_key,
     status_ranks,
     unset_value,
@@ -811,6 +814,20 @@ def _list_issue_activity(call: ToolCall) -> Any:
     }
 
 
+def _list_issue_description_versions(call: ToolCall) -> Any:
+    """An issue's saved description versions, newest first, the newest being the current text."""
+    issue = issue_ref(call, call.require("issue_id"))
+    _, versions = list_description_versions(call.repositories, call.context, issue.issue_id)
+    return {"versions": [IssueDescriptionVersionRead.from_row(row).model_dump(mode="json") for row in versions]}
+
+
+def _restore_issue_description(call: ToolCall) -> Any:
+    """Make one earlier description version the issue's current text, as an edit by the caller."""
+    issue = issue_ref(call, call.require("issue_id"))
+    restored = restore_description(call.repositories, call.context, issue, str(call.require("version_id")))
+    return _answer(call, restored)
+
+
 def _link_json(link: LinkRead) -> dict[str, Any]:
     """One relation as the tools answer it, the far side named by id and key.
 
@@ -1369,6 +1386,29 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             required=("issue_id",),
         ),
         handler=_list_issue_activity,
+    ),
+    Tool(
+        name="list_issue_description_versions",
+        description=(
+            "An issue's saved description versions, newest first; the newest is the current text. "
+            "Rapid edits by one author are kept as one version."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_list_issue_description_versions,
+    ),
+    Tool(
+        name="restore_issue_description",
+        description=(
+            "Replace an issue's description with one earlier version from list_issue_description_versions. "
+            "Recorded as a description edit by the caller."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "version_id": string("The version_id to restore")},
+            required=("issue_id", "version_id"),
+        ),
+        handler=_restore_issue_description,
     ),
     Tool(
         name="add_comment",
