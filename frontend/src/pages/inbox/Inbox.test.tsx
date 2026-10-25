@@ -602,7 +602,14 @@ describe('inbox', () => {
 
     await waitFor(() => {
       expect(listInbox).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: ['commented', 'status_changed'] })
+        expect.objectContaining({
+          kind: [
+            'commented',
+            'status_changed',
+            'issue_completed',
+            'issue_cancelled',
+          ],
+        })
       );
     });
   });
