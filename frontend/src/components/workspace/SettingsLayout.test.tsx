@@ -56,6 +56,7 @@ const renderLayout = (extra: ReactNode = null) =>
                 }
               />
             </Route>
+            <Route index element={<Page />} />
             <Route path="*" element={<Page />} />
           </Route>
         </Routes>
