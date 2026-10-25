@@ -35,8 +35,9 @@ def record_description_version(
     `before` is the issue as it stood, or `None` for a new issue. An empty
     description on a new issue records nothing.
     """
-    previous = before.body if before is not None else ""
-    if before is None and not after.body:
+    previous = (before.body or "") if before is not None else ""
+    body = after.body or ""
+    if before is None and not body:
         return
     workspace_id, issue_id = after.workspace_id, after.issue_id
     latest = repositories.activity.latest_description_version(workspace_id, issue_id)
@@ -55,14 +56,14 @@ def record_description_version(
         latest = None
     if latest is not None and _coalesces(latest, context.user_id, previous, now):
         repositories.activity.save_description_version(
-            latest.model_copy(update={"body": after.body, "edited_at": now, "source": context.source})
+            latest.model_copy(update={"body": body, "edited_at": now, "source": context.source})
         )
         return
     repositories.activity.save_description_version(
         build_description_version(
             workspace_id,
             issue_id,
-            after.body,
+            body,
             context.user_id,
             edited_at=now,
             source=context.source,
@@ -84,7 +85,7 @@ def _coalesces(latest: DescriptionVersion, user_id: str, previous: str, now: dat
 def seal_latest_version(repositories: Repositories, issue: Issue) -> None:
     """Keep the newest version from being rewritten by the next save, ahead of a restore."""
     latest = repositories.activity.latest_description_version(issue.workspace_id, issue.issue_id)
-    if latest is not None and not latest.sealed and latest.body == issue.body:
+    if latest is not None and not latest.sealed and latest.body == (issue.body or ""):
         repositories.activity.save_description_version(latest.model_copy(update={"sealed": True}))
 
 

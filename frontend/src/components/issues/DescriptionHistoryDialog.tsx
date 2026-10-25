@@ -159,7 +159,7 @@ export const DescriptionHistoryDialog: React.FC<
     null;
   const isCurrent =
     selected !== null && selected.version_id === versions[0]?.version_id;
-  const current = issue.body;
+  const current = issue.body ?? '';
   const lines = useMemo(
     () => (selected === null ? [] : diffLines(current, selected.body)),
     [current, selected]
