@@ -220,6 +220,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     : personLabel(people.find((person) => person.user_id === update.author_id));
 
   const projectUpdate = isProjectUpdate(update) ? update : null;
+  const hasReport = (projectUpdate?.snapshot ?? null) !== null;
   const report =
     projectUpdate === null
       ? []
@@ -235,9 +236,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
   ): Promise<boolean> =>
     onEdit(
       update.update_id,
-      projectUpdate === null
-        ? { body, health }
-        : { body, health, hide_details: hideDetails }
+      hasReport ? { body, health, hide_details: hideDetails } : { body, health }
     ).then(
       () => {
         setEditing(false);
@@ -340,7 +339,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             busyLabel="Saving"
             ariaLabel="Edit update"
             autoFocus
-            withDetailsToggle={(projectUpdate?.snapshot ?? null) !== null}
+            withDetailsToggle={hasReport}
             initialHideDetails={projectUpdate?.hide_details === true}
             onSubmit={save}
             onCancel={() => {
