@@ -45,6 +45,9 @@ MAX_LIMIT = 10
 
 TITLE_OVERLAP = 2
 
+MIN_WORD = 4
+"""The shortest word the duplicate match reads, since short words such as "add" or "fix" say little about the work."""
+
 GENERIC_TERMS = frozenset(
     {
         "able",
@@ -118,7 +121,7 @@ def title_overlap(term_count: int) -> int:
 
 def title_terms(title: str) -> set[str]:
     """The specific terms of a draft title the matcher reads, at most `MAX_TERMS`."""
-    words = [word for word in _SPLIT.split(title.lower()) if word not in GENERIC_TERMS]
+    words = [word for word in _SPLIT.split(title.lower()) if len(word) >= MIN_WORD and word not in GENERIC_TERMS]
     return ranked_terms(" ".join(words), cap=MAX_TERMS)
 
 

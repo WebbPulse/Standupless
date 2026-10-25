@@ -379,7 +379,7 @@ export const Search: React.FC = () => {
             message="Type a word to search the teams you can see."
           />
         ) : !indexable ? (
-          <EmptyState message="Search needs a word of at least four letters. Shorter words are not indexed." />
+          <EmptyState message="Keep typing to search." />
         ) : isLoading ? (
           <Spinner label="Searching" />
         ) : total === 0 ? (

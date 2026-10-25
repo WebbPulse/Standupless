@@ -1,16 +1,17 @@
 /**
  * What the search page decides about a term before it sends it. The index drops
- * short words and does not hold issue keys, so these predicates keep a call
- * that would be refused, or answered with the wrong thing, from being made at
- * all. They sit here rather than in the page so they can be tested as the plain
+ * single characters and does not hold issue keys, so these predicates keep a
+ * call that would be refused, or answered with the wrong thing, from being made
+ * at all. They sit here rather than in the page so they can be tested as the plain
  * functions they are.
  */
 
 /**
- * The shortest term the index holds. Terms of three characters or fewer are not
- * indexed, so the page says so rather than sending a call that will be refused.
+ * The shortest word the index holds. A single character is not indexed, so the
+ * page waits for a second one rather than sending a call that will be refused.
+ * The last word typed matches as a prefix, so "notif" finds "notifications".
  */
-export const MIN_TERM = 4;
+export const MIN_TERM = 2;
 
 /** Whether any word in the term is long enough for the index to hold it. */
 export const hasIndexableTerm = (term: string): boolean =>

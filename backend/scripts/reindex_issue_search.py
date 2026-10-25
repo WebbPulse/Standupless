@@ -6,7 +6,14 @@ cannot be found, a removed word that still matches, or an issue that moved team
 and is still filed under the old one. Before STUP-327 the shared rate limiter
 dropped such batches. This rebuilds the posting set each issue and comment should
 have, the same terms the consumer computes, compares it with what each team's
-partition holds, and writes the missing rows and deletes the stray ones.
+partition holds, and writes the missing rows and deletes the stray ones. Each document's stored
+search terms are recomputed the same way and rewritten when they differ.
+Projects and initiatives are matched against their text at read time, so they
+hold nothing to rebuild.
+
+Run it after a change to what is indexed, such as STUP-462 posting short words
+and word prefixes, so issues and comments written before the change are found
+the way new ones are.
 
 Idempotent: a posting is a row whose whole content is its key, so a second run
 finds nothing to change. An edit that lands while the run is reading its team can
@@ -42,6 +49,8 @@ class Tally:
     docs_changed: int = 0
     added: int = 0
     removed: int = 0
+    documents: int = 0
+    documents_changed: int = 0
 
 
 def workspace_issues(workspace_id: str) -> Iterable[Mapping[str, Any]]:
@@ -96,15 +105,31 @@ def reconcile_team(
             repositories.search_index.apply(workspace_id, team_id, doc, appeared=appeared, departed=departed)
 
 
+def reterm_documents(repositories: Any, workspace_id: str, tally: Tally, *, dry_run: bool) -> None:
+    """Rewrite the stored search terms of every document of one workspace whose terms are out of date."""
+    from app.common.documents import document_terms
+
+    for document in repositories.documents.list_for_workspace(workspace_id, max_items=100_000):
+        tally.documents += 1
+        body = repositories.documents.get_body(workspace_id, document.document_id)
+        terms = document_terms(document.title, body.body if body is not None else "")
+        if terms == sorted(document.terms):
+            continue
+        tally.documents_changed += 1
+        if not dry_run:
+            repositories.documents.set_terms(document, terms)
+
+
 def reindex_workspace(
     repositories: Any, workspace_id: str, items: Iterable[Mapping[str, Any]], tally: Tally, *, dry_run: bool
 ) -> None:
-    """Reconcile every live team of one workspace, and any team an issue still names."""
+    """Reconcile every live team of one workspace, any team an issue still names, and its documents."""
     wanted = wanted_postings(repositories, workspace_id, items, tally)
     teams = {team.team_id for team in repositories.teams.list_for_workspace(workspace_id, limit=1000)}
     for team_id in sorted(teams | set(wanted)):
         tally.teams += 1
         reconcile_team(repositories, workspace_id, team_id, wanted.get(team_id, {}), tally, dry_run=dry_run)
+    reterm_documents(repositories, workspace_id, tally, dry_run=dry_run)
 
 
 def workspace_ids() -> list[str]:
@@ -140,6 +165,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ("dry-run " if arguments.dry_run else "")
         + f"workspaces={len(workspaces)} teams={tally.teams} issues={tally.issues} comments={tally.comments}"
         + f" docs_changed={tally.docs_changed} postings_added={tally.added} postings_removed={tally.removed}"
+        + f" documents={tally.documents} documents_changed={tally.documents_changed}"
     )
     return 0
 

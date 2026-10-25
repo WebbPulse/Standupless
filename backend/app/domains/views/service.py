@@ -36,7 +36,7 @@ def query_too_short() -> HTTPException:
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail={
             "error_code": "QUERY_TOO_SHORT",
-            "message": "Search terms must be at least four characters",
+            "message": "Search needs a word of at least two characters",
         },
     )
 

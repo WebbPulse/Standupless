@@ -23,7 +23,7 @@ from typing import Any, Iterable, Literal
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
-from webbpulse.dynamodb import Repository, new_ulid
+from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
 from app.common.db.dynamo.base import build_repository, utc_now
 from app.common.db.dynamo.tables import PLANNING
@@ -265,6 +265,20 @@ class DocumentRepository:
         after = {mention.issue_id for mention in document.mentions}
         self._write_links(document, added=sorted(after - before), removed=sorted(before - after))
         return document
+
+    def set_terms(self, document: Document, terms: list[str]) -> bool:
+        """Rewrite one document's search terms alone, answering false when the document went away."""
+        try:
+            self._repository.update(
+                _key(document.workspace_id, document.planning_key),
+                update_expression="SET #terms = :terms",
+                expression_names={"#terms": "terms"},
+                expression_values={":terms": terms},
+                condition=Attr("planning_key").exists() & Attr("kind").eq(DOCUMENT),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def add_version(self, version: DocumentVersion, body: DocumentBody) -> DocumentBody:
         """Store one version and answer the body carrying its id, dropping versions past the cap."""

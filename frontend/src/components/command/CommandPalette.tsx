@@ -1428,7 +1428,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const empty =
     page === 'root' && deferred !== '' && !isKey && !indexable
-      ? `Search needs a word of at least ${String(MIN_TERM)} letters.`
+      ? `Type at least ${String(MIN_TERM)} characters to search.`
       : isLoading && enabled
         ? 'Searching'
         : page === 'template' && (templateList?.templates.length ?? 0) === 0

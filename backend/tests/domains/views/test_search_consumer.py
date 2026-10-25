@@ -20,6 +20,8 @@ from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import (
     MIN_TERM_LENGTH,
+    PREFIX_CAP,
+    PREFIX_MARK,
     STOPWORDS,
     TERM_CAP,
     comment_doc,
@@ -62,13 +64,29 @@ def postings(repositories: Any, term: str) -> list[str]:
     return repositories.search_index.postings(WORKSPACE, TEAM, term)
 
 
+def held_terms(repositories: Any) -> list[str]:
+    """Every term the team's partition holds, prefix terms included."""
+    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
+    return [str(item["term_doc"]).split("#", 1)[0] for item in held.items]
+
+
+def word_terms(terms: Any) -> list[str]:
+    """The whole-word terms among some terms, prefix terms left out."""
+    return [term for term in terms if not term.startswith(PREFIX_MARK)]
+
+
 def test_tokenizing_drops_terms_below_the_minimum() -> None:
-    """Short words are not indexed, so they cannot be searched for."""
+    """Single characters are not indexed, so they cannot be searched for."""
     terms = tokenize("the widget is a pipeline")
 
     assert "widget" in terms
     assert "pipeline" in terms
     assert all(len(term) >= MIN_TERM_LENGTH for term in terms)
+
+
+def test_two_and_three_letter_words_are_indexed() -> None:
+    """Words such as UI, CSV and MCP are what people search for, so they are terms."""
+    assert tokenize("UI export to CSV over MCP") == {"ui", "export", "csv", "over", "mcp"}
 
 
 def test_tokenizing_folds_case_and_punctuation() -> None:
@@ -88,6 +106,19 @@ def test_an_insert_indexes_every_term(dynamo_tables: None, repositories: Any) ->
 
     assert postings(repositories, "repair") == [ISSUE]
     assert postings(repositories, "widget") == [ISSUE]
+    assert postings(repositories, "p:repai") == [ISSUE]
+    assert postings(repositories, "p:wid") == [ISSUE]
+
+
+def test_prefixes_run_from_three_characters_to_the_cap_and_stop_short_of_the_word() -> None:
+    """A word posts its leading three to six characters, never itself again and never past six."""
+    terms = issue_terms({"title": "Notifications for CSV"})
+
+    assert {"notifications", "csv"} <= terms
+    assert {"p:not", "p:noti", "p:notif", "p:notifi"} <= terms
+    assert "p:notific" not in terms
+    assert "p:csv" not in terms
+    assert not any(term.startswith("p:fo") for term in terms)
 
 
 def test_an_edit_writes_only_the_difference(dynamo_tables: None, repositories: Any) -> None:
@@ -112,6 +143,9 @@ def test_an_edit_writes_only_the_difference(dynamo_tables: None, repositories: A
     assert postings(repositories, "repair") == []
     assert postings(repositories, "replace") == [ISSUE]
     assert postings(repositories, "widget") == [ISSUE]
+    assert postings(repositories, "p:repai") == []
+    assert postings(repositories, "p:repla") == [ISSUE]
+    assert postings(repositories, "p:rep") == [ISSUE]
 
 
 def test_a_remove_clears_every_term(dynamo_tables: None, repositories: Any) -> None:
@@ -123,6 +157,7 @@ def test_a_remove_clears_every_term(dynamo_tables: None, repositories: Any) -> N
 
     assert postings(repositories, "repair") == []
     assert postings(repositories, "widget") == []
+    assert held_terms(repositories) == []
 
 
 def test_replaying_a_record_converges(dynamo_tables: None, repositories: Any) -> None:
@@ -311,15 +346,16 @@ def test_issue_terms_cap_the_term_set_and_keep_title_terms() -> None:
     body = " ".join(f"word{index:04d}" for index in range(TERM_CAP * 2))
     terms = issue_terms({"title": "Replace widget", "key": "ABCD-12", "body": body})
 
-    assert len(terms) == TERM_CAP
-    assert {"replace", "widget", "abcd"} <= terms
+    assert len(word_terms(terms)) == TERM_CAP
+    assert len(terms) - TERM_CAP <= PREFIX_CAP
+    assert {"replace", "widget", "abcd", "p:repl", "p:wid"} <= terms
 
 
 def test_legacy_terms_are_the_uncapped_superset() -> None:
     """The cleanup set covers everything an older indexer might have written."""
     image = {"title": "That widget", "body": " ".join(f"word{index:04d}" for index in range(TERM_CAP + 5))}
 
-    assert issue_terms(image) < legacy_terms(image)
+    assert set(word_terms(issue_terms(image))) < legacy_terms(image)
     assert "that" in legacy_terms(image)
 
 
@@ -357,8 +393,9 @@ def test_a_long_issue_posts_at_most_the_cap(dynamo_tables: None, repositories: A
         ),
     )
 
-    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
-    assert len(held.items) == TERM_CAP
+    held = held_terms(repositories)
+    assert len(word_terms(held)) == TERM_CAP
+    assert len(held) <= TERM_CAP + PREFIX_CAP
     assert postings(repositories, "widget") == [ISSUE]
     assert postings(repositories, f"word{TERM_CAP * 2 - 1:04d}") == []
 
@@ -377,8 +414,7 @@ def test_a_title_edit_that_pushes_a_body_term_past_the_cap_unposts_it(dynamo_tab
 
     assert postings(repositories, "pipeline") == [ISSUE]
     assert postings(repositories, f"word{TERM_CAP - 2:04d}") == []
-    held = repositories.search_index._repository.query(Key("ws_team").eq(f"{WORKSPACE}#{TEAM}"), limit=1000)
-    assert len(held.items) == TERM_CAP
+    assert len(word_terms(held_terms(repositories))) == TERM_CAP
 
 
 def test_an_edit_cleans_up_a_legacy_stopword_posting(dynamo_tables: None, repositories: Any) -> None:

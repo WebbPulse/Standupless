@@ -8,11 +8,20 @@ large workspace does not put every term in one partition.
 Writes never read. Common words are kept out by `STOPWORDS` and one issue by
 `TERM_CAP`, and reads are bounded by `POSTING_CAP` per term per team, so no
 per-term count is needed to keep a partition in check.
+
+Words of `MIN_TERM_LENGTH` or more are posted whole, and the leading
+`PREFIX_MIN` to `PREFIX_MAX` characters of each word, short of the word itself,
+are posted under `p:` terms so a word still being typed finds the words it
+starts. Prefixes come from the earliest words first and stop at `PREFIX_CAP`
+per issue, so one issue holds at most `TERM_CAP + PREFIX_CAP` postings plus its
+source key. A query matches its last word as a prefix and every other word
+whole, as `SearchQuery` describes.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Iterable, Iterator, Mapping
 
 from boto3.dynamodb.conditions import Key
@@ -21,7 +30,15 @@ from webbpulse.dynamodb import Repository
 from app.common.db.dynamo.base import build_repository
 from app.common.db.dynamo.tables import SEARCH_INDEX
 
-MIN_TERM_LENGTH = 4
+MIN_TERM_LENGTH = 2
+
+PREFIX_MIN = 3
+
+PREFIX_MAX = 6
+
+PREFIX_CAP = 100
+
+PREFIX_MARK = "p:"
 
 BODY_BYTES = 4096
 
@@ -39,6 +56,32 @@ COMMENT_PREFIX = "c:"
 
 STOPWORDS = frozenset(
     {
+        "an",
+        "as",
+        "at",
+        "be",
+        "by",
+        "if",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "so",
+        "to",
+        "we",
+        "and",
+        "are",
+        "but",
+        "for",
+        "had",
+        "has",
+        "its",
+        "our",
+        "the",
+        "was",
+        "you",
         "about",
         "after",
         "also",
@@ -81,7 +124,7 @@ STOPWORDS = frozenset(
         "your",
     }
 )
-"""Common English words at or above `MIN_TERM_LENGTH` that would post against most issues."""
+"""Common English words at or above `MIN_TERM_LENGTH` that would post against most issues, never posted whole."""
 
 _SPLIT = re.compile(r"[^a-z0-9]+")
 
@@ -109,15 +152,15 @@ def _tokens(*parts: str | None) -> Iterator[str]:
 def tokenize(*parts: str | None) -> set[str]:
     """The term set of some text, lowercased, split on non-alphanumerics, stopwords dropped.
 
-    Short terms and stopwords match too much to be worth a row, and dropping them at
+    Single characters and stopwords match too much to be worth a row, and dropping them at
     both write and read time keeps the index and the query agreeing about what is
     searchable.
     """
     return {token for token in _tokens(*parts) if token not in STOPWORDS}
 
 
-def ranked_terms(*parts: str | None, cap: int = TERM_CAP) -> set[str]:
-    """The first `cap` distinct non-stopword terms, taking earlier parts first."""
+def _ranked(*parts: str | None, cap: int = TERM_CAP) -> list[str]:
+    """The first `cap` distinct non-stopword terms in order, taking earlier parts first."""
     kept: dict[str, None] = {}
     for token in _tokens(*parts):
         if token in STOPWORDS or token in kept:
@@ -125,7 +168,116 @@ def ranked_terms(*parts: str | None, cap: int = TERM_CAP) -> set[str]:
         kept[token] = None
         if len(kept) >= cap:
             break
+    return list(kept)
+
+
+def ranked_terms(*parts: str | None, cap: int = TERM_CAP) -> set[str]:
+    """The first `cap` distinct non-stopword terms, taking earlier parts first."""
+    return set(_ranked(*parts, cap=cap))
+
+
+def prefix_term(prefix: str) -> str:
+    """The posting term a word prefix is filed under, kept apart from whole words."""
+    return f"{PREFIX_MARK}{prefix[:PREFIX_MAX]}"
+
+
+def prefix_terms(words: Iterable[str], cap: int = PREFIX_CAP) -> set[str]:
+    """The prefix terms of some words in order, three to six characters and shorter than the word, at most `cap`.
+
+    Earlier words claim the cap first, so title prefixes are always posted.
+    """
+    kept: dict[str, None] = {}
+    for word in words:
+        for length in range(PREFIX_MIN, min(len(word) - 1, PREFIX_MAX) + 1):
+            term = prefix_term(word[:length])
+            if term in kept:
+                continue
+            if len(kept) >= cap:
+                return set(kept)
+            kept[term] = None
     return set(kept)
+
+
+def indexed_terms(*parts: str | None, cap: int = TERM_CAP, prefix_cap: int = PREFIX_CAP) -> set[str]:
+    """The word and prefix terms some text is posted under, earlier parts first, before any namespace is applied.
+
+    Each indexed kind, issues and comments today, posts this set under its own
+    namespace, so a new kind only needs a namespace and the text it covers.
+    """
+    words = _ranked(*parts, cap=cap)
+    return set(words) | prefix_terms(words, cap=prefix_cap)
+
+
+@dataclass(frozen=True)
+class SearchQuery:
+    """What a typed query asks the index for: whole words, and the last word as a prefix.
+
+    `words` must each be posted whole. `prefix` is the last word when it is at
+    least `PREFIX_MIN` long, and matches any word it starts, the word itself
+    included; a shorter last word is one of `words`. A stopword is never a whole
+    word but can still be a prefix, so "the" finds "theme".
+    """
+
+    words: frozenset[str]
+    prefix: str | None = None
+
+    def __bool__(self) -> bool:
+        """Whether the query asks for anything at all."""
+        return bool(self.words or self.prefix)
+
+    @property
+    def size(self) -> int:
+        """How many words the query matches on, the prefix counted once."""
+        return len(self.words) + (1 if self.prefix else 0)
+
+    @property
+    def highlights(self) -> set[str]:
+        """The words and the prefix, for marking where a hit matched."""
+        return set(self.words) | ({self.prefix} if self.prefix else set())
+
+    @property
+    def needs_check(self) -> bool:
+        """Whether the prefix outruns the posted prefixes, so a posting hit must be checked against its text."""
+        return self.prefix is not None and len(self.prefix) > PREFIX_MAX
+
+    def clauses(self) -> list[list[str]]:
+        """The postings each hit must be in, one clause per word, a hit in any term of a clause satisfying it."""
+        clauses = [[word] for word in sorted(self.words)]
+        if self.prefix:
+            alternatives = [] if self.prefix in STOPWORDS else [self.prefix]
+            clauses.append([*alternatives, prefix_term(self.prefix)])
+        return clauses
+
+    def matches(self, tokens: Iterable[str]) -> bool:
+        """Whether some terms hold every word whole and a word the prefix starts."""
+        held = set(tokens)
+        if not self or not self.words.issubset(held):
+            return False
+        prefix = self.prefix
+        return prefix is None or any(token.startswith(prefix) for token in held)
+
+    def matches_text(self, *parts: str | None) -> bool:
+        """Whether some text, tokenized as the index tokenizes it, matches the query."""
+        return self.matches(_tokens(*parts))
+
+    def prefix_in(self, *parts: str | None) -> bool:
+        """Whether some text holds a word the prefix starts, true when there is no prefix."""
+        prefix = self.prefix
+        return prefix is None or any(token.startswith(prefix) for token in _tokens(*parts))
+
+
+def parse_query(text: str | None) -> SearchQuery:
+    """A typed query as whole words and a last-word prefix, stopwords dropped from the whole words."""
+    tokens = list(_tokens(text))
+    if not tokens:
+        return SearchQuery(words=frozenset())
+    last = tokens[-1]
+    words = {token for token in tokens[:-1] if token not in STOPWORDS}
+    if len(last) >= PREFIX_MIN:
+        return SearchQuery(words=frozenset(words - {last}), prefix=last)
+    if last not in STOPWORDS:
+        words.add(last)
+    return SearchQuery(words=frozenset(words))
 
 
 def truncate_body(body: str | None) -> str:
@@ -143,8 +295,8 @@ def truncate_body(body: str | None) -> str:
 def ref_term(ref: str | None) -> str | None:
     """The one term an imported issue's source key is posted under, or `None` when there is none.
 
-    A source key such as `PROJ-12` splits into terms too short to index, so the
-    whole key is posted as one term instead, lowercased with every run of
+    A source key such as `PROJ-12` splits into terms that would match too
+    widely, so the whole key is posted as one term instead, lowercased with every run of
     punctuation turned into a hyphen. The `ref:` prefix keeps it apart from word
     terms, and the result never holds `#`, which separates a term from its issue id.
     """
@@ -174,10 +326,10 @@ def _issue_parts(image: Mapping[str, Any]) -> tuple[str | None, str | None, str]
 
 
 def issue_terms(image: Mapping[str, Any]) -> set[str]:
-    """The terms one issue image is posted under: at most `TERM_CAP` text terms, title first, and its source key."""
+    """The terms one issue image is posted under: its word and prefix terms, title first, and its source key."""
     if not image:
         return set()
-    return ranked_terms(*_issue_parts(image)) | _ref_terms(image)
+    return indexed_terms(*_issue_parts(image)) | _ref_terms(image)
 
 
 def comment_term(term: str) -> str:
@@ -201,11 +353,11 @@ def split_comment_doc(doc: str) -> tuple[str, str] | None:
 
 
 def comment_terms(image: Mapping[str, Any]) -> set[str]:
-    """The prefixed terms one comment image is posted under, at most `TERM_CAP` of them."""
+    """The `c:` terms one comment image is posted under, its word and prefix terms."""
     if not image:
         return set()
     body = image.get("body")
-    return {comment_term(term) for term in ranked_terms(truncate_body(body if isinstance(body, str) else None))}
+    return {comment_term(term) for term in indexed_terms(truncate_body(body if isinstance(body, str) else None))}
 
 
 def legacy_terms(image: Mapping[str, Any]) -> set[str]:

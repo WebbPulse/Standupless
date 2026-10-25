@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.comments import build_comment
 from app.common.db.dynamo.planning import Initiative, Project, initiative_key, project_key
-from app.common.db.dynamo.search_index import comment_doc, comment_terms
-from app.domains.views.endpoints.search import snippet, text_matches
+from app.common.db.dynamo.search_index import comment_doc, comment_terms, parse_query
+from app.domains.views.endpoints.search import snippet
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 from tests.domains.views.test_search import index_issue
@@ -302,8 +302,43 @@ def test_a_short_comment_snippet_is_the_whole_body() -> None:
     assert snippet("Fixed the\nzephyr  bug", {"zephyr"}) == "Fixed the zephyr bug"
 
 
-def test_text_matches_needs_every_term() -> None:
-    """Matching is an intersection, case folded, across the parts given."""
-    assert text_matches({"zephyr", "flag"}, "Zephyr", "ship the FLAG")
-    assert not text_matches({"zephyr", "flag"}, "Zephyr", None)
-    assert not text_matches({"zephyr"})
+def test_text_matching_needs_every_term() -> None:
+    """Matching is an intersection, case folded, across the parts given, the last word a prefix."""
+    assert parse_query("zephyr flag").matches_text("Zephyr", "ship the FLAG")
+    assert parse_query("zephyr fla").matches_text("Zephyr", "ship the FLAG")
+    assert not parse_query("zephyr flag").matches_text("Zephyr", None)
+    assert not parse_query("zeph flag").matches_text("Zephyr", "ship the FLAG")
+    assert not parse_query("zephyr").matches_text()
+
+
+def test_projects_and_initiatives_match_short_words_and_prefixes(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A two-letter word or a partly typed last word finds a project or an initiative by name."""
+    _project(repositories, workspace, PROJECT, TEAM, name="UI refresh")
+    _project(repositories, workspace, OTHER_PROJECT, TEAM, name="Guidance pages")
+    _initiative(repositories, workspace, name="Notifications overhaul")
+
+    sign_in(client, MEMBER)
+
+    assert [row["project_id"] for row in _search(client, workspace, q="ui")["projects"]] == [PROJECT]
+    assert [row["project_id"] for row in _search(client, workspace, q="ui refr")["projects"]] == [PROJECT]
+    assert [row["initiative_id"] for row in _search(client, workspace, q="notif")["initiatives"]] == [INITIATIVE]
+
+
+def test_a_comment_matches_on_a_prefix_of_its_words(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Comments post prefixes too, and a prefix longer than those posted is checked against the body."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Login fails")
+    expiring = _comment(repositories, workspace, issue, "The zephyr cache is expiring early")
+    expired = _comment(repositories, workspace, issue, "The token expired overnight")
+
+    sign_in(client, MEMBER)
+
+    assert {row["comment_id"] for row in _search(client, workspace, q="expi")["comments"]} == {expiring, expired}
+    assert [row["comment_id"] for row in _search(client, workspace, q="expiri")["comments"]] == [expiring]
+    assert [row["comment_id"] for row in _search(client, workspace, q="expire")["comments"]] == [expired]
+    assert [row["comment_id"] for row in _search(client, workspace, q="expirin")["comments"]] == [expiring]
+    assert [row["comment_id"] for row in _search(client, workspace, q="zephyr ca")["comments"]] == []
