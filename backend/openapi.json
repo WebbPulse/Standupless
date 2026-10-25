@@ -20569,6 +20569,78 @@
         "title": "ReleaseUpdate",
         "type": "object"
       },
+      "ReminderListRead": {
+        "description": "The caller's pending reminders on every kind of subject, soonest first.",
+        "properties": {
+          "reminders": {
+            "items": {
+              "$ref": "#/components/schemas/ReminderRead"
+            },
+            "title": "Reminders",
+            "type": "array"
+          }
+        },
+        "title": "ReminderListRead",
+        "type": "object"
+      },
+      "ReminderRead": {
+        "description": "One pending reminder of the caller's on any kind of subject, with the subject as it reads now.\n\n`issue_key` is set for an issue alone, and `team_id` is empty for a subject that\nbelongs to the workspace rather than one team, such as an initiative or a\nworkspace document.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_type": {
+            "enum": [
+              "issue",
+              "project",
+              "initiative",
+              "document"
+            ],
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Key"
+          },
+          "remind_at": {
+            "format": "date-time",
+            "title": "Remind At",
+            "type": "string"
+          },
+          "team_id": {
+            "default": "",
+            "title": "Team Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id",
+          "title",
+          "remind_at",
+          "created_at"
+        ],
+        "title": "ReminderRead",
+        "type": "object"
+      },
       "RepositoryLinkWrite": {
         "description": "Point one repository at one team, or clear it, and choose what records its releases.\n\nA body naming only `release_source` keeps the team; any other body sets the\nteam, so an empty one clears it as it always has.",
         "properties": {
@@ -45298,6 +45370,243 @@
           }
         ],
         "summary": "Unread Count",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/entity-reminders": {
+      "get": {
+        "description": "The caller's pending reminders on issues, projects, initiatives and documents, soonest first.\n\n`entity_type` narrows to one kind, and with `entity_id` to one subject. A\nreminder on a subject that is gone or no longer readable is left out.",
+        "operationId": "list_reminders_on_entities_api_workspaces__workspace_id__inbox_entity_reminders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "issue",
+                    "project",
+                    "initiative",
+                    "document"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Reminders On Entities",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}": {
+      "delete": {
+        "description": "Cancel the caller's pending reminder on one subject, or 404 when none is pending.",
+        "operationId": "cancel_reminder_on_entity_api_workspaces__workspace_id__inbox_entity_reminders__entity_type___entity_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "issue",
+                "project",
+                "initiative",
+                "document"
+              ],
+              "title": "Entity Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Cancel Reminder On Entity",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Remind the caller about one issue, project, initiative or document at `remind_at`, replacing any set.\n\nThe moment must carry a timezone and be between a minute and 365 days out. A\nsubject the caller cannot read is a 404.",
+        "operationId": "set_reminder_on_entity_api_workspaces__workspace_id__inbox_entity_reminders__entity_type___entity_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "issue",
+                "project",
+                "initiative",
+                "document"
+              ],
+              "title": "Entity Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueReminderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Reminder On Entity",
         "tags": [
           "views"
         ]

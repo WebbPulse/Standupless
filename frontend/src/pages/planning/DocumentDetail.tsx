@@ -33,6 +33,7 @@ import {
   LuBell,
   LuBellOff,
   LuChevronRight,
+  LuClock,
   LuEllipsis,
   LuFolderInput,
   LuHistory,
@@ -56,6 +57,10 @@ import DocumentIconPicker from '../../components/planning/DocumentIconPicker';
 import DocumentOutline from '../../components/planning/DocumentOutline';
 import DocumentThread from '../../components/planning/DocumentThread';
 import EditableText from '../../components/planning/EditableText';
+import {
+  REMIND_ME_MENU_LABEL,
+  useRemindMe,
+} from '../../components/planning/RemindMe';
 import MoveDocumentDialog, {
   type Destination,
 } from '../../components/planning/MoveDocumentDialog';
@@ -402,6 +407,14 @@ export const DocumentDetail: React.FC = () => {
   });
 
   usePrintCommand({ group: 'Document', enabled: page !== null });
+  const remindMe = useRemindMe({
+    workspaceId,
+    entityType: 'document',
+    entityId: page?.document_id ?? '',
+    subject: page?.title || 'This document',
+    group: 'Document',
+    keys: 'h',
+  });
 
   const crumbs =
     page === null ? null : (
@@ -545,6 +558,11 @@ export const DocumentDetail: React.FC = () => {
               )}
               {followers?.subscribed === true ? 'Unsubscribe' : 'Subscribe'}
             </MenuItem>
+            <MenuItem onSelect={remindMe.open}>
+              <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+              {REMIND_ME_MENU_LABEL}
+              <MenuShortcut keys="h" />
+            </MenuItem>
             <MenuItem onSelect={printPage}>
               <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
               {PRINT_LABEL}
@@ -607,6 +625,10 @@ export const DocumentDetail: React.FC = () => {
     >
       <div className="min-h-0 flex-1 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,48rem)_minmax(0,1fr)]">
         <article className="print-page mx-auto w-full max-w-3xl min-w-0 space-y-6 px-4 py-8 lg:px-8 xl:col-start-2">
+          {remindMe.dialog}
+          {remindMe.banner !== null && (
+            <div className="screen-only">{remindMe.banner}</div>
+          )}
           {saveState === 'conflict' && (
             <div
               role="alert"

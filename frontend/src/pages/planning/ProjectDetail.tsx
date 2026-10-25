@@ -35,6 +35,7 @@ import {
   LuCalendar,
   LuCalendarCheck,
   LuChevronRight,
+  LuClock,
   LuEllipsis,
   LuPencilLine,
   LuPlus,
@@ -146,6 +147,10 @@ import {
 import { showErrorToast, showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FollowButton from '../../components/planning/FollowButton';
+import {
+  REMIND_ME_MENU_LABEL,
+  useRemindMe,
+} from '../../components/planning/RemindMe';
 import type {
   MilestoneRead,
   ProjectRead,
@@ -352,6 +357,13 @@ export const ProjectDetail: React.FC = () => {
 
   const mayCreate = canCreate && createTeam !== undefined;
   const propertiesRow = useRef<HTMLDivElement>(null);
+  const remindMe = useRemindMe({
+    workspaceId,
+    entityType: 'project',
+    entityId: project?.project_id ?? '',
+    subject: project?.name ?? 'This project',
+    group: 'Project',
+  });
   useShortcut({
     keys: 'c',
     label: 'New issue in this project',
@@ -842,52 +854,58 @@ export const ProjectDetail: React.FC = () => {
               New issue
             </Button>
           )}
-          {(tab === 'overview' || canEdit || canDelete) && (
-            <Menu
-              label="Project actions"
-              align="end"
-              trigger={(trigger) => (
-                <IconButton label="Project actions" size="sm" {...trigger}>
-                  <LuEllipsis className="h-3.5 w-3.5" />
-                </IconButton>
-              )}
-            >
-              {tab === 'overview' && (
-                <MenuItem onSelect={printPage}>
-                  <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
-                  {PRINT_LABEL}
-                  <MenuShortcut keys={PRINT_KEYS} />
-                </MenuItem>
-              )}
-              {canEdit && (
-                <MenuItem onSelect={toggleArchived}>
-                  {archived ? (
-                    <LuArchiveRestore
-                      aria-hidden="true"
-                      className="h-3.5 w-3.5"
-                    />
-                  ) : (
-                    <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
-                  )}
-                  {archived ? 'Restore project' : 'Archive project'}
-                </MenuItem>
-              )}
-              {canDelete && (
-                <MenuItem
-                  danger
-                  onSelect={() => {
-                    setIsConfirmingDelete(true);
-                  }}
-                >
-                  <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                  Delete project
-                </MenuItem>
-              )}
-            </Menu>
-          )}
+          <Menu
+            label="Project actions"
+            align="end"
+            trigger={(trigger) => (
+              <IconButton label="Project actions" size="sm" {...trigger}>
+                <LuEllipsis className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
+          >
+            <MenuItem onSelect={remindMe.open}>
+              <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+              {REMIND_ME_MENU_LABEL}
+            </MenuItem>
+            {tab === 'overview' && (
+              <MenuItem onSelect={printPage}>
+                <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
+                {PRINT_LABEL}
+                <MenuShortcut keys={PRINT_KEYS} />
+              </MenuItem>
+            )}
+            {canEdit && (
+              <MenuItem onSelect={toggleArchived}>
+                {archived ? (
+                  <LuArchiveRestore
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                ) : (
+                  <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
+                )}
+                {archived ? 'Restore project' : 'Archive project'}
+              </MenuItem>
+            )}
+            {canDelete && (
+              <MenuItem
+                danger
+                onSelect={() => {
+                  setIsConfirmingDelete(true);
+                }}
+              >
+                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                Delete project
+              </MenuItem>
+            )}
+          </Menu>
         </div>
       }
     >
+      {remindMe.dialog}
+      {remindMe.banner !== null && (
+        <div className="px-4 pt-3 lg:px-6">{remindMe.banner}</div>
+      )}
       {error !== null && (
         <div className="px-4 pt-3 lg:px-6">
           <ErrorAlert

@@ -1142,6 +1142,40 @@ describe('inbox', () => {
     );
   });
 
+  it('shows a reminder on a project and opens the project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-r1',
+          kind: 'reminder',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-1',
+          project_name: 'Public beta',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Public beta/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Reminder' })
+    ).toHaveTextContent('You asked to be reminded about Public beta');
+
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-1'
+    );
+  });
+
   it('says who made you a project lead and opens the project', async () => {
     const user = userEvent.setup();
     listInbox.mockResolvedValue({
