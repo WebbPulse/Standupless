@@ -492,6 +492,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/inbox/reminders/{issue_id}"): NOTIFICATIONS_WRITE,
     ("DELETE", "/{workspace_id}/inbox/{notification_id}"): NOTIFICATIONS_WRITE,
     ("GET", "/{workspace_id}/reviews"): ISSUES_READ,
+    ("GET", "/{workspace_id}/github/pull-requests"): ISSUES_READ,
     ("GET", "/{workspace_id}/share-links"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/share-links"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/share-links/{token_hash}"): NO_KEY_ACCESS,

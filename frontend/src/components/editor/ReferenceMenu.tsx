@@ -1,7 +1,8 @@
 /**
  * The list the `#` reference picker opens under the caret: issues with their
- * status glyph and key, projects with their own mark, and documents with the
- * project or initiative they belong to. The `[[` picker draws it over
+ * status glyph and key, projects with their own mark, documents with the
+ * project or initiative they belong to, and linked pull requests with their
+ * state glyph and `repo#number`. The `[[` picker draws it over
  * documents only, with a last row that creates one. It only draws; the
  * editor owns the query, the highlight and what a pick writes.
  */
@@ -9,6 +10,7 @@
 import React from 'react';
 import { LuFileText, LuPlus } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
+import { pullRequestStateStyle } from '../../lib/pullRequestState';
 import { referenceLabel, type ReferenceItem } from '../../lib/references';
 import type { StatusLike } from '../../lib/statusAppearance';
 import type { ProjectIconName } from '../../types/Api';
@@ -74,6 +76,17 @@ const ItemGlyph: React.FC<{ item: ReferenceItem }> = ({ item }) => {
           className="h-3 w-3 shrink-0 text-text-muted"
         />
       );
+    case 'pull_request': {
+      const style = pullRequestStateStyle(item.state);
+      const Icon = style.icon;
+      return (
+        <Icon
+          role="img"
+          aria-label={`${style.label} pull request`}
+          className={cn('h-3.5 w-3.5 shrink-0', style.colorClass)}
+        />
+      );
+    }
   }
 };
 
@@ -111,12 +124,24 @@ const ItemText: React.FC<{ item: ReferenceItem }> = ({ item }) => {
           </span>
         </>
       );
+    case 'pull_request':
+      return (
+        <>
+          <span className="min-w-0 flex-1 truncate text-text">
+            {referenceLabel(item)}
+          </span>
+          <span className="max-w-28 shrink-0 truncate font-mono text-xs text-text-faint">
+            {`${item.repository.split('/').pop() ?? item.repository}#${String(item.number)}`}
+          </span>
+        </>
+      );
   }
 };
 
 /** The hint a row shows when there is nothing to pick. */
 const emptyHint = (searchable: boolean, loading: boolean): string => {
-  if (!searchable) return 'Type to search issues, projects and documents';
+  if (!searchable)
+    return 'Type to search issues, projects, documents and pull requests';
   return loading ? 'Searching' : 'No matches';
 };
 
@@ -130,7 +155,7 @@ export const ReferenceMenu: React.FC<ReferenceMenuProps> = ({
   left,
   onChoose,
   onHighlight,
-  ariaLabel = 'Reference an issue, project or document',
+  ariaLabel = 'Reference an issue, project, document or pull request',
   hint,
   createTitle = null,
   onCreate,

@@ -17,7 +17,10 @@
 import React, { useMemo } from 'react';
 import { LuChevronRight } from 'react-icons/lu';
 import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinition';
-import { useLinkedReference } from '../../hooks/useLinkedReference';
+import {
+  useLinkedPullRequest,
+  useLinkedReference,
+} from '../../hooks/useLinkedReference';
 import { cn } from '../../lib/cn';
 import { isContentPath } from '../../lib/media';
 import { isMermaidLanguage } from '../../lib/mermaid';
@@ -79,7 +82,8 @@ const MarkdownLink: React.FC<{ href: string; children: React.ReactNode }> = ({
   children,
 }) => {
   const target = useLinkedReference(href);
-  if (target !== null) {
+  const pullRequest = useLinkedPullRequest(href);
+  if (target !== null || pullRequest !== null) {
     return <ReferenceChip href={href}>{children}</ReferenceChip>;
   }
   return (

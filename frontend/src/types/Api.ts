@@ -3694,6 +3694,27 @@ export interface GithubIssueLinkRead {
   updated_at: string;
 }
 
+/**
+ * One pull request a linked issue the caller can see points at, as the `#`
+ * reference picker and a pull request chip read it. `issue_keys` names only
+ * the linked issues the caller can see.
+ */
+export interface PullRequestHitRead {
+  repository_full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'draft' | 'merged' | 'closed';
+  author_login: string;
+  issue_keys: string[];
+  updated_at: string;
+}
+
+/** The pull requests matching a picker query, exact references first. */
+export interface PullRequestSearchRead {
+  pull_requests: PullRequestHitRead[];
+}
+
 /** Which way a team's issues sync with its linked repository. */
 export type GithubSyncDirection = 'two_way' | 'github_to_standupless';
 
