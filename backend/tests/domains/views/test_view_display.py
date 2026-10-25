@@ -380,3 +380,43 @@ def test_collapsed_groups_round_trip_and_clear(client: TestClient, workspace: st
     assert client.patch(path, json={"collapsed_groups": ["x"] * 2 + [""]}).status_code == 422
     assert client.patch(path, json={"collapsed_groups": ["k" * 301]}).status_code == 422
     assert client.patch(path, json={"collapsed_groups": [f"g{n}" for n in range(501)]}).status_code == 422
+
+
+def test_the_customer_field_filters_round_trip(client: TestClient, workspace: str) -> None:
+    """A view keeps the customer status, tier, bounds and important flag, a JSON number or bool stored as text."""
+    sign_in(client, MEMBER)
+
+    created = _create(
+        client,
+        workspace,
+        filter={
+            "customer_status_id": ["active", "none"],
+            "customer_tier_id_not": ["tier-1"],
+            "customer_revenue_min": 50_000,
+            "customer_size_max": "200",
+            "customer_request_count_max": 0,
+            "customer_important": True,
+            "groups": [{"match": "any", "customer_tier_id": ["tier-2"], "customer_request_count_min": 2}],
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["filter"] == {
+        "customer_status_id": ["active", "none"],
+        "customer_tier_id_not": ["tier-1"],
+        "customer_revenue_min": "50000",
+        "customer_size_max": "200",
+        "customer_request_count_max": "0",
+        "customer_important": "true",
+        "groups": [{"match": "any", "customer_tier_id": ["tier-2"], "customer_request_count_min": "2"}],
+    }
+    for bad in (
+        {"customer_revenue_min": "-1"},
+        {"customer_size_max": "1.5"},
+        {"customer_request_count_min": ["1"]},
+        {"customer_important": "maybe"},
+        {"groups": [{"customer_size_min": "lots"}]},
+    ):
+        response = _create(client, workspace, filter=bad)
+        assert response.status_code == 422, bad
+        assert response.json()["error_code"] == "INVALID_FILTER"

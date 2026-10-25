@@ -431,3 +431,53 @@ describe('filter removal keys', () => {
     ).toEqual({ filters: [], match: 'all', groups: [group] });
   });
 });
+
+describe('customer field chips', () => {
+  const customers: IssueContext = {
+    ...context,
+    customers: [],
+    customerStatuses: [{ id: 'active', name: 'Active', color: '#4cb782' }],
+    customerTiers: [{ id: 'tier-growth', name: 'Growth', color: null }],
+  };
+
+  it('name the status and tier and format the revenue', () => {
+    render(
+      <FilterChips
+        filters={[
+          { field: 'customer_status', op: 'is', values: ['active'] },
+          { field: 'customer_tier', op: 'is_not', values: ['tier-growth'] },
+          { field: 'customer_revenue', op: 'at_least', values: ['1200000'] },
+          { field: 'customer_requests', op: 'at_most', values: ['0'] },
+        ]}
+        context={customers}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByText('Growth')).toBeInTheDocument();
+    expect(screen.getByText('$1.2M')).toBeInTheDocument();
+    expect(screen.getByText('at least')).toBeInTheDocument();
+    expect(screen.getByText('at most')).toBeInTheDocument();
+  });
+
+  it('flips a number bound between at least and at most', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <FilterChips
+        filters={[{ field: 'customer_size', op: 'at_least', values: ['50'] }]}
+        context={customers}
+        onChange={onChange}
+      />
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Customer size at least, switch' })
+    );
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'customer_size', op: 'at_most', values: ['50'] },
+    ]);
+  });
+});

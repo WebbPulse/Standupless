@@ -120,14 +120,22 @@ export type FilterField =
   | 'blocking'
   | 'relation'
   | 'customer'
+  | 'customer_status'
+  | 'customer_tier'
+  | 'customer_revenue'
+  | 'customer_size'
+  | 'customer_requests'
+  | 'customer_important'
   | 'release';
 
 /**
  * Whether a filter keeps or excludes the issues matching its values, or, for
- * a date field, whether it keeps the days before or after its one value. A
+ * a date field, whether it keeps the days before or after its one value, or,
+ * for a number field, whether its one value is a lower or an upper bound. A
  * label filter can also keep only the issues carrying `all` of its values.
  */
-export type FilterOp = 'is' | 'is_not' | 'all' | 'before' | 'after';
+export type FilterOp =
+  'is' | 'is_not' | 'all' | 'before' | 'after' | 'at_least' | 'at_most';
 
 /** How a set of conditions combines: every one must hold, or any one. */
 export type FilterMatch = 'all' | 'any';
@@ -150,6 +158,7 @@ export const BOOLEAN_FIELDS: ReadonlySet<FilterField> = new Set([
   'sub_issues',
   'blocked',
   'blocking',
+  'customer_important',
 ]);
 
 /** The fields that take free text matched against an issue's title and description. */
@@ -174,8 +183,50 @@ const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'blocking',
   'relation',
   'customer',
+  'customer_status',
+  'customer_tier',
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+  'customer_important',
   'release',
 ]);
+
+/**
+ * The filters that read the customers asking for an issue, offered only
+ * where the reader may see customers.
+ */
+export const CUSTOMER_FILTER_FIELDS: ReadonlySet<FilterField> = new Set([
+  'customer',
+  'customer_status',
+  'customer_tier',
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+  'customer_important',
+]);
+
+/**
+ * The fields filtered by a whole number bound, at least or at most, rather
+ * than a set of values: an asking customer's revenue or size, or how many
+ * customer requests an issue carries.
+ */
+export const NUMBER_FIELDS: ReadonlySet<FilterField> = new Set([
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+]);
+
+/** Whether a field takes a whole number bound rather than a set of values. */
+export const isNumberField = (field: FilterField): boolean =>
+  NUMBER_FIELDS.has(field);
+
+/** The largest bound a number filter takes, the server's own limit. */
+export const MAX_FILTER_NUMBER = 10 ** 15;
+
+/** Whether a number filter's text is a bound the server takes: digits only, 0 to the limit. */
+export const isFilterNumber = (text: string): boolean =>
+  /^\d{1,16}$/.test(text) && Number(text) <= MAX_FILTER_NUMBER;
 
 /** The fields filtered by a day bound rather than a set of values. */
 export const DATE_FIELDS: ReadonlySet<FilterField> = new Set([
@@ -337,6 +388,13 @@ export interface IssueContext {
    */
   customers?: IssueCustomer[];
   /**
+   * The workspace's customer statuses, which the customer status filter
+   * offers and its chips name. Set alongside `customers`.
+   */
+  customerStatuses?: IssueCustomerField[];
+  /** The workspace's customer tiers, for the customer tier filter. */
+  customerTiers?: IssueCustomerField[];
+  /**
    * The customers that requested each issue, by issue id, so a grouping by
    * customer places an issue under every customer that asked for it.
    */
@@ -371,6 +429,13 @@ export interface IssueCustomer {
   name: string;
   revenue?: number | null;
   requestCount?: number;
+}
+
+/** A customer status or tier as the customer filters offer and name it. */
+export interface IssueCustomerField {
+  id: string;
+  name: string;
+  color?: string | null;
 }
 
 /** How a parent issue heads its group: its key and title. */
@@ -469,7 +534,7 @@ export const filterFieldsFor = (
         context.milestones !== undefined ||
         context.projects.length > 0) &&
       (field !== 'team' || (context.teams ?? []).length > 1) &&
-      (field !== 'customer' || context.customers !== undefined) &&
+      (!CUSTOMER_FILTER_FIELDS.has(field) || context.customers !== undefined) &&
       (field !== 'release' || context.releases !== undefined)
   );
 
@@ -673,6 +738,12 @@ export const FILTER_FIELDS: FilterField[] = [
   'blocking',
   'relation',
   'customer',
+  'customer_status',
+  'customer_tier',
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+  'customer_important',
   'release',
 ];
 
@@ -701,6 +772,12 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   blocking: 'Blocking',
   relation: 'Relations',
   customer: 'Customer',
+  customer_status: 'Customer status',
+  customer_tier: 'Customer tier',
+  customer_revenue: 'Customer revenue',
+  customer_size: 'Customer size',
+  customer_requests: 'Customer requests',
+  customer_important: 'Important request',
   release: 'Release',
 };
 
@@ -714,11 +791,13 @@ export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'blocked',
   'blocking',
   'relation',
+  'customer_important',
 ]);
 
 /**
  * The list query key each filter field maps to. A date field's key is the
- * stem its `_before` and `_after` bounds share.
+ * stem its `_before` and `_after` bounds share, and a number field's the stem
+ * its `_min` and `_max` bounds share.
  */
 const FILTER_KEYS: Record<FilterField, string> = {
   status: 'status_id',
@@ -744,6 +823,12 @@ const FILTER_KEYS: Record<FilterField, string> = {
   blocking: 'is_blocking',
   relation: 'has_relation',
   customer: 'customer_id',
+  customer_status: 'customer_status_id',
+  customer_tier: 'customer_tier_id',
+  customer_revenue: 'customer_revenue',
+  customer_size: 'customer_size',
+  customer_requests: 'customer_request_count',
+  customer_important: 'customer_important',
   release: 'release_id',
 };
 
@@ -754,6 +839,9 @@ export const ALL_OF_FIELDS: ReadonlySet<FilterField> = new Set(['label']);
 const clauseKey = (field: FilterField, op: FilterOp): string => {
   if (isDateField(field)) {
     return `${FILTER_KEYS[field]}_${op === 'before' ? 'before' : 'after'}`;
+  }
+  if (isNumberField(field)) {
+    return `${FILTER_KEYS[field]}_${op === 'at_most' ? 'max' : 'min'}`;
   }
   if (op === 'all') {
     return ALL_OF_FIELDS.has(field)
@@ -895,6 +983,15 @@ const parseClause = (raw: string): FilterClause | null => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
     return { field, op: op === 'before' ? 'before' : 'after', values: [day] };
   }
+  if (isNumberField(field)) {
+    const bound = values[0] ?? '';
+    if (!isFilterNumber(bound)) return null;
+    return {
+      field,
+      op: op === 'max' ? 'at_most' : 'at_least',
+      values: [String(Number(bound))],
+    };
+  }
   if (op === 'all' && ALL_OF_FIELDS.has(field)) {
     return { field, op: 'all', values };
   }
@@ -911,6 +1008,8 @@ const CLAUSE_OPS: Record<FilterOp, string> = {
   all: 'all',
   before: 'before',
   after: 'after',
+  at_least: 'min',
+  at_most: 'max',
 };
 
 /** Writes one clause as its `f` parameter. */
@@ -1247,6 +1346,12 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
     case 'blocking':
     case 'relation':
     case 'customer':
+    case 'customer_status':
+    case 'customer_tier':
+    case 'customer_revenue':
+    case 'customer_size':
+    case 'customer_requests':
+    case 'customer_important':
     case 'release':
       return [];
   }
@@ -1365,7 +1470,11 @@ const clauseQuery = (
   const query: Record<string, string | string[]> = {};
   for (const clause of filters) {
     const key = clauseKey(clause.field, clause.op);
-    if (isDateField(clause.field) || isTextField(clause.field)) {
+    if (
+      isDateField(clause.field) ||
+      isTextField(clause.field) ||
+      isNumberField(clause.field)
+    ) {
       const value = clause.values[0];
       if (value !== undefined) query[key] = value;
       continue;
@@ -1456,6 +1565,7 @@ const filterClauses = (filter: Record<string, unknown>): FilterClause[] => {
   const read = (key: string): string[] => {
     const value = filter[key];
     if (typeof value === 'string') return asList(value);
+    if (typeof value === 'number') return [String(value)];
     if (Array.isArray(value)) {
       return value.filter((item): item is string => typeof item === 'string');
     }
@@ -1468,6 +1578,15 @@ const filterClauses = (filter: Record<string, unknown>): FilterClause[] => {
         const day = read(clauseKey(field, op))[0];
         if (day !== undefined && day !== '') {
           filters.push({ field, op, values: [day.slice(0, 10)] });
+        }
+      }
+      continue;
+    }
+    if (isNumberField(field)) {
+      for (const op of ['at_least', 'at_most'] as const) {
+        const bound = read(clauseKey(field, op))[0]?.trim();
+        if (bound !== undefined && isFilterNumber(bound)) {
+          filters.push({ field, op, values: [String(Number(bound))] });
         }
       }
       continue;

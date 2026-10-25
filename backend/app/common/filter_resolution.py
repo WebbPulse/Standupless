@@ -111,7 +111,9 @@ def resolve_issue_filter(
 
     The customer index is read when the filter names a customer or `sort` orders
     by customer requests, so a list sorting that way finds the counts on the
-    filter it already carries.
+    filter it already carries. A condition on a customer's status, tier, revenue
+    or size reads the customers in that same query, so any number of customer
+    conditions, groups included, costs one planning query.
 
     A relative cycle is read on each team's own today, in its timezone, unless
     `today` pins one day for every team.
@@ -157,7 +159,12 @@ def resolve_issue_filter(
         }
     customers: Optional[CustomerIndex] = None
     if needs_customers:
-        customers = load_customer_index(repositories, workspace_id, with_revenue=sort == REVENUE_SORT)
+        customers = load_customer_index(
+            repositories,
+            workspace_id,
+            with_revenue=sort == REVENUE_SORT,
+            with_profiles=wanted.needs_customer_profiles,
+        )
     releases = repositories.releases.release_ids_by_issue(workspace_id) if needs_releases else None
     return _attach(wanted, by_team, days, relation_ids, subscribed, customers, mine, releases)
 

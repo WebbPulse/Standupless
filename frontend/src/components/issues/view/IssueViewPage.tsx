@@ -51,6 +51,7 @@ import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { isFeatureOn } from '../../../lib/features';
 import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
+import { useCustomerFields } from '../../../hooks/useCustomerFields';
 import { useCustomers } from '../../../hooks/useCustomers';
 import {
   releaseContext,
@@ -577,6 +578,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     isFeatureOn(workspace, 'customers');
   const releasesOn = isFeatureOn(workspace, 'releases');
   const { customers } = useCustomers(workspaceId, customersShown);
+  const customerFields = useCustomerFields(workspaceId, customersShown);
   const customerRequests = useCustomerRequestMap(
     workspaceId,
     customersShown &&
@@ -606,6 +608,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
               revenue: customer.revenue,
               requestCount: customer.request_count,
             })),
+            customerStatuses: customerFields.statuses,
+            customerTiers: customerFields.tiers,
           }
         : {}),
       ...(releasesOn ? releaseContext(releaseIndex) : {}),
@@ -616,6 +620,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       namedTeams,
       customersShown,
       customers,
+      customerFields.statuses,
+      customerFields.tiers,
       releasesOn,
       releaseIndex,
     ]

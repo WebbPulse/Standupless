@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from app.common.customer_index import CustomerIndex, CustomerProfile
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
 
@@ -335,3 +336,100 @@ def test_a_release_condition_asks_for_the_release_index() -> None:
     assert build_issue_filter(user_id=CALLER, groups=[{"release_id_not": "none"}]).needs_releases
     wanted = build_issue_filter(user_id=CALLER, release_id="R1")
     assert wanted.fingerprint() == replace(wanted, release_index={"A": frozenset({"R1"})}).fingerprint()
+
+
+def _customer_index() -> CustomerIndex:
+    """Three issues: A asked by an active enterprise and a trial startup, B by one churned customer, C by none."""
+    return CustomerIndex(
+        customers={("issue", "A"): frozenset({"big", "small"}), ("issue", "B"): frozenset({"gone"})},
+        counts={("issue", "A"): 3, ("issue", "B"): 1},
+        important={("issue", "A"): 1},
+        profiles={
+            "big": CustomerProfile(status_id="active", tier_id="enterprise", revenue=900_000, size=5000),
+            "small": CustomerProfile(status_id="trial", tier_id="startup", revenue=1_000, size=4),
+            "gone": CustomerProfile(status_id="churned", revenue=None, size=None),
+        },
+    )
+
+
+def _kept(**values: Any) -> set[str]:
+    """The issues among A, B and C a customer field filter keeps against the seeded index."""
+    wanted = replace(build_issue_filter(user_id=CALLER, **values), customer_index=_customer_index())
+    return {issue_id for issue_id in ("A", "B", "C") if wanted.matches(_issue(issue_id=issue_id))}
+
+
+def test_customer_status_and_tier_read_any_asking_customer_and_none_means_unrequested() -> None:
+    """Any of the asking customers holding a wanted entry keeps the issue, and `none` is no customer at all."""
+    assert _kept(customer_status_id="trial") == {"A"}
+    assert _kept(customer_status_id=["churned", "none"]) == {"B", "C"}
+    assert _kept(customer_status_id_not="active") == {"B", "C"}
+    assert _kept(customer_status_id_not="none") == {"A", "B"}
+    assert _kept(customer_tier_id="enterprise") == {"A"}
+    assert _kept(customer_tier_id="none") == {"C"}
+    assert _kept(customer_tier_id_not="startup") == {"B", "C"}
+
+
+def test_customer_revenue_and_size_bounds_are_inclusive_on_some_asking_customer() -> None:
+    """One asking customer inside both bounds keeps the issue; an unset figure meets no bound."""
+    assert _kept(customer_revenue_min="900000") == {"A"}
+    assert _kept(customer_revenue_max=1000) == {"A"}
+    assert _kept(customer_revenue_min=2000, customer_revenue_max=10_000) == set()
+    assert _kept(customer_size_max="4") == {"A"}
+    assert _kept(customer_size_min=0) == {"A"}
+
+
+def test_customer_request_count_and_important_flag() -> None:
+    """The request count counts every request, a max of 0 keeps the unrequested, important needs one flagged."""
+    assert _kept(customer_request_count_min=2) == {"A"}
+    assert _kept(customer_request_count_min=1, customer_request_count_max=1) == {"B"}
+    assert _kept(customer_request_count_max=0) == {"C"}
+    assert _kept(customer_important=True) == {"A"}
+    assert _kept(customer_important="false") == {"B", "C"}
+
+
+def test_customer_fields_hold_inside_groups() -> None:
+    """A group of customer conditions ORs under `any`, and asks for the profiles it reads."""
+    wanted = build_issue_filter(
+        user_id=CALLER,
+        groups=[{"match": "any", "customer_tier_id": "startup", "customer_request_count_max": "0"}],
+    )
+
+    assert wanted.needs_customers and wanted.needs_customer_profiles
+    index = _customer_index()
+    groups = tuple(replace(group, customer_index=index) for group in wanted.groups)
+    indexed = replace(wanted, customer_index=index, groups=groups)
+    assert {issue_id for issue_id in "ABC" if indexed.matches(_issue(issue_id=issue_id))} == {"A", "C"}
+
+
+def test_only_field_conditions_ask_for_customer_profiles() -> None:
+    """A request count or important filter reads requests alone; status, tier, revenue and size read customers."""
+    counted = build_issue_filter(user_id=CALLER, customer_request_count_min=1, customer_important=True)
+    assert counted.needs_customers and not counted.needs_customer_profiles
+    for field in ("customer_status_id", "customer_tier_id_not", "customer_revenue_min", "customer_size_max"):
+        value = "1" if field.endswith(("_min", "_max")) else "active"
+        wanted = build_issue_filter(user_id=CALLER, **{field: value})
+        assert wanted.needs_customers and wanted.needs_customer_profiles
+    assert not IssueFilter().needs_customers
+
+
+@pytest.mark.parametrize("value", [True, -1, "-1", "1.5", "lots", "\u0663", "1" * 17, 10**15 + 1, ["1", "2"]])
+def test_a_customer_number_bound_refuses_anything_but_a_whole_number(value: Any) -> None:
+    """A bool, negative, fraction, non-ASCII digit, oversized or repeated bound is a refusal, not no bound."""
+    with pytest.raises(UnknownStatusCategory):
+        build_issue_filter(user_id=CALLER, customer_revenue_min=value)
+
+
+def test_customer_field_filters_move_the_fingerprint_and_the_index_does_not() -> None:
+    """Each new key changes the cursor binding, the resolved index never does."""
+    plain = build_issue_filter(user_id=CALLER)
+    for values in (
+        {"customer_status_id": "active"},
+        {"customer_tier_id_not": "none"},
+        {"customer_revenue_min": "5"},
+        {"customer_size_max": 5},
+        {"customer_request_count_max": 0},
+        {"customer_important": True},
+    ):
+        wanted = build_issue_filter(user_id=CALLER, **values)
+        assert wanted.fingerprint() != plain.fingerprint()
+        assert wanted.fingerprint() == replace(wanted, customer_index=_customer_index()).fingerprint()

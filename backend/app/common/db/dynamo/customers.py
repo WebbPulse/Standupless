@@ -41,6 +41,9 @@ CUSTOMER_KEY_PREFIX = "customer#"
 
 CUSTOMER_REQUEST_KEY_PREFIX = "customer_request#"
 
+CUSTOMER_REQUESTS_KEY_END = "customer_request$"
+"""The first sort key past every request row, `$` sorting just after `#`, closing the customers and requests range."""
+
 TargetKind = Literal["issue", "project"]
 
 TARGET_KINDS: tuple[str, ...] = ("issue", "project")
@@ -381,6 +384,32 @@ class CustomerRepository:
             max_items=max_items,
         )
         return [CustomerRequest.model_validate(dict(item)) for item in items if item.get("kind") == CUSTOMER_REQUEST]
+
+    def list_customers_and_requests(
+        self, workspace_id: str, *, max_items: int = 2 * LIST_MAX
+    ) -> tuple[list[Customer], list[CustomerRequest]]:
+        """Every customer and every request of the workspace from one query.
+
+        The customer rows sort under `customer#` and the requests under
+        `customer_request#`, adjacent in the partition with only the
+        `customer_fields#` marker between them, so one key range reads both and a
+        list filtering by customer fields pays one query rather than two.
+        """
+        if not workspace_id:
+            return [], []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id)
+            & Key("planning_key").between(CUSTOMER_KEY_PREFIX, CUSTOMER_REQUESTS_KEY_END),
+            max_items=max_items,
+        )
+        customers: list[Customer] = []
+        requests: list[CustomerRequest] = []
+        for item in items:
+            if item.get("kind") == CUSTOMER:
+                customers.append(Customer.model_validate(dict(item)))
+            elif item.get("kind") == CUSTOMER_REQUEST:
+                requests.append(CustomerRequest.model_validate(dict(item)))
+        return customers, requests
 
     def move_requests(self, workspace_id: str, source_id: str, target_id: str) -> int:
         """Move every request of one customer onto another, returning how many moved."""
