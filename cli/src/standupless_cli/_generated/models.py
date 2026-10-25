@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, NotRequired
+from typing import Any, Literal, NotRequired, TypeAlias
 from typing_extensions import TypedDict
 
 
@@ -1583,6 +1583,19 @@ class LinkStatusRead(TypedDict):
     icon: NotRequired[str | None]
     id: str
     name: str
+
+
+class ListFoldsRead(TypedDict):
+    collapsed_groups: NotRequired[list[str]]
+    list_key: str
+
+
+CollapsedGroup: TypeAlias = str
+
+
+class ListFoldsWrite(TypedDict):
+    collapsed_groups: NotRequired[list[CollapsedGroup]]
+    list_key: str
 
 
 class ManifestStart(TypedDict):
@@ -3422,6 +3435,7 @@ class VelocityRead(TypedDict):
 
 
 class ViewCreate(TypedDict):
+    collapsed_groups: NotRequired[list[CollapsedGroup]]
     color: NotRequired[
         Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
     ]
@@ -3548,6 +3562,7 @@ class ViewCreate(TypedDict):
 
 
 class ViewRead(TypedDict):
+    collapsed_groups: NotRequired[list[str]]
     color: NotRequired[str | None]
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"]]
     created_at: str
@@ -3581,6 +3596,7 @@ class ViewRead(TypedDict):
 
 
 class ViewUpdate(TypedDict):
+    collapsed_groups: NotRequired[list[CollapsedGroup] | None]
     color: NotRequired[
         Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
     ]

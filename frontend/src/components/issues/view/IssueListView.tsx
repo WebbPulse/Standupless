@@ -190,10 +190,11 @@ export interface IssueListViewProps {
   /** What an empty list says. */
   emptyMessage?: string;
   /**
-   * Names the view for remembering folded groups and hidden board columns
-   * across visits. Left out, they last only while the view is open.
+   * The folded groups, swimlanes and hidden board columns, held by the page:
+   * a saved view keeps them with its display and any other list keeps them
+   * for the viewer. Left out, they last only while the view is open.
    */
-  collapseKey?: string | undefined;
+  folds?: ListFoldControl | undefined;
   /**
    * The fields a chip click may filter on. Left out, every field the view's
    * filter menu offers.
@@ -210,6 +211,12 @@ export interface IssueListViewProps {
    * groups hold no issue and rows show no customers.
    */
   customerRequests?: CustomerRequestMap | undefined;
+}
+
+/** The folds a page holds for its list, and the toggle for one of them. */
+export interface ListFoldControl {
+  collapsed: ReadonlySet<string>;
+  onToggle: (key: string) => void;
 }
 
 /** The palette label of each property command. */
@@ -277,7 +284,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   createProjectId,
   createCycleId,
   emptyMessage = 'No issues match this view.',
-  collapseKey,
+  folds,
   filterFields,
   statusCategories,
   customerRequests,
@@ -314,11 +321,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     ]
   );
 
-  const [collapsed, onToggle] = useStoredSet(
-    collapseKey === undefined
-      ? undefined
-      : `standupless.view.collapsed.${collapseKey}`
-  );
+  const [ownFolds, toggleOwnFold] = useStoredSet(undefined);
+  const collapsed = folds?.collapsed ?? ownFolds;
+  const onToggle = folds?.onToggle ?? toggleOwnFold;
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set()

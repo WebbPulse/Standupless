@@ -168,6 +168,11 @@ export interface SavedViewDisplay {
   show_archived?: boolean;
   /** What group headers read; an older server leaves it out, which reads as the count. */
   group_header?: ViewGroupHeader;
+  /**
+   * The groups, swimlanes and board columns folded away in the view, as the
+   * list's own keys; an older server leaves it out, which reads as none.
+   */
+  collapsed_groups?: string[];
 }
 
 /**
@@ -237,6 +242,7 @@ export interface SavedViewDisplayCreate extends Omit<
   completed_window?: CompletedWindow;
   show_archived?: boolean;
   group_header?: ViewGroupHeader;
+  collapsed_groups?: string[];
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -265,6 +271,7 @@ export interface SavedViewDisplayUpdate extends Omit<
   completed_window?: CompletedWindow;
   show_archived?: boolean;
   group_header?: ViewGroupHeader;
+  collapsed_groups?: string[];
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -532,6 +539,45 @@ export const updateView = async (
   const response = await apiClient.patch<SavedViewDisplayRead>(
     viewPath(workspaceId, viewId),
     body
+  );
+  return response.data;
+};
+
+/** One person's folds on a list that is not a saved view. */
+export interface ListFoldsRead {
+  list_key: string;
+  collapsed_groups: string[];
+}
+
+/** The route a person's folds on an unsaved list are read and written through. */
+export const listFoldsPath = (workspaceId: string): string =>
+  `${viewsPath(workspaceId)}/folds`;
+
+/**
+ * Reads the caller's folded groups, swimlanes and hidden board columns on one
+ * list that is not a saved view, empty when they never folded anything there.
+ */
+export const getListFolds = async (
+  workspaceId: string,
+  listKey: string,
+  signal?: AbortSignal
+): Promise<ListFoldsRead> => {
+  const response = await apiClient.get<ListFoldsRead>(
+    listFoldsPath(workspaceId),
+    { query: { list_key: listKey }, ...signalOptions(signal) }
+  );
+  return response.data;
+};
+
+/** Replaces the caller's folds on one unsaved list; an empty set clears them. */
+export const putListFolds = async (
+  workspaceId: string,
+  listKey: string,
+  collapsed: readonly string[]
+): Promise<ListFoldsRead> => {
+  const response = await apiClient.put<ListFoldsRead>(
+    listFoldsPath(workspaceId),
+    { list_key: listKey, collapsed_groups: [...collapsed] }
   );
   return response.data;
 };

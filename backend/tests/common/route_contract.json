@@ -2583,6 +2583,18 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/folds"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/folds"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/home"
   },
   {
