@@ -132,6 +132,9 @@ export const TEXT_FIELDS: ReadonlySet<FilterField> = new Set(['content']);
 export const isTextField = (field: FilterField): boolean =>
   TEXT_FIELDS.has(field);
 
+/** The team filter value that stands for the viewer's own teams, resolved per viewer. */
+export const MY_TEAMS = 'my_teams';
+
 /** Cycle values the server resolves per team when the list runs. */
 export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
 
@@ -274,7 +277,7 @@ export interface IssueContext {
    * The teams a list spans. Only a list over more than one team offers a team
    * filter, since a single team's list already fixes it.
    */
-  teams?: { id: string; name: string; key?: string }[];
+  teams?: { id: string; name: string; key?: string; isMember?: boolean }[];
   /**
    * The issues a list holds that other rows name as their parent, so a
    * grouping by parent issue heads each group with its key and title.
@@ -1079,9 +1082,48 @@ const contentHolds = (issue: IssueRead, text: string): boolean =>
     .toLowerCase()
     .includes(text.trim().toLowerCase());
 
-/** Whether one clause holds for an issue, true for a clause only the server decides. */
-const clauseHolds = (issue: IssueRead, clause: FilterClause): boolean => {
-  if (decidedByServer(clause)) return true;
+/** The viewer's teams, read from a list's team context, for resolving `my_teams`. */
+export const myTeamIds = (
+  context: Pick<IssueContext, 'teams'>
+): ReadonlySet<string> =>
+  new Set(
+    (context.teams ?? [])
+      .filter((team) => team.isMember === true)
+      .map((team) => team.id)
+  );
+
+/** A clause with `my_teams` swapped for the viewer's teams, unchanged when it names none. */
+export const resolveMyTeams = (
+  clause: FilterClause,
+  myTeams: ReadonlySet<string>
+): FilterClause =>
+  clause.field === 'team' && clause.values.includes(MY_TEAMS)
+    ? {
+        ...clause,
+        values: [
+          ...new Set([
+            ...clause.values.filter((value) => value !== MY_TEAMS),
+            ...myTeams,
+          ]),
+        ],
+      }
+    : clause;
+
+/**
+ * Whether one clause holds for an issue, true for a clause only the server
+ * decides. `my_teams` is resolved from `myTeams`, and left to the server when
+ * the viewer's teams are not known.
+ */
+const clauseHolds = (
+  issue: IssueRead,
+  raw: FilterClause,
+  myTeams?: ReadonlySet<string>
+): boolean => {
+  if (decidedByServer(raw)) return true;
+  const named = raw.field === 'team' && raw.values.includes(MY_TEAMS);
+  if (named && myTeams === undefined) return true;
+  const clause =
+    named && myTeams !== undefined ? resolveMyTeams(raw, myTeams) : raw;
   if (isTextField(clause.field)) {
     const hit = contentHolds(issue, clause.values[0] ?? '');
     return clause.op === 'is_not' ? !hit : hit;
@@ -1110,19 +1152,21 @@ const combined = (results: boolean[], match: FilterMatch): boolean =>
  * Whether an issue passes the filters, for a list filtered on the client. The
  * top level clauses and each group combine under `match`, every clause by
  * default, and each group combines its own clauses under its own match.
+ * `myTeams` is the viewer's teams, which `my_teams` in a team clause names.
  */
 export const matchesFilters = (
   issue: IssueRead,
   filters: FilterClause[],
   match: FilterMatch = 'all',
-  groups: readonly FilterGroup[] = []
+  groups: readonly FilterGroup[] = [],
+  myTeams?: ReadonlySet<string>
 ): boolean =>
   combined(
     [
-      ...filters.map((clause) => clauseHolds(issue, clause)),
+      ...filters.map((clause) => clauseHolds(issue, clause, myTeams)),
       ...groups.map((group) =>
         combined(
-          group.filters.map((clause) => clauseHolds(issue, clause)),
+          group.filters.map((clause) => clauseHolds(issue, clause, myTeams)),
           group.match
         )
       ),
@@ -2538,4 +2582,5 @@ export const namedTeamIds = (
     [...state.filters, ...state.groups.flatMap((group) => group.filters)]
       .filter((clause) => clause.field === 'team' && clause.op === 'is')
       .flatMap((clause) => clause.values)
+      .filter((value) => value !== MY_TEAMS)
   );

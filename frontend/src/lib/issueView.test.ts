@@ -20,11 +20,14 @@ import {
   manualMoveKeys,
   matchesFilters,
   moveChange,
+  MY_TEAMS,
+  myTeamIds,
   narrowFilters,
   ORDERING_LABELS,
   ORDERINGS,
   orderKeyAt,
   parseViewState,
+  resolveMyTeams,
   sameViewState,
   sharedChange,
   shownIssues,
@@ -922,6 +925,22 @@ describe('chip filters', () => {
       { field: 'priority', op: 'is', values: ['low'] },
       { field: 'label', op: 'is', values: ['lb-bug'] },
     ]);
+  });
+
+  it('swaps My teams for the teams the viewer belongs to', () => {
+    const mine = myTeamIds({
+      teams: [
+        { id: 'team-1', name: 'Engine', key: 'ENG', isMember: true },
+        { id: 'team-2', name: 'Design', key: 'DES' },
+      ],
+    });
+    expect([...mine]).toEqual(['team-1']);
+    expect(
+      resolveMyTeams({ field: 'team', op: 'is', values: [MY_TEAMS] }, mine)
+    ).toEqual({ field: 'team', op: 'is', values: ['team-1'] });
+    expect(
+      resolveMyTeams({ field: 'team', op: 'is', values: ['team-2'] }, mine)
+    ).toEqual({ field: 'team', op: 'is', values: ['team-2'] });
   });
 
   it('matches issues on the client', () => {

@@ -527,6 +527,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         id: team.id,
         name: team.name,
         key: team.key_prefix,
+        isMember: team.is_member === true,
       })),
       ...(isMember
         ? {

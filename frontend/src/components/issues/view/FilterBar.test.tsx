@@ -4,6 +4,7 @@
  * chips: that team and date clauses read and flip like the others. The
  * removal keys: that Shift F drops the newest filter and Alt Shift F clears
  * them all, as Linear's do, and that neither binds with nothing to remove.
+ * My teams: that the chip names it and the hint names the platform modifier.
  */
 
 import { act, render, screen } from '@testing-library/react';
@@ -14,7 +15,13 @@ import {
   ShortcutRegistryContext,
 } from '../../../hooks/useShortcuts';
 import type { IssueContext } from '../../../lib/issueView';
-import { FilterButton, FilterChips, withoutLastFilter } from './FilterBar';
+import { MY_TEAMS } from '../../../lib/issueView';
+import {
+  FilterButton,
+  FilterChips,
+  selectOnlyHint,
+  withoutLastFilter,
+} from './FilterBar';
 
 const context: IssueContext = {
   statuses: [],
@@ -71,6 +78,23 @@ describe('FilterChips', () => {
     expect(onChange).toHaveBeenCalledWith([
       { field: 'team', op: 'is_not', values: ['team-1'] },
     ]);
+  });
+
+  it('reads a My teams clause as My teams', () => {
+    render(
+      <FilterChips
+        filters={[{ field: 'team', op: 'is', values: [MY_TEAMS] }]}
+        context={teams}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('My teams')).toBeInTheDocument();
+  });
+
+  it('names Option on Apple platforms and Alt elsewhere', () => {
+    expect(selectOnlyHint(true)).toBe('Option+click to select only one');
+    expect(selectOnlyHint(false)).toBe('Alt+click to select only one');
   });
 
   it('reads a date clause as a bound and flips before to after', async () => {
