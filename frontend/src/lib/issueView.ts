@@ -2035,6 +2035,7 @@ export const sortIssues = (
 
 /** A change to one or many issues, in the shape a bulk patch takes. */
 export interface IssueChange {
+  title?: string;
   status_id?: string;
   priority?: IssuePriority;
   assignee_id?: string | null;
@@ -2095,6 +2096,7 @@ export const changeIsNoop = (
 ): boolean => {
   const next = applyChange(issue, change);
   return (
+    next.title === issue.title &&
     next.status_id === issue.status_id &&
     shownStatusId(next) === shownStatusId(issue) &&
     next.priority === issue.priority &&

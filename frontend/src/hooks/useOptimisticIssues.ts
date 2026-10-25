@@ -3,8 +3,8 @@
  * read at once and stay there until a re-read brings a newer version of the
  * issue, so a row never flickers back to its old value between the write
  * landing and the next poll. A failed write drops its overlay and says so in
- * a toast. A date is written issue by issue, because the bulk route never
- * takes dates. Every landed change is recorded for undo, and an undo lays the
+ * a toast. A date or a title is written issue by issue, because the bulk route
+ * never takes either. Every landed change is recorded for undo, and an undo lays the
  * old values over the rows the same way until the re-read catches up.
  */
 
@@ -47,6 +47,7 @@ interface Overlay {
 /** The bulk patch a change becomes. A manual position is never bulk written. */
 const bulkPatch = (change: IssueChange): IssueBulkPatch => {
   const {
+    title: _title,
     sort_order: _order,
     start_date: _start,
     due_date: _due,
@@ -200,7 +201,9 @@ export const useOptimisticIssues = (
         planned.length === 1 ||
         planned.some(
           ({ change: own }) =>
-            own.start_date !== undefined || own.due_date !== undefined
+            own.title !== undefined ||
+            own.start_date !== undefined ||
+            own.due_date !== undefined
         );
       if (oneByOne) {
         const writes = planned.map(({ issue, change: own }) =>

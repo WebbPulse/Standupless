@@ -733,6 +733,16 @@ describe('moving and ordering', () => {
     expect(changeIsNoop(issue(), { priority: 'high' })).toBe(false);
   });
 
+  it('treats a new title as a change and the same one as none', () => {
+    const shown = issue({ title: 'Cache the token' });
+
+    expect(changeIsNoop(shown, { title: 'Cache the token' })).toBe(true);
+    expect(changeIsNoop(shown, { title: 'Rotate the token' })).toBe(false);
+    expect(applyChange(shown, { title: 'Rotate the token' }).title).toBe(
+      'Rotate the token'
+    );
+  });
+
   it('orders a dropped card between its neighbours', () => {
     const column = [
       issue({ id: 'a', sort_order: 'a0' }),

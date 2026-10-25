@@ -552,6 +552,7 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
           issueId={issueId}
           people={context.people}
           threadTargets={threadTargets}
+          jumpShortcut
         />
       )}
     </section>

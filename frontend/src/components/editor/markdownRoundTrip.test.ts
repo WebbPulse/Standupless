@@ -4,7 +4,9 @@
  * GitHub sync read the stored text, so anything the editor rewrites changes
  * what everyone else sees. Most documents come back byte for byte; the few
  * spellings the editor normalizes are listed here, and each one is stable on
- * a second pass so a description never drifts save after save.
+ * a second pass so a description never drifts save after save. Collapsible
+ * sections store as GitHub's `<details>` block and read back as the same
+ * section in the static renderer.
  */
 
 import { Editor } from '@tiptap/core';
@@ -70,6 +72,30 @@ const EXACT: [string, string][] = [
     'snake_case_name and 2 * 3 * 4 and a_b and a < b & c',
   ],
   ['backslash escapes', 'literal \\*not em\\*'],
+  [
+    'a collapsible section',
+    '<details>\n<summary>Logs</summary>\n\nbody\n\n</details>',
+  ],
+  [
+    'a collapsible section between paragraphs',
+    'before\n\n<details>\n<summary>Logs</summary>\n\nbody\n\n</details>\n\nafter',
+  ],
+  [
+    'a collapsible section holding a list and a fence',
+    '<details>\n<summary>Steps</summary>\n\n- one\n- two\n\n```\n</details>\n```\n\n</details>',
+  ],
+  [
+    'nested collapsible sections',
+    '<details>\n<summary>Outer</summary>\n\n<details>\n<summary>Inner</summary>\n\ntext\n\n</details>\n\n</details>',
+  ],
+  [
+    'an empty collapsible section',
+    '<details>\n<summary>Empty</summary>\n\n</details>',
+  ],
+  [
+    'a collapsible summary with escaped markup',
+    '<details>\n<summary>a &lt;b&gt; &amp;lt; c & d</summary>\n\nx\n\n</details>',
+  ],
 ];
 
 const NORMALIZED: [string, string, string][] = [
@@ -87,6 +113,21 @@ const NORMALIZED: [string, string, string][] = [
     'underscore emphasis becomes stars',
     '__bold__ and _em_',
     '**bold** and *em*',
+  ],
+  [
+    'an open collapsible section drops its open flag',
+    '<details open>\n<summary>Logs</summary>\nbody\n</details>',
+    '<details>\n<summary>Logs</summary>\n\nbody\n\n</details>',
+  ],
+  [
+    'the GitHub one line summary moves onto its own line',
+    '<details><summary><b>Logs</b></summary>\n\nbody\n</details>',
+    '<details>\n<summary>Logs</summary>\n\nbody\n\n</details>',
+  ],
+  [
+    'a collapsible section without a summary gains an empty one',
+    '<details>\n\nbody\n\n</details>',
+    '<details>\n<summary></summary>\n\nbody\n\n</details>',
   ],
 ];
 
@@ -158,5 +199,56 @@ describe('blank lines typed in the rich editor', () => {
     const saved = roundTrip(stored);
     expect(saved).toBe('one\n\ntwo');
     expect(roundTrip(saved)).toBe(saved);
+  });
+});
+
+describe('collapsible sections in the rich editor', () => {
+  it('read as one section node that starts closed', () => {
+    writeMarkdown(
+      editor,
+      '<details>\n<summary>Logs</summary>\n\nbody\n\n</details>'
+    );
+    const [section] = editor.getJSON().content ?? [];
+    expect(section?.type).toBe('collapsibleSection');
+    expect(section?.attrs?.['open']).toBe(false);
+    expect(section?.content?.map((child: JSONContent) => child.type)).toEqual([
+      'collapsibleSummary',
+      'collapsibleBody',
+    ]);
+  });
+
+  it('leave a details tag that never closes as text', () => {
+    writeMarkdown(editor, '<details>\n<summary>x</summary>\n\nbody');
+    const types = (editor.getJSON().content ?? []).map((child) => child.type);
+    expect(types).not.toContain('collapsibleSection');
+    expect(readMarkdown(editor)).toContain('<details>');
+  });
+
+  it('write what the static renderer reads as the same section', () => {
+    const source =
+      '<details>\n<summary>Logs</summary>\n\n- one\n- two\n\n</details>';
+    expect(parseMarkdown(roundTrip(source))).toEqual([
+      {
+        type: 'details',
+        summary: 'Logs',
+        children: [
+          {
+            type: 'list',
+            ordered: false,
+            start: 1,
+            items: [
+              {
+                checked: null,
+                children: [{ type: 'text', value: 'one' }],
+              },
+              {
+                checked: null,
+                children: [{ type: 'text', value: 'two' }],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 });
