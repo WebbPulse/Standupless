@@ -223,6 +223,7 @@ const ConnectedAccountsList: React.FC<{ client: IdentityClient }> = ({
     providers,
     returnTo: SECURITY_PATH,
     withStepUp,
+    messages: { removed: 'Disconnected.' },
   });
   const links = panel.items;
 
@@ -232,13 +233,13 @@ const ConnectedAccountsList: React.FC<{ client: IdentityClient }> = ({
     [links]
   );
 
+  const { notice, dismiss } = panel;
   useEffect(() => {
-    if (confirming === null || links === null) return;
-    if (linkFor(confirming.id) !== undefined) return;
+    if (notice === null || confirming === null) return;
+    showToast(`${confirming.displayName} disconnected.`);
     setConfirming(null);
-    if (panel.error === null)
-      showToast(`${confirming.displayName} disconnected.`);
-  }, [confirming, links, linkFor, panel.error]);
+    dismiss();
+  }, [notice, confirming, dismiss]);
 
   if (providers.length === 0) return null;
 
