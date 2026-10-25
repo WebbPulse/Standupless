@@ -11955,6 +11955,28 @@
         "title": "IssueListRead",
         "type": "object"
       },
+      "IssueLookupRead": {
+        "description": "The issues a batch of keys names, each once, leaving out any the caller cannot see.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "resolved": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Each requested key, uppercased, to the id of the issue it names, even under a retired prefix.",
+            "title": "Resolved",
+            "type": "object"
+          }
+        },
+        "title": "IssueLookupRead",
+        "type": "object"
+      },
       "IssueMove": {
         "description": "The body a move to another team takes: the team the issue lands in.",
         "properties": {
@@ -48338,6 +48360,69 @@
           }
         ],
         "summary": "Read Issue By Key",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/by-keys": {
+      "get": {
+        "description": "The issues several human keys name, in one read, for the issue chips a body draws.\n\nEach `key` resolves the way `/issues/by-key/{key}` does, case insensitive and\nfollowing a key change or a move. A key that is malformed, names no team, names\na deleted issue or one in a team the caller cannot see is left out rather than\nfailing the batch, and two keys naming one issue answer it once. Declared before\n`/issues/{issue_id}` so `by-keys` is not swallowed as an id.",
+        "operationId": "lookup_issues_by_key_api_workspaces__workspace_id__issues_by_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "title": "Key",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueLookupRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Lookup Issues By Key",
         "tags": [
           "issues"
         ]

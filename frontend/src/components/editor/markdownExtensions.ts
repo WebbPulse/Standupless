@@ -45,6 +45,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
+import { codeSpanIssueKey } from '../../lib/issueDisplay';
 import { isLinkTarget } from '../../lib/markdown';
 import { escapeInlineMath } from '../../lib/math';
 import { BlockHandle } from './blockHandle';
@@ -81,6 +82,23 @@ export interface MarkdownExtensionOptions {
    * drawn as a chip while editing. Unset draws no link chips.
    */
   isReferenceLink?: (href: string) => boolean;
+  /**
+   * How a mentioned issue looks once it is read, or undefined while it is read
+   * and when it names nothing the reader can see. Set, a key is drawn as a
+   * chip only once it resolves, and inline code holding nothing but a key is
+   * drawn as one too; unset, every key naming a team is marked.
+   */
+  issueLook?: (key: string) => IssueLook | undefined;
+}
+
+/** What the editor draws a resolved issue mention from. */
+export interface IssueLook {
+  /** The issue's title, shown truncated after the key. */
+  title: string;
+  /** The status glyph, cloned in front of the key, or null when not yet drawn. */
+  icon: Element | null;
+  /** Changes whenever the title or glyph does, so an unchanged chip is reused. */
+  signature: string;
 }
 
 /**
@@ -230,7 +248,64 @@ const MentionChips = Extension.create({
 interface ReferenceChipOptions {
   isIssueKey?: (key: string) => boolean;
   isReferenceLink?: (href: string) => boolean;
+  issueLook?: (key: string) => IssueLook | undefined;
 }
+
+/** A part of a mention chip drawn beside its key, carrying the key for the hover card. */
+const chipPart = (key: string, part: string): HTMLElement => {
+  const element = document.createElement('span');
+  element.className = `rich-issue-ref rich-issue-${part}`;
+  element.setAttribute('data-issue-key', key);
+  element.setAttribute('data-issue-open', '');
+  element.contentEditable = 'false';
+  return element;
+};
+
+/**
+ * The decorations drawing one mention: the status glyph before the key, the
+ * key itself in muted text and the title after it. Nothing is drawn until the
+ * mention resolves, so an unknown key stays the text it was written as.
+ */
+const issueChipDecorations = (
+  start: number,
+  key: string,
+  look: IssueLook
+): Decoration[] => {
+  const end = start + key.length;
+  const drawn: Decoration[] = [];
+  const icon = look.icon;
+  if (icon !== null) {
+    drawn.push(
+      Decoration.widget(
+        start,
+        () => {
+          const element = chipPart(key, 'icon');
+          element.setAttribute('aria-hidden', 'true');
+          element.append(icon.cloneNode(true));
+          return element;
+        },
+        { side: -1, key: `issue-icon:${key}:${look.signature}` }
+      )
+    );
+  }
+  drawn.push(
+    Decoration.inline(start, end, {
+      class: 'rich-issue-ref rich-issue-chip',
+      'data-issue-key': key,
+    }),
+    Decoration.widget(
+      end,
+      () => {
+        const element = chipPart(key, 'title');
+        element.textContent = look.title;
+        element.title = look.title;
+        return element;
+      },
+      { side: 1, key: `issue-title:${key}:${look.signature}` }
+    )
+  );
+  return drawn;
+};
 
 /**
  * Finds each issue key naming a team, and each link to a project or document,
@@ -240,11 +315,22 @@ const referenceDecorations = (
   doc: ProseMirrorNode,
   options: ReferenceChipOptions
 ): DecorationSet => {
-  const { isIssueKey, isReferenceLink } = options;
+  const { isIssueKey, isReferenceLink, issueLook } = options;
   const found: Decoration[] = [];
   doc.descendants((node, position) => {
     if (!node.isText || node.text === undefined) return;
-    if (node.marks.some((mark) => mark.type.name === 'code')) return;
+    if (node.marks.some((mark) => mark.type.name === 'code')) {
+      const key = codeSpanIssueKey(node.text);
+      const look =
+        key === null || isIssueKey?.(key) !== true
+          ? undefined
+          : issueLook?.(key);
+      if (key !== null && look !== undefined) {
+        const start = position + node.text.indexOf(key);
+        found.push(...issueChipDecorations(start, key, look));
+      }
+      return;
+    }
     const link = node.marks.find((mark) => mark.type.name === 'link');
     if (link !== undefined) {
       const href = (link.attrs as { href?: unknown }).href;
@@ -265,6 +351,13 @@ const referenceDecorations = (
     for (const match of node.text.matchAll(ISSUE_KEY)) {
       if (!isIssueKey(match[0])) continue;
       const start = position + match.index;
+      if (issueLook !== undefined) {
+        const look = issueLook(match[0]);
+        if (look !== undefined) {
+          found.push(...issueChipDecorations(start, match[0], look));
+        }
+        continue;
+      }
       found.push(
         Decoration.inline(start, start + match[0].length, {
           class: 'rich-reference rich-issue-ref',
@@ -274,6 +367,31 @@ const referenceDecorations = (
     }
   });
   return DecorationSet.create(doc, found);
+};
+
+/**
+ * Every issue key in `doc` that `isIssueKey` accepts, uppercased, each once
+ * and in order, counting inline code holding nothing but a key and leaving
+ * out keys inside links and other code, as the chips do.
+ */
+export const issueKeysIn = (
+  doc: ProseMirrorNode,
+  isIssueKey: (key: string) => boolean
+): string[] => {
+  const keys = new Set<string>();
+  doc.descendants((node) => {
+    if (!node.isText || node.text === undefined) return;
+    if (node.marks.some((mark) => mark.type.name === 'code')) {
+      const key = codeSpanIssueKey(node.text);
+      if (key !== null && isIssueKey(key)) keys.add(key);
+      return;
+    }
+    if (node.marks.some((mark) => mark.type.name === 'link')) return;
+    for (const match of node.text.matchAll(ISSUE_KEY)) {
+      if (isIssueKey(match[0])) keys.add(match[0]);
+    }
+  });
+  return [...keys];
 };
 
 /**
@@ -372,6 +490,9 @@ export const markdownExtensions = (
       ...(options.isReferenceLink === undefined
         ? {}
         : { isReferenceLink: options.isReferenceLink }),
+      ...(options.issueLook === undefined
+        ? {}
+        : { issueLook: options.issueLook }),
     }),
     StanduplessMarkdown.configure({ marked: createMarked() as never }),
   ] as AnyExtension[];

@@ -25,6 +25,7 @@ import type {
   IssueExportRead,
   IssueListQuery,
   IssueListRead,
+  IssueLookupRead,
   IssueMove,
   IssuePriority,
   IssueRead,
@@ -53,6 +54,10 @@ export const issuePath = (workspaceId: string, issueId: string): string =>
 /** The route one issue is read from by its human key, such as `ENG-12`. */
 export const issueByKeyPath = (workspaceId: string, key: string): string =>
   `${issuesPath(workspaceId)}/by-key/${encodeURIComponent(key)}`;
+
+/** The route several issues are read from at once by their human keys. */
+export const issuesByKeysPath = (workspaceId: string): string =>
+  `${issuesPath(workspaceId)}/by-keys`;
 
 /** The route an issue's direct children are read from. */
 export const issueChildrenPath = (
@@ -420,6 +425,29 @@ export function getIssue(
  * Reads one issue by its key, which the contract matches case insensitively.
  * Handed a polled query's context, the read is conditional on the held ETag.
  */
+/**
+ * Reads the issues several keys name in one request, for the chips a body
+ * draws. Keys that name nothing the caller can see are simply absent from
+ * `resolved`, so the batch never fails on one stale mention.
+ */
+export const lookupIssuesByKey = async (
+  workspaceId: string,
+  keys: readonly string[],
+  signal?: AbortSignal
+): Promise<IssueLookupRead> => {
+  const response = await apiClient.get<IssueLookupRead>(
+    issuesByKeysPath(workspaceId),
+    listOptions({ key: [...keys] }, signal)
+  );
+  const body = response.data;
+  const issues = Array.isArray(body?.issues) ? body.issues : [];
+  const resolved = body?.resolved ?? {};
+  for (const [key, id] of Object.entries(resolved)) {
+    rememberIssueRef(workspaceId, id, key);
+  }
+  return { issues, resolved };
+};
+
 export function getIssueByKey(
   workspaceId: string,
   key: string,

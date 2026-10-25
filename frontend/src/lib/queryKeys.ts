@@ -197,6 +197,13 @@ export const issueKey = (workspaceId: string, issueId: string): QueryKey => [
   issueId,
 ];
 
+/** The issue a key mentioned in a body names, read through the batch lookup. */
+export const issueMentionKey = (workspaceId: string, key: string): QueryKey => [
+  'issue-mention',
+  workspaceId,
+  key.toUpperCase(),
+];
+
 /** One team's recently deleted issues, the trash a restore takes them out of. */
 export const trashKey = (workspaceId: string, teamId: string): QueryKey => [
   'issue-trash',

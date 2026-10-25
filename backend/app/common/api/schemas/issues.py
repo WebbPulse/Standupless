@@ -503,6 +503,20 @@ IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
 """The body every issue list route answers with, items under `issues`."""
 
 
+MAX_LOOKUP_KEYS = 100
+"""How many issue keys one batch lookup may name."""
+
+
+class IssueLookupRead(BaseModel):
+    """The issues a batch of keys names, each once, leaving out any the caller cannot see."""
+
+    issues: list[IssueRead] = Field(default_factory=list)
+    resolved: dict[str, str] = Field(
+        default_factory=dict,
+        description="Each requested key, uppercased, to the id of the issue it names, even under a retired prefix.",
+    )
+
+
 class DeletedIssueListRead(BaseModel):
     """One team's trash: its deleted issues, newest number first, and when each is purged."""
 

@@ -138,3 +138,15 @@ export const isTeamKey = (
       (team.retired_key_prefixes ?? []).includes(prefix)
   );
 };
+
+/** The issue key shape the renderer and the editor read as a reference. */
+const WHOLE_ISSUE_KEY = /^[A-Z][A-Z0-9]{1,5}-\d{1,9}$/;
+
+/**
+ * The issue key an inline code span holds when that is all it holds, such as
+ * `STUP-620` written in backticks, or null for any other code.
+ */
+export const codeSpanIssueKey = (value: string): string | null => {
+  const trimmed = value.trim();
+  return WHOLE_ISSUE_KEY.test(trimmed) ? trimmed : null;
+};
