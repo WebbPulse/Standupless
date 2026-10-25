@@ -15,7 +15,9 @@ import { personLabel, type Assignable } from './issuePeople';
 import { PRIORITY_LABELS } from './issueDisplay';
 import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from './projectLook';
 import { TIMELINE_ZOOMS, type TimelineZoom } from './timeline';
+import { isCoarse, periodEnd, periodLabel } from './dateResolution';
 import type {
+  DateResolution,
   IssuePriority,
   ProjectHealth,
   ProjectRead,
@@ -85,7 +87,16 @@ export const PROJECT_ORDERING_LABELS: Record<ProjectOrdering, string> = {
 
 /** What the projects list can group by. */
 export type ProjectGrouping =
-  'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+  | 'status'
+  | 'health'
+  | 'priority'
+  | 'initiative'
+  | 'lead'
+  | 'member'
+  | 'team'
+  | 'start_date'
+  | 'target_date'
+  | 'none';
 
 /** The groupings in the order the display menu offers them. */
 export const PROJECT_GROUPINGS: ProjectGrouping[] = [
@@ -94,7 +105,10 @@ export const PROJECT_GROUPINGS: ProjectGrouping[] = [
   'priority',
   'initiative',
   'lead',
+  'member',
   'team',
+  'start_date',
+  'target_date',
   'none',
 ];
 
@@ -105,7 +119,10 @@ export const PROJECT_GROUPING_LABELS: Record<ProjectGrouping, string> = {
   priority: 'Priority',
   initiative: 'Initiative',
   lead: 'Lead',
+  member: 'Members',
   team: 'Team',
+  start_date: 'Start date',
+  target_date: 'Target date',
   none: 'No grouping',
 };
 
@@ -533,6 +550,117 @@ export const NO_INITIATIVE_KEY = 'initiative:none';
 /** The group key projects nobody has judged the health of sit under. */
 export const NO_HEALTH_KEY = 'health:none';
 
+/** The group key projects with no members sit under. */
+export const NO_MEMBER_KEY = 'member:none';
+
+/** The groupings that file a project under the period of one of its dates. */
+export const DATE_GROUPINGS: ReadonlySet<ProjectGrouping> = new Set([
+  'start_date',
+  'target_date',
+]);
+
+/** How a period sorts among others ending in the same month: months first, years last. */
+const PERIOD_RANK: Record<DateResolution, number> = {
+  day: 0,
+  month: 0,
+  quarter: 1,
+  half: 2,
+  year: 3,
+};
+
+/** One calendar period a dated project groups under. */
+export interface DatePeriod {
+  /** The value after the group kind, such as `2026-11`, `2027-Q1`, `2027-H1` or `2027`. */
+  value: string;
+  /** The period as people name it, such as `Nov 2026` or `Q1 2027`. */
+  label: string;
+  /** Sorts periods by the month they end in, finer periods before coarser ones. */
+  rank: string;
+}
+
+/**
+ * The period a planning date groups under: its calendar month for an exact
+ * day or a month, and its own quarter, half or year for a coarser date. Null
+ * for a missing or unreadable date.
+ */
+export const datePeriod = (
+  value: string | null | undefined,
+  resolution: DateResolution | null | undefined
+): DatePeriod | null => {
+  if (value === null || value === undefined) return null;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value)) return null;
+  const coarse = isCoarse(resolution) ? resolution : 'month';
+  const year = value.slice(0, 4);
+  const month = Number(value.slice(5, 7));
+  const label = periodLabel(value, coarse);
+  const ends = periodEnd(value, coarse).slice(0, 7);
+  const rank = `${ends}:${PERIOD_RANK[coarse]}`;
+  switch (coarse) {
+    case 'month':
+      return { value: value.slice(0, 7), label, rank };
+    case 'quarter':
+      return {
+        value: `${year}-Q${Math.floor((month - 1) / 3) + 1}`,
+        label,
+        rank,
+      };
+    case 'half':
+      return { value: `${year}-H${month <= 6 ? 1 : 2}`, label, rank };
+    case 'year':
+      return { value: year, label, rank };
+  }
+};
+
+/** The period a project's start or target date groups under, or null when it has none. */
+const projectPeriod = (
+  project: ProjectRead,
+  grouping: 'start_date' | 'target_date'
+): DatePeriod | null =>
+  grouping === 'start_date'
+    ? datePeriod(project.start_date, project.start_date_resolution)
+    : datePeriod(project.target_date, project.target_date_resolution);
+
+/**
+ * Groups projects by the period of one date, earliest first, each coarse
+ * period after the months it covers, and the undated ones last.
+ */
+const byPeriod = (
+  projects: ProjectRead[],
+  grouping: 'start_date' | 'target_date'
+): ProjectGroup[] => {
+  const held = new Map<string, { period: DatePeriod; rows: ProjectRead[] }>();
+  const undated: ProjectRead[] = [];
+  for (const project of projects) {
+    const period = projectPeriod(project, grouping);
+    if (period === null) {
+      undated.push(project);
+      continue;
+    }
+    const entry = held.get(period.value) ?? { period, rows: [] };
+    entry.rows.push(project);
+    held.set(period.value, entry);
+  }
+  const dated = [...held.values()]
+    .sort((left, right) => left.period.rank.localeCompare(right.period.rank))
+    .map(({ period, rows }) => ({
+      key: `${grouping}:${period.value}`,
+      label: period.label,
+      kind: grouping,
+      rows,
+    }));
+  return undated.length === 0
+    ? dated
+    : [
+        ...dated,
+        {
+          key: `${grouping}:none`,
+          label: 'No date',
+          kind: grouping,
+          rows: undated,
+        },
+      ];
+};
+
 /** An initiative as grouping needs it: its id and name. */
 export interface InitiativeName {
   initiative_id: string;
@@ -592,6 +720,10 @@ const byValue = (
  * initiatives and leads by name with the empty group last, and team groups
  * in the teams' order; a project on several teams shows under each of them,
  * or once under the first filtered team it is on when a team filter is set.
+ * Member groups run by name with "No members" last, and a project shows
+ * under each of its members. Start and target dates group by calendar month,
+ * a coarse date under its own quarter, half or year after the months it
+ * covers, with "No date" last.
  * Empty groups are left out unless asked for, and "none" is one unlabelled
  * group.
  */
@@ -710,14 +842,61 @@ export const groupProjects = (
         keepEmpty,
         { value: 'none', label: 'No lead' }
       );
+    case 'member': {
+      const ids = [
+        ...new Set(projects.flatMap((project) => project.member_ids)),
+      ];
+      const labelOf = (id: string): string => {
+        const person = people.find((item) => item.user_id === id);
+        return person === undefined ? 'Unknown member' : personLabel(person);
+      };
+      const members = ids
+        .map((id) => ({ id, label: labelOf(id) }))
+        .sort((left, right) => left.label.localeCompare(right.label))
+        .map(({ id, label }) => ({
+          key: `member:${id}`,
+          label,
+          kind: grouping,
+          rows: projects.filter((project) => project.member_ids.includes(id)),
+        }));
+      const alone = projects.filter(
+        (project) => project.member_ids.length === 0
+      );
+      return alone.length === 0
+        ? members
+        : [
+            ...members,
+            {
+              key: NO_MEMBER_KEY,
+              label: 'No members',
+              kind: grouping,
+              rows: alone,
+            },
+          ];
+    }
+    case 'start_date':
+    case 'target_date':
+      return byPeriod(projects, grouping);
   }
 };
 
-/** Groups in the chosen direction: their own order, or reversed. */
+/**
+ * Groups in the chosen direction: their own order, or reversed. Reversed
+ * date groups run latest first and keep "No date" last.
+ */
 export const directedGroups = (
   groups: ProjectGroup[],
   direction: GroupDirection
-): ProjectGroup[] => (direction === 'desc' ? [...groups].reverse() : groups);
+): ProjectGroup[] => {
+  if (direction !== 'desc') return groups;
+  const undated = groups.filter(
+    (group) => DATE_GROUPINGS.has(group.kind) && groupValue(group) === 'none'
+  );
+  return [
+    ...groups.filter((group) => !undated.includes(group)).reverse(),
+    ...undated,
+  ];
+};
 
 /** The second level grouping in force: none when it repeats the first or the first is none. */
 export const effectiveRows = (
@@ -788,7 +967,10 @@ export const groupPatch = (
       return { initiative_id: value === 'none' ? null : value };
     case 'lead':
       return { lead_id: value === 'none' ? null : value };
+    case 'member':
     case 'team':
+    case 'start_date':
+    case 'target_date':
     case 'none':
       return null;
   }
@@ -808,8 +990,15 @@ export const inGroup = (project: ProjectRead, group: ProjectGroup): boolean => {
       return (project.initiative_id ?? 'none') === value;
     case 'lead':
       return (project.lead_id ?? 'none') === value;
+    case 'member':
+      return value === 'none'
+        ? project.member_ids.length === 0
+        : project.member_ids.includes(value);
     case 'team':
       return project.team_ids.includes(value);
+    case 'start_date':
+    case 'target_date':
+      return (projectPeriod(project, group.kind)?.value ?? 'none') === value;
     case 'none':
       return true;
   }

@@ -85,7 +85,16 @@ export interface InitiativesDisplayPreference {
 export interface ProjectsDisplayPreference {
   layout: 'list' | 'board' | 'timeline';
   group:
-    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+    | 'status'
+    | 'health'
+    | 'priority'
+    | 'initiative'
+    | 'lead'
+    | 'member'
+    | 'team'
+    | 'start_date'
+    | 'target_date'
+    | 'none';
   order:
     | 'target'
     | 'start'
@@ -102,7 +111,16 @@ export interface ProjectsDisplayPreference {
   direction?: 'asc' | 'desc';
   /** The grouping inside each group. */
   rows?:
-    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+    | 'status'
+    | 'health'
+    | 'priority'
+    | 'initiative'
+    | 'lead'
+    | 'member'
+    | 'team'
+    | 'start_date'
+    | 'target_date'
+    | 'none';
   /** Whether a team page keeps only the projects that team leads. */
   lead_team?: 'all' | 'lead';
   /** Whether the board shows columns that hold no project. */

@@ -2,8 +2,9 @@
 
 The properties worth holding are that a project view's filter is judged by the
 projects page's keys rather than the issue list's, that its arrangement reads back
-whole, that listings can be narrowed to one kind, and that every view saved before
-project views existed still reads as an issue view.
+whole, member and date groupings included, that listings can be narrowed to one
+kind, and that every view saved before project views existed still reads as an
+issue view.
 """
 
 from __future__ import annotations
@@ -78,6 +79,20 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
     }
     read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}")
     assert read.json()["projects_display"] == view["projects_display"]
+
+
+def test_a_project_view_keeps_member_and_date_groupings(client: TestClient, workspace: str) -> None:
+    """Grouping by member, start date or target date, and grouping again by one of them, read back."""
+    sign_in(client, MEMBER)
+
+    for group, rows in (("member", "target_date"), ("start_date", "member"), ("target_date", "start_date")):
+        response = _create(
+            client, workspace, entity="projects", projects_display={"layout": "board", "group": group, "rows": rows}
+        )
+
+        assert response.status_code == 201, response.text
+        display = response.json()["projects_display"]
+        assert (display["group"], display["rows"]) == (group, rows)
 
 
 def test_a_project_view_without_an_arrangement_takes_the_default(client: TestClient, workspace: str) -> None:

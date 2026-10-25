@@ -17,6 +17,7 @@ import type { ProjectRead, TeamRead } from '../types/Api';
 import {
   DEFAULT_PROJECTS_DISPLAY,
   cellChange,
+  datePeriod,
   directedGroups,
   dropPatch,
   effectiveRows,
@@ -24,6 +25,7 @@ import {
   groupProjects,
   inGroup,
   manualPlacements,
+  parseDisplayField,
   parseGrouping,
   parseOrdering,
   resolveDisplay,
@@ -570,5 +572,182 @@ describe('manual ordering', () => {
       rows: [],
     };
     expect(cellChange(row, [teamGroup])).toBeNull();
+  });
+});
+
+describe('member and date groups', () => {
+  const people = [
+    { user_id: 'u2', email: 'zed@example.com', display_name: 'Zed' },
+    { user_id: 'u1', email: 'amy@example.com', display_name: 'Amy' },
+  ];
+
+  it('shows a project under each of its members with no members last', () => {
+    const groups = groupProjects(
+      [
+        project({ project_id: 'a', name: 'Both', member_ids: ['u1', 'u2'] }),
+        project({ project_id: 'b', name: 'Zed only', member_ids: ['u2'] }),
+        project({ project_id: 'c', name: 'Alone', member_ids: [] }),
+      ],
+      'member',
+      people,
+      []
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      'Amy',
+      'Zed',
+      'No members',
+    ]);
+    expect(groups.map((group) => names(group.rows))).toEqual([
+      ['Both'],
+      ['Both', 'Zed only'],
+      ['Alone'],
+    ]);
+    expect(groups[2]?.key).toBe('member:none');
+  });
+
+  it('names the period a date groups under', () => {
+    expect(datePeriod('2026-11-14', 'day')).toMatchObject({
+      value: '2026-11',
+      label: 'Nov 2026',
+    });
+    expect(datePeriod('2026-11-14', null)?.label).toBe('Nov 2026');
+    expect(datePeriod('2027-03-31', 'quarter')).toMatchObject({
+      value: '2027-Q1',
+      label: 'Q1 2027',
+    });
+    expect(datePeriod('2027-06-30', 'half')).toMatchObject({
+      value: '2027-H1',
+      label: 'H1 2027',
+    });
+    expect(datePeriod('2027-12-31', 'year')).toMatchObject({
+      value: '2027',
+      label: '2027',
+    });
+    expect(datePeriod(null, 'day')).toBeNull();
+    expect(datePeriod('soon', 'day')).toBeNull();
+  });
+
+  const dated = [
+    project({
+      project_id: 'y',
+      name: 'Year',
+      target_date: '2027-12-31',
+      target_date_resolution: 'year',
+    }),
+    project({ project_id: 'n', name: 'Undated' }),
+    project({
+      project_id: 'h',
+      name: 'Half',
+      target_date: '2027-06-30',
+      target_date_resolution: 'half',
+    }),
+    project({
+      project_id: 'q',
+      name: 'Quarter',
+      target_date: '2027-03-31',
+      target_date_resolution: 'quarter',
+    }),
+    project({ project_id: 'm', name: 'March', target_date: '2027-03-02' }),
+    project({ project_id: 'j', name: 'June', target_date: '2027-06-10' }),
+    project({
+      project_id: 'k',
+      name: 'June too',
+      target_date: '2027-06-28',
+      target_date_resolution: 'day',
+    }),
+    project({
+      project_id: 'o',
+      name: 'November',
+      target_date: '2026-11-01',
+      target_date_resolution: 'month',
+    }),
+    project({ project_id: 'd', name: 'December', target_date: '2027-12-01' }),
+  ];
+
+  it('groups target dates by month with coarse periods after the months they cover', () => {
+    const groups = groupProjects(dated, 'target_date', [], []);
+    expect(groups.map((group) => group.label)).toEqual([
+      'Nov 2026',
+      'Mar 2027',
+      'Q1 2027',
+      'Jun 2027',
+      'H1 2027',
+      'Dec 2027',
+      '2027',
+      'No date',
+    ]);
+    expect(names(groups[3]?.rows ?? [])).toEqual(['June', 'June too']);
+    expect(groups.at(-1)?.key).toBe('target_date:none');
+  });
+
+  it('runs reversed date groups latest first and keeps no date last', () => {
+    const groups = groupProjects(dated, 'target_date', [], []);
+    expect(directedGroups(groups, 'desc').map((group) => group.label)).toEqual([
+      '2027',
+      'Dec 2027',
+      'H1 2027',
+      'Jun 2027',
+      'Q1 2027',
+      'Mar 2027',
+      'Nov 2026',
+      'No date',
+    ]);
+  });
+
+  it('groups start dates by their own date', () => {
+    const groups = groupProjects(
+      [
+        project({
+          name: 'Later',
+          start_date: '2027-01-01',
+          start_date_resolution: 'quarter',
+        }),
+        project({ name: 'Sooner', start_date: '2026-12-05' }),
+        project({ name: 'Unstarted', target_date: '2026-10-01' }),
+      ],
+      'start_date',
+      [],
+      []
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      'Dec 2026',
+      'Q1 2027',
+      'No date',
+    ]);
+  });
+
+  it('refuses board drops between member or date columns but keeps reorders', () => {
+    const row = project({ member_ids: ['u1'], target_date: '2026-11-03' });
+    const members = groupProjects(
+      [row, project({ project_id: 'p2', member_ids: ['u2'] })],
+      'member',
+      people,
+      []
+    );
+    const amy = members.find((group) => group.key === 'member:u1');
+    const zed = members.find((group) => group.key === 'member:u2');
+    if (amy === undefined || zed === undefined)
+      throw new Error('no member columns');
+    expect(inGroup(row, amy)).toBe(true);
+    expect(cellChange(row, [zed])).toBeNull();
+    expect(cellChange(row, [amy])).toEqual({});
+    const [november, december] = groupProjects(
+      [row, project({ project_id: 'p3', target_date: '2026-12-03' })],
+      'target_date',
+      [],
+      []
+    );
+    if (november === undefined || december === undefined)
+      throw new Error('no month columns');
+    expect(cellChange(row, [november])).toEqual({});
+    expect(cellChange(row, [december])).toBeNull();
+    expect(groupPatch(december)).toBeNull();
+  });
+
+  it('reads the new groupings from the URL and the saved display', () => {
+    expect(parseGrouping('member')).toBe('member');
+    expect(parseGrouping('start_date')).toBe('start_date');
+    expect(parseDisplayField('rows', 'target_date')).toBe('target_date');
+    expect(parseDisplayField('group', 'members')).toBeUndefined();
   });
 });

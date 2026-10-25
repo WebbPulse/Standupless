@@ -1,12 +1,12 @@
 /**
  * The glyph a group of projects is headed with: the status, health or
- * priority glyph, the initiative mark, the team key or the lead's avatar,
- * matching what the group is by. Shared by the projects list, its board and
+ * priority glyph, the initiative mark, the team key, the lead's or member's
+ * avatar or a calendar for a date period, matching what the group is by. Shared by the projects list, its board and
  * the roadmap so their group headers read alike.
  */
 
 import React from 'react';
-import { LuGoal } from 'react-icons/lu';
+import { LuCalendar, LuGoal } from 'react-icons/lu';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { groupValue, type ProjectGroup } from '../../lib/projectList';
 import type {
@@ -72,7 +72,20 @@ export const ProjectGroupGlyph: React.FC<ProjectGroupGlyphProps> = ({
       );
     }
     case 'lead':
+    case 'member':
       return value === 'none' ? null : <Avatar name={group.label} size="xs" />;
+    case 'start_date':
+    case 'target_date':
+      return (
+        <LuCalendar
+          aria-hidden="true"
+          className={
+            value === 'none'
+              ? 'h-3.5 w-3.5 shrink-0 text-text-faint'
+              : 'h-3.5 w-3.5 shrink-0 text-text-muted'
+          }
+        />
+      );
     case 'none':
       return null;
   }
