@@ -17,7 +17,7 @@ vi.mock('../../hooks/useOffline', async (importOriginal) => ({
   useWritable: (permitted: boolean) => permitted && !network.offline,
 }));
 
-const moveIssues = vi.fn();
+const moveIssues = vi.fn<(...args: unknown[]) => Promise<IssueRead[]>>();
 
 vi.mock('../../lib/bulkIssueActions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
