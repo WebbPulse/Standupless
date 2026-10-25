@@ -227,9 +227,12 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Pull request transitions</h3>
         <p className="text-sm text-text-muted">
-          A pull request naming an issue key from this team moves that issue. An
-          issue somebody moved by hand after the pull request event is left
-          alone.
+          A pull request naming an issue key from this team in its branch, its
+          title or after a word such as Fixes, Closes, Resolves, Refs, Part of
+          or Updates moves that issue, and only a closing word closes it on
+          merge. A key after Relates to or Related to links the pull request
+          without moving the issue. An issue somebody moved by hand after the
+          pull request event is left alone.
         </p>
       </div>
 

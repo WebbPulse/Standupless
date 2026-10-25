@@ -442,9 +442,10 @@ def _handle_pull_request(
     tracked = _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=True)
     pr_summary = pr_status.summary(tracked)
     promoted_holds: dict[str, bool] = {}
+    promoted_quiet: set[str] = set()
     if trigger == "pr_merged" and commit_messages:
         direct = linking.extract(prefixes, branch=branch, title=title, body=pr_body)
-        promoted_holds = _promoted_holds(
+        promoted_holds, promoted_quiet = _promoted_holds(
             repositories,
             workspace_id,
             prefixes,
@@ -462,7 +463,7 @@ def _handle_pull_request(
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
         holds = promoted_holds.get(key, match.holds_on_merge)
-        moves = match.moves_status or promoted_holds.get(key) is False
+        moves = (match.moves_status and key not in promoted_quiet) or promoted_holds.get(key) is False
         issue_trigger = trigger if moves else None
         newly_moving = previous is None or not previous.moves_status
         if moves and newly_moving and issue_trigger is None:
@@ -546,7 +547,7 @@ def _promoted_holds(
     repository_id: str,
     repository_full_name: str,
     node_id: str,
-) -> dict[str, bool]:
+) -> tuple[dict[str, bool], set[str]]:
     """Whether each key a merge found only in its commits holds, judged by the pull requests that shipped it.
 
     A promotion names the work it ships through the commits it carries, and a
@@ -557,8 +558,12 @@ def _promoted_holds(
     was stored, falls back to what its text says. A key held by every commit naming
     it stays put; a key the promotion itself names in its branch, title or body is
     left to the text, as before. Answers only for the keys it judged.
+
+    Also answers the keys to keep still: those whose every commit cites a shipped
+    link that never moved its issue, as one that only said `Relates to`.
     """
     holds: dict[str, bool] = {}
+    quiet: set[str] = set()
     by_ident = {(row.team_id, row.number): row for row in found}
     naming: dict[str, list[str]] = {}
     for message in commit_messages:
@@ -573,6 +578,7 @@ def _promoted_holds(
         )
         judged: list[bool] = []
         unjudged = False
+        still = True
         for message in messages:
             number = linking.cited_pull_number(message)
             link = merged.get(number) if number is not None else None
@@ -581,11 +587,15 @@ def _promoted_holds(
                 unjudged = True
             else:
                 judged.append(verdict)
+            if link is None or getattr(link, "magic_word", None) or getattr(link, "moves_status", True):
+                still = False
         if not judged:
             continue
         closes = any(judged) or (unjudged and not match.holds_on_merge)
         holds[key] = not closes
-    return holds
+        if still:
+            quiet.add(key)
+    return holds, quiet
 
 
 def _merged_links_by_number(
