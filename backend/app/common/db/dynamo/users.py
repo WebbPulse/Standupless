@@ -67,6 +67,45 @@ ActivityFilterField = Literal["all", "comments"]
 ACTIVITY_FILTERS: tuple[str, ...] = ("all", "comments")
 """Whether an issue's activity shows every change or only its comments."""
 
+SidebarItemField = Literal[
+    "home",
+    "inbox",
+    "my_issues",
+    "reviews",
+    "pulse",
+    "projects",
+    "initiatives",
+    "customers",
+    "views",
+    "roadmap",
+    "teams",
+]
+
+SIDEBAR_ITEMS: tuple[str, ...] = (
+    "home",
+    "inbox",
+    "my_issues",
+    "reviews",
+    "pulse",
+    "projects",
+    "initiatives",
+    "customers",
+    "views",
+    "roadmap",
+    "teams",
+)
+"""The workspace sidebar's top-level items a person may show, hide or move to the More menu."""
+
+SidebarVisibilityField = Literal["show", "more", "hide"]
+
+SIDEBAR_VISIBILITIES: tuple[str, ...] = ("show", "more", "hide")
+"""Where a sidebar item sits: in the sidebar, in its More menu, or nowhere."""
+
+SidebarBadgeStyleField = Literal["count", "dot"]
+
+SIDEBAR_BADGE_STYLES: tuple[str, ...] = ("count", "dot")
+"""Whether the sidebar's unread badges show a number or a dot."""
+
 STALE_ACCOUNT_PURGE = timedelta(hours=12)
 """How long a started account purge may go quiet before the sweep starts it again."""
 
@@ -106,6 +145,9 @@ class User(BaseModel):
     the pointer cursor on interactive elements, off by default.
     `activity_filter` is whether every issue's activity shows all of it or only
     its comments, all by default.
+    `sidebar_items` holds only the sidebar items the person moved off the
+    sidebar, each as `more` or `hide`, so an item added later shows for everyone.
+    `sidebar_badge_style` is whether the unread badges show a count or a dot.
     `projects_display` is how the person last arranged the projects list, its
     layout, grouping, ordering, closed window and timeline zoom, kept as plain
     strings that the read falls back from when a choice is retired.
@@ -145,6 +187,8 @@ class User(BaseModel):
     theme: Optional[str] = None
     pointer_cursors: bool = False
     activity_filter: str = "all"
+    sidebar_items: dict[str, str] = Field(default_factory=dict)
+    sidebar_badge_style: str = "count"
     projects_display: dict[str, str] = Field(default_factory=dict)
     initiatives_display: dict[str, str] = Field(default_factory=dict)
     auto_assign_to_self: bool = False

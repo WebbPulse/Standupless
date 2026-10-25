@@ -35,6 +35,9 @@ from app.common.db.dynamo.users import (
     HOME_VIEWS,
     NAME_DISPLAYS,
     PULSE_DIGESTS,
+    SIDEBAR_BADGE_STYLES,
+    SIDEBAR_ITEMS,
+    SIDEBAR_VISIBILITIES,
     THEMES,
     WEEK_STARTS,
     ActivityFilterField,
@@ -43,6 +46,9 @@ from app.common.db.dynamo.users import (
     HomeViewField,
     NameDisplayField,
     PulseDigestField,
+    SidebarBadgeStyleField,
+    SidebarItemField,
+    SidebarVisibilityField,
     ThemeField,
     User,
     WeekStartField,
@@ -95,7 +101,8 @@ class UserRead(BaseModel):
     they did. A person who has not opens the page with their team's or the
     workspace's default instead. `initiatives_display` and
     `initiatives_display_saved` are the same for the initiatives list. `theme`
-    is null until the person first saves one.
+    is null until the person first saves one. `sidebar_items` names every
+    sidebar item with where it sits, `show` unless the person moved it.
     """
 
     id: str
@@ -117,6 +124,8 @@ class UserRead(BaseModel):
     theme: Optional[ThemeField] = None
     pointer_cursors: bool = False
     activity_filter: ActivityFilterField = "all"
+    sidebar_items: dict[SidebarItemField, SidebarVisibilityField] = Field(default_factory=dict)
+    sidebar_badge_style: SidebarBadgeStyleField = "count"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
     initiatives_display: InitiativesDisplay = Field(default_factory=InitiativesDisplay)
@@ -178,7 +187,9 @@ class UserPreferencesUpdate(BaseModel):
     Preferences page sets, kept on the row so they follow the person to every
     device. `theme` is the interface theme and `pointer_cursors` whether
     interactive elements show the pointer cursor. `activity_filter` is whether issue activity shows every change or
-    only comments. `projects_display` replaces how the projects list is arranged as a
+    only comments. `sidebar_items` moves the named sidebar items, leaving the
+    others where they are, and `sidebar_badge_style` picks a count or a dot for
+    the unread badges. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
     the workspace's default again, and `initiatives_display` does the same for
     the initiatives list. `auto_assign_to_self`, `branch_copy_starts`
@@ -202,6 +213,8 @@ class UserPreferencesUpdate(BaseModel):
     theme: Optional[ThemeField] = None
     pointer_cursors: Optional[bool] = None
     activity_filter: Optional[ActivityFilterField] = None
+    sidebar_items: Optional[dict[SidebarItemField, SidebarVisibilityField]] = None
+    sidebar_badge_style: Optional[SidebarBadgeStyleField] = None
     projects_display: Optional[ProjectsDisplay] = None
     initiatives_display: Optional[InitiativesDisplay] = None
     auto_assign_to_self: Optional[bool] = None
@@ -278,6 +291,8 @@ def _as_read(user: "Any") -> UserRead:
         theme=user.theme if user.theme in THEMES else None,
         pointer_cursors=bool(user.pointer_cursors),
         activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
+        sidebar_items=_sidebar_read(user.sidebar_items),
+        sidebar_badge_style=_known(user.sidebar_badge_style, SIDEBAR_BADGE_STYLES, "count"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
         initiatives_display=stored_initiatives_display(user.initiatives_display),
@@ -292,6 +307,11 @@ def _as_read(user: "Any") -> UserRead:
 def _known(value: str, allowed: tuple[str, ...], fallback: str) -> Any:
     """A stored choice when it is still one of `allowed`, else the default, so a retired value never fails a read."""
     return value if value in allowed else fallback
+
+
+def _sidebar_read(stored: dict[str, str]) -> Any:
+    """Every sidebar item with where it sits, `show` for one never moved or stored with a retired place."""
+    return {item: _known(stored.get(item, "show"), SIDEBAR_VISIBILITIES, "show") for item in SIDEBAR_ITEMS}
 
 
 def _summaries(rows: list[WorkspaceSummary]) -> list[WorkspaceSummaryRead]:
@@ -340,6 +360,21 @@ def _merged_preferences(stored: dict[str, dict[str, bool]], changes: dict[Any, N
             else:
                 channels[channel] = False
     return {kind: channels for kind, channels in merged.items() if channels}
+
+
+def _merged_sidebar(stored: dict[str, str], changes: dict[Any, str]) -> dict[str, str]:
+    """The stored sidebar placements with a partial change applied, kept sparse.
+
+    Only an item moved off the sidebar is kept, and a stored item the sidebar no
+    longer has is dropped, so the row holds just what differs from the default.
+    """
+    merged = {item: place for item, place in stored.items() if item in SIDEBAR_ITEMS}
+    for item, place in changes.items():
+        if place == "show":
+            merged.pop(str(item), None)
+        else:
+            merged[str(item)] = place
+    return merged
 
 
 @router.get("/me", response_model=UserRead)
@@ -399,6 +434,7 @@ def update_current_user_preferences(
         "theme",
         "pointer_cursors",
         "activity_filter",
+        "sidebar_badge_style",
         "auto_assign_to_self",
         "branch_copy_starts",
         "branch_copy_assigns",
@@ -407,6 +443,10 @@ def update_current_user_preferences(
         value = getattr(payload, field)
         if value is not None and value != getattr(user, field):
             changes[field] = value
+    if payload.sidebar_items:
+        placed = _merged_sidebar(user.sidebar_items, dict(payload.sidebar_items))
+        if placed != user.sidebar_items:
+            changes["sidebar_items"] = placed
     if payload.projects_display is not None:
         display = payload.projects_display.model_dump()
         if display != user.projects_display:

@@ -2937,6 +2937,26 @@ class UserPreferencesUpdate(TypedDict):
     pointer_cursors: NotRequired[bool | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+        | None
+    ]
     theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
@@ -2971,6 +2991,25 @@ class UserRead(TypedDict):
     projects_display: NotRequired[ProjectsDisplay]
     projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"]]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+    ]
     theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]

@@ -7,24 +7,41 @@
  */
 
 import React from 'react';
+import type { SidebarBadgeStyle } from '../../types/Api';
 import { useInboxCount } from '../../hooks/useSidebarData';
 
 /** Props for InboxBadge: the workspace whose inbox is counted. */
 export interface InboxBadgeProps {
   workspaceId: string;
+  /** Draws a dot in place of the number. */
+  badgeStyle?: SidebarBadgeStyle;
 }
 
 /** The count the route saturates at, shown as "99+" past it. */
 const SATURATES_AT = 100;
 
 /** Shows the caller's unread notification count, or nothing when it is zero. */
-export const InboxBadge: React.FC<InboxBadgeProps> = ({ workspaceId }) => {
+export const InboxBadge: React.FC<InboxBadgeProps> = ({
+  workspaceId,
+  badgeStyle = 'count',
+}) => {
   const data = useInboxCount(workspaceId);
 
   const unread = data ?? 0;
   if (unread <= 0) return null;
 
   const shown = unread >= SATURATES_AT ? '99+' : String(unread);
+
+  if (badgeStyle === 'dot') {
+    return (
+      <span
+        role="img"
+        aria-label={`${shown} unread`}
+        data-testid="sidebar-badge-dot"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+      />
+    );
+  }
 
   return (
     <span
