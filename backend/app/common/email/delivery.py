@@ -42,6 +42,7 @@ def with_reply_to(message: EmailMessage, reply_to: str) -> EmailMessage:
         text=message.text,
         html=message.html,
         tags=dict(message.tags),
+        headers=dict(message.headers),
         reply_to=reply_to,
     )
 

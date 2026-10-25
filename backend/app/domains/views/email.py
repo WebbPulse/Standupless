@@ -32,6 +32,7 @@ from webbpulse.identity.email import EmailMessage
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.email.brand import notification_settings_url, render
+from app.common.email_unsubscribe import list_unsubscribe_headers
 from app.common.readable_ids import initiative_web_url, project_web_url
 from app.common.standup import StandupDigest, StandupItem, StandupPerson
 
@@ -251,6 +252,7 @@ def render_notification(
         blocks=blocks,
         footer_note=_issue_reason(kind).format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,
     )
@@ -307,6 +309,7 @@ def render_project_update_notification(
         blocks=blocks,
         footer_note=_PROJECT_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": "project_update"},
         accent=accent,
     )
@@ -348,6 +351,7 @@ def render_view_project_added_notification(
         ],
         footer_note=_VIEW_PROJECT_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": VIEW_PROJECT_ADDED},
         accent=accent,
     )
@@ -399,6 +403,7 @@ def render_project_role_notification(
         ],
         footer_note=_PROJECT_ROLE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,
     )
@@ -449,6 +454,7 @@ def render_project_update_due_notification(
         ],
         footer_note=_DUE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": PROJECT_UPDATE_DUE},
         accent=accent,
     )
@@ -508,6 +514,7 @@ def render_initiative_owner_notification(
         ],
         footer_note=_INITIATIVE_ROLE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": INITIATIVE_OWNER_ASSIGNED},
         accent=accent,
     )
@@ -552,6 +559,7 @@ def render_initiative_update_due_notification(
         ],
         footer_note=_INITIATIVE_DUE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": INITIATIVE_UPDATE_DUE},
         accent=accent,
     )
@@ -763,6 +771,7 @@ def render_digest(
         blocks=blocks,
         footer_note=_DIGEST_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": "digest"},
         accent=accent,
     )
@@ -863,6 +872,7 @@ def render_standup_digest(
         blocks=blocks,
         footer_note=_STANDUP_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": STANDUP_DIGEST},
         accent=accent,
     )
@@ -951,6 +961,7 @@ def render_pulse_digest(
         blocks=blocks,
         footer_note=_PULSE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
+        headers=list_unsubscribe_headers(unsubscribe_links),
         tags={"purpose": "notification", "kind": PULSE_DIGEST},
         accent=accent,
     )

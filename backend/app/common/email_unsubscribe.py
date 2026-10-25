@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Collection
+from typing import Any, Collection, Sequence
 from urllib.parse import quote
 
 from webbpulse.email_layout import EmailLink
@@ -243,3 +243,20 @@ def unsubscribe_links(
             token = mint_unsubscribe_token(user_id=user_id, workspace_id=workspace_id, action=KIND, target=kind)
             links.append(EmailLink("Stop emails like this", unsubscribe_url(token)))
     return tuple(links)
+
+
+ONE_CLICK_POST = "List-Unsubscribe=One-Click"
+"""The RFC 8058 `List-Unsubscribe-Post` value that marks the link as one-click."""
+
+
+def list_unsubscribe_headers(links: Sequence[EmailLink]) -> dict[str, str]:
+    """The RFC 2369 and RFC 8058 headers for an email whose footer carries `links`.
+
+    The first link is the most specific one `unsubscribe_links` offers, the issue or
+    project link ahead of the kind link, so a mail client's unsubscribe control stops
+    the same thing the footer's first link does. Only an https link qualifies, since
+    RFC 8058 requires one, so an email with no such link carries no headers.
+    """
+    if not links or not links[0].url.startswith("https://"):
+        return {}
+    return {"List-Unsubscribe": f"<{links[0].url}>", "List-Unsubscribe-Post": ONE_CLICK_POST}

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from webbpulse.email_layout import EmailLink
+from webbpulse.identity.email import EmailMessage
 from webbpulse.security import create_token
 
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
+from app.common.email.delivery import ReplyToSesSender, with_reply_to
+from app.common.email.invite import render_invite
 from app.common.email_unsubscribe import (
     ISSUE,
     KIND,
@@ -18,12 +23,13 @@ from app.common.email_unsubscribe import (
     UNSUBSCRIBE_PATH,
     UNSUBSCRIBE_TOKEN_TTL,
     UnsubscribeTokenError,
+    list_unsubscribe_headers,
     mint_unsubscribe_token,
     read_unsubscribe_token,
     unsubscribe_links,
 )
 from app.domains.views.consumers.digest import footer_unsubscribe_links
-from app.domains.views.email import render_digest
+from app.domains.views.email import render_digest, render_notification
 
 USER = "01JB0000000000000000000USR"
 WORKSPACE = "01JB00000000000000000000WS"
@@ -219,3 +225,114 @@ def test_the_footer_renders_before_the_settings_link() -> None:
     assert "Stop emails like this" in html
     assert html.index("Stop emails like this") < html.index("Notification settings")
     assert UNSUBSCRIBE_PATH in html
+
+
+API_ORIGIN = "https://api.example.test"
+
+
+@pytest.fixture
+def https_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point unsubscribe links at an https API origin, as staging and production do."""
+    monkeypatch.setattr(settings, "API_URL", API_ORIGIN, raising=False)
+
+
+def _issue_notification() -> tuple[EmailMessage, tuple[EmailLink, ...]]:
+    """One rendered comment notification with its footer unsubscribe links."""
+    links = unsubscribe_links(
+        user_id=USER, workspace_id=WORKSPACE, kinds=["commented"], issue_id="ISSUE1", issue_key="ENG-1"
+    )
+    return render_notification(
+        kind="commented",
+        to="reader@example.com",
+        actor_name="Ada",
+        issue_key="ENG-1",
+        issue_title="Fix the build",
+        workspace_slug="acme",
+        unsubscribe_links=links,
+    ), links
+
+
+def test_a_notification_carries_the_one_click_headers(https_api: None) -> None:
+    """The header points at the most specific footer link, the issue one, and is one-click."""
+    message, links = _issue_notification()
+    assert message.headers == {
+        "List-Unsubscribe": f"<{links[0].url}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+    grant = read_unsubscribe_token(_token_of(links[0].url))
+    assert (grant.action, grant.target) == (ISSUE, "ISSUE1")
+
+
+def test_a_digest_carries_the_headers_for_its_first_link(https_api: None) -> None:
+    """A digest's header uses the same link that leads its footer."""
+    entry = _entry("commented", "I1")
+    links = footer_unsubscribe_links(WORKSPACE, USER, [entry])
+    message = render_digest([entry], to="reader@example.com", workspace_slug="acme", unsubscribe_links=links)
+    assert message.headers["List-Unsubscribe"] == f"<{links[0].url}>"
+    assert message.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+
+
+def test_only_an_https_link_makes_headers() -> None:
+    """RFC 8058 needs https, so a plain http link or no link means no headers."""
+    assert list_unsubscribe_headers(()) == {}
+    assert list_unsubscribe_headers((EmailLink("Stop emails like this", "http://localhost:8000/x"),)) == {}
+    assert list_unsubscribe_headers((EmailLink("Stop emails like this", "https://api.example.test/x"),)) == {
+        "List-Unsubscribe": "<https://api.example.test/x>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+
+
+def test_a_notification_without_links_carries_no_headers(https_api: None) -> None:
+    """An email that names nobody has no unsubscribe link, so no headers either."""
+    message = render_notification(
+        kind="commented",
+        to="reader@example.com",
+        actor_name="Ada",
+        issue_key="ENG-1",
+        issue_title="Fix the build",
+        workspace_slug="acme",
+    )
+    assert message.headers == {}
+
+
+def test_transactional_mail_carries_no_headers(https_api: None) -> None:
+    """An invite is not a notification and offers no unsubscribe."""
+    message = render_invite(
+        to="new@example.com",
+        token="t",
+        workspace_name="Acme",
+        role="member",
+        inviter_name="Ada",
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    assert message.headers == {}
+
+
+class _Client:
+    """Records each SES SendEmail request."""
+
+    def __init__(self) -> None:
+        """Start empty."""
+        self.requests: list[dict[str, Any]] = []
+
+    def send_email(self, **kwargs: Any) -> dict[str, str]:
+        """Record one request."""
+        self.requests.append(kwargs)
+        return {"MessageId": "m"}
+
+
+def test_the_headers_reach_ses_with_and_without_a_reply_address(https_api: None) -> None:
+    """Both sender paths send the headers, and the reply path still sets Reply-To."""
+    message, _ = _issue_notification()
+    replyable = with_reply_to(message, "reply-x@example.com")
+    assert replyable.headers == message.headers
+
+    client = _Client()
+    sender = ReplyToSesSender(client, from_address="no-reply@example.com")
+    sender.send(replyable)
+    sender.send(message)
+    expected = [{"Name": name, "Value": value} for name, value in message.headers.items()]
+    for request in client.requests:
+        assert request["Content"]["Simple"]["Headers"] == expected
+    assert client.requests[0]["ReplyToAddresses"] == ["reply-x@example.com"]
+    assert "ReplyToAddresses" not in client.requests[1]
