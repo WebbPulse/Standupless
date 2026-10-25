@@ -8,7 +8,9 @@ link, and Slack's own link preview is turned off on those replies, because the i
 page is behind sign in and its preview would only ever be the site's landing card.
 The form preselects the team whose notifications the channel already carries.
 An issue created from a message is paired with that message's thread, so the two
-keep their discussion in step through `threads`.
+keep their discussion in step through `threads`. `ask` and the "Submit a request"
+shortcut open a team's request form instead, built by `requests`, and the create
+form offers the same forms so a message can be filed through one.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from app.common.issue_writes import create_issue
 from app.domains.integrations.channels.messages import clip, slack_escape
 from app.domains.integrations.chat import issues as chat_issues
 from app.domains.integrations.slack import install, people, threads
+from app.domains.integrations.slack import requests as request_forms
 from app.domains.integrations.slack.api import SlackError, respond
 from app.domains.integrations.slack.unfurls import issue_blocks, issue_by_key, split_key
 
@@ -71,6 +74,7 @@ def help_text(command: str) -> str:
     return (
         f"`{name} show ABC-12` or `{name} ABC-12` shows an issue.\n"
         f"`{name} create Fix the login redirect` opens the form to create an issue.\n"
+        f"`{name} ask` opens a team's request form, as does the *Submit a request* shortcut.\n"
         "The *Create issue* shortcut on any message files it as an issue."
     )
 
@@ -104,12 +108,17 @@ def create_view(
     team_id: str = "",
     channel_id: str = "",
     thread_ts: str = "",
+    forms: list[request_forms.TeamForms] | None = None,
 ) -> dict:
     """The modal that creates an issue, prefilled from a command or a message.
 
     The team picker starts on `team_id` when it is one of the offered teams, and on
     the only team when there is just one. A message's channel and thread ride in
     the private metadata, so the submission can pair the issue with that thread.
+    When any team offers request forms, a last, optional picker lets the person
+    answer one of them instead, which the submission swaps in; the team picker is
+    then optional too, since a form names its own team, and a plain create still
+    has to pick one.
     """
     metadata: dict[str, str] = {"permalink": permalink}
     if channel_id and thread_ts:
@@ -145,6 +154,7 @@ def create_view(
                 "block_id": TEAM_BLOCK,
                 "label": {"type": "plain_text", "text": "Team"},
                 "element": team_select,
+                **({"optional": True} if forms else {}),
             },
             {
                 "type": "input",
@@ -159,6 +169,7 @@ def create_view(
                 "label": {"type": "plain_text", "text": "Description"},
                 "element": description_input,
             },
+            *([request_forms.picker_block(forms, optional=True)] if forms else []),
         ],
     }
 
@@ -204,14 +215,18 @@ def slash_command(repositories: Repositories, installation: SlackInstallation, f
     """Answer one `/standupless` invocation.
 
     `show KEY` and a bare `KEY` both show an issue, matching the Discord App's
-    `show`, and anything else that is not `create` or `help` names what was not
-    recognised before the help, rather than silently answering the help alone.
+    `show`, `ask` opens a request form, and anything else that is not `create` or
+    `help` names what was not recognised before the help, rather than silently
+    answering the help alone.
     """
     command = form.get("command", "")
     text = " ".join(form.get("text", "").split())
     if not text or text.lower() == "help":
         return ephemeral(help_text(command))
     verb, _, rest = text.partition(" ")
+    if verb.lower() == "ask":
+        reply = request_forms.ask_command(repositories, installation, form, rest)
+        return ephemeral(reply) if reply else {}
     if verb.lower() == "show":
         key = rest
         if split_key(key) is None:
@@ -229,7 +244,9 @@ def slash_command(repositories: Repositories, installation: SlackInstallation, f
     if not teams:
         return ephemeral(NO_TEAMS)
     team_id = _channel_team(repositories, context, form.get("channel_id", ""))
-    if not _open(installation, form.get("trigger_id", ""), create_view(teams, title=rest, team_id=team_id)):
+    forms = request_forms.slack_forms(repositories, context)
+    view = create_view(teams, title=rest, team_id=team_id, forms=forms)
+    if not _open(installation, form.get("trigger_id", ""), view):
         return ephemeral("Slack could not open the form. Try again.")
     return {}
 
@@ -277,6 +294,7 @@ def message_shortcut(repositories: Repositories, installation: SlackInstallation
         team_id=_channel_team(repositories, context, channel_id),
         channel_id=channel_id,
         thread_ts=thread_ts or message_ts,
+        forms=request_forms.slack_forms(repositories, context),
     )
     _open(installation, str(payload.get("trigger_id", "")), view)
     return {}
@@ -309,7 +327,9 @@ def submit_create(repositories: Repositories, installation: SlackInstallation, p
 
     A form opened from a message pairs the new issue with the message's thread.
     The pairing is best effort: an issue whose thread Slack would not reply in is
-    still created, and simply is not synced.
+    still created, and simply is not synced. Picking a request form creates
+    nothing yet: the modal becomes that form, carrying what was typed and the
+    message it came from.
     """
     user = payload.get("user") or {}
     context = _context(repositories, installation, str(user.get("id", "")) if isinstance(user, Mapping) else "")
@@ -325,6 +345,12 @@ def submit_create(repositories: Repositories, installation: SlackInstallation, p
     except ValueError:
         metadata = {}
     permalink = str(metadata.get("permalink", "")) if isinstance(metadata, Mapping) else ""
+    chosen_form = request_forms.selected(values, request_forms.FORM_BLOCK, request_forms.FORM_BLOCK)
+    if chosen_form:
+        carried = {str(key): str(value) for key, value in metadata.items()} if isinstance(metadata, Mapping) else {}
+        return request_forms.continue_from_create(
+            repositories, context, chosen_form, title=title, description=description, metadata=carried
+        )
     if permalink.startswith("https://"):
         description = f"{description}\n\nFrom Slack: {permalink}".strip()
     if team_id not in {team for team, _ in writable_teams(repositories, context)}:
@@ -356,7 +382,14 @@ def interaction(repositories: Repositories, installation: SlackInstallation, pay
     kind = payload.get("type")
     if kind == "message_action" and payload.get("callback_id") == SHORTCUT_CALLBACK:
         return message_shortcut(repositories, installation, payload)
+    if kind == "shortcut" and payload.get("callback_id") == request_forms.GLOBAL_CALLBACK:
+        return request_forms.global_shortcut(repositories, installation, payload)
     view = payload.get("view") or {}
-    if kind == "view_submission" and isinstance(view, Mapping) and view.get("callback_id") == CREATE_CALLBACK:
+    callback = view.get("callback_id") if kind == "view_submission" and isinstance(view, Mapping) else None
+    if callback == CREATE_CALLBACK:
         return submit_create(repositories, installation, payload)
+    if callback == request_forms.PICK_CALLBACK:
+        return request_forms.submit_pick(repositories, installation, payload)
+    if callback == request_forms.FORM_CALLBACK:
+        return request_forms.submit_form(repositories, installation, payload)
     return {}

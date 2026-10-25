@@ -1426,6 +1426,8 @@ export interface TemplateCreate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** The questions that make an issue template a form. */
   form_fields?: FormField[];
+  /** Offers the form in the Slack App's request picker. */
+  in_slack?: boolean;
   /** The sub-issues an issue template creates under each issue made from it. */
   sub_issues?: TemplateSubIssue[];
 }
@@ -1438,6 +1440,8 @@ export interface TemplateUpdate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** Replaces a form's questions; null or an empty list turns the form off. */
   form_fields?: FormField[] | null;
+  /** Offers the form in the Slack App's request picker, or stops offering it. */
+  in_slack?: boolean;
   /** Replaces an issue template's sub-issues; null or an empty list removes them. */
   sub_issues?: TemplateSubIssue[] | null;
 }
@@ -1467,6 +1471,8 @@ export interface TemplateRead {
   project?: ProjectBlueprint | null;
   /** A form template's questions; empty, or absent on an older answer, on any other template. */
   form_fields?: FormFieldRead[];
+  /** Whether the Slack App's request picker offers this form; absent on an older answer. */
+  in_slack?: boolean;
   /** An issue template's sub-issues, in order; empty, or absent on an older answer, on any other template. */
   sub_issues?: TemplateSubIssueRead[];
   position: number;

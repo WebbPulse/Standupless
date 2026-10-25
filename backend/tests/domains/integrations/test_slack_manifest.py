@@ -16,6 +16,7 @@ import pytest
 from app.common.core.config import PRODUCTION_HOST, STAGING_HOST
 from app.domains.integrations.slack.api import BOT_SCOPES
 from app.domains.integrations.slack.commands import SHORTCUT_CALLBACK
+from app.domains.integrations.slack.requests import GLOBAL_CALLBACK
 
 MANIFESTS = Path(__file__).resolve().parents[3].parent / "slack"
 
@@ -39,12 +40,15 @@ def test_a_manifest_points_at_its_own_environment(name: str, host: str, command:
     assert tuple(manifest["oauth_config"]["scopes"]["bot"]) == BOT_SCOPES
     assert "user" not in manifest["oauth_config"]["scopes"]
     assert [(row["command"], row["url"]) for row in features["slash_commands"]] == [(command, f"{api}/commands")]
-    assert [(row["type"], row["callback_id"]) for row in features["shortcuts"]] == [("message", SHORTCUT_CALLBACK)]
+    assert [(row["type"], row["callback_id"]) for row in features["shortcuts"]] == [
+        ("global", GLOBAL_CALLBACK),
+        ("message", SHORTCUT_CALLBACK),
+    ]
     assert features["unfurl_domains"] == [host]
     assert features["app_home"] == {
         "home_tab_enabled": False,
         "messages_tab_enabled": True,
-        "messages_tab_read_only_enabled": True,
+        "messages_tab_read_only_enabled": False,
     }
     assert settings["event_subscriptions"]["request_url"] == f"{api}/events"
     assert sorted(settings["event_subscriptions"]["bot_events"]) == [
@@ -52,6 +56,7 @@ def test_a_manifest_points_at_its_own_environment(name: str, host: str, command:
         "link_shared",
         "message.channels",
         "message.groups",
+        "message.im",
         "reaction_added",
         "tokens_revoked",
     ]

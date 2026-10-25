@@ -126,6 +126,7 @@ interface FormState {
   projectId: string | null;
   cycleId: string | null;
   isForm: boolean;
+  inSlack: boolean;
   formFields: FormField[];
   subIssues: SubIssueDraft[];
 }
@@ -142,6 +143,7 @@ const EMPTY_FORM: FormState = {
   projectId: null,
   cycleId: null,
   isForm: false,
+  inSlack: false,
   formFields: [],
   subIssues: [],
 };
@@ -159,6 +161,7 @@ const formOf = (template: TemplateRead): FormState => ({
   projectId: template.project_id,
   cycleId: template.cycle_id,
   isForm: (template.form_fields ?? []).length > 0,
+  inSlack: template.in_slack ?? false,
   formFields: template.form_fields ?? [],
   subIssues: subIssueDrafts(template.sub_issues),
 });
@@ -191,6 +194,7 @@ const fieldsOf = (form: FormState) => ({
   project_id: form.projectId,
   cycle_id: form.cycleId,
   form_fields: formFieldsOf(form),
+  in_slack: form.isForm && form.inSlack,
   sub_issues: subIssuesOf(form.subIssues),
 });
 
@@ -200,7 +204,7 @@ const documentFieldsOf = (form: FormState) => ({
   body: form.body.trim() === '' ? null : form.body,
 });
 
-/** The create body, leaving out every field still empty. */
+/** The create body, leaving out every field still empty or switched off. */
 const createBodyOf = (form: FormState, kind: EditorKind): TemplateCreate => {
   const body: TemplateCreate =
     kind === 'document'
@@ -208,7 +212,7 @@ const createBodyOf = (form: FormState, kind: EditorKind): TemplateCreate => {
       : { name: form.name.trim() };
   const fields = kind === 'document' ? documentFieldsOf(form) : fieldsOf(form);
   for (const [name, value] of Object.entries(fields)) {
-    if (value === null) continue;
+    if (value === null || value === false) continue;
     if (Array.isArray(value) && value.length === 0) continue;
     Object.assign(body, { [name]: value });
   }
@@ -365,6 +369,17 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
                   set({ formFields });
                 }}
               />
+              <Checkbox
+                label="Offer this form in Slack"
+                checked={form.inSlack}
+                onChange={(event) => {
+                  set({ inSlack: event.target.checked });
+                }}
+              />
+              <p className="text-xs text-text-muted">
+                People pick it from the Submit a request shortcut or the ask
+                command, and the request files into triage.
+              </p>
             </>
           )}
         </div>

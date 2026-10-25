@@ -25467,7 +25467,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`. `form_fields` makes an issue template a form.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`. `form_fields` makes an issue template a form,\nand `in_slack` offers that form in the Slack App's request picker.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -25521,6 +25521,11 @@
             "maxItems": 20,
             "title": "Form Fields",
             "type": "array"
+          },
+          "in_slack": {
+            "default": false,
+            "title": "In Slack",
+            "type": "boolean"
           },
           "kind": {
             "default": "issue",
@@ -25686,7 +25691,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.\n`sub_issues` are the issues an issue template creates under each issue made\nfrom it.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage,\nand `in_slack` says the Slack App's request picker offers it. `sub_issues`\nare the issues an issue template creates under each issue made from it.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -25758,6 +25763,11 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "in_slack": {
+            "default": false,
+            "title": "In Slack",
+            "type": "boolean"
           },
           "kind": {
             "default": "issue",
@@ -26148,6 +26158,17 @@
               }
             ],
             "title": "Form Fields"
+          },
+          "in_slack": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Slack"
           },
           "label_ids": {
             "anyOf": [
@@ -33639,7 +33660,7 @@
     },
     "/api/slack/interactions": {
       "post": {
-        "description": "Verify one interactivity request: the message shortcut, or the create issue form being submitted.",
+        "description": "Verify one interactivity request: a shortcut, or the create issue or request form being submitted.",
         "operationId": "receive_slack_interaction_api_slack_interactions_post",
         "responses": {
           "200": {

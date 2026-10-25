@@ -153,7 +153,8 @@ class IssueTemplate(BaseModel):
     only `title` and `body`. An issue template with `form_fields` is a form: an
     issue filed from it answers each field and lands in the team's triage.
     `sub_issues` are the issues an issue template creates under each issue
-    made from it, in order.
+    made from it, in order. `in_slack` offers a form in the Slack App's request
+    picker, so people can file it from Slack without opening Standupless.
     """
 
     workspace_id: str
@@ -174,6 +175,7 @@ class IssueTemplate(BaseModel):
     cycle_id: Optional[str] = None
     project: Optional[ProjectBlueprint] = None
     form_fields: list[FormFieldBlueprint] = Field(default_factory=list)
+    in_slack: bool = False
     sub_issues: list[IssueBlueprint] = Field(default_factory=list)
     position: int = 0
     created_by: Optional[str] = None

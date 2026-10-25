@@ -228,3 +228,26 @@ def test_a_form_files_normally_while_triage_is_off(teams: TestClient, issues: Te
     assert response.status_code == 201, response.text
     assert response.json()["in_triage"] is False
     assert response.json()["priority"] == "low"
+
+
+def test_a_form_is_offered_in_slack_only_when_asked_and_only_as_an_issue_template(
+    teams: TestClient, workspace: str
+) -> None:
+    """`in_slack` starts off, turns on and off by edit, and a project or document template refuses it."""
+    saved = _form(teams)
+    assert saved["in_slack"] is False
+
+    path = f"{TEMPLATES}/{saved['id']}"
+    turned_on = teams.patch(path, json={"in_slack": True})
+    assert turned_on.status_code == 200, turned_on.text
+    assert turned_on.json()["in_slack"] is True
+    assert teams.get(TEMPLATES).json()["templates"][0]["in_slack"] is True
+    assert teams.patch(path, json={"in_slack": None}).status_code == 422
+    assert teams.patch(path, json={"in_slack": False}).json()["in_slack"] is False
+
+    offered = _form(teams, name="Access request", in_slack=True)
+    assert offered["in_slack"] is True
+
+    project = teams.post(TEMPLATES, json={"kind": "project", "name": "Launch", "in_slack": True})
+    document = teams.post(TEMPLATES, json={"kind": "document", "name": "Notes", "in_slack": True})
+    assert (project.status_code, document.status_code) == (422, 422)

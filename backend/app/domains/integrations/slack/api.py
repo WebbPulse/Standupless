@@ -29,6 +29,7 @@ BOT_SCOPES: tuple[str, ...] = (
     "channels:join",
     "groups:read",
     "groups:history",
+    "im:history",
     "commands",
     "links:read",
     "links:write",
@@ -38,7 +39,8 @@ BOT_SCOPES: tuple[str, ...] = (
 )
 """What the bot asks for: posting, channels, the command, unfurls, synced threads, emoji intake and people.
 
-The history scopes are what deliver a synced thread's replies, and joining is how
+The history scopes are what deliver a synced thread's replies, the direct message
+one for a request whose thread is the requester's confirmation, and joining is how
 the bot comes to receive them in a public channel it was not yet in. Reading
 reactions is what delivers an intake emoji and lets the bot read the message it
 was added to.

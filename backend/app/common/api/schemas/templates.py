@@ -429,7 +429,8 @@ class TemplateCreate(TemplateFields):
 
     `kind` "project" makes a project template, which fills `project` and leaves
     the issue fields unset. `kind` "document" makes a document template, which
-    takes only `title` and `body`. `form_fields` makes an issue template a form.
+    takes only `title` and `body`. `form_fields` makes an issue template a form,
+    and `in_slack` offers that form in the Slack App's request picker.
     """
 
     kind: TemplateKindField = "issue"
@@ -437,6 +438,7 @@ class TemplateCreate(TemplateFields):
     label_ids: list[str] = Field(default_factory=list)
     project: Optional[ProjectTemplateFields] = None
     form_fields: list[FormField] = Field(default_factory=list, max_length=FORM_FIELDS_MAX)
+    in_slack: bool = False
     sub_issues: list[IssueTemplateItem] = Field(default_factory=list, max_length=TEMPLATE_SUB_ISSUES_MAX)
 
     @field_validator("form_fields")
@@ -471,6 +473,7 @@ class TemplateUpdate(TemplateFields):
     label_ids: Optional[list[str]] = None
     project: Optional[ProjectTemplateFields] = None
     form_fields: Optional[list[FormField]] = Field(default=None, max_length=FORM_FIELDS_MAX)
+    in_slack: Optional[bool] = None
     sub_issues: Optional[list[IssueTemplateItem]] = Field(default=None, max_length=TEMPLATE_SUB_ISSUES_MAX)
 
     @field_validator("form_fields")
@@ -505,9 +508,9 @@ class TemplateRead(BaseModel):
     own, its parent team's, or the workspace's. `team_id` is `None` for a
     workspace template. `project` is set on a project template only, and a
     document template sets only `title` and `body`. `form_fields` is set on a
-    form, an issue template whose issues answer its questions and land in triage.
-    `sub_issues` are the issues an issue template creates under each issue made
-    from it.
+    form, an issue template whose issues answer its questions and land in triage,
+    and `in_slack` says the Slack App's request picker offers it. `sub_issues`
+    are the issues an issue template creates under each issue made from it.
     """
 
     id: str
@@ -527,6 +530,7 @@ class TemplateRead(BaseModel):
     cycle_id: Optional[str] = None
     project: Optional[ProjectBlueprint] = None
     form_fields: list[FormFieldBlueprint] = Field(default_factory=list)
+    in_slack: bool = False
     sub_issues: list[IssueBlueprint] = Field(default_factory=list)
     position: int = 0
     created_by: Optional[str] = None
@@ -560,6 +564,7 @@ class TemplateRead(BaseModel):
             cycle_id=row.cycle_id,
             project=row.project,
             form_fields=list(row.form_fields),
+            in_slack=row.in_slack,
             sub_issues=list(row.sub_issues),
             position=row.position,
             created_by=row.created_by,
