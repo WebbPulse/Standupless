@@ -71,11 +71,19 @@ DEFAULT_FIELDS: dict[str, str] = {
 
 SETTING_KINDS: dict[str, str] = {
     "default_template_id": ISSUE_TEMPLATE,
+    "non_member_default_template_id": ISSUE_TEMPLATE,
     "default_project_template_id": PROJECT_TEMPLATE,
     "default_document_template_id": DOCUMENT_TEMPLATE,
     "default_update_template_id": DOCUMENT_TEMPLATE,
 }
-"""The kind of template each settings field names; a new document and a new update both start from a document."""
+"""The kind of template each settings field names; a new document and a new update both start from a document.
+
+The non-member default names an issue template, the one people outside the team
+open the create dialog with.
+"""
+
+NON_MEMBER_FIELD = "non_member_default_template_id"
+"""The settings field naming the issue template a non-member's create dialog opens with."""
 
 DOCUMENT_FIELDS: tuple[str, ...] = ("title", "body")
 """The fields a document template carries."""
@@ -154,6 +162,32 @@ def list_team_templates(
     """Every template of one kind one team offers the caller, and the one its dialog opens with."""
     rows = team_templates(repositories, context, team_id, kind)
     return rows, effective_default(repositories, context, team_id, rows, kind)
+
+
+def non_member_default(
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str,
+    offered: list[IssueTemplate],
+    member_default: Optional[str],
+    kind: str = ISSUE_TEMPLATE,
+) -> Optional[str]:
+    """The template one team's create dialog opens with for someone outside it.
+
+    The team's own non-member default, else `member_default`, the one members
+    open with. A parent team's non-member default is not inherited, since a
+    sub-team's outsiders may well be the parent's members. A non-member default
+    naming a template since deleted, or one the caller is not offered, falls
+    back too, and only issue templates have one, so every other kind answers
+    `member_default`.
+    """
+    if kind != ISSUE_TEMPLATE:
+        return member_default
+    settings = repositories.team_config.get_template_settings(context.workspace_id, team_id)
+    chosen = settings.non_member_default_template_id if settings is not None else None
+    if chosen and chosen in {row.template_id for row in offered}:
+        return chosen
+    return member_default
 
 
 def list_workspace_templates(
@@ -479,10 +513,16 @@ def delete_workspace_template(repositories: Repositories, context: AuthzContext,
 def _effective_defaults(repositories: Repositories, context: AuthzContext, team_id: str) -> dict[str, Optional[str]]:
     """The template each of one team's create dialogs and composers opens with, by settings field."""
     offered = {kind: team_templates(repositories, context, team_id, kind) for kind in DEFAULT_FIELDS}
-    return {
+    effective = {
         field: effective_default(repositories, context, team_id, offered[kind], kind, field)
         for field, kind in SETTING_KINDS.items()
+        if field != NON_MEMBER_FIELD
     }
+    member_default = effective[DEFAULT_FIELDS[ISSUE_TEMPLATE]]
+    effective[NON_MEMBER_FIELD] = non_member_default(
+        repositories, context, team_id, offered[ISSUE_TEMPLATE], member_default
+    )
+    return effective
 
 
 def _blank_settings(context: AuthzContext, team_id: str) -> TemplateSettings:

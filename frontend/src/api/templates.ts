@@ -56,6 +56,8 @@ const listOptions = (
 const normalised = (body: TemplateListRead | undefined): TemplateListRead => ({
   templates: Array.isArray(body?.templates) ? body.templates : [],
   default_template_id: body?.default_template_id ?? null,
+  non_member_default_template_id:
+    body?.non_member_default_template_id ?? body?.default_template_id ?? null,
 });
 
 /**

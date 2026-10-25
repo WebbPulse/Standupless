@@ -573,10 +573,14 @@ class TemplateListRead(BaseModel):
 
     `default_template_id` is the team's own default, else its parent's, and is
     always one of `templates`; a workspace list carries none.
+    `non_member_default_template_id` is what the dialog opens with for someone
+    outside the team: the non-member default when one is set, else
+    `default_template_id`.
     """
 
     templates: list[TemplateRead]
     default_template_id: Optional[str] = None
+    non_member_default_template_id: Optional[str] = None
 
 
 class DocumentTemplateListRead(BaseModel):
@@ -598,6 +602,8 @@ class TemplateSettingsRead(BaseModel):
 
     `default_template_id` is what the team saved and `effective_default_template_id`
     what its issue create dialog opens with, which falls back to the parent team's.
+    The non-member fields are the issue template people outside the team open
+    the dialog with; its effective value falls back to the members' default.
     The project fields are the same for the new project dialog, the document
     fields for a new document of a project the team is on, and the update fields
     for the project update composer.
@@ -606,6 +612,8 @@ class TemplateSettingsRead(BaseModel):
     team_id: str
     default_template_id: Optional[str] = None
     effective_default_template_id: Optional[str] = None
+    non_member_default_template_id: Optional[str] = None
+    effective_non_member_default_template_id: Optional[str] = None
     default_project_template_id: Optional[str] = None
     effective_default_project_template_id: Optional[str] = None
     default_document_template_id: Optional[str] = None
@@ -620,6 +628,8 @@ class TemplateSettingsRead(BaseModel):
             team_id=row.team_id,
             default_template_id=row.default_template_id,
             effective_default_template_id=effective.get("default_template_id"),
+            non_member_default_template_id=row.non_member_default_template_id,
+            effective_non_member_default_template_id=effective.get("non_member_default_template_id"),
             default_project_template_id=row.default_project_template_id,
             effective_default_project_template_id=effective.get("default_project_template_id"),
             default_document_template_id=row.default_document_template_id,
@@ -632,10 +642,12 @@ class TemplateSettingsRead(BaseModel):
 class TemplateSettingsUpdate(BaseModel):
     """The body a team's template settings patch takes: only the defaults sent change, and null clears one.
 
-    The document and update defaults both name a document template.
+    The document and update defaults both name a document template, and the
+    non-member default an issue template.
     """
 
     default_template_id: Optional[str] = None
+    non_member_default_template_id: Optional[str] = None
     default_project_template_id: Optional[str] = None
     default_document_template_id: Optional[str] = None
     default_update_template_id: Optional[str] = None

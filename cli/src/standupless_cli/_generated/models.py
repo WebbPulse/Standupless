@@ -3134,6 +3134,8 @@ class TemplateSettingsRead(TypedDict):
     effective_default_project_template_id: NotRequired[str | None]
     effective_default_template_id: NotRequired[str | None]
     effective_default_update_template_id: NotRequired[str | None]
+    effective_non_member_default_template_id: NotRequired[str | None]
+    non_member_default_template_id: NotRequired[str | None]
     team_id: str
 
 
@@ -3142,6 +3144,7 @@ class TemplateSettingsUpdate(TypedDict):
     default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
     default_update_template_id: NotRequired[str | None]
+    non_member_default_template_id: NotRequired[str | None]
 
 
 class ThreadResolution(TypedDict):
@@ -5287,4 +5290,5 @@ class StandupDigest(TypedDict):
 
 class TemplateListRead(TypedDict):
     default_template_id: NotRequired[str | None]
+    non_member_default_template_id: NotRequired[str | None]
     templates: list[TemplateRead]
