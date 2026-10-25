@@ -3,7 +3,7 @@
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
- * or removes their parent issue, i assigns them to the
+ * or removes their parent issue, r renames the focused issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
  * or convert it into a project, M then B, X, R or D marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
@@ -112,11 +112,13 @@ import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
+import RenameIssueDialog from '../RenameIssueDialog';
 import { RELATION_COMMANDS } from '../RelationGlyphs';
 import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
+  RENAME_ISSUE_KEYS,
   propertyKeysFor,
   type CommandProperty,
 } from './propertyKeys';
@@ -254,6 +256,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [command, setCommand] = useState<OpenCommand | null>(null);
   const [parenting, setParenting] = useState<string[] | null>(null);
   const [converting, setConverting] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
@@ -869,6 +872,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   useShortcut({
+    keys: RENAME_ISSUE_KEYS,
+    label: 'Rename issue…',
+    scope: 'issue',
+    enabled: canEdit && single !== undefined,
+    handler: (event) => {
+      event?.preventDefault();
+      if (single !== undefined) setRenaming(single.id);
+    },
+  });
+  useShortcut({
     keys: COPY_ISSUE_ID_KEYS,
     label: 'Copy issue ID',
     scope: 'issue',
@@ -1099,6 +1112,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const commandIssues = command === null ? [] : resolve(command.ids);
   const parentIssues = parenting === null ? [] : resolve(parenting);
   const [convertIssue] = converting === null ? [] : resolve([converting]);
+  const [renameIssue] = renaming === null ? [] : resolve([renaming]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
@@ -1276,6 +1290,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
           onLinked={() => {
             invalidateQueries(queryKey);
+          }}
+        />
+      )}
+      {renameIssue !== undefined && (
+        <RenameIssueDialog
+          issueKey={renameIssue.key}
+          title={renameIssue.title}
+          onRename={(title) => {
+            update([renameIssue.id], { title });
+          }}
+          onClose={() => {
+            setRenaming(null);
           }}
         />
       )}

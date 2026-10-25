@@ -150,6 +150,24 @@ FAVORITE_KINDS: tuple[str, ...] = ("issue", "project", "cycle", "view", "team", 
 FAVORITES_MAX = 100
 """The most favorites one member keeps in one workspace, so the sidebar read stays bounded."""
 
+FAVORITE_FOLDERS_MAX = 50
+"""The most favorite folders one member keeps in one workspace."""
+
+FAVORITE_FOLDER_NAME_MAX = 80
+"""The longest name a favorite folder takes."""
+
+
+def new_favorite_folder_id() -> str:
+    """A fresh favorite folder id, time sortable like every other id here."""
+    return new_ulid()
+
+
+class FavoriteFolder(BaseModel):
+    """One named folder in a member's favorites, its place being its index in the row's `folders`."""
+
+    folder_id: str
+    name: str
+
 
 class FavoriteItem(BaseModel):
     """One starred thing: its kind, its id, and the team a cycle needs to be found again.
@@ -161,6 +179,7 @@ class FavoriteItem(BaseModel):
     kind: str
     target_id: str
     team_id: str | None = None
+    folder_id: str | None = None
 
 
 class FavoriteViews(BaseModel):
@@ -170,7 +189,9 @@ class FavoriteViews(BaseModel):
     workspace view is shared and a favorite is not. `items` holds every kind;
     `view_ids` is the view subset, still written so a row stays readable by a
     function deployed before `items` existed, and read to build `items` on a row
-    written before it.
+    written before it. `folders` holds the member's favorite folders in their
+    order, and an item's `folder_id` names the one it sits in, so a row written
+    before folders existed reads as every favorite at the top level.
     """
 
     workspace_id: str
@@ -178,6 +199,7 @@ class FavoriteViews(BaseModel):
     user_id: str
     view_ids: list[str] = Field(default_factory=list)
     items: list[FavoriteItem] | None = None
+    folders: list[FavoriteFolder] = Field(default_factory=list)
 
     def ordered_items(self) -> list[FavoriteItem]:
         """The favorites in order, a row older than `items` reading as its views."""
@@ -334,41 +356,74 @@ class ViewRepository:
             if VIEW_KEY_MARKER in str(item.get("view_key", "")) and item.get("view_id"):
                 yield SavedView.model_validate(dict(item))
 
+    def _favorites_row(self, workspace_id: str, user_id: str) -> FavoriteViews | None:
+        """One member's favorites row, or `None` when they have none."""
+        if not workspace_id or not user_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "view_key": favorites_key(user_id)})
+        return FavoriteViews.model_validate(dict(item)) if item is not None else None
+
     def favorite_items(self, workspace_id: str, user_id: str) -> list[FavoriteItem]:
         """One member's favorites of every kind, in the order they arranged them."""
-        if not workspace_id or not user_id:
-            return []
-        item = self._repository.get({"workspace_id": workspace_id, "view_key": favorites_key(user_id)})
-        if item is None:
-            return []
-        return FavoriteViews.model_validate(dict(item)).ordered_items()
+        row = self._favorites_row(workspace_id, user_id)
+        return row.ordered_items() if row is not None else []
+
+    def favorite_folders(self, workspace_id: str, user_id: str) -> list[FavoriteFolder]:
+        """One member's favorite folders, in the order they arranged them."""
+        row = self._favorites_row(workspace_id, user_id)
+        return list(row.folders) if row is not None else []
 
     def favorites(self, workspace_id: str, user_id: str) -> list[str]:
         """One member's favorite view ids, in the order they arranged them."""
         return [row.target_id for row in self.favorite_items(workspace_id, user_id) if row.kind == "view"]
 
     def set_favorite_items(self, workspace_id: str, user_id: str, items: list[FavoriteItem]) -> list[FavoriteItem]:
-        """Replace one member's favorites, dropping repeats and the row itself when none are left."""
+        """Replace one member's favorites, keeping their folders as they are."""
+        folders = self.favorite_folders(workspace_id, user_id)
+        stored, _ = self.set_favorites(workspace_id, user_id, items, folders)
+        return stored
+
+    def clear_favorites(self, workspace_id: str, user_id: str) -> None:
+        """Remove one member's favorites and folders together."""
+        self.set_favorites(workspace_id, user_id, [], [])
+
+    def set_favorites(
+        self, workspace_id: str, user_id: str, items: list[FavoriteItem], folders: list[FavoriteFolder]
+    ) -> tuple[list[FavoriteItem], list[FavoriteFolder]]:
+        """Replace one member's favorites and folders in one write.
+
+        Repeats are dropped, a favorite naming a folder that is not kept moves to
+        the top level, and the row itself goes once nothing is left in it.
+        """
         key = {"workspace_id": workspace_id, "view_key": favorites_key(user_id)}
+        kept_folders: list[FavoriteFolder] = []
+        folder_ids: set[str] = set()
+        for folder in folders:
+            if folder.folder_id not in folder_ids:
+                folder_ids.add(folder.folder_id)
+                kept_folders.append(folder)
         seen: set[tuple[str, str]] = set()
         ordered: list[FavoriteItem] = []
         for row in items:
             identity = (row.kind, row.target_id)
             if identity not in seen:
                 seen.add(identity)
+                if row.folder_id is not None and row.folder_id not in folder_ids:
+                    row = row.model_copy(update={"folder_id": None})
                 ordered.append(row)
-        if not ordered:
+        if not ordered and not kept_folders:
             self._repository.delete(key)
-            return []
-        row = FavoriteViews(
+            return [], []
+        stored = FavoriteViews(
             workspace_id=workspace_id,
             view_key=key["view_key"],
             user_id=user_id,
             view_ids=[entry.target_id for entry in ordered if entry.kind == "view"],
             items=ordered,
+            folders=kept_folders,
         )
-        self._repository.put(as_item(row))
-        return ordered
+        self._repository.put(as_item(stored))
+        return ordered, kept_folders
 
     def get_draft(
         self, workspace_id: str, user_id: str, issue_id: str, parent_comment_id: str | None = None

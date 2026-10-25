@@ -4,7 +4,12 @@
  * provider so both can import it and each file stays refresh safe.
  */
 
-import type { FavoriteKind, FavoriteRead, FavoriteRef } from '../types/Api';
+import type {
+  FavoriteFolderRead,
+  FavoriteKind,
+  FavoriteRead,
+  FavoriteRef,
+} from '../types/Api';
 import {
   cyclePath,
   documentPath,
@@ -40,8 +45,18 @@ export interface FavoritesState {
   ) => Promise<boolean>;
   /** Unstars one favorite. */
   remove: (kind: FavoriteKind, targetId: string) => Promise<void>;
-  /** Puts the favorites in a new order, shown at once. */
+  /** Puts the favorites in a new order, each in the folder its row names, shown at once. */
   reorder: (next: FavoriteRead[]) => Promise<void>;
+  /** The caller's folders in sidebar order, or null before the first read. */
+  folders: FavoriteFolderRead[] | null;
+  /** Adds an empty folder last, resolving to it or null when the write failed. */
+  createFolder: (name: string) => Promise<FavoriteFolderRead | null>;
+  /** Renames one folder, shown at once. */
+  renameFolder: (folderId: string, name: string) => Promise<void>;
+  /** Deletes one folder, its favorites moving to the top level at once. */
+  deleteFolder: (folderId: string) => Promise<void>;
+  /** Puts the folders in a new order, shown at once. */
+  reorderFolders: (next: FavoriteFolderRead[]) => Promise<void>;
 }
 
 /** A state with nothing starred and writes that do nothing, for outside a workspace. */
@@ -51,6 +66,11 @@ export const EMPTY_FAVORITES: FavoritesState = {
   toggle: () => Promise.resolve(false),
   remove: () => Promise.resolve(),
   reorder: () => Promise.resolve(),
+  folders: null,
+  createFolder: () => Promise.resolve(null),
+  renameFolder: () => Promise.resolve(),
+  deleteFolder: () => Promise.resolve(),
+  reorderFolders: () => Promise.resolve(),
 };
 
 /** Whether two favorites name the same target. */
