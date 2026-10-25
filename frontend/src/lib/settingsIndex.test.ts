@@ -238,11 +238,11 @@ describe('settingsNavGroups', () => {
 
   it('puts the admin only pages under Administration and Features', () => {
     const groups = outline('owner');
-    expect(groups.Administration).toEqual(
+    expect(groups['Administration']).toEqual(
       expect.arrayContaining(['Security', 'Export', 'Audit log'])
     );
-    expect(groups.Features).toEqual(['Features']);
-    expect(groups.Integrations).toEqual(
+    expect(groups['Features']).toEqual(['Features']);
+    expect(groups['Integrations']).toEqual(
       expect.arrayContaining(['API keys', 'Integrations'])
     );
   });
@@ -254,10 +254,10 @@ describe('settingsNavGroups', () => {
       'Workspace',
       'Integrations',
     ]);
-    expect(groups.Workspace).toEqual(
+    expect(groups['Workspace']).toEqual(
       expect.arrayContaining(['Workspace', 'Teams', 'Labels'])
     );
-    expect(groups.Integrations).not.toContain('Integrations');
+    expect(groups['Integrations']).not.toContain('Integrations');
   });
 
   it('lists the workspace page for a member without offering it to search', () => {
