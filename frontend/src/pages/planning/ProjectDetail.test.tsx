@@ -875,6 +875,7 @@ describe('ProjectDetail', () => {
       expect(createProjectUpdate).toHaveBeenCalledWith({
         body: 'Beta out',
         health: 'at_risk',
+        hide_details: false,
       });
     });
     await waitFor(() => {

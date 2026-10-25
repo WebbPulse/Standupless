@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 import pytest
+from boto3.dynamodb.types import TypeSerializer
 from webbpulse.dynamodb import table_name
 from webbpulse.identity.email import RecordingEmailSender
 
@@ -163,3 +164,19 @@ def test_the_email_links_to_the_projects_updates_and_quotes_the_body() -> None:
     assert "off track" in message.text
     assert "<b>late</b>" in message.text
     assert "&lt;b&gt;late&lt;/b&gt;" in (message.html or "")
+
+
+def test_the_email_carries_the_progress_report(
+    repositories: Any, workspace: str, recorder: RecordingEmailSender
+) -> None:
+    """The report the update stored is listed under its body in the mail."""
+    _project(repositories, workspace, lead_id=MEMBER)
+    snapshot = {"measure": "issues", "completed": 8, "total": 20, "percent": 40, "milestones": []}
+
+    posted = _posted(workspace)
+    posted["dynamodb"]["NewImage"]["snapshot"] = TypeSerializer().serialize(snapshot)
+    handle_record(repositories, posted)
+    flush_digests(repositories)
+
+    assert len(recorder.sent) == 1
+    assert "Progress 40% (8 of 20 issues)" in recorder.sent[0].text

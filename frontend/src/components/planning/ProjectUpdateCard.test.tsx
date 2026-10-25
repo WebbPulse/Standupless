@@ -262,3 +262,50 @@ describe('project update thread', () => {
     expect(screen.queryByRole('button', { name: /Thumbs up/ })).toBeNull();
   });
 });
+
+describe('ProjectUpdateCard progress report', () => {
+  const snapshot = {
+    measure: 'issues' as const,
+    completed: 8,
+    total: 20,
+    percent: 40,
+    target_date: null,
+    target_date_resolution: null,
+    lead_id: null,
+    lead_name: null,
+    status: null,
+    status_id: null,
+    status_name: null,
+    milestones: [],
+  };
+
+  it('shows the diff against the previous snapshot', () => {
+    renderCard(
+      update({
+        snapshot: { ...snapshot, completed: 12, percent: 60 },
+        previous_snapshot: snapshot,
+      })
+    );
+
+    const report = screen.getByRole('list', { name: 'Progress report' });
+    expect(
+      within(report).getByText('Progress 40% to 60% (12 of 20 issues)')
+    ).toBeTruthy();
+  });
+
+  it('shows a baseline for a first update', () => {
+    renderCard(update({ snapshot, previous_snapshot: null }));
+
+    expect(screen.getByText('Progress 40% (8 of 20 issues)')).toBeTruthy();
+  });
+
+  it('shows no report when its author hid it', () => {
+    renderCard(update({ snapshot, hide_details: true }));
+    expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+
+  it('shows no report on an update from before snapshots', () => {
+    renderCard(update());
+    expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+});

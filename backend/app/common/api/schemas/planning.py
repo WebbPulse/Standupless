@@ -31,6 +31,7 @@ from app.common.db.dynamo.planning import (
     ProjectLink,
     ProjectMilestone,
     ProjectUpdateRow,
+    ProjectUpdateSnapshot,
     PulseEvent,
     RollupCounts,
     normalise_project_status,
@@ -1213,6 +1214,7 @@ class ProjectUpdateCreate(BaseModel):
     body: Optional[str] = None
     health: ProjectHealthField
     template_id: Optional[str] = None
+    hide_details: bool = Field(default=False, description="Hide the progress report on this update for everyone")
 
     @field_validator("body")
     @classmethod
@@ -1222,16 +1224,57 @@ class ProjectUpdateCreate(BaseModel):
 
 
 class ProjectUpdatePatch(BaseModel):
-    """The body a project update patch takes; either field may be left out, neither cleared."""
+    """The body a project update patch takes; any field may be left out, none cleared."""
 
     body: Optional[str] = None
     health: Optional[ProjectHealthField] = None
+    hide_details: Optional[bool] = Field(default=None, description="Hide or show the update's progress report")
 
     @field_validator("body")
     @classmethod
     def check_body(cls, value: Optional[str]) -> Optional[str]:
         """Hold the body to non-blank markdown under the byte cap."""
         return _check_update_body(value)
+
+
+class MilestoneSnapshotRead(BaseModel):
+    """One milestone's progress as a project update recorded it, in the project's measure."""
+
+    milestone_id: str
+    name: str
+    completed: int = 0
+    total: int = 0
+
+
+class ProjectUpdateSnapshotRead(BaseModel):
+    """Where a project stood when an update was posted, as the API returns it.
+
+    `completed` and `total` are in `measure`, cancelled work left out, and
+    `percent` is their whole percent.
+    """
+
+    measure: ProgressMeasureField = "issues"
+    completed: int = 0
+    total: int = 0
+    percent: int = 0
+    target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = None
+    lead_id: Optional[str] = None
+    lead_name: Optional[str] = None
+    status: Optional[ProjectStatusField] = None
+    status_id: Optional[str] = None
+    status_name: Optional[str] = None
+    milestones: list[MilestoneSnapshotRead] = Field(default_factory=list)
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Optional[ProjectUpdateSnapshot]) -> Optional["ProjectUpdateSnapshotRead"]:
+        """The response shape of a stored snapshot, or None without one."""
+        if snapshot is None:
+            return None
+        fields = snapshot.model_dump()
+        fields["target_date_resolution"] = read_resolution(snapshot.target_date, snapshot.target_date_resolution)
+        fields["status"] = normalise_project_status(snapshot.status) if snapshot.status else None
+        return cls.model_validate(fields)
 
 
 class ProjectUpdateRead(BaseModel):
@@ -1242,6 +1285,12 @@ class ProjectUpdateRead(BaseModel):
     client draws the menu without repeating the rule. `reactions` and
     `comment_count` summarise the update's thread so the feed draws the reaction
     bar and the replies toggle without a read per card.
+
+    `snapshot` and `previous_snapshot` are what the progress report diffs: the
+    project when this update was posted, and when the one before it was. A null
+    `snapshot` is an update posted before reports existed, which shows none,
+    and a null `previous_snapshot` beside a snapshot is a first update, whose
+    report is a baseline. `hide_details` is the author's choice to hide it.
     """
 
     update_id: str
@@ -1257,6 +1306,9 @@ class ProjectUpdateRead(BaseModel):
     can_edit: bool = False
     reactions: list[ReactionGroupRead] = Field(default_factory=list)
     comment_count: int = 0
+    snapshot: Optional[ProjectUpdateSnapshotRead] = None
+    previous_snapshot: Optional[ProjectUpdateSnapshotRead] = None
+    hide_details: bool = False
 
     @classmethod
     def from_row(
@@ -1282,6 +1334,9 @@ class ProjectUpdateRead(BaseModel):
             can_edit=can_edit,
             reactions=reactions or [],
             comment_count=comment_count,
+            snapshot=ProjectUpdateSnapshotRead.from_snapshot(update.snapshot),
+            previous_snapshot=ProjectUpdateSnapshotRead.from_snapshot(update.previous_snapshot),
+            hide_details=update.hide_details,
         )
 
 
@@ -1847,6 +1902,7 @@ class InitiativeUpdateCreate(BaseModel):
     body: Optional[str] = None
     health: ProjectHealthField
     template_id: Optional[str] = None
+    hide_details: bool = Field(default=False, description="Hide the progress report on this update for everyone")
 
     @field_validator("body")
     @classmethod

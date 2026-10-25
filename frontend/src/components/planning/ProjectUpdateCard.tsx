@@ -8,6 +8,11 @@
  * how many replies there are, which opens the replies and a reply box under
  * the update. An initiative update has no thread, so it shows neither.
  *
+ * Under a project update's text sits its progress report: what moved since the
+ * update before it, or a baseline for the first one, drawn from the snapshots
+ * the server stored when it was posted. Its author can hide the report for
+ * everyone, and updates from before snapshots show none.
+ *
  * The card carries the element id `update-<id>`, so a link from an email, a
  * webhook or the inbox that ends in that hash scrolls straight to it.
  */
@@ -28,6 +33,7 @@ import {
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
+import { updateReport } from '../../lib/projectUpdateDiff';
 import { projectUpdatesKey } from '../../lib/queryKeys';
 import { replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
@@ -91,6 +97,23 @@ const isProjectUpdate = (
   update: StatusUpdateRead
 ): update is ProjectUpdateRead =>
   typeof (update as Partial<ProjectUpdateRead>).project_id === 'string';
+
+/** Props for ProgressReport: the lines of one update's report. */
+interface ProgressReportProps {
+  lines: string[];
+}
+
+/** An update's progress report as a compact list under its text. */
+const ProgressReport: React.FC<ProgressReportProps> = ({ lines }) => (
+  <ul
+    aria-label="Progress report"
+    className="mt-2 space-y-0.5 border-l-2 border-line pl-3 text-xs text-text-muted"
+  >
+    {lines.map((line) => (
+      <li key={line}>{line}</li>
+    ))}
+  </ul>
+);
 
 /** Props for UpdateThreadFooter. */
 interface UpdateThreadFooterProps {
@@ -196,8 +219,25 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     ? `${update.author_id.slice(LINEAR_AUTHOR_PREFIX.length)} (Linear)`
     : personLabel(people.find((person) => person.user_id === update.author_id));
 
-  const save = (body: string, health: ProjectHealth): Promise<boolean> =>
-    onEdit(update.update_id, { body, health }).then(
+  const projectUpdate = isProjectUpdate(update) ? update : null;
+  const hasReport = (projectUpdate?.snapshot ?? null) !== null;
+  const report =
+    projectUpdate === null
+      ? []
+      : updateReport(projectUpdate, (userId) => {
+          const person = people.find((each) => each.user_id === userId);
+          return person === undefined ? undefined : personLabel(person);
+        });
+
+  const save = (
+    body: string,
+    health: ProjectHealth,
+    hideDetails: boolean
+  ): Promise<boolean> =>
+    onEdit(
+      update.update_id,
+      hasReport ? { body, health, hide_details: hideDetails } : { body, health }
+    ).then(
       () => {
         setEditing(false);
         return true;
@@ -299,13 +339,18 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             busyLabel="Saving"
             ariaLabel="Edit update"
             autoFocus
+            withDetailsToggle={hasReport}
+            initialHideDetails={projectUpdate?.hide_details === true}
             onSubmit={save}
             onCancel={() => {
               setEditing(false);
             }}
           />
         ) : (
-          <Markdown source={update.body} density="compact" />
+          <>
+            <Markdown source={update.body} density="compact" />
+            {report.length > 0 && <ProgressReport lines={report} />}
+          </>
         )}
       </div>
 

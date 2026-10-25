@@ -3127,6 +3127,39 @@ export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
   reactions?: ReactionGroup[];
   comment_count?: number;
+  /** Where the project stood when the update was posted; absent on updates from before snapshots. */
+  snapshot?: ProjectUpdateSnapshot | null;
+  /** The snapshot the update before this one recorded, or null for a first update. */
+  previous_snapshot?: ProjectUpdateSnapshot | null;
+  /** Whether the author hid the progress report for everyone. */
+  hide_details?: boolean;
+}
+
+/** One milestone's progress when a project update was posted. */
+export interface MilestoneSnapshot {
+  milestone_id: string;
+  name: string;
+  completed: number;
+  total: number;
+}
+
+/**
+ * Where a project stood when an update was posted. `total` is the scope with
+ * cancelled work left out, and `percent` is a whole number.
+ */
+export interface ProjectUpdateSnapshot {
+  measure: 'points' | 'issues';
+  completed: number;
+  total: number;
+  percent: number;
+  target_date: string | null;
+  target_date_resolution: DateResolution | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  status: ProjectStatus | null;
+  status_id: string | null;
+  status_name: string | null;
+  milestones: MilestoneSnapshot[];
 }
 
 /**
@@ -3211,12 +3244,16 @@ export interface ProjectActivityListRead {
 export interface ProjectUpdateCreate {
   body: string;
   health: ProjectHealth;
+  /** Hides the progress report for everyone; project updates only. */
+  hide_details?: boolean;
 }
 
 /** The editable fields of a project update. */
 export interface ProjectUpdateEdit {
   body?: string;
   health?: ProjectHealth;
+  /** Hides or shows the progress report; project updates only. */
+  hide_details?: boolean;
 }
 
 /** The paging a project's update list reads. */
