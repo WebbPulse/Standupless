@@ -22,6 +22,9 @@
 import { createContext, useContext } from 'react';
 import type { IssueRead } from '../types/Api';
 
+/** The keys that open the template picker, Alt+C (Option+C) as in Linear. */
+export const CREATE_FROM_TEMPLATE_KEYS = 'alt+c';
+
 /** What a caller may preset on the dialog. */
 export interface CreateIssueOptions {
   teamId?: string;

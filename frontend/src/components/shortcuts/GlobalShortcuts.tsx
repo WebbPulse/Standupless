@@ -1,5 +1,6 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
+ * Alt+C to pick a template of the team in context and create from it,
  * `G` then a letter to go somewhere: the team's active issues, backlog,
  * board, archive, cycles and, as in Linear, `G` then `V` for its current
  * cycle among them, with `G` then Shift+V for views,
@@ -16,7 +17,10 @@ import {
   usePaletteControls,
   type PalettePicker,
 } from '../../hooks/useCommandPalette';
-import { useCreateIssue } from '../../hooks/useCreateIssue';
+import {
+  CREATE_FROM_TEMPLATE_KEYS,
+  useCreateIssue,
+} from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
 import {
@@ -104,6 +108,12 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
       createIssue.open();
     },
     enabled: createIssue.canCreate,
+  });
+  useShortcut({
+    keys: CREATE_FROM_TEMPLATE_KEYS,
+    label: 'Create issue from template',
+    handler: pick('template'),
+    enabled: createIssue.canCreate && canPick && team !== undefined,
   });
   useShortcut({
     keys: 'g i',

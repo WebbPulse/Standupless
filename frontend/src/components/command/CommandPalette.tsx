@@ -21,9 +21,10 @@
  * dialog for each over the page in view, and a project or initiative page adds
  * its own "Create document".
  *
- * The favorite, project, cycle, team and view pickers are nested lists a row
- * opens, and the `O` then letter shortcuts open the palette straight onto
- * one of them through the `picker` prop.
+ * The favorite, project, cycle, team, view and template pickers are nested
+ * lists a row opens, and the `O` then letter shortcuts and Alt+C open the
+ * palette straight onto one of them through the `picker` prop. A team with no
+ * templates offers a row to its template settings instead.
  *
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
@@ -101,7 +102,10 @@ import { listTeamTemplates } from '../../api/templates';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { StatusIcon } from '../ui/StatusIcon';
-import { useCreateIssue } from '../../hooks/useCreateIssue';
+import {
+  CREATE_FROM_TEMPLATE_KEYS,
+  useCreateIssue,
+} from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
 import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
@@ -143,6 +147,7 @@ import {
   teamReleasesPath,
   teamViewsPath,
   teamSettingsPath,
+  teamSettingsSectionPath,
   teamTriagePath,
   viewsPath,
 } from '../../lib/paths';
@@ -245,7 +250,7 @@ interface CommandGroup {
  * The palette's lists: the top level, or the favorite, project, cycle, team,
  * view, sub-team parent or issue template picker inside it.
  */
-type Page = 'root' | PalettePicker | 'sub-team' | 'template';
+type Page = 'root' | PalettePicker | 'sub-team';
 
 /** What the back button and the input say on each nested list. */
 const PAGE_COPY: Record<
@@ -591,6 +596,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-create-issue-template',
         label: 'Create issue from template',
         keywords: 'new template prefill',
+        hint: shortcutHint(CREATE_FROM_TEMPLATE_KEYS),
         icon: <LuFileText className={ICON} />,
         page: 'template',
       });
@@ -1109,6 +1115,26 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           },
         }))
         .filter((command) => matches(command, deferred));
+      if (
+        rows.length === 0 &&
+        team !== undefined &&
+        templateList !== undefined &&
+        templateList.templates.length === 0
+      ) {
+        return [
+          {
+            heading: 'This team has no templates yet.',
+            commands: [
+              {
+                id: 'template-settings',
+                label: 'Set up templates in team settings',
+                icon: <LuSettings className={ICON} />,
+                to: teamSettingsSectionPath(slug, team.key_prefix, 'templates'),
+              },
+            ],
+          },
+        ];
+      }
       return rows.length === 0
         ? []
         : [{ heading: team?.name ?? 'Templates', commands: rows }];
