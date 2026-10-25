@@ -69,6 +69,9 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
         },
         "projects_display_saved": False,
+        "auto_assign_to_self": False,
+        "branch_copy_starts": True,
+        "branch_copy_assigns": True,
         "auto_grant_new_scopes": False,
     }
 
@@ -148,6 +151,35 @@ def test_interface_preferences_default_and_change_one_at_a_time(client: TestClie
         ("font_size", "huge"),
     ):
         assert client.patch("/api/users/me/preferences", json={field: value}).status_code == 422
+
+
+def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, repositories: Any) -> None:
+    """Auto assign starts off and the branch copy switches start on; each turns on and off alone and is stored."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+    fields = ("auto_assign_to_self", "branch_copy_starts", "branch_copy_assigns")
+
+    body = client.get("/api/users/me").json()
+    assert tuple(body[field] for field in fields) == (False, True, True)
+
+    body = client.patch("/api/users/me/preferences", json={"auto_assign_to_self": True}).json()
+    assert tuple(body[field] for field in fields) == (True, True, True)
+
+    body = client.patch(
+        "/api/users/me/preferences", json={"branch_copy_starts": False, "branch_copy_assigns": False}
+    ).json()
+    assert tuple(body[field] for field in fields) == (True, False, False)
+    stored = repositories.users.get(OWNER)
+    assert (stored.auto_assign_to_self, stored.branch_copy_starts, stored.branch_copy_assigns) == (True, False, False)
+
+    body = client.patch(
+        "/api/users/me/preferences",
+        json={"auto_assign_to_self": False, "branch_copy_starts": True, "branch_copy_assigns": True},
+    ).json()
+    assert tuple(body[field] for field in fields) == (False, True, True)
+    assert client.get("/api/users/me").json()["home_view"] == "home"
+
+    assert client.patch("/api/users/me/preferences", json={"branch_copy_starts": "sometimes"}).status_code == 422
 
 
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:
