@@ -2,7 +2,8 @@
  * Collapsible sections in a live editor: `>>> ` at the start of a line makes
  * one, the caret moves predictably between summary and body, Backspace at the
  * start of the summary takes the section apart again, and opening or closing
- * one is a view change that neither saves nor lands on the undo stack.
+ * one is a view change that neither saves nor lands on the undo stack. Tab
+ * and Shift+Tab in a summary nest and lift sections, one undo step each.
  */
 
 import { Editor } from '@tiptap/core';
@@ -51,14 +52,22 @@ const typeText = (editor: Editor, text: string): void => {
   }
 };
 
-/** Presses a key through the editor's key handlers, as the keyboard does. */
-const press = (editor: Editor, key: string): void => {
+/**
+ * Presses a key through the editor's key handlers, as the keyboard does, and
+ * answers whether a handler took it.
+ */
+const press = (editor: Editor, key: string, shiftKey = false): boolean => {
   const event = new KeyboardEvent('keydown', {
     key,
+    shiftKey,
     bubbles: true,
     cancelable: true,
   });
-  editor.view.someProp('handleKeyDown', (handle) => handle(editor.view, event));
+  return (
+    editor.view.someProp('handleKeyDown', (handle) =>
+      handle(editor.view, event)
+    ) === true
+  );
 };
 
 /** The name of the node the caret sits in. */
@@ -232,5 +241,100 @@ describe('the keyboard in a section', () => {
     press(editor, 'Backspace');
     expect(caretIn(editor)).toBe('collapsibleSummary');
     expect(readMarkdown(editor)).toBe(STORED);
+  });
+});
+
+const NESTED =
+  '<details>\n<summary>Outer</summary>\n\n<details>\n<summary>Inner</summary>\n\ntext\n\n</details>\n\n</details>';
+
+const SIBLINGS =
+  '<details>\n<summary>A</summary>\n\none\n\n</details>\n\n<details>\n<summary>B</summary>\n\ntwo\n\n</details>';
+
+/** The number of items in the first list inside the first section's body. */
+const bodyListItems = (editor: Editor): number =>
+  editor.state.doc.firstChild?.lastChild?.firstChild?.childCount ?? 0;
+
+describe('nesting sections with Tab and Shift+Tab', () => {
+  it('reads and writes nested sections unchanged', () => {
+    const { editor } = mounted(NESTED);
+    expect(readMarkdown(editor)).toBe(NESTED);
+  });
+
+  it('lifts a nested section after its parent on Shift+Tab, and undoes in one step', () => {
+    const { editor } = mounted(NESTED);
+    editor.commands.toggleCollapsibleSection(0);
+    editor.commands.setTextSelection(13);
+    expect(caretIn(editor)).toBe('collapsibleSummary');
+    expect(press(editor, 'Tab', true)).toBe(true);
+    expect(readMarkdown(editor)).toBe(
+      '<details>\n<summary>Outer</summary>\n\n</details>\n\n<details>\n<summary>Inner</summary>\n\ntext\n\n</details>'
+    );
+    expect(topLevel(editor)).toEqual([
+      'collapsibleSection',
+      'collapsibleSection',
+    ]);
+    expect(caretIn(editor)).toBe('collapsibleSummary');
+    expect(editor.state.selection.$from.parent.textContent).toBe('Inner');
+    expect(editor.state.selection.$from.depth).toBe(2);
+    editor.commands.undo();
+    expect(readMarkdown(editor)).toBe(NESTED);
+  });
+
+  it('keeps a top level section in place on Shift+Tab and holds the key', () => {
+    const { editor } = mounted(STORED);
+    editor.commands.setTextSelection(6);
+    expect(press(editor, 'Tab', true)).toBe(true);
+    expect(readMarkdown(editor)).toBe(STORED);
+    expect(caretIn(editor)).toBe('collapsibleSummary');
+  });
+
+  it('nests a section into the end of the one above on Tab, and undoes in one step', () => {
+    const { editor } = mounted(SIBLINGS);
+    editor.commands.setTextSelection(15);
+    expect(caretIn(editor)).toBe('collapsibleSummary');
+    expect(press(editor, 'Tab')).toBe(true);
+    expect(readMarkdown(editor)).toBe(
+      '<details>\n<summary>A</summary>\n\none\n\n<details>\n<summary>B</summary>\n\ntwo\n\n</details>\n\n</details>'
+    );
+    expect(topLevel(editor)).toEqual(['collapsibleSection']);
+    expect(firstSectionOpen(editor)).toBe(true);
+    expect(caretIn(editor)).toBe('collapsibleSummary');
+    expect(editor.state.selection.$from.parent.textContent).toBe('B');
+    editor.commands.undo();
+    expect(readMarkdown(editor)).toBe(SIBLINGS);
+    expect(firstSectionOpen(editor)).toBe(false);
+  });
+
+  it('round trips a section nested with Tab and lifted with Shift+Tab', () => {
+    const { editor } = mounted(SIBLINGS);
+    editor.commands.setTextSelection(15);
+    press(editor, 'Tab');
+    press(editor, 'Tab', true);
+    expect(readMarkdown(editor)).toBe(
+      '<details>\n<summary>A</summary>\n\none\n\n</details>\n\n<details>\n<summary>B</summary>\n\ntwo\n\n</details>'
+    );
+  });
+
+  it('holds Tab without a section above to nest into', () => {
+    const { editor } = mounted(`first\n\n${STORED}`);
+    editor.commands.setTextSelection(13);
+    expect(caretIn(editor)).toBe('collapsibleSummary');
+    expect(press(editor, 'Tab')).toBe(true);
+    expect(readMarkdown(editor)).toBe(`first\n\n${STORED}`);
+  });
+
+  it('leaves Tab and Shift+Tab to a list inside a body', () => {
+    const { editor } = mounted(
+      '<details>\n<summary>L</summary>\n\n- one\n- two\n\n</details>'
+    );
+    editor.commands.toggleCollapsibleSection(0);
+    editor.commands.setTextSelection(16);
+    expect(editor.state.selection.$from.parent.textContent).toBe('two');
+    press(editor, 'Tab');
+    expect(bodyListItems(editor)).toBe(1);
+    expect(topLevel(editor)).toEqual(['collapsibleSection']);
+    press(editor, 'Tab', true);
+    expect(bodyListItems(editor)).toBe(2);
+    expect(topLevel(editor)).toEqual(['collapsibleSection']);
   });
 });

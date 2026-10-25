@@ -10,6 +10,9 @@
  * is open is the reader's view rather than the document's, so it is never
  * written: sections read from Markdown start closed, and a new one starts
  * open so its body can be filled in.
+ *
+ * In a summary, Tab nests the section into the one above it and Shift+Tab
+ * lifts a nested section out one level, as in Linear.
  */
 
 import type { Editor, JSONContent, MarkdownToken } from '@tiptap/core';
@@ -250,6 +253,87 @@ const enter = (editor: Editor): boolean => {
   if (found === null) return false;
   const tr = state.tr.delete($from.before(), $from.after());
   lineAfter(tr, tr.mapping.map(found.pos + found.node.nodeSize));
+  view.dispatch(tr.scrollIntoView());
+  return true;
+};
+
+/** Whether a body holds nothing but one empty paragraph. */
+const isBlankBody = (body: ProseMirrorNode): boolean =>
+  body.childCount === 1 &&
+  body.firstChild?.type.name === 'paragraph' &&
+  body.firstChild.content.size === 0;
+
+/**
+ * Tab in a summary nests the section into the end of the section directly
+ * above it, opening that one so the caret stays visible, and replacing its
+ * body when that is a single empty line. Where there is nothing to nest into,
+ * the key is held so focus stays in the editor, except inside a list item,
+ * where the list's own indent takes it.
+ */
+const indent = (editor: Editor): boolean => {
+  const { state, view } = editor;
+  const { $from } = state.selection;
+  if ($from.parent.type.name !== SUMMARY) return false;
+  const found = sectionAround($from, SUMMARY);
+  if (found === null) return false;
+  const holder = $from.node(found.depth - 1);
+  const index = $from.index(found.depth - 1);
+  const previous = index > 0 ? holder.child(index - 1) : null;
+  if (previous === null || previous.type.name !== SECTION) {
+    return holder.type.name === 'doc' || holder.type.name === BODY;
+  }
+  const previousPos = found.pos - previous.nodeSize;
+  const body = previous.lastChild;
+  if (body === null) return false;
+  const offset = $from.pos - found.pos;
+  const bodyEnd = previousPos + previous.nodeSize - 2;
+  const tr = state.tr.delete(found.pos, found.pos + found.node.nodeSize);
+  if (!isOpen(previous)) {
+    tr.setNodeMarkup(previousPos, undefined, { ...previous.attrs, open: true });
+  }
+  let at = bodyEnd;
+  if (isBlankBody(body)) {
+    at = bodyEnd - body.content.size;
+    tr.replaceWith(at, bodyEnd, found.node);
+  } else {
+    tr.insert(at, found.node);
+  }
+  tr.setSelection(TextSelection.create(tr.doc, at + offset));
+  view.dispatch(tr.scrollIntoView());
+  return true;
+};
+
+/**
+ * Shift+Tab in a summary lifts a nested section, with its contents, to just
+ * after the section it sits in. A section at the top level stays put and the
+ * key is held so focus stays in the editor; inside a list item the list's own
+ * outdent takes it.
+ */
+const outdent = (editor: Editor): boolean => {
+  const { state, view } = editor;
+  const { $from } = state.selection;
+  if ($from.parent.type.name !== SUMMARY) return false;
+  const found = sectionAround($from, SUMMARY);
+  if (found === null || found.depth < 1) return false;
+  const holder = $from.node(found.depth - 1);
+  if (holder.type.name === 'doc') return true;
+  if (holder.type.name !== BODY || found.depth < 2) return false;
+  const outer = $from.node(found.depth - 2);
+  if (outer.type.name !== SECTION) return false;
+  const outerEnd = $from.before(found.depth - 2) + outer.nodeSize;
+  const paragraph = state.schema.nodes['paragraph'];
+  if (paragraph === undefined) return false;
+  const offset = $from.pos - found.pos;
+  const end = found.pos + found.node.nodeSize;
+  const tr = state.tr;
+  if (holder.childCount === 1) {
+    tr.replaceWith(found.pos, end, paragraph.create());
+  } else {
+    tr.delete(found.pos, end);
+  }
+  const at = tr.mapping.map(outerEnd);
+  tr.insert(at, found.node);
+  tr.setSelection(TextSelection.create(tr.doc, at + offset));
   view.dispatch(tr.scrollIntoView());
   return true;
 };
@@ -510,6 +594,8 @@ export const CollapsibleSection = Node.create({
     return {
       Backspace: ({ editor }) => backspace(editor),
       Enter: ({ editor }) => enter(editor),
+      Tab: ({ editor }) => indent(editor),
+      'Shift-Tab': ({ editor }) => outdent(editor),
     };
   },
 
