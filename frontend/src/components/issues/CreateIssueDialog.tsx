@@ -14,7 +14,8 @@
  * saved a moment after typing stops and again when the dialog closes, so
  * closing never loses it. The dialog always opens on a new draft, and the
  * Drafts list in the header resumes any earlier one, from this device or
- * another. "Discard draft" is the one way to throw a draft away, and filing
+ * another. Duplicate as draft opens the dialog on a copy of an issue, kept
+ * as a draft on close even before it is edited. "Discard draft" is the one way to throw a draft away, and filing
  * the issue removes it. When the draft cannot be stored even in this
  * browser, closing over typed text asks first.
  *
@@ -225,6 +226,20 @@ export interface CreateIssuePreset {
   parentId?: string;
   /** The parent's key, shown in the header so the person sees where it lands. */
   parentKey?: string;
+  /** The parent's title, kept with the draft beside `parentKey`. */
+  parentTitle?: string;
+  /** The labels the draft starts with, such as a copied issue's. */
+  labelIds?: string[];
+  /** The estimate the draft starts on. */
+  estimate?: string;
+  /** The project milestone the draft starts in, beside `projectId`. */
+  projectMilestoneId?: string;
+  /**
+   * Whether the prefilled text is kept as a draft on close before any edit,
+   * skipping the team's default template and the assign to self preference,
+   * as a copy of another issue opens.
+   */
+  keepAsDraft?: boolean;
   /** The priority the draft starts on, such as a parent's for a sub-issue. */
   priority?: IssuePriority;
   /** The template the draft starts from, in place of the team's default. */
@@ -271,14 +286,33 @@ const presetDraft = (preset: CreateIssuePreset | undefined): Draft => ({
   ...EMPTY_DRAFT,
   statusId: preset?.statusId ?? '',
   assigneeId: preset?.assigneeId ?? null,
+  labelIds: preset?.labelIds ?? [],
+  estimate: preset?.estimate ?? null,
   projectId: preset?.projectId ?? null,
+  projectMilestoneId:
+    preset?.projectId === undefined
+      ? null
+      : (preset.projectMilestoneId ?? null),
   cycleId: preset?.cycleId ?? null,
   priority: preset?.priority ?? 'none',
   parent:
     preset?.parentId === undefined
       ? null
-      : { id: preset.parentId, key: preset.parentKey ?? 'Parent', title: '' },
+      : {
+          id: preset.parentId,
+          key: preset.parentKey ?? 'Parent',
+          title: preset.parentTitle ?? '',
+        },
 });
+
+/**
+ * The person as assignee for a new draft, or null for a copy of another
+ * issue, which keeps the source's assignee or none.
+ */
+const selfFor = (
+  preset: CreateIssuePreset | undefined,
+  selfId: string | null
+): string | null => (preset?.keepAsDraft === true ? null : selfId);
 
 /**
  * The draft with the person as assignee when it has none and they asked for
@@ -329,7 +363,7 @@ const withTemplate = (draft: Draft, fill: TemplatePrefill): Draft => {
 /**
  * The text a caller started the draft on, such as a selection. A draft seeded
  * with text is only kept, and closing it only asks first, once the text is
- * edited.
+ * edited, unless the caller asked for it to be kept as it is.
  */
 const seedTextOf = (
   preset: CreateIssuePreset | undefined
@@ -582,11 +616,16 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const auth = useQueryAuth();
   const { autoAssignToSelf } = usePreferences();
-  const selfAssignee =
+  const selfAssignee = selfFor(
+    preset,
     autoAssignToSelf && currentUserId !== undefined && currentUserId !== ''
       ? currentUserId
-      : null;
-  const [seed, setSeed] = useState(() => seedTextOf(preset));
+      : null
+  );
+  const [initialText] = useState(() => seedTextOf(preset));
+  const [seed, setSeed] = useState(() =>
+    preset?.keepAsDraft === true ? null : initialText
+  );
   const discarded = useRef(false);
   const [draftId, setDraftId] = useState(newIssueDraftId);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
@@ -598,12 +637,13 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [templateText, setTemplateText] = useState<TemplateText>(NO_TEXT);
   const [answers, setAnswers] = useState<FormAnswers>({});
-  const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>({
-    teamId,
-    id: preset?.templateId ?? null,
-  });
-  const [title, setTitle] = useState(seed?.title ?? '');
-  const [body, setBody] = useState(seed?.body ?? '');
+  const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>(
+    preset?.keepAsDraft === true
+      ? null
+      : { teamId, id: preset?.templateId ?? null }
+  );
+  const [title, setTitle] = useState(initialText?.title ?? '');
+  const [body, setBody] = useState(initialText?.body ?? '');
   const [draft, setDraft] = useState<Draft>(() =>
     withSelf(presetDraft(preset), selfAssignee)
   );

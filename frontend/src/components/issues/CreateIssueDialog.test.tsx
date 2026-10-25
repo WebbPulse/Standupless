@@ -9,7 +9,9 @@
  * scoped choices, the similar issues strip offering to open a possible
  * duplicate or mark the new issue as one, and the auto-assign preference
  * filling the creator in as assignee, which they can still clear, and the
- * quiet line naming who on triage duty will see a new triage issue.
+ * quiet line naming who on triage duty will see a new triage issue, and a
+ * Duplicate as draft copy opening prefilled, filing nothing until submitted
+ * and kept as a draft when closed unedited.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -142,6 +144,7 @@ vi.mock('../../api/templates', () => ({
 vi.mock('../../api/planning', () => ({
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+  listMilestones: () => Promise.resolve([]),
 }));
 
 interface FakeDraftServer {
@@ -1039,5 +1042,133 @@ describe('expanded', () => {
       'aria-pressed',
       'false'
     );
+  });
+});
+
+describe('duplicate as draft', () => {
+  const copy: CreateIssuePreset = {
+    title: 'Fix login',
+    description: 'Steps to reproduce',
+    statusId: 'st-2',
+    priority: 'high',
+    labelIds: ['lb-1'],
+    assigneeId: 'user-9',
+    estimate: '3',
+    projectId: 'prj-1',
+    projectMilestoneId: 'ms-1',
+    cycleId: 'cy-1',
+    parentId: 'id-ENG-7',
+    parentKey: 'ENG-7',
+    parentTitle: 'Login epic',
+    keepAsDraft: true,
+  };
+
+  it('opens prefilled with the copy and files it only on submit', async () => {
+    const user = userEvent.setup();
+    renderDialog({ currentUserId: 'user-1', preset: copy });
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Fix login'
+    );
+    const description = await findDescription();
+    await waitFor(() => {
+      expect(description).toHaveTextContent('Steps to reproduce');
+    });
+    expect(
+      screen.getByRole('button', { name: 'Status: Todo' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Priority: High' })
+    ).toBeInTheDocument();
+    expect(createIssue).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledTimes(1);
+    });
+    expect(createIssue).toHaveBeenCalledWith({
+      team_id: 't-1',
+      title: 'Fix login',
+      body: 'Steps to reproduce',
+      status_id: 'st-2',
+      priority: 'high',
+      assignee_id: 'user-9',
+      label_ids: ['lb-1'],
+      estimate: '3',
+      project_id: 'prj-1',
+      project_milestone_id: 'ms-1',
+      cycle_id: 'cy-1',
+      parent_id: 'id-ENG-7',
+    });
+  });
+
+  it('keeps the unedited copy as a draft when closed', async () => {
+    const user = userEvent.setup();
+    renderDialog({ currentUserId: 'user-1', preset: copy });
+
+    await findDescription();
+    await user.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(saveNewIssueDraft).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          team_id: 't-1',
+          title: 'Fix login',
+          body: 'Steps to reproduce',
+          status_id: 'st-2',
+          priority: 'high',
+          assignee_id: 'user-9',
+          label_ids: ['lb-1'],
+          estimate: '3',
+          project_id: 'prj-1',
+          project_milestone_id: 'ms-1',
+          cycle_id: 'cy-1',
+          parent_id: 'id-ENG-7',
+          parent_key: 'ENG-7',
+          parent_title: 'Login epic',
+          sub_issues: [],
+        })
+      );
+    });
+    expect(createIssue).not.toHaveBeenCalled();
+    expect(
+      readIssueDrafts('ws-1', 'user-1').map((saved) => saved.draft.title)
+    ).toEqual(['Fix login']);
+  });
+
+  it('keeps an unassigned copy unassigned under auto-assign', async () => {
+    const user = userEvent.setup();
+    setPreferences({ ...DEFAULT_PREFERENCES, autoAssignToSelf: true });
+    renderDialog({
+      currentUserId: 'user-1',
+      preset: { title: 'Fix login', keepAsDraft: true },
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith({
+        team_id: 't-1',
+        title: 'Fix login',
+      });
+    });
+  });
+
+  it('leaves an unedited plain seed undrafted, unlike a copy', async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      currentUserId: 'user-1',
+      preset: { title: 'Fix login', description: 'Steps to reproduce' },
+    });
+
+    await findDescription();
+    await user.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(readIssueDrafts('ws-1', 'user-1')).toEqual([]);
   });
 });

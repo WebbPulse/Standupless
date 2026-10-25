@@ -112,27 +112,31 @@ interface CreateIssueHostProps {
 }
 
 /** The dialog preset a create request carries, leaving out what it does not set. */
-const presetOf = (request: Request): CreateIssuePreset => ({
-  ...(request.statusId === undefined ? {} : { statusId: request.statusId }),
-  ...(request.assigneeId === undefined
-    ? {}
-    : { assigneeId: request.assigneeId }),
-  ...(request.projectId === undefined ? {} : { projectId: request.projectId }),
-  ...(request.cycleId === undefined ? {} : { cycleId: request.cycleId }),
-  ...(request.parentId === undefined ? {} : { parentId: request.parentId }),
-  ...(request.parentKey === undefined ? {} : { parentKey: request.parentKey }),
-  ...(request.priority === undefined ? {} : { priority: request.priority }),
-  ...(request.templateId === undefined
-    ? {}
-    : { templateId: request.templateId }),
-  ...(request.title === undefined ? {} : { title: request.title }),
-  ...(request.description === undefined
-    ? {}
-    : { description: request.description }),
-  ...(request.relatedIssueId === undefined
-    ? {}
-    : { relatedIssueId: request.relatedIssueId }),
-});
+const presetOf = (request: Request): CreateIssuePreset => {
+  const preset: {
+    [K in keyof CreateIssuePreset]-?: CreateIssuePreset[K] | undefined;
+  } = {
+    statusId: request.statusId,
+    assigneeId: request.assigneeId,
+    projectId: request.projectId,
+    projectMilestoneId: request.projectMilestoneId,
+    cycleId: request.cycleId,
+    parentId: request.parentId,
+    parentKey: request.parentKey,
+    parentTitle: request.parentTitle,
+    priority: request.priority,
+    labelIds: request.labelIds,
+    estimate: request.estimate,
+    templateId: request.templateId,
+    title: request.title,
+    description: request.description,
+    relatedIssueId: request.relatedIssueId,
+    keepAsDraft: request.keepAsDraft,
+  };
+  return Object.fromEntries(
+    Object.entries(preset).filter(([, value]) => value !== undefined)
+  );
+};
 
 /**
  * Loads the chosen team's statuses, labels and people and renders the dialog

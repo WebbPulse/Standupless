@@ -1,6 +1,7 @@
 /**
  * The menu a right click opens on a row or a card: every property command,
- * setting or removing the parent issue, duplicating one issue or converting
+ * setting or removing the parent issue, duplicating one issue, opening a
+ * draft copy of it in the create dialog, or converting
  * it into a project, marking a relation to another issue, the copy commands
  * (git branch name included), and archive and delete, each with the key that
  * does the same from the keyboard. It acts on the selection when the row clicked is
@@ -28,6 +29,7 @@ import {
   LuRefreshCw,
   LuSignal,
   LuSquareArrowOutUpRight,
+  LuSquarePen,
   LuTag,
   LuTrash2,
   LuTriangle,
@@ -54,6 +56,7 @@ import {
 } from '../../ui/menu';
 import {
   CONVERT_TO_PROJECT_LABEL,
+  DUPLICATE_AS_DRAFT_LABEL,
   DUPLICATE_ISSUE_LABEL,
 } from '../../../lib/issueConversion';
 import { RELATION_COMMANDS } from '../RelationGlyphs';
@@ -103,6 +106,8 @@ export interface IssueRowMenuProps {
   onAssignToMe?: (() => void) | undefined;
   /** Files a copy of the issue, offered for one issue at a time. */
   onDuplicate?: (() => void) | undefined;
+  /** Opens a draft copy of the issue in the create dialog, for one issue at a time. */
+  onDuplicateAsDraft?: (() => void) | undefined;
   /** Asks to convert the issue into a project, offered for one issue at a time. */
   onConvertToProject?: (() => void) | undefined;
   /**
@@ -146,6 +151,7 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   onRemoveParent,
   onAssignToMe,
   onDuplicate,
+  onDuplicateAsDraft,
   onConvertToProject,
   onRelation,
   onCopyId,
@@ -261,6 +267,12 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
             <MenuItem onSelect={onDuplicate}>
               <LuCopyPlus aria-hidden="true" className="h-3.5 w-3.5" />
               {DUPLICATE_ISSUE_LABEL}
+            </MenuItem>
+          )}
+          {onDuplicateAsDraft !== undefined && (
+            <MenuItem onSelect={onDuplicateAsDraft}>
+              <LuSquarePen aria-hidden="true" className="h-3.5 w-3.5" />
+              {DUPLICATE_AS_DRAFT_LABEL}
             </MenuItem>
           )}
           {onConvertToProject !== undefined && (
