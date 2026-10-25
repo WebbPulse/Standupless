@@ -15,7 +15,7 @@ against today in the team's own timezone, as `team_time` reads it.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import HTTPException, status

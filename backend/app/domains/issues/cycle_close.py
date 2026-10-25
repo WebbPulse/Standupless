@@ -30,8 +30,8 @@ from datetime import date, datetime, timedelta
 from typing import Any, Mapping, Sequence
 
 from app.common.cycle_rollover import carry_unfinished
-from app.common.db.dynamo.planning import Cycle
 from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.planning import Cycle
 from app.common.team_retirement import is_active
 from app.common.team_time import team_today
 
