@@ -5,31 +5,16 @@
  * and a second click on the active row clears that filter.
  */
 
-import React, { useMemo, useState } from 'react';
-import { NONE } from '../../api/issues';
+import React from 'react';
 import { cn } from '../../lib/cn';
-import {
-  breakdownPercent,
-  cycleBreakdown,
-  type BreakdownField,
-  type BreakdownRow,
-} from '../../lib/cycleBreakdown';
-import { personAvatar } from '../../lib/issuePeople';
+import type { BreakdownField } from '../../lib/cycleBreakdown';
 import type { IssueContext } from '../../lib/issueView';
 import type { BurnUpPoint, PlanningMeasure } from '../../lib/planningModel';
 import { projectionLabel } from '../../lib/planningModel';
-import type {
-  CycleRead,
-  IssuePriority,
-  IssueRead,
-  StatusRead,
-} from '../../types/Api';
-import Avatar from '../ui/avatar';
-import { PriorityGlyph } from '../ui/glyphs';
+import type { CycleRead, IssueRead, StatusRead } from '../../types/Api';
+import BreakdownTabs from './BreakdownTabs';
 import BurnUpChart from './BurnUpChart';
 import MeasureToggle from './MeasureToggle';
-import ProgressRing from './ProgressRing';
-import ProjectIcon from './ProjectIcon';
 
 /** Props for CycleProgressPanel. */
 export interface CycleProgressPanelProps {
@@ -56,11 +41,11 @@ export interface CycleProgressPanelProps {
 }
 
 /** The breakdown tabs, in the order they show. */
-const TABS: { field: BreakdownField; label: string }[] = [
-  { field: 'assignee', label: 'Assignees' },
-  { field: 'label', label: 'Labels' },
-  { field: 'project', label: 'Projects' },
-  { field: 'priority', label: 'Priorities' },
+const FIELDS: readonly BreakdownField[] = [
+  'assignee',
+  'label',
+  'project',
+  'priority',
 ];
 
 /** A small heading for one block of the panel. */
@@ -127,177 +112,6 @@ const CycleStats: React.FC<{
   );
 };
 
-/** The glyph a breakdown row leads with. */
-const RowGlyph: React.FC<{
-  field: BreakdownField;
-  row: BreakdownRow;
-  context: CycleProgressPanelProps['context'];
-}> = ({ field, row, context }) => {
-  if (field === 'assignee') {
-    const person =
-      row.id === NONE
-        ? undefined
-        : context.people.find((item) => item.user_id === row.id);
-    return (
-      <Avatar
-        name={row.id === NONE ? '?' : row.name}
-        src={personAvatar(person)}
-        size="xs"
-        className={row.id === NONE ? 'opacity-50' : ''}
-      />
-    );
-  }
-  if (field === 'priority') {
-    return <PriorityGlyph priority={row.id as IssuePriority} />;
-  }
-  if (field === 'project') {
-    const project = context.projects.find((item) => item.project_id === row.id);
-    return (
-      <ProjectIcon
-        icon={project?.icon ?? null}
-        color={project?.color ?? null}
-        className="h-3.5 w-3.5 shrink-0"
-      />
-    );
-  }
-  const label = context.labels.find((item) => item.id === row.id);
-  return (
-    <span
-      aria-hidden="true"
-      className="h-2 w-2 shrink-0 rounded-full"
-      style={{ backgroundColor: label?.color ?? 'var(--color-text-faint)' }}
-    />
-  );
-};
-
-/** The breakdown of the cycle by one field, as a tab strip over its rows. */
-const Breakdown: React.FC<
-  Pick<
-    CycleProgressPanelProps,
-    | 'issues'
-    | 'statuses'
-    | 'context'
-    | 'complete'
-    | 'isLoadingIssues'
-    | 'activeFilters'
-    | 'onFilter'
-  >
-> = ({
-  issues,
-  statuses,
-  context,
-  complete,
-  isLoadingIssues,
-  activeFilters,
-  onFilter,
-}) => {
-  const [field, setField] = useState<BreakdownField>('assignee');
-  const rows = useMemo(
-    () => cycleBreakdown(issues, statuses, field, context),
-    [issues, statuses, field, context]
-  );
-  const panelId = `cycle-breakdown-${field}`;
-
-  return (
-    <section aria-labelledby="cycle-breakdown" className="space-y-2">
-      <PanelHeading id="cycle-breakdown">Breakdown</PanelHeading>
-      <div
-        role="tablist"
-        aria-label="Break the cycle down by"
-        className="flex gap-0.5 rounded-md border border-line p-0.5"
-      >
-        {TABS.map((tab) => (
-          <button
-            key={tab.field}
-            type="button"
-            role="tab"
-            id={`cycle-breakdown-tab-${tab.field}`}
-            aria-selected={field === tab.field}
-            aria-controls={`cycle-breakdown-${tab.field}`}
-            onClick={() => {
-              setField(tab.field);
-            }}
-            className={cn(
-              'h-6 flex-1 rounded-sm text-xs transition-colors hover:text-text duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
-              field === tab.field
-                ? 'bg-raised font-medium text-text'
-                : 'text-text-muted hover:bg-surface'
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div
-        role="tabpanel"
-        id={panelId}
-        aria-labelledby={`cycle-breakdown-tab-${field}`}
-      >
-        {isLoadingIssues && issues.length === 0 ? (
-          <ul aria-hidden="true" className="space-y-1.5 py-1">
-            {[0, 1, 2].map((index) => (
-              <li
-                key={index}
-                className="h-5 animate-pulse rounded-sm bg-surface"
-              />
-            ))}
-          </ul>
-        ) : rows.length === 0 ? (
-          <p className="rounded-md border border-dashed border-line px-3 py-4 text-center text-xs text-text-faint">
-            No issues to break down yet.
-          </p>
-        ) : (
-          <ul
-            aria-label={`Issues by ${field}`}
-            className="space-y-0.5"
-            data-testid="cycle-breakdown-rows"
-          >
-            {rows.map((row) => {
-              const percent = breakdownPercent(row);
-              const active = activeFilters[field]?.includes(row.id) === true;
-              return (
-                <li key={`${field}:${row.id}`}>
-                  <button
-                    type="button"
-                    aria-pressed={active}
-                    aria-label={`${row.name}, ${String(row.completed)} of ${String(row.total)} done`}
-                    onClick={() => {
-                      onFilter(field, active ? null : row.id);
-                    }}
-                    className={cn(
-                      'flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left text-xs transition-colors duration-100 hover:bg-surface focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
-                      active && 'bg-raised hover:bg-raised'
-                    )}
-                  >
-                    <RowGlyph field={field} row={row} context={context} />
-                    <span
-                      className={cn(
-                        'min-w-0 flex-1 truncate',
-                        row.id === NONE ? 'text-text-muted' : 'text-text'
-                      )}
-                    >
-                      {row.name}
-                    </span>
-                    <ProgressRing percent={percent} size={12} />
-                    <span className="w-16 shrink-0 text-right text-text-muted tabular-nums">
-                      {`${String(percent)}% of ${String(row.total)}`}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {!complete && rows.length > 0 && (
-          <p className="pt-1.5 text-2xs text-text-faint">
-            Counts cover the issues loaded so far.
-          </p>
-        )}
-      </div>
-    </section>
-  );
-};
-
 /** The progress, burn-up and breakdown of one cycle. */
 export const CycleProgressPanel: React.FC<CycleProgressPanelProps> = ({
   cycle,
@@ -360,7 +174,9 @@ export const CycleProgressPanel: React.FC<CycleProgressPanelProps> = ({
           </div>
         )}
       </section>
-      <Breakdown
+      <BreakdownTabs
+        subject="cycle"
+        fields={FIELDS}
         issues={issues}
         statuses={statuses}
         context={context}

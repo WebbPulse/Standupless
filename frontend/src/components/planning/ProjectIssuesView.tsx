@@ -35,7 +35,7 @@ import {
 import IssueListView from '../issues/view/IssueListView';
 
 /** The settings a project's issues open with. */
-const PROJECT_VIEW_BASE: ViewState = defaultViewState('list');
+export const PROJECT_VIEW_BASE: ViewState = defaultViewState('list');
 
 /** Props for ProjectIssuesView. */
 export interface ProjectIssuesViewProps {
