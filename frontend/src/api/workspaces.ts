@@ -24,6 +24,8 @@ import type {
   InviteRead,
   JoinableWorkspaceListRead,
   JoinableWorkspaceRead,
+  MemberBulkRead,
+  MemberBulkUpdate,
   MemberListRead,
   MemberRead,
   MemberStatus,
@@ -490,6 +492,18 @@ export const suspendMember = async (
 ): Promise<MemberRead> => {
   const response = await apiClient.post<MemberRead>(
     `${membersPath(workspaceId)}/${userId}/suspend`
+  );
+  return response.data;
+};
+
+/** Applies one action to several members in one request, answering what happened to each. */
+export const bulkUpdateMembers = async (
+  workspaceId: string,
+  payload: MemberBulkUpdate
+): Promise<MemberBulkRead> => {
+  const response = await apiClient.post<MemberBulkRead>(
+    `${membersPath(workspaceId)}/bulk`,
+    payload
   );
   return response.data;
 };

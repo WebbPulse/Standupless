@@ -15,14 +15,17 @@ from fastapi import HTTPException, status
 from webbpulse.audit import changed_fields
 from webbpulse.dynamodb import TransactionCanceled
 
-from app.common import audit, plan_usage
-from app.common.api.dependencies.authz import AuthzContext, refuse_api_key_actor
+from app.common import audit, plan_usage, team_members
+from app.common.api.dependencies.authz import AuthzContext, Capability, check_capability, refuse_api_key_actor
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.workspaces import (
     InviteCreate,
     InviteCreated,
     InviteListRead,
     InviteRead,
+    MemberBulkRead,
+    MemberBulkResult,
+    MemberBulkUpdate,
     MemberListRead,
     MemberRead,
     MemberUpdate,
@@ -37,6 +40,7 @@ from app.common.db.dynamo.workspaces import PERMISSION_FIELDS, Workspace
 from app.common.email import deliver
 from app.common.email.invite import render_invite
 from app.common.plan_limits import LimitedResource
+from app.common.team_retirement import refuse_if_retired
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -53,6 +57,13 @@ ADMIN_ONLY = {"error_code": "FORBIDDEN", "message": "Only a workspace admin may 
 SUSPEND_SELF = {"error_code": "CONFLICT", "message": "You cannot suspend yourself"}
 
 ALREADY_SUSPENDED = {"error_code": "CONFLICT", "message": "This member is already suspended"}
+
+BULK_ADMIN_ONLY = {"error_code": "FORBIDDEN", "message": "Only a workspace admin may change several members at once"}
+
+BULK_SELF = {
+    "error_code": "SELF",
+    "message": "You cannot change your own membership in a bulk action",
+}
 
 DEFAULT_MEMBER_STATUSES: frozenset[str] = frozenset({"active", "suspended"})
 
@@ -164,7 +175,12 @@ def list_members(
 
 
 def update_member_role(
-    repositories: Repositories, context: AuthzContext, user_id: str, payload: MemberUpdate
+    repositories: Repositories,
+    context: AuthzContext,
+    user_id: str,
+    payload: MemberUpdate,
+    *,
+    sync: bool = True,
 ) -> MemberRead:
     """Change a member's workspace role.
 
@@ -172,6 +188,7 @@ def update_member_role(
     demoted, which is the same invariant that stops them being removed. Making a
     member a guest respects the plan's guest allowance, which the seat they give
     up no longer earns, and moves the guest count in the same transaction.
+    `sync` false leaves the seat sync to a bulk caller, which runs it once.
     """
     existing = repositories.memberships.get(context.workspace_id, user_id)
     if existing is None:
@@ -188,7 +205,8 @@ def update_member_role(
     updated = plan_usage.change_role(repositories, context.workspace_id, user_id, payload.role)
     if updated is None:
         raise _not_found()
-    sync_seats(repositories, context.workspace_id)
+    if sync:
+        sync_seats(repositories, context.workspace_id)
     user = repositories.users.get(user_id)
     if existing.role != updated.role:
         audit.record(
@@ -204,7 +222,7 @@ def update_member_role(
     return MemberRead.from_rows(updated, user)
 
 
-def remove_member(repositories: Repositories, context: AuthzContext, user_id: str) -> None:
+def remove_member(repositories: Repositories, context: AuthzContext, user_id: str, *, sync: bool = True) -> None:
     """Remove a member, or let the caller leave, along with every team membership they hold.
 
     Any member may remove themselves; removing someone else needs a workspace
@@ -232,7 +250,8 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_OWNER)
 
     plan_usage.remove_membership(repositories, context.workspace_id, user_id)
-    sync_seats(repositories, context.workspace_id)
+    if sync:
+        sync_seats(repositories, context.workspace_id)
     audit.record(
         repositories,
         context,
@@ -244,7 +263,7 @@ def remove_member(repositories: Repositories, context: AuthzContext, user_id: st
     )
 
 
-def suspend_member(repositories: Repositories, context: AuthzContext, user_id: str) -> MemberRead:
+def suspend_member(repositories: Repositories, context: AuthzContext, user_id: str, *, sync: bool = True) -> MemberRead:
     """Suspend a member: they keep their role, teams and history but hold no access here.
 
     Only a workspace admin may suspend, never themselves, and suspending an owner
@@ -264,7 +283,8 @@ def suspend_member(repositories: Repositories, context: AuthzContext, user_id: s
     updated = repositories.memberships.set_suspended(context.workspace_id, user_id, suspended_by=context.user_id)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ALREADY_SUSPENDED)
-    sync_seats(repositories, context.workspace_id)
+    if sync:
+        sync_seats(repositories, context.workspace_id)
     user = repositories.users.get(user_id)
     audit.record(
         repositories,
@@ -279,7 +299,9 @@ def suspend_member(repositories: Repositories, context: AuthzContext, user_id: s
     return MemberRead.from_rows(updated, user)
 
 
-def reactivate_member(repositories: Repositories, context: AuthzContext, user_id: str) -> MemberRead:
+def reactivate_member(
+    repositories: Repositories, context: AuthzContext, user_id: str, *, sync: bool = True
+) -> MemberRead:
     """Reactivate a suspended member with the role and teams they held. Idempotent, and audited only on a change."""
     existing = _suspension_target(repositories, context, user_id)
     user = repositories.users.get(user_id)
@@ -288,7 +310,8 @@ def reactivate_member(repositories: Repositories, context: AuthzContext, user_id
     updated = repositories.memberships.clear_suspended(context.workspace_id, user_id)
     if updated is None:
         raise _not_found()
-    sync_seats(repositories, context.workspace_id)
+    if sync:
+        sync_seats(repositories, context.workspace_id)
     audit.record(
         repositories,
         context,
@@ -405,3 +428,88 @@ def revoke_invite(repositories: Repositories, context: AuthzContext, invite_id: 
             target_label=existing.email,
             before={"role": existing.role},
         )
+
+
+def bulk_update_members(repositories: Repositories, context: AuthzContext, payload: MemberBulkUpdate) -> MemberBulkRead:
+    """Apply one action to several members, each through the single-member path, answering a result per member.
+
+    Workspace admin work, whatever the action. Each member goes through the same
+    function the single route calls, so every rule holds per member: only an owner
+    changes, suspends or removes an owner, and the last active owner stays, read
+    again before each member so a selection holding every owner keeps the last one.
+    The caller is skipped for every action but adding to a team, since a bulk
+    action is for other people and leaving or demoting yourself has its own path.
+    A refusal skips that member with the error the single route would answer and
+    the rest go on, so one locked row never blocks the selection. Each change is
+    audited as a single change is, and the seat count is synced once at the end.
+    """
+    if not context.acts_as_workspace_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=BULK_ADMIN_ONLY)
+    if payload.action == "add_to_team":
+        team_id = str(payload.team_id)
+        check_capability(repositories, context, Capability.TEAM_ADMIN, team_id)
+        refuse_if_retired(repositories.teams.get(context.workspace_id, team_id))
+    results = [_bulk_one(repositories, context, payload, user_id) for user_id in payload.user_ids]
+    changed = sum(1 for result in results if result.outcome == "changed")
+    if changed and payload.action != "add_to_team":
+        sync_seats(repositories, context.workspace_id)
+    return MemberBulkRead(
+        results=results,
+        changed=changed,
+        unchanged=sum(1 for result in results if result.outcome == "unchanged"),
+        skipped=sum(1 for result in results if result.outcome == "skipped"),
+    )
+
+
+def _bulk_one(
+    repositories: Repositories, context: AuthzContext, payload: MemberBulkUpdate, user_id: str
+) -> MemberBulkResult:
+    """Apply a bulk action to one member, turning a refusal into a skipped result rather than failing the batch."""
+    try:
+        if user_id == context.user_id and payload.action != "add_to_team":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BULK_SELF)
+        return _apply_one(repositories, context, payload, user_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        return MemberBulkResult(
+            user_id=user_id,
+            outcome="skipped",
+            error_code=str(detail.get("error_code", "ERROR")),
+            message=str(detail.get("message", exc.detail)),
+        )
+
+
+def _apply_one(
+    repositories: Repositories, context: AuthzContext, payload: MemberBulkUpdate, user_id: str
+) -> MemberBulkResult:
+    """Run the single-member function for one bulk action, answering whether it changed anything."""
+    action = payload.action
+    if action == "remove":
+        remove_member(repositories, context, user_id, sync=False)
+        return MemberBulkResult(user_id=user_id, outcome="changed")
+    existing = repositories.memberships.get_consistent(context.workspace_id, user_id)
+    if existing is None:
+        raise _not_found()
+    if action == "change_role" and payload.role is not None:
+        member = update_member_role(repositories, context, user_id, MemberUpdate(role=payload.role), sync=False)
+        return MemberBulkResult(
+            user_id=user_id, outcome="unchanged" if existing.role == payload.role else "changed", member=member
+        )
+    if action == "suspend":
+        if existing.is_suspended:
+            _suspension_target(repositories, context, user_id)
+            member = MemberRead.from_rows(existing, repositories.users.get(user_id))
+            return MemberBulkResult(user_id=user_id, outcome="unchanged", member=member)
+        member = suspend_member(repositories, context, user_id, sync=False)
+        return MemberBulkResult(user_id=user_id, outcome="changed", member=member)
+    if action == "reactivate":
+        member = reactivate_member(repositories, context, user_id, sync=False)
+        return MemberBulkResult(
+            user_id=user_id, outcome="changed" if existing.is_suspended else "unchanged", member=member
+        )
+    team_id = str(payload.team_id)
+    member = MemberRead.from_rows(existing, repositories.users.get(user_id))
+    if repositories.memberships.get_team_membership(context.workspace_id, team_id, user_id) is not None:
+        return MemberBulkResult(user_id=user_id, outcome="unchanged", member=member)
+    team_members.put_team_member(repositories, context, team_id, user_id, "member")
+    return MemberBulkResult(user_id=user_id, outcome="changed", member=member)

@@ -12893,6 +12893,155 @@
         "title": "MemberActivityRead",
         "type": "object"
       },
+      "MemberBulkRead": {
+        "description": "What a bulk member action answers with: one result per named member, in request order, and the tallies.",
+        "properties": {
+          "changed": {
+            "default": 0,
+            "title": "Changed",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MemberBulkResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "unchanged": {
+            "default": 0,
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "MemberBulkRead",
+        "type": "object"
+      },
+      "MemberBulkResult": {
+        "description": "What a bulk action did to one member.\n\n`changed` and `unchanged` carry the member as they now stand, absent once\nremoved. `skipped` carries the refusal the single route would have answered,\nas `error_code` and `message`, so the caller can say why.",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "member": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "outcome": {
+            "enum": [
+              "changed",
+              "unchanged",
+              "skipped"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "outcome"
+        ],
+        "title": "MemberBulkResult",
+        "type": "object"
+      },
+      "MemberBulkUpdate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/members/bulk` takes.\n\nOne action applied to every named member: `role` is the role `change_role`\nsets, and `team_id` the team `add_to_team` adds them to as members.",
+        "properties": {
+          "action": {
+            "enum": [
+              "change_role",
+              "suspend",
+              "reactivate",
+              "remove",
+              "add_to_team"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "owner",
+                  "admin",
+                  "member",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "user_ids"
+        ],
+        "title": "MemberBulkUpdate",
+        "type": "object"
+      },
       "MemberCommentRead": {
         "description": "The comment one feed entry is, cut to an excerpt.",
         "properties": {
@@ -48067,6 +48216,65 @@
           }
         ],
         "summary": "List Members",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/members/bulk": {
+      "post": {
+        "description": "Change the role of, suspend, reactivate, remove or add to a team up to 200 members in one request.\n\nEach member goes through the single-member path with every rule it holds, and\none the caller may not change is skipped with the reason rather than failing\nthe rest. The caller is always skipped, except when adding to a team. Every\nchange is audited per member, as a single change is.",
+        "operationId": "bulk_update_members_api_workspaces__workspace_id__members_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberBulkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberBulkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Bulk Update Members",
         "tags": [
           "workspaces"
         ]

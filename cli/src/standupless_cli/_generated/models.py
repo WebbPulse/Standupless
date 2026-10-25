@@ -1590,6 +1590,13 @@ class MediaTokensRead(TypedDict):
     tokens: dict[str, str]
 
 
+class MemberBulkUpdate(TypedDict):
+    action: Literal["change_role", "suspend", "reactivate", "remove", "add_to_team"]
+    role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
+    team_id: NotRequired[str | None]
+    user_ids: list[str]
+
+
 class MemberCommentRead(TypedDict):
     body: str
     comment_id: str
@@ -4672,6 +4679,14 @@ class MemberActivityRead(TypedDict):
     type: Literal["issue_change", "comment"]
 
 
+class MemberBulkResult(TypedDict):
+    error_code: NotRequired[str | None]
+    member: NotRequired[MemberRead | None]
+    message: NotRequired[str | None]
+    outcome: Literal["changed", "unchanged", "skipped"]
+    user_id: str
+
+
 class MemberListRead(TypedDict):
     members: list[MemberRead]
 
@@ -5175,6 +5190,13 @@ class LinkListRead(TypedDict):
 class MemberActivityListRead(TypedDict):
     activity: list[MemberActivityRead]
     next_cursor: NotRequired[str | None]
+
+
+class MemberBulkRead(TypedDict):
+    changed: NotRequired[int]
+    results: list[MemberBulkResult]
+    skipped: NotRequired[int]
+    unchanged: NotRequired[int]
 
 
 class MilestoneConversionRead(TypedDict):

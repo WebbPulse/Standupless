@@ -41,6 +41,8 @@ from app.domains.workspaces.schemas.workspace import (
     InviteCreate,
     InviteCreated,
     InviteListRead,
+    MemberBulkRead,
+    MemberBulkUpdate,
     MemberListRead,
     MemberRead,
     MemberStatusField,
@@ -334,6 +336,22 @@ def list_members(
     admin. The answer carries a weak `ETag`, so an unchanged poll gets a 304.
     """
     return conditional_response(request, workspace_members.list_members(repositories, context, member_status))
+
+
+@router.post("/{workspace_id}/members/bulk", response_model=MemberBulkRead)
+def bulk_update_members(
+    payload: MemberBulkUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> MemberBulkRead:
+    """Change the role of, suspend, reactivate, remove or add to a team up to 200 members in one request.
+
+    Each member goes through the single-member path with every rule it holds, and
+    one the caller may not change is skipped with the reason rather than failing
+    the rest. The caller is always skipped, except when adding to a team. Every
+    change is audited per member, as a single change is.
+    """
+    return workspace_members.bulk_update_members(repositories, context, payload)
 
 
 @router.patch("/{workspace_id}/members/{user_id}", response_model=MemberRead)
