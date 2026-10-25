@@ -6,7 +6,7 @@
  * the widgets the room; the filter keeps applying while it is hidden.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -149,10 +149,11 @@ export const DashboardDetail: React.FC = () => {
       auth,
     }
   );
-  const [dashboard, setDashboard] = useState<DashboardRead | null>(null);
-  useEffect(() => {
-    if (data !== null) setDashboard(data);
-  }, [data]);
+  const [saved, setSaved] = useState<DashboardRead | null>(null);
+  const dashboard =
+    saved !== null && (data === null || saved.updated_at >= data.updated_at)
+      ? saved
+      : data;
 
   const { data: viewRows } = usePolledQuery(
     (context) => listViews(workspaceId, { scope: 'all' }, context),
@@ -181,15 +182,15 @@ export const DashboardDetail: React.FC = () => {
       .filter((widget): widget is DashboardWidgetRead => widget !== undefined);
   }, [dashboard, order]);
 
-  const apply = (saved: DashboardRead): void => {
-    setDashboard(saved);
+  const apply = (next: DashboardRead): void => {
+    setSaved(next);
     setOrder(null);
     invalidateQueries([
-      dashboardKey(workspaceId, saved.id),
+      dashboardKey(workspaceId, next.id),
       dashboardsKey(workspaceId, 'all', ''),
-      ...(saved.team_id === null
+      ...(next.team_id === null
         ? []
-        : [dashboardsKey(workspaceId, 'all', saved.team_id)]),
+        : [dashboardsKey(workspaceId, 'all', next.team_id)]),
     ]);
   };
 
@@ -307,7 +308,7 @@ export const DashboardDetail: React.FC = () => {
   const filterTeam = typeof storedTeam === 'string' ? storedTeam : '';
   const storedPriority: unknown = dashboard.filter['priority'];
   const filterPriorities: string[] = Array.isArray(storedPriority)
-    ? storedPriority.map((item) => String(item))
+    ? storedPriority.filter((item): item is string => typeof item === 'string')
     : typeof storedPriority === 'string'
       ? [storedPriority]
       : [];

@@ -173,12 +173,21 @@ const FILTER_NAMES: Record<string, string> = {
   created_before: 'Created before',
 };
 
+/** One stored filter value in words, objects written out as JSON. */
+const asText = (value: unknown): string =>
+  typeof value === 'string' ||
+  typeof value === 'number' ||
+  typeof value === 'boolean'
+    ? String(value)
+    : JSON.stringify(value);
+
+/** A stored filter value as a list of words, whether it held one or several. */
 const asValues = (value: unknown): string[] =>
   Array.isArray(value)
-    ? value.map((item) => String(item))
+    ? value.map(asText)
     : value === undefined || value === null
       ? []
-      : [String(value)];
+      : [asText(value)];
 
 /** A dashboard filter as chips, team and priority values resolved to names. */
 export const filterChips = (
