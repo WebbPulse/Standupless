@@ -75,23 +75,22 @@ class FakeNotification {
 }
 
 /** An unread inbox row about issue `key`, created at `at`. */
-const row = (id: string, at: string, key = 'ENG-1'): NotificationRead =>
-  ({
-    notification_id: id,
-    workspace_id: 'ws',
-    kind: 'commented',
-    issue_id: `issue-${id}`,
-    issue_key: key,
-    issue_title: 'Fix the login page',
-    team_id: 'team',
-    comment_id: null,
-    actor_id: 'u-2',
-    actor_name: 'Olive',
-    unread: true,
-    summary: 'Olive commented',
-    created_at: at,
-    expires_at: '2027-01-01T00:00:00Z',
-  }) as NotificationRead;
+const row = (id: string, at: string, key = 'ENG-1'): NotificationRead => ({
+  notification_id: id,
+  workspace_id: 'ws',
+  kind: 'commented',
+  issue_id: `issue-${id}`,
+  issue_key: key,
+  issue_title: 'Fix the login page',
+  team_id: 'team',
+  comment_id: null,
+  actor_id: 'u-2',
+  actor_name: 'Olive',
+  unread: true,
+  summary: 'Olive commented',
+  created_at: at,
+  expires_at: '2027-01-01T00:00:00Z',
+});
 
 /** Mounts the hook for a workspace and shows the current path. */
 const Harness: React.FC<{ id: string }> = ({ id }) => {
