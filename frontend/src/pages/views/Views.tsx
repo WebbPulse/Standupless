@@ -58,6 +58,7 @@ import { Select } from '../../components/ui/select';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import DashboardList from './DashboardList';
 import ViewIcon from '../../components/views/ViewIcon';
+import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
@@ -456,6 +457,14 @@ export const Views: React.FC = () => {
       }
       toolbar={
         <div className="flex flex-wrap items-center gap-2">
+          {team !== null && (
+            <TeamTabs
+              slug={slug}
+              keyPrefix={team.key_prefix}
+              teamId={team.id}
+              current="views"
+            />
+          )}
           <div
             role="tablist"
             aria-label="What the views list"

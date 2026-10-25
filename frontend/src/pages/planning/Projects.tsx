@@ -124,6 +124,7 @@ import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
+import TeamTabs from '../../components/workspace/TeamTabs';
 import WorkspaceShell, {
   type WorkspaceShellProps,
 } from '../../components/workspace/WorkspaceShell';
@@ -893,6 +894,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     [params, base]
   );
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const teamTabsShown =
+    scope === undefined &&
+    view === undefined &&
+    filteredTeam !== undefined &&
+    params.get('team') === filteredTeam.key_prefix;
   const { fallback: displayDefault, actionsFor: defaultActionsFor } =
     useProjectsDisplayDefault({
       workspaceId,
@@ -1802,6 +1808,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       }
       toolbar={
         <div className="flex flex-wrap items-center gap-1.5">
+          {teamTabsShown && filteredTeam !== undefined && (
+            <TeamTabs
+              slug={slug}
+              keyPrefix={filteredTeam.key_prefix}
+              teamId={filteredTeam.id}
+              current="projects"
+            />
+          )}
           <LuListFilter
             aria-hidden="true"
             className="mr-0.5 h-3.5 w-3.5 text-text-faint"
