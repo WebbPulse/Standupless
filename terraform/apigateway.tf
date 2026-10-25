@@ -45,6 +45,7 @@ locals {
       "/api/workspaces/{workspace_id}/cycles",
       "/api/workspaces/{workspace_id}/projects",
       "/api/workspaces/{workspace_id}/project-labels",
+      "/api/workspaces/{workspace_id}/project-statuses",
       "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
       "/api/workspaces/{workspace_id}/pulse",

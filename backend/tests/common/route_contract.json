@@ -1389,6 +1389,30 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/project-statuses"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/project-statuses"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/project-statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/project-statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects"
   },
   {

@@ -9,6 +9,7 @@ widens when a field is renamed.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
 
@@ -73,6 +74,9 @@ CompletedWindowField = Literal["all", "past_week", "past_month", "none"]
 """How many completed and cancelled issues a view shows: all, those finished in the last week or month, or none."""
 
 COMPLETED_WINDOWS: tuple[str, ...] = get_args(CompletedWindowField)
+
+PROJECT_STATUS_ID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
+"""The shape of a workspace project status id a view's status filter may name beside a category."""
 
 
 def completed_window_of(window: Optional[str], show_completed: Optional[bool]) -> CompletedWindowField:
@@ -391,7 +395,7 @@ def unknown_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
 def invalid_project_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
     """Every key of a project view's filter that is unknown or holds a value the projects page cannot apply.
 
-    A status must be one the projects page offers, and `sub_teams`, `is_blocked`
+    A status must be a category or a workspace project status id, and `sub_teams`, `is_blocked`
     and `is_blocking` `true` or `false`, so a stored view never names a filter the
     page would quietly drop.
     """
@@ -417,7 +421,7 @@ def _project_entry_well_formed(key: str, entry: Any) -> bool:
     if key in PROJECT_SCALAR_FILTER_FIELDS and not isinstance(entry, str):
         return False
     if key == "status":
-        return all(item in PROJECT_STATUSES for item in values)
+        return all(item in PROJECT_STATUSES or PROJECT_STATUS_ID_PATTERN.match(item) for item in values)
     return True
 
 

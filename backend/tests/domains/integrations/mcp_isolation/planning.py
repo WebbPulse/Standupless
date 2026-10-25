@@ -7,7 +7,7 @@ from typing import Any
 from app.common.db.dynamo.planning import ProjectLabel, ProjectLink, ProjectUpdateRow, project_update_key
 from tests.domains.helpers import OWNER
 
-ANSWERS_AT_HOME: frozenset[str] = frozenset({"list_project_labels", "create_project_label"})
+ANSWERS_AT_HOME: frozenset[str] = frozenset({"list_project_labels", "create_project_label", "list_project_statuses"})
 
 
 def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
@@ -46,6 +46,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     issues = [foreign["issue_id"]]
     return {
         "list_project_labels": {},
+        "list_project_statuses": {},
         "create_project_label": {"name": "Home only", "color": "#5e6ad2"},
         "update_project_label": {"label": foreign["project_label_id"], "name": "Should not land"},
         "delete_project_label": {"label": foreign["project_label_id"]},

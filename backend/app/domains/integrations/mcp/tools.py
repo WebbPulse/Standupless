@@ -32,6 +32,7 @@ from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.jira_import_tools import JIRA_IMPORT_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.project_label_tools import PROJECT_LABEL_TOOLS
+from app.domains.integrations.mcp.project_status_tools import PROJECT_STATUS_TOOLS
 from app.domains.integrations.mcp.pulse_tools import PULSE_TOOLS
 from app.domains.integrations.mcp.recurring_tools import RECURRING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
@@ -62,6 +63,7 @@ TOOLS: tuple[Tool, ...] = (
     *PLANNING_TOOLS,
     *UPDATE_THREAD_TOOLS,
     *PROJECT_LABEL_TOOLS,
+    *PROJECT_STATUS_TOOLS,
     *INITIATIVE_TOOLS,
     *PULSE_TOOLS,
     *DOCUMENT_TOOLS,

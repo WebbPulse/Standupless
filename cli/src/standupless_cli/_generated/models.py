@@ -1668,6 +1668,7 @@ class ProjectCreate(TypedDict):
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]]
+    status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
@@ -1756,6 +1757,34 @@ class ProjectRelationRead(TypedDict):
     type: Literal["blocks", "blocked_by"]
 
 
+class ProjectStatusCreate(TypedDict):
+    category: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    name: str
+    position: NotRequired[int | None]
+
+
+class ProjectStatusRead(TypedDict):
+    category: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+    color: NotRequired[str | None]
+    created_at: str
+    description: NotRequired[str | None]
+    id: str
+    is_default: bool
+    name: str
+    position: int
+    project_count: NotRequired[int]
+    updated_at: str
+
+
+class ProjectStatusUpdate(TypedDict):
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    name: NotRequired[str | None]
+    position: NotRequired[int | None]
+
+
 class ProjectTemplateFields(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
@@ -1825,6 +1854,7 @@ class ProjectUpdate(TypedDict):
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
+    status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
@@ -2152,6 +2182,7 @@ class RoadmapEntryRead(TypedDict):
     progress: NotRequired[CountsRead]
     start_date: NotRequired[str | None]
     status: str
+    status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]
@@ -2223,6 +2254,7 @@ class SearchProjectRead(TypedDict):
     name: str
     project_id: str
     status: str
+    status_id: NotRequired[str]
     target_date: NotRequired[str | None]
     team_ids: NotRequired[list[str]]
     updated_at: str
@@ -4152,6 +4184,7 @@ class ProjectRead(TypedDict):
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]
+    status_id: NotRequired[str]
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]
@@ -4165,6 +4198,10 @@ class ProjectRead(TypedDict):
 class ProjectRelationListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     relations: list[ProjectRelationRead]
+
+
+class ProjectStatusListRead(TypedDict):
+    statuses: list[ProjectStatusRead]
 
 
 class ProjectUpdateCommentRead(TypedDict):

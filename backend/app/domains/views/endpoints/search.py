@@ -383,6 +383,7 @@ def _project_hits(
                     project_id=project.project_id,
                     name=project.name,
                     status=project.status,
+                    status_id=project.effective_status_id,
                     health=project.health,
                     icon=project.icon,
                     color=project.color,
