@@ -378,7 +378,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     sent back, tells everyone on that team's triage duty when the team notifies.
     An issue newly matching a saved view tells each of the view's subscribers,
     naming the view in `new_value`, unless the record already earned them
-    something more specific.
+    something more specific, and only the first time that issue enters that view
+    for them.
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
@@ -459,6 +460,7 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 
     changed_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
     before = image_issue(old_image) if old_image else None
+    view_notices: dict[str, str] = {}
     if before is not None or not old_image:
         for entry in newly_entered(repositories, workspace_id, before, image_issue(new_image)):
             plan(
@@ -467,6 +469,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 f"{issue_id}#view#{entry.view.view_id}#{changed_at}",
                 new_value=entry.view.name,
             )
+            if entry.user_id in planned and planned[entry.user_id][0] == VIEW_ISSUE_ADDED:
+                view_notices.setdefault(entry.user_id, entry.view.view_id)
 
     written = 0
     for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):
@@ -487,6 +491,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 **extra,
             )
         )
+        if kind == VIEW_ISSUE_ADDED and recipient_id in view_notices:
+            repositories.views.record_notice(workspace_id, view_notices[recipient_id], recipient_id, issue_id)
     if resolved:
         written += notify_blocker_resolved(
             repositories,

@@ -448,7 +448,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   sla_breached: 'SLA breached',
   review_requested: 'requested your review',
   triage_new: 'New in triage',
-  view_issue_added: 'Added to view',
+  view_issue_added: 'New issue in view',
   reaction: 'reacted to your comment',
   issue_completed: 'completed',
   issue_cancelled: 'canceled',

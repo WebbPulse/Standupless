@@ -13,6 +13,13 @@ sub-issues, completed issues or archived ones never gains those. A view the
 subscriber can no longer read, such as a team view after they left a private
 team, notifies nobody, and the issue itself is still checked for visibility when
 the row is written.
+
+The work per write is bounded. The workspace's subscriptions are one query, a
+team view on a team the issue is not on is skipped without a read, and the team
+views of the issue's team are one query per team rather than a read per view.
+A subscriber hears of one issue entering one view at most once, which a sent
+notice record beside the subscription remembers, so an issue leaving the view
+and coming back stays quiet.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from app.common.db.dynamo.views import (
     SavedView,
     ViewSubscription,
     personal_view_key,
+    team_view_prefix,
     workspace_view_key,
 )
 from app.common.filter_resolution import resolve_issue_filter
@@ -74,6 +82,44 @@ def _view_for(repositories: Repositories, workspace_id: str, row: ViewSubscripti
         if view is not None and view.view_id == row.view_id:
             return view
     return None
+
+
+def _subscribed_team(row: ViewSubscription) -> Optional[str]:
+    """The team a subscription's view belongs to, read off its stored sort key, or `None` for a teamless view."""
+    prefix, _, rest = row.saved_view_key.partition("#")
+    team_id = rest.split("#", 1)[0]
+    if prefix != "team" or not team_id or not row.saved_view_key.startswith(team_view_prefix(team_id)):
+        return None
+    return team_id
+
+
+class _ViewLookup:
+    """Finds each subscribed view once per write, a team's views in one query."""
+
+    def __init__(self, repositories: Repositories, workspace_id: str, teams: list[str]) -> None:
+        """Hold the bundle, the workspace and the teams the written issue is or was on."""
+        self._repositories = repositories
+        self._workspace_id = workspace_id
+        self._teams = set(teams)
+        self._team_views: dict[str, dict[str, SavedView]] = {}
+
+    def find(self, row: ViewSubscription) -> Optional[SavedView]:
+        """The view one subscription follows, or `None` when it is gone or cannot hold the issue.
+
+        A team view never holds an issue of another team, so it is skipped without
+        a read, and the views of the issue's own team come from one listing, with
+        a direct read only for a view past the listing's bound.
+        """
+        team_id = _subscribed_team(row)
+        if team_id is None:
+            return _view_for(self._repositories, self._workspace_id, row)
+        if team_id not in self._teams:
+            return None
+        if team_id not in self._team_views:
+            listed = self._repositories.views.list_for_team(self._workspace_id, team_id)
+            self._team_views[team_id] = {view.view_id: view for view in listed}
+        listed_view = self._team_views[team_id].get(row.view_id)
+        return listed_view if listed_view is not None else _view_for(self._repositories, self._workspace_id, row)
 
 
 def subscriber_can_read(repositories: Repositories, workspace_id: str, view: SavedView, user_id: str) -> bool:
@@ -128,7 +174,8 @@ def newly_entered(
 ) -> list[ViewEntry]:
     """Each subscriber whose subscribed view `after` matches and `before` did not, one entry per view.
 
-    `before` is `None` for a created issue, which matched nothing until now. A view
+    `before` is `None` for a created issue, which matched nothing until now. A
+    subscriber already told of this issue entering this view is left out. A view
     whose filter no longer parses, such as one naming a deleted cycle, is skipped
     and logged rather than failing the whole record.
     """
@@ -142,10 +189,11 @@ def newly_entered(
         by_view.setdefault(row.view_id, []).append(row)
 
     teams = list(dict.fromkeys(t for t in (after.team_id, before.team_id if before else None) if t))
+    lookup = _ViewLookup(repositories, workspace_id, teams)
     categories: Optional[dict[str, str]] = None
     entries: list[ViewEntry] = []
     for view_id, rows in by_view.items():
-        view = _view_for(repositories, workspace_id, rows[0])
+        view = lookup.find(rows[0])
         if view is None or view.lists_projects:
             continue
         for row in sorted(rows, key=lambda item: item.created_at):
@@ -167,6 +215,8 @@ def newly_entered(
                     for status in repositories.team_config.list_statuses(workspace_id, team):
                         categories[status.status_id] = status.category
             if in_view(view, wanted, before, categories) or not in_view(view, wanted, after, categories):
+                continue
+            if repositories.views.notice_sent(workspace_id, view.view_id, row.user_id, after.issue_id):
                 continue
             if subscriber_can_read(repositories, workspace_id, view, row.user_id):
                 entries.append(ViewEntry(user_id=row.user_id, view=view))

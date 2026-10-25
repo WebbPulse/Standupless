@@ -34,7 +34,7 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   app_approval_decided: 'App approval decided',
   review_requested: 'Review requested',
   triage_new: 'New in triage',
-  view_issue_added: 'Added to view',
+  view_issue_added: 'New issue in view',
   reaction: 'Reaction',
   issue_completed: 'Completed',
   issue_cancelled: 'Canceled',

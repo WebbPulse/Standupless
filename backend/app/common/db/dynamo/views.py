@@ -330,6 +330,20 @@ def view_subscription_key(view_id: str, user_id: str) -> str:
     return f"{view_subscription_prefix(view_id)}{user_id}"
 
 
+VIEW_NOTICE_PREFIX = "viewsent#"
+"""The sort key prefix every record of a view notice already sent shares."""
+
+
+def view_notice_prefix(view_id: str, user_id: str | None = None) -> str:
+    """The sort key prefix of one view's sent notices, or of one subscriber's notices for it."""
+    return f"{VIEW_NOTICE_PREFIX}{view_id}#" if user_id is None else f"{VIEW_NOTICE_PREFIX}{view_id}#{user_id}#"
+
+
+def view_notice_key(view_id: str, user_id: str, issue_id: str) -> str:
+    """The sort key recording that one subscriber heard of one issue entering one view."""
+    return f"{view_notice_prefix(view_id, user_id)}{issue_id}"
+
+
 class ViewSubscription(BaseModel):
     """One member following one saved view, to hear when an issue newly enters it.
 
@@ -699,6 +713,43 @@ class ViewRepository(DashboardRows):
         if not workspace_id or not view_id or not user_id:
             return
         self._repository.delete({"workspace_id": workspace_id, "view_key": view_subscription_key(view_id, user_id)})
+        self._delete_prefix(workspace_id, view_notice_prefix(view_id, user_id))
+
+    def notice_sent(self, workspace_id: str, view_id: str, user_id: str, issue_id: str) -> bool:
+        """Whether one subscriber has already been told one issue entered one view."""
+        if not workspace_id or not view_id or not user_id or not issue_id:
+            return False
+        key = {"workspace_id": workspace_id, "view_key": view_notice_key(view_id, user_id, issue_id)}
+        return self._repository.get(key) is not None
+
+    def record_notice(self, workspace_id: str, view_id: str, user_id: str, issue_id: str) -> None:
+        """Remember that one subscriber was told one issue entered one view, so it never tells them twice.
+
+        The record lives beside the subscription and goes with it, on unsubscribe,
+        on the view's deletion and in the account purge.
+        """
+        if not workspace_id or not view_id or not user_id or not issue_id:
+            return
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "view_key": view_notice_key(view_id, user_id, issue_id),
+                "view_id": view_id,
+                "user_id": user_id,
+                "issue_id": issue_id,
+                "created_at": utc_now().isoformat(),
+            }
+        )
+
+    def _delete_prefix(self, workspace_id: str, prefix: str) -> int:
+        """Delete every row under one sort key prefix, answering how many went."""
+        removed = 0
+        for item in list(
+            self._repository.iter_query(Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(prefix))
+        ):
+            self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+            removed += 1
+        return removed
 
     def subscriber_ids(self, workspace_id: str, view_id: str) -> list[str]:
         """The members subscribed to one view, oldest subscription first."""
@@ -721,21 +772,15 @@ class ViewRepository(DashboardRows):
         return [ViewSubscription.model_validate(dict(item)) for item in items]
 
     def delete_view_subscriptions(self, workspace_id: str, view_id: str) -> int:
-        """Delete every subscription to one view, for when the view itself goes."""
+        """Delete every subscription to one view and the notices it sent, for when the view itself goes."""
         if not workspace_id or not view_id:
             return 0
-        removed = 0
-        for item in list(
-            self._repository.iter_query(
-                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(view_subscription_prefix(view_id))
-            )
-        ):
-            self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
-            removed += 1
+        removed = self._delete_prefix(workspace_id, view_subscription_prefix(view_id))
+        self._delete_prefix(workspace_id, view_notice_prefix(view_id))
         return removed
 
     def delete_subscriptions_for_user(self, workspace_id: str, user_id: str) -> int:
-        """Delete every view subscription one member holds in a workspace, for the account purge."""
+        """Delete the view subscriptions and sent view notices one member holds, for the account purge."""
         if not workspace_id or not user_id:
             return 0
         removed = 0
@@ -747,6 +792,13 @@ class ViewRepository(DashboardRows):
             if row.get("user_id") == user_id:
                 self._repository.delete({"workspace_id": workspace_id, "view_key": row["view_key"]})
                 removed += 1
+        for row in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(VIEW_NOTICE_PREFIX)
+            )
+        ):
+            if row.get("user_id") == user_id:
+                self._repository.delete({"workspace_id": workspace_id, "view_key": row["view_key"]})
         return removed
 
     def _list(self, workspace_id: str, prefix: str, limit: int) -> list[SavedView]:
