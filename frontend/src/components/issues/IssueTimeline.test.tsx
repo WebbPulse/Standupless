@@ -63,6 +63,16 @@ vi.mock('../../api/discussion', async () => {
   };
 });
 
+vi.mock('@webbpulse/auth/react', async () => {
+  const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
+    '@webbpulse/auth/react'
+  );
+  return {
+    ...actual,
+    useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
+  };
+});
+
 vi.mock('../../api/notifications', () => ({
   updatePreferences: (body: UserPreferencesUpdate) => updatePreferences(body),
 }));
