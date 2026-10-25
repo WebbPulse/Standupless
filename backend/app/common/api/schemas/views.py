@@ -625,7 +625,8 @@ class ViewUpdate(BaseModel):
     of an update. `shared` is the one exception, for a view without a team: it
     moves a personal view to the whole workspace or back, which refiles the row
     under the same view id. `entity` is fixed at create, and `projects_display`
-    applies only to a project view.
+    applies only to a project view. `owner_id` hands a shared view to another
+    member, the owner's or a workspace admin's call.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_NAME_MAX)
@@ -648,6 +649,7 @@ class ViewUpdate(BaseModel):
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
     shared: Optional[StrictBool] = None
+    owner_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("visible_properties")
     @classmethod

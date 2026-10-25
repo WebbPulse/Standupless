@@ -148,6 +148,7 @@ EVENTS: dict[str, str] = {
     "dashboard.deleted": "Dashboard deleted",
     "dashboard.moved": "Dashboard moved",
     "dashboard.owner_changed": "Dashboard owner changed",
+    "view.owner_changed": "View owner changed",
     "platform_admin.granted": "Platform admin granted",
     "platform_admin.revoked": "Platform admin revoked",
 }

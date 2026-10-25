@@ -73,6 +73,7 @@ from app.domains.integrations.mcp.toolkit import (
     projects_display_schema,
     string,
     team_id_ref,
+    user_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -279,6 +280,8 @@ def _update_view(call: ToolCall) -> Any:
             raise ToolError(f"{name} cannot be null")
     if call.present("shared"):
         fields["shared"] = _flag(call, "shared")
+    if call.present("owner_id"):
+        fields["owner_id"] = user_ref(call, call.arguments["owner_id"])
     payload = ViewUpdate.model_validate(fields)
     return _view_json(update_saved_view(call.repositories, call.context, view.view_id, payload))
 
@@ -480,7 +483,9 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         description=(
             "Change a saved view's name, filter, sort, layout, grouping or display settings. Only named fields "
             "change. shared=true moves a view without a team to the whole workspace, shared=false back to you. "
-            "Your own views, any view on a team you administer, or any workspace view if you are an admin."
+            "owner_id hands a team or workspace view to another member, yours to give or any if you are a "
+            "workspace admin. Your own views, any view on a team you administer, or any workspace view if you "
+            "are an admin."
         ),
         scopes=("views:write",),
         schema=object_schema(
@@ -488,6 +493,7 @@ VIEW_TOOLS: tuple[Tool, ...] = (
                 "view_id": VIEW_REF,
                 **_view_properties(clearable=True),
                 "shared": _boolean("Share a view without a team with the whole workspace, or false to make it yours"),
+                "owner_id": string("The new owner: a member's user id, email address, or 'me'"),
             },
             required=("view_id",),
         ),
