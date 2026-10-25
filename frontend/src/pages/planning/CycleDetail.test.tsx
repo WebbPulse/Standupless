@@ -11,7 +11,8 @@
  * name reads as its number, and the side panel's breakdown filters the list.
  * The name, goal and dates edit in place with an optimistic save that rolls
  * back on failure, an end before the start is refused, and a closed cycle
- * reads only.
+ * reads only. A cycle that has not started carries the capacity dial in its
+ * header, read against the team's last three closed cycles.
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -28,6 +29,7 @@ import type {
   IssueRead,
   StatusRead,
   TeamRead,
+  VelocityRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -42,6 +44,30 @@ const updateCycle =
   vi.fn<(id: string, body: CycleUpdate) => Promise<CycleRead>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const getVelocity = vi.fn<(teamId: string) => Promise<VelocityRead>>();
+
+/** One closed cycle that finished four issues, with nothing being planned. */
+const velocity: VelocityRead = {
+  team_id: 'proj-1',
+  estimate_scale: 'off',
+  cycles: [
+    {
+      cycle_id: 'old-1',
+      name: 'Sprint 0',
+      start_date: '2026-08-15',
+      end_date: '2026-08-28',
+      completed_issues: 4,
+      completed_points: 0,
+      scope_issues: 5,
+      scope_points: 0,
+      carried_out: 1,
+      carried_out_points: 0,
+    },
+  ],
+  average_points: 0,
+  average_issues: 4,
+  upcoming: null,
+};
 
 const statuses: StatusRead[] = [
   { id: 'todo', name: 'Todo', category: 'unstarted', position: 0 },
@@ -68,6 +94,7 @@ vi.mock('../../api/planning', () => ({
   updateCycle: (_w: string, id: string, body: CycleUpdate) =>
     updateCycle(id, body),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+  getVelocity: (_w: string, teamId: string) => getVelocity(teamId),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -282,6 +309,7 @@ describe('CycleDetail', () => {
     listTeams.mockResolvedValue([team]);
     getCycle.mockResolvedValue(cycle);
     getCycleHistory.mockResolvedValue(history);
+    getVelocity.mockResolvedValue(velocity);
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
     listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
     updateCycle.mockImplementation((_id, body) =>
@@ -457,6 +485,26 @@ describe('CycleDetail', () => {
     expect(
       await screen.findByText(/burn-up starts drawing once the cycle begins/)
     ).toBeInTheDocument();
+  });
+
+  it('shows the capacity dial for a cycle that has not started', async () => {
+    getCycle.mockResolvedValue({ ...cycle, status: 'upcoming' });
+    renderPage();
+
+    expect(
+      await screen.findByRole('img', {
+        name: 'Capacity: 4 of 4 issues, based on the last cycle',
+      })
+    ).toBeInTheDocument();
+    expect(getVelocity).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('draws no capacity dial once the cycle has started', async () => {
+    renderPage();
+
+    await historyRequested();
+    expect(screen.queryByTestId('capacity-dial')).not.toBeInTheDocument();
+    expect(getVelocity).not.toHaveBeenCalled();
   });
 
   it('reads the issues by cycle', async () => {

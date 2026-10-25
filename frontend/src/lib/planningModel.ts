@@ -6,6 +6,8 @@
 
 import type {
   CycleHistoryPoint,
+  CycleRead,
+  CycleUpdate,
   IssueRead,
   ProjectHistoryRead,
   ProjectProjectionRead,
@@ -544,4 +546,163 @@ export const capacityGuidance = (
     carriedIn,
     delta: Math.round((planned - average) * 10) / 10,
   };
+};
+
+/** How many closed cycles the capacity dial averages, as Linear's does. */
+export const CAPACITY_CYCLES = 3;
+
+/** One cycle's planned scope measured against what the team usually finishes. */
+export interface CycleCapacity extends CapacityGuidance {
+  /** Planned as a whole percent of the average, above 100 when overloaded. */
+  percent: number;
+  /** How many closed cycles the average was read from. */
+  basis: number;
+}
+
+/** The mean of some figures to one decimal place, zero for none. */
+const meanOf = (values: number[]): number =>
+  values.length === 0
+    ? 0
+    : Math.round(
+        (values.reduce((sum, value) => sum + value, 0) / values.length) * 10
+      ) / 10;
+
+/**
+ * A cycle that has not started measured against the team's last three closed
+ * cycles, through `capacityGuidance` with the cycle standing in as the one
+ * being planned. `null` for a cycle that has started or been cancelled, or a
+ * team with no closed cycle to compare with.
+ */
+export const cycleCapacity = (
+  velocity: VelocityRead,
+  cycle: CycleRead,
+  measure: PlanningMeasure = velocityMeasure(velocity)
+): CycleCapacity | null => {
+  if (cycle.status !== 'upcoming') return null;
+  const recent = velocity.cycles.slice(-CAPACITY_CYCLES);
+  const points = cycle.points;
+  const guidance = capacityGuidance(
+    {
+      ...velocity,
+      cycles: recent,
+      average_points: meanOf(recent.map((row) => row.completed_points)),
+      average_issues: meanOf(recent.map((row) => row.completed_issues)),
+      upcoming: {
+        cycle_id: cycle.cycle_id,
+        name: cycle.name,
+        status: cycle.status,
+        start_date: cycle.start_date,
+        end_date: cycle.end_date,
+        scope_issues: cycle.counts.total - cycle.counts.cancelled,
+        scope_points:
+          points === undefined ? 0 : points.total - points.cancelled,
+        carried_in: cycle.carry?.carried_in ?? 0,
+        carried_in_points: cycle.carry?.carried_in_points ?? 0,
+      },
+    },
+    measure
+  );
+  if (guidance === null) return null;
+  const percent =
+    guidance.average > 0
+      ? Math.round((guidance.planned / guidance.average) * 100)
+      : guidance.planned > 0
+        ? 100
+        : 0;
+  return { ...guidance, percent, basis: recent.length };
+};
+
+/** A figure the way capacity prints it: whole when it is whole. */
+const capacityFigure = (value: number): string =>
+  Number.isInteger(value) ? String(value) : value.toFixed(1);
+
+/** The dial's tooltip, such as "8 of 10 points, based on the last 3 cycles". */
+export const capacityLabel = (capacity: CycleCapacity): string => {
+  const unit = capacity.measure === 'points' ? 'points' : 'issues';
+  const cycles =
+    capacity.basis === 1
+      ? 'the last cycle'
+      : `the last ${String(capacity.basis)} cycles`;
+  return `${capacityFigure(capacity.planned)} of ${capacityFigure(capacity.average)} ${unit}, based on ${cycles}`;
+};
+
+/** One entry of a cycle list: a cycle, or the paused days before or after it. */
+export type CycleListEntry =
+  | { kind: 'cycle'; cycle: CycleRead }
+  | { kind: 'gap'; key: string; days: number };
+
+/** The paused entry for the days before a cycle, or none when it follows on. */
+const gapBefore = (cycle: CycleRead): CycleListEntry[] => {
+  const days = cycle.gap_before_days ?? 0;
+  return days > 0 ? [{ kind: 'gap', key: `gap-${cycle.cycle_id}`, days }] : [];
+};
+
+/**
+ * A group's cycles with a "Cycles paused" entry wherever the server reports
+ * days with no live cycle. Ascending lists put the gap above the cycle it
+ * precedes; a descending list, the past read newest first, puts it below.
+ * `after` is the cycle that follows the whole group, the current one above
+ * the past, whose own gap then leads a descending list.
+ */
+export const cycleEntries = (
+  cycles: CycleRead[],
+  order: 'ascending' | 'descending',
+  after?: CycleRead
+): CycleListEntry[] => {
+  if (order === 'ascending') {
+    return cycles.flatMap((cycle) => [
+      ...gapBefore(cycle),
+      { kind: 'cycle' as const, cycle },
+    ]);
+  }
+  const lead =
+    after === undefined || cycles.length === 0 ? [] : gapBefore(after);
+  return [
+    ...lead,
+    ...cycles.flatMap((cycle) => [
+      { kind: 'cycle' as const, cycle },
+      ...gapBefore(cycle),
+    ]),
+  ];
+};
+
+/** How a paused gap reads, such as "Cycles paused · 3 days". */
+export const pausedLabel = (days: number): string =>
+  `Cycles paused · ${String(days)} ${days === 1 ? 'day' : 'days'}`;
+
+/** The fields "Edit cycle..." changes on a cycle. */
+export type CycleEdit = Pick<
+  CycleUpdate,
+  'name' | 'goal' | 'start_date' | 'end_date'
+>;
+
+/**
+ * The changed fields of an edit and what they held before, or an empty pair
+ * when nothing changed. A cleared goal is sent as null.
+ */
+export const cycleEditPatch = (
+  cycle: CycleRead,
+  draft: { name: string; goal: string; start_date: string; end_date: string }
+): { patch: CycleEdit; before: CycleEdit } => {
+  const patch: CycleEdit = {};
+  const before: CycleEdit = {};
+  const name = draft.name.trim();
+  if (name !== '' && name !== cycle.name) {
+    patch.name = name;
+    before.name = cycle.name;
+  }
+  const goal = draft.goal.trim() === '' ? null : draft.goal.trim();
+  if (goal !== cycle.goal) {
+    patch.goal = goal;
+    before.goal = cycle.goal;
+  }
+  if (draft.start_date !== cycle.start_date) {
+    patch.start_date = draft.start_date;
+    before.start_date = cycle.start_date;
+  }
+  if (draft.end_date !== cycle.end_date) {
+    patch.end_date = draft.end_date;
+    before.end_date = cycle.end_date;
+  }
+  return { patch, before };
 };

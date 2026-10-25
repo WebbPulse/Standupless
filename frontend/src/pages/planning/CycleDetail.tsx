@@ -1,6 +1,7 @@
 /**
  * One cycle. The header names the cycle, its state, dates and days left, and
- * its goal. While the cycle is upcoming or running, a member edits the name,
+ * its goal, and a cycle that has not started carries the capacity dial its
+ * row on the cycles page shows. While the cycle is upcoming or running, a member edits the name,
  * goal and dates in place, each save shown at once and undone with a notice
  * should the write fail; a completed or cancelled cycle reads only. A side
  * panel holds scope against what is started and completed, the burn-up over
@@ -24,7 +25,12 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { getCycle, getCycleHistory, updateCycle } from '../../api/planning';
+import {
+  getCycle,
+  getCycleHistory,
+  getVelocity,
+  updateCycle,
+} from '../../api/planning';
 import { DatePicker } from '../../components/issues/PropertyPickers';
 import DisplayMenu from '../../components/issues/view/DisplayMenu';
 import {
@@ -33,6 +39,7 @@ import {
   type FilterLogic,
 } from '../../components/issues/view/FilterBar';
 import IssueListView from '../../components/issues/view/IssueListView';
+import CapacityDial from '../../components/planning/CapacityDial';
 import CycleProgressPanel from '../../components/planning/CycleProgressPanel';
 import EditableText from '../../components/planning/EditableText';
 import ProgressRing from '../../components/planning/ProgressRing';
@@ -83,9 +90,11 @@ import {
 } from '../../lib/planningDisplay';
 import {
   burnUpSeries,
+  cycleCapacity,
   daysBetween,
   historySeries,
   projectCompletion,
+  type CycleCapacity,
   type PlanningMeasure,
 } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
@@ -160,6 +169,8 @@ interface CycleHeaderProps {
   measure: PlanningMeasure;
   canEdit: boolean;
   onUpdate: (patch: CyclePatch) => void;
+  /** The capacity dial for a cycle that has not started, or null. */
+  capacity?: CycleCapacity | null;
 }
 
 /**
@@ -180,6 +191,7 @@ const CycleHeader: React.FC<CycleHeaderProps> = ({
   measure,
   canEdit,
   onUpdate,
+  capacity = null,
 }) => {
   const title = cycleTitle(cycle);
   const percent = completionPercent(cycle.counts);
@@ -238,6 +250,7 @@ const CycleHeader: React.FC<CycleHeaderProps> = ({
         <Badge tone={isCurrent ? 'accent' : 'neutral'}>
           {isCurrent ? 'Current' : CYCLE_STATUS_LABELS[cycle.status]}
         </Badge>
+        {capacity !== null && <CapacityDial capacity={capacity} size={16} />}
         {canEdit ? (
           <span className="flex items-center gap-1.5" data-testid="cycle-dates">
             <DatePicker
@@ -405,6 +418,25 @@ export const CycleDetail: React.FC = () => {
       queryKey: ['cycleHistory', workspaceId, teamId, id, matchKey],
       auth,
     }
+  );
+
+  const readVelocity = useCallback(
+    ({ signal }: { signal?: AbortSignal }) =>
+      getVelocity(workspaceId, teamId, undefined, signal),
+    [workspaceId, teamId]
+  );
+  const { data: velocity } = usePolledQuery(readVelocity, {
+    intervalMs: POLL_MS,
+    enabled: teamId !== '' && cycle?.status === 'upcoming',
+    queryKey: ['cycleVelocity', workspaceId, teamId],
+    auth,
+  });
+  const capacity = useMemo(
+    () =>
+      velocity === null || velocity === undefined || cycle === undefined
+        ? null
+        : cycleCapacity(velocity, cycle),
+    [velocity, cycle]
   );
 
   const hasPoints =
@@ -670,6 +702,7 @@ export const CycleDetail: React.FC = () => {
           measure={measure}
           canEdit={canEditCycle}
           onUpdate={editCycle}
+          capacity={capacity}
         />
         <div className="border-b border-line px-4 py-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:overflow-y-auto lg:border-b-0 lg:border-l lg:px-5">
           <CycleProgressPanel
