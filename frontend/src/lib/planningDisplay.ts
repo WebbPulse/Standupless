@@ -5,7 +5,9 @@
  * page that renders a status pill.
  */
 
+import { shortDateLabel } from './propertyOptions';
 import type {
+  CycleRead,
   CycleStatus,
   InitiativeStatus,
   ProjectRead,
@@ -310,3 +312,48 @@ export const updateNudge = (
     ? 'No update in 2 weeks'
     : null;
 };
+
+/** The order a cycle picker groups cycles in: running, then ahead, then behind. */
+const PICKER_RANK: Record<CycleStatus, number> = {
+  active: 0,
+  upcoming: 1,
+  completed: 2,
+  cancelled: 3,
+};
+
+/**
+ * Orders cycles the way a cycle picker offers them, as Linear does: the
+ * current cycle first, then upcoming ones by start date, then any finished
+ * one an issue is still in.
+ */
+export const pickerCycleOrder = (cycles: CycleRead[]): CycleRead[] =>
+  [...cycles].sort(
+    (left, right) =>
+      PICKER_RANK[left.status] - PICKER_RANK[right.status] ||
+      left.start_date.localeCompare(right.start_date) ||
+      left.cycle_id.localeCompare(right.cycle_id)
+  );
+
+/**
+ * Where a cycle sits on its team's schedule, as a picker reads it: Current,
+ * Next for the first upcoming cycle of its team, Upcoming after that, or its
+ * status once finished.
+ */
+export const cyclePlace = (cycle: CycleRead, cycles: CycleRead[]): string => {
+  if (cycle.status === 'active') return 'Current';
+  if (cycle.status !== 'upcoming') return CYCLE_STATUS_LABELS[cycle.status];
+  const first = pickerCycleOrder(
+    cycles.filter(
+      (other) => other.team_id === cycle.team_id && other.status === 'upcoming'
+    )
+  )[0];
+  return first?.cycle_id === cycle.cycle_id ? 'Next' : 'Upcoming';
+};
+
+/** A cycle option's quieter text: its place and dates, such as "Next · Oct 19 to Nov 1". */
+export const cycleOptionDetail = (
+  cycle: CycleRead,
+  cycles: CycleRead[],
+  today = new Date()
+): string =>
+  `${cyclePlace(cycle, cycles)} · ${cycleDatesLabel(shortDateLabel(cycle.start_date, today), shortDateLabel(cycle.end_date, today))}`;

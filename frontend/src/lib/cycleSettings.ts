@@ -80,17 +80,29 @@ export const formatPreviewDate = (date: Date): string =>
   });
 
 /**
- * When a cycle would start and end under `schedule`, counted from `today`:
- * the first day on or after tomorrow that falls on the start weekday, running
- * for the cycle length. A preview only; the server decides the real dates.
+ * When the next cycle would start and end under `schedule`. With no current
+ * cycle it is the first day on or after tomorrow that falls on the start
+ * weekday. With one it follows the current cycle's last day and the cooldown,
+ * as the server lays out upcoming cycles. A preview only; the server decides
+ * the real dates.
  */
 export const previewNextCycle = (
-  schedule: Pick<CycleSchedule, 'start_weekday' | 'duration_weeks'>,
-  today: Date
+  schedule: Pick<CycleSchedule, 'start_weekday' | 'duration_weeks'> &
+    Partial<Pick<CycleSchedule, 'cooldown_weeks'>>,
+  today: Date,
+  currentEnd: Date | null = null
 ): { start: Date; end: Date } => {
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const tomorrow = today.getDate() + 1;
+  const from =
+    currentEnd === null
+      ? today
+      : new Date(
+          currentEnd.getFullYear(),
+          currentEnd.getMonth(),
+          currentEnd.getDate() + (schedule.cooldown_weeks ?? 0) * 7
+        );
+  const year = from.getFullYear();
+  const month = from.getMonth();
+  const tomorrow = from.getDate() + 1;
   const weekday = (new Date(year, month, tomorrow).getDay() + 6) % 7;
   const first = tomorrow + ((schedule.start_weekday - weekday + 7) % 7);
   return {
@@ -98,3 +110,19 @@ export const previewNextCycle = (
     end: new Date(year, month, first + schedule.duration_weeks * 7 - 1),
   };
 };
+
+/** Reads a `YYYY-MM-DD` date as local midnight, or `null` for none. */
+export const parseScheduleDate = (value: string | undefined): Date | null => {
+  if (value === undefined) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) {
+    return null;
+  }
+  return new Date(year, month - 1, day);
+};
+
+/** Whether a change moves the dates of the upcoming automatic cycles. */
+export const movesUpcoming = (changes: CycleSettingsUpdate): boolean =>
+  changes.duration_weeks !== undefined ||
+  changes.cooldown_weeks !== undefined ||
+  changes.start_weekday !== undefined;

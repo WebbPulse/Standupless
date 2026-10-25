@@ -12,6 +12,10 @@ conditional on the key being free, so two runs racing, or a scheduled retry,
 land on the same row rather than a duplicate. A run never changes an existing
 cycle: a cycle a planner made by hand, moved or cancelled stays as it is, and the
 chain simply continues after the latest end date of any cycle the team has. The
+one exception is a change to the cycle length, cooldown or start day: as in
+Linear, the upcoming automatic cycles then move onto the new schedule while the
+current cycle keeps its dates, unless a planner already shaped the upcoming
+chain by hand. The
 numbering continues from the latest numbered cycle, so a planner who renames a
 cycle to a name ending in a number starts a new sequence, as Linear does.
 
@@ -28,6 +32,7 @@ from typing import Iterable
 
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Cycle, PlanningRepository, cycle_key
 from app.common.db.dynamo.team_config import CycleSettings
 
@@ -38,6 +43,12 @@ SYSTEM_ACTOR = "system"
 MAX_CYCLES_PER_RUN = 20
 """The most cycles one run creates for one team, a bound on a runaway loop."""
 
+MAX_ID_ATTEMPTS = 5
+"""The most suffixed ids tried for one automatic cycle whose plain id is taken by another date."""
+
+SCHEDULE_FIELDS: tuple[str, ...] = ("duration_weeks", "cooldown_weeks", "start_weekday")
+"""The settings that decide an automatic cycle's dates."""
+
 RELATIVE_CYCLES: tuple[str, ...] = ("current", "next", "previous")
 """Cycle references resolved against a team's schedule on the day they are read."""
 
@@ -47,15 +58,22 @@ TRAILING_NUMBER = re.compile(r"(\d+)\s*$")
 
 @dataclass
 class ScheduleResult:
-    """What one run did for one team: the cycles it created."""
+    """What one run did for one team: the cycles it created and the ones it moved."""
 
     team_id: str
     created: list[Cycle] = field(default_factory=list)
+    moved: list[Cycle] = field(default_factory=list)
 
 
-def auto_cycle_id(start: date) -> str:
-    """The deterministic id of the automatic cycle starting on `start`."""
-    return f"{AUTO_CYCLE_PREFIX}{start.strftime('%Y%m%d')}"
+def auto_cycle_id(start: date, attempt: int = 1) -> str:
+    """The deterministic id of the automatic cycle starting on `start`, suffixed after the first attempt."""
+    base = f"{AUTO_CYCLE_PREFIX}{start.strftime('%Y%m%d')}"
+    return base if attempt == 1 else f"{base}-{attempt}"
+
+
+def schedule_changed(before: CycleSettings, after: CycleSettings) -> bool:
+    """Whether a settings change moves automatic cycle dates: a new length, cooldown or start day."""
+    return any(getattr(before, name) != getattr(after, name) for name in SCHEDULE_FIELDS)
 
 
 def align_forward(day: date, weekday: int) -> date:
@@ -200,6 +218,81 @@ def gaps_before(cycles: list[Cycle]) -> dict[str, int | None]:
     return gaps
 
 
+def replan_upcoming(settings: CycleSettings, existing: list[Cycle], today: date) -> list[tuple[Cycle, date, date]]:
+    """The upcoming automatic cycles of a team with their dates under `settings`, in start order.
+
+    The chain is anchored on the latest end date of any cycle that already
+    started, so the current cycle keeps its dates. Nothing moves when the team
+    has no started cycle, or when any upcoming cycle was made by hand or
+    cancelled, because then a planner shaped the chain and it is theirs.
+    """
+    now = today.isoformat()
+    upcoming = sorted((c for c in existing if c.start_date > now), key=lambda c: (c.start_date, c.cycle_id))
+    started = [date.fromisoformat(c.end_date) for c in existing if c.start_date <= now]
+    if not upcoming or not started:
+        return []
+    if any(c.cancelled or c.created_by != SYSTEM_ACTOR for c in upcoming):
+        return []
+    length = timedelta(weeks=settings.duration_weeks)
+    cooldown = timedelta(weeks=settings.cooldown_weeks)
+    chain_end = max(started)
+    planned: list[tuple[Cycle, date, date]] = []
+    for cycle in upcoming:
+        start = align_forward(chain_end + timedelta(days=1) + cooldown, settings.start_weekday)
+        end = start + length - timedelta(days=1)
+        planned.append((cycle, start, end))
+        chain_end = end
+    return planned
+
+
+def reschedule_upcoming(
+    planning: PlanningRepository,
+    settings: CycleSettings,
+    today: date | None = None,
+) -> ScheduleResult:
+    """Move a team's upcoming automatic cycles onto its current schedule, then stock any it is missing.
+
+    Each moved cycle keeps its id, name, number and issues; only its dates
+    change. A cycle deleted while this ran is skipped. Does nothing when the
+    settings are off.
+    """
+    result = ScheduleResult(team_id=settings.team_id)
+    if not settings.enabled:
+        return result
+    now = today or date.today()
+    existing = planning.list_for_roadmap(settings.workspace_id, settings.team_id)
+    for cycle, start, end in replan_upcoming(settings, existing, now):
+        if cycle.start_date == start.isoformat() and cycle.end_date == end.isoformat():
+            continue
+        moved = cycle.model_copy(
+            update={"start_date": start.isoformat(), "end_date": end.isoformat(), "updated_at": utc_now()}
+        )
+        try:
+            result.moved.append(planning.replace_cycle(moved))
+        except ConditionFailed:
+            continue
+    result.created = ensure_cycles(planning, settings, now).created
+    return result
+
+
+def _create_automatic(planning: PlanningRepository, cycle: Cycle, start: date) -> Cycle | None:
+    """Store one automatic cycle, returning it, or `None` when a run already made the cycle for that date.
+
+    A taken id whose row starts on another date belongs to a cycle the schedule
+    moved, so the next suffixed id is tried instead.
+    """
+    for attempt in range(1, MAX_ID_ATTEMPTS + 1):
+        cycle_id = auto_cycle_id(start, attempt)
+        candidate = cycle.model_copy(update={"cycle_id": cycle_id, "planning_key": cycle_key(cycle.team_id, cycle_id)})
+        try:
+            return planning.create_cycle(candidate)
+        except ConditionFailed:
+            taken = planning.get_cycle(cycle.workspace_id, cycle.team_id, cycle_id)
+            if taken is None or taken.start_date == cycle.start_date:
+                return None
+    return None
+
+
 def ensure_cycles(
     planning: PlanningRepository,
     settings: CycleSettings,
@@ -207,8 +300,9 @@ def ensure_cycles(
 ) -> ScheduleResult:
     """Create the cycles a team with cycles turned on is missing.
 
-    Does nothing when the settings are off. A cycle whose key is already taken,
-    by a concurrent run or a retry, is taken as existing and still counts.
+    Does nothing when the settings are off. A cycle whose key is already taken
+    for the same date, by a concurrent run or a retry, is taken as existing and
+    still counts.
     """
     result = ScheduleResult(team_id=settings.team_id)
     if not settings.enabled:
@@ -230,9 +324,7 @@ def ensure_cycles(
             created_by=SYSTEM_ACTOR,
         )
         number += 1
-        try:
-            planning.create_cycle(cycle)
-        except ConditionFailed:
-            continue
-        result.created.append(cycle)
+        created = _create_automatic(planning, cycle, start)
+        if created is not None:
+            result.created.append(created)
     return result

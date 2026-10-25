@@ -3,7 +3,9 @@
  * defaults with cycles off, that turning cycles on reveals the schedule and
  * its preview, that saving patches only what changed and refreshes the cycle
  * lists, that a reader sees the schedule without being able to change it,
- * and that a sub-team links to its parent's cycle settings.
+ * that a sub-team links to its parent's cycle settings, and that once cycles
+ * run the preview follows the current cycle and warns that a schedule change
+ * moves the upcoming ones.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -11,13 +13,27 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearToasts, currentToasts } from '../../lib/toast';
-import type { CycleSettingsRead, CycleSettingsUpdate } from '../../types/Api';
+import type {
+  CycleListRead,
+  CycleRead,
+  CycleSettingsRead,
+  CycleSettingsUpdate,
+} from '../../types/Api';
 import CyclesSection from './CyclesSection';
 
 const getCycleSettings = vi.fn<() => Promise<CycleSettingsRead>>();
 const updateCycleSettings =
   vi.fn<(body: CycleSettingsUpdate) => Promise<CycleSettingsRead>>();
+const listCycles = vi.fn<() => Promise<CycleListRead>>();
 const invalidated: unknown[] = [];
+
+vi.mock('../../api/planning', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/planning')>(
+      '../../api/planning'
+    );
+  return { ...actual, listCycles: () => listCycles() };
+});
 
 vi.mock('../../api/teams', async () => {
   const actual =
@@ -90,6 +106,8 @@ beforeEach(() => {
   updateCycleSettings.mockReset();
   invalidated.length = 0;
   getCycleSettings.mockResolvedValue(settings());
+  listCycles.mockReset();
+  listCycles.mockResolvedValue({ cycles: [], next_cursor: null });
   updateCycleSettings.mockImplementation((body) =>
     Promise.resolve(settings({ ...body, updated_at: '2026-09-26T00:00:00Z' }))
   );
@@ -182,6 +200,7 @@ describe('the cycles section', () => {
       [
         ['cycle-settings', 'ws-1', 'team-1'],
         ['cycles', 'ws-1', 'team-1', ''],
+        ['cycles', 'ws-1', 'team-1', 'active'],
         ['cycleVelocity', 'ws-1', 'team-1'],
         ['planning-options', 'team-1'],
       ],
@@ -195,6 +214,38 @@ describe('the cycles section', () => {
       expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     });
     expect(screen.getByLabelText('Cycle length')).toHaveValue('3');
+  });
+
+  it('previews the next cycle after the current one and warns that upcoming cycles move', async () => {
+    getCycleSettings.mockResolvedValue(settings({ enabled: true }));
+    listCycles.mockResolvedValue({
+      cycles: [
+        {
+          cycle_id: 'auto-20260921',
+          team_id: 'team-1',
+          start_date: '2026-09-21',
+          end_date: '2026-10-04',
+          status: 'active',
+        } as CycleRead,
+      ],
+      next_cursor: null,
+    });
+    renderSection();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cycle-preview')).toHaveTextContent(
+        'Preview: next cycle starts Mon, Oct 5 and ends Sun, Oct 18.'
+      );
+    });
+    expect(screen.getByTestId('cycle-preview')).not.toHaveTextContent(
+      'Upcoming cycles move'
+    );
+    await userEvent.selectOptions(screen.getByLabelText('Cycle length'), '1');
+    await userEvent.selectOptions(screen.getByLabelText('Cooldown'), '1');
+
+    expect(screen.getByTestId('cycle-preview')).toHaveTextContent(
+      'Preview: next cycle starts Mon, Oct 12 and ends Sun, Oct 18, then a 1 week cooldown. Upcoming cycles move to the new schedule when you save. The current cycle keeps its dates.'
+    );
   });
 
   it('turns moving unfinished issues off', async () => {

@@ -2,11 +2,13 @@
 
 These pin who may read and change the settings, the ranges each field is held
 to, that turning cycles on creates the team's cycles before the response, and
-that turning them off or deleting the team never brings cycles back.
+that turning them off or deleting the team never brings cycles back, and that
+a new cycle length moves the upcoming cycles while the current one stays put.
 """
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any, Iterator
 
 import pytest
@@ -172,3 +174,21 @@ def test_auto_adding_completed_issues_can_be_turned_on(client: TestClient, team:
     assert response.json()["auto_add_completed"] is True
     assert response.json()["auto_add_started"] is True
     assert client.get(URL).json()["auto_add_completed"] is True
+
+
+def test_a_new_length_moves_the_upcoming_cycles(client: TestClient, team: str, repositories: Any) -> None:
+    """Switching to one week cycles re-dates the upcoming two right behind the current cycle."""
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"enabled": True})
+    before = sorted(repositories.planning.list_for_roadmap(WORKSPACE, team), key=lambda c: c.start_date)
+
+    assert client.patch(URL, json={"duration_weeks": 1}).status_code == 200
+
+    after = sorted(repositories.planning.list_for_roadmap(WORKSPACE, team), key=lambda c: c.start_date)
+    assert [c.cycle_id for c in after] == [c.cycle_id for c in before]
+    assert (after[0].start_date, after[0].end_date) == (before[0].start_date, before[0].end_date)
+    current_end = date.fromisoformat(after[0].end_date)
+    assert [(c.start_date, c.end_date) for c in after[1:]] == [
+        ((current_end + timedelta(days=1)).isoformat(), (current_end + timedelta(days=7)).isoformat()),
+        ((current_end + timedelta(days=8)).isoformat(), (current_end + timedelta(days=14)).isoformat()),
+    ]
