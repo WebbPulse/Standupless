@@ -47,6 +47,7 @@ import { CollapsibleSectionKit } from './CollapsibleSection';
 import { EditorShortcuts } from './editorShortcuts';
 import { EmojiSuggestion } from './EmojiSuggestion';
 import { MediaImage, MediaUpload } from './mediaNodes';
+import { SpreadsheetPaste } from './tablePaste';
 
 /** What {@link markdownExtensions} can be asked to vary per surface. */
 export interface MarkdownExtensionOptions {
@@ -318,6 +319,7 @@ export const markdownExtensions = (
     TaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
+    SpreadsheetPaste,
     MediaImage.configure({ inline: false, allowBase64: false }),
     MediaUpload,
     CollapsibleSectionKit,
