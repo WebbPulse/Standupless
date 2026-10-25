@@ -1,6 +1,7 @@
 /**
- * The caller's Pulse, like Linear's: one centred feed of project and
- * initiative updates, health changes and completed milestones, newest first.
+ * The caller's Pulse, like Linear's: a feed of project and initiative
+ * updates, health changes and completed milestones, newest first, with the
+ * projects and initiatives it is about listed beside it on wide screens.
  * "For me" holds what the caller leads, is a member of, owns or follows,
  * "Popular" the last two weeks' updates ranked by replies plus reactions, and
  * "Recent" everything they may read. The tab lives in the URL, so a link lands
@@ -36,6 +37,7 @@ import PulseEntryMenu, {
   entrySubject,
 } from './PulseEntryMenu';
 import { entryHref, subjectName } from './pulseDisplay';
+import PulseSidePanel from './PulseSidePanel';
 
 /** How often the first page is read again while the page is open. */
 const POLL_MS = 60000;
@@ -299,59 +301,62 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
   }
   return (
     <div ref={feed} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 pb-10 sm:px-6">
-        <section
-          aria-label={SCOPES.find((option) => option.id === scope)?.label}
-        >
-          {scope === 'popular' ? (
-            <div className="flex flex-col gap-3 pt-6">
-              {items.map((item, index) => renderEntry(item, index))}
-            </div>
-          ) : (
-            groupByDay(items, new Date()).map((group) => (
-              <section
-                key={group.key}
-                aria-labelledby={`pulse-day-${group.key}`}
-                className="pb-2"
-              >
-                <h2
-                  id={`pulse-day-${group.key}`}
-                  className="sticky top-0 z-10 bg-bg/95 pt-6 pb-3 text-xs font-medium text-text-muted backdrop-blur-sm"
+      <div className="mx-auto flex w-full max-w-6xl gap-8 px-4 pb-10 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full min-w-0 max-w-3xl xl:mx-0 xl:max-w-none xl:flex-1">
+          <section
+            aria-label={SCOPES.find((option) => option.id === scope)?.label}
+          >
+            {scope === 'popular' ? (
+              <div className="flex flex-col gap-3 pt-6">
+                {items.map((item, index) => renderEntry(item, index))}
+              </div>
+            ) : (
+              groupByDay(items, new Date()).map((group) => (
+                <section
+                  key={group.key}
+                  aria-labelledby={`pulse-day-${group.key}`}
+                  className="pb-2"
                 >
-                  {group.heading}
-                </h2>
-                <div className="flex flex-col gap-3">
-                  {group.entries.map(({ item, index }) =>
-                    renderEntry(item, index)
-                  )}
-                </div>
-              </section>
-            ))
+                  <h2
+                    id={`pulse-day-${group.key}`}
+                    className="sticky top-0 z-10 bg-bg/95 pt-6 pb-3 text-xs font-medium text-text-muted backdrop-blur-sm"
+                  >
+                    {group.heading}
+                  </h2>
+                  <div className="flex flex-col gap-3">
+                    {group.entries.map(({ item, index }) =>
+                      renderEntry(item, index)
+                    )}
+                  </div>
+                </section>
+              ))
+            )}
+          </section>
+          {moreError !== null && (
+            <div className="mt-3">
+              <ErrorAlert
+                message={errorMessage(moreError, 'Could not load more.')}
+              />
+            </div>
           )}
-        </section>
-        {moreError !== null && (
-          <div className="mt-3">
-            <ErrorAlert
-              message={errorMessage(moreError, 'Could not load more.')}
-            />
-          </div>
-        )}
-        {nextCursor !== null && (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={loadingMore}
-              onClick={loadMore}
-            >
-              {loadingMore
-                ? 'Loading'
-                : scope === 'popular'
-                  ? 'Show more'
-                  : 'Show older'}
-            </Button>
-          </div>
-        )}
+          {nextCursor !== null && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={loadingMore}
+                onClick={loadMore}
+              >
+                {loadingMore
+                  ? 'Loading'
+                  : scope === 'popular'
+                    ? 'Show more'
+                    : 'Show older'}
+              </Button>
+            </div>
+          )}
+        </div>
+        <PulseSidePanel items={items} slug={slug} />
       </div>
     </div>
   );

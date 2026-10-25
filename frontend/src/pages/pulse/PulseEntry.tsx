@@ -19,7 +19,7 @@ import type { PulseItemRead } from '../../types/Api';
 import { describeEvent, entryHref, subjectName, summary } from './pulseDisplay';
 
 /** The mark beside what an entry is about: the project's own icon, or a goal. */
-const SubjectMark: React.FC<{ item: PulseItemRead }> = ({ item }) =>
+export const SubjectMark: React.FC<{ item: PulseItemRead }> = ({ item }) =>
   item.subject_type === 'initiative' ? (
     <span
       aria-hidden="true"
