@@ -83,9 +83,9 @@ export interface UpdateDraftTarget {
 
 /** The route one target's status update draft is read, saved and discarded through. */
 export const updateDraftPath = (target: UpdateDraftTarget): string =>
-  `${draftsPath(target.workspaceId)}/updates/${
-    target.kind === 'project' ? 'projects' : 'initiatives'
-  }/${target.id}`;
+  target.kind === 'project'
+    ? `/workspaces/${target.workspaceId}/drafts/updates/projects/${target.id}`
+    : `/workspaces/${target.workspaceId}/drafts/updates/initiatives/${target.id}`;
 
 /** Reads the caller's status update draft on a target, answering null when there is none. */
 export const getUpdateDraft = async (
