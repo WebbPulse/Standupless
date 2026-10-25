@@ -128,3 +128,21 @@ describe('PreferencesSection workflow', () => {
     ]);
   });
 });
+
+describe('PreferencesSection interface', () => {
+  it('turns pointer cursors on, off by default', async () => {
+    const saved = { ...base, pointer_cursors: true };
+    updatePreferences.mockResolvedValue(saved);
+    const user = userEvent.setup();
+    render(<PreferencesSection />);
+
+    expect(toggle('Use pointer cursors')).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    await user.click(toggle('Use pointer cursors'));
+
+    expect(updatePreferences).toHaveBeenCalledWith({ pointer_cursors: true });
+    await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
+  });
+});

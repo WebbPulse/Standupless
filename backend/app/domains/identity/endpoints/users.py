@@ -35,6 +35,7 @@ from app.common.db.dynamo.users import (
     HOME_VIEWS,
     NAME_DISPLAYS,
     PULSE_DIGESTS,
+    THEMES,
     WEEK_STARTS,
     ActivityFilterField,
     EmailFormatField,
@@ -42,6 +43,7 @@ from app.common.db.dynamo.users import (
     HomeViewField,
     NameDisplayField,
     PulseDigestField,
+    ThemeField,
     User,
     WeekStartField,
 )
@@ -92,7 +94,8 @@ class UserRead(BaseModel):
     when they never arranged the page, and `projects_display_saved` says whether
     they did. A person who has not opens the page with their team's or the
     workspace's default instead. `initiatives_display` and
-    `initiatives_display_saved` are the same for the initiatives list.
+    `initiatives_display_saved` are the same for the initiatives list. `theme`
+    is null until the person first saves one.
     """
 
     id: str
@@ -111,6 +114,8 @@ class UserRead(BaseModel):
     week_start: WeekStartField = "monday"
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
+    theme: Optional[ThemeField] = None
+    pointer_cursors: bool = False
     activity_filter: ActivityFilterField = "all"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
@@ -171,7 +176,8 @@ class UserPreferencesUpdate(BaseModel):
     digest email comes, `off` by default. `home_view`, `week_start`,
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
-    device. `activity_filter` is whether issue activity shows every change or
+    device. `theme` is the interface theme and `pointer_cursors` whether
+    interactive elements show the pointer cursor. `activity_filter` is whether issue activity shows every change or
     only comments. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
     the workspace's default again, and `initiatives_display` does the same for
@@ -193,6 +199,8 @@ class UserPreferencesUpdate(BaseModel):
     week_start: Optional[WeekStartField] = None
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
+    theme: Optional[ThemeField] = None
+    pointer_cursors: Optional[bool] = None
     activity_filter: Optional[ActivityFilterField] = None
     projects_display: Optional[ProjectsDisplay] = None
     initiatives_display: Optional[InitiativesDisplay] = None
@@ -267,6 +275,8 @@ def _as_read(user: "Any") -> UserRead:
         week_start=_known(user.week_start, WEEK_STARTS, "monday"),
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
+        theme=user.theme if user.theme in THEMES else None,
+        pointer_cursors=bool(user.pointer_cursors),
         activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
@@ -386,6 +396,8 @@ def update_current_user_preferences(
         "week_start",
         "name_display",
         "font_size",
+        "theme",
+        "pointer_cursors",
         "activity_filter",
         "auto_assign_to_self",
         "branch_copy_starts",

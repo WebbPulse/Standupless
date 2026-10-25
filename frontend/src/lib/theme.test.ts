@@ -8,13 +8,17 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  adoptTheme,
   applyTheme,
   DEFAULT_THEME,
   nextTheme,
   parseTheme,
+  readStoredTheme,
   readTheme,
+  setThemeSaver,
+  subscribeTheme,
   THEME_STORAGE_KEY,
 } from './theme';
 
@@ -45,6 +49,7 @@ const runPrePaint = (stored: string | null): void => {
 };
 
 afterEach(() => {
+  setThemeSaver(null);
   localStorage.clear();
   document.head.innerHTML = '';
   document.documentElement.removeAttribute('data-theme');
@@ -110,5 +115,53 @@ describe('choosing another theme', () => {
     expect(nextTheme('dark')).toBe('light');
     expect(nextTheme('light')).toBe('system');
     expect(nextTheme('system')).toBe('dark');
+  });
+});
+
+describe('the account theme', () => {
+  it('saves a chosen theme through the registered saver', () => {
+    const saver = vi.fn<(theme: string) => void>();
+    setThemeSaver(saver);
+
+    applyTheme('light');
+
+    expect(saver).toHaveBeenCalledWith('light');
+  });
+
+  it('adopts the account theme without saving it back', () => {
+    const saver = vi.fn<(theme: string) => void>();
+    const listener = vi.fn();
+    setThemeSaver(saver);
+    const unsubscribe = subscribeTheme(listener);
+
+    adoptTheme('light');
+
+    expect(readStoredTheme()).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(saver).not.toHaveBeenCalled();
+
+    adoptTheme('light');
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('reads no stored theme in a fresh browser', () => {
+    expect(readStoredTheme()).toBeNull();
+    expect(readTheme()).toBe(DEFAULT_THEME);
+  });
+
+  it('repaints when another tab stores a theme', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeTheme(listener);
+
+    localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: THEME_STORAGE_KEY })
+    );
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 });

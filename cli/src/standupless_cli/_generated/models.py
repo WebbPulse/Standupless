@@ -2904,8 +2904,10 @@ class UserPreferencesUpdate(TypedDict):
         ]
         | None
     ]
+    pointer_cursors: NotRequired[bool | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
 
@@ -2935,9 +2937,11 @@ class UserRead(TypedDict):
     initiatives_display_saved: NotRequired[bool]
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
+    pointer_cursors: NotRequired[bool]
     projects_display: NotRequired[ProjectsDisplay]
     projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
