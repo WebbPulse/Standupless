@@ -362,7 +362,7 @@ def test_an_urgent_issue_is_mailed_on_the_next_flush(
     recorder: RecordingEmailSender,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An urgent issue's notification makes the open window due at once, and the window's own close sends nothing more."""
+    """An urgent issue makes the open window due at once, and the window's own close sends nothing more."""
     _hold_at_window_start(repositories, monkeypatch)
     opened = datetime.fromtimestamp(window_start(datetime.now(timezone.utc)), timezone.utc)
     sign_in(issues_client, OWNER)
