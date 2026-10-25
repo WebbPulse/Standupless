@@ -92,6 +92,7 @@ standupless cycle settings -t ENG [--move-unfinished/--no-move-unfinished] [--en
 standupless project list [-t ENG] [--status in_progress] [--initiative Grow]
 standupless project view Launch [--web]
 standupless project cadence Launch biweekly   # off, weekly, biweekly, monthly, inherit
+standupless project edit Launch -F brief.md [--base-body-version V]   # V from `project view --json`; stale is refused
 standupless initiative list [--status active]
 standupless initiative view Grow [--web]
 standupless initiative create Grow [--owner me] [--target 2026-12-01] [-d "Why it matters"]

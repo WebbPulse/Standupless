@@ -110,14 +110,22 @@ PAGE_LIMIT = 100
 
 
 class ApiError(Exception):
-    """A non-2xx answer, carrying the error envelope's status, message and code."""
+    """A non-2xx answer, carrying the error envelope's status, message, code and details."""
 
-    def __init__(self, status: int, message: str, error_code: str | None = None, request_id: str | None = None):
+    def __init__(
+        self,
+        status: int,
+        message: str,
+        error_code: str | None = None,
+        request_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.status = status
         self.message = message
         self.error_code = error_code
         self.request_id = request_id
+        self.details = details or {}
 
     def __str__(self) -> str:
         """The message with the status and code, which is what a user can act on."""
@@ -132,6 +140,7 @@ def _raise_for(response: httpx.Response) -> None:
     message = response.reason_phrase or "Request failed"
     error_code = None
     request_id = None
+    details: dict[str, Any] | None = None
     try:
         body = response.json()
     except ValueError:
@@ -140,7 +149,9 @@ def _raise_for(response: httpx.Response) -> None:
         message = str(body.get("message") or body.get("detail") or message)
         error_code = body.get("error_code")
         request_id = body.get("request_id")
-    raise ApiError(response.status_code, message, error_code, request_id)
+        if isinstance(body.get("details"), dict):
+            details = body["details"]
+    raise ApiError(response.status_code, message, error_code, request_id, details)
 
 
 class StanduplessClient:
