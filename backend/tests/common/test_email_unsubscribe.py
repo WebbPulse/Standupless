@@ -183,6 +183,7 @@ def _entry(kind: str, issue_id: str = "", project_id: str = "") -> DigestEntry:
         issue_id=issue_id,
         issue_key="ENG-1" if issue_id else "",
         project_id=project_id,
+        created_at=datetime.now(UTC),
     )
 
 

@@ -55,6 +55,8 @@ PUBLIC_OPERATIONS = {
     ("GET", "/api/discord/oauth/callback"),
     ("POST", "/api/discord/interactions"),
     ("POST", "/api/billing/stripe/webhook"),
+    ("GET", "/api/email/unsubscribe"),
+    ("POST", "/api/email/unsubscribe"),
     ("GET", "/api/mcp"),
     ("POST", "/api/mcp"),
     ("DELETE", "/api/mcp"),
