@@ -4,6 +4,8 @@
  * Today chip, and the grid lines and today line behind the lanes. The
  * projects timeline and the initiatives timeline share it, so both scroll,
  * step, zoom and jump to today the same way, and each only draws its own rows.
+ * Each opens, rezooms and jumps back with the today line centred in the lanes
+ * in view, so how long current work has run and what comes next both show.
  */
 
 import React, {
@@ -23,8 +25,8 @@ import type {
 /** The width of the pinned name column, in pixels. */
 export const NAME_WIDTH = 280;
 
-/** How far from the left edge today sits when the view jumps to it. */
-export const TODAY_INSET = 160;
+/** How far from the left edge of the lanes a day sits when the view jumps to it. */
+export const JUMP_INSET = 160;
 
 /** The share of the view one step earlier or later moves it by. */
 export const STEP_SHARE = 0.8;
@@ -37,7 +39,7 @@ export interface ViewWindow {
 
 /** What a page holding a timeline can ask of it. */
 export interface TimelineHandle {
-  /** Scrolls the view so today sits near its left edge. */
+  /** Scrolls the view so the today line sits in the middle of the lanes in view. */
   scrollToToday: () => void;
   /** Moves the view most of a screen earlier, or later. */
   step: (direction: -1 | 1) => void;
@@ -64,10 +66,15 @@ export interface TimelineView {
   scrollToDay: (day: number, inset?: number) => void;
 }
 
+/** The width of the lanes in view, past the pinned name column. */
+const lanesInView = (node: HTMLElement): number =>
+  Math.max(0, node.clientWidth - NAME_WIDTH);
+
 /**
- * Keeps a timeline's view: it opens on today, holds the day at the centre
- * when the zoom changes, follows resizes, and answers the page's Today and
- * step requests through `ref`.
+ * Keeps a timeline's view: it opens with the today line centred, centres it
+ * again when the zoom changes, holds the day at the centre when the data or
+ * range changes so a refetch never moves a view the user scrolled, follows
+ * resizes, and answers the page's Today and step requests through `ref`.
  */
 export const useTimelineView = ({
   range,
@@ -85,7 +92,7 @@ export const useTimelineView = ({
     const node = scroller.current;
     if (node === null) return;
     const left = node.scrollLeft;
-    const right = left + Math.max(0, node.clientWidth - NAME_WIDTH);
+    const right = left + lanesInView(node);
     centre.current = range.start + (left + (right - left) / 2) / pxPerDay;
     setView((held) =>
       held.left === left && held.right === right ? held : { left, right }
@@ -93,7 +100,7 @@ export const useTimelineView = ({
   }, [range.start, pxPerDay]);
 
   const scrollToDay = useCallback(
-    (day: number, inset = TODAY_INSET): void => {
+    (day: number, inset = JUMP_INSET): void => {
       const node = scroller.current;
       if (node === null) return;
       node.scrollLeft = Math.max(0, (day - range.start) * pxPerDay - inset);
@@ -102,16 +109,20 @@ export const useTimelineView = ({
     [range.start, pxPerDay, readView]
   );
 
+  const centreToday = useCallback((): void => {
+    const node = scroller.current;
+    if (node === null) return;
+    scrollToDay(today + 0.5, lanesInView(node) / 2);
+  }, [scrollToDay, today]);
+
   useImperativeHandle(
     ref,
     () => ({
-      scrollToToday: () => {
-        scrollToDay(today);
-      },
+      scrollToToday: centreToday,
       step: (direction) => {
         const node = scroller.current;
         if (node === null) return;
-        const width = Math.max(0, node.clientWidth - NAME_WIDTH);
+        const width = lanesInView(node);
         node.scrollLeft = Math.max(
           0,
           node.scrollLeft + direction * Math.round(width * STEP_SHARE)
@@ -119,24 +130,23 @@ export const useTimelineView = ({
         readView();
       },
     }),
-    [scrollToDay, today, readView]
+    [centreToday, readView]
   );
 
-  const placed = useRef(false);
+  const placedZoom = useRef<TimelineZoom | null>(null);
   useLayoutEffect(() => {
     if (!hasRows) return;
     const node = scroller.current;
     if (node === null) return;
-    if (!placed.current) {
-      placed.current = true;
-      scrollToDay(today);
+    if (placedZoom.current !== zoom) {
+      placedZoom.current = zoom;
+      centreToday();
       return;
     }
     if (centre.current !== null) {
-      const half = Math.max(0, node.clientWidth - NAME_WIDTH) / 2;
-      scrollToDay(centre.current, half);
+      scrollToDay(centre.current, lanesInView(node) / 2);
     }
-  }, [zoom, hasRows, today, scrollToDay]);
+  }, [zoom, hasRows, centreToday, scrollToDay]);
 
   useEffect(() => {
     const node = scroller.current;
