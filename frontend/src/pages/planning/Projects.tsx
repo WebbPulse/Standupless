@@ -123,6 +123,7 @@ import type { ComboboxOption } from '../../components/ui/combobox';
 import EmptyState, { EmptyStateButton } from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FilterButton from '../../components/ui/filter-button';
+import { FilterRow } from '../../components/ui/page-header';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
@@ -1819,7 +1820,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               current="projects"
             />
           )}
-          <div className="flex items-center gap-1.5 max-sm:w-full max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:*:shrink-0 sm:contents">
+          <FilterRow>
             <LuListFilter
               aria-hidden="true"
               className="mr-0.5 h-3.5 w-3.5 text-text-faint"
@@ -1898,7 +1899,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
                 Clear
               </Button>
             )}
-          </div>
+          </FilterRow>
           <div className="ml-auto flex items-center gap-1">
             <ProjectsDisplayMenu
               layout={layout}

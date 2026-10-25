@@ -13,7 +13,9 @@
  * the same view fits a full page and a pane beside a list. Cmd or Ctrl+I, or
  * the panel button in the bar, hides the panel so the column reads at full
  * width, and the viewer's choice holds on every issue and in the pane. The
- * property keys still open their pickers while it is hidden.
+ * property keys still open their pickers while it is hidden. On a phone the
+ * panel folds behind a Show properties button under the description, so the
+ * title and the description come first.
  *
  * Adding a link, a sub-issue, a relation or a parent opens a dialog from the issue
  * menu, the panel's "+" menu, the command palette or a shortcut. Duplicate
@@ -106,6 +108,7 @@ import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
+import { cn } from '../../lib/cn';
 import { useWritable } from '../../hooks/useOffline';
 import {
   COPY_BRANCH_KEYS,
@@ -387,6 +390,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const attachFiles = useAttachFiles(workspaceId, issueId);
   const subscription = useIssueSubscription(workspaceId, issueId);
   const detailsPanel = useDetailsPanel();
+  const [phoneProperties, setPhoneProperties] = useState(false);
   const reminder = useIssueReminder(workspaceId, issueId);
   const teamTip = useTruncationTooltip<HTMLAnchorElement>();
   const remindKeys = embedded ? '' : REMIND_ME_KEYS;
@@ -1192,8 +1196,30 @@ export const IssueView: React.FC<IssueViewProps> = ({
               </div>
 
               {team !== undefined && detailsPanel.shown && (
+                <button
+                  type="button"
+                  aria-expanded={phoneProperties}
+                  className="screen-only order-2 flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm text-text-muted sm:hidden"
+                  onClick={() => {
+                    setPhoneProperties((open) => !open);
+                  }}
+                >
+                  <LuChevronRight
+                    aria-hidden="true"
+                    className={cn(
+                      'h-3.5 w-3.5 transition-transform',
+                      phoneProperties && 'rotate-90'
+                    )}
+                  />
+                  {phoneProperties ? 'Hide properties' : 'Show properties'}
+                </button>
+              )}
+              {team !== undefined && detailsPanel.shown && (
                 <IssuePropertiesPanel
-                  className="screen-only order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto"
+                  className={cn(
+                    'screen-only order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto',
+                    !phoneProperties && 'max-sm:hidden'
+                  )}
                   workspaceId={workspaceId}
                   slug={slug}
                   issue={issue}
