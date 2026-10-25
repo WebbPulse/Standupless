@@ -156,7 +156,7 @@ def add_template_rows(
             issues={row.issue_id: row for row in issues.values()},
         )
         try:
-            created = create_issue(repositories, context, payload, fresh=fresh)
+            created = create_issue(repositories, context, payload, fresh=fresh, inherit=False)
         except HTTPException as exc:
             if exc.status_code != status.HTTP_422_UNPROCESSABLE_ENTITY:
                 raise

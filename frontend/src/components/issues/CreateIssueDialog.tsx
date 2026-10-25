@@ -40,7 +40,9 @@
  * Milestone, parent, sub-issues and attachments are filed in the same save.
  * The milestone chip appears once a project is chosen, the parent chip
  * searches the team's top level issues, and sub-issue rows become issues
- * under the new one, carrying its project, milestone and cycle. A file
+ * under the new one, carrying its project, milestone and cycle. A sub-issue
+ * preset with its parent's assignee that the person clears is sent
+ * unassigned, so the server does not hand it back. A file
  * pasted, dropped or picked is held with a placeholder in the description
  * and uploaded once the issue exists, the placeholder becoming its embed.
  *
@@ -1229,13 +1231,17 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         : withSubIssues !== null
           ? templatePayload(activeTeamId, title, sentBody, draft, withSubIssues)
           : toPayload(activeTeamId, title, sentBody, draft);
-    const payload: IssueCreate =
-      withSubIssues === null
-        ? base
-        : {
-            ...base,
-            template_sub_issue_keys: draft.parent === null ? kept : [],
-          };
+    const clearedAssignee =
+      draft.parent !== null &&
+      draft.assigneeId === null &&
+      preset?.assigneeId !== undefined;
+    const payload: IssueCreate = {
+      ...base,
+      ...(clearedAssignee ? { assignee_id: null } : {}),
+      ...(withSubIssues === null
+        ? {}
+        : { template_sub_issue_keys: draft.parent === null ? kept : [] }),
+    };
     createIssue(workspaceId, payload)
       .then(async (made) => {
         const issue = await uploadHeld(made, sentBody, form !== null);

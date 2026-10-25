@@ -1,13 +1,15 @@
 /**
  * Filing sub-issues: the create body carries the parent's team, priority and
- * project but never its labels, the caller's fields win, and a run files the
- * drafts in order and stops at the first failure.
+ * project but never its labels, the caller's fields win, the parent's assignee
+ * follows by Linear's rule, and a run files the drafts in order and stops at
+ * the first failure.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IssueCreate, IssueRead } from '../types/Api';
 import {
   createSubIssues,
+  inheritedAssignee,
   parentOfIssue,
   subIssueBody,
   subIssueDialogPresets,
@@ -124,6 +126,72 @@ describe('subIssueDialogPresets', () => {
       projectId: 'proj-2',
     });
     expect(presets).not.toHaveProperty('labelIds');
+  });
+});
+
+describe('inheritedAssignee', () => {
+  it('passes the parent down to the creator who holds it', () => {
+    expect(inheritedAssignee('u-1', 'u-1', ['u-2'])).toBe('u-1');
+    expect(inheritedAssignee('u-1', 'u-1', undefined)).toBe('u-1');
+  });
+
+  it('counts no siblings as sharing the assignee', () => {
+    expect(inheritedAssignee('u-1', 'u-9', [])).toBe('u-1');
+  });
+
+  it('follows siblings that all share it and stops at a mixed set', () => {
+    expect(inheritedAssignee('u-1', 'u-9', ['u-1', 'u-1'])).toBe('u-1');
+    expect(inheritedAssignee('u-1', 'u-9', ['u-1', null])).toBeNull();
+    expect(inheritedAssignee('u-1', 'u-9', ['u-1', 'u-2'])).toBeNull();
+  });
+
+  it('leaves it to the server while the siblings are unknown', () => {
+    expect(inheritedAssignee('u-1', 'u-9', undefined)).toBeNull();
+    expect(inheritedAssignee('u-1', undefined, undefined)).toBeNull();
+  });
+
+  it('passes nothing down from an unassigned parent', () => {
+    expect(inheritedAssignee(null, 'u-1', [])).toBeNull();
+    expect(inheritedAssignee(undefined, 'u-1', [])).toBeNull();
+  });
+});
+
+describe('subIssueDialogPresets with an assignee', () => {
+  const assigned = { ...parent, assigneeId: 'u-1' };
+
+  it("presets the parent's assignee by the creation rule", () => {
+    expect(subIssueDialogPresets(assigned, { creatorId: 'u-1' })).toMatchObject(
+      { assigneeId: 'u-1' }
+    );
+    expect(
+      subIssueDialogPresets(assigned, {
+        creatorId: 'u-9',
+        siblingAssigneeIds: [],
+      })
+    ).toMatchObject({ assigneeId: 'u-1' });
+  });
+
+  it('presets no assignee when the rule does not hold', () => {
+    expect(
+      subIssueDialogPresets(assigned, {
+        creatorId: 'u-9',
+        siblingAssigneeIds: ['u-2'],
+      })
+    ).not.toHaveProperty('assigneeId');
+    expect(subIssueDialogPresets(assigned)).not.toHaveProperty('assigneeId');
+  });
+
+  it("reads the parent's assignee from an issue row", () => {
+    expect(
+      parentOfIssue({
+        id: 'p-3',
+        key: 'ENG-3',
+        team_id: 'team-3',
+        priority: 'none',
+        project_id: null,
+        assignee_id: 'u-1',
+      })
+    ).toMatchObject({ assigneeId: 'u-1' });
   });
 });
 

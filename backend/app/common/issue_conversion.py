@@ -100,13 +100,15 @@ def duplicate_issue(
     never asks for triage, though a caller the team would send there still lands
     there, as their own new issue would. With `include_sub_issues` every live
     sub-issue is copied under the copy in the same order, keeping its own title.
+    A copy is the original's fields, so it never takes a parent's cycle or
+    assignee the way a new sub-issue does.
     """
     children = sub_issues_to_copy(repositories, context.workspace_id, issue) if include_sub_issues else []
     payload = _copy_payload(issue, title=duplicate_title(issue.title), parent_id=issue.parent_id, sort_order=None)
-    copy = create_issue(repositories, context, payload)
+    copy = create_issue(repositories, context, payload, inherit=False)
     for child in children:
         child_payload = _copy_payload(child, title=child.title, parent_id=copy.issue_id, sort_order=child.sort_order)
-        create_issue(repositories, context, child_payload)
+        create_issue(repositories, context, child_payload, inherit=False)
     return copy
 
 

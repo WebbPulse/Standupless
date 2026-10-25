@@ -69,6 +69,7 @@ from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
 from app.common.sla import apply_sla, sla_breach_key
+from app.common.sub_issue_inheritance import inherited_assignee_id, inherited_cycle_id
 from app.common.sub_teams import listed_teams
 from app.common.triage_duty import duty_assignee, require_priority
 
@@ -448,9 +449,10 @@ def create_issue(
     *,
     fresh: Optional[FreshRows] = None,
     origin_ref: Optional[str] = None,
+    inherit: bool = True,
 ) -> Issue:
     """Create an issue and the sub-issues its template adds, answering the issue."""
-    return create_issue_tree(repositories, context, payload, fresh=fresh, origin_ref=origin_ref)[0]
+    return create_issue_tree(repositories, context, payload, fresh=fresh, origin_ref=origin_ref, inherit=inherit)[0]
 
 
 def create_issue_tree(
@@ -460,6 +462,7 @@ def create_issue_tree(
     *,
     fresh: Optional[FreshRows] = None,
     origin_ref: Optional[str] = None,
+    inherit: bool = True,
 ) -> tuple[Issue, list[Issue]]:
     """Create an issue and the sub-issues its template adds, all of them or none.
 
@@ -470,10 +473,11 @@ def create_issue_tree(
     removed and the 422 names the sub-issue, so a parent is never left half
     built. An issue landing in triage then runs its team's triage rules.
     `origin_ref` is kept on the issue's created activity, such as the Message-ID
-    of the mail that filed it.
+    of the mail that filed it. `inherit` off keeps a sub-issue from taking its
+    parent's cycle and assignee, for a blueprint that already plans both.
     """
     fresh = fresh or FreshRows()
-    issue, template, filled = _create_one(repositories, context, payload, fresh, origin_ref=origin_ref)
+    issue, template, filled = _create_one(repositories, context, payload, fresh, origin_ref=origin_ref, inherit=inherit)
     created: list[Issue] = []
     try:
         team = repositories.teams.get(context.workspace_id, issue.team_id)
@@ -494,7 +498,7 @@ def create_issue_tree(
                 project=fresh.project, milestones=fresh.milestones, issues={**fresh.issues, issue.issue_id: issue}
             )
             try:
-                created.append(_create_one(repositories, context, child, known)[0])
+                created.append(_create_one(repositories, context, child, known, inherit=False)[0])
             except HTTPException as exc:
                 raise unprocessable(
                     f"Could not create the sub-issue {item.title}: {_reason(exc)}. Nothing was created."
@@ -534,6 +538,7 @@ def _create_one(
     fresh: FreshRows,
     *,
     origin_ref: Optional[str] = None,
+    inherit: bool = True,
 ) -> tuple[Issue, Optional[IssueTemplate], IssueCreate]:
     """Create one issue, allocating its key from the team's counter, and answer the template and the filled create.
 
@@ -544,7 +549,9 @@ def _create_one(
     wasted ones. `fresh` names rows this request has just written, so a project,
     milestone or parent created a moment ago is not refused for read lag. An
     unassigned issue landing in a triage inbox whose team assigns its duty goes
-    to the member on duty.
+    to the member on duty. A sub-issue that leaves out its cycle or assignee
+    takes the parent's under Linear's rules, unless `inherit` is off, as it is
+    for a template's own sub-issues, which carry their parent's plan already.
     """
     require_team_member(repositories, context, payload.team_id)
     team = repositories.teams.get(context.workspace_id, payload.team_id)
@@ -592,6 +599,13 @@ def _create_one(
         status_named=bool(status_ref),
         has_parent=parent_id is not None,
     )
+    parent: Optional[Issue] = None
+    if inherit and parent_id is not None:
+        parent = fresh.issues.get(parent_id) or repositories.issues.get(context.workspace_id, parent_id)
+    if parent is not None and "cycle_id" not in payload.model_fields_set:
+        cycle_id = inherited_cycle_id(repositories, parent, chosen.category, in_triage)
+    if parent is not None and "assignee_id" not in payload.model_fields_set:
+        assignee_id = inherited_assignee_id(repositories, context.user_id, parent)
     if in_triage and assignee_id is None:
         assignee_id = duty_assignee(repositories, context.workspace_id, payload.team_id)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)

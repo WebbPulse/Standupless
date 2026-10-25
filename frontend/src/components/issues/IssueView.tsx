@@ -507,7 +507,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const addSubIssue = (): void => {
     if (issue === null) return;
     createIssue.open({
-      ...subIssueDialogPresets(parentOfIssue(issue)),
+      ...subIssueDialogPresets(parentOfIssue(issue), {
+        creatorId: currentUserId,
+        ...(children.isLoading || children.hasMore
+          ? {}
+          : {
+              siblingAssigneeIds: children.rows.map((row) => row.assignee_id),
+            }),
+      }),
       onCreated: () => {
         invalidateQueries([childrenKey(issue.id), activityKey(issue.id)]);
       },
