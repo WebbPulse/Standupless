@@ -189,9 +189,10 @@ class UserPreferencesUpdate(BaseModel):
     device. `theme` is the interface theme and `pointer_cursors` whether
     interactive elements show the pointer cursor. `convert_emoticons` is
     whether the editor turns typed emoticons into emoji. `activity_filter` is
-    whether issue activity shows every change or only comments. `sidebar_items` moves the named sidebar items, leaving the
-    others where they are, and `sidebar_badge_style` picks a count or a dot for
-    the unread badges. `projects_display` replaces how the projects list is arranged as a
+    whether issue activity shows every change or only comments.
+    `sidebar_items` moves the named sidebar items, leaving the others where
+    they are, and `sidebar_badge_style` picks a count or a dot for the unread
+    badges. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
     the workspace's default again, and `initiatives_display` does the same for
     the initiatives list. `auto_assign_to_self`, `branch_copy_starts`
