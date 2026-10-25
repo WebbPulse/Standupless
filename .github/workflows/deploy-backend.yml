@@ -395,6 +395,7 @@ jobs:
       id-token: write
     outputs:
       function-image-map: ${{ steps.filter.outputs.function-image-map }}
+      missing-function-image-map: ${{ steps.filter.outputs.missing-function-image-map }}
     steps:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -447,10 +448,13 @@ jobs:
           full = json.load(sys.stdin)
           present = {n for n in os.environ["PRESENT"].split("\n") if n}
           json.dump({k: v for k, v in full.items() if k in present}, open("deploy-map.json", "w"), indent=2)
+          json.dump({k: v for k, v in full.items() if k not in present}, open("missing-map.json", "w"), indent=2)
           '
 
           MAP=$(python3 -c 'import json; print(json.dumps(json.load(open("deploy-map.json"))))')
           echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
+          MISSING_MAP=$(python3 -c 'import json; print(json.dumps(json.load(open("missing-map.json"))))')
+          echo "missing-function-image-map=${MISSING_MAP}" >> "$GITHUB_OUTPUT"
 
           {
             echo "## Deploy targets"
@@ -467,7 +471,8 @@ jobs:
             fi
             if [ -n "$MISSING" ]; then
               echo
-              echo "Not created yet, skipped:"
+              echo "Not created yet, so the new-functions job waits for the plane run on"
+              echo "this commit and deploys whichever of these it created:"
               echo
               printf "%b" "$MISSING" | sed 's/^/- `/; s/$/`/'
             fi
@@ -595,6 +600,163 @@ jobs:
           fi
           echo "Every deployed domain function answered GET /health with 200."
 
+  new-functions:
+    name: Wait for the plane to create the missing functions
+    needs: [resolve-env, existing-functions, deploy-images]
+    if: >-
+      always()
+      && needs.existing-functions.result == 'success'
+      && needs.existing-functions.outputs.missing-function-image-map != ''
+      && needs.existing-functions.outputs.missing-function-image-map != '{}'
+      && needs.deploy-images.result != 'failure'
+      && needs.deploy-images.result != 'cancelled'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      checks: read
+      id-token: write
+    outputs:
+      function-image-map: ${{ steps.filter.outputs.function-image-map }}
+    steps:
+      - name: Wait for the plane run on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WORKSPACE: ${{ needs.resolve-env.outputs.name == 'production' && 'Standupless' || 'Standupless-staging' }}
+          TIMEOUT_MINUTES: ${{ needs.resolve-env.outputs.name == 'production' && '45' || '20' }}
+          PLANE_CHECK: webbpulse-terraform
+          POLL_SECONDS: "20"
+        run: |
+          set -euo pipefail
+
+          newest_check() {
+            local ENCODED
+            ENCODED=$(jq -rn --arg value "$1" '$value | @uri')
+            gh api "repos/${REPOSITORY}/commits/${GITHUB_SHA}/check-runs?check_name=${ENCODED}&filter=all&per_page=100" \
+              --jq "[.check_runs[] | select(.app.slug == \"${PLANE_CHECK}\")] | sort_by(.started_at, .id) | last // empty | {status, conclusion, title: (.output.title // \"\")}"
+          }
+
+          echo "Waiting up to ${TIMEOUT_MINUTES} minutes for the ${WORKSPACE} run at ${GITHUB_SHA}."
+          DEADLINE=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+          LAST_WAITING=""
+
+          while :; do
+            WAITING=""
+            if ! AGGREGATE=$(newest_check "$PLANE_CHECK"); then
+              WAITING="the GitHub API, which refused the ${PLANE_CHECK} check run read"
+            elif [ -z "$AGGREGATE" ]; then
+              WAITING="the plane to report on this commit"
+            elif ! STATE=$(newest_check "${PLANE_CHECK}/${WORKSPACE}"); then
+              WAITING="the GitHub API, which refused the ${PLANE_CHECK}/${WORKSPACE} check run read"
+            elif [ -z "$STATE" ]; then
+              echo "The plane did not run ${WORKSPACE} on this commit, so it creates no function."
+              break
+            else
+              STATUS=$(jq -r '.status' <<<"$STATE")
+              CONCLUSION=$(jq -r '.conclusion // ""' <<<"$STATE")
+              TITLE=$(jq -r '.title' <<<"$STATE")
+              if [ "$STATUS" != "completed" ]; then
+                WAITING="${WORKSPACE}, whose run is ${STATUS} (${TITLE})"
+              elif [ "$CONCLUSION" = "action_required" ]; then
+                WAITING="${WORKSPACE}, whose run is held for confirmation (${TITLE})"
+              else
+                echo "${WORKSPACE}: ${CONCLUSION} (${TITLE})."
+                break
+              fi
+            fi
+
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::error::Waited ${TIMEOUT_MINUTES} minutes and was still waiting on ${WAITING}. Functions the apply creates later keep their seed image until this job is re-run."
+              exit 1
+            fi
+            if [ "$WAITING" != "$LAST_WAITING" ]; then
+              echo "Waiting on ${WAITING}."
+              LAST_WAITING="$WAITING"
+            fi
+            sleep "$POLL_SECONDS"
+          done
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: us-west-2
+
+      - name: Keep the functions the apply created
+        id: filter
+        env:
+          MISSING_FUNCTION_IMAGE_MAP: ${{ needs.existing-functions.outputs.missing-function-image-map }}
+        run: |
+          set -euo pipefail
+
+          printf '%s' "$MISSING_FUNCTION_IMAGE_MAP" > missing-map.json
+          CREATED=""
+          for FUNCTION in $(python3 -c 'import json; print("\n".join(sorted(json.load(open("missing-map.json")))))'); do
+            set +e
+            ERR=$(aws lambda get-function-configuration \
+              --function-name "$FUNCTION" \
+              --query 'FunctionName' --output text 2>&1 >/dev/null)
+            STATUS=$?
+            set -e
+            if [ "$STATUS" -eq 0 ]; then
+              CREATED="${CREATED} ${FUNCTION}"
+              continue
+            fi
+            case "$ERR" in
+              *ResourceNotFoundException*|*"Function not found"*)
+                echo "${FUNCTION} still does not exist, skipped."
+                ;;
+              *)
+                echo "$ERR"
+                echo "get-function-configuration failed for ${FUNCTION} for a reason other than the function not existing."
+                exit 1
+                ;;
+            esac
+          done
+
+          MAP=$(CREATED="$CREATED" python3 -c '
+          import json, os
+
+          full = json.load(open("missing-map.json"))
+          created = set(os.environ["CREATED"].split())
+          print(json.dumps({k: v for k, v in full.items() if k in created}))
+          ')
+          echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Functions created by the apply"
+            echo
+            if [ -n "$CREATED" ]; then
+              echo "Moving onto this commit's image:"
+              echo
+              for FUNCTION in $CREATED; do echo "- \`${FUNCTION}\`"; done
+            else
+              echo "The apply created none of the missing functions."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-new-functions:
+    needs: [resolve-env, new-functions]
+    if: >-
+      always()
+      && needs.new-functions.result == 'success'
+      && needs.new-functions.outputs.function-image-map != ''
+      && needs.new-functions.outputs.function-image-map != '{}'
+    permissions:
+      contents: read
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/lambda-image-deploy.yml@v3
+    with:
+      environment: ${{ needs.resolve-env.outputs.name }}
+      aws-region: us-west-2
+      function-image-map: ${{ needs.new-functions.outputs.function-image-map }}
+      publish-version: true
+      concurrency-group: backend-image-deploy-${{ needs.resolve-env.outputs.name }}
+    secrets:
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+
   slack-manifest:
     name: Apply the Slack manifest
     needs:
@@ -606,6 +768,8 @@ jobs:
       - existing-functions
       - deploy-images
       - smoke-domains
+      - new-functions
+      - deploy-new-functions
     if: >-
       always()
       && needs.resolve-env.result == 'success'
