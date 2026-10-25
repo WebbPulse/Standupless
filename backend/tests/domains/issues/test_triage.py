@@ -14,6 +14,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common.api.dependencies.authz import AuthzContext
+from app.common.comment_writes import create_comment, edit_comment
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.team_config import default_triage_settings
@@ -361,11 +363,11 @@ def _snoozed(client: TestClient, repositories: Any) -> str:
     return str(waiting["id"])
 
 
-def _comment(client: TestClient, issue_id: str, body: str = "Any news?") -> "dict[str, Any]":
-    """Post one comment on an issue as the signed in user."""
-    response = client.post(f"{BASE}/{issue_id}/comments", json={"body": body})
-    assert response.status_code == 201, response.text
-    return dict(response.json())
+def _comment(repositories: Any, issue_id: str, user_id: str, body: str = "Any news?") -> Any:
+    """Post one comment on an issue through the shared write path every surface uses."""
+    role = "owner" if user_id == OWNER else "admin"
+    context = AuthzContext(workspace_id=WORKSPACE, user_id=user_id, role=role)
+    return create_comment(repositories, context, issue_id, body)
 
 
 def test_snooze_keeps_who_snoozed_it(client: TestClient, triage: str, repositories: Any) -> None:
@@ -383,8 +385,7 @@ def test_someone_elses_comment_wakes_a_snoozed_issue(client: TestClient, triage:
     before = repositories.issues.get(WORKSPACE, issue_id)
     history = len(repositories.activity.list_for_issue(WORKSPACE, issue_id, limit=50).items)
 
-    sign_in(client, ADMIN)
-    _comment(client, issue_id)
+    _comment(repositories, issue_id, ADMIN)
 
     after = repositories.issues.get(WORKSPACE, issue_id)
     assert after.snoozed_until is None
@@ -401,7 +402,7 @@ def test_the_snoozers_own_comment_keeps_it_snoozed(client: TestClient, triage: s
     """A comment from the person who snoozed the issue is not new activity from someone else."""
     issue_id = _snoozed(client, repositories)
 
-    _comment(client, issue_id)
+    _comment(repositories, issue_id, OWNER)
 
     assert repositories.issues.get(WORKSPACE, issue_id).snoozed_until is not None
     assert _waiting(client) == []
@@ -413,19 +414,14 @@ def test_editing_a_comment_does_not_wake_it(client: TestClient, triage: str, rep
     add_team_member(repositories, WORKSPACE, TEAM, ADMIN, "member")
     sign_in(client, MEMBER)
     waiting = create_issue(client, WORKSPACE)
-    sign_in(client, ADMIN)
-    written = _comment(client, waiting["id"])
+    written = _comment(repositories, waiting["id"], ADMIN)
     sign_in(client, OWNER)
     until = (utc_now() + timedelta(days=1)).isoformat()
     client.post(f"{BASE}/{waiting['id']}/triage/snooze", json={"until": until})
 
-    sign_in(client, ADMIN)
-    edited = client.patch(
-        f"/api/workspaces/{WORKSPACE}/comments/{written['comment_id']}",
-        json={"issue_id": waiting["id"], "body": "Edited"},
-    )
+    context = AuthzContext(workspace_id=WORKSPACE, user_id=ADMIN, role="admin")
+    edit_comment(repositories, context, written, "Edited")
 
-    assert edited.status_code == 200, edited.text
     assert repositories.issues.get(WORKSPACE, waiting["id"]).snoozed_until is not None
 
 
@@ -436,8 +432,7 @@ def test_a_comment_on_an_issue_not_snoozed_changes_nothing(client: TestClient, t
     waiting = create_issue(client, WORKSPACE)
     before = repositories.issues.get(WORKSPACE, waiting["id"])
 
-    sign_in(client, ADMIN)
-    _comment(client, waiting["id"])
+    _comment(repositories, waiting["id"], ADMIN)
 
     after = repositories.issues.get(WORKSPACE, waiting["id"])
     assert after.snoozed_until is None
@@ -455,8 +450,7 @@ def test_a_comment_on_an_issue_out_of_triage_changes_nothing(
     until = utc_now() + timedelta(days=1)
     stamped = repositories.issues.replace(stored.model_copy(update={"snoozed_until": until, "snoozed_by": OWNER}))
 
-    sign_in(client, ADMIN)
-    _comment(client, direct["id"])
+    _comment(repositories, direct["id"], ADMIN)
 
     after = repositories.issues.get(WORKSPACE, direct["id"])
     assert after.in_triage is False
