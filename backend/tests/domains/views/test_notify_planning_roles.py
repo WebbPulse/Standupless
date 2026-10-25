@@ -1,4 +1,4 @@
-"""The notify consumer's role notices: a person made a project's lead, added to its members or made an initiative's owner.
+"""The notify consumer's role notices: made a project's lead, added to its members or made an initiative's owner.
 
 These pin that each role is news once, to the person handed it and never to
 whoever made the write, on a created row and on a changed one; that a removal,

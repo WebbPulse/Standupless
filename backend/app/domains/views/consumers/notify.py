@@ -61,7 +61,6 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import (
     BLOCKING_CHANGED,
-    INITIATIVE_OWNER_ASSIGNED,
     ISSUE_CANCELLED,
     ISSUE_COMPLETED,
     PRIORITY_URGENT,
