@@ -312,8 +312,8 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_workspace_members",
         description="Every workspace member with user id, email, display name, workspace role, join date, "
-        "status and, for an admin, last active time (null when never seen). Active and suspended members by default; pass status to filter, and invited to include pending "
-        "invites, which only an admin sees.",
+        "status and, for an admin, last active time (null when never seen). Active and suspended members "
+        "by default; pass status to filter, and invited to include pending invites, which only an admin sees.",
         scopes=("members:read",),
         schema=object_schema({"status": one_or_many("active, suspended or invited; one or a list")}),
         handler=_list_members,
