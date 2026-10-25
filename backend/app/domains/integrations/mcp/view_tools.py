@@ -393,6 +393,7 @@ def _clear_notifications(call: ToolCall) -> Any:
     payload = InboxClearRequest(
         read_only=_flag(call, "read_only"),
         include_snoozed=_flag(call, "include_snoozed"),
+        completed_only=_flag(call, "completed_only"),
         kinds=filter_values(call.optional("kinds")) or [],
     )
     return {"deleted": clear_notifications(call.repositories, call.context, payload)}
@@ -577,7 +578,8 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         name="delete_all_notifications",
         description=(
             "Permanently delete your notifications in bulk. read_only=true deletes only read ones; otherwise "
-            "every one goes except those still snoozed, unless include_snoozed=true. kinds keeps to those kinds. "
+            "every one goes except those still snoozed, unless include_snoozed=true. completed_only=true deletes only "
+            "those about an issue now completed or cancelled, read or not. kinds keeps to those kinds. "
             "Answers how many were deleted. Issues are untouched."
         ),
         scopes=("notifications:write",),
@@ -585,6 +587,7 @@ VIEW_TOOLS: tuple[Tool, ...] = (
             {
                 "read_only": _boolean("Only notifications already read"),
                 "include_snoozed": _boolean("Also delete notifications still snoozed"),
+                "completed_only": _boolean("Only notifications about an issue now completed or cancelled"),
                 "kinds": one_or_many("One notification kind or a list, ORed: " + ", ".join(INBOX_KINDS)),
             }
         ),
