@@ -761,6 +761,15 @@ class DisplayOptionsBody(TypedDict):
     ]
 
 
+class DocumentCommentCreate(TypedDict):
+    body: str
+    parent_comment_id: NotRequired[str | None]
+
+
+class DocumentCommentUpdate(TypedDict):
+    body: str
+
+
 class DocumentCreate(TypedDict):
     body: NotRequired[str | None]
     icon: NotRequired[str | None]
@@ -1520,6 +1529,8 @@ class NotificationRead(TypedDict):
     actor_name: str
     comment_id: NotRequired[str | None]
     created_at: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
     due_state: NotRequired[Literal["due", "overdue"] | None]
     expires_at: int
     initiative_id: NotRequired[str | None]
@@ -1922,6 +1933,7 @@ class ReactionListRead(TypedDict):
 
 
 class ReactionWrite(TypedDict):
+    document_id: NotRequired[str | None]
     emoji: str
     issue_id: NotRequired[str | None]
     target_id: str
@@ -2172,6 +2184,8 @@ class SearchCommentRead(TypedDict):
     author_id: str
     comment_id: str
     created_at: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
     issue_id: str
     issue_key: str
     issue_title: str
@@ -2986,6 +3000,7 @@ class UserPreferencesUpdate(TypedDict):
                 "issue_cancelled",
                 "priority_urgent",
                 "blocking_changed",
+                "document_comment",
             ],
             NotificationChannelsUpdate,
         ]
@@ -3656,6 +3671,7 @@ class CommentRead(TypedDict):
     body: str
     comment_id: str
     created_at: str
+    document_id: NotRequired[str | None]
     edited_at: NotRequired[str | None]
     github_thread: NotRequired[GithubThread | None]
     issue_id: str
