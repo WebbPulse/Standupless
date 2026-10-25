@@ -2228,6 +2228,11 @@ export interface CycleRead {
   unestimated?: RollupCounts;
   /** What the cycle close rolled in from the cycle before and out to the next. */
   carry?: CarryOver;
+  /**
+   * On the cycle list, the days with no live cycle before this one, drawn as
+   * "Cycles paused"; null on the first live cycle, a cancelled one and other reads.
+   */
+  gap_before_days?: number | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2375,6 +2380,11 @@ export interface CycleUpdate {
 
 /** Starting a team's next upcoming cycle today. The team names the row. */
 export interface CycleStartToday {
+  team_id: string;
+}
+
+/** Ending a team's current cycle at the close of today. The team names the row. */
+export interface CycleEndToday {
   team_id: string;
 }
 

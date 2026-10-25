@@ -1,4 +1,4 @@
-"""Cycle routes: list, create, read, patch and delete, plus history, velocity and start today.
+"""Cycle routes: list, create, read, patch and delete, plus history, velocity, start today and end today.
 
 Cycles are workspace scoped like issues, so the team is a query parameter or a
 body field rather than a path segment, and every route decides visibility against
@@ -25,6 +25,7 @@ from app.common.api.schemas.planning import (
     MAX_LIMIT,
     CycleCapacityRead,
     CycleCreate,
+    CycleEndToday,
     CycleHistoryPoint,
     CycleHistoryRead,
     CycleListRead,
@@ -36,6 +37,7 @@ from app.common.api.schemas.planning import (
     VelocityCycleRead,
     VelocityRead,
 )
+from app.common.cycle_rollover import end_cycle_today as end_cycle_today_row
 from app.common.cycle_rollover import start_cycle_today_read
 from app.common.cycle_writes import create_cycle as create_cycle_row
 from app.common.cycle_writes import delete_cycle as delete_cycle_row
@@ -231,11 +233,15 @@ def update_cycle(
     workspace_id: Annotated[str, Path()],
     cycle_id: Annotated[str, Path()],
 ) -> CycleRead:
-    """Patch a cycle's name, dates, goal or cancellation.
+    """Patch a cycle's name, dates, goal or cancellation, under Linear's cycle rules.
 
     The row is read first and written whole, so the counters the consumer maintains
     ride along untouched: a patch here must never become a second write path into
-    the numbers the stream owns.
+    the numbers the stream owns. A 422 answers a start date already in the past or
+    any date moved behind today. Extending a cycle into the next one moves that
+    next cycle's start to the day after, and a 409 answers an extension that would
+    leave it no days. A name ending in a number renumbers the automatically named
+    cycles after it.
     """
     return update_cycle_row(repositories, context, cycle_id, payload)
 
@@ -256,6 +262,23 @@ def start_cycle_today(
     current cycle that itself started today.
     """
     return start_cycle_today_read(repositories, context, payload.team_id, cycle_id)
+
+
+@router.post("/{workspace_id}/cycles/{cycle_id}/end-today", response_model=CycleRead)
+def end_cycle_today(
+    payload: CycleEndToday,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    cycle_id: Annotated[str, Path()],
+) -> CycleRead:
+    """End the team's current cycle at the close of today, as Linear's "End cycle today" does.
+
+    Today is the team's own day in its timezone. The cycle after keeps its dates,
+    and the hourly cycle close rolls the unfinished issues on once today is over.
+    A 409 answers a cycle that is not current.
+    """
+    return end_cycle_today_row(repositories, context, payload.team_id, cycle_id)
 
 
 @router.delete("/{workspace_id}/cycles/{cycle_id}", status_code=status.HTTP_204_NO_CONTENT)

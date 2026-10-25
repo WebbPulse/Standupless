@@ -58,6 +58,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         },
         "update_cycle": {"team_id": team, "cycle_id": cycle, "name": "Should not land"},
         "start_cycle_today": {"team_id": team, "cycle_id": cycle},
+        "end_cycle_today": {"team_id": team, "cycle_id": cycle},
         "delete_cycle": {"team_id": team, "cycle_id": cycle},
         "add_issues_to_cycle": {"team_id": team, "cycle_id": cycle, "issue_ids": issues},
         "remove_issues_from_cycle": {"team_id": team, "cycle_id": cycle, "issue_ids": issues},

@@ -42,7 +42,7 @@ from app.common.api.schemas.planning import (
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
-from app.common.cycle_rollover import start_cycle_today_read
+from app.common.cycle_rollover import end_cycle_today, start_cycle_today_read
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.date_resolution import DATE_RESOLUTIONS, date_label
@@ -248,6 +248,7 @@ def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
         "cancelled": cycle.cancelled,
         "counts": cycle.counts.model_dump(),
         "carry": cycle.carry.model_dump(),
+        "gap_before_days": cycle.gap_before_days,
     }
 
 
@@ -410,6 +411,13 @@ def _start_cycle_today(call: ToolCall) -> Any:
         "ended": None if result.ended is None else _cycle_json(result.ended),
         "moved_issues": result.moved_issues,
     }
+
+
+def _end_cycle_today(call: ToolCall) -> Any:
+    """End the current cycle at the close of today; the cycle close rolls its open issues on."""
+    team_id = _team_id(call)
+    cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
+    return _cycle_json(end_cycle_today(call.repositories, call.context, team_id, cycle_id))
 
 
 def _delete_cycle(call: ToolCall) -> Any:
@@ -942,7 +950,11 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="update_cycle",
         description=(
             "Change a cycle's name, dates, goal or cancellation. "
-            "Only the fields named are written; null clears the goal."
+            "Only the fields named are written; null clears the goal. "
+            "Dates already in the past cannot change and no date may move before today. "
+            "Extending a cycle into the next one moves that cycle's start to the day after, "
+            "refused when it would leave the next cycle no days. "
+            "A name ending in a number renumbers the automatically named cycles after it."
         ),
         scopes=("cycles:write",),
         schema=object_schema(
@@ -972,6 +984,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "cycle_id"),
         ),
         handler=_start_cycle_today,
+    ),
+    Tool(
+        name="end_cycle_today",
+        description=(
+            "End a team's current cycle at the close of today in the team's timezone. "
+            "The next cycle keeps its dates, and unfinished issues roll into it when the cycle closes. "
+            "Refused for any cycle but the current one."
+        ),
+        scopes=("cycles:write",),
+        schema=object_schema(
+            {"team_id": string(TEAM_HELP), "cycle_id": string(CYCLE_HELP)},
+            required=("team_id", "cycle_id"),
+        ),
+        handler=_end_cycle_today,
     ),
     Tool(
         name="delete_cycle",

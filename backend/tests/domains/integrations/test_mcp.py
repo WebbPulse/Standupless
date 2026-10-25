@@ -265,6 +265,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "cancel_issue_reminder",
         "snooze_notification",
         "start_cycle_today",
+        "end_cycle_today",
         "subscribe_to_issue",
         "subscribe_to_view",
         "test_channel",

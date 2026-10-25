@@ -112,18 +112,18 @@ def test_a_cycle_of_another_team_is_not_found(client: TestClient, workspace: str
 def test_a_patch_moves_the_name_and_the_dates(client: TestClient, workspace: str) -> None:
     """A patch writes the row whole, so the counters ride along untouched."""
     sign_in(client, MEMBER)
-    cycle = seed_cycle(client, workspace)
+    cycle = seed_cycle(client, workspace, start_date="2099-01-01", end_date="2099-01-14")
 
     response = client.patch(
         f"/api/workspaces/{workspace}/cycles/{cycle['cycle_id']}",
-        json={"team_id": TEAM, "name": "Renamed", "end_date": "2026-01-21"},
+        json={"team_id": TEAM, "name": "Renamed", "end_date": "2099-01-21"},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "Renamed"
-    assert body["end_date"] == "2026-01-21"
-    assert body["start_date"] == "2026-01-01"
+    assert body["end_date"] == "2099-01-21"
+    assert body["start_date"] == "2099-01-01"
     assert body["counts"]["total"] == 0
 
 

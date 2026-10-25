@@ -573,6 +573,10 @@ class CycleCreate(TypedDict):
     team_id: str
 
 
+class CycleEndToday(TypedDict):
+    team_id: str
+
+
 class CycleHistoryPoint(TypedDict):
     completed: int
     completed_points: int
@@ -601,6 +605,7 @@ class CycleRead(TypedDict):
     created_by: str
     cycle_id: str
     end_date: str
+    gap_before_days: NotRequired[int | None]
     goal: NotRequired[str | None]
     name: str
     number: NotRequired[int | None]

@@ -1,4 +1,4 @@
-"""Rolling a cycle's unfinished issues forward, and starting the next cycle today.
+"""Rolling a cycle's unfinished issues forward, starting the next cycle today, and ending the current one today.
 
 The cycle close in the issues function and the "Start cycle today" action share
 one rollover rule: every issue of the cycle whose status is not in a completed
@@ -7,8 +7,12 @@ in the cycle it leaves, and each one stamped with that cycle so the planning
 rollup counts the carry-over on both rows. An issue whose status the team does
 not know is left alone rather than guessed at.
 
-Held in `common` because the planning routes and the MCP tools both start a
-cycle early, and neither image may import the issues domain.
+"End cycle today" moves nothing itself: it ends the current cycle at the close
+of today, and the hourly cycle close rolls its unfinished issues on under the
+same rule once the day is over.
+
+Held in `common` because the planning routes and the MCP tools both start and
+end a cycle early, and neither image may import the issues domain.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import CycleRead, CycleStartTodayRead
 from app.common.cycle_schedule import active_cycle, relative_cycle
+from app.common.cycle_writes import team_today
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Cycle
@@ -162,3 +167,32 @@ def start_cycle_today_read(
         ended=None if result.ended is None else CycleRead.from_row(result.ended, now, count_unestimated=counted),
         moved_issues=result.moved,
     )
+
+
+def end_cycle_today(
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str,
+    cycle_id: str,
+    today: Optional[date] = None,
+) -> CycleRead:
+    """End a team's current cycle at the close of today in the team's timezone, as Linear's action does.
+
+    Only a live cycle whose dates hold today may end today; anything else is a
+    409. A cycle already ending today is answered as it is. The cycle after it
+    keeps its dates, so the days between read as a gap, and the hourly cycle
+    close rolls the unfinished issues into the next cycle once today is over.
+    """
+    cycle = load_readable_cycle(repositories, context, team_id, cycle_id)
+    require_team_member(repositories, context, team_id)
+    now = (today or team_today(repositories, context.workspace_id, team_id)).isoformat()
+    if cycle.cancelled or not cycle.start_date <= now <= cycle.end_date:
+        raise _conflict("Only the current cycle can end today")
+
+    stored = cycle
+    if cycle.end_date != now:
+        stored = repositories.planning.replace_cycle(
+            cycle.model_copy(update={"end_date": now, "updated_at": utc_now()})
+        )
+    counted = counts_unestimated(repositories, context.workspace_id, team_id)
+    return CycleRead.from_row(stored, now, count_unestimated=counted)
