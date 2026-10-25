@@ -37,6 +37,7 @@ import type {
   JiraImportPreviewRead,
   JiraImportRequest,
   JiraProjectListRead,
+  LinearImportPreviewRead,
   LinearImportRequest,
   LinearTeamRead,
   ShortcutImportPreviewRead,
@@ -57,6 +58,8 @@ const startIssueImport =
 const listLinearTeams = vi.fn<(apiKey: string) => Promise<LinearTeamRead[]>>();
 const startLinearImport =
   vi.fn<(body: LinearImportRequest) => Promise<IssueImportRead>>();
+const previewLinearImport =
+  vi.fn<(body: LinearImportRequest) => Promise<LinearImportPreviewRead>>();
 const listShortcutTeams =
   vi.fn<(apiToken: string) => Promise<ShortcutTeamRead[]>>();
 const previewShortcutImport =
@@ -106,6 +109,8 @@ vi.mock('../../api/imports', () => ({
     listLinearTeams(apiKey),
   startLinearImport: (_workspaceId: string, body: LinearImportRequest) =>
     startLinearImport(body),
+  previewLinearImport: (_workspaceId: string, body: LinearImportRequest) =>
+    previewLinearImport(body),
   listShortcutTeams: (_workspaceId: string, apiToken: string) =>
     listShortcutTeams(apiToken),
   previewShortcutImport: (_workspaceId: string, body: ShortcutImportRequest) =>
@@ -326,6 +331,7 @@ beforeEach(() => {
   startIssueImport.mockReset();
   listLinearTeams.mockReset();
   startLinearImport.mockReset();
+  previewLinearImport.mockReset();
   cancelIssueImport.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('admin'));
@@ -697,11 +703,76 @@ describe('the issue import page', () => {
     await waitFor(() => {
       expect(startLinearImport).toHaveBeenCalledWith({
         api_key: 'lin_api_example',
-        teams: [{ linear_team_id: 'lin-team-1', team_id: 'team-1' }],
+        teams: [
+          {
+            linear_team_id: 'lin-team-1',
+            team_id: 'team-1',
+            create_statuses: false,
+            import_templates: false,
+          },
+        ],
       });
     });
     await waitFor(() => {
       expect(screen.getByLabelText('Linear API key')).toHaveValue('');
+    });
+  });
+
+  it('previews and sends the Linear status and template switches per team', async () => {
+    previewLinearImport.mockResolvedValue({
+      teams: [
+        {
+          linear_team_id: 'lin-team-1',
+          linear_key: 'PLA',
+          name: 'Linear Platform',
+          team_id: 'team-1',
+          new_statuses: ['Doing', 'Shipped'],
+          new_templates: ['Bug report'],
+          status_count: 2,
+          template_count: 1,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await chooseProvider(user, /^Linear/);
+
+    await user.type(screen.getByLabelText('Linear API key'), 'lin_api_example');
+    await user.click(screen.getByRole('button', { name: 'Load teams' }));
+    await user.click(
+      await screen.findByLabelText(
+        'Create missing statuses for Linear Platform'
+      )
+    );
+    await user.click(
+      screen.getByLabelText('Import issue templates for Linear Platform')
+    );
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
+
+    expect(
+      await screen.findByText('2 new statuses: Doing, Shipped')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('1 issue template: Bug report')
+    ).toBeInTheDocument();
+    const choice = {
+      linear_team_id: 'lin-team-1',
+      team_id: 'team-1',
+      create_statuses: true,
+      import_templates: true,
+    };
+    expect(previewLinearImport).toHaveBeenCalledWith({
+      api_key: 'lin_api_example',
+      teams: [choice],
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Import 1 team' }));
+
+    await waitFor(() => {
+      expect(startLinearImport).toHaveBeenCalledWith({
+        api_key: 'lin_api_example',
+        teams: [choice],
+      });
     });
   });
 

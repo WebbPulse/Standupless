@@ -43,8 +43,10 @@ from app.domains.integrations.schemas.imports import (
     IssueImportPreviewRead,
     IssueImportRead,
     IssueImportRequest,
+    LinearImportPreviewRead,
     LinearImportRequest,
     LinearKeyRequest,
+    LinearPreviewTeamRead,
     LinearTeamListRead,
     LinearTeamRead,
     ShortcutImportPreviewRead,
@@ -205,6 +207,41 @@ def list_linear_teams(
     return LinearTeamListRead(items=[LinearTeamRead(**team) for team in teams])
 
 
+def _linear_choices(body: LinearImportRequest) -> list[tuple[str, str, bool, bool]]:
+    """The chosen Linear teams as `team_mappings` takes them."""
+    return [
+        (choice.linear_team_id, choice.team_id, choice.create_statuses, choice.import_templates)
+        for choice in body.teams
+    ]
+
+
+@router.post("/{workspace_id}/imports/linear/preview", response_model=LinearImportPreviewRead)
+def preview_linear_import(
+    body: LinearImportRequest,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> LinearImportPreviewRead:
+    """The statuses and templates importing the chosen Linear teams would create, team by team, writing nothing."""
+    for choice in body.teams:
+        require_team_member(repositories, context, choice.team_id)
+    api_key = body.api_key.strip()
+    try:
+        mappings = linear_import.team_mappings(api_key, _linear_choices(body))
+        teams = linear_import.preview(repositories, context.workspace_id, api_key, mappings)
+    except LinearError as exc:
+        raise linear_refusal(exc) from None
+    except linear_import.UnknownLinearTeam:
+        raise unprocessable("A chosen Linear team is not readable with this key, or was chosen twice") from None
+    return LinearImportPreviewRead(
+        teams=[
+            LinearPreviewTeamRead(
+                **team, status_count=len(team["new_statuses"]), template_count=len(team["new_templates"])
+            )
+            for team in teams
+        ]
+    )
+
+
 @router.post(
     "/{workspace_id}/imports/linear",
     response_model=IssueImportRead,
@@ -220,8 +257,7 @@ def start_linear_import(
         require_team_member(repositories, context, choice.team_id)
     try:
         api_key = body.api_key.strip()
-        choices = [(choice.linear_team_id, choice.team_id) for choice in body.teams]
-        mappings = linear_import.team_mappings(api_key, choices)
+        mappings = linear_import.team_mappings(api_key, _linear_choices(body))
         job = issue_import.start_linear_import(repositories, context, api_key, mappings)
     except LinearError as exc:
         raise linear_refusal(exc) from None

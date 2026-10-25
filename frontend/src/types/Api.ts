@@ -5088,7 +5088,9 @@ export type LinearImportCount =
   | 'initiatives'
   | 'sub_issues'
   | 'relations'
-  | 'project_relations';
+  | 'project_relations'
+  | 'statuses'
+  | 'templates';
 
 /** The tallies a GitHub import keeps, by name. */
 export type GitHubImportCount =
@@ -5150,6 +5152,10 @@ export interface LinearTeamMappingRead {
   linear_key: string;
   name: string;
   team_id: string;
+  /** Whether the import creates a status for each Linear state the team lacks. */
+  create_statuses?: boolean;
+  /** Whether the import brings the team's Linear issue templates over. */
+  import_templates?: boolean;
 }
 
 /** One team of the tool an API import reads, such as a Shortcut team, and the Standupless team it writes into. */
@@ -5229,12 +5235,33 @@ export interface LinearTeamListRead {
 export interface LinearTeamChoice {
   linear_team_id: string;
   team_id: string;
+  /** Create a status for each Linear workflow state the team has no status of the same name for. */
+  create_statuses?: boolean;
+  /** Bring the Linear team's issue templates over, skipping names the team already has. */
+  import_templates?: boolean;
 }
 
-/** The body a Linear import starts with. The key is used for the job only. */
+/** The body a Linear import or its preview starts with. The key is used for the job only. */
 export interface LinearImportRequest {
   api_key: string;
   teams: LinearTeamChoice[];
+}
+
+/** What the optional phases of importing one Linear team would create. */
+export interface LinearPreviewTeamRead {
+  linear_team_id: string;
+  linear_key: string;
+  name: string;
+  team_id: string;
+  new_statuses: string[];
+  new_templates: string[];
+  status_count: number;
+  template_count: number;
+}
+
+/** What a Linear import would create in each team, computed without writing anything. */
+export interface LinearImportPreviewRead {
+  teams: LinearPreviewTeamRead[];
 }
 
 /** One team a Shortcut API token can read. */

@@ -179,6 +179,7 @@ class IssueTemplate(BaseModel):
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    import_batch_id: Optional[str] = None
 
 
 class TemplateSettings(BaseModel):
@@ -193,6 +194,14 @@ class TemplateSettings(BaseModel):
     default_document_template_id: Optional[str] = None
     default_update_template_id: Optional[str] = None
     updated_at: Optional[datetime] = None
+
+
+def _template_item(template: IssueTemplate) -> dict[str, Any]:
+    """A template as a stored item, leaving out an unset import batch rather than storing null."""
+    item = as_item(template)
+    if item.get("import_batch_id") is None:
+        item.pop("import_batch_id", None)
+    return item
 
 
 def template_order(row: IssueTemplate) -> tuple[int, str, str]:
@@ -248,14 +257,14 @@ class TemplateRows:
 
     def create_template(self, template: IssueTemplate) -> IssueTemplate:
         """Store one new template, raising `ConditionFailed` on a key collision."""
-        self._repository.put(as_item(template), condition=Attr("config_key").not_exists())
+        self._repository.put(_template_item(template), condition=Attr("config_key").not_exists())
         return template
 
     def replace_template(self, template: IssueTemplate) -> IssueTemplate | None:
         """Store an edited template whole, or `None` when it was deleted meanwhile."""
         stored = template.model_copy(update={"updated_at": utc_now()})
         try:
-            self._repository.put(as_item(stored), condition=Attr("config_key").exists())
+            self._repository.put(_template_item(stored), condition=Attr("config_key").exists())
         except ConditionFailed:
             return None
         return stored

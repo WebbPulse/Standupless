@@ -238,24 +238,29 @@ Standupless team. The UI creates a new team before it starts the import.
 
 | Surface | How |
 | --- | --- |
-| API | `POST /api/workspaces/{workspace_id}/imports/linear/teams`, `POST /api/workspaces/{workspace_id}/imports/linear`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| API | `POST /api/workspaces/{workspace_id}/imports/linear/teams`, `POST /api/workspaces/{workspace_id}/imports/linear/preview`, `POST /api/workspaces/{workspace_id}/imports/linear`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
 | MCP | `list_linear_teams`, `import_linear_workspace`, `get_workspace_import`, `cancel_workspace_import` |
 | UI | Workspace settings, Import tab, source Linear |
 
 `POST .../imports/linear/teams` takes `{"api_key": "..."}` and answers the
 teams the key can read. A key Linear refuses answers 400 with code
 `LINEAR_KEY_REFUSED`, and Linear not answering is 502. `POST .../imports/linear`
-takes the key and `teams`, a list of `{"linear_team_id", "team_id"}`, and
-answers 202 with the job, which has `kind` `linear`. A Linear team the key
+takes the key and `teams`, a list of `{"linear_team_id", "team_id"}` with the
+optional booleans `create_statuses` and `import_templates`, both off by
+default, and answers 202 with the job, which has `kind` `linear`. A Linear team the key
 cannot read, or one chosen twice, answers 422, and a second import while one
 runs answers 409. Cancel stops a queued or running job and answers a finished
-one as it is.
+one as it is. `POST .../imports/linear/preview` takes the same body and answers,
+per team, `new_statuses` and `new_templates` with their counts: what the two
+optional phases would create, whether or not they are switched on. It writes
+nothing.
 
 ### What is read
 
-Per mapped team, in order: cycles, projects with their milestones and updates,
-issues with their comments, then a second pass over the issues for sub-issue
-links and relations. Initiatives and then project dependencies come last, once
+Per mapped team, in order: its workflow states when `create_statuses` is on,
+cycles, projects with their milestones and updates, issues with their comments,
+a second pass over the issues for sub-issue links and relations, and its issue
+templates when `import_templates` is on. Initiatives and then project dependencies come last, once
 for the workspace. Every
 connection is paged 50 at a time. Linear's rate limit, a 429 or a `RATELIMITED`
 error, is waited out until the reset time it gives, at most 60 seconds per wait
@@ -266,6 +271,16 @@ say where it is, and `counts` holds the tallies the summary shows.
 
 - Workflow states map to the team status with the same name, else the first
   status in the category of the state's type, else the team default.
+- With `create_statuses`, each state no visible status shares a name with
+  becomes a status in the category of its type, placed after the status the
+  state before it became, with the palette colour nearest Linear's. It is
+  created before any issue is written, so issues land in it. A re-run finds it
+  by its id, derived from the team and the Linear state.
+- With `import_templates`, each Linear issue template becomes a team template
+  with its title, body, priority, labels matched or created by name, and
+  estimate. A name the team already has a template by is skipped. Project and
+  document templates stay in Linear, and a templates query Linear rejects ends
+  the phase with a warning instead of failing the import.
 - Priority 1 to 4 is urgent, high, medium and low. Estimates keep their points,
   or the matching size on a t-shirt team; a value off the team's scale is left
   empty with a warning.

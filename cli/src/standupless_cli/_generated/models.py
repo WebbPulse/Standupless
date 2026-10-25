@@ -1524,12 +1524,27 @@ class LinearKeyRequest(TypedDict):
     api_key: str
 
 
+class LinearPreviewTeamRead(TypedDict):
+    linear_key: str
+    linear_team_id: str
+    name: str
+    new_statuses: list[str]
+    new_templates: list[str]
+    status_count: int
+    team_id: str
+    template_count: int
+
+
 class LinearTeamChoice(TypedDict):
+    create_statuses: NotRequired[bool]
+    import_templates: NotRequired[bool]
     linear_team_id: str
     team_id: str
 
 
 class LinearTeamMappingRead(TypedDict):
+    create_statuses: NotRequired[bool]
+    import_templates: NotRequired[bool]
     linear_key: str
     linear_team_id: str
     name: str
@@ -4549,6 +4564,10 @@ class LabelMergeRead(TypedDict):
     target: LabelRead
     templates_updated: NotRequired[int]
     views_updated: NotRequired[int]
+
+
+class LinearImportPreviewRead(TypedDict):
+    teams: list[LinearPreviewTeamRead]
 
 
 class LinearImportRequest(TypedDict):

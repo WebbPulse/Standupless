@@ -93,9 +93,15 @@ def linear(monkeypatch: pytest.MonkeyPatch, sleeps: list[float], repositories: A
     return fake
 
 
-def start_body(key: str = FAKE_KEY, team_id: str = TEAM) -> dict[str, Any]:
-    """The request that imports the sample team into one Standupless team."""
-    return {"api_key": key, "teams": [{"linear_team_id": LINEAR_TEAM, "team_id": team_id}]}
+def start_body(key: str = FAKE_KEY, team_id: str = TEAM, **flags: bool) -> dict[str, Any]:
+    """The request that imports the sample team into one Standupless team, with any optional phases."""
+    return {"api_key": key, "teams": [{"linear_team_id": LINEAR_TEAM, "team_id": team_id, **flags}]}
+
+
+def start_with(client: TestClient, **flags: bool) -> Any:
+    """Start an import of the sample team as the admin with optional phases switched on."""
+    sign_in(client, ADMIN)
+    return client.post(f"/api/workspaces/{WORKSPACE}/imports/linear", json=start_body(**flags))
 
 
 def start(client: TestClient, key: str = FAKE_KEY) -> Any:
@@ -199,7 +205,7 @@ def test_a_refused_key_is_a_400_that_never_repeats_the_key(
     assert issue_import.list_jobs(WORKSPACE) == []
 
 
-@pytest.mark.parametrize("route", ["imports/linear/teams", "imports/linear"])
+@pytest.mark.parametrize("route", ["imports/linear/teams", "imports/linear/preview", "imports/linear"])
 def test_only_an_owner_or_admin_may_import_from_linear(
     client: TestClient, workspace: str, bucket: str, linear: FakeLinear, route: str
 ) -> None:
@@ -752,3 +758,175 @@ def test_linear_row_ids_are_stable_and_distinct() -> None:
     assert first != linear_import.linear_row_id(WORKSPACE, "comment", "abc", when)
     assert first != linear_import.linear_row_id("01JB00000000000000000WS2", "issue", "abc", when)
     assert first[:10] < linear_import.linear_row_id(WORKSPACE, "issue", "abc", "2026-09-02T09:00:00.000Z")[:10]
+
+
+def team_templates(repositories: Any) -> dict[str, Any]:
+    """The team's own issue templates by name."""
+    return {row.name: row for row in repositories.team_config.list_team_templates(WORKSPACE, TEAM)}
+
+
+def test_missing_statuses_are_created_before_the_issues_land_in_them(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """A Linear state the team has no status for becomes one in its category, and its issues use it."""
+    before = {status.name for status in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
+
+    job = start_with(client, create_statuses=True).json()
+
+    assert job["status"] == "completed", job
+    assert job["counts"]["statuses"] == 3
+    statuses = repositories.team_config.list_statuses(WORKSPACE, TEAM)
+    created = {status.name: status for status in statuses if status.name not in before}
+    assert {name: status.category for name, status in created.items()} == {
+        "Doing": "started",
+        "Shipped": "completed",
+        "Dropped": "cancelled",
+    }
+    assert all(status.import_batch_id == job["import_id"] for status in created.values())
+    assert all(status.color for status in created.values())
+    positions = [status.position for status in statuses if not status.hidden]
+    assert len(positions) == len(set(positions))
+    shipped = imported_issue(repositories, linear, 3)
+    dropped = imported_issue(repositories, linear, 4)
+    assert status_name(repositories, shipped.status_id) == "Shipped"
+    assert status_name(repositories, dropped.status_id) == "Dropped"
+    assert status_name(repositories, imported_issue(repositories, linear, 1).status_id) == "In Progress"
+    assert "Templates" not in linear.operations()
+
+
+def test_templates_are_imported_with_their_fields(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """Each Linear issue template becomes a team template with its title, body, priority, labels and estimate."""
+    job = start_with(client, import_templates=True).json()
+
+    assert job["status"] == "completed", job
+    assert job["counts"]["templates"] == 2
+    templates = team_templates(repositories)
+    assert sorted(templates) == ["Bug report", "Spike"]
+    bug = templates["Bug report"]
+    assert bug.title == "Bug:"
+    assert bug.body == "## Steps\n\n1."
+    assert bug.priority == "high"
+    assert bug.estimate == "3"
+    assert bug.import_batch_id == job["import_id"]
+    labels = {label.label_id: label for label in repositories.team_config.list_labels(WORKSPACE, TEAM)}
+    assert [labels[label_id].name for label_id in bug.label_ids] == ["Bug"]
+    spike = templates["Spike"]
+    assert spike.body == "Timebox it."
+    assert spike.priority is None
+    assert spike.label_ids == []
+    assert "WorkflowStates" not in linear.operations()
+
+
+def test_a_second_run_creates_no_status_or_template_twice(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """Running the import again with both phases on finds what the first wrote."""
+    first = start_with(client, create_statuses=True, import_templates=True).json()
+    statuses = len(repositories.team_config.list_statuses(WORKSPACE, TEAM))
+    labels = len(repositories.team_config.list_labels(WORKSPACE, TEAM))
+
+    second = start_with(client, create_statuses=True, import_templates=True).json()
+
+    assert (first["counts"]["statuses"], first["counts"]["templates"]) == (3, 2)
+    assert second["status"] == "completed", second
+    assert second["counts"].get("statuses", 0) == 0
+    assert second["counts"].get("templates", 0) == 0
+    assert len(repositories.team_config.list_statuses(WORKSPACE, TEAM)) == statuses
+    assert len(repositories.team_config.list_labels(WORKSPACE, TEAM)) == labels
+    assert sorted(team_templates(repositories)) == ["Bug report", "Spike"]
+
+
+def test_a_template_name_the_team_already_has_is_skipped(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """A team template by the same name stays as it is and the Linear one is left out."""
+    from app.common.db.dynamo.team_templates import IssueTemplate, template_key
+
+    repositories.team_config.create_template(
+        IssueTemplate(
+            workspace_id=WORKSPACE,
+            config_key=template_key(TEAM, "01JB0000000000000000TMPL01"),
+            template_id="01JB0000000000000000TMPL01",
+            team_id=TEAM,
+            name="bug report",
+            title="Ours",
+        )
+    )
+
+    job = start_with(client, import_templates=True).json()
+
+    assert job["counts"]["templates"] == 1
+    templates = team_templates(repositories)
+    assert sorted(templates) == ["Spike", "bug report"]
+    assert templates["bug report"].title == "Ours"
+    assert templates["bug report"].import_batch_id is None
+
+
+def test_a_rejected_templates_query_still_completes_the_import(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """A schema mismatch on the templates query is a warning, never a failed import."""
+    linear.rejected_operations = {"Templates"}
+
+    job = start_with(client, import_templates=True).json()
+
+    assert job["status"] == "completed", job
+    assert job["counts"]["issues_created"] == 4
+    assert job["counts"].get("templates", 0) == 0
+    problems = {(problem["field"], problem["message"]) for problem in job["problems"]}
+    assert ("templates", "Linear would not list the templates of ENG (graphql_validation_failed), left out") in problems
+
+
+def test_the_preview_counts_statuses_and_templates_and_writes_nothing(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """The preview names what each team would gain, whether or not the phases are on, and imports nothing."""
+    sign_in(client, ADMIN)
+    statuses = len(repositories.team_config.list_statuses(WORKSPACE, TEAM))
+
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports/linear/preview", json=start_body())
+
+    assert response.status_code == 200, response.text
+    [team] = response.json()["teams"]
+    assert (team["linear_team_id"], team["linear_key"], team["team_id"]) == (LINEAR_TEAM, "ENG", TEAM)
+    assert team["new_statuses"] == ["Doing", "Shipped", "Dropped"]
+    assert team["new_templates"] == ["Bug report", "Spike"]
+    assert (team["status_count"], team["template_count"]) == (3, 2)
+    assert len(repositories.team_config.list_statuses(WORKSPACE, TEAM)) == statuses
+    assert team_templates(repositories) == {}
+    assert issue_import.list_jobs(WORKSPACE) == []
+    start_with(client, create_statuses=True, import_templates=True)
+
+    again = client.post(f"/api/workspaces/{WORKSPACE}/imports/linear/preview", json=start_body()).json()
+
+    assert (again["teams"][0]["status_count"], again["teams"][0]["template_count"]) == (0, 0)
+
+
+def test_the_queue_reports_the_optional_phases(
+    client: TestClient, repositories: Any, workspace: str, queued: list[tuple[str, Any]], linear: FakeLinear
+) -> None:
+    """A team with both phases on walks statuses first and templates last."""
+    job = start_with(client, create_statuses=True, import_templates=True).json()
+    assert job["status"] == "queued"
+
+    import_jobs.handle_record(repositories, sqs_record(dict(queued[0][1].payload)))
+    middle = client.get(f"/api/workspaces/{WORKSPACE}/imports/{job['import_id']}").json()
+
+    assert middle["phase"] == "cycles"
+    assert (middle["phase_index"], middle["phase_count"]) == (1, 8)
+    assert [team["create_statuses"] for team in middle["linear_teams"]] == [True]
+
+
+def test_the_mcp_tool_passes_the_optional_phases(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """An agent switches the optional phases on per team the way the form does."""
+    secret = mint_for(repositories, OWNER, ("settings:read", "settings:write", "admin"))
+    teams = [{"linear_team_id": LINEAR_TEAM, "team_id": "ABC", "create_statuses": True, "import_templates": True}]
+
+    started = answer(tool(client, secret, "import_linear_workspace", {"api_key": FAKE_KEY, "teams": teams}))
+
+    assert started["status"] == "completed", started
+    assert (started["counts"]["statuses"], started["counts"]["templates"]) == (3, 2)

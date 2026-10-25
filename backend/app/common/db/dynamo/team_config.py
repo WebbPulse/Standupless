@@ -332,6 +332,7 @@ class Status(BaseModel):
     scope: str = TEAM_SCOPE
     hidden: bool = False
     inherited_name: str | None = None
+    import_batch_id: str | None = None
 
 
 class Label(BaseModel):
@@ -712,9 +713,9 @@ def _stored(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _status_item(status: Status) -> dict[str, Any]:
-    """A status as a stored item, leaving out an unset color or icon rather than storing null."""
+    """A status as a stored item, leaving out an unset color, icon or import batch rather than storing null."""
     item = _stored(as_item(status))
-    for name in STATUS_APPEARANCE_FIELDS:
+    for name in (*STATUS_APPEARANCE_FIELDS, "import_batch_id"):
         if item.get(name) is None:
             item.pop(name, None)
     return item
