@@ -90,6 +90,17 @@ describe('parseInline', () => {
     ]);
   });
 
+  it('reads a stored date chip and leaves an impossible day as text', () => {
+    expect(parseInline('due <2026-10-01>.')).toEqual([
+      { type: 'text', value: 'due ' },
+      { type: 'date', value: '2026-10-01' },
+      { type: 'text', value: '.' },
+    ]);
+    expect(parseInline('due <2026-02-30>')).toEqual([
+      { type: 'text', value: 'due <2026-02-30>' },
+    ]);
+  });
+
   it('reads a mention but not an email address', () => {
     expect(parseInline('ping @tyler, mail a@b.com')).toEqual([
       { type: 'text', value: 'ping ' },

@@ -27,7 +27,7 @@ export const MERMAID_LANGUAGE = 'mermaid';
 
 /** The small graph a new diagram starts from. */
 export const MERMAID_STARTER = [
-  'flowchart LR',
+  'graph TD',
   '  A[Idea] --> B{Ready?}',
   '  B -->|Yes| C[Build]',
   '  B -->|No| D[Refine]',

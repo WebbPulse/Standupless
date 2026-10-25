@@ -20,6 +20,10 @@
  * opens the workspace's create dialog on the selected text and puts the new
  * issue's key in its place.
  *
+ * A day goes in as a date chip, from the `/date` picker or from the Date group
+ * the `@` menu shows when the text after the `@` reads as a date, and `|--`
+ * on an empty line starts a table.
+ *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
  * Escape puts back the last committed text, except right after a video link
  * was pasted as an embed, when it keeps the link instead. Text input made
@@ -34,6 +38,7 @@
 
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
+import { LuCalendar } from 'react-icons/lu';
 import React, {
   useCallback,
   useContext,
@@ -61,6 +66,11 @@ import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
 import type { CommentAnchor } from '../../types/Api';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
+import {
+  dateMentionOptions,
+  dateMentionQuery,
+  type DateMentionOption,
+} from '../../lib/dateChips';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
 import {
   currentOrigin,
@@ -72,6 +82,7 @@ import {
 } from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
+import { DateChipPicker } from './DateChipPicker';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
 import { toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
@@ -192,6 +203,18 @@ interface MentionDraft {
   left: number;
 }
 
+/** One row of the @ menu: a person to mention or a day to insert as a chip. */
+type MentionOption =
+  | { kind: 'person'; person: Assignable }
+  | { kind: 'date'; date: DateMentionOption };
+
+/** Where the `/date` picker opens and the position its chip goes in at. */
+interface DatePickerDraft {
+  at: number;
+  top: number;
+  left: number;
+}
+
 /** The `#` reference being typed, where it sits, and where its list opens. */
 type ReferenceDraft = MentionDraft;
 
@@ -274,17 +297,25 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null);
   const [mention, setMention] = useState<MentionDraft | null>(null);
   const [highlight, setHighlight] = useState(0);
-  const matches = useMemo(
-    () =>
-      mention === null || mentionPeople === undefined
+  const matches = useMemo<MentionOption[]>(() => {
+    if (mention === null) return [];
+    const people =
+      mentionPeople === undefined
         ? []
-        : matchPeople(mentionPeople, mention.query),
-    [mention, mentionPeople]
-  );
+        : matchPeople(mentionPeople, mention.query).map(
+            (person): MentionOption => ({ kind: 'person', person })
+          );
+    const dates = dateMentionOptions(mention.query).map(
+      (date): MentionOption => ({ kind: 'date', date })
+    );
+    return [...people, ...dates];
+  }, [mention, mentionPeople]);
   const mentionState = useRef({ mention, matches, highlight });
   mentionState.current = { mention, matches, highlight };
   const readMentionRef = useRef<(editor: Editor) => void>(() => undefined);
-  const chooseRef = useRef<(person: Assignable) => void>(() => undefined);
+  const chooseRef = useRef<(option: MentionOption) => void>(() => undefined);
+  const [datePicker, setDatePicker] = useState<DatePickerDraft | null>(null);
+  const openDatePickerRef = useRef<() => void>(() => undefined);
 
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const teams = useContext(TeamsContext)?.data ?? null;
@@ -324,6 +355,9 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   const slashContext = useMemo<SlashContext>(
     () => ({
       mentions: canMention,
+      pickDate: () => {
+        openDatePickerRef.current();
+      },
       ...(canUpload
         ? {
             pickFiles: () => {
@@ -458,10 +492,10 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               return true;
             }
             if ((event.key === 'Enter' && !mod) || event.key === 'Tab') {
-              const person = open.matches[open.highlight];
-              if (person !== undefined) {
+              const option = open.matches[open.highlight];
+              if (option !== undefined) {
                 event.preventDefault();
-                chooseRef.current(person);
+                chooseRef.current(option);
                 return true;
               }
             }
@@ -645,8 +679,10 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       }
     }
     setSlash(null);
-    if (mentionPeople === undefined) return;
-    const typed = mentionQuery(before, before.length);
+    const typed =
+      (mentionPeople === undefined
+        ? null
+        : mentionQuery(before, before.length)) ?? dateMentionQuery(before);
     if (typed === null) {
       setMention(null);
       return;
@@ -690,18 +726,37 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     command.run(editor, { from: open.from, to: open.to }, slashContext);
   };
 
-  chooseRef.current = (person: Assignable): void => {
+  chooseRef.current = (option: MentionOption): void => {
     const open = mentionState.current.mention;
     if (open === null) return;
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(
-        { from: open.from, to: open.to },
-        `@${mentionHandle(person)} `
-      )
-      .run();
+    const range = { from: open.from, to: open.to };
+    const chain = editor.chain().focus();
+    if (option.kind === 'date') {
+      chain.insertDateChip(option.date.value, range).run();
+    } else {
+      chain.insertContentAt(range, `@${mentionHandle(option.person)} `).run();
+    }
     setMention(null);
+  };
+
+  openDatePickerRef.current = (): void => {
+    const box = surface.current?.getBoundingClientRect();
+    if (box === undefined) return;
+    const at = editor.state.selection.from;
+    const caret = editor.view.coordsAtPos(at);
+    setDatePicker({
+      at,
+      top: caret.bottom - box.top + 4,
+      left: Math.max(0, Math.min(caret.left - box.left, box.width - 256)),
+    });
+  };
+
+  const pickDate = (value: string): void => {
+    const open = datePicker;
+    setDatePicker(null);
+    if (open === null) return;
+    const at = Math.min(open.at, editor.state.doc.content.size);
+    editor.chain().focus().insertDateChip(value, { from: at, to: at }).run();
   };
 
   const isDirty = useCallback(
@@ -967,41 +1022,101 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       {mention !== null && matches.length > 0 && (
         <ul
           role="listbox"
-          aria-label="Mention someone"
+          aria-label={
+            matches.every((option) => option.kind === 'date')
+              ? 'Insert a date'
+              : 'Mention someone'
+          }
           className="absolute z-20 w-64 overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-overlay"
           style={{ top: mention.top, left: mention.left }}
         >
-          {matches.map((person, index) => (
-            <li
-              key={person.user_id}
-              role="option"
-              aria-selected={index === highlight}
-              className={cn(
-                'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
-                index === highlight ? 'bg-raised text-text' : 'text-text-muted'
-              )}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                chooseRef.current(person);
-              }}
-              onMouseEnter={() => {
-                setHighlight(index);
-              }}
-            >
-              <Avatar
-                name={personLabel(person)}
-                src={personAvatar(person)}
-                size="sm"
-              />
-              <span className="min-w-0 flex-1 truncate text-text">
-                {personLabel(person)}
-              </span>
-              <span className="shrink-0 text-xs text-text-faint">
-                @{mentionHandle(person)}
-              </span>
-            </li>
-          ))}
+          {matches.map((option, index) => {
+            const rowClass = cn(
+              'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
+              index === highlight ? 'bg-raised text-text' : 'text-text-muted'
+            );
+            const pick = (event: React.MouseEvent): void => {
+              event.preventDefault();
+              chooseRef.current(option);
+            };
+            const hover = (): void => {
+              setHighlight(index);
+            };
+            if (option.kind === 'date') {
+              const firstDate = matches[index - 1]?.kind !== 'date';
+              return (
+                <React.Fragment key={`date-${option.date.value}`}>
+                  {firstDate && (
+                    <li
+                      role="presentation"
+                      className={cn(
+                        'px-2 pt-1.5 pb-1 text-xs font-medium text-text-faint',
+                        index > 0 && 'mt-1 border-t border-line'
+                      )}
+                    >
+                      Date
+                    </li>
+                  )}
+                  <li
+                    role="option"
+                    aria-selected={index === highlight}
+                    className={rowClass}
+                    onMouseDown={pick}
+                    onMouseEnter={hover}
+                  >
+                    <LuCalendar aria-hidden className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-text">
+                      {option.date.label}
+                    </span>
+                  </li>
+                </React.Fragment>
+              );
+            }
+            const { person } = option;
+            return (
+              <li
+                key={person.user_id}
+                role="option"
+                aria-selected={index === highlight}
+                className={rowClass}
+                onMouseDown={pick}
+                onMouseEnter={hover}
+              >
+                <Avatar
+                  name={personLabel(person)}
+                  src={personAvatar(person)}
+                  size="sm"
+                />
+                <span className="min-w-0 flex-1 truncate text-text">
+                  {personLabel(person)}
+                </span>
+                <span className="shrink-0 text-xs text-text-faint">
+                  @{mentionHandle(person)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
+      )}
+      {datePicker !== null && (
+        <DateChipPicker
+          top={datePicker.top}
+          left={datePicker.left}
+          onPick={pickDate}
+          onClose={() => {
+            setDatePicker(null);
+            editor.commands.focus();
+          }}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (next !== null && surface.current?.contains(next) === true) {
+              return;
+            }
+            setDatePicker(null);
+            handlers.current.onFocusChange?.(false);
+            commit();
+          }}
+        />
       )}
       {reference !== null && (
         <ReferenceMenu

@@ -1,6 +1,12 @@
 /**
  * Reading and writing Markdown through the editor schema, shared by the live
  * editor and by the tests that hold it to round trip fidelity.
+ *
+ * A date chip stores as its ISO day in angle brackets, `<2026-10-01>`, the
+ * org-mode date stamp. That reads as the plain date in the API, MCP, email
+ * and GitHub sync, GitHub shows it literally because a tag name cannot start
+ * with a digit, and the editor and the static renderer both read it back as
+ * the chip. Text the person types in that exact shape becomes a chip too.
  */
 
 import type { Editor, JSONContent } from '@tiptap/core';

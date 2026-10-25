@@ -116,6 +116,10 @@ const EXACT: [string, string][] = [
     '> [!NOTE]\n> ```ts\n> const a = 1;\n>\n> const b = 2;\n> ```',
   ],
   ['an empty callout', '> [!NOTE]'],
+  ['a date chip', 'Ship by <2026-10-01> and review <2026-10-08>.'],
+  ['a date chip opening a line', '<2026-10-01> cut the release'],
+  ['a date chip in a list', '- [ ] Review on <2026-11-12>'],
+  ['an impossible date left as text', 'Not a day: <2026-13-40>'],
 ];
 
 const NORMALIZED: [string, string, string][] = [
@@ -342,5 +346,51 @@ describe('callouts in the rich editor', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('date chips in the rich editor', () => {
+  it('read a stored day as one chip node carrying it', () => {
+    writeMarkdown(editor, 'Due <2026-10-01>');
+    const inline = editor.getJSON().content?.[0]?.content ?? [];
+    expect(inline.map((node) => node.type)).toEqual(['text', 'dateChip']);
+    expect(inline[1]?.attrs).toEqual({ value: '2026-10-01' });
+  });
+
+  it('leave an impossible day as text', () => {
+    writeMarkdown(editor, 'Due <2026-02-30>');
+    const inline = editor.getJSON().content?.[0]?.content ?? [];
+    expect(inline.map((node) => node.type)).toEqual(['text']);
+  });
+
+  it('insert a chip with a space after it from the command', () => {
+    writeMarkdown(editor, 'Due @tom');
+    editor.commands.insertDateChip('2026-10-26', { from: 5, to: 9 });
+    expect(readMarkdown(editor).trimEnd()).toBe('Due <2026-10-26>');
+    const inline = editor.getJSON().content?.[0]?.content ?? [];
+    expect(inline.map((node) => node.type)).toEqual([
+      'text',
+      'dateChip',
+      'text',
+    ]);
+  });
+
+  it('refuse a value that is not a day', () => {
+    writeMarkdown(editor, 'Due ');
+    expect(editor.commands.insertDateChip('soon', { from: 5, to: 5 })).toBe(
+      false
+    );
+  });
+
+  it('write what the static renderer reads as the same day', () => {
+    writeMarkdown(editor, 'Due <2026-10-01>');
+    const [block] = parseMarkdown(readMarkdown(editor));
+    expect(block).toEqual({
+      type: 'paragraph',
+      children: [
+        { type: 'text', value: 'Due ' },
+        { type: 'date', value: '2026-10-01' },
+      ],
+    });
   });
 });
