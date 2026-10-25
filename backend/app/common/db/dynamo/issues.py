@@ -85,6 +85,7 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "cycle_id",
     "project_id",
     "cycle_carried_from",
+    "cycle_added_at",
     "archived_at",
     "deleted_at",
     "deleted_by",
@@ -282,6 +283,7 @@ class Issue(BaseModel):
     parent_id: str | None = None
     cycle_id: str | None = None
     cycle_carried_from: str | None = None
+    cycle_added_at: datetime | None = None
     project_id: str | None = None
     project_milestone_id: str | None = None
     sort_order: str | None = None
@@ -410,6 +412,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
     optional = (
         *ATTACHMENT_ATTRIBUTE_NAMES,
         "cycle_carried_from",
+        "cycle_added_at",
         "archived_at",
         "deleted_at",
         "deleted_by",
@@ -767,7 +770,9 @@ class IssueRepository:
         Conditional on the issue still sitting in `from_cycle`, so a planner who
         moved it meanwhile keeps their choice and a repeated close is a no-op. The
         issue is stamped with the cycle it left, which is how the planning rollup
-        tells a carry-over from a planner's own move. `updated_at` is left alone,
+        tells a carry-over from a planner's own move, and `cycle_added_at` is the
+        close, so a carry-over reads as added after the new cycle's start unless
+        it lands within that cycle's first day. `updated_at` is left alone,
         because a close is not an edit and must not reorder the list view.
         """
         if not workspace_id or not issue_id or not from_cycle or not to_cycle:
@@ -775,10 +780,12 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "issue_id": issue_id},
-                update_expression="SET #cycle = :to, #carried = :from, #changed = :changed, " + REVISION_BUMP,
+                update_expression="SET #cycle = :to, #carried = :from, #added = :changed, #changed = :changed, "
+                + REVISION_BUMP,
                 expression_names={
                     "#cycle": "cycle_id",
                     "#carried": "cycle_carried_from",
+                    "#added": "cycle_added_at",
                     "#changed": CHANGED_AT,
                     "#rev": REVISION,
                 },
@@ -794,7 +801,8 @@ class IssueRepository:
         """Put one issue with no cycle into `cycle_id`, or `None` when it already has one.
 
         Conditional on the issue carrying no cycle, so a planner's own choice made
-        meanwhile always wins and a redelivered record is a no-op. `updated_at` is
+        meanwhile always wins and a redelivered record is a no-op. It stamps
+        `cycle_added_at` with the add. `updated_at` is
         left alone, because the automatic add is not an edit to the issue.
         """
         if not workspace_id or not issue_id or not cycle_id:
@@ -802,8 +810,13 @@ class IssueRepository:
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "issue_id": issue_id},
-                update_expression="SET #cycle = :cycle, #changed = :changed, " + REVISION_BUMP,
-                expression_names={"#cycle": "cycle_id", "#changed": CHANGED_AT, "#rev": REVISION},
+                update_expression="SET #cycle = :cycle, #added = :changed, #changed = :changed, " + REVISION_BUMP,
+                expression_names={
+                    "#cycle": "cycle_id",
+                    "#added": "cycle_added_at",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
                 expression_values={":cycle": cycle_id, ":changed": changed_stamp(), **REVISION_STEP},
                 condition=Attr("issue_id").exists() & Attr("deleted_at").not_exists() & Attr("cycle_id").not_exists(),
                 return_values="ALL_NEW",

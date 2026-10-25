@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any, Iterable, Iterator, Mapping, Optional
 
 from app.common.customer_index import CustomerIndex, customer_match
+from app.common.cycle_added import CYCLE_ADDED_PHASES, cycle_added_phase
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import LINK_TYPES
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
@@ -208,6 +209,17 @@ def _sla_statuses(raw: Iterable[str] | str | None) -> FilterValues:
     return frozenset(normalised)
 
 
+def _cycle_added_phases(raw: Iterable[str] | str | None, *, name: str = "cycle_added") -> FilterValues:
+    """"Added to cycle" values lower cased, refusing any outside `planned` and `after_start`."""
+    normalised: set[Optional[str]] = set()
+    for value in _comma_split(raw):
+        candidate = str(value).lower()
+        if candidate not in CYCLE_ADDED_PHASES:
+            raise InvalidFilterValue(f"{name} must be one of: {', '.join(CYCLE_ADDED_PHASES)}")
+        normalised.add(candidate)
+    return frozenset(normalised)
+
+
 def _match_mode(raw: object, *, name: str = "match") -> str:
     """A match mode from its wire spelling, `all` when absent, refusing any other word."""
     if raw is None or raw == "":
@@ -330,6 +342,10 @@ class IssueFilter:
     updated_after: Optional[str] = None
     completed_before: Optional[str] = None
     completed_after: Optional[str] = None
+    cycle_added: FilterValues = field(default_factory=frozenset)
+    cycle_added_not: FilterValues = field(default_factory=frozenset)
+    cycle_added_before: Optional[str] = None
+    cycle_added_after: Optional[str] = None
     content: Optional[str] = None
     content_not: Optional[str] = None
     query: Optional[str] = None
@@ -361,6 +377,7 @@ class IssueFilter:
     subscribed_issue_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     customer_index: Optional[CustomerIndex] = field(default=None, compare=False)
     release_index: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
+    cycle_starts: Optional[Mapping[str, datetime]] = field(default=None, compare=False)
     viewer_id: Optional[str] = field(default=None, compare=False)
 
     @property
@@ -429,6 +446,12 @@ class IssueFilter:
         return own or any(group.needs_cycles for group in self.groups)
 
     @property
+    def needs_cycle_starts(self) -> bool:
+        """Whether an "Added to cycle" phase must be judged against each cycle's start, which costs a cycles read."""
+        own = bool(self.cycle_added or self.cycle_added_not)
+        return own or any(group.needs_cycle_starts for group in self.groups)
+
+    @property
     def subscribers(self) -> frozenset[str]:
         """Every person a subscriber condition names, here or in a group, whose subscriptions must be read."""
         own = {value for value in self.subscriber_ids | self.subscriber_ids_not if value is not None}
@@ -466,6 +489,7 @@ class IssueFilter:
                 "subscribed_issue_ids",
                 "customer_index",
                 "release_index",
+                "cycle_starts",
                 "viewer_id",
             ):
                 continue
@@ -557,6 +581,14 @@ class IssueFilter:
             yield category == "completed" and _within(
                 issue.completed_at or issue.updated_at, self.completed_after, self.completed_before
             )
+        if self.cycle_added or self.cycle_added_not:
+            yield self._cycle_phase_holds(issue)
+        if self.cycle_added_after or self.cycle_added_before:
+            yield (
+                issue.cycle_id is not None
+                and issue.cycle_added_at is not None
+                and _within(issue.cycle_added_at, self.cycle_added_after, self.cycle_added_before)
+            )
         if self.is_blocked is not None:
             yield (issue.blocked_by_open_count > 0) == self.is_blocked
         if self.is_blocking is not None:
@@ -612,6 +644,20 @@ class IssueFilter:
             yield _bounded(count, self.customer_request_count_min, self.customer_request_count_max)
         if self.customer_important is not None:
             yield (index.important_count("issue", issue_id) > 0) == self.customer_important
+
+    def _cycle_phase_holds(self, issue: Issue) -> bool:
+        """The "Added to cycle" condition: planned or added after the start, judged on the issue's own cycle.
+
+        An issue in no cycle, or in one the resolved starts do not know because it
+        was deleted, matches neither value and neither negation.
+        """
+        if issue.cycle_id is None:
+            return False
+        start = (self.cycle_starts or {}).get(issue.cycle_id)
+        if start is None:
+            return False
+        phase = cycle_added_phase(issue.cycle_added_at, start)
+        return _included(self.cycle_added, self.cycle_added_not, phase)
 
     def _subscribers_hold(self, issue_id: str) -> bool:
         """The subscriber condition: one of the wanted people subscribes, none of the unwanted does."""
@@ -806,6 +852,10 @@ def build_issue_filter(
     updated_after: Optional[str] = None,
     completed_before: Optional[str] = None,
     completed_after: Optional[str] = None,
+    cycle_added: Iterable[str] | str | None = None,
+    cycle_added_not: Iterable[str] | str | None = None,
+    cycle_added_before: Optional[str] = None,
+    cycle_added_after: Optional[str] = None,
     content: object = None,
     content_not: object = None,
     q: Optional[str] = None,
@@ -857,11 +907,16 @@ def build_issue_filter(
     `false` the rest. A bound that is not a whole number from 0 is refused with
     `InvalidFilterValue`. `release_id` keeps the issues that shipped in one of the named
     releases and `release_id_not` drops them, `none` standing for an issue in no
-    release. Every date bound takes a day or an offset relative to the request
-    day, `today`, `-14d`, `+1w`, `-1m` or `+1y`, resolved here by calendar; a bound
+    release. `cycle_added` keeps the issues added to their cycle at `planned`,
+    before it started or within its first day, or `after_start`, and
+    `cycle_added_not` drops them; `cycle_added_before` and `_after` bound the day
+    the issue joined its cycle. An issue in no cycle meets none of the four, and
+    a value outside the two is refused with `InvalidFilterValue`. Every date
+    bound takes a day or an offset relative to the request day, `today`,
+    `-14d`, `+1w`, `-1m` or `+1y`, resolved here by calendar; a bound
     that looks relative but does not parse is refused with `InvalidFilterValue`.
     `my_teams` in a team filter stands for the teams `user_id` belongs
-    to. Relative cycles, `my_teams`, the link index and the
+    to. Relative cycles, cycle starts, `my_teams`, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
     each built by these same names plus its own `match`; a group naming a key
@@ -905,6 +960,10 @@ def build_issue_filter(
         updated_after=_day("updated_after", updated_after),
         completed_before=_day("completed_before", completed_before),
         completed_after=_day("completed_after", completed_after),
+        cycle_added=_cycle_added_phases(cycle_added),
+        cycle_added_not=_cycle_added_phases(cycle_added_not, name="cycle_added_not"),
+        cycle_added_before=_day("cycle_added_before", cycle_added_before),
+        cycle_added_after=_day("cycle_added_after", cycle_added_after),
         content=_text(content),
         content_not=_text(content_not),
         query=q or None,

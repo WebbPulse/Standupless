@@ -4134,6 +4134,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     completed_at: NotRequired[str | None]
     created_at: str
     created_by: str
+    cycle_added_at: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     deleted_at: NotRequired[str | None]
     deleted_by: NotRequired[str | None]

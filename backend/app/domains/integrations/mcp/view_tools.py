@@ -152,6 +152,7 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
                 "assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, parent_id, cycle_id, "
                 "project_id, project_milestone_id, estimate, sla_status, has_relation, due_before, due_after, "
                 "created_after, created_before, updated_after, updated_before, completed_after, completed_before, "
+                "cycle_added (planned or after_start), cycle_added_after, cycle_added_before, "
                 "customer_id, customer_status_id, customer_tier_id, release_id, content, q and their _not forms, "
                 "customer_revenue_min, customer_revenue_max, customer_size_min, customer_size_max, "
                 "customer_request_count_min and customer_request_count_max as whole numbers, plus is_blocked, "

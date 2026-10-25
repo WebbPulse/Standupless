@@ -96,6 +96,10 @@ export interface ViewFilterNegations {
   has_sub_issues?: 'true' | 'false';
   completed_after?: string;
   completed_before?: string;
+  cycle_added?: string | string[];
+  cycle_added_not?: string | string[];
+  cycle_added_after?: string;
+  cycle_added_before?: string;
   content?: string;
   content_not?: string;
   match?: 'all' | 'any';
@@ -317,6 +321,8 @@ const SCALAR_FILTER_KEYS = new Set([
   'has_sub_issues',
   'completed_after',
   'completed_before',
+  'cycle_added_after',
+  'cycle_added_before',
   'content',
   'content_not',
   'match',

@@ -465,6 +465,7 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
         "cancelled_at": issue.cancelled_at.isoformat() if issue.cancelled_at else None,
         "status_changed_at": issue.entered_status_at().isoformat(),
+        "cycle_added_at": issue.cycle_added_at.isoformat() if issue.cycle_id and issue.cycle_added_at else None,
         "external_ref": issue.external_ref,
     }
 

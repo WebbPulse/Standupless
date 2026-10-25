@@ -33,6 +33,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
+from app.common.cycle_added import stamp_cycle_added
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import SlaSettings, default_sla_settings
@@ -176,7 +177,10 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
     `cancelled_at` through `stamp_completion`, `status_changed_at` through
     `stamp_status_change`, stamps triage entry and exit
     through `stamp_triage`, and pauses or resumes the timer through `hold_sla`.
+    Every write, watched field or not, stamps `cycle_added_at` through
+    `stamp_cycle_added`, since every issue write path runs through here.
     """
+    stamp_cycle_added(previous, updated, now)
     if previous is not None and all(getattr(previous, name) == getattr(updated, name) for name in WATCHED_FIELDS):
         return
     stamp_triage(previous, updated, now)

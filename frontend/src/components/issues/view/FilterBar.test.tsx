@@ -51,6 +51,31 @@ describe('FilterButton', () => {
       false
     );
   });
+
+  it('finds Added to cycle in the quick search and keeps an after start phase', async () => {
+    const user = userEvent.setup();
+    const registry = createShortcutRegistry();
+    const onChange = vi.fn();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton filters={[]} context={context} onChange={onChange} />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    act(() => {
+      registry.handleKey(new KeyboardEvent('keydown', { key: 'f' }));
+    });
+    await user.type(
+      screen.getByRole('combobox', { name: 'Filter by' }),
+      'added'
+    );
+    await user.click(screen.getByRole('option', { name: /^Added to cycle/ }));
+    await user.click(screen.getByRole('option', { name: /^After start/ }));
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'cycle_added', op: 'is', values: ['after_start'] },
+    ]);
+  });
 });
 
 describe('FilterChips', () => {
@@ -174,6 +199,43 @@ describe('FilterChips', () => {
     expect(
       screen.getByRole('button', { name: 'Due date after, switch' })
     ).toBeDisabled();
+  });
+
+  it('reads an Added to cycle clause by phase and flips it to an exclusion', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <FilterChips
+        filters={[{ field: 'cycle_added', op: 'is', values: ['planned'] }]}
+        context={context}
+        onChange={onChange}
+      />
+    );
+
+    expect(screen.getByText('Planned')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Added to cycle is, switch' })
+    );
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'cycle_added', op: 'is_not', values: ['planned'] },
+    ]);
+  });
+
+  it('reads the date an issue joined its cycle as a day bound', () => {
+    render(
+      <FilterChips
+        filters={[
+          { field: 'cycle_added_at', op: 'after', values: ['2026-10-01'] },
+        ]}
+        context={context}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Date added to cycle after, switch' })
+    ).toHaveTextContent('after');
   });
 });
 

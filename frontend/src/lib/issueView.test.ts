@@ -1313,3 +1313,68 @@ describe('the advanced filters', () => {
     ).toBe(true);
   });
 });
+
+describe('the added to cycle filter', () => {
+  const phased: ViewState = {
+    ...base,
+    filters: [
+      { field: 'cycle_added', op: 'is', values: ['after_start'] },
+      { field: 'cycle_added', op: 'is_not', values: ['planned'] },
+      { field: 'cycle_added_at', op: 'after', values: ['-2w'] },
+      { field: 'cycle_added_at', op: 'before', values: ['2026-11-01'] },
+    ],
+  };
+
+  it('sends the phase and the day bounds under their server keys', () => {
+    expect(viewStateQuery(phased)).toEqual({
+      cycle_added: ['after_start'],
+      cycle_added_not: ['planned'],
+      cycle_added_after: '-2w',
+      cycle_added_before: '2026-11-01',
+      sort: 'priority_desc',
+    });
+  });
+
+  it('round trips through the URL and a saved view', () => {
+    const params = writeViewState(phased, base);
+    expect(sameViewState(parseViewState(params, base), phased)).toBe(true);
+
+    const body = stateToViewBody(phased, 'Scope creep');
+    const view = {
+      view_id: 'v-10',
+      ...body,
+      team_id: null,
+    } as unknown as SavedViewDisplayRead;
+    expect(sameViewState(viewToState(view), phased)).toBe(true);
+  });
+
+  it('leaves the phase to the server and never matches the date outside a cycle', () => {
+    const late = issue({
+      cycle_id: 'cy-1',
+      cycle_added_at: '2026-10-05T12:00:00Z',
+    });
+    const loose = issue({ cycle_added_at: '2026-10-05T12:00:00Z' });
+    const after = [
+      {
+        field: 'cycle_added_at' as const,
+        op: 'after' as const,
+        values: ['2026-10-04'],
+      },
+    ];
+
+    expect(
+      matchesFilters(late, [
+        { field: 'cycle_added', op: 'is', values: ['planned'] },
+      ])
+    ).toBe(true);
+    expect(matchesFilters(late, after)).toBe(true);
+    expect(matchesFilters(loose, after)).toBe(false);
+    expect(matchesFilters(issue({ cycle_id: 'cy-1' }), after)).toBe(false);
+  });
+
+  it('offers both fields in the filter menu', () => {
+    expect(filterFieldsFor(context)).toEqual(
+      expect.arrayContaining(['cycle', 'cycle_added', 'cycle_added_at'])
+    );
+  });
+});

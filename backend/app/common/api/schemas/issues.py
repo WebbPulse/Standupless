@@ -434,6 +434,10 @@ class IssueRead(BaseModel):
     status_changed_at: Optional[datetime] = Field(
         default=None, description="When the issue entered its current status, for time in status."
     )
+    cycle_added_at: Optional[datetime] = Field(
+        default=None,
+        description="When the issue joined its current cycle, null with no cycle or when the moment is unknown.",
+    )
     external_ref: Optional[str] = None
 
     @classmethod
@@ -490,6 +494,7 @@ class IssueRead(BaseModel):
             completed_at=issue.completed_at,
             cancelled_at=issue.cancelled_at,
             status_changed_at=issue.entered_status_at(),
+            cycle_added_at=issue.cycle_added_at if issue.cycle_id else None,
             external_ref=issue.external_ref,
         )
 
