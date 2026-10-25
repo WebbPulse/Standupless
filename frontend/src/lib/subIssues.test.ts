@@ -1,13 +1,16 @@
 /**
  * The sub-issues arrangement: reading what the viewer stored, falling back on
- * anything unreadable, and the manual keys a drop writes.
+ * anything unreadable, the manual keys a drop writes, and which sub-issue
+ * shows first.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { OrderedIssueRead } from '../api/issues';
+import type { StatusRead } from '../types/Api';
 import {
   DEFAULT_SUB_ISSUE_DISPLAY,
   SUB_ISSUE_DISPLAY_KEY,
+  firstSubIssue,
   readSubIssueDisplay,
   subIssueDropKeys,
   writeSubIssueDisplay,
@@ -77,5 +80,46 @@ describe('the keys a drop writes', () => {
 
   it('is null for a row that is not in the list', () => {
     expect(subIssueDropKeys([row('a', 'B')], 'x', 0)).toBeNull();
+  });
+});
+
+describe('the first sub-issue shown', () => {
+  const statuses: StatusRead[] = [
+    { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
+    { id: 'st-9', name: 'Done', category: 'completed', position: 1 },
+  ];
+  const open = (id: string, sortOrder: string): OrderedIssueRead => ({
+    ...row(id, sortOrder),
+    status_id: 'st-1',
+  });
+  const done = (id: string, sortOrder: string): OrderedIssueRead => ({
+    ...row(id, sortOrder),
+    status_id: 'st-9',
+  });
+
+  it('takes the first row in manual order', () => {
+    expect(firstSubIssue([open('b', 'D'), done('a', 'B')], statuses)?.id).toBe(
+      'a'
+    );
+  });
+
+  it('skips completed rows while they are hidden', () => {
+    writeSubIssueDisplay({ ordering: 'manual', showCompleted: false });
+    expect(firstSubIssue([open('b', 'D'), done('a', 'B')], statuses)?.id).toBe(
+      'b'
+    );
+  });
+
+  it('falls back on a completed row when every row is completed', () => {
+    expect(
+      firstSubIssue([done('a', 'B')], statuses, {
+        ordering: 'manual',
+        showCompleted: false,
+      })?.id
+    ).toBe('a');
+  });
+
+  it('finds nothing among no rows', () => {
+    expect(firstSubIssue([], statuses)).toBeUndefined();
   });
 });
