@@ -75,6 +75,7 @@ from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.project_update_report import report_for_item
 from app.common.team_privacy import person_can_see_team
 from app.common.trash_stream import touches_trash
 from app.common.triage_duty import duty_notified
@@ -779,12 +780,14 @@ def write_project_update_notification(
     actor_display: str,
     created_at: datetime | None,
     source: str | None = None,
+    report: list[str] | None = None,
 ) -> bool:
     """Write one project update inbox row, and mail it, under the same rules an issue row follows.
 
     The recipient must still see at least one of the project's teams, and that
     team is the one the row carries, so the inbox's visibility checks read it as
-    they read an issue's team.
+    they read an issue's team. `report` is the update's progress report, which
+    the email lists under the excerpt.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -820,7 +823,9 @@ def write_project_update_notification(
         return False
 
     if email:
-        hold_for_digest(repositories, row, recipient=recipient, health=health, excerpt=excerpt(body))
+        hold_for_digest(
+            repositories, row, recipient=recipient, health=health, excerpt=excerpt(body), report=list(report or [])
+        )
     if chat:
         hold_for_chat(repositories, row, health=health, excerpt=excerpt(body))
     return True
@@ -910,6 +915,7 @@ def handle_update_reply(repositories: Repositories, new_image: Mapping[str, Any]
                 actor_display=display,
                 created_at=created_at,
                 source=_text(new_image, "source") or None,
+                report=report,
             )
         )
     return written
@@ -944,6 +950,7 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     display = actor_name(repositories, actor_id)
     created_at = _stamped_at(new_image)
     audience = [user_id for user_id in dict.fromkeys([project.lead_id or "", *project.member_ids]) if user_id]
+    report = report_for_item(new_image)
     written = 0
     for recipient_id in cap_recipients(
         [user_id for user_id in audience if user_id != actor_id],
@@ -962,6 +969,7 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
                 actor_display=display,
                 created_at=created_at,
                 source=_text(new_image, "source") or None,
+                report=report,
             )
         )
     return written

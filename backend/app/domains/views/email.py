@@ -252,11 +252,13 @@ def render_project_update_notification(
     workspace_slug: str,
     body: str = "",
     accent: str | None = None,
+    report: Sequence[str] = (),
 ) -> EmailMessage:
     """Render the email for one project update notification.
 
     The subject is `[Project] Name`, so every update on one project threads
-    together in a mail client the way an issue's notifications do.
+    together in a mail client the way an issue's notifications do. `report` is
+    the update's progress report, listed as plain lines under the excerpt.
     """
     actor = actor_name.strip() or "Someone"
     title = project_name.strip() or "Untitled project"
@@ -270,6 +272,8 @@ def render_project_update_notification(
     ]
     if trimmed:
         blocks.append(Quote(trimmed))
+    if report:
+        blocks.append(BulletList(tuple(ListItem(line) for line in report)))
     blocks.append(Button("Open project updates", project_url(workspace_slug, project_id), show_url=True))
     return render(
         to=to,
@@ -443,6 +447,7 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: s
             workspace_slug=workspace_slug,
             body=entry.excerpt,
             accent=accent,
+            report=entry.report,
         )
     return render_notification(
         kind=entry.kind,

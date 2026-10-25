@@ -8460,6 +8460,12 @@
             "title": "Health",
             "type": "string"
           },
+          "hide_details": {
+            "default": false,
+            "description": "Hide the progress report on this update for everyone",
+            "title": "Hide Details",
+            "type": "boolean"
+          },
           "template_id": {
             "anyOf": [
               {
@@ -13220,6 +13226,35 @@
         "title": "MilestoneRead",
         "type": "object"
       },
+      "MilestoneSnapshotRead": {
+        "description": "One milestone's progress as a project update recorded it, in the project's measure.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "milestone_id": {
+            "title": "Milestone Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "milestone_id",
+          "name"
+        ],
+        "title": "MilestoneSnapshotRead",
+        "type": "object"
+      },
       "MilestoneTemplate": {
         "description": "One milestone a project template adds; `target_offset_days` counts from the creation day.",
         "properties": {
@@ -16330,6 +16365,12 @@
             "title": "Health",
             "type": "string"
           },
+          "hide_details": {
+            "default": false,
+            "description": "Hide the progress report on this update for everyone",
+            "title": "Hide Details",
+            "type": "boolean"
+          },
           "template_id": {
             "anyOf": [
               {
@@ -16376,7 +16417,7 @@
         "type": "object"
       },
       "ProjectUpdatePatch": {
-        "description": "The body a project update patch takes; either field may be left out, neither cleared.",
+        "description": "The body a project update patch takes; any field may be left out, none cleared.",
         "properties": {
           "body": {
             "anyOf": [
@@ -16404,6 +16445,18 @@
               }
             ],
             "title": "Health"
+          },
+          "hide_details": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hide or show the update's progress report",
+            "title": "Hide Details"
           }
         },
         "title": "ProjectUpdatePatch",
@@ -16436,7 +16489,7 @@
         "type": "object"
       },
       "ProjectUpdateRead": {
-        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.",
+        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\nproject when this update was posted, and when the one before it was. A null\n`snapshot` is an update posted before reports existed, which shows none,\nand a null `previous_snapshot` beside a snapshot is a first update, whose\nreport is a baseline. `hide_details` is the author's choice to hide it.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -16482,6 +16535,21 @@
             "title": "Health",
             "type": "string"
           },
+          "hide_details": {
+            "default": false,
+            "title": "Hide Details",
+            "type": "boolean"
+          },
+          "previous_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectUpdateSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -16492,6 +16560,16 @@
             },
             "title": "Reactions",
             "type": "array"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectUpdateSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "anyOf": [
@@ -16538,6 +16616,136 @@
           "updated_at"
         ],
         "title": "ProjectUpdateRead",
+        "type": "object"
+      },
+      "ProjectUpdateSnapshotRead": {
+        "description": "Where a project stood when an update was posted, as the API returns it.\n\n`completed` and `total` are in `measure`, cancelled work left out, and\n`percent` is their whole percent.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "lead_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Name"
+          },
+          "measure": {
+            "default": "issues",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneSnapshotRead"
+            },
+            "title": "Milestones",
+            "type": "array"
+          },
+          "percent": {
+            "default": 0,
+            "title": "Percent",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "backlog",
+                  "planned",
+                  "in_progress",
+                  "paused",
+                  "completed",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "status_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Name"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date Resolution"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ProjectUpdateSnapshotRead",
         "type": "object"
       },
       "ProjectsDisplay": {

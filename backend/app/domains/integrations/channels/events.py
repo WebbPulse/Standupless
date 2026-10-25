@@ -31,6 +31,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.channels import ChannelDestination
 from app.common.db.dynamo.planning import PROJECT_UPDATE
 from app.common.issue_keys import display_key
+from app.common.project_update_report import report_for_item
 from app.common.standup import StandupDigest, StandupWindowError, build_digest
 from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels.delivery import Enqueue, schedule
@@ -225,19 +226,24 @@ def comment_candidates(repositories: Repositories, event_name: str, new: Mapping
 def project_update_candidates(
     repositories: Repositories, workspace_id: str, new: Mapping[str, Any]
 ) -> tuple[list[Candidate], tuple[str, ...]]:
-    """What a new project update announces, with the teams of its project."""
+    """What a new project update announces, with the teams of its project.
+
+    The detail is the body's excerpt with the update's progress report under it
+    as plain lines, so a long body is cut without cutting the report.
+    """
     project = repositories.planning.get_project(workspace_id, str(new.get("project_id", "")))
     if project is None:
         return [], ()
     health = str(new.get("health", ""))
     actor = _actor(repositories, new.get("author_id"))
+    report = "\n".join(report_for_item(new))
     message = ChannelMessage(
         event="project_update_posted",
         subject=project.name,
         url=Links(repositories, workspace_id).project_update(project.project_id, str(new.get("update_id", ""))),
         summary=f"{actor} posted a project update.",
         actor=actor,
-        detail=excerpt(str(new.get("body", ""))),
+        detail="\n\n".join(part for part in (excerpt(str(new.get("body", ""))), report) if part),
         color=HEALTH_COLORS.get(health),
         fields=(("Health", HEALTH_NAMES.get(health, health)),) if health else (),
     )
