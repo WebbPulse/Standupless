@@ -155,9 +155,11 @@ def list_issues(
     The `completed_desc` sort puts the latest `completed_at` first and issues not
     completed last.
     `customer_id` keeps the issues one of the named customers asked for and
-    `customer_id_not` drops them, `none` standing for no customer request, and
-    the `customer_requests_desc` and `customer_revenue_desc` sorts put the most
-    requested or highest revenue issues first. Guests may use neither.
+    `customer_id_not` drops them, `none` standing for no customer request and
+    `important` for an important one, and the `customer_requests_desc`,
+    `customer_important_desc` and `customer_revenue_desc` sorts put the most
+    requested, most importantly requested or highest revenue issues first.
+    Guests may use neither.
 
     Archived issues are left out unless `include_archived` is set, and
     `archived_only` lists nothing but them, the archive view. That read goes

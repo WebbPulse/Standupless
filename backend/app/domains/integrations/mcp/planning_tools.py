@@ -270,6 +270,11 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         **(
             {} if project.customer_request_count is None else {"customer_request_count": project.customer_request_count}
         ),
+        **(
+            {}
+            if project.customer_important_count is None
+            else {"customer_important_count": project.customer_important_count}
+        ),
         **({} if project.customer_revenue is None else {"customer_revenue": project.customer_revenue}),
         **(
             {}
@@ -951,7 +956,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                     "description": "true for open projects that block another project, false for the rest",
                 },
                 "customer_id": one_or_many(
-                    "Only projects any of these customers asked for; 'none' is projects no customer asked for"
+                    "Only projects any of these customers asked for; 'none' is projects no customer asked for, "
+                    "'important' projects with an important request"
                 ),
                 "customer_id_not": one_or_many("Only projects none of these customers asked for"),
                 "label_id": one_or_many(
@@ -960,7 +966,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "sort": enum(
                     PROJECT_SORTS,
                     "The order, defaulting to target_asc; customer_requests_desc puts the most customer requests "
-                    "first and customer_revenue_desc the highest summed revenue of the customers asking",
+                    "first, customer_important_desc the most important ones and customer_revenue_desc the highest "
+                    "summed revenue of the customers asking",
                 ),
                 **page_properties(),
             }

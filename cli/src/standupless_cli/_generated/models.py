@@ -456,6 +456,7 @@ class CustomerCreate(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
+    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
     tier: NotRequired[str | None]
 
 
@@ -469,6 +470,7 @@ class CustomerPatch(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
+    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
     tier: NotRequired[str | None]
 
 
@@ -479,11 +481,13 @@ class CustomerRead(TypedDict):
     created_by: str
     customer_id: str
     domains: NotRequired[list[str]]
+    important_count: NotRequired[int]
     name: str
     owner_id: NotRequired[str | None]
     request_count: NotRequired[int]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
+    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
     tier: NotRequired[str | None]
     updated_at: str
     workspace_id: str
@@ -492,21 +496,33 @@ class CustomerRead(TypedDict):
 class CustomerRequestCreate(TypedDict):
     body: NotRequired[str]
     customer_id: str
+    important: NotRequired[bool]
+
+
+class CustomerRequestPatch(TypedDict):
+    body: NotRequired[str | None]
+    customer_id: NotRequired[str | None]
+    important: NotRequired[bool | None]
+    target_id: NotRequired[str | None]
+    target_kind: NotRequired[Literal["issue", "project"] | None]
 
 
 class CustomerRequestRead(TypedDict):
     author_id: str
     body: NotRequired[str]
     can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
     created_at: str
     customer_id: str
     customer_name: NotRequired[str]
+    important: NotRequired[bool]
     request_id: str
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     target_id: str
     target_key: NotRequired[str]
     target_kind: Literal["issue", "project"]
     target_title: NotRequired[str]
+    updated_at: NotRequired[str | None]
     workspace_id: str
 
 
@@ -666,6 +682,7 @@ class DisplayOptionsBody(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -2167,6 +2184,7 @@ class ShareLinkCreate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -2976,6 +2994,7 @@ class ViewCreate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -3000,6 +3019,7 @@ class ViewCreate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -3094,6 +3114,7 @@ class ViewUpdate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -3118,6 +3139,7 @@ class ViewUpdate(TypedDict):
             "start_asc",
             "estimate_desc",
             "customer_requests_desc",
+            "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
         ]
@@ -3926,6 +3948,7 @@ class ProjectRead(TypedDict):
     counts: CountsRead
     created_at: str
     created_by: str
+    customer_important_count: NotRequired[int | None]
     customer_request_count: NotRequired[int | None]
     customer_revenue: NotRequired[int | None]
     description: NotRequired[str | None]

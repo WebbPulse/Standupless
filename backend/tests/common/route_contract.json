@@ -1070,6 +1070,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/customers/{customer_id}/requests/{request_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/cycles"
   },

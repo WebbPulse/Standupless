@@ -2,10 +2,10 @@
 
 A customer lives in the workspace partition in three row shapes:
 
-- `customer#<customer>` is the customer: name, domains, tier, owner, revenue and
-  size. The workspace's customers are one query under `customer#`.
+- `customer#<customer>` is the customer: name, domains, status, tier, owner,
+  revenue and size. The workspace's customers are one query under `customer#`.
 - `customer_request#<customer>#<request>` is one request, a customer asking for
-  an issue or a project, with an optional quote. A customer's requests are one
+  an issue or a project, with an optional quote and an important flag. A customer's requests are one
   query, and the workspace's are one query under `customer_request#`.
 - `customer_target#<target_kind>#<target>#<request>` is a copy of the request
   under the issue or project it names, so a target's requests are one query.
@@ -40,6 +40,11 @@ CUSTOMER_REQUEST_KEY_PREFIX = "customer_request#"
 TargetKind = Literal["issue", "project"]
 
 TARGET_KINDS: tuple[str, ...] = ("issue", "project")
+
+CustomerStatus = Literal["lead", "trial", "active", "paused", "churned"]
+
+CUSTOMER_STATUSES: tuple[str, ...] = ("lead", "trial", "active", "paused", "churned")
+"""The fixed lifecycle a customer moves through, in the order a list groups them."""
 
 LIST_MAX = 2000
 """The most customers, or requests, one workspace listing reads."""
@@ -84,6 +89,7 @@ class Customer(BaseModel):
     kind: str = CUSTOMER
     name: str
     domains: list[str] = Field(default_factory=list)
+    status: CustomerStatus | None = None
     tier: str | None = None
     owner_id: str | None = None
     revenue: int | None = None
@@ -114,9 +120,11 @@ class CustomerRequest(BaseModel):
     target_id: str
     team_ids: list[str] = Field(default_factory=list)
     body: str = ""
+    important: bool = False
     author_id: str
     source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime | None = None
 
     def model_post_init(self, _context: Any) -> None:
         """Derive the sort key from the kind, customer, target and id when none was given."""
@@ -225,6 +233,25 @@ class CustomerRepository:
                 ),
             ]
         )
+
+    def replace_request(self, previous: CustomerRequest, edited: CustomerRequest) -> CustomerRequest:
+        """Write an edited request under its customer and target, dropping the old rows a move left behind."""
+        row = edited.as_customer_row()
+        self._repository.put(row.model_dump(mode="json"))
+        self._repository.put(row.as_target_copy().model_dump(mode="json"))
+        stale = []
+        if previous.customer_id != row.customer_id:
+            stale.append(_key(previous.workspace_id, customer_request_key(previous.customer_id, previous.request_id)))
+        if (previous.target_kind, previous.target_id) != (row.target_kind, row.target_id):
+            stale.append(
+                _key(
+                    previous.workspace_id,
+                    customer_target_key(previous.target_kind, previous.target_id, previous.request_id),
+                )
+            )
+        if stale:
+            self._repository.delete_many(stale)
+        return row
 
     def list_for_customer(
         self, workspace_id: str, customer_id: str, *, max_items: int = LIST_MAX

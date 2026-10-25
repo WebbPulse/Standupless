@@ -273,6 +273,7 @@ EXPECTED_TOOLS = frozenset(
         "delete_customer",
         "create_customer_request",
         "list_customer_requests",
+        "update_customer_request",
         "delete_customer_request",
         "list_templates",
         "create_template",

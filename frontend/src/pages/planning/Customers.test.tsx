@@ -82,6 +82,7 @@ const customer = (
   workspace_id: 'ws-1',
   name,
   domains: [],
+  status: null,
   tier: null,
   owner_id: null,
   revenue: null,
@@ -90,6 +91,7 @@ const customer = (
   created_at: '2026-10-01T00:00:00Z',
   updated_at: '2026-10-01T00:00:00Z',
   request_count: 0,
+  important_count: 0,
   can_edit: true,
   can_delete: true,
   ...overrides,
@@ -214,6 +216,7 @@ describe('Customers', () => {
       expect(createCustomer).toHaveBeenCalledWith({
         name: 'Initech',
         domains: ['initech.com', 'initech.io'],
+        status: null,
         tier: null,
         owner_id: null,
         revenue: null,

@@ -1,7 +1,46 @@
 /**
- * How customer fields read in lists and on the customer page: compact amounts
- * for revenue and headcount, and the domains joined for one line.
+ * How customer fields read in lists and on the customer page: the status with
+ * its label and dot colour, compact amounts for revenue and headcount, and the
+ * domains joined for one line.
  */
+
+import type { CustomerStatus } from '../types/Api';
+
+/** Every customer status, in the order a customer usually moves through them. */
+export const CUSTOMER_STATUSES: CustomerStatus[] = [
+  'lead',
+  'trial',
+  'active',
+  'paused',
+  'churned',
+];
+
+/** How a customer status reads in the interface. */
+export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
+  lead: 'Lead',
+  trial: 'Trial',
+  active: 'Active',
+  paused: 'Paused',
+  churned: 'Churned',
+};
+
+/** The dot colour beside each status. */
+export const CUSTOMER_STATUS_DOT: Record<CustomerStatus, string> = {
+  lead: 'bg-text-faint',
+  trial: 'bg-accent',
+  active: 'bg-success',
+  paused: 'bg-warning',
+  churned: 'bg-danger',
+};
+
+/** A status's label, or a fallback when unset. */
+export const customerStatusLabel = (
+  status: CustomerStatus | null | undefined,
+  fallback = 'No status'
+): string =>
+  status === null || status === undefined
+    ? fallback
+    : CUSTOMER_STATUS_LABELS[status];
 
 const COMPACT = new Intl.NumberFormat('en-US', {
   notation: 'compact',

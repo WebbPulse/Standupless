@@ -1,22 +1,29 @@
 /**
- * The add customer request dialog, opened from an issue or a project: pick the
- * customer who asked, or type a new name to add one on the spot, then paste
- * what they said. Cmd or Ctrl and Enter files it from anywhere in the dialog.
+ * The customer request dialog, opened from an issue or a project to add one or
+ * from a request's menu to edit it: pick the customer who asked, or type a new
+ * name to add one on the spot, paste what they said, and mark it important.
+ * Cmd or Ctrl and Enter saves it from anywhere in the dialog.
  */
 
 import React, { useMemo, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { LuBuilding2 } from 'react-icons/lu';
-import { createCustomer, createCustomerRequest } from '../../api/customers';
+import {
+  createCustomer,
+  createCustomerRequest,
+  updateCustomerRequest,
+} from '../../api/customers';
 import { useCustomers } from '../../hooks/useCustomers';
 import { errorMessage } from '../../lib/errors';
 import type {
   CustomerRead,
+  CustomerRequestPatch,
   CustomerRequestRead,
   CustomerTargetKind,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Combobox from '../ui/combobox';
 import Dialog from '../ui/dialog';
 
@@ -27,18 +34,32 @@ export interface AddCustomerRequestDialogProps {
   targetId: string;
   /** The issue key or project name, shown in the dialog's heading. */
   targetLabel: string;
+  /** The request being edited; unset files a new one. */
+  request?: CustomerRequestRead | null;
   onClose: () => void;
   onAdded: (request: CustomerRequestRead) => void;
 }
 
-/** The dialog that files a customer request. */
+/** The dialog that files or edits a customer request. */
 export const AddCustomerRequestDialog: React.FC<
   AddCustomerRequestDialogProps
-> = ({ workspaceId, targetKind, targetId, targetLabel, onClose, onAdded }) => {
+> = ({
+  workspaceId,
+  targetKind,
+  targetId,
+  targetLabel,
+  request = null,
+  onClose,
+  onAdded,
+}) => {
   const { customers, queryKey } = useCustomers(workspaceId);
   const [added, setAdded] = useState<CustomerRead[]>([]);
-  const [customerId, setCustomerId] = useState<string | null>(null);
-  const [quote, setQuote] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(
+    request?.customer_id ?? null
+  );
+  const [quote, setQuote] = useState(request?.body ?? '');
+  const [important, setImportant] = useState(request?.important ?? false);
+  const isEditing = request !== null;
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -82,10 +103,27 @@ export const AddCustomerRequestDialog: React.FC<
     if (customerId === null || isSaving) return;
     setIsSaving(true);
     setError(null);
-    createCustomerRequest(workspaceId, targetKind, targetId, {
-      customer_id: customerId,
-      body: quote.trim(),
-    }).then(
+    const body = quote.trim();
+    const save = (): Promise<CustomerRequestRead> => {
+      if (request === null) {
+        return createCustomerRequest(workspaceId, targetKind, targetId, {
+          customer_id: customerId,
+          body,
+          important,
+        });
+      }
+      const patch: CustomerRequestPatch = {};
+      if (customerId !== request.customer_id) patch.customer_id = customerId;
+      if (body !== request.body) patch.body = body;
+      if (important !== request.important) patch.important = important;
+      return updateCustomerRequest(
+        workspaceId,
+        request.customer_id,
+        request.request_id,
+        patch
+      );
+    };
+    save().then(
       (request) => {
         setIsSaving(false);
         invalidateQueries(queryKey);
@@ -103,8 +141,12 @@ export const AddCustomerRequestDialog: React.FC<
   return (
     <Dialog
       open
-      title="Add customer request"
-      description={`Record which customer asked for ${targetLabel}.`}
+      title={isEditing ? 'Edit customer request' : 'Add customer request'}
+      description={
+        request !== null
+          ? `The request from ${request.customer_name} for ${targetLabel}.`
+          : `Record which customer asked for ${targetLabel}.`
+      }
       size="md"
       onClose={onClose}
     >
@@ -119,7 +161,12 @@ export const AddCustomerRequestDialog: React.FC<
       >
         {error !== null && (
           <ErrorAlert
-            message={errorMessage(error, 'Could not add that request.')}
+            message={errorMessage(
+              error,
+              isEditing
+                ? 'Could not save that request.'
+                : 'Could not add that request.'
+            )}
           />
         )}
         {chosen === null ? (
@@ -164,6 +211,13 @@ export const AddCustomerRequestDialog: React.FC<
           }}
           className="w-full resize-none rounded-md border border-line bg-transparent px-2.5 py-2 text-sm text-text placeholder:text-text-faint focus:border-accent focus:outline-none"
         />
+        <Checkbox
+          label="Mark as important"
+          checked={important}
+          onChange={(event) => {
+            setImportant(event.target.checked);
+          }}
+        />
         <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
           <Button variant="secondary" size="sm" onClick={onClose}>
             Cancel
@@ -174,7 +228,13 @@ export const AddCustomerRequestDialog: React.FC<
             disabled={customerId === null || isSaving}
             onClick={submit}
           >
-            {isSaving ? 'Adding' : 'Add request'}
+            {isSaving
+              ? isEditing
+                ? 'Saving'
+                : 'Adding'
+              : isEditing
+                ? 'Save changes'
+                : 'Add request'}
           </Button>
         </div>
       </div>

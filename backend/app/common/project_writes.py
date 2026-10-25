@@ -27,6 +27,7 @@ from app.common.api.schemas.planning import (
 )
 from app.common.customer_index import (
     CUSTOMER_SORTS,
+    IMPORTANT_SORT,
     REVENUE_SORT,
     CustomerIndex,
     customer_match,
@@ -165,10 +166,12 @@ def list_projects(
     the rest, the same reading as the list's blocked and blocking flags.
 
     `customer_id` keeps the projects one of the named customers asked for and
-    `customer_id_not` drops them, `none` standing for no request. `sort` set to
-    `customer_requests_desc` or `customer_revenue_desc` orders by request count or
-    the asking customers' summed revenue, highest first, target date breaking ties.
-    Either reads the workspace's requests once and fills `customer_request_count`,
+    `customer_id_not` drops them, `none` standing for no request and `important`
+    for any important one. `sort` set to `customer_requests_desc`,
+    `customer_important_desc` or `customer_revenue_desc` orders by request count,
+    important request count or the asking customers' summed revenue, highest
+    first, target date breaking ties. Each reads the workspace's requests once and
+    fills `customer_request_count` and `customer_important_count`,
     and neither is open to a guest. `label_id` keeps the projects carrying any of
     the named project labels, `none` standing for a project with no label.
     """
@@ -213,17 +216,23 @@ def list_projects(
         if not label_match(wanted_labels, row.label_ids):
             continue
         if index is not None and not customer_match(
-            wanted_customers, unwanted_customers, index.customer_ids("project", row.project_id)
+            wanted_customers,
+            unwanted_customers,
+            index.customer_ids("project", row.project_id),
+            index.important_count("project", row.project_id),
         ):
             continue
         body = ProjectRead.from_row(row, teams, default_interval_days=default_days)
         if index is not None:
             body.customer_request_count = index.request_count("project", row.project_id)
+            body.customer_important_count = index.important_count("project", row.project_id)
             if sort == REVENUE_SORT:
                 body.customer_revenue = index.revenue_of("project", row.project_id)
         bodies.append(body)
     if sort == "customer_requests_desc":
         bodies.sort(key=lambda body: -(body.customer_request_count or 0))
+    elif sort == IMPORTANT_SORT:
+        bodies.sort(key=lambda body: -(body.customer_important_count or 0))
     elif sort == REVENUE_SORT:
         bodies.sort(key=lambda body: -(body.customer_revenue or 0))
 

@@ -4,7 +4,8 @@ The properties worth holding are that both lists narrow to the issues or
 projects a customer asked for, or that none did, and leave out the ones a
 customer asked for under `customer_id_not`; that the request sort puts the most
 asked for first with unrequested rows last; that the revenue sort sums each
-asking customer once; and that a guest, who may not read customers, is refused
+asking customer once; that the important filter and sort count only requests
+marked important; and that a guest, who may not read customers, is refused
 either rather than learning who asked for what from the order of a list.
 """
 
@@ -30,10 +31,13 @@ def _customer(client: TestClient, workspace: str, name: str, revenue: int = 0) -
     return response.json()["customer_id"]
 
 
-def _ask(client: TestClient, workspace: str, kind: str, target_id: str, customer_id: str) -> None:
+def _ask(
+    client: TestClient, workspace: str, kind: str, target_id: str, customer_id: str, important: bool = False
+) -> None:
     """File one request from a customer for an issue or project."""
     response = client.post(
-        f"{_base(workspace)}/{kind}s/{target_id}/customer-requests", json={"customer_id": customer_id}
+        f"{_base(workspace)}/{kind}s/{target_id}/customer-requests",
+        json={"customer_id": customer_id, "important": important},
     )
     assert response.status_code == 201, response.text
 
@@ -146,3 +150,32 @@ def test_guests_cannot_list_by_customer(client: TestClient, issues_client: TestC
     assert client.get(projects, params={"sort": "customer_revenue_desc"}).status_code == 403
     assert issues_client.get(issues, params={"team_id": TEAM}).status_code == 200
     assert client.get(projects).status_code == 200
+
+
+def test_the_lists_filter_and_sort_by_important_requests(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """Only requests marked important count toward the important filter and sort."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    acme = _customer(client, workspace, "Acme")
+    many = seed_issue(issues_client, workspace, title="Many")["id"]
+    flagged = seed_issue(issues_client, workspace, title="Flagged")["id"]
+    quiet = seed_issue(issues_client, workspace, title="Quiet")["id"]
+    _ask(client, workspace, "issue", many, acme)
+    _ask(client, workspace, "issue", many, acme)
+    _ask(client, workspace, "issue", flagged, acme, important=True)
+
+    assert _issues(issues_client, workspace, customer_id="important") == [flagged]
+    assert set(_issues(issues_client, workspace, customer_id_not="important")) == {many, quiet}
+    assert _issues(issues_client, workspace, sort="customer_important_desc")[0] == flagged
+
+    asked = seed_project(client, workspace, name="Asked")["project_id"]
+    urgent = seed_project(client, workspace, name="Urgent")["project_id"]
+    _ask(client, workspace, "project", asked, acme)
+    _ask(client, workspace, "project", urgent, acme, important=True)
+
+    assert [row["project_id"] for row in _projects(client, workspace, customer_id="important")] == [urgent]
+    ordered = _projects(client, workspace, sort="customer_important_desc")
+    assert [row["project_id"] for row in ordered] == [urgent, asked]
+    assert [row["customer_important_count"] for row in ordered] == [1, 0]

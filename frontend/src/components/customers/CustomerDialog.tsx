@@ -1,7 +1,7 @@
 /**
  * The customer dialog, for adding a customer or editing one: a large name
- * field, then domains, tier, revenue and size, with the account owner as a
- * chip. Cmd or Ctrl and Enter saves it from anywhere in the dialog.
+ * field, then domains, tier, revenue and size, with the status and the
+ * account owner as chips. Cmd or Ctrl and Enter saves it from anywhere in the dialog.
  */
 
 import React, { useState } from 'react';
@@ -9,12 +9,13 @@ import { createCustomer, updateCustomer } from '../../api/customers';
 import { parseAmount, parseDomains } from '../../lib/customerDisplay';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import type { CustomerRead } from '../../types/Api';
+import type { CustomerRead, CustomerStatus } from '../../types/Api';
 import { LeadPicker } from '../planning/ProjectPickers';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
+import CustomerStatusPicker from './CustomerStatusPicker';
 
 /** Props for CustomerDialog: the customer to edit, or none to add one. */
 export interface CustomerDialogProps {
@@ -44,6 +45,9 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
 }) => {
   const [name, setName] = useState(customer?.name ?? initialName);
   const [domains, setDomains] = useState(customer?.domains.join(', ') ?? '');
+  const [status, setStatus] = useState<CustomerStatus | null>(
+    customer?.status ?? null
+  );
   const [tier, setTier] = useState(customer?.tier ?? '');
   const [ownerId, setOwnerId] = useState<string | null>(
     customer?.owner_id ?? null
@@ -65,6 +69,7 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
     const body = {
       name: name.trim(),
       domains: parseDomains(domains),
+      status,
       tier: tier.trim() === '' ? null : tier.trim(),
       owner_id: ownerId,
       revenue: parseAmount(revenue),
@@ -168,6 +173,7 @@ export const CustomerDialog: React.FC<CustomerDialogProps> = ({
           />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          <CustomerStatusPicker value={status} onChange={setStatus} />
           <LeadPicker
             variant="chip"
             field="Owner"

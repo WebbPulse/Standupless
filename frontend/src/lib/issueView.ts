@@ -494,6 +494,7 @@ export const ORDERINGS: IssueListSort[] = [
   'sla_asc',
   'key_asc',
   'customer_requests_desc',
+  'customer_important_desc',
   'customer_revenue_desc',
 ];
 
@@ -511,6 +512,7 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   start_asc: 'Start date',
   estimate_desc: 'Estimate',
   customer_requests_desc: 'Customer requests',
+  customer_important_desc: 'Important customer requests',
   customer_revenue_desc: 'Customer revenue',
 };
 

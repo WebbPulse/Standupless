@@ -103,8 +103,9 @@ SORT_HELP = (
     "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
     "and issues without a running SLA last; status_asc follows the board's status order, "
     "start_asc the earliest start date and estimate_desc the largest estimate; "
-    "customer_requests_desc puts the most customer requests first and customer_revenue_desc "
-    "the highest summed revenue of the customers asking; completed_desc puts the latest completed_at "
+    "customer_requests_desc puts the most customer requests first, customer_important_desc the most "
+    "important ones and customer_revenue_desc the highest summed revenue of the customers asking; "
+    "completed_desc puts the latest completed_at "
     "first and issues not completed last"
 )
 
@@ -257,8 +258,14 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "project_id_not": one_or_many("In none of these projects"),
         "project_milestone_id_not": one_or_many("In none of these project milestones"),
         "cycle_id_not": one_or_many("In none of these cycles"),
-        "customer_id": one_or_many("Requested by any of these customers; 'none' is issues no customer asked for"),
-        "customer_id_not": one_or_many("Requested by none of these customers; 'none' keeps requested issues only"),
+        "customer_id": one_or_many(
+            "Requested by any of these customers; 'none' is issues no customer asked for, "
+            "'important' issues with an important request"
+        ),
+        "customer_id_not": one_or_many(
+            "Requested by none of these customers; 'none' keeps requested issues only, "
+            "'important' drops issues with an important request"
+        ),
         "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
         "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
         "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),

@@ -1,7 +1,9 @@
 /**
- * One customer's page: its fields in a properties column, and every request it
- * made, newest first, each linking to the issue or project asked for. Edit,
- * merge and delete sit in the header menu for whoever may run them.
+ * One customer's page: its status and fields in a properties column, and every
+ * request it made, newest first, each linking to the issue or project asked
+ * for, with the important ones counted. Each request's menu marks, edits or
+ * moves it, and edit, merge and delete sit in the header menu for whoever may
+ * run them.
  */
 
 import React, { useState } from 'react';
@@ -10,6 +12,7 @@ import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   LuBox,
   LuChevronRight,
+  LuCircleAlert,
   LuEllipsis,
   LuGitMerge,
   LuPencil,
@@ -22,9 +25,11 @@ import {
   deleteCustomerRequest,
   getCustomer,
   listCustomerRequests,
+  updateCustomer,
 } from '../../api/customers';
 import CustomerDialog from '../../components/customers/CustomerDialog';
 import CustomerRequestRow from '../../components/customers/CustomerRequestRow';
+import { CustomerStatusPicker } from '../../components/customers/CustomerStatusPicker';
 import MergeCustomerDialog from '../../components/customers/MergeCustomerDialog';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
@@ -34,6 +39,7 @@ import EmptyState from '../../components/ui/empty-state';
 import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useCustomerRequestActions } from '../../hooks/useCustomerRequestActions';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
@@ -52,7 +58,11 @@ import {
   customersKey,
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
-import type { CustomerRead, CustomerRequestRead } from '../../types/Api';
+import type {
+  CustomerRead,
+  CustomerRequestRead,
+  CustomerStatus,
+} from '../../types/Api';
 
 /** How often the customer and its requests re-read. */
 const POLL_MS = 60000;
@@ -100,6 +110,7 @@ export const CustomerDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const requestActions = useCustomerRequestActions(workspaceId);
 
   const customer: CustomerRead | null = detail.data ?? null;
   const rows: CustomerRequestRead[] = requests.data ?? [];
@@ -173,6 +184,20 @@ export const CustomerDetail: React.FC = () => {
       (failure: unknown) => {
         showToast(
           errorMessage(failure, 'Could not remove that request.'),
+          'error'
+        );
+      }
+    );
+  };
+
+  const setStatus = (status: CustomerStatus | null): void => {
+    updateCustomer(workspaceId, customer.customer_id, { status }).then(
+      () => {
+        refresh();
+      },
+      (failure: unknown) => {
+        showToast(
+          errorMessage(failure, 'Could not change the status.'),
           'error'
         );
       }
@@ -258,6 +283,12 @@ export const CustomerDetail: React.FC = () => {
             <span className="ml-1.5 text-xs font-normal text-text-faint tabular-nums">
               {String(rows.length)}
             </span>
+            {customer.important_count > 0 && (
+              <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-warning tabular-nums">
+                <LuCircleAlert aria-hidden="true" className="h-3 w-3" />
+                {`${String(customer.important_count)} important`}
+              </span>
+            )}
           </h2>
           {requests.error !== null && (
             <ErrorAlert
@@ -296,6 +327,9 @@ export const CustomerDetail: React.FC = () => {
                     )
                   }
                   onRemove={removeRequest}
+                  onToggleImportant={requestActions.toggleImportant}
+                  onEdit={requestActions.edit}
+                  onMove={requestActions.move}
                 />
               ))}
             </ul>
@@ -306,6 +340,15 @@ export const CustomerDetail: React.FC = () => {
           className="lg:border-l lg:border-line lg:pl-6"
         >
           <dl>
+            <Property label="Status">
+              <CustomerStatusPicker
+                value={customer.status}
+                onChange={setStatus}
+                disabled={!customer.can_edit}
+                variant="rail"
+                className="-my-1 -ml-2"
+              />
+            </Property>
             <Property label="Domains">
               {customer.domains.length === 0 ? (
                 <Unset label="No domains" />
@@ -367,6 +410,7 @@ export const CustomerDetail: React.FC = () => {
         </aside>
       </div>
 
+      {requestActions.dialogs}
       {isEditing && (
         <CustomerDialog
           workspaceId={workspaceId}

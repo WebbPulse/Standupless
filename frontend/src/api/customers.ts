@@ -2,7 +2,7 @@
  * The customer routes: the companies a workspace builds for and the requests
  * they make for issues and projects. A customer is reached by its own id, and a
  * request is filed and listed through the issue or project it names, listed
- * again under its customer, and removed through its customer.
+ * again under its customer, and edited, moved and removed through its customer.
  */
 
 import apiClient from './client';
@@ -13,6 +13,7 @@ import type {
   CustomerRead,
   CustomerRequestCreate,
   CustomerRequestListRead,
+  CustomerRequestPatch,
   CustomerRequestRead,
   CustomerTargetKind,
 } from '../types/Api';
@@ -49,7 +50,7 @@ export const customerRequestsPath = (
   customerId: string
 ): string => `/workspaces/${workspaceId}/customers/${customerId}/requests`;
 
-/** The route one request is removed through. */
+/** The route one request is edited and removed through. */
 export const customerRequestPath = (
   workspaceId: string,
   customerId: string,
@@ -188,6 +189,20 @@ export const createCustomerRequest = async (
 ): Promise<CustomerRequestRead> => {
   const response = await apiClient.post<CustomerRequestRead>(
     targetPath(workspaceId, kind, targetId),
+    body
+  );
+  return response.data;
+};
+
+/** Edits one request's quote, customer or important flag, or moves it to another target. */
+export const updateCustomerRequest = async (
+  workspaceId: string,
+  customerId: string,
+  requestId: string,
+  body: CustomerRequestPatch
+): Promise<CustomerRequestRead> => {
+  const response = await apiClient.patch<CustomerRequestRead>(
+    customerRequestPath(workspaceId, customerId, requestId),
     body
   );
   return response.data;

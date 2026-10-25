@@ -3121,6 +3121,24 @@
             ],
             "title": "Size"
           },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lead",
+                  "trial",
+                  "active",
+                  "paused",
+                  "churned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
           "tier": {
             "anyOf": [
               {
@@ -3245,6 +3263,24 @@
             ],
             "title": "Size"
           },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lead",
+                  "trial",
+                  "active",
+                  "paused",
+                  "churned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
           "tier": {
             "anyOf": [
               {
@@ -3293,6 +3329,11 @@
             "title": "Domains",
             "type": "array"
           },
+          "important_count": {
+            "default": 0,
+            "title": "Important Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3334,6 +3375,24 @@
               }
             ],
             "title": "Size"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lead",
+                  "trial",
+                  "active",
+                  "paused",
+                  "churned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           },
           "tier": {
             "anyOf": [
@@ -3378,6 +3437,11 @@
           "customer_id": {
             "title": "Customer Id",
             "type": "string"
+          },
+          "important": {
+            "default": false,
+            "title": "Important",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3413,6 +3477,72 @@
         "title": "CustomerRequestListRead",
         "type": "object"
       },
+      "CustomerRequestPatch": {
+        "description": "The body a request patch takes; a field left out is kept.\n\n`customer_id` hands the request to another customer, and `target_kind` with\n`target_id` moves it to another issue or project; the two go together.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "important": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Important"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "issue",
+                  "project"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Kind"
+          }
+        },
+        "title": "CustomerRequestPatch",
+        "type": "object"
+      },
       "CustomerRequestRead": {
         "description": "One request, with the names a list draws beside it.\n\n`target_key` is the issue key for an issue and empty for a project.",
         "properties": {
@@ -3430,6 +3560,11 @@
             "title": "Can Delete",
             "type": "boolean"
           },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3443,6 +3578,11 @@
             "default": "",
             "title": "Customer Name",
             "type": "string"
+          },
+          "important": {
+            "default": false,
+            "title": "Important",
+            "type": "boolean"
           },
           "request_id": {
             "title": "Request Id",
@@ -3488,6 +3628,18 @@
             "default": "",
             "title": "Target Title",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           },
           "workspace_id": {
             "title": "Workspace Id",
@@ -4386,6 +4538,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -12688,6 +12841,18 @@
             "title": "Created By",
             "type": "string"
           },
+          "customer_important_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Customer requests naming the project marked important, answered with customer_request_count",
+            "title": "Customer Important Count"
+          },
           "customer_request_count": {
             "anyOf": [
               {
@@ -17146,6 +17311,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -22456,6 +22622,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -22516,6 +22683,7 @@
               "start_asc",
               "estimate_desc",
               "customer_requests_desc",
+              "customer_important_desc",
               "customer_revenue_desc",
               "completed_desc"
             ],
@@ -22977,6 +23145,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -23068,6 +23237,7 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
+                  "customer_important_desc",
                   "customer_revenue_desc",
                   "completed_desc"
                 ],
@@ -30100,6 +30270,81 @@
         "tags": [
           "planning"
         ]
+      },
+      "patch": {
+        "description": "Edit a request's quote, customer or important flag, or move it to another issue or project.",
+        "operationId": "edit_request_api_workspaces__workspace_id__customers__customer_id__requests__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerRequestPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Request",
+        "tags": [
+          "planning"
+        ]
       }
     },
     "/api/workspaces/{workspace_id}/cycles": {
@@ -35803,7 +36048,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request, and\nthe `customer_requests_desc` and `customer_revenue_desc` sorts put the most\nrequested or highest revenue issues first. Guests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one, and the `customer_requests_desc`,\n`customer_important_desc` and `customer_revenue_desc` sorts put the most\nrequested, most importantly requested or highest revenue issues first.\nGuests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -36748,6 +36993,7 @@
                 "start_asc",
                 "estimate_desc",
                 "customer_requests_desc",
+                "customer_important_desc",
                 "customer_revenue_desc",
                 "completed_desc"
               ],
@@ -41112,7 +41358,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request.\n`sort=customer_requests_desc` puts the most requested projects first and\n`customer_revenue_desc` the highest summed customer revenue, target date\nbreaking ties; both fill `customer_request_count`. Guests may use neither.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -41291,6 +41537,7 @@
                   "enum": [
                     "target_asc",
                     "customer_requests_desc",
+                    "customer_important_desc",
                     "customer_revenue_desc"
                   ],
                   "type": "string"
