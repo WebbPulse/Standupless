@@ -5,8 +5,8 @@
  * the bulleted list on Mod-Shift-8, the quote and the code block on Mod-Alt-C
  * already come with StarterKit. The numbered list moves to Mod-Shift-9 and the
  * checklist to Mod-Shift-7, as in Linear, and Mod-Enter checks the checklist
- * item at the caret. Mod-K for a link is handled by the surface, since it
- * opens the link field.
+ * item at the caret. Mod-K for a link and Mod-Shift-U for the file picker
+ * are handled by the surface, since each opens something the surface owns.
  */
 
 import { Extension } from '@tiptap/core';
@@ -58,6 +58,16 @@ export const toggleChecklistItem = (
   dispatch(transaction);
   return true;
 };
+
+/**
+ * Whether a key event is Linear's attach chord, Mod-Shift-U, which opens the
+ * editor's file picker.
+ */
+export const isAttachChord = (event: KeyboardEvent): boolean =>
+  (event.metaKey || event.ctrlKey) &&
+  event.shiftKey &&
+  !event.altKey &&
+  event.key.toLowerCase() === 'u';
 
 /** The numbered list, toggled on Mod-Shift-9 as in Linear. */
 export const LinearOrderedList = OrderedList.extend({

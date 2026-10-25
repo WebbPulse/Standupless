@@ -88,7 +88,7 @@ import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
 import { DateChipPicker } from './DateChipPicker';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
-import { toggleChecklistItem } from './editorShortcuts';
+import { isAttachChord, toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
@@ -605,6 +605,20 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           ) {
             event.preventDefault();
             event.stopPropagation();
+            return true;
+          }
+          if (isAttachChord(event)) {
+            const picker = filePicker.current;
+            if (
+              !view.editable ||
+              handlers.current.uploadFile === undefined ||
+              picker === null
+            ) {
+              return false;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            picker.click();
             return true;
           }
           if (mod && !event.shiftKey && event.key.toLowerCase() === 'k') {
