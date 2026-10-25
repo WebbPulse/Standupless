@@ -928,8 +928,11 @@ def _apply_transition(
     on staging leaves them there. A merge that holds its issue, because the pull
     request only said `Refs`, still takes a branch rule into a status that is not
     finished, so partial work merged into `staging` reaches On Staging, but it never
-    takes a rule for any branch or one that would finish the issue. An issue in a
-    retired team is never moved.
+    takes a rule for any branch or one that would finish the issue. Once a pull
+    request that closes the issue has merged, every trigger moves it forward only,
+    an abandoned pull request's `pr_closed` rule included, so a pull request that
+    only references the issue never drags it back along the release path. An issue
+    in a retired team is never moved.
 
     `actor_kind` and `source` attribute the move, GitHub's by default; a GitLab
     merge request moves an issue as the system, since GitLab is not a change
@@ -961,7 +964,9 @@ def _apply_transition(
         return None
     if holds and trigger == "pr_merged" and not _held_merge_may_take(rule, statuses):
         return None
-    if trigger in linking.FORWARD_ONLY_TRIGGERS:
+    if trigger in linking.FORWARD_ONLY_TRIGGERS or _closing_pull_request_merged(
+        repositories, workspace_id, issue.issue_id
+    ):
         by_id = {status.status_id: status for status in statuses}
         if not linking.moves_forward(by_id.get(issue.status_id), by_id.get(target)):
             _log.info(
@@ -991,6 +996,16 @@ def _apply_transition(
         )
     )
     return target
+
+
+def _closing_pull_request_merged(repositories: Repositories, workspace_id: str, issue_id: str) -> bool:
+    """Whether any merged pull request or merge request linked to the issue closed it."""
+    page = repositories.github.list_links_for_issue(workspace_id, issue_id, limit=200)
+    for item in page.items:
+        link = IssueLink.model_validate(dict(item))
+        if not link.detached and link.pr_state == "merged" and linking.link_closes(link) is True:
+            return True
+    return False
 
 
 def _held_merge_may_take(rule: Any, statuses: Sequence[Any]) -> bool:
