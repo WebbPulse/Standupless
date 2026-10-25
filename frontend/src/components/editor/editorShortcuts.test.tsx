@@ -2,7 +2,8 @@
  * Holds the list chords to Linear's keys: Mod-Shift-7 a checklist, 8 a
  * bulleted list and 9 a numbered list, each chord doing one thing. Mod-Enter
  * checks the checklist item at the caret, with Shift its nested items too, and
- * outside a checklist item still submits the surface.
+ * outside a checklist item still submits the surface. Mod-Shift-U opens the
+ * file picker in a surface that takes uploads and does nothing elsewhere.
  */
 
 import { Editor } from '@tiptap/core';
@@ -14,6 +15,7 @@ import {
   screen,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { UploadFile } from './mediaNodes';
 import { FORMAT_ACTIONS, actionTooltip } from './formatting';
 import { markdownExtensions } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
@@ -23,6 +25,7 @@ import { SLASH_COMMANDS } from './slashCommands';
 const editors: Editor[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   cleanup();
   for (const editor of editors.splice(0)) editor.destroy();
   document.body.innerHTML = '';
@@ -181,5 +184,79 @@ describe('Ctrl+Enter in a surface', () => {
     press(surface, ENTER);
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(readMarkdown(editor)).toBe('a comment');
+  });
+});
+
+describe('Ctrl+Shift+U in a surface', () => {
+  const ATTACH = {
+    key: 'U',
+    code: 'KeyU',
+    keyCode: 85,
+    ctrlKey: true,
+    shiftKey: true,
+  };
+
+  /** Renders a surface, with uploads when `uploadFile` is given, and focuses it. */
+  const renderSurface = (uploadFile?: UploadFile): HTMLElement => {
+    render(
+      <RichMarkdownEditor
+        value="text"
+        editable
+        ariaLabel="Description"
+        onCommit={() => true}
+        {...(uploadFile === undefined ? {} : { uploadFile })}
+      />
+    );
+    const surface = screen.getByRole('textbox', { name: 'Description' });
+    const editor = (surface as HTMLElement & { editor: Editor }).editor;
+    act(() => {
+      editor.commands.focus();
+    });
+    return surface;
+  };
+
+  it('opens the file picker where the surface takes uploads', () => {
+    const click = vi
+      .spyOn(HTMLInputElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const surface = renderSurface(vi.fn<UploadFile>());
+    const event = new KeyboardEvent('keydown', {
+      ...ATTACH,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      surface.dispatchEvent(event);
+    });
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    expect(
+      screen.getByLabelText('Upload an image or attachment')
+    ).toBeInTheDocument();
+  });
+
+  it('does nothing where the surface takes no uploads', () => {
+    const click = vi
+      .spyOn(HTMLInputElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const surface = renderSurface();
+    const event = new KeyboardEvent('keydown', {
+      ...ATTACH,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      surface.dispatchEvent(event);
+    });
+    expect(click).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('names the chord in the slash menu and matches insert', () => {
+    const attachment = SLASH_COMMANDS.find(
+      (command) => command.id === 'attachment'
+    );
+    expect(attachment?.keys).toEqual(['mod', 'shift', 'u']);
+    expect(attachment?.keywords).toContain('insert');
   });
 });
