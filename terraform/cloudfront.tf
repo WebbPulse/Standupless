@@ -22,7 +22,8 @@
  * use the global s3.amazonaws.com host while regional ones may appear in time.
  */
 locals {
-  api_origin = local.custom_domain ? "https://api.${local.domain_name}" : "https://*.execute-api.${var.aws_region}.amazonaws.com"
+  api_origin      = local.custom_domain ? "https://api.${local.domain_name}" : "https://*.execute-api.${var.aws_region}.amazonaws.com"
+  realtime_origin = "wss://*.execute-api.${var.aws_region}.amazonaws.com"
 
   attachments_bucket_origins = [
     "https://${module.attachments_bucket.bucket_id}.s3.amazonaws.com",
@@ -74,7 +75,7 @@ module "frontend" {
     content_security_policy = {
       mode        = "report_only"
       script_src  = local.frontend_inline_script_hashes
-      connect_src = concat([local.api_origin], local.attachments_bucket_origins)
+      connect_src = concat([local.api_origin, local.realtime_origin], local.attachments_bucket_origins)
       img_src     = concat(["blob:", "https://avatars.githubusercontent.com"], local.attachments_bucket_origins)
       media_src   = concat(["blob:"], local.attachments_bucket_origins)
       frame_src   = local.video_embed_origins

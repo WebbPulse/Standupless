@@ -12,6 +12,7 @@ import {
   type PolledQueryContext,
   type PolledResponse,
 } from '@webbpulse/api-client/react';
+import { rememberIssueRef } from '../lib/issueRefs';
 import type {
   ActivityListRead,
   ActivityRead,
@@ -431,7 +432,10 @@ export function getIssueByKey(
     issueByKeyPath(workspaceId, key),
     signalOptions,
     context,
-    (body) => body
+    (body) => {
+      rememberIssueRef(workspaceId, body.id, key);
+      return body;
+    }
   );
 }
 

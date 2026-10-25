@@ -13,6 +13,7 @@ import {
   usePolledQuery,
   type QueryKey,
 } from '@webbpulse/api-client/react';
+import { useLiveQueryKey } from '../lib/realtime';
 
 /** One cursor page: the rows and the cursor that follows them, or null at the end. */
 export interface CursorPage<T> {
@@ -86,6 +87,7 @@ export const useCursorPages = <T>(
       auth,
     }
   );
+  useLiveQueryKey(options.queryKey, options.enabled);
 
   const serialisedKey = serializeQueryKey(options.queryKey);
   const anchorRef = useRef<{ key: string; first: CursorPage<T> | null }>({
