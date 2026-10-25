@@ -1032,16 +1032,38 @@ describe('inbox', () => {
     open.mockRestore();
   });
 
-  it('marks everything read with shift r', async () => {
+  it('marks everything read with alt u', async () => {
     renderPage();
 
     await screen.findByText('Cache the token');
-    await keysBound('shift+r');
-    press('R', { shiftKey: true });
+    await keysBound('alt+u');
+    press('u', { altKey: true, code: 'KeyU' });
 
     await waitFor(() => {
-      expect(markAllRead).toHaveBeenCalled();
+      expect(markAllRead).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('marks everything read with option u on a mac dead key', async () => {
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await keysBound('alt+u');
+    press('Dead', { altKey: true, code: 'KeyU' });
+
+    await waitFor(() => {
+      expect(markAllRead).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('no longer marks everything read with shift r', async () => {
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await keysBound('alt+u');
+    press('R', { shiftKey: true, code: 'KeyR' });
+
+    expect(markAllRead).not.toHaveBeenCalled();
   });
 
   it('opens a quick search with ctrl f that narrows the rows and clears on escape', async () => {
