@@ -70,3 +70,55 @@ moved {
   from = aws_route53_record.dmarc
   to   = module.ses.aws_route53_record.dmarc
 }
+
+locals {
+  email_intake_domain   = "intake.${local.domain_name}"
+  email_intake_rule_set = "${local.prefix}-intake"
+  email_intake_rule     = "store-intake-mail"
+}
+
+/**
+ * Inbound mail for issue intake addresses.
+ *
+ * An account has one active receipt rule set per region, and neither account had
+ * one, so this set is created and activated here. Any later receiving use adds a
+ * rule to it rather than activating a second set. The intake subdomain inherits
+ * its verification from the environment's domain identity above.
+ */
+resource "aws_ses_receipt_rule_set" "intake" {
+  count = local.email_intake_enabled ? 1 : 0
+
+  rule_set_name = local.email_intake_rule_set
+}
+
+resource "aws_ses_active_receipt_rule_set" "intake" {
+  count = local.email_intake_enabled ? 1 : 0
+
+  rule_set_name = aws_ses_receipt_rule_set.intake[0].rule_set_name
+}
+
+/**
+ * Stores every message to the intake subdomain and lets the consumer decide.
+ *
+ * Spam and virus scanning is on so the consumer can drop a message on the verdict
+ * headers SES prepends, and TLS is required of the sending server. Nothing here
+ * bounces or replies: the product never mails a sender back.
+ */
+resource "aws_ses_receipt_rule" "intake" {
+  count = local.email_intake_enabled ? 1 : 0
+
+  name          = local.email_intake_rule
+  rule_set_name = aws_ses_receipt_rule_set.intake[0].rule_set_name
+  recipients    = [local.email_intake_domain]
+  enabled       = true
+  scan_enabled  = true
+  tls_policy    = "Require"
+
+  s3_action {
+    position          = 1
+    bucket_name       = module.email_intake_bucket[0].bucket_id
+    object_key_prefix = "inbound/"
+  }
+
+  depends_on = [module.email_intake_bucket]
+}

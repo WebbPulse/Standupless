@@ -287,3 +287,56 @@ resource "aws_iam_role_policy" "issue_import_queue" {
     ]
   })
 }
+
+locals {
+  email_intake_enabled = local.domain_functions_enabled && local.custom_domain && var.email_intake_enabled
+}
+
+/**
+ * The queue S3 notifies when SES stores an inbound message.
+ *
+ * One message per stored object. The consumer is idempotent on the Message-ID, so
+ * a redelivery after a timeout files nothing twice, and a message that keeps
+ * failing parks in the dead-letter queue while its raw object ages out of the
+ * bucket on the bucket's own expiry.
+ */
+module "email_intake_queue" {
+  count = local.email_intake_enabled ? 1 : 0
+
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
+  version = "~> 2.45"
+
+  name = "${local.prefix}-email-intake"
+
+  visibility_timeout_seconds = 720
+  consumer_timeout_seconds   = 120
+
+  message_retention_seconds = 259200
+
+  max_receive_count = 5
+
+  tags = { Name = "${local.prefix}-email-intake" }
+}
+
+resource "aws_sqs_queue_policy" "email_intake" {
+  count = local.email_intake_enabled ? 1 : 0
+
+  queue_url = module.email_intake_queue[0].queue_url
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "ReceiveInboundMailNotifications"
+        Effect    = "Allow"
+        Principal = { Service = "s3.amazonaws.com" }
+        Action    = ["sqs:SendMessage"]
+        Resource  = module.email_intake_queue[0].queue_arn
+        Condition = {
+          ArnEquals    = { "aws:SourceArn" = module.email_intake_bucket[0].bucket_arn }
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        }
+      },
+    ]
+  })
+}

@@ -233,6 +233,12 @@ variable "issue_import_enabled" {
   default     = false
 }
 
+variable "email_intake_enabled" {
+  description = "Whether issues can be created by email: the intake subdomain MX record, the SES receipt rule set and rule, the raw mail bucket, the intake queue and its dead-letter queue, and the email consumer function on the integrations image. Needs custom_domain_enabled, because mail is received on a subdomain of the environment's own zone. Off by default for the same reason issue_import_enabled is: the code lands first, and while EMAIL_INTAKE_DOMAIN is empty a deployed environment refuses to turn an intake address on."
+  type        = bool
+  default     = false
+}
+
 variable "billing_enabled" {
   description = "Whether workspaces can buy a paid plan. Sets BILLING_ENABLED on every function, because the free plan's real ceilings apply only while it is on. Off by default until the Stripe prices, webhook endpoint and portal configuration exist and STRIPE_WEBHOOK_SECRET is in the app secret."
   type        = bool

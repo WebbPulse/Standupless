@@ -29,3 +29,13 @@ import {
   to = module.staging_dns.aws_route53_zone.this[0]
   id = each.value
 }
+
+resource "aws_route53_record" "email_intake_mx" {
+  count = local.email_intake_enabled ? 1 : 0
+
+  zone_id = module.staging_dns.zone_id
+  name    = local.email_intake_domain
+  type    = "MX"
+  ttl     = 300
+  records = ["10 inbound-smtp.${var.aws_region}.amazonaws.com"]
+}
