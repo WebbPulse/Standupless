@@ -7,7 +7,7 @@ answers the issue as it now stands.
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, Path, Query
 from webbpulse.http import CursorPage
@@ -37,15 +37,27 @@ def list_triage(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     team_id: Annotated[str, Query(min_length=1)],
     snoozed: Annotated[bool, Query()] = False,
+    requester_user_id: Annotated[Optional[str], Query(min_length=1, max_length=64)] = None,
+    requester_slack_user_id: Annotated[Optional[str], Query(min_length=1, max_length=64)] = None,
+    requester_source: Annotated[Optional[Literal["slack", "email", "none"]], Query()] = None,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> CursorPage[IssueRead]:
     """One page of a team's triage inbox, newest filed first.
 
     Snoozed issues stay out until their time passes; `snoozed=true` lists only them.
+    `requester_user_id` (a member id or `me`), `requester_slack_user_id` and
+    `requester_source` (`slack`, `email`, or `none` for issues with no requester)
+    narrow it to who asked, every one given having to hold.
     """
+    requester = issue_triage.requester_filter(
+        context,
+        user_id=requester_user_id,
+        slack_user_id=requester_slack_user_id,
+        source=requester_source,
+    )
     rows, next_cursor = issue_triage.list_triage(
-        repositories, context, team_id, snoozed=snoozed, cursor=cursor, limit=limit
+        repositories, context, team_id, snoozed=snoozed, requester=requester, cursor=cursor, limit=limit
     )
     return IssueListRead(items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor)
 

@@ -86,17 +86,32 @@ def _answer(call: ToolCall, issue: Any) -> dict[str, Any]:
     return issue_json(call.repositories.teams, issue, status_name=row.name if row is not None else "")
 
 
+def _text_argument(call: ToolCall, name: str) -> Any:
+    """One optional text argument, or the `ToolError` when it is not text."""
+    value = call.optional(name)
+    if value is not None and not isinstance(value, str):
+        raise ToolError(f"{name} must be a string")
+    return value
+
+
 def _list_triage(call: ToolCall) -> Any:
     """One page of a team's triage inbox, newest filed first."""
     team = team_ref(call, call.require("team_id"))
     snoozed = call.optional("snoozed", False)
     if not isinstance(snoozed, bool):
         raise ToolError("snoozed must be true or false")
+    requester = issue_triage.requester_filter(
+        call.context,
+        user_id=_text_argument(call, "requester_user_id"),
+        slack_user_id=_text_argument(call, "requester_slack_user_id"),
+        source=_text_argument(call, "requester_source"),
+    )
     rows, next_cursor = issue_triage.list_triage(
         call.repositories,
         call.context,
         team.team_id,
         snoozed=snoozed,
+        requester=requester,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
@@ -181,13 +196,18 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
             "Issues waiting in a team's triage inbox, newest filed first: new issues filed with no status while "
             "the team has triage on, and every one from a guest, someone outside the team or a workspace key. "
             "Snoozed issues are left out "
-            "until their time passes; snoozed=true lists only them."
+            "until their time passes; snoozed=true lists only them. The requester arguments narrow it to who "
+            "asked: a linked member id or 'me', a Slack user id, or a source (slack, email, or none for issues "
+            "no intake filed for anyone)."
         ),
         scopes=("issues:read",),
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
                 "snoozed": boolean("List only snoozed issues"),
+                "requester_user_id": string("Only issues requested by this member, or 'me'"),
+                "requester_slack_user_id": string("Only issues requested by this Slack user id"),
+                "requester_source": string("Only issues from this requester source: slack, email or none"),
                 **page_properties(),
             },
             required=("team_id",),

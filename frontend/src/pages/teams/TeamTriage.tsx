@@ -13,6 +13,11 @@
  * issue leaves the list and the badge and comes back by itself; the Snoozed
  * tab lists what is still waiting and offers to bring one back now.
  *
+ * The Requester filter narrows the inbox on the server to one source, one
+ * person or the issues nobody asked for through an intake, and Group by
+ * requester puts each person's asks together, newest first, as Linear's Asks
+ * triage does. J and K follow the grouped order.
+ *
  * Guests may file into triage but never work it, so a guest sees the list
  * without the actions.
  */
@@ -36,11 +41,12 @@ import {
   LuClock,
   LuCopy,
   LuInbox,
+  LuLayers,
   LuX,
 } from 'react-icons/lu';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appendIssues, listIssues } from '../../api/issues';
-import { listStatuses } from '../../api/teams';
+import { listStatuses, listTeamMembers } from '../../api/teams';
 import {
   acceptTriage,
   declineTriage,
@@ -56,6 +62,7 @@ import Button from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
+import FilterButton from '../../components/ui/filter-button';
 import Popover from '../../components/ui/popover';
 import Tooltip from '../../components/ui/tooltip';
 import Spinner from '../../components/ui/spinner';
@@ -74,11 +81,20 @@ import { LOOKUP_POLL_MS } from '../../lib/polling';
 import { teamSettingsPath } from '../../lib/paths';
 import {
   statusesKey,
+  teamMembersKey,
   triageKey,
   triageSettingsKey,
   triageSummaryKey,
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
+import {
+  ANY_REQUESTER,
+  groupByRequester,
+  requesterChoices,
+  requesterQuery,
+  type RequesterChoice,
+  type RequesterGroup,
+} from '../../lib/triageRequesters';
 import {
   TRIAGE_ACTION,
   TRIAGE_ACTIONS,
@@ -327,12 +343,20 @@ export const TeamTriage: React.FC = () => {
     error: teamsError,
   } = useTeam(keyPrefix);
   const [filter, setFilter] = useState<TriageFilter>('waiting');
+  const [requester, setRequester] = useState<RequesterChoice | null>(null);
+  const [grouped, setGrouped] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
   const [reason, setReason] = useState('');
 
   const teamId = team?.id ?? '';
   const enabled = teamId !== '' && workspaceId !== '';
-  const queryKey = triageKey(workspaceId, teamId, filter === 'snoozed');
+  const requesterFilter = requester?.value ?? ANY_REQUESTER;
+  const queryKey = triageKey(
+    workspaceId,
+    teamId,
+    filter === 'snoozed',
+    requesterFilter
+  );
   const selectedId = params.get(SELECTED_PARAM);
   const canWork =
     workspace?.role !== 'guest' && canWriteIssues(workspace?.role, team?.role);
@@ -354,12 +378,13 @@ export const TeamTriage: React.FC = () => {
         {
           team_id: teamId,
           ...(filter === 'snoozed' ? { snoozed: true } : {}),
+          ...requesterQuery(requesterFilter),
           ...(cursor === undefined ? {} : { cursor }),
           limit: PAGE_SIZE,
         },
         signal
       ).then((page) => ({ rows: page.issues, nextCursor: page.next_cursor })),
-    [workspaceId, teamId, filter]
+    [workspaceId, teamId, filter, requesterFilter]
   );
 
   const merge = useCallback(
@@ -368,12 +393,47 @@ export const TeamTriage: React.FC = () => {
     []
   );
 
-  const { rows, error, isLoading, isPaging, hasMore, loadMore } =
-    useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
+  const {
+    rows: readRows,
+    error,
+    isLoading,
+    isPaging,
+    hasMore,
+    loadMore,
+  } = useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
+
+  const { data: members } = usePolledQuery(
+    (context) => listTeamMembers(workspaceId, teamId, context),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled,
+      queryKey: teamMembersKey(teamId),
+      auth,
+    }
+  );
+  const people = useMemo(() => members ?? [], [members]);
+
+  const groups = useMemo(
+    () => (grouped ? groupByRequester(readRows, people) : null),
+    [grouped, readRows, people]
+  );
+  const rows = useMemo(
+    () => (groups === null ? readRows : groups.flatMap((group) => group.rows)),
+    [groups, readRows]
+  );
+  const sections = useMemo<RequesterGroup[]>(
+    () => groups ?? [{ key: '', label: '', requester: null, rows }],
+    [groups, rows]
+  );
+  const choices = useMemo(
+    () => requesterChoices(readRows, people, requester),
+    [readRows, people, requester]
+  );
 
   const everyKey: QueryKey[] = [
     triageKey(workspaceId, teamId, false),
     triageKey(workspaceId, teamId, true),
+    ...(requesterFilter === ANY_REQUESTER ? [] : [queryKey]),
     triageSummaryKey(workspaceId),
   ];
 
@@ -648,29 +708,57 @@ export const TeamTriage: React.FC = () => {
         />
       }
       actions={
-        <div
-          role="group"
-          aria-label="Show"
-          className="flex items-center gap-0.5 rounded-md border border-line p-0.5"
-        >
-          {FILTERS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              aria-pressed={filter === option.id}
+        <div className="flex items-center gap-2">
+          <FilterButton
+            field="Requester"
+            options={choices}
+            selected={requester === null ? [] : [requester.value]}
+            onSelect={(value) => {
+              setRequester(
+                value === requester?.value
+                  ? null
+                  : (choices.find((choice) => choice.value === value) ?? null)
+              );
+            }}
+          />
+          <Tooltip text="Group by requester">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Group by requester"
+              aria-pressed={grouped}
+              className={cn(grouped && 'bg-raised text-text')}
               onClick={() => {
-                setFilter(option.id);
+                setGrouped((was) => !was);
               }}
-              className={cn(
-                'rounded-sm px-2 py-0.5 text-xs transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
-                filter === option.id
-                  ? 'bg-raised text-text'
-                  : 'text-text-muted hover:text-text'
-              )}
             >
-              {option.label}
-            </button>
-          ))}
+              <LuLayers className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </Tooltip>
+          <div
+            role="group"
+            aria-label="Show"
+            className="flex items-center gap-0.5 rounded-md border border-line p-0.5"
+          >
+            {FILTERS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={filter === option.id}
+                onClick={() => {
+                  setFilter(option.id);
+                }}
+                className={cn(
+                  'rounded-sm px-2 py-0.5 text-xs transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
+                  filter === option.id
+                    ? 'bg-raised text-text'
+                    : 'text-text-muted hover:text-text'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
       }
     >
@@ -709,27 +797,45 @@ export const TeamTriage: React.FC = () => {
               <EmptyState
                 icon={<LuInbox />}
                 message={
-                  filter === 'snoozed'
-                    ? 'Nothing snoozed.'
-                    : 'Nothing waiting for triage.'
+                  requester !== null
+                    ? 'Nothing from this requester.'
+                    : filter === 'snoozed'
+                      ? 'Nothing snoozed.'
+                      : 'Nothing waiting for triage.'
                 }
               />
             </div>
           ) : (
             <ul>
-              {rows.map((row) => (
-                <TriageRow
-                  key={row.id}
-                  issue={row}
-                  selected={row.id === selected?.id}
-                  canWork={canWork}
-                  onSelect={() => {
-                    select(row);
-                  }}
-                  onAction={(id) => {
-                    openAction(id, row);
-                  }}
-                />
+              {sections.map((group) => (
+                <React.Fragment key={group.key}>
+                  {groups !== null && (
+                    <li
+                      role="presentation"
+                      data-testid="triage-requester-group"
+                      className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-surface px-3 py-1.5 text-xs font-medium text-text-muted"
+                    >
+                      <span className="truncate">{group.label}</span>
+                      <span className="tabular-nums text-text-faint">
+                        {group.rows.length}
+                      </span>
+                    </li>
+                  )}
+                  {group.rows.map((row) => (
+                    <TriageRow
+                      key={row.id}
+                      issue={row}
+                      selected={row.id === selected?.id}
+                      canWork={canWork}
+                      onSelect={() => {
+                        select(row);
+                      }}
+                      onAction={(id) => {
+                        openAction(id, row);
+                      }}
+                    />
+                  ))}
+                </React.Fragment>
               ))}
             </ul>
           )}

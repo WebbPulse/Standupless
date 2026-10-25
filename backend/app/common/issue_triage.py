@@ -10,6 +10,7 @@ the same patch path a person's edit does, so the history reads the same.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -29,6 +30,7 @@ from app.common.api.schemas.issues import (
     TriageTeamCount,
 )
 from app.common.api.schemas.teams import TriageSettingsUpdate
+from app.common.change_source import EMAIL, SLACK
 from app.common.comment_writes import create_comment
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
@@ -115,29 +117,96 @@ def is_snoozed(issue: Issue, now: datetime) -> bool:
     return issue.snoozed_until is not None and issue.snoozed_until > now
 
 
+REQUESTER_NONE = "none"
+"""The requester source value that matches issues filed with no requester."""
+
+REQUESTER_ME = "me"
+"""The requester member value that means the caller."""
+
+REQUESTER_SOURCES: tuple[str, ...] = (SLACK, EMAIL, REQUESTER_NONE)
+"""The requester sources the triage list narrows to."""
+
+
+@dataclass(frozen=True)
+class RequesterFilter:
+    """Which requester a triage list keeps: a linked member, a Slack user, a source, or any mix of them.
+
+    Every field set must hold, so `source=slack` with a Slack user id keeps only
+    that person's Slack asks. `source=none` keeps the issues no intake filed for
+    anyone. An empty filter keeps every issue.
+    """
+
+    user_id: Optional[str] = None
+    slack_user_id: Optional[str] = None
+    source: Optional[str] = None
+
+    def is_empty(self) -> bool:
+        """Whether the filter keeps every issue."""
+        return self.user_id is None and self.slack_user_id is None and self.source is None
+
+    def matches(self, issue: Issue) -> bool:
+        """Whether one waiting issue's requester passes every condition set."""
+        requester = issue.requester
+        if self.source == REQUESTER_NONE:
+            return requester is None and self.user_id is None and self.slack_user_id is None
+        if self.source is not None and (requester is None or requester.source != self.source):
+            return False
+        if self.user_id is not None and (requester is None or requester.user_id != self.user_id):
+            return False
+        if self.slack_user_id is not None and (
+            requester is None or requester.source != SLACK or requester.external_id != self.slack_user_id
+        ):
+            return False
+        return True
+
+    def scope(self) -> str:
+        """The filter as it is folded into the cursor scope, so a cursor never serves another filter."""
+        return f"{self.user_id or ''}|{self.slack_user_id or ''}|{self.source or ''}"
+
+
+def requester_filter(
+    context: AuthzContext,
+    *,
+    user_id: Optional[str] = None,
+    slack_user_id: Optional[str] = None,
+    source: Optional[str] = None,
+) -> RequesterFilter:
+    """The requester filter a caller asked for, `me` read as the caller and an unknown source refused with a 422."""
+    if source is not None and source not in REQUESTER_SOURCES:
+        raise unprocessable(f"requester_source must be one of {', '.join(REQUESTER_SOURCES)}")
+    member = context.user_id if user_id == REQUESTER_ME else (user_id or None)
+    return RequesterFilter(user_id=member, slack_user_id=slack_user_id or None, source=source or None)
+
+
 def list_triage(
     repositories: Repositories,
     context: AuthzContext,
     team_id: str,
     *,
     snoozed: bool = False,
+    requester: Optional[RequesterFilter] = None,
     cursor: Optional[str] = None,
     limit: int = 50,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of a team's waiting issues, newest filed first, and the next cursor.
 
     Snoozed issues are left out until their time passes, or listed alone with
-    `snoozed`, so a snooze ends on read without any schedule.
+    `snoozed`, so a snooze ends on read without any schedule. `requester`
+    narrows the inbox to who asked before it is paged, so every page holds
+    only matching issues.
     """
     require_team_reader(repositories, context, team_id)
     now = utc_now()
+    wanted = requester or RequesterFilter()
     rows = [
         issue
         for issue in repositories.issues.iter_triage(context.workspace_id, team_id, max_items=TRIAGE_READ_CAP)
-        if is_snoozed(issue, now) == snoozed
+        if is_snoozed(issue, now) == snoozed and wanted.matches(issue)
     ]
     rows.sort(key=lambda issue: (issue.created_at, issue.issue_id), reverse=True)
     scope = f"triage:{context.workspace_id}:{team_id}:{snoozed}"
+    if not wanted.is_empty():
+        scope = f"{scope}:{wanted.scope()}"
     offset = decode_offset_cursor(cursor, scope)
     page = rows[offset : offset + limit]
     next_offset = offset + len(page)

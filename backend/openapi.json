@@ -51096,7 +51096,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/triage": {
       "get": {
-        "description": "One page of a team's triage inbox, newest filed first.\n\nSnoozed issues stay out until their time passes; `snoozed=true` lists only them.",
+        "description": "One page of a team's triage inbox, newest filed first.\n\nSnoozed issues stay out until their time passes; `snoozed=true` lists only them.\n`requester_user_id` (a member id or `me`), `requester_slack_user_id` and\n`requester_source` (`slack`, `email`, or `none` for issues with no requester)\nnarrow it to who asked, every one given having to hold.",
         "operationId": "list_triage_api_workspaces__workspace_id__issues_triage_get",
         "parameters": [
           {
@@ -51127,6 +51127,63 @@
               "default": false,
               "title": "Snoozed",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requester User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_slack_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requester Slack User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "slack",
+                    "email",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requester Source"
             }
           },
           {
