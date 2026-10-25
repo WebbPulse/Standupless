@@ -1002,6 +1002,12 @@ class InitiativeUpdateRead(TypedDict):
     workspace_id: str
 
 
+class InitiativesDisplay(TypedDict):
+    columns: NotRequired[str]
+    completed: NotRequired[Literal["show", "hide"]]
+    order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
+
+
 class InsightBucket(TypedDict):
     color: NotRequired[str | None]
     issue_count: NotRequired[int]
@@ -2839,6 +2845,7 @@ class UserPreferencesUpdate(TypedDict):
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
+    initiatives_display: NotRequired[InitiativesDisplay | None]
     name_display: NotRequired[Literal["username", "full_name"] | None]
     notification_preferences: NotRequired[
         dict[
@@ -2890,6 +2897,8 @@ class UserRead(TypedDict):
     full_name: NotRequired[str]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
     id: str
+    initiatives_display: NotRequired[InitiativesDisplay]
+    initiatives_display_saved: NotRequired[bool]
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
     projects_display: NotRequired[ProjectsDisplay]

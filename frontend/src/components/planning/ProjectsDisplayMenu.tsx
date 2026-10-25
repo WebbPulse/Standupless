@@ -105,7 +105,7 @@ const SCOPE_AUDIENCE: Record<ProjectsDefaultActions['scope'], string> = {
 };
 
 /** Props for one labelled select row of the panel. */
-interface ChoiceRowProps<T extends string> {
+export interface ChoiceRowProps<T extends string> {
   id: string;
   label: string;
   value: T;
@@ -118,7 +118,7 @@ interface ChoiceRowProps<T extends string> {
 }
 
 /** One labelled select row of the Display panel. */
-const ChoiceRow = <T extends string>({
+export const ChoiceRow = <T extends string>({
   id,
   label,
   value,
@@ -155,7 +155,7 @@ const ChoiceRow = <T extends string>({
 );
 
 /** One on or off choice of the Display panel, drawn as a labelled switch. */
-const SwitchRow: React.FC<{
+export const SwitchRow: React.FC<{
   id: string;
   label: string;
   checked: boolean;

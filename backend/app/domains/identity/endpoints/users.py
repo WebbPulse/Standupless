@@ -25,6 +25,7 @@ from app.common.api.dependencies.authz import (
     require_person,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.api.schemas.initiatives_display import InitiativesDisplay, stored_initiatives_display
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
@@ -86,7 +87,8 @@ class UserRead(BaseModel):
     `projects_display` is the person's projects arrangement, the built-in one
     when they never arranged the page, and `projects_display_saved` says whether
     they did. A person who has not opens the page with their team's or the
-    workspace's default instead.
+    workspace's default instead. `initiatives_display` and
+    `initiatives_display_saved` are the same for the initiatives list.
     """
 
     id: str
@@ -106,6 +108,8 @@ class UserRead(BaseModel):
     font_size: FontSizeField = "default"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     projects_display_saved: bool = False
+    initiatives_display: InitiativesDisplay = Field(default_factory=InitiativesDisplay)
+    initiatives_display_saved: bool = False
     auto_assign_to_self: bool = False
     branch_copy_starts: bool = True
     branch_copy_assigns: bool = True
@@ -162,7 +166,8 @@ class UserPreferencesUpdate(BaseModel):
     Preferences page sets, kept on the row so they follow the person to every
     device. `projects_display` replaces how the projects list is arranged as a
     whole, and null forgets the arrangement, so the page opens with the team's or
-    the workspace's default again. `auto_assign_to_self`, `branch_copy_starts`
+    the workspace's default again, and `initiatives_display` does the same for
+    the initiatives list. `auto_assign_to_self`, `branch_copy_starts`
     and `branch_copy_assigns` are the Workflow group: assigning issues the person
     creates to them, and starting and assigning an issue when its git branch name
     is copied. `auto_grant_new_scopes` lets scopes the product adds later reach the
@@ -180,6 +185,7 @@ class UserPreferencesUpdate(BaseModel):
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
     projects_display: Optional[ProjectsDisplay] = None
+    initiatives_display: Optional[InitiativesDisplay] = None
     auto_assign_to_self: Optional[bool] = None
     branch_copy_starts: Optional[bool] = None
     branch_copy_assigns: Optional[bool] = None
@@ -252,6 +258,8 @@ def _as_read(user: "Any") -> UserRead:
         font_size=_known(user.font_size, FONT_SIZES, "default"),
         projects_display=stored_projects_display(user.projects_display),
         projects_display_saved=bool(user.projects_display),
+        initiatives_display=stored_initiatives_display(user.initiatives_display),
+        initiatives_display_saved=bool(user.initiatives_display),
         auto_assign_to_self=bool(user.auto_assign_to_self),
         branch_copy_starts=bool(user.branch_copy_starts),
         branch_copy_assigns=bool(user.branch_copy_assigns),
@@ -379,6 +387,12 @@ def update_current_user_preferences(
             changes["projects_display"] = display
     elif "projects_display" in payload.model_fields_set and user.projects_display:
         changes["projects_display"] = {}
+    if payload.initiatives_display is not None:
+        arranged = payload.initiatives_display.model_dump()
+        if arranged != user.initiatives_display:
+            changes["initiatives_display"] = arranged
+    elif "initiatives_display" in payload.model_fields_set and user.initiatives_display:
+        changes["initiatives_display"] = {}
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))
