@@ -21,7 +21,7 @@
  * dialog for each over the page in view, and a project or initiative page adds
  * its own "Create document".
  *
- * The favorite, project, cycle, team, view, template and workspace pickers
+ * The favorite, project, cycle, team, view, member, template and workspace pickers
  * are nested lists a row opens, and the `O` then letter shortcuts and Alt+C
  * open the palette straight onto one of them through the `picker` prop. A
  * team with no templates offers a row to its template settings instead. The
@@ -200,7 +200,13 @@ import {
   routeTeam,
   settingsLanding,
 } from '../../lib/workspaceNav';
-import type { CycleRead, TeamRead, WorkspaceRead } from '../../types/Api';
+import { openUpcomingCycle } from '../../lib/currentCycle';
+import type {
+  CycleRead,
+  MemberRead,
+  TeamRead,
+  WorkspaceRead,
+} from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 
@@ -283,6 +289,7 @@ const PAGE_COPY: Record<
   favorites: { back: 'Open favorite', placeholder: 'Open a favorite' },
   projects: { back: 'Open project', placeholder: 'Open a project' },
   cycles: { back: 'Open cycle', placeholder: 'Open a cycle' },
+  members: { back: 'Open member', placeholder: 'Open a member' },
   'sub-team': {
     back: 'Create sub-team',
     placeholder: 'Pick the parent team',
@@ -292,6 +299,16 @@ const PAGE_COPY: Record<
     placeholder: 'Pick a template',
   },
 };
+
+/**
+ * How a member reads in the palette: their handle, then their written name.
+ * Never their email, matching the member page.
+ */
+const memberName = (member: MemberRead): string =>
+  member.display_name ??
+  (member.full_name !== undefined && member.full_name !== ''
+    ? member.full_name
+    : 'Member');
 
 /** Whether a team sits at the top level, so it can take a sub-team. */
 const isTopLevel = (team: TeamRead): boolean =>
@@ -482,7 +499,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const members = useWorkspaceMembers(
     workspaceId,
-    page === 'root' && deferred !== ''
+    (page === 'root' && deferred !== '') || page === 'members'
   );
 
   const { data: savedViews } = usePolledQuery(
@@ -770,8 +787,26 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'O then P',
         icon: <LuTarget className={ICON} />,
         page: 'projects',
+      },
+      {
+        id: 'action-open-member',
+        label: 'Open member',
+        keywords: 'go people person user teammate profile',
+        hint: 'O then U',
+        icon: <LuUsers className={ICON} />,
+        page: 'members',
       }
     );
+    if (currentUserId !== undefined) {
+      built.push({
+        id: 'action-open-my-profile',
+        label: 'Open my profile',
+        keywords: 'go me member page assigned',
+        hint: 'O then M',
+        icon: <LuUserRound className={ICON} />,
+        to: memberPath(slug, currentUserId),
+      });
+    }
     if (team !== undefined) {
       built.push({
         id: 'action-open-cycle',
@@ -799,6 +834,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     undo,
     workspaces,
     onLogOut,
+    currentUserId,
   ]);
 
   const places = useMemo<Command[]>(() => {
@@ -910,6 +946,23 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then C',
         icon: <LuRefreshCcw className={ICON} />,
         to: teamCyclesPath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-upcoming-cycle',
+        label: 'Go to upcoming cycle',
+        keywords: `${team.name} ${team.key_prefix} next cycle sprint`,
+        hint: 'G then W',
+        icon: <LuRefreshCcw className={ICON} />,
+        run: () => {
+          void openUpcomingCycle({
+            workspaceId,
+            slug,
+            team,
+            navigate: (to) => {
+              void navigate(to);
+            },
+          });
+        },
       });
       built.push({
         id: 'nav-releases',
@@ -1026,7 +1079,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }))
     );
     return built;
-  }, [insideTeam, slug, team, teams, workspace]);
+  }, [insideTeam, slug, team, teams, workspace, workspaceId, navigate]);
 
   const teamSettings = useMemo<Command[]>(
     () =>
@@ -1178,6 +1231,23 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       return rows.length === 0
         ? []
         : [{ heading: team?.name ?? 'Cycles', commands: rows }];
+    }
+
+    if (page === 'members') {
+      const rows = [...members]
+        .sort((left, right) =>
+          memberName(left).localeCompare(memberName(right))
+        )
+        .map((member) => ({
+          id: `open-member-${member.user_id}`,
+          label: memberName(member),
+          keywords: `${member.full_name ?? ''} ${member.display_name ?? ''}`,
+          ...(member.user_id === currentUserId ? { hint: 'You' } : {}),
+          icon: <LuUserRound className={ICON} />,
+          to: memberPath(slug, member.user_id),
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0 ? [] : [{ heading: 'Members', commands: rows }];
     }
 
     if (page === 'sub-team') {
@@ -1382,12 +1452,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       const people = members
         .map((member) => ({
           id: `member-${member.user_id}`,
-          label: `Go to member ${
-            member.display_name ??
-            (member.full_name !== undefined && member.full_name !== ''
-              ? member.full_name
-              : 'Member')
-          }`,
+          label: `Go to member ${memberName(member)}`,
           keywords: `people person member ${member.full_name ?? ''}`,
           icon: <LuUserRound className={ICON} />,
           to: memberPath(slug, member.user_id),
@@ -1465,6 +1530,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     data,
     documents,
     members,
+    currentUserId,
     enabled,
     actions,
     places,
