@@ -258,8 +258,8 @@ export const useIssueCollection = (
     }
   );
 
-  const [last, setLast] = useState<CollectionRead | undefined>(data);
-  if (data !== undefined && data !== last) setLast(data);
+  const [last, setLast] = useState<CollectionRead | null | undefined>(data);
+  if (data !== undefined && data !== null && data !== last) setLast(data);
   const shown = data ?? (options.holdRows === true ? last : undefined);
   const read = shown?.issues;
   const {
