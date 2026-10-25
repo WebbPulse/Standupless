@@ -417,6 +417,31 @@ describe('CycleDetail', () => {
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('breaks the issues down by priority and filters the list from a row', async () => {
+    const user = userEvent.setup();
+    listIssues.mockResolvedValue({
+      issues: [{ ...openIssue, priority: 'high' }],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole('tab', { name: 'Priorities' }));
+    const row = await screen.findByRole('button', {
+      name: 'High, 0 of 1 done',
+    });
+    expect(row).toHaveAttribute('aria-pressed', 'false');
+    await user.click(row);
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ cycle_id: 'cyc-1', priority: ['high'] })
+      );
+    });
+    expect(
+      screen.getByRole('button', { name: 'High, 0 of 1 done' })
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('draws the burn-up for a cycle that has begun', async () => {
     renderPage();
 
