@@ -12,20 +12,22 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from tests.domains.helpers import ADMIN, sign_in
+from app.common.api.dependencies.authz import AuthzContext
+from app.common.api.schemas.project_statuses import ProjectStatusCreate
+from app.common.project_statuses import create_project_status
+from tests.domains.helpers import ADMIN
 from tests.domains.integrations.conftest import TEAM
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
 
-def _custom_status(client: TestClient, workspace: str) -> str:
-    """Add an `In review` status to the in progress category through the route and answer its id."""
-    sign_in(client, ADMIN)
-    created = client.post(
-        f"/api/workspaces/{workspace}/project-statuses", json={"name": "In review", "category": "in_progress"}
+def _custom_status(repositories: Any, workspace: str) -> str:
+    """Add an `In review` status to the in progress category as an admin and answer its id."""
+    context = AuthzContext(workspace_id=workspace, user_id=ADMIN, role="admin")
+    created = create_project_status(
+        repositories, context, ProjectStatusCreate(name="In review", category="in_progress")
     )
-    assert created.status_code == 201, created.text
-    return created.json()["id"]
+    return created.id
 
 
 def test_the_list_answers_the_seeded_defaults(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -48,7 +50,7 @@ def test_the_list_answers_the_seeded_defaults(client: TestClient, repositories: 
 
 def test_a_project_takes_a_status_by_name_id_or_category(client: TestClient, repositories: Any, workspace: str) -> None:
     """A name or id sets that status, a category its default, and each answer names both."""
-    review = _custom_status(client, workspace)
+    review = _custom_status(repositories, workspace)
     writer = mint_for(repositories, ADMIN, ("projects:write", "projects:read"))
 
     named = answer(tool(client, writer, "create_project", {"name": "Named", "team_ids": [TEAM], "status": "in review"}))
@@ -77,7 +79,7 @@ def test_legacy_status_values_resolve_to_the_category_default(
 
 def test_the_project_list_filters_by_status_or_category(client: TestClient, repositories: Any, workspace: str) -> None:
     """A status name keeps its projects, a category keeps every status in it."""
-    review = _custom_status(client, workspace)
+    review = _custom_status(repositories, workspace)
     writer = mint_for(repositories, ADMIN, ("projects:write", "projects:read"))
     reviewing = answer(
         tool(client, writer, "create_project", {"name": "Reviewing", "team_ids": [TEAM], "status_id": review})
