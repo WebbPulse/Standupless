@@ -20,9 +20,9 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import ProjectIcon from './ProjectIcon';
 import {
-  NAME_WIDTH,
   TimelineDateHeader,
   TimelineGrid,
+  useNameWidth,
   useTimelineView,
   type TimelineHandle,
   type ViewWindow,
@@ -83,14 +83,17 @@ interface LaneNameProps {
 }
 
 /** The pinned name cell every lane starts with. */
-const LaneName: React.FC<LaneNameProps> = ({ depth, children }) => (
-  <div
-    className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
-    style={{ width: NAME_WIDTH, paddingLeft: 16 + depth * INDENT_PX }}
-  >
-    {children}
-  </div>
-);
+const LaneName: React.FC<LaneNameProps> = ({ depth, children }) => {
+  const nameWidth = useNameWidth();
+  return (
+    <div
+      className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
+      style={{ width: nameWidth, paddingLeft: 16 + depth * INDENT_PX }}
+    >
+      {children}
+    </div>
+  );
+};
 
 /** Props for the button that scrolls a bar back into view. */
 interface RevealProps {
@@ -161,6 +164,7 @@ const InitiativeLaneRow: React.FC<InitiativeLaneRowProps> = ({
 }) => {
   const navigate = useNavigate();
   const [drag, setDrag] = useState<DragState | null>(null);
+  const nameWidth = useNameWidth();
   const href = initiativePath(slug, initiative);
   const percent = progressPercent(initiative);
   const saved = barDays(initiative.start_date ?? null, initiative.target_date);
@@ -308,7 +312,7 @@ const InitiativeLaneRow: React.FC<InitiativeLaneRowProps> = ({
           editable ? (
             <span
               className="pointer-events-none sticky top-0 hidden h-full items-center pl-3 text-xs text-text-faint group-hover/row:flex"
-              style={{ left: NAME_WIDTH }}
+              style={{ left: nameWidth }}
             >
               Click to schedule
             </span>
@@ -549,6 +553,7 @@ export const InitiativeTimeline: React.FC<InitiativeTimelineProps> = ({
 }) => {
   const pxPerDay = PX_PER_DAY[zoom];
   const [today] = useState(() => todayNumber());
+  const nameWidth = useNameWidth();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -649,7 +654,7 @@ export const InitiativeTimeline: React.FC<InitiativeTimelineProps> = ({
       className="relative min-h-0 flex-1 overflow-auto"
       data-testid={testId}
     >
-      <div className="relative" style={{ width: NAME_WIDTH + laneWidth }}>
+      <div className="relative" style={{ width: nameWidth + laneWidth }}>
         <TimelineDateHeader
           range={range}
           header={header}
@@ -674,7 +679,7 @@ export const InitiativeTimeline: React.FC<InitiativeTimelineProps> = ({
               <div className="sticky top-12 z-20 flex h-8 border-b border-line bg-surface">
                 <span
                   className="sticky left-0 flex shrink-0 items-center gap-2 px-4 text-sm font-medium text-text"
-                  style={{ width: NAME_WIDTH }}
+                  style={{ width: nameWidth }}
                 >
                   No dates
                   <span className="text-xs font-normal text-text-faint tabular-nums">

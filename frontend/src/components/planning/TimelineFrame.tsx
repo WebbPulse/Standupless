@@ -16,6 +16,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import type {
   TimelineHeader,
   TimelineRange,
@@ -24,6 +25,16 @@ import type {
 
 /** The width of the pinned name column, in pixels. */
 export const NAME_WIDTH = 280;
+
+/** The width of the pinned name column on a phone, in pixels, so the lanes keep most of the screen. */
+export const PHONE_NAME_WIDTH = 148;
+
+/** The query the phone layout answers to, below Tailwind's `sm` breakpoint. */
+export const WIDER_THAN_PHONE = '(min-width: 40rem)';
+
+/** The pinned name column's width for the viewport: the full column, or the narrow one on a phone. */
+export const useNameWidth = (): number =>
+  useMediaQuery(WIDER_THAN_PHONE) ? NAME_WIDTH : PHONE_NAME_WIDTH;
 
 /** How far from the left edge of the lanes a day sits when the view jumps to it. */
 export const JUMP_INSET = 160;
@@ -66,9 +77,9 @@ export interface TimelineView {
   scrollToDay: (day: number, inset?: number) => void;
 }
 
-/** The width of the lanes in view, past the pinned name column. */
-const lanesInView = (node: HTMLElement): number =>
-  Math.max(0, node.clientWidth - NAME_WIDTH);
+/** The width of the lanes in view, past a pinned name column `nameWidth` wide. */
+const lanesInView = (node: HTMLElement, nameWidth: number): number =>
+  Math.max(0, node.clientWidth - nameWidth);
 
 /**
  * Keeps a timeline's view: it opens with the today line centred, centres it
@@ -87,17 +98,18 @@ export const useTimelineView = ({
   const scroller = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<ViewWindow>({ left: 0, right: 0 });
   const centre = useRef<number | null>(null);
+  const nameWidth = useNameWidth();
 
   const readView = useCallback((): void => {
     const node = scroller.current;
     if (node === null) return;
     const left = node.scrollLeft;
-    const right = left + lanesInView(node);
+    const right = left + lanesInView(node, nameWidth);
     centre.current = range.start + (left + (right - left) / 2) / pxPerDay;
     setView((held) =>
       held.left === left && held.right === right ? held : { left, right }
     );
-  }, [range.start, pxPerDay]);
+  }, [range.start, pxPerDay, nameWidth]);
 
   const scrollToDay = useCallback(
     (day: number, inset = JUMP_INSET): void => {
@@ -112,8 +124,8 @@ export const useTimelineView = ({
   const centreToday = useCallback((): void => {
     const node = scroller.current;
     if (node === null) return;
-    scrollToDay(today + 0.5, lanesInView(node) / 2);
-  }, [scrollToDay, today]);
+    scrollToDay(today + 0.5, lanesInView(node, nameWidth) / 2);
+  }, [scrollToDay, today, nameWidth]);
 
   useImperativeHandle(
     ref,
@@ -122,7 +134,7 @@ export const useTimelineView = ({
       step: (direction) => {
         const node = scroller.current;
         if (node === null) return;
-        const width = lanesInView(node);
+        const width = lanesInView(node, nameWidth);
         node.scrollLeft = Math.max(
           0,
           node.scrollLeft + direction * Math.round(width * STEP_SHARE)
@@ -130,7 +142,7 @@ export const useTimelineView = ({
         readView();
       },
     }),
-    [centreToday, readView]
+    [centreToday, readView, nameWidth]
   );
 
   const placedZoom = useRef<TimelineZoom | null>(null);
@@ -144,9 +156,9 @@ export const useTimelineView = ({
       return;
     }
     if (centre.current !== null) {
-      scrollToDay(centre.current, lanesInView(node) / 2);
+      scrollToDay(centre.current, lanesInView(node, nameWidth) / 2);
     }
-  }, [zoom, hasRows, centreToday, scrollToDay]);
+  }, [zoom, hasRows, centreToday, scrollToDay, nameWidth]);
 
   useEffect(() => {
     const node = scroller.current;
@@ -187,54 +199,57 @@ export const TimelineDateHeader: React.FC<TimelineDateHeaderProps> = ({
   laneWidth,
   todayLeft,
   countLabel,
-}) => (
-  <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
-    <div
-      className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
-      style={{ width: NAME_WIDTH }}
-    >
-      {countLabel}
-    </div>
-    <div
-      className="relative h-12 shrink-0"
-      style={{ width: laneWidth }}
-      aria-hidden="true"
-    >
-      {header.major.map((tick) => (
-        <span
-          key={`major-${String(tick.day)}`}
-          className="absolute top-0 flex h-6 items-center border-l border-line px-2 text-xs font-medium text-text"
-          style={{
-            left: (tick.day - range.start) * pxPerDay,
-            width: tick.span * pxPerDay,
-          }}
-        >
-          <span className="sticky truncate" style={{ left: NAME_WIDTH + 8 }}>
-            {tick.label}
-          </span>
-        </span>
-      ))}
-      {header.minor.map((tick) => (
-        <span
-          key={`minor-${String(tick.day)}`}
-          className="absolute top-6 flex h-6 items-center overflow-hidden border-l border-line/60 pl-1 text-2xs text-text-faint"
-          style={{
-            left: (tick.day - range.start) * pxPerDay,
-            width: tick.span * pxPerDay,
-          }}
-        >
-          {tick.span * pxPerDay >= 18 ? tick.label : ''}
-        </span>
-      ))}
-      <span
-        className="absolute top-6 z-10 -translate-x-1/2 rounded-xs bg-accent px-1 text-2xs font-medium text-bg"
-        style={{ left: todayLeft }}
+}) => {
+  const nameWidth = useNameWidth();
+  return (
+    <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
+      <div
+        className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
+        style={{ width: nameWidth }}
       >
-        Today
-      </span>
+        {countLabel}
+      </div>
+      <div
+        className="relative h-12 shrink-0"
+        style={{ width: laneWidth }}
+        aria-hidden="true"
+      >
+        {header.major.map((tick) => (
+          <span
+            key={`major-${String(tick.day)}`}
+            className="absolute top-0 flex h-6 items-center border-l border-line px-2 text-xs font-medium text-text"
+            style={{
+              left: (tick.day - range.start) * pxPerDay,
+              width: tick.span * pxPerDay,
+            }}
+          >
+            <span className="sticky truncate" style={{ left: nameWidth + 8 }}>
+              {tick.label}
+            </span>
+          </span>
+        ))}
+        {header.minor.map((tick) => (
+          <span
+            key={`minor-${String(tick.day)}`}
+            className="absolute top-6 flex h-6 items-center overflow-hidden border-l border-line/60 pl-1 text-2xs text-text-faint"
+            style={{
+              left: (tick.day - range.start) * pxPerDay,
+              width: tick.span * pxPerDay,
+            }}
+          >
+            {tick.span * pxPerDay >= 18 ? tick.label : ''}
+          </span>
+        ))}
+        <span
+          className="absolute top-6 z-10 -translate-x-1/2 rounded-xs bg-accent px-1 text-2xs font-medium text-bg"
+          style={{ left: todayLeft }}
+        >
+          Today
+        </span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /** Props for TimelineGrid: the scale and anything drawn over the grid, such as link lines. */
 export interface TimelineGridProps extends TimelineScaleProps {
@@ -249,24 +264,27 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
   laneWidth,
   todayLeft,
   children,
-}) => (
-  <div
-    aria-hidden="true"
-    className="pointer-events-none absolute inset-y-0"
-    style={{ left: NAME_WIDTH, width: laneWidth }}
-  >
-    {header.major.map((tick) => (
+}) => {
+  const nameWidth = useNameWidth();
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0"
+      style={{ left: nameWidth, width: laneWidth }}
+    >
+      {header.major.map((tick) => (
+        <span
+          key={`grid-${String(tick.day)}`}
+          className="absolute inset-y-0 border-l border-line"
+          style={{ left: (tick.day - range.start) * pxPerDay }}
+        />
+      ))}
       <span
-        key={`grid-${String(tick.day)}`}
-        className="absolute inset-y-0 border-l border-line"
-        style={{ left: (tick.day - range.start) * pxPerDay }}
+        data-testid="timeline-today"
+        className="absolute inset-y-0 z-10 w-px bg-accent"
+        style={{ left: todayLeft }}
       />
-    ))}
-    <span
-      data-testid="timeline-today"
-      className="absolute inset-y-0 z-10 w-px bg-accent"
-      style={{ left: todayLeft }}
-    />
-    {children}
-  </div>
-);
+      {children}
+    </div>
+  );
+};

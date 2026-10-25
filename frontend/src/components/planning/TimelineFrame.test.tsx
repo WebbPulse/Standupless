@@ -2,18 +2,20 @@
  * The shared timeline view. Covers that a timeline opens with the today line
  * centred in the lanes past the pinned name column, at desktop and phone
  * widths, that a zoom change centres it again, that the toolbar's Today
- * button brings it back after scrolling away, and that a refetch leaves a
- * position the user scrolled to alone.
+ * button brings it back after scrolling away, that a refetch leaves a
+ * position the user scrolled to alone, and that a phone narrows the pinned
+ * name column and drops the zoom presets.
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React, { useRef } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PX_PER_DAY, type TimelineZoom } from '../../lib/timeline';
 import { TimelineControls } from './ProjectTimeline';
 import {
   NAME_WIDTH,
+  PHONE_NAME_WIDTH,
   type TimelineHandle,
   useTimelineView,
 } from './TimelineFrame';
@@ -57,6 +59,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const [name, target] of [
     ['clientWidth', HTMLElement.prototype],
     ['scrollWidth', Element.prototype],
@@ -108,11 +111,25 @@ const Harness: React.FC<HarnessProps> = ({
 };
 
 /** Where the scroller sits when the today line is centred in the lanes in view. */
-const centred = (zoom: TimelineZoom, width = viewportWidth): number =>
+const centred = (
+  zoom: TimelineZoom,
+  width = viewportWidth,
+  nameWidth = NAME_WIDTH
+): number =>
   Math.max(
     0,
-    (TODAY - RANGE.start + 0.5) * PX_PER_DAY[zoom] - (width - NAME_WIDTH) / 2
+    (TODAY - RANGE.start + 0.5) * PX_PER_DAY[zoom] - (width - nameWidth) / 2
   );
+
+/** Makes every media query miss, as a viewport below the `sm` breakpoint does. */
+const stubPhone = (): void => {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+};
 
 const scroller = (): HTMLElement => screen.getByTestId('scroller');
 
@@ -163,5 +180,22 @@ describe('useTimelineView', () => {
       <Harness zoom="month" range={{ start: RANGE.start - 30, end: 400 }} />
     );
     expect(scroller().scrollLeft).toBe(640 + 30 * PX_PER_DAY.month);
+  });
+
+  it('centres past the narrow phone name column below the sm breakpoint', () => {
+    stubPhone();
+    viewportWidth = 390;
+    render(<Harness zoom="month" />);
+    expect(scroller().scrollLeft).toBe(centred('month', 390, PHONE_NAME_WIDTH));
+  });
+
+  it('hides the zoom presets on a phone and keeps the zoom steps', () => {
+    render(<Harness zoom="month" />);
+    expect(screen.getByRole('radiogroup', { name: 'Zoom' })).toHaveClass(
+      'max-sm:hidden'
+    );
+    expect(screen.getByRole('button', { name: 'Zoom in' })).not.toHaveClass(
+      'max-sm:hidden'
+    );
   });
 });
