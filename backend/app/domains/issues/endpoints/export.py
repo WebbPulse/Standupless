@@ -15,8 +15,8 @@ from pydantic import BaseModel
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
+from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_rules import unprocessable
 from app.domains.issues.export import DEFAULT_ROWS, MAX_ROWS, export_page
 

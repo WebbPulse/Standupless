@@ -41,8 +41,8 @@ from app.common.issue_archive import archive_issue as archive_issue_row
 from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
 from app.common.issue_conversion import convert_to_project, duplicate_issue
-from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
+from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_move import move_issue as move_issue_row
