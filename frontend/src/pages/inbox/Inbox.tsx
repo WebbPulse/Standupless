@@ -979,7 +979,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
                 swipe.commit('right');
               }}
               style={{ width: Math.max(REVEAL_PX, swipe.offset) }}
-              className="flex items-center justify-center bg-accent text-xs font-medium text-on-accent"
+              className="flex items-center justify-center bg-accent text-xs font-medium text-on-accent hover:bg-accent-strong"
             >
               {group.unread ? (
                 <LuCheck aria-hidden="true" className="h-4 w-4" />
@@ -999,7 +999,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
                 swipe.commit('left');
               }}
               style={{ width: Math.max(REVEAL_PX, -swipe.offset) }}
-              className="ml-auto flex items-center justify-center bg-danger text-xs font-medium text-white"
+              className="ml-auto flex items-center justify-center bg-danger text-xs font-medium text-white hover:bg-danger/90"
             >
               <LuTrash2 aria-hidden="true" className="h-4 w-4" />
               <span className="sr-only">Delete notification</span>

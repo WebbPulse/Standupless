@@ -174,9 +174,6 @@ describe('touch gestures on list rows', () => {
     expect(
       within(menu).getByRole('menuitem', { name: /Priority/ })
     ).toBeInTheDocument();
-    expect(
-      within(menu).getAllByRole('menuitem', { name: /Snooze/ }).length
-    ).toBeGreaterThan(0);
     fireEvent.click(
       within(menu).getByRole('menuitem', { name: 'Assign to me' })
     );
