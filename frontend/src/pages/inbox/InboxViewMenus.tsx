@@ -2,6 +2,7 @@
  * The inbox header's Filter and Display buttons. Filter narrows the list to
  * chosen notification types, and Display decides whether read and snoozed
  * rows stay in it and whether unread rows sort first. Both only report a new view; the page owns the state.
+ * Display also holds the split inbox setting, which saves to the account.
  */
 
 import React from 'react';
@@ -9,6 +10,7 @@ import { LuListFilter, LuSlidersHorizontal } from 'react-icons/lu';
 import Button from '../../components/ui/button';
 import Checkbox from '../../components/ui/checkbox';
 import { Popover } from '../../components/ui/popover';
+import type { PriorityInbox } from '../../hooks/usePriorityInbox';
 import { DEFAULT_VIEW, INBOX_CATEGORIES, type InboxView } from './groups';
 
 /** Props for the inbox menus: the current view and how to change it. */
@@ -81,10 +83,46 @@ export const InboxFilterMenu: React.FC<InboxViewMenuProps> = ({
   );
 };
 
+/** Props for the Display menu: the view, plus the split inbox setting when the page has one. */
+export interface InboxDisplayMenuProps extends InboxViewMenuProps {
+  priority?: PriorityInbox;
+}
+
+/** The split inbox switch and, while it is on, which types the Priority tab holds. */
+const PriorityInboxOptions: React.FC<{ priority: PriorityInbox }> = ({
+  priority,
+}) => (
+  <div className="flex flex-col gap-2 border-t border-line p-3">
+    <Checkbox
+      label="Use priority inbox"
+      checked={priority.enabled}
+      onChange={(event) => {
+        priority.setEnabled(event.target.checked);
+      }}
+    />
+    {priority.enabled && (
+      <fieldset className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+        <legend className="mb-1 text-xs text-text-muted">Priority types</legend>
+        {INBOX_CATEGORIES.map((category) => (
+          <Checkbox
+            key={category.id}
+            label={category.label}
+            checked={category.kinds.every((kind) => priority.kinds.has(kind))}
+            onChange={(event) => {
+              priority.setKinds(category.kinds, event.target.checked);
+            }}
+          />
+        ))}
+      </fieldset>
+    )}
+  </div>
+);
+
 /** The Display button and its read, snoozed and unread first toggles. */
-export const InboxDisplayMenu: React.FC<InboxViewMenuProps> = ({
+export const InboxDisplayMenu: React.FC<InboxDisplayMenuProps> = ({
   view,
   onChange,
+  priority,
 }) => {
   const changed =
     view.showRead !== DEFAULT_VIEW.showRead ||
@@ -125,6 +163,7 @@ export const InboxDisplayMenu: React.FC<InboxViewMenuProps> = ({
           }}
         />
       </div>
+      {priority !== undefined && <PriorityInboxOptions priority={priority} />}
       {changed && (
         <div className="flex justify-end border-t border-line px-3 py-2">
           <Button

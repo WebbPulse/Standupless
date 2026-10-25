@@ -19,6 +19,10 @@ export interface UserRead {
   email_notifications?: boolean;
   /** Every notification kind's inbox and email switches, fully resolved. */
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
+  /** Whether the inbox splits into Priority and Other tabs. */
+  priority_inbox?: boolean;
+  /** Every kind the Priority tab holds, fully resolved. */
+  priority_kinds?: InboxKind[];
   /** Whether notification emails are batched into a digest or sent one at a time. */
   email_format?: EmailFormat;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
@@ -194,6 +198,9 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  priority_inbox?: boolean;
+  /** Replaces the whole set of kinds the Priority tab holds. */
+  priority_kinds?: InboxKind[];
   email_format?: EmailFormat;
   timezone?: string;
   pulse_digest?: PulseDigest;
@@ -2093,14 +2100,26 @@ export interface NotificationListRead {
   next_cursor: string | null;
 }
 
-/** The unread count, capped and reported as 100 above 100. */
+/** One tab of the split inbox, or both. */
+export type InboxBucket = 'all' | 'priority' | 'other';
+
+/**
+ * The unread counts, each capped and reported as 100 above 100: everything,
+ * each tab of the split inbox, and the sidebar badge, which counts Priority
+ * alone while the split is on.
+ */
 export interface InboxCountRead {
   unread: number;
+  priority_unread?: number;
+  other_unread?: number;
+  priority_inbox?: boolean;
+  badge?: number;
 }
 
 /** What a mark-read call takes: named rows, or every row. */
 export type InboxReadWrite =
-  { notification_ids: string[] } | { all: true; kinds?: string[] };
+  | { notification_ids: string[] }
+  | { all: true; kinds?: string[]; bucket?: InboxBucket };
 
 /** What a mark-unread call takes: the rows to bring back as unread. */
 export interface InboxUnreadWrite {
@@ -2149,6 +2168,7 @@ export interface InboxClearWrite {
   read_only?: boolean;
   include_snoozed?: boolean;
   kinds?: string[];
+  bucket?: InboxBucket;
 }
 
 /** How many rows a bulk delete removed. */

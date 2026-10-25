@@ -254,6 +254,26 @@ def test_mark_all_read_keeps_to_the_kinds_named(client: TestClient, repositories
     assert "Unknown notification kind" in unknown
 
 
+def test_the_bucket_keeps_to_one_tab_of_the_split_inbox(client: TestClient, repositories: Any, workspace: str) -> None:
+    """`bucket` lists or marks only the Priority or Other tab, and the answer counts both."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A001", minutes=0, kind="mentioned")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B002", minutes=5, kind="commented")
+    secret = mint_for(repositories, MEMBER, INBOX)
+
+    priority = answer(tool(client, secret, "list_notifications", {"bucket": "priority"}))
+    other = answer(tool(client, secret, "list_notifications", {"bucket": "other"}))
+    unknown = refusal(tool(client, secret, "list_notifications", {"bucket": "starred"}))
+    marked = answer(tool(client, secret, "mark_all_notifications_read", {"bucket": "other"}))
+
+    assert [row["notification_id"] for row in priority["notifications"]] == ["01N0000000000000000000A001"]
+    assert [row["notification_id"] for row in other["notifications"]] == ["01N0000000000000000000B002"]
+    assert (priority["priority_unread_count"], priority["other_unread_count"]) == (1, 1)
+    assert priority["priority_inbox"] is True and "mentioned" in priority["priority_kinds"]
+    assert "bucket must be one of" in unknown
+    assert marked["updated"] == 1
+    assert repositories.inbox.get(WORKSPACE, MEMBER, "01N0000000000000000000A001").unread is True
+
+
 def test_snooze_notification(client: TestClient, repositories: Any, inbox: tuple[str, str]) -> None:
     """A snoozed row leaves the inbox and lists under snoozed; a past or naive moment is refused."""
     secret = mint_for(repositories, MEMBER, INBOX)

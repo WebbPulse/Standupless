@@ -7,6 +7,9 @@
  * one email per notification. Desktop notifications are switched per device,
  * since the browser holds their permission.
  *
+ * The priority inbox switch splits the inbox into Priority and Other tabs, and
+ * the Priority column picks which kinds land in the first.
+ *
  * Preferences belong to the person, not to the workspace, so a change here
  * applies in every workspace they are a member of. Each switch saves as soon
  * as it flips, the way the rest of the settings pages do, and the page keeps
@@ -40,17 +43,22 @@ import SettingsNav from '../../components/workspace/SettingsNav';
 import SlackDirectMessages from '../../components/workspace/SlackDirectMessages';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { discordLinkOutcome } from '../../components/workspace/discordLinkOutcomes';
+import { useAuth } from '../../hooks/useAuth';
+import { DEFAULT_PRIORITY_KINDS } from '../../hooks/usePriorityInbox';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { errorMessage } from '../../lib/errors';
 import {
   CURRENT_USER_KEY,
   discordLinkKey,
+  inboxCountKey,
+  inboxCountsKey,
   slackLinkKey,
 } from '../../lib/queryKeys';
 import { browserTimezone } from '../../lib/viewerTimezone';
 import type {
   DiscordLinkRead,
   EmailFormat,
+  InboxKind,
   NotificationChannels,
   NotificationKind,
   PulseDigest,
@@ -284,13 +292,16 @@ const EMAIL_FORMAT_CHOICES: {
   },
 ];
 
-/** The column layout the header and every row share. */
-const COLUMNS =
-  'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem] items-center gap-3 px-3';
+/** The column layout the header and every row share, with a Priority column while the split inbox is on. */
+const columnsFor = (split: boolean): string =>
+  split
+    ? 'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem_4rem] items-center gap-3 px-3'
+    : 'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem] items-center gap-3 px-3';
 
 /** Renders the caller's notification preferences and saves each change. */
 const NotificationsSettings: React.FC = () => {
   const { workspace } = useWorkspace();
+  const { login } = useAuth();
   const auth = useQueryAuth();
   const [saved, setSaved] = useState<UserRead | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
@@ -340,6 +351,10 @@ const NotificationsSettings: React.FC = () => {
   const digest: PulseDigest = user?.pulse_digest ?? 'off';
   const zone = user?.timezone ?? browserTimezone();
   const zones = useMemo(() => zoneChoices(zone), [zone]);
+  const split = user?.priority_inbox ?? true;
+  const priorityKinds: readonly InboxKind[] =
+    user?.priority_kinds ?? DEFAULT_PRIORITY_KINDS;
+  const COLUMNS = columnsFor(split);
 
   const save = (body: UserPreferencesUpdate): void => {
     setSaving(true);
@@ -347,7 +362,12 @@ const NotificationsSettings: React.FC = () => {
     void updatePreferences(body)
       .then((stored) => {
         setSaved(stored);
-        invalidateQueries(CURRENT_USER_KEY);
+        login(stored);
+        invalidateQueries([
+          CURRENT_USER_KEY,
+          inboxCountKey(workspaceId),
+          inboxCountsKey(workspaceId),
+        ]);
       })
       .catch((failure: unknown) => {
         setSaveError(failure);
@@ -355,6 +375,13 @@ const NotificationsSettings: React.FC = () => {
       .finally(() => {
         setSaving(false);
       });
+  };
+
+  const setPriority = (kind: NotificationKind, on: boolean): void => {
+    const next = on
+      ? [...priorityKinds.filter((one) => one !== kind), kind]
+      : priorityKinds.filter((one) => one !== kind);
+    save({ priority_kinds: next });
   };
 
   const channelsOf = (kind: NotificationKind): NotificationChannels =>
@@ -425,6 +452,22 @@ const NotificationsSettings: React.FC = () => {
               <p className="mt-1 pl-5.5 text-xs text-text-faint">
                 Turning this off stops every email below at once. Your inbox is
                 not affected.
+              </p>
+            </div>
+
+            <div className="rounded-md border border-line p-3">
+              <Checkbox
+                label="Use priority inbox"
+                checked={split}
+                disabled={saving}
+                onChange={(event) => {
+                  save({ priority_inbox: event.target.checked });
+                }}
+              />
+              <p className="mt-1 pl-5.5 text-xs text-text-faint">
+                Splits your inbox into Priority and Other tabs. The sidebar
+                badge counts Priority only. Pick the Priority types in the
+                column below.
               </p>
             </div>
 
@@ -560,6 +603,7 @@ const NotificationsSettings: React.FC = () => {
                 <span className="text-center">Inbox</span>
                 <span className="text-center">Email</span>
                 <span className="text-center">Chat</span>
+                {split && <span className="text-center">Priority</span>}
               </div>
               {sectionsFor(NOTIFICATION_KINDS).map((section) => (
                 <section
@@ -647,6 +691,20 @@ const NotificationsSettings: React.FC = () => {
                               }}
                             />
                           </div>
+                          {split && (
+                            <div className="flex justify-center">
+                              <input
+                                type="checkbox"
+                                aria-label={`${copy.title} in Priority`}
+                                className="h-3.5 w-3.5 rounded-xs border-line-strong"
+                                checked={priorityKinds.includes(kind)}
+                                disabled={saving}
+                                onChange={(event) => {
+                                  setPriority(kind, event.target.checked);
+                                }}
+                              />
+                            </div>
+                          )}
                         </li>
                       );
                     })}

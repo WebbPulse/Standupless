@@ -35,6 +35,15 @@ neither mailed nor sent to chat until someone asks for them, as in Linear.
 """
 
 
+DEFAULT_PRIORITY_KINDS: frozenset[str] = frozenset(
+    {"mentioned", "assigned", "review_requested", "priority_urgent", "sla_breached", "reminder"}
+)
+"""The kinds the Priority inbox tab holds for a person who never changed it, as in Linear.
+
+Any other kind, including one added later, lands in Other until the person moves it.
+"""
+
+
 def channel_default(kind: str, channel: str) -> bool:
     """Whether one kind reaches one channel for a person who never touched its switch."""
     return channel not in DEFAULT_OFF_CHANNELS.get(kind, frozenset())
@@ -191,6 +200,8 @@ class User(BaseModel):
     email_verified: bool = False
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    priority_inbox: bool = True
+    priority_kinds: dict[str, bool] = Field(default_factory=dict)
     email_format: str = "digest"
     timezone: Optional[str] = None
     pulse_digest: str = "off"
@@ -256,6 +267,14 @@ class User(BaseModel):
         if channel == "email" and not self.email_notifications:
             return False
         return bool(self.notification_preferences.get(kind, {}).get(channel, channel_default(kind, channel)))
+
+    def is_priority(self, kind: str) -> bool:
+        """Whether one kind lands in this person's Priority inbox tab.
+
+        Stored sparsely like the channel switches: only a kind moved away from
+        `DEFAULT_PRIORITY_KINDS` is on the row, so a new kind takes its default.
+        """
+        return bool(self.priority_kinds.get(kind, kind in DEFAULT_PRIORITY_KINDS))
 
     @property
     def immediate_email(self) -> bool:

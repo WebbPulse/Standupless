@@ -722,10 +722,23 @@ InboxListRead = cursor_page(NotificationRead, "notifications", model_name="Inbox
 """The body the inbox list answers with, items under `notifications`."""
 
 
+InboxBucket = Literal["all", "priority", "other"]
+"""Which tab of the split inbox a read or bulk action covers: both, Priority or Other."""
+
+
 class InboxCountRead(BaseModel):
-    """The unread badge, counted from the sparse index and capped."""
+    """The unread badge, counted from the sparse index and capped.
+
+    `unread` counts everything. `priority_unread` and `other_unread` count each
+    tab of the split inbox by the caller's own priority kinds, and `badge` is
+    the number the sidebar shows: Priority alone while `priority_inbox` is on.
+    """
 
     unread: int = 0
+    priority_unread: int = 0
+    other_unread: int = 0
+    priority_inbox: bool = True
+    badge: int = 0
 
 
 class InboxReadRequest(BaseModel):
@@ -733,11 +746,13 @@ class InboxReadRequest(BaseModel):
 
     `kinds` narrows `all` to those notification kinds, matching the list's filter,
     so marking everything read under a filter leaves the hidden types alone.
+    `bucket` narrows `all` to one tab of the split inbox in the same way.
     """
 
     notification_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=INBOX_READ_MAX_IDS)
     all: bool = False
     kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
+    bucket: InboxBucket = "all"
 
 
 class InboxUnreadRequest(BaseModel):
@@ -776,12 +791,13 @@ class InboxClearRequest(BaseModel):
 
     `read_only` keeps to rows already read. Without it every row goes except those
     still snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those
-    notification kinds, matching the list's filter.
+    notification kinds, matching the list's filter, and `bucket` to one tab of the split inbox.
     """
 
     read_only: bool = False
     include_snoozed: bool = False
     kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
+    bucket: InboxBucket = "all"
 
 
 class InboxClearResult(BaseModel):

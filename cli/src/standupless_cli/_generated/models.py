@@ -981,6 +981,7 @@ class ImportRowRead(TypedDict):
 
 
 class InboxClearRequest(TypedDict):
+    bucket: NotRequired[Literal["all", "priority", "other"]]
     include_snoozed: NotRequired[bool]
     kinds: NotRequired[list[str]]
     read_only: NotRequired[bool]
@@ -991,11 +992,16 @@ class InboxClearResult(TypedDict):
 
 
 class InboxCountRead(TypedDict):
+    badge: NotRequired[int]
+    other_unread: NotRequired[int]
+    priority_inbox: NotRequired[bool]
+    priority_unread: NotRequired[int]
     unread: NotRequired[int]
 
 
 class InboxReadRequest(TypedDict):
     all: NotRequired[bool]
+    bucket: NotRequired[Literal["all", "priority", "other"]]
     kinds: NotRequired[list[str]]
     notification_ids: NotRequired[list[str] | None]
 
@@ -3040,6 +3046,8 @@ class UserPreferencesUpdate(TypedDict):
         | None
     ]
     pointer_cursors: NotRequired[bool | None]
+    priority_inbox: NotRequired[bool | None]
+    priority_kinds: NotRequired[list[str] | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
     sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
@@ -3094,6 +3102,8 @@ class UserRead(TypedDict):
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
     pointer_cursors: NotRequired[bool]
+    priority_inbox: NotRequired[bool]
+    priority_kinds: NotRequired[list[str]]
     projects_display: NotRequired[ProjectsDisplay]
     projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]

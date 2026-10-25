@@ -28,7 +28,8 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.inbox import INBOX_KINDS, list_notifications
+from app.common.api.schemas.views import InboxBucket
+from app.common.inbox import INBOX_KINDS, inbox_counts, list_notifications
 from app.common.inbox import clear_notifications as clear_rows
 from app.common.inbox import delete_notification as delete_row
 from app.common.inbox import mark_read as mark_rows_read
@@ -64,6 +65,7 @@ def list_inbox(
     snoozed: bool = Query(default=False),
     include_snoozed: bool = Query(default=False),
     kind: list[str] = Query(default=[], max_length=INBOX_MAX_KINDS),
+    bucket: InboxBucket = Query(default="all"),
     cursor: Optional[str] = Query(default=None),
     limit: int = Query(default=INBOX_DEFAULT_LIMIT, ge=1, le=INBOX_MAX_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
@@ -78,7 +80,8 @@ def list_inbox(
     Snoozed notifications stay out of both lists until their time comes; `snoozed=true`
     lists only them, and is refused beside `unread=true` since nothing is both.
     `include_snoozed=true` keeps snoozed rows in either list, and each repeated
-    `kind` keeps only that notification kind.
+    `kind` keeps only that notification kind. `bucket` keeps the caller's
+    Priority or Other tab, by the priority kinds in their notification settings.
     """
     items, next_cursor = list_notifications(
         repositories,
@@ -87,6 +90,7 @@ def list_inbox(
         snoozed=snoozed,
         include_snoozed=include_snoozed,
         kinds=kind,
+        bucket=bucket,
         cursor=cursor,
         limit=limit,
     )
@@ -99,12 +103,13 @@ def unread_count(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> InboxCountRead:
-    """How many of the caller's notifications are unread, capped at 100.
+    """How many of the caller's notifications are unread, in all and per tab, each capped at 100.
 
     Capped because the badge stops meaning anything past that, and counting no
-    further keeps a busy inbox costing the same as a quiet one.
+    further keeps a busy inbox costing the same as a quiet one. `badge` counts
+    the Priority tab alone while the caller's priority inbox is on.
     """
-    return InboxCountRead(unread=repositories.inbox.unread_count(workspace_id, context.user_id))
+    return inbox_counts(repositories, context)
 
 
 @router.post("/{workspace_id}/inbox/read", response_model=InboxReadResult)

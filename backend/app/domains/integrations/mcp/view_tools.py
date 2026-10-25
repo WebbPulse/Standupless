@@ -36,12 +36,15 @@ from app.common.api.schemas.views import (
 )
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox import (
+    INBOX_BUCKETS,
     INBOX_KINDS,
     clear_notifications,
     delete_notification,
+    inbox_counts,
     list_notifications,
     mark_read,
     mark_unread,
+    priority_kinds,
     snooze,
 )
 from app.common.issue_reminders import cancel_reminder, list_reminders, set_reminder
@@ -293,6 +296,24 @@ def _unsubscribe_from_view(call: ToolCall) -> Any:
     return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
 
 
+def _bucket(call: ToolCall) -> Any:
+    """The bucket argument, `all` when absent, refusing anything but the three tabs."""
+    value = call.optional("bucket", "all")
+    if value not in INBOX_BUCKETS:
+        raise ToolError("bucket must be one of " + ", ".join(INBOX_BUCKETS))
+    return value
+
+
+BUCKET = {
+    "type": "string",
+    "enum": list(INBOX_BUCKETS),
+    "description": (
+        "Keep to one tab of the split inbox: priority (by default mentions, assignments, review requests, "
+        "urgent issues, SLA breaches and reminders, as set in your notification settings), other, or all"
+    ),
+}
+
+
 def _ids(call: ToolCall) -> Optional[list[str]]:
     """The notification ids argument as a list, whichever shape the agent sent."""
     return filter_values(call.require("notification_ids"))
@@ -308,13 +329,20 @@ def _list_notifications(call: ToolCall) -> Any:
         snoozed=_flag(call, "snoozed"),
         include_snoozed=_flag(call, "include_snoozed"),
         kinds=filter_values(call.optional("kinds")) or [],
+        bucket=_bucket(call),
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
+    counts = inbox_counts(call.repositories, call.context)
+    _, priority = priority_kinds(call.repositories, call.context)
     return {
         "notifications": [row.model_dump(mode="json") for row in items],
         "next_cursor": next_cursor,
-        "unread_count": call.repositories.inbox.unread_count(call.context.workspace_id, call.context.user_id),
+        "unread_count": counts.unread,
+        "priority_unread_count": counts.priority_unread,
+        "other_unread_count": counts.other_unread,
+        "priority_inbox": counts.priority_inbox,
+        "priority_kinds": [kind for kind in INBOX_KINDS if kind in priority],
     }
 
 
@@ -328,7 +356,7 @@ def _mark_read(call: ToolCall) -> Any:
 def _mark_all_read(call: ToolCall) -> Any:
     """Mark every one of the caller's notifications read, or only those of some kinds."""
     _workspace_member(call)
-    payload = InboxReadRequest(all=True, kinds=filter_values(call.optional("kinds")) or [])
+    payload = InboxReadRequest(all=True, kinds=filter_values(call.optional("kinds")) or [], bucket=_bucket(call))
     return {"updated": mark_read(call.repositories, call.context, payload)}
 
 
@@ -471,7 +499,8 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         description=(
             "The caller's inbox, newest first, with the unread count. unread=true lists only unread, "
             "snoozed=true only snoozed ones (not both). Snoozed notifications are hidden until they return "
-            "unless include_snoozed=true. kinds keeps only those kinds. Each row's summary says who changed "
+            "unless include_snoozed=true. kinds keeps only those kinds, and bucket only the Priority or Other "
+            "tab; the answer names the priority_kinds that define it. Each row's summary says who changed "
             "what, such as 'Olive moved to Done', and new_value holds the status a change moved to."
         ),
         scopes=("notifications:read",),
@@ -481,6 +510,7 @@ VIEW_TOOLS: tuple[Tool, ...] = (
                 "snoozed": _boolean("Only snoozed notifications"),
                 "include_snoozed": _boolean("Keep snoozed notifications in the list"),
                 "kinds": one_or_many("One notification kind or a list, ORed: " + ", ".join(INBOX_KINDS)),
+                "bucket": BUCKET,
                 **page_properties(),
             }
         ),
@@ -503,11 +533,15 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="mark_all_notifications_read",
         description=(
-            "Mark every notification in your inbox read, or only those of the given kinds. Answers how many changed."
+            "Mark every notification in your inbox read, or only those of the given kinds or bucket. "
+            "Answers how many changed."
         ),
         scopes=("notifications:write",),
         schema=object_schema(
-            {"kinds": one_or_many("One notification kind or a list, ORed, to mark read: " + ", ".join(INBOX_KINDS))}
+            {
+                "kinds": one_or_many("One notification kind or a list, ORed, to mark read: " + ", ".join(INBOX_KINDS)),
+                "bucket": BUCKET,
+            }
         ),
         handler=_mark_all_read,
     ),
