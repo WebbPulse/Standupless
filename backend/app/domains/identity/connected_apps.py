@@ -11,9 +11,11 @@ at a time. A workspace's membership is bounded, and a platform table change for 
 admin view nobody opens often would cost more than the reads it saves.
 
 A grant is never widened behind the person's back. A scope the product adds after a
-client was authorized is offered as a new permission, and the person's own "Grant new
-permissions" adds it to the stored consent, which the client's next refresh then
-carries. The one other way is the person's standing opt-in, `auto_grant_new_scopes`
+client was authorized is listed as a new permission, and the client gains it by
+authorizing again for it: the authorization server runs with
+`mcp_include_granted_scopes` on, so the person's approval adds the new scopes to the
+stored consent and keeps its id, its first grant time and the scopes it already held.
+The one other way is the person's standing opt-in, `auto_grant_new_scopes`
 on their account, off by default: with it on, a grant that took every scope on offer
 when it was given gains the scopes added since at the client's next refresh, each
 widening recorded in the workspace audit log. Nothing is added at check time, and
@@ -23,7 +25,6 @@ every request still intersects the token's scopes with the live role ceiling.
 from __future__ import annotations
 
 import os
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
@@ -165,44 +166,6 @@ def group_by_client(grants: Iterable[Grant]) -> list[ConnectedApp]:
     return sorted(
         apps.values(), key=lambda app: (app.last_used_at or app.first_authorized_at, app.client_name), reverse=True
     )
-
-
-def add_scopes(
-    stores: "OAuthServerStores",
-    user_id: str,
-    client_id: str,
-    scopes: Iterable[str],
-    *,
-    workspace_id: str = "",
-    now: int | None = None,
-) -> list[tuple["ConsentRecord", "ConsentRecord"]]:
-    """Add scopes the person approved to their grants to one client, keeping what each holds.
-
-    Every grant the person holds to the client is widened, or only the one in
-    `workspace_id` when named. A grant that already covers the scopes is left alone.
-    The consent keeps its id, its first grant time and its refresh families, so the
-    client's next refresh mints a token carrying the widened set without a new
-    authorization. Returns each changed grant as a pair of before and after.
-
-    The scopes must already be ones the authorization server offers; the route
-    validates them before this is called.
-    """
-    wanted = set(scopes)
-    moment = int(time.time()) if now is None else now
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(moment))
-    changes: list[tuple[ConsentRecord, ConsentRecord]] = []
-    for record in stores.consents.list_for_client(user_id, client_id):
-        if workspace_id and record.tenant_id != workspace_id:
-            continue
-        added = [scope for scope in MCP_SCOPES if scope in wanted and not satisfies(record.scopes, scope)]
-        if not added:
-            continue
-        held = set(record.scopes) | set(added)
-        merged = tuple(scope for scope in MCP_SCOPES if scope in held) + tuple(sorted(held - set(MCP_SCOPES)))
-        updated = replace(record, scopes=merged, updated_at=stamp)
-        stores.consents.put(updated)
-        changes.append((record, updated))
-    return changes
 
 
 def took_every_scope(record: "ConsentRecord") -> bool:

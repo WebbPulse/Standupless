@@ -48,6 +48,7 @@ IDENTITY_ENVIRONMENT = {
     "IDENTITY_SIGNING_KEY_ARNS": '["arn:aws:kms:us-west-2:000000000000:key/test-signing-key"]',
     "IDENTITY_MCP_OAUTH_ENABLED": "true",
     "IDENTITY_MCP_RESOURCE_URL": RESOURCE,
+    "IDENTITY_MCP_INCLUDE_GRANTED_SCOPES": "true",
 }
 """What Terraform sets on the identity function, narrowed to what this server needs.
 

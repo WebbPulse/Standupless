@@ -313,10 +313,10 @@ def _insufficient_scope(
     A scope the caller's role cannot hold is named as that, because no grant would
     help. Otherwise the refusal names both ways to get it, because by now every
     credential is attributed to MCP and an OAuth token cannot be told from an API key:
-    an OAuth client is pointed at the connected apps page, where "Grant new
-    permissions" adds the scope to the existing grant and the client's next token
-    refresh carries it, and an API key at the API keys page, since a key's scopes are
-    fixed when it is created. The body is the one a REST route refuses with.
+    an OAuth client is told to authorize again for the scope, which adds it to the
+    existing grant and keeps what the grant already held, and an API key is pointed
+    at the API keys page, since a key's scopes are fixed when it is created. The body
+    is the one a REST route refuses with.
     """
     detail = insufficient_scope_detail(context, missing, repositories)
     message = str(detail.pop("message"))

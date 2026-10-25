@@ -6,7 +6,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MY_CONNECTED_APPS_ROUTE,
-  grantMyConnectedAppScopes,
   listMyConnectedApps,
   listWorkspaceConnectedApps,
   revokeMyConnectedApp,
@@ -15,13 +14,11 @@ import {
 
 const get = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
 const del = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
-const post = vi.fn<(path: string, body?: unknown) => Promise<unknown>>();
 
 vi.mock('./client', () => ({
   default: {
     get: (path: string, options?: unknown) => get(path, options),
     delete: (path: string, options?: unknown) => del(path, options),
-    post: (path: string, body?: unknown) => post(path, body),
   },
 }));
 
@@ -29,20 +26,6 @@ beforeEach(() => {
   get.mockReset();
   del.mockReset();
   del.mockResolvedValue({ data: null });
-  post.mockReset();
-});
-
-describe('granting new permissions', () => {
-  it('posts the approved scopes to the escaped client path', async () => {
-    post.mockResolvedValue({ data: { client_id: 'a b' } });
-
-    await expect(
-      grantMyConnectedAppScopes('a b', ['releases:read'])
-    ).resolves.toEqual({ client_id: 'a b' });
-    expect(post).toHaveBeenCalledWith('/users/me/connected-apps/a%20b/scopes', {
-      scopes: ['releases:read'],
-    });
-  });
 });
 
 describe('the connected apps routes', () => {

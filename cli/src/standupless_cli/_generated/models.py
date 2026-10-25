@@ -457,11 +457,6 @@ class ConnectedAppMemberRead(TypedDict):
     id: str
 
 
-class ConnectedAppScopesGrant(TypedDict):
-    scopes: list[str]
-    workspace_id: NotRequired[str | None]
-
-
 class ConnectedAppWorkspaceRead(TypedDict):
     authorized_at: NotRequired[str | None]
     id: str
