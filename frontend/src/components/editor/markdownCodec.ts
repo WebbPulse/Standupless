@@ -12,8 +12,12 @@
 import type { Editor, JSONContent } from '@tiptap/core';
 import { parseVideoEmbed } from '../../lib/videoEmbeds';
 
-/** Fenced code and inline code, which the output clean up must not touch. */
-const CODE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/;
+/**
+ * Fenced code, inline code and block equations, which the output clean up
+ * must not touch.
+ */
+const CODE =
+  /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|^\$\$\n[\s\S]*?\n\$\$$)/m;
 
 /** A run of blank lines longer than the one that separates two blocks. */
 const BLANK_RUN = /\n{3,}/g;
@@ -48,8 +52,8 @@ const bareSelfLinks = (part: string): string =>
  * way it was typed, since the serializer can only write the bracketed form,
  * unless it is a video link kept as a link on a line of its own, and
  * collapses the blank lines empty paragraphs leave into one, so repeated blank
- * lines in the editor store as a single paragraph break. Code keeps its blank
- * lines.
+ * lines in the editor store as a single paragraph break. Code and equations
+ * keep their blank lines.
  */
 const tidyOutput = (markdown: string): string =>
   markdown

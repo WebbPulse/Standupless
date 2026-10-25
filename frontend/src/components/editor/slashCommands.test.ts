@@ -77,6 +77,8 @@ describe('filterSlashCommands', () => {
       'callout',
       'divider',
       'table',
+      'equation',
+      'inlineEquation',
     ]);
   });
 
@@ -187,6 +189,31 @@ describe('running a command', () => {
     expect(ids('mermaid')).toEqual(['diagram']);
     expect(ids('flow')).toEqual(['diagram']);
     expect(ids('diag')).toEqual(['diagram']);
+  });
+
+  it('inserts a block equation in place of the slash', () => {
+    const editor = editorTyping('/equation');
+    command('equation').run(editor, { from: 1, to: 10 }, {});
+    const types: string[] = [];
+    editor.state.doc.forEach((node) => types.push(node.type.name));
+    expect(types).toContain('blockMath');
+    expect(editor.getText()).not.toContain('/equation');
+  });
+
+  it('inserts an inline equation in place of the slash', () => {
+    const editor = editorTyping('Area /eq');
+    command('inlineEquation').run(editor, { from: 6, to: 9 }, {});
+    const types: string[] = [];
+    editor.state.doc.descendants((node) => {
+      types.push(node.type.name);
+    });
+    expect(types).toContain('inlineMath');
+  });
+
+  it('finds the equations by their keywords', () => {
+    expect(ids('equ')).toEqual(['equation', 'inlineEquation']);
+    expect(ids('latex')).toEqual(['equation', 'inlineEquation']);
+    expect(ids('math')).toEqual(['equation', 'inlineEquation']);
   });
 
   it('starts a mention in place of the slash', () => {

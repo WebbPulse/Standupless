@@ -3,8 +3,8 @@
  * people write in a tracker (paragraphs, headings, lists and task lists,
  * quotes, fenced code, inline code, emphasis, links, embedded images and
  * videos, @mentions, issue keys, date chips, `<details>` collapsible sections and
- * GitHub alert callouts such as `> [!NOTE]`) and
- * nothing that would need raw HTML: the output is a tree the renderer turns
+ * GitHub alert callouts such as `> [!NOTE]`, and LaTeX math as `$...$` inline
+ * or a `$$` block) and nothing that would need raw HTML: the output is a tree the renderer turns
  * into React elements, so no string from a comment is ever parsed as markup.
  *
  * Link targets are limited to http, https, mailto and an attachment's content
@@ -16,6 +16,7 @@
 
 import { calloutFromQuote, type CalloutKind } from './callouts';
 import { isChipDate } from './dateChips';
+import { INLINE_MATH_SOURCE, MATH_FENCE, MATH_ONE_LINE } from './math';
 import { isContentPath, isEmbeddableSrc, isVideoSrc } from './media';
 import { videoEmbedOfLine, type VideoEmbed } from './videoEmbeds';
 
@@ -28,6 +29,7 @@ export type InlineNode =
   | { type: 'mention'; handle: string }
   | { type: 'issue'; key: string }
   | { type: 'date'; value: string }
+  | { type: 'math'; latex: string }
   | { type: 'image' | 'video'; src: string; alt: string }
   | { type: 'break' };
 
@@ -47,6 +49,7 @@ export type BlockNode =
   | { type: 'details'; summary: string; children: BlockNode[] }
   | { type: 'callout'; kind: CalloutKind; children: BlockNode[] }
   | { type: 'embed'; embed: VideoEmbed }
+  | { type: 'math'; latex: string }
   | { type: 'rule' };
 
 /** The schemes a link may point at. */
@@ -61,13 +64,19 @@ export const isLinkTarget = (href: string): boolean =>
 
 /**
  * The inline grammar, tried left to right at each position. The groups are,
- * in order: an embed, a code span, a link, a bare URL, strong, strong with underscores,
+ * in order: an embed, a code span, an inline equation, a link, a bare URL, strong, strong with underscores,
  * strikethrough, emphasis, emphasis with underscores, a mention, an issue
  * key such as `ENG-12`, a backslash escape, which the rich editor writes when literal text would
  * otherwise read as formatting, and a date chip such as `<2026-10-01>`.
  */
-const INLINE =
-  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])|\\([!-/:-@[-`{-~])|<(\d{4}-\d{2}-\d{2})>/g;
+const INLINE_BASE =
+  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])|\\([!-/:-@[-`{-~])|<(\d{4}-\d{2}-\d{2})>/;
+
+/** The inline grammar with the inline equation placed after the code span. */
+const INLINE = new RegExp(
+  INLINE_BASE.source.replace('(?!`)|', `(?!\`)|${INLINE_MATH_SOURCE}|`),
+  'g'
+);
 
 /** Appends text, merging it into a text node already at the end. */
 const pushText = (out: InlineNode[], value: string): void => {
@@ -105,6 +114,7 @@ export const parseInline = (source: string): InlineNode[] => {
       embedSrc,
       ,
       code,
+      math,
       linkText,
       linkHref,
       bare,
@@ -130,6 +140,8 @@ export const parseInline = (source: string): InlineNode[] => {
       }
     } else if (code !== undefined) {
       out.push({ type: 'code', value: code });
+    } else if (math !== undefined) {
+      out.push({ type: 'math', latex: math });
     } else if (linkText !== undefined && linkHref !== undefined) {
       if (isLinkTarget(linkHref)) {
         out.push({
@@ -296,9 +308,35 @@ export const collapsibleAt = (
   return null;
 };
 
+/**
+ * The `$$` block equation that opens at a line, with the line after its
+ * closing `$$`, or null. A fence that never closes is not one, so it stays
+ * text.
+ */
+const mathBlockAt = (
+  lines: string[],
+  start: number
+): { latex: string; end: number } | null => {
+  if (!MATH_FENCE.test(lines[start] ?? '')) return null;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (MATH_FENCE.test(lines[index] ?? '')) {
+      return {
+        latex: lines
+          .slice(start + 1, index)
+          .join('\n')
+          .replace(/^\n+|\s+$/g, ''),
+        end: index + 1,
+      };
+    }
+  }
+  return null;
+};
+
 /** Whether a line starts a block other than a paragraph. */
 const startsBlock = (line: string): boolean =>
   FENCE.test(line) ||
+  MATH_FENCE.test(line) ||
+  MATH_ONE_LINE.test(line) ||
   DETAILS_OPEN.test(line) ||
   HEADING.test(line) ||
   RULE.test(line) ||
@@ -348,6 +386,20 @@ export const parseMarkdown = (source: string): BlockNode[] => {
         language: fence[2] ?? '',
         value: body.join('\n'),
       });
+      continue;
+    }
+
+    const oneLine = MATH_ONE_LINE.exec(line);
+    if (oneLine !== null) {
+      blocks.push({ type: 'math', latex: (oneLine[1] ?? '').trim() });
+      index += 1;
+      continue;
+    }
+
+    const equation = mathBlockAt(lines, index);
+    if (equation !== null) {
+      blocks.push({ type: 'math', latex: equation.latex });
+      index = equation.end;
       continue;
     }
 

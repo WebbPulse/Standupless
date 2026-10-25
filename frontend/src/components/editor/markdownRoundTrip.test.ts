@@ -7,7 +7,9 @@
  * a second pass so a description never drifts save after save. Collapsible
  * sections store as GitHub's `<details>` block and read back as the same
  * section in the static renderer. Callouts store as GitHub alerts such as
- * `> [!NOTE]` and keep their kind both ways.
+ * `> [!NOTE]` and keep their kind both ways. Equations store as `$...$` and a
+ * `$$` fence and read back as the same LaTeX in the editor and the static
+ * renderer.
  */
 
 import { Editor } from '@tiptap/core';
@@ -124,6 +126,25 @@ const EXACT: [string, string][] = [
   ['a date chip opening a line', '<2026-10-01> cut the release'],
   ['a date chip in a list', '- [ ] Review on <2026-11-12>'],
   ['an impossible date left as text', 'Not a day: <2026-13-40>'],
+  ['an inline equation', 'Energy is $E = mc^2$ here.'],
+  [
+    'an inline equation holding underscores and stars',
+    'Indexes $a_1 + b_2$ and $x^*$ stay put.',
+  ],
+  [
+    'an inline equation holding an escaped dollar',
+    'Cost $\\$5 \\times n$ total',
+  ],
+  ['a block equation', 'Before\n\n$$\n\\frac{a}{b}\n$$\n\nafter'],
+  [
+    'a multi-line block equation',
+    '$$\n\\begin{aligned}\na &= b \\\\\nc &= d\n\\end{aligned}\n$$',
+  ],
+  ['an empty block equation', '$$\n$$'],
+  ['prices left as text', 'It costs $5 and $10 today.'],
+  ['a lone dollar sign', 'Pay in $ or in euros'],
+  ['an escaped dollar left as text', 'Literal \\$x$ stays text'],
+  ['an equation in inline code left as code', 'Type `$x$` for math'],
 ];
 
 const NORMALIZED: [string, string, string][] = [
@@ -166,6 +187,11 @@ const NORMALIZED: [string, string, string][] = [
     'text on the callout marker line moves onto its own line',
     '> [!TIP] Use the CLI',
     '> [!TIP]\n> Use the CLI',
+  ],
+  [
+    'a one line block equation gains its own fence lines',
+    '$$ x^2 $$',
+    '$$\nx^2\n$$',
   ],
 ];
 
@@ -400,5 +426,71 @@ describe('date chips in the rich editor', () => {
         { type: 'date', value: '2026-10-01' },
       ],
     });
+  });
+});
+
+describe('equations in the rich editor', () => {
+  it('read an inline equation as one node carrying its LaTeX', () => {
+    writeMarkdown(editor, 'Area $\\pi r^2$');
+    expect(inlineTypes()).toEqual(['text', 'inlineMath']);
+    expect(editor.state.doc.firstChild?.child(1).attrs).toEqual({
+      latex: '\\pi r^2',
+    });
+  });
+
+  it('read a fenced block as one block equation', () => {
+    writeMarkdown(editor, '$$\n\\sum_{i=1}^n i\n$$');
+    expect(editor.state.doc.firstChild?.type.name).toBe('blockMath');
+    expect(editor.state.doc.firstChild?.attrs).toEqual({
+      latex: '\\sum_{i=1}^n i',
+    });
+  });
+
+  it('leave prices and escaped dollars as text', () => {
+    writeMarkdown(editor, 'From $5 to $10');
+    expect(inlineTypes()).toEqual(['text']);
+    writeMarkdown(editor, 'Literal \\$x$');
+    expect(inlineTypes()).toEqual(['text']);
+    expect(editor.state.doc.textContent).toBe('Literal $x$');
+  });
+
+  it('escape typed text that would read as an equation', () => {
+    expect(typed('Swap $a$ for $b$')).toBe('Swap \\$a$ for \\$b$');
+    expect(roundTrip('Swap \\$a$ for \\$b$')).toBe('Swap \\$a$ for \\$b$');
+  });
+
+  it('write an empty inline equation as nothing', () => {
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Area ' },
+            { type: 'inlineMath', attrs: { latex: '' } },
+          ],
+        },
+      ],
+    });
+    expect(readMarkdown(editor)).toBe('Area');
+  });
+
+  it('write what the static renderer reads as the same equations', () => {
+    writeMarkdown(editor, 'Energy $E = mc^2$\n\n$$\n\\frac{a}{b}\n$$');
+    expect(parseMarkdown(readMarkdown(editor))).toEqual([
+      {
+        type: 'paragraph',
+        children: [
+          { type: 'text', value: 'Energy ' },
+          { type: 'math', latex: 'E = mc^2' },
+        ],
+      },
+      { type: 'math', latex: '\\frac{a}{b}' },
+    ]);
+  });
+
+  it('show the LaTeX source as the plain text of the document', () => {
+    writeMarkdown(editor, 'Area $\\pi r^2$');
+    expect(editor.getText()).toBe('Area $\\pi r^2$');
   });
 });

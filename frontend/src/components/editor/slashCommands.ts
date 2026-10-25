@@ -24,6 +24,8 @@ import {
   LuListOrdered,
   LuListTodo,
   LuMinus,
+  LuRadical,
+  LuSigma,
   LuSquareCode,
   LuTable,
   LuTextQuote,
@@ -201,6 +203,26 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     hint: '|--',
     run: (editor, range) => {
       insertStarterTable(editor.chain().focus().deleteRange(range)).run();
+    },
+  },
+  {
+    id: 'equation',
+    label: 'Equation',
+    icon: LuSigma,
+    keywords: ['math', 'latex', 'formula', 'katex', 'tex', 'block'],
+    hint: '$$',
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).insertBlockMath().run();
+    },
+  },
+  {
+    id: 'inlineEquation',
+    label: 'Inline equation',
+    icon: LuRadical,
+    keywords: ['math', 'latex', 'formula', 'katex', 'tex'],
+    hint: '$',
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).insertInlineMath().run();
     },
   },
   {
