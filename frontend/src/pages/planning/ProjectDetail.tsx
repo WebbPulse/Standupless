@@ -72,6 +72,7 @@ import ProjectActivityFeed from '../../components/planning/ProjectActivityFeed';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import ProjectResources from '../../components/planning/ProjectResources';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
+import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
@@ -668,18 +669,22 @@ export const ProjectDetail: React.FC = () => {
       )}
       {tab === 'updates' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <ProjectUpdatesFeed
-            feed={updates}
-            people={people}
-            canPost={canEdit}
-            defaultHealth={project.health ?? 'on_track'}
-            dueState={project.update_due_state ?? null}
-            dueAt={project.next_update_due_at ?? null}
-            composing={composing}
-            onComposingChange={setComposing}
-            templates={updateTemplates.templates}
-            defaultTemplate={updateTemplates.defaultUpdate}
-          />
+          <DocumentLinkContext.Provider
+            value={{ kind: 'project', id: projectId }}
+          >
+            <ProjectUpdatesFeed
+              feed={updates}
+              people={people}
+              canPost={canEdit}
+              defaultHealth={project.health ?? 'on_track'}
+              dueState={project.update_due_state ?? null}
+              dueAt={project.next_update_due_at ?? null}
+              composing={composing}
+              onComposingChange={setComposing}
+              templates={updateTemplates.templates}
+              defaultTemplate={updateTemplates.defaultUpdate}
+            />
+          </DocumentLinkContext.Provider>
         </div>
       ) : tab === 'issues' ? (
         <ProjectIssuesView

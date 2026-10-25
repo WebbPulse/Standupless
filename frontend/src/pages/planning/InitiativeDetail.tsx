@@ -50,6 +50,7 @@ import {
 } from '../../components/planning/ProjectPickers';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
+import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
@@ -696,19 +697,23 @@ export const InitiativeDetail: React.FC = () => {
       )}
       {tab === 'updates' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <ProjectUpdatesFeed
-            feed={updates}
-            people={people}
-            subject="initiative"
-            canPost={canEdit}
-            defaultHealth={initiative.health ?? 'on_track'}
-            dueState={initiative.update_due_state}
-            dueAt={initiative.next_update_due_at}
-            composing={composing}
-            onComposingChange={setComposing}
-            templates={updateTemplates.templates}
-            defaultTemplate={updateTemplates.defaultUpdate}
-          />
+          <DocumentLinkContext.Provider
+            value={{ kind: 'initiative', id: initiative.initiative_id }}
+          >
+            <ProjectUpdatesFeed
+              feed={updates}
+              people={people}
+              subject="initiative"
+              canPost={canEdit}
+              defaultHealth={initiative.health ?? 'on_track'}
+              dueState={initiative.update_due_state}
+              dueAt={initiative.next_update_due_at}
+              composing={composing}
+              onComposingChange={setComposing}
+              templates={updateTemplates.templates}
+              defaultTemplate={updateTemplates.defaultUpdate}
+            />
+          </DocumentLinkContext.Provider>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
