@@ -77,6 +77,7 @@ import { listCycles, listProjects } from '../../api/planning';
 import { useAttachFiles } from '../../hooks/useAttachFiles';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
+import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import {
   DETAILS_PANEL_KEYS,
@@ -350,6 +351,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   }, [childrenHasMore, childrenPaging, childrenLoading, loadMoreChildren]);
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
+  const descriptionQuotes = useQuoteRequest(issue?.id ?? '');
   const onCommentAttachments = useCallback((ids: Set<string>) => {
     setHiddenIds((held) => (sameIds(held, ids) ? held : ids));
   }, []);
@@ -990,6 +992,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     onSaved={receive}
                     people={options.people}
                     onDropFiles={attachFiles}
+                    {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
                   />
 
                   <ReactionBar
@@ -1027,6 +1030,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     slug={slug}
                     teamKeyPrefix={team?.key_prefix ?? ''}
                     onCommentAttachments={onCommentAttachments}
+                    quote={descriptionQuotes.request}
                   />
                 </div>
               </div>

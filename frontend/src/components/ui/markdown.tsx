@@ -52,7 +52,10 @@ export interface MarkdownProps {
 const Mention: React.FC<{ handle: string }> = ({ handle }) => {
   const label = useMentionLabel(handle);
   return (
-    <span className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent">
+    <span
+      data-md={`@${handle}`}
+      className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent"
+    >
       @{label}
     </span>
   );

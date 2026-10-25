@@ -47,6 +47,7 @@ const handle = (initial = ''): RichMarkdownHandle & { text: string } => {
       editor.text = markdown;
     },
     insertFiles: vi.fn(),
+    appendMarkdown: vi.fn(),
   };
   return editor;
 };
