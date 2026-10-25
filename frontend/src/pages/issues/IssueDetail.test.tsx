@@ -41,6 +41,14 @@ import type {
   WorkspaceRole,
 } from '../../types/Api';
 import { clearToasts } from '../../lib/toast';
+import {
+  DETAILS_PANEL_STORAGE_KEY,
+  resetDetailsPanel,
+} from '../../hooks/useDetailsPanel';
+import {
+  createShortcutRegistry,
+  ShortcutRegistryContext,
+} from '../../hooks/useShortcuts';
 import IssueDetail from './IssueDetail';
 
 const getIssueByKey = vi.fn<(key?: string) => Promise<IssueRead>>();
@@ -313,6 +321,7 @@ beforeEach(() => {
     spy.mockReset();
   }
   clearToasts();
+  resetDetailsPanel();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('member'));
   useAuthMock.mockReset();
@@ -1229,6 +1238,87 @@ describe('the capability gate', () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole('menuitem', { name: 'Copy link' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the details panel', () => {
+  it('hides and shows from the bar, and remembers the choice', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderPage();
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Properties' })
+    ).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole('button', { name: 'Hide details panel' })
+    );
+
+    expect(
+      screen.queryByRole('complementary', { name: 'Properties' })
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem(DETAILS_PANEL_STORAGE_KEY)).toBe('hidden');
+
+    unmount();
+    renderPage();
+    const show = await screen.findByRole('button', {
+      name: 'Show details panel',
+    });
+    expect(
+      screen.queryByRole('complementary', { name: 'Properties' })
+    ).not.toBeInTheDocument();
+
+    await user.click(show);
+    expect(
+      await screen.findByRole('complementary', { name: 'Properties' })
+    ).toBeInTheDocument();
+    expect(localStorage.getItem(DETAILS_PANEL_STORAGE_KEY)).toBeNull();
+  });
+
+  it('toggles on Ctrl+I and keeps the property keys working while hidden', async () => {
+    const registry = createShortcutRegistry();
+    const press = (key: string, init: KeyboardEventInit = {}): void => {
+      act(() => {
+        registry.handleKey(
+          new KeyboardEvent('keydown', {
+            key,
+            bubbles: true,
+            cancelable: true,
+            ...init,
+          })
+        );
+      });
+    };
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <MemoryRouter initialEntries={['/w/mine/issues/ENG-1']}>
+          <Routes>
+            <Route path="/w/:slug/issues/:key" element={<IssueDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </ShortcutRegistryContext.Provider>
+    );
+
+    await screen.findByRole('complementary', { name: 'Properties' });
+    await screen.findByRole('button', { name: 'Hide details panel' });
+    press('i', { ctrlKey: true });
+
+    expect(
+      screen.queryByRole('complementary', { name: 'Properties' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Show details panel' })
+    ).toHaveAttribute('aria-pressed', 'false');
+
+    press('s');
+    fireEvent.click(await screen.findByRole('option', { name: /Doing/ }));
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledWith('iss-1', { status_id: 'st-2' });
+    });
+
+    press('i', { metaKey: true });
+    expect(
+      await screen.findByRole('complementary', { name: 'Properties' })
     ).toBeInTheDocument();
   });
 });
