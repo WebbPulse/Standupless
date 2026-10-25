@@ -35,6 +35,12 @@ export interface SubjectValue {
   /** Extra words the row matches on, such as the property's name. */
   keywords: string;
   icon: ReactNode;
+  /** The property the value belongs to, such as "priority". */
+  property?: string;
+  /** Whether every issue of the subject already has the value. */
+  checked?: boolean;
+  /** Whether running the value would change nothing, as for the current status. */
+  inert?: boolean;
   /** Writes the value to every issue of the subject. */
   run: () => void;
 }

@@ -39,6 +39,17 @@ export const VALUE_PROPERTIES = [
 /** One of the properties the palette offers values of. */
 export type ValueProperty = (typeof VALUE_PROPERTIES)[number];
 
+/** The label each property's registered shortcut reads as. */
+export const PROPERTY_SHORTCUT_LABELS: Record<ValueProperty, string> = {
+  status: 'Change status',
+  priority: 'Change priority',
+  assignee: 'Assign',
+  labels: 'Change labels',
+  project: 'Move to project',
+  cycle: 'Move to cycle',
+  estimate: 'Set estimate',
+};
+
 const ICON = 'h-3.5 w-3.5 shrink-0';
 
 /** The words a property's values are found by beyond their names. */
@@ -100,8 +111,9 @@ export interface PropertyValuesInput {
 
 /**
  * Every value the issues' properties can be set to, as commands. A value
- * every issue already has is left out, since running it would change
- * nothing, except a label, which reads as removing it, as its picker does.
+ * every issue already has is checked and marked inert, since running it
+ * would change nothing, except a label, which reads as removing it, as its
+ * picker does.
  */
 export const propertyValues = ({
   issues,
@@ -122,7 +134,7 @@ export const propertyValues = ({
     return choices.options.flatMap((option) => {
       if (option.disabled === true) return [];
       const applied = choices.selected.includes(option.value);
-      if (applied && !choices.multiple) return [];
+      const inert = applied && !choices.multiple;
       return [
         {
           id: `${property}-${encodeURIComponent(option.value)}`,
@@ -130,8 +142,11 @@ export const propertyValues = ({
           name: option.label,
           keywords: [KEYWORDS[property], ...(option.keywords ?? [])].join(' '),
           icon: option.icon ?? FALLBACK_ICONS[property],
+          property,
+          checked: applied,
+          inert,
           run: () => {
-            choices.pick(option.value);
+            if (!inert) choices.pick(option.value);
           },
         },
       ];
