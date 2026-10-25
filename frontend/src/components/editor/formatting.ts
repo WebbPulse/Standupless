@@ -64,10 +64,21 @@ export interface FormatContext {
    * cannot, which leaves the button out.
    */
   createIssue?: () => void;
+  /**
+   * Files one sub-issue per selected list item. Unset when the surface has no
+   * parent issue, which leaves the button out.
+   */
+  createSubIssues?: () => void;
 }
 
 /** The name and tooltip of the button that files an issue from the selection. */
 export const CREATE_ISSUE_LABEL = 'Create issue from selection';
+
+/** The name of the button that files a sub-issue per selected list item. */
+export const CREATE_SUB_ISSUES_LABEL = 'Create sub-issues from selection';
+
+/** The chord that files sub-issues from the selection, as in Linear. */
+export const CREATE_SUB_ISSUES_KEYS = ['mod', 'shift', 'o'];
 
 /** One toolbar button. */
 export interface FormatAction {

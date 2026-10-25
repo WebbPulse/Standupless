@@ -35,6 +35,7 @@ import { updateIssue } from '../../api/issues';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { parentOfIssue } from '../../lib/subIssueCreation';
 import type { Assignable } from '../../lib/issuePeople';
 import { contentPath, mediaKindOf } from '../../lib/media';
 import { rememberPreview, useMedia } from '../../lib/mediaContext';
@@ -319,6 +320,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
                         selectionIssue: {
                           teamId: issue.team_id,
                           issueId: issue.id,
+                          parent: parentOfIssue(issue),
                         },
                       }
                     : {})}

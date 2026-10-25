@@ -2,7 +2,8 @@
  * The compact toolbar that floats over selected text, as in Linear: the
  * inline marks and a link, the three heading levels, the three lists, and the
  * quote and code block, then a button that files an issue from the selection
- * where the surface allows it. Each formatting button shows whether its formatting is already on
+ * where the surface allows it, and one that files a sub-issue per item when
+ * the selection is a list on a surface with a parent issue. Each formatting button shows whether its formatting is already on
  * and names its keys in its tooltip, so the toolbar also teaches the chords.
  *
  * Buttons never take focus from the document, so pressing one formats the
@@ -13,17 +14,21 @@ import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import React from 'react';
-import { LuCirclePlus } from 'react-icons/lu';
+import { LuCirclePlus, LuListTree } from 'react-icons/lu';
 import Tooltip from '../ui/tooltip';
 import {
   actionTooltip,
   CREATE_ISSUE_LABEL,
+  CREATE_SUB_ISSUES_KEYS,
+  CREATE_SUB_ISSUES_LABEL,
+  shortcutLabel,
   FORMAT_ACTIONS,
   FORMAT_GROUPS,
   formattingToolbarKey,
   shouldShowToolbar,
   type FormatContext,
 } from './formatting';
+import { isListSelection } from './selectionIssue';
 
 /** Props for FormattingButtons and FormattingToolbar. */
 export interface FormattingButtonsProps {
@@ -44,6 +49,11 @@ export const FormattingButtons: React.FC<FormattingButtonsProps> = ({
       ) as Record<string, boolean>,
   });
   const createIssue = context.createIssue;
+  const listSelected = useEditorState({
+    editor,
+    selector: ({ editor: current }) => isListSelection(current),
+  });
+  const createSubIssues = listSelected ? context.createSubIssues : undefined;
 
   return (
     <div
@@ -96,6 +106,30 @@ export const FormattingButtons: React.FC<FormattingButtonsProps> = ({
               onClick={createIssue}
             >
               <LuCirclePlus aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+        </>
+      )}
+      {createSubIssues !== undefined && (
+        <>
+          {createIssue === undefined && (
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
+          )}
+          <Tooltip
+            text={`${CREATE_SUB_ISSUES_LABEL}  ${shortcutLabel(CREATE_SUB_ISSUES_KEYS)}`}
+            side="top"
+          >
+            <button
+              type="button"
+              aria-label={CREATE_SUB_ISSUES_LABEL}
+              data-action="createSubIssues"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-muted hover:bg-hover hover:text-text active:bg-press"
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onClick={createSubIssues}
+            >
+              <LuListTree aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </Tooltip>
         </>

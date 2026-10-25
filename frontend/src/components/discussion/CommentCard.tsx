@@ -25,6 +25,11 @@
  * whole thread with a way to unresolve it. Replying reopens a thread, which the
  * server does, so the card only follows what the thread list says.
  *
+ * On an issue, a comment's menu offers a new sub-issue of the issue described
+ * by the comment with a link back to it, and a passage selected in a comment
+ * files sub-issues the way a selection in the description does: one per item
+ * of a list, or one through the create dialog.
+ *
  * Any comment can be quoted into the thread's reply, whole from its menu or a
  * selected passage of it from the Quote button that floats under the
  * selection. The quote lands as a blockquote after whatever the reply already
@@ -39,7 +44,7 @@
  * list's key is shared, and GitHub sync and the activity feed play no part.
  */
 
-import React, { Suspense, lazy, useRef, useState } from 'react';
+import React, { Suspense, lazy, useContext, useRef, useState } from 'react';
 import {
   invalidateQueries,
   useMutationWithRefetch,
@@ -53,6 +58,7 @@ import {
   LuEllipsis,
   LuExternalLink,
   LuGithub,
+  LuListTree,
   LuPencil,
   LuReply,
   LuTextQuote,
@@ -70,6 +76,8 @@ import {
 } from '../../api/discussion';
 import { syncThread, unsyncThread } from '../../api/integrations';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
+import { useCreateIssue } from '../../hooks/useCreateIssue';
+import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -81,7 +89,18 @@ import {
 import { embeddedAttachmentIds } from '../../lib/media';
 import { submitKeysLabel } from '../../lib/platform';
 import { quoteMarkdown } from '../../lib/quote';
-import { activityKey, commentsKey } from '../../lib/queryKeys';
+import { issuePath } from '../../lib/paths';
+import { activityKey, childrenKey, commentsKey } from '../../lib/queryKeys';
+import {
+  createSubIssues,
+  resolveSubIssueParent,
+  type ResolvedSubIssueParent,
+} from '../../lib/subIssueCreation';
+import {
+  commentSubIssueBody,
+  listTitles,
+  textPrefill,
+} from '../../lib/subIssueLines';
 import {
   PUBLIC_THREAD_WARNING,
   targetKey,
@@ -138,6 +157,24 @@ interface CommentItemProps extends ReaderProps {
 
 /** The anchor a comment is linked to, so a copied link scrolls to it. */
 const anchorOf = (commentId: string): string => `comment-${commentId}`;
+
+/**
+ * The address of a comment on its issue's page, or on the page showing it when
+ * the workspace is not known.
+ */
+const commentUrl = (
+  commentId: string,
+  slug: string | undefined,
+  issueKey: string
+): string => {
+  const url = new URL(globalThis.location.href);
+  if (slug !== undefined) {
+    url.pathname = issuePath(slug, issueKey);
+    url.search = '';
+  }
+  url.hash = anchorOf(commentId);
+  return url.toString();
+};
 
 /** Props for PassageQuote. */
 interface PassageQuoteProps {
@@ -282,6 +319,65 @@ const CommentItem: React.FC<CommentItemProps> = ({
       });
   };
 
+  const issueCreator = useCreateIssue();
+  const slug = useContext(WorkspaceContext)?.workspace?.slug;
+  const canSubIssue =
+    canComment && documentId === undefined && issueCreator.canCreate;
+
+  const openSubIssue = (
+    draft: (parent: ResolvedSubIssueParent) => {
+      title?: string;
+      description?: string;
+    }
+  ): void => {
+    void resolveSubIssueParent(workspaceId, { id: issueId })
+      .then((parent) => {
+        issueCreator.open({
+          teamId: parent.teamId,
+          parentId: parent.id,
+          parentKey: parent.key,
+          ...(parent.priority === 'none' ? {} : { priority: parent.priority }),
+          ...(parent.projectId === null ? {} : { projectId: parent.projectId }),
+          ...draft(parent),
+          onCreated: () => {
+            invalidateQueries([childrenKey(issueId), activityKey(issueId)]);
+          },
+        });
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(errorMessage(failure, 'Could not read the issue.'));
+      });
+  };
+
+  const subIssuesFromPassage = (markdown: string): void => {
+    const titles = listTitles(markdown);
+    if (titles !== null && titles.length >= 2) {
+      void createSubIssues(
+        workspaceId,
+        { id: issueId },
+        titles.map((title) => ({ title }))
+      );
+      return;
+    }
+    const prefill = textPrefill(markdown);
+    if (prefill.title === '') return;
+    openSubIssue(() => ({
+      title: prefill.title,
+      ...(prefill.description === ''
+        ? {}
+        : { description: prefill.description }),
+    }));
+  };
+
+  const subIssueFromComment = (): void => {
+    openSubIssue((parent) => ({
+      description: commentSubIssueBody(
+        comment.body,
+        commentUrl(comment.comment_id, slug, parent.key)
+      ),
+    }));
+  };
+
   const copyLink = (): void => {
     const url = new URL(globalThis.location.href);
     url.hash = anchorOf(comment.comment_id);
@@ -383,6 +479,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
               >
                 <LuTextQuote aria-hidden="true" className="h-3.5 w-3.5" />
                 Quote in reply
+              </MenuItem>
+            )}
+            {canSubIssue && (
+              <MenuItem onSelect={subIssueFromComment}>
+                <LuListTree aria-hidden="true" className="h-3.5 w-3.5" />
+                New sub-issue from comment
               </MenuItem>
             )}
             {isAuthor && (
@@ -500,7 +602,11 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 onCancel={() => {
                   setEditing(false);
                 }}
-                selectionIssue={{ issueId }}
+                selectionIssue={
+                  documentId === undefined
+                    ? { issueId, parent: { id: issueId } }
+                    : { issueId }
+                }
               />
             </Suspense>
             <div className="flex items-center justify-end gap-1.5">
@@ -527,7 +633,10 @@ const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         ) : (
           comment.body !== '' && (
-            <SelectionQuote onQuote={quote}>
+            <SelectionQuote
+              onQuote={quote}
+              {...(canSubIssue ? { onSubIssue: subIssuesFromPassage } : {})}
+            >
               <Markdown source={comment.body} density="compact" />
             </SelectionQuote>
           )

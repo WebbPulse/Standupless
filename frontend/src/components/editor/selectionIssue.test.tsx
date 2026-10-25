@@ -3,7 +3,9 @@
  * title and the description Markdown, that the toolbar offers the button only
  * when the surface can file one, that filing replaces the selection with the
  * new key while cancelling leaves the text alone, and that a range changed in
- * the meantime is never overwritten.
+ * the meantime is never overwritten. Also covers reading a selection of list
+ * items as one sub-issue title per item, and the toolbar offering the
+ * sub-issue button only on such a selection.
  */
 
 import { Editor } from '@tiptap/core';
@@ -13,12 +15,14 @@ import type { CreateIssueOptions } from '../../hooks/useCreateIssue';
 import { TITLE_MAX } from '../../lib/validation';
 import type { IssueRead } from '../../types/Api';
 import { FormattingButtons } from './FormattingToolbar';
-import { CREATE_ISSUE_LABEL } from './formatting';
+import { CREATE_ISSUE_LABEL, CREATE_SUB_ISSUES_LABEL } from './formatting';
 import { markdownExtensions } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
   createIssueFromSelection,
+  isListSelection,
   replaceWithIssueKey,
+  selectedListItems,
   selectionPrefill,
   titleOfLine,
 } from './selectionIssue';
@@ -235,5 +239,74 @@ describe('filing an issue from the selection', () => {
 
     expect(createIssueFromSelection(editor, {}, open)).toBe(false);
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe('a selection of list items', () => {
+  const titlesOf = (editor: Editor): string[] => {
+    const { from, to } = editor.state.selection;
+    return selectedListItems(editor.state.doc, from, to).map(
+      (item) => item.title
+    );
+  };
+
+  it('reads one title per item, nested ones included', () => {
+    const editor = editorWith('- one\n- two\n  - nested\n- three');
+    selectAll(editor);
+
+    expect(titlesOf(editor)).toEqual(['one', 'two', 'nested', 'three']);
+    expect(isListSelection(editor)).toBe(true);
+  });
+
+  it('reads ordered lists too', () => {
+    const editor = editorWith('1. first\n2. second');
+    selectAll(editor);
+
+    expect(titlesOf(editor)).toEqual(['first', 'second']);
+  });
+
+  it('is not a list when the range reaches a paragraph', () => {
+    const editor = editorWith('Intro\n\n- one\n- two');
+    selectAll(editor);
+
+    expect(titlesOf(editor)).toEqual([]);
+    expect(isListSelection(editor)).toBe(false);
+  });
+
+  it('needs two items to be a list selection', () => {
+    const editor = editorWith('- only one\n- two');
+    selectText(editor, 'only one');
+
+    expect(titlesOf(editor)).toEqual(['only one']);
+    expect(isListSelection(editor)).toBe(false);
+  });
+
+  it('offers the sub-issue button only on a list selection', () => {
+    const editor = editorWith('- one\n- two');
+    const createSubIssues = vi.fn();
+    selectText(editor, 'one');
+    const { unmount } = render(
+      <FormattingButtons
+        editor={editor}
+        context={{ openLink: vi.fn(), createSubIssues }}
+      />
+    );
+    expect(
+      screen.queryByRole('button', { name: CREATE_SUB_ISSUES_LABEL })
+    ).toBeNull();
+    unmount();
+
+    selectAll(editor);
+    render(
+      <FormattingButtons
+        editor={editor}
+        context={{ openLink: vi.fn(), createSubIssues }}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: CREATE_SUB_ISSUES_LABEL })
+    );
+
+    expect(createSubIssues).toHaveBeenCalledTimes(1);
   });
 });
