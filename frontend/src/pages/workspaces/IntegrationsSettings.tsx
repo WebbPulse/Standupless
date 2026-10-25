@@ -1,6 +1,7 @@
 /**
  * The workspace integrations page, where a workspace admin connects Slack and
- * Discord once for every team, manages the workspace channels that post
+ * Discord once for every team, connects the GitLab groups and projects whose
+ * merge requests link to issues, manages the workspace channels that post
  * activity from all teams, or a chosen few, to one place, and picks the git
  * branch name format every member copies.
  *
@@ -16,6 +17,7 @@ import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
 import BranchFormatSection from '../../components/workspace/BranchFormatSection';
 import ChatAppConnectionRow from '../../components/workspace/ChatAppConnectionRow';
+import GitlabSection from '../../components/workspace/GitlabSection';
 import {
   discordRowCopy,
   slackRowCopy,
@@ -50,8 +52,8 @@ const installerName = (
 };
 
 /**
- * The Slack and Discord connections, the workspace channels and the git branch
- * name format, for an admin.
+ * The Slack and Discord connections, the workspace channels, the GitLab
+ * connections and the git branch name format, for an admin.
  */
 const Integrations: React.FC<{ workspace: WorkspaceRead }> = ({
   workspace,
@@ -145,6 +147,7 @@ const Integrations: React.FC<{ workspace: WorkspaceRead }> = ({
                 'Connect Slack or Discord first to add a workspace channel.',
             })}
       />
+      <GitlabSection workspaceId={workspaceId} />
       <BranchFormatSection
         workspace={workspace}
         handle={branchHandle(user ?? undefined)}

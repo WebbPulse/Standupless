@@ -195,6 +195,7 @@ class IssueLinkRead(BaseModel):
     `review_state` is the review decision and `ci_state` the combined result of the
     head commit's checks, both `none` until GitHub reports one. `stack` is set when
     the pull request is stacked with another of the issue's pull requests.
+    `provider` says whether it is a GitHub pull request or a GitLab merge request.
     """
 
     link_id: str
@@ -213,6 +214,7 @@ class IssueLinkRead(BaseModel):
     review_state: ReviewState = "none"
     ci_state: CiState = "none"
     stack: StackRead | None = None
+    provider: Literal["github", "gitlab"] = "github"
     linked_at: datetime
     updated_at: datetime
 

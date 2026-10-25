@@ -236,6 +236,25 @@ class PinnedHttpsSender:
 
     def post(self, url: str, *, body: bytes, headers: Mapping[str, str], timeout: float) -> WebhookResponse:
         """Post `body` to the checked address of `url` and report what came back."""
+        return self.request("POST", url, body=body, headers=headers, timeout=timeout)
+
+    def get(
+        self, url: str, *, headers: Mapping[str, str], timeout: float, body_limit: int = RESPONSE_BODY_LIMIT
+    ) -> WebhookResponse:
+        """Read `url` from its checked address, keeping up to `body_limit` bytes of the answer."""
+        return self.request("GET", url, body=None, headers=headers, timeout=timeout, body_limit=body_limit)
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: bytes | None,
+        headers: Mapping[str, str],
+        timeout: float,
+        body_limit: int = RESPONSE_BODY_LIMIT,
+    ) -> WebhookResponse:
+        """Send one request to the checked address of `url` and report what came back."""
         try:
             destination = parse_destination(url)
             addresses = check_destination(url, resolver=self._resolver, allow_unresolved=False)
@@ -253,9 +272,9 @@ class PinnedHttpsSender:
         deadline = _Deadline(connection, timeout)
         try:
             with deadline:
-                connection.request("POST", destination.target, body=body, headers=dict(headers))
+                connection.request(method, destination.target, body=body, headers=dict(headers))
                 response = connection.getresponse()
-                text = response.read(RESPONSE_BODY_LIMIT).decode("utf-8", "replace")
+                text = response.read(body_limit).decode("utf-8", "replace")
                 status = int(response.status)
         except TimeoutError:
             return WebhookResponse(status_code=0, error="Timed out")

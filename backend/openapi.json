@@ -7262,6 +7262,233 @@
         "title": "GithubThreadWrite",
         "type": "object"
       },
+      "GitlabConnectionCreated": {
+        "description": "A connection just made or whose webhook secret was just replaced, with that secret shown once.",
+        "properties": {
+          "connected_at": {
+            "format": "date-time",
+            "title": "Connected At",
+            "type": "string"
+          },
+          "connected_by": {
+            "title": "Connected By",
+            "type": "string"
+          },
+          "connection_id": {
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "instance_url": {
+            "title": "Instance Url",
+            "type": "string"
+          },
+          "scope_id": {
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "scope_kind": {
+            "enum": [
+              "group",
+              "project"
+            ],
+            "title": "Scope Kind",
+            "type": "string"
+          },
+          "scope_name": {
+            "title": "Scope Name",
+            "type": "string"
+          },
+          "scope_path": {
+            "title": "Scope Path",
+            "type": "string"
+          },
+          "secret_rotated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Rotated At"
+          },
+          "token_hint": {
+            "title": "Token Hint",
+            "type": "string"
+          },
+          "web_url": {
+            "title": "Web Url",
+            "type": "string"
+          },
+          "webhook_secret": {
+            "title": "Webhook Secret",
+            "type": "string"
+          },
+          "webhook_url": {
+            "title": "Webhook Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "instance_url",
+          "scope_kind",
+          "scope_id",
+          "scope_path",
+          "scope_name",
+          "web_url",
+          "token_hint",
+          "webhook_url",
+          "connected_by",
+          "connected_at",
+          "webhook_secret"
+        ],
+        "title": "GitlabConnectionCreated",
+        "type": "object"
+      },
+      "GitlabConnectionRead": {
+        "description": "One GitLab group or project this workspace receives merge request events from.\n\n`webhook_url` is the address to add as a merge request webhook in GitLab.",
+        "properties": {
+          "connected_at": {
+            "format": "date-time",
+            "title": "Connected At",
+            "type": "string"
+          },
+          "connected_by": {
+            "title": "Connected By",
+            "type": "string"
+          },
+          "connection_id": {
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "instance_url": {
+            "title": "Instance Url",
+            "type": "string"
+          },
+          "scope_id": {
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "scope_kind": {
+            "enum": [
+              "group",
+              "project"
+            ],
+            "title": "Scope Kind",
+            "type": "string"
+          },
+          "scope_name": {
+            "title": "Scope Name",
+            "type": "string"
+          },
+          "scope_path": {
+            "title": "Scope Path",
+            "type": "string"
+          },
+          "secret_rotated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Rotated At"
+          },
+          "token_hint": {
+            "title": "Token Hint",
+            "type": "string"
+          },
+          "web_url": {
+            "title": "Web Url",
+            "type": "string"
+          },
+          "webhook_url": {
+            "title": "Webhook Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "instance_url",
+          "scope_kind",
+          "scope_id",
+          "scope_path",
+          "scope_name",
+          "web_url",
+          "token_hint",
+          "webhook_url",
+          "connected_by",
+          "connected_at"
+        ],
+        "title": "GitlabConnectionRead",
+        "type": "object"
+      },
+      "GitlabConnectionWrite": {
+        "description": "What a workspace admin enters to connect one GitLab group or project.\n\n`instance_url` is empty for gitlab.com and the https address of a self-managed\ninstance otherwise. `access_token` needs only the `read_api` scope.",
+        "properties": {
+          "access_token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Access Token",
+            "type": "string"
+          },
+          "instance_url": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Instance Url",
+            "type": "string"
+          },
+          "scope_kind": {
+            "enum": [
+              "group",
+              "project"
+            ],
+            "title": "Scope Kind",
+            "type": "string"
+          },
+          "scope_path": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Scope Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_kind",
+          "scope_path",
+          "access_token"
+        ],
+        "title": "GitlabConnectionWrite",
+        "type": "object"
+      },
+      "GitlabConnectionsRead": {
+        "description": "Whether GitLab can be connected in this environment, and this workspace's connections.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/GitlabConnectionRead"
+            },
+            "title": "Connections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "connections"
+        ],
+        "title": "GitlabConnectionsRead",
+        "type": "object"
+      },
       "HealthBreakdownRead": {
         "description": "How many of an initiative's visible projects report each health.",
         "properties": {
@@ -11494,7 +11721,7 @@
         "type": "object"
       },
       "IssueLinkRead": {
-        "description": "One pull request linked to one issue.\n\n`review_state` is the review decision and `ci_state` the combined result of the\nhead commit's checks, both `none` until GitHub reports one. `stack` is set when\nthe pull request is stacked with another of the issue's pull requests.",
+        "description": "One pull request linked to one issue.\n\n`review_state` is the review decision and `ci_state` the combined result of the\nhead commit's checks, both `none` until GitHub reports one. `stack` is set when\nthe pull request is stacked with another of the issue's pull requests.\n`provider` says whether it is a GitHub pull request or a GitLab merge request.",
         "properties": {
           "applied_status_id": {
             "anyOf": [
@@ -11573,6 +11800,15 @@
           },
           "pr_url": {
             "title": "Pr Url",
+            "type": "string"
+          },
+          "provider": {
+            "default": "github",
+            "enum": [
+              "github",
+              "gitlab"
+            ],
+            "title": "Provider",
             "type": "string"
           },
           "repository_full_name": {
@@ -31100,6 +31336,114 @@
         ]
       }
     },
+    "/api/gitlab/webhooks/{workspace_id}/{connection_id}": {
+      "post": {
+        "description": "Check, claim and enqueue one GitLab delivery, then answer at once.\n\nThe order is the security property. The token is compared before the body is\nread, an unknown connection is answered exactly as a wrong token is so the\nroute confirms nothing, and only a merge request event is claimed. A failed\nenqueue releases the claim, so GitLab's retry does the work rather than being\ndropped as a replay.",
+        "operationId": "receive_gitlab_webhook_api_gitlab_webhooks__workspace_id___connection_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-gitlab-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Gitlab-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-gitlab-event",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Gitlab-Event"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-gitlab-event-uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Gitlab-Event-Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "description": "The delivery was queued."
+          },
+          "401": {
+            "description": "The token does not match the connection's webhook secret."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Gitlab Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/icons/team/{workspace_id}/{team_id}/{icon_id}": {
       "get": {
         "description": "Serve one team icon URL.",
@@ -41126,6 +41470,225 @@
           }
         ],
         "summary": "Link Repository",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/gitlab/connections": {
+      "get": {
+        "description": "Whether GitLab can be connected here, and every group or project this workspace is connected to.",
+        "operationId": "list_gitlab_connections_api_workspaces__workspace_id__gitlab_connections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitlabConnectionsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Gitlab Connections",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Check the token can read the group or project, then store the connection and show its webhook secret once.\n\nThe token is sealed before the row is written and the webhook secret is kept\nonly as a digest, so neither is readable from the table afterwards.",
+        "operationId": "create_gitlab_connection_api_workspaces__workspace_id__gitlab_connections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitlabConnectionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitlabConnectionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Gitlab Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/gitlab/connections/{connection_id}": {
+      "delete": {
+        "description": "Remove a connection, its sealed token with it; deliveries to its webhook are refused from then on.\n\nLinks already made stay on their issues, as a GitHub pull request's do when its\nrepository is removed.",
+        "operationId": "delete_gitlab_connection_api_workspaces__workspace_id__gitlab_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Gitlab Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/gitlab/connections/{connection_id}/rotate-secret": {
+      "post": {
+        "description": "Replace a connection's webhook secret and show the new one once; the old one stops working at once.",
+        "operationId": "rotate_gitlab_webhook_secret_api_workspaces__workspace_id__gitlab_connections__connection_id__rotate_secret_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitlabConnectionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Rotate Gitlab Webhook Secret",
         "tags": [
           "integrations"
         ]

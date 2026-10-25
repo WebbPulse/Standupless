@@ -4,7 +4,8 @@
  * request, that each link points at the pull request, that a closing link says
  * so since that is what drives the merge transition, that each state's icon
  * carries its GitHub color, that the synced GitHub issue is not listed here,
- * and that O then G opens the pull request or the synced issue.
+ * that a GitLab merge request is marked as one and written with `!`, and that
+ * O then G opens the pull request or the synced issue.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -101,6 +102,34 @@ describe('the linked pull requests', () => {
 
     expect(
       await screen.findByText(/Merged, opened by someone, closes this issue/)
+    ).toBeInTheDocument();
+  });
+
+  it('marks a GitLab merge request and writes its number the GitLab way', async () => {
+    listIssueLinks.mockResolvedValue({
+      items: [
+        link({
+          link_id: 'gitlab_abc_77_5#iss-1',
+          provider: 'gitlab',
+          repository_full_name: 'acme/web',
+          pr_number: 5,
+          pr_title: 'Fix the login',
+          pr_url: 'https://gitlab.com/acme/web/-/merge_requests/5',
+        }),
+      ],
+      next_cursor: null,
+    });
+    render(<GithubLinksSection workspaceId="ws-1" issueId="iss-1" />);
+
+    const anchor = await screen.findByRole('link', {
+      name: /acme\/web!5 Fix the login/,
+    });
+    expect(anchor).toHaveAttribute(
+      'href',
+      'https://gitlab.com/acme/web/-/merge_requests/5'
+    );
+    expect(
+      screen.getByText(/GitLab, open, opened by someone/)
     ).toBeInTheDocument();
   });
 

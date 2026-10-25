@@ -15,6 +15,9 @@
  * and check icons, and expand to every entry with its own. The section count
  * treats a stack as one row.
  *
+ * A GitLab merge request links the same way and shares the section, marked
+ * with its provider, and is written with GitLab's `!` before its number.
+ *
  * O then G opens the linked pull request, or the synced GitHub issue when
  * there is none, from anywhere on the issue.
  */
@@ -115,6 +118,8 @@ const PullRequestEntry: React.FC<{
 }> = ({ link, badge }) => {
   const state = pullRequestStateStyle(link.pr_state);
   const StateIcon = state.icon;
+  const gitlab = link.provider === 'gitlab';
+  const reference = `${link.repository_full_name}${gitlab ? '!' : '#'}${String(link.pr_number)}`;
   return (
     <div className="flex items-start gap-1.5">
       <StateIcon
@@ -128,12 +133,14 @@ const PullRequestEntry: React.FC<{
           href={link.pr_url}
           target="_blank"
           rel="noreferrer"
-          title={`${link.repository_full_name}#${String(link.pr_number)} ${link.pr_title}`}
+          title={`${reference} ${link.pr_title}`}
         >
-          {link.repository_full_name}#{link.pr_number} {link.pr_title}
+          {reference} {link.pr_title}
         </a>
         <p className="truncate text-text-faint">
-          {state.label}, opened by {link.author_login}
+          {gitlab ? 'GitLab, ' : ''}
+          {gitlab ? state.label.toLowerCase() : state.label}
+          {link.author_login === '' ? '' : `, opened by ${link.author_login}`}
           {link.closes_issue ? ', closes this issue' : ''}
         </p>
       </div>

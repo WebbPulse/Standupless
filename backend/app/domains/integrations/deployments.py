@@ -415,8 +415,8 @@ def _off_the_stage(
 
 
 def _in_repository(link: IssueLink, repository_id: str, repository: str) -> bool:
-    """Whether a live link is to a pull request of this repository, by id or, on an older row, by name."""
-    if link.detached:
+    """Whether a live link is to a GitHub pull request of this repository, by id or, on an older row, by name."""
+    if link.detached or link.provider != "github":
         return False
     if link.repository_id:
         return link.repository_id == repository_id

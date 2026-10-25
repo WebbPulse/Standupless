@@ -119,6 +119,8 @@ vi.mock('../../api/integrations', async () => {
       getDiscordConnection(workspaceId),
     getDiscordInstallUrl: (workspaceId: string, teamId?: string) =>
       getDiscordInstallUrl(workspaceId, teamId),
+    listGitlabConnections: () =>
+      Promise.resolve({ configured: false, connections: [] }),
   };
 });
 

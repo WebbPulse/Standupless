@@ -326,6 +326,12 @@
   {
     "auth": "public",
     "domain": "integrations",
+    "method": "POST",
+    "path": "/api/gitlab/webhooks/{workspace_id}/{connection_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
     "method": "DELETE",
     "path": "/api/mcp"
   },
@@ -484,6 +490,30 @@
     "domain": "integrations",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/github/repositories/{repository_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections/{connection_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections/{connection_id}/rotate-secret"
   },
   {
     "auth": "workspace:admin",
