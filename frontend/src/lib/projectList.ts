@@ -41,7 +41,8 @@ export type ProjectOrdering =
   | 'progress'
   | 'created'
   | 'updated'
-  | 'customers';
+  | 'customers'
+  | 'important';
 
 /** The orderings in the order the display menu offers them. */
 export const PROJECT_ORDERINGS: ProjectOrdering[] = [
@@ -54,11 +55,12 @@ export const PROJECT_ORDERINGS: ProjectOrdering[] = [
   'created',
   'updated',
   'customers',
+  'important',
 ];
 
 /** The orderings that read who asked for each project, which guests may not. */
 export const CUSTOMER_PROJECT_ORDERINGS: ReadonlySet<ProjectOrdering> = new Set(
-  ['customers']
+  ['customers', 'important']
 );
 
 /** How each ordering reads in the display menu. */
@@ -72,6 +74,7 @@ export const PROJECT_ORDERING_LABELS: Record<ProjectOrdering, string> = {
   created: 'Created',
   updated: 'Last updated',
   customers: 'Customer requests',
+  important: 'Important customer requests',
 };
 
 /** What the projects list can group by. */
@@ -139,6 +142,7 @@ export type ProjectColumn =
   | 'target'
   | 'teams'
   | 'issues'
+  | 'important'
   | 'created'
   | 'updated'
   | 'completed'
@@ -161,6 +165,7 @@ export const PROJECT_COLUMNS: ProjectColumn[] = [
   'target',
   'teams',
   'issues',
+  'important',
   'created',
   'updated',
   'completed',
@@ -184,6 +189,7 @@ export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
   'start',
   'target',
   'issues',
+  'important',
   'created',
   'updated',
   'completed',
@@ -212,6 +218,7 @@ export const PROJECT_COLUMN_LABELS: Record<ProjectColumn, string> = {
   target: 'Target date',
   teams: 'Teams',
   issues: 'Issues',
+  important: 'Important requests',
   created: 'Created',
   updated: 'Updated',
   completed: 'Completed',
@@ -475,6 +482,11 @@ export const sortProjects = (
           (right.customer_request_count ?? 0) -
           (left.customer_request_count ?? 0)
         );
+      case 'important':
+        return (
+          (right.customer_important_count ?? 0) -
+          (left.customer_important_count ?? 0)
+        );
       case 'name':
         return 0;
     }
@@ -513,6 +525,8 @@ export interface GroupOptions {
   initiatives?: InitiativeName[];
   /** Keeps every group a project could be moved into, even empty, for the board. */
   keepEmpty?: boolean;
+  /** The filtered team and the sub-teams it rolls up, which alone get team groups. */
+  teamIds?: readonly string[] | null;
 }
 
 /**
@@ -554,7 +568,8 @@ const byValue = (
  * Groups already sorted projects. Status groups run in the list's order,
  * health from on track to no updates, priority from urgent to none,
  * initiatives and leads by name with the empty group last, and team groups
- * in the teams' order; a project on several teams shows under each of them.
+ * in the teams' order; a project on several teams shows under each of them,
+ * or once under the first filtered team it is on when a team filter is set.
  * Empty groups are left out unless asked for, and "none" is one unlabelled
  * group.
  */
@@ -627,17 +642,27 @@ export const groupProjects = (
         { value: 'none', label: 'No initiative' }
       );
     }
-    case 'team':
-      return teams
+    case 'team': {
+      const filter = options.teamIds ?? null;
+      const shown =
+        filter === null
+          ? teams
+          : teams.filter((team) => filter.includes(team.id));
+      const home = (project: ProjectRead): string | undefined =>
+        shown.find((team) => project.team_ids.includes(team.id))?.id;
+      return shown
         .map((team) => ({
           key: `team:${team.id}`,
           label: team.name,
           kind: grouping,
           rows: projects.filter((project) =>
-            project.team_ids.includes(team.id)
+            filter === null
+              ? project.team_ids.includes(team.id)
+              : home(project) === team.id
           ),
         }))
         .filter((group) => keepEmpty || group.rows.length > 0);
+    }
     case 'lead':
       return byValue(
         projects,

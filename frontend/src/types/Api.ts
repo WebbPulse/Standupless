@@ -81,6 +81,7 @@ export interface ProjectsDisplayPreference {
     | 'created'
     | 'updated'
     | 'customers'
+    | 'important'
     | 'manual';
   closed: 'all' | 'fortnight' | 'month' | 'none';
   /** Whether groups run in their own order or reversed. */

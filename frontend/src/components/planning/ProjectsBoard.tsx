@@ -36,6 +36,7 @@ import React, {
 } from 'react';
 import {
   LuChevronRight,
+  LuCircleAlert,
   LuEllipsis,
   LuEye,
   LuEyeOff,
@@ -415,6 +416,19 @@ const BoardCard: React.FC<BoardCardProps> = ({
           <span className="px-0.5 whitespace-nowrap tabular-nums">
             <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
             <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
+          </span>
+        )}
+        {has('important') && (project.customer_important_count ?? 0) > 0 && (
+          <span
+            title="Important customer requests"
+            className="flex items-center gap-0.5 px-0.5 whitespace-nowrap tabular-nums"
+          >
+            <LuCircleAlert
+              aria-hidden="true"
+              className="h-3 w-3 text-warning"
+            />
+            <span className="sr-only">Important customer requests </span>
+            {String(project.customer_important_count)}
           </span>
         )}
         <span className="ml-auto flex items-center gap-1 tabular-nums">

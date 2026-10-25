@@ -1792,7 +1792,9 @@ class ProjectsDisplay(TypedDict):
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
     order: NotRequired[
-        Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"]
+        Literal[
+            "target", "start", "name", "priority", "progress", "created", "updated", "customers", "important", "manual"
+        ]
     ]
     rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]

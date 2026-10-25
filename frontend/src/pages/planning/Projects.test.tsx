@@ -428,6 +428,38 @@ describe('Projects', () => {
     expect(screen.queryByRole('region', { name: 'In progress' })).toBeNull();
   });
 
+  it('repeats a project on two teams under each team without a team filter', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, team_ids: ['team-1', 'team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const designGroup = screen.getByRole('region', { name: 'Design' });
+    expect(
+      within(designGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows a project on two teams once under the filtered team', async () => {
+    listProjects.mockResolvedValue({
+      projects: [{ ...launch, team_ids: ['team-2', 'team-1'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?team=ENG&group=team');
+
+    const engineGroup = await screen.findByRole('region', { name: 'Engine' });
+    expect(
+      within(engineGroup).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Design' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Launch' })).toHaveLength(1);
+  });
+
   it('orders the rows by the Display menu choice', async () => {
     const user = userEvent.setup();
     const alpha = {
