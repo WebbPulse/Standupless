@@ -6311,6 +6311,8 @@ export interface MemberProfileRead {
   team_ids?: string[];
   /** The member's status while it is in force, or null when none is set or the viewer may not see it. */
   user_status?: UserStatusRead | null;
+  /** The IANA zone the member set, shown as their local time; null when unset or hidden from the viewer. */
+  timezone?: string | null;
 }
 
 /** A comment as a member's activity feed carries it, its body cut to an excerpt. */

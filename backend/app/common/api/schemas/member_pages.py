@@ -27,6 +27,9 @@ class MemberProfileRead(BaseModel):
     `team_ids` are the teams they belong to that the caller can see, so a private
     team stays hidden from anyone outside it. `user_status` is their away status
     while it is in force, hidden from a guest who shares no team with them.
+    `timezone` is the IANA zone they set in their preferences, so a hover card
+    can show their local time; it follows the same rule as `user_status`, and is
+    null when they set none. No other preference is exposed.
     """
 
     user_id: str
@@ -37,6 +40,7 @@ class MemberProfileRead(BaseModel):
     joined_at: datetime
     team_ids: list[str] = Field(default_factory=list)
     user_status: Optional[UserStatusRead] = None
+    timezone: Optional[str] = None
 
 
 class MemberCommentRead(BaseModel):

@@ -71,6 +71,7 @@ def member_profile(repositories: Repositories, context: AuthzContext, user_id: s
     """One workspace member's page header, or a 404 when they are not a member.
 
     The teams listed are the ones the caller can see, and no email is returned.
+    The status and timezone answer only to a caller who may see the member's status.
     """
     member_id = resolve_member_id(context, user_id)
     membership = repositories.memberships.get(context.workspace_id, member_id)
@@ -84,6 +85,7 @@ def member_profile(repositories: Repositories, context: AuthzContext, user_id: s
             if row.team_id and context.can_see_team(row.team_id)
         }
     )
+    shown = _status_shown(context, member_id, team_ids)
     return MemberProfileRead(
         user_id=member_id,
         display_name=display_name_for(user),
@@ -92,7 +94,8 @@ def member_profile(repositories: Repositories, context: AuthzContext, user_id: s
         role=membership.role,  # pyright: ignore[reportArgumentType]
         joined_at=membership.joined_at,
         team_ids=team_ids,
-        user_status=current_status(membership.user_status) if _status_shown(context, member_id, team_ids) else None,
+        user_status=current_status(membership.user_status) if shown else None,
+        timezone=user.timezone if shown and user is not None else None,
     )
 
 
