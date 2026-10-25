@@ -495,9 +495,28 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     },
     [state, setState]
   );
+  const setViewFolds = useCallback(
+    (keys: readonly string[], folded: boolean) => {
+      const next = new Set(state.collapsed);
+      for (const key of keys) {
+        if (folded) next.add(key);
+        else next.delete(key);
+      }
+      setState({ ...state, collapsed: [...next] });
+    },
+    [state, setState]
+  );
   const folds = keepsFolds
-    ? { collapsed: viewFoldSet, onToggle: toggleViewFold }
-    : { collapsed: viewerFolds.collapsed, onToggle: viewerFolds.toggle };
+    ? {
+        collapsed: viewFoldSet,
+        onToggle: toggleViewFold,
+        onSet: setViewFolds,
+      }
+    : {
+        collapsed: viewerFolds.collapsed,
+        onToggle: viewerFolds.toggle,
+        onSet: viewerFolds.set,
+      };
   const savedViewId = view?.view_id;
   const savedFolds = base.collapsed.length;
   useEffect(() => {

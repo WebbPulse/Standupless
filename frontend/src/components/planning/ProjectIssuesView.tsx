@@ -219,7 +219,11 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
         canEdit={canEdit}
         createTeamId={createTeamId}
         createProjectId={projectId}
-        folds={{ collapsed: folds.collapsed, onToggle: folds.toggle }}
+        folds={{
+          collapsed: folds.collapsed,
+          onToggle: folds.toggle,
+          onSet: folds.set,
+        }}
         emptyMessage={
           state.filters.length === 0
             ? 'No issues are in this project yet.'

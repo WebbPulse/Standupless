@@ -9,6 +9,11 @@
  * title only, with tree connectors drawn in the indent; a parent carries a
  * done/total chip beside its title, and a sub-issue listed apart from its
  * parent names it in a muted prefix.
+ *
+ * Each group header carries a menu, from its "..." button or a right click,
+ * that folds or unfolds every group beside it or hides the group. Alt+click on
+ * a header folds or unfolds every group to match. Hidden groups drop out of
+ * the list and wait in a quiet row at its foot, one click from coming back.
  */
 
 import React from 'react';
@@ -16,6 +21,10 @@ import {
   LuArchive,
   LuBan,
   LuChevronRight,
+  LuChevronsDownUp,
+  LuChevronsUpDown,
+  LuEllipsis,
+  LuEyeOff,
   LuFlame,
   LuPlus,
   LuRefreshCcw,
@@ -33,10 +42,18 @@ import {
 } from '../../../lib/issueTree';
 import { groupFigure } from '../../../lib/groupHeader';
 import { FOCUS_FIELD } from '../../../lib/focusGrouping';
-import { isLabelGroupField, type IssueGroup } from '../../../lib/issueView';
+import {
+  hiddenColumnKey,
+  hiddenSubGroupKey,
+  isLabelGroupField,
+  splitHiddenSections,
+  type HiddenGroup,
+  type IssueGroup,
+} from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
+import { ContextMenu, Menu, MenuItem, MenuSeparator } from '../../ui/menu';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
@@ -205,6 +222,13 @@ export interface GroupHeaderProps {
   onCreate?: (() => void) | undefined;
   /** True for a sub-group, drawn indented and quieter. */
   nested?: boolean;
+  /**
+   * Folds or unfolds this group and every group beside it, the top level
+   * groups for a group and the sub-groups of the same parent for a sub-group.
+   */
+  onFoldAll?: ((folded: boolean) => void) | undefined;
+  /** Hides the group from the list. */
+  onHide?: (() => void) | undefined;
 }
 
 /** Keeps Space on a checkbox a native toggle rather than the list's peek. */
@@ -259,9 +283,46 @@ const SectionCheckbox: React.FC<{ group: IssueGroup }> = ({ group }) => {
   );
 };
 
+/** The header menu's items, shared by its "..." button and its right click. */
+const GroupMenuItems: React.FC<{
+  onFoldAll?: ((folded: boolean) => void) | undefined;
+  onHide?: (() => void) | undefined;
+}> = ({ onFoldAll, onHide }) => (
+  <>
+    {onFoldAll !== undefined && (
+      <>
+        <MenuItem
+          onSelect={() => {
+            onFoldAll(true);
+          }}
+        >
+          <LuChevronsDownUp aria-hidden="true" className="h-3.5 w-3.5" />
+          Collapse all
+        </MenuItem>
+        <MenuItem
+          onSelect={() => {
+            onFoldAll(false);
+          }}
+        >
+          <LuChevronsUpDown aria-hidden="true" className="h-3.5 w-3.5" />
+          Expand all
+        </MenuItem>
+      </>
+    )}
+    {onFoldAll !== undefined && onHide !== undefined && <MenuSeparator />}
+    {onHide !== undefined && (
+      <MenuItem onSelect={onHide}>
+        <LuEyeOff aria-hidden="true" className="h-3.5 w-3.5" />
+        Hide group
+      </MenuItem>
+    )}
+  </>
+);
+
 /**
- * A group's header: select-all, fold toggle, glyph, name, count and a create
- * button.
+ * A group's header: select-all, fold toggle, glyph, name, count, a create
+ * button and the group menu. Alt+click on the fold toggle folds or unfolds
+ * every group beside it to match the clicked one.
  */
 export const GroupHeader: React.FC<GroupHeaderProps> = ({
   group,
@@ -269,47 +330,152 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
   onToggle,
   onCreate,
   nested = false,
-}) => (
-  <div
-    className={cn(
-      'group/header flex h-9 items-center pointer-coarse:h-11 gap-2 border-b border-line pr-3 pl-2 transition-colors duration-100 hover:bg-raised has-[button[aria-expanded]:active]:bg-line lg:pr-5',
-      nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface'
-    )}
-  >
-    <SectionCheckbox group={group} />
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={!collapsed}
-      data-hover="parent"
-      className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent"
+  onFoldAll,
+  onHide,
+}) => {
+  const [pointer, setPointer] = React.useState<{ x: number; y: number } | null>(
+    null
+  );
+  const hasMenu = onFoldAll !== undefined || onHide !== undefined;
+  const menuLabel = `${group.label} group`;
+  return (
+    <div
+      onContextMenu={(event) => {
+        if (!hasMenu) return;
+        event.preventDefault();
+        setPointer({ x: event.clientX, y: event.clientY });
+      }}
+      className={cn(
+        'group/header flex h-9 items-center pointer-coarse:h-11 gap-2 border-b border-line pr-3 pl-2 transition-colors duration-100 hover:bg-raised has-[button[aria-expanded]:active]:bg-line lg:pr-5',
+        nested ? 'bg-bg pl-7 text-text-muted' : 'sticky top-0 z-20 bg-surface'
+      )}
     >
-      <LuChevronRight
-        aria-hidden="true"
-        className={cn(
-          'h-3.5 w-3.5 shrink-0 text-text-faint transition-transform duration-100',
-          !collapsed && 'rotate-90'
-        )}
-      />
-      <GroupGlyph group={group} />
-      <TruncatedText className="font-medium text-text">
-        {group.label}
-      </TruncatedText>
-      <GroupFigure issues={group.issues} requests={group.requests} />
-    </button>
-    {onCreate !== undefined && (
-      <IconButton
-        label={`New issue in ${group.label}`}
-        size="sm"
-        variant="ghost"
-        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-        onClick={onCreate}
+      <SectionCheckbox group={group} />
+      <button
+        type="button"
+        onClick={(event) => {
+          if (event.altKey && onFoldAll !== undefined) {
+            onFoldAll(!collapsed);
+            return;
+          }
+          onToggle();
+        }}
+        aria-expanded={!collapsed}
+        data-hover="parent"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <LuPlus className="h-3.5 w-3.5" />
-      </IconButton>
-    )}
-  </div>
-);
+        <LuChevronRight
+          aria-hidden="true"
+          className={cn(
+            'h-3.5 w-3.5 shrink-0 text-text-faint transition-transform duration-100',
+            !collapsed && 'rotate-90'
+          )}
+        />
+        <GroupGlyph group={group} />
+        <TruncatedText className="font-medium text-text">
+          {group.label}
+        </TruncatedText>
+        <GroupFigure issues={group.issues} requests={group.requests} />
+      </button>
+      {hasMenu && (
+        <span className="flex items-center opacity-0 group-focus-within/header:opacity-100 group-hover/header:opacity-100 has-[button[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100">
+          <Menu
+            label={menuLabel}
+            align="end"
+            trigger={(props) => (
+              <IconButton
+                {...props}
+                label={`Group options for ${group.label}`}
+                size="sm"
+                variant="ghost"
+              >
+                <LuEllipsis className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
+          >
+            <GroupMenuItems onFoldAll={onFoldAll} onHide={onHide} />
+          </Menu>
+        </span>
+      )}
+      {onCreate !== undefined && (
+        <IconButton
+          label={`New issue in ${group.label}`}
+          size="sm"
+          variant="ghost"
+          className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+          onClick={onCreate}
+        >
+          <LuPlus className="h-3.5 w-3.5" />
+        </IconButton>
+      )}
+      {pointer !== null && (
+        <ContextMenu
+          x={pointer.x}
+          y={pointer.y}
+          label={menuLabel}
+          onClose={() => {
+            setPointer(null);
+          }}
+        >
+          <GroupMenuItems onFoldAll={onFoldAll} onHide={onHide} />
+        </ContextMenu>
+      )}
+    </div>
+  );
+};
+
+/**
+ * The quiet row at the foot of a list that counts its hidden groups and opens
+ * a menu of them, where one click brings a group back.
+ */
+export const HiddenGroupsRow: React.FC<{
+  hidden: readonly HiddenGroup[];
+  onShow: (key: string) => void;
+}> = ({ hidden, onShow }) => {
+  if (hidden.length === 0) return null;
+  const count =
+    hidden.length === 1 ? '1 hidden group' : `${hidden.length} hidden groups`;
+  return (
+    <div className="flex h-9 items-center pr-3 pl-2 pointer-coarse:h-11 lg:pr-5">
+      <Menu
+        label="Hidden groups"
+        trigger={(props) => (
+          <button
+            {...props}
+            type="button"
+            className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-text-faint transition-colors duration-100 pointer-coarse:h-11 hover:bg-raised hover:text-text-muted focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <LuEyeOff aria-hidden="true" className="h-3.5 w-3.5" />
+            {count}
+          </button>
+        )}
+      >
+        {hidden.map(({ key, group, parent }) => {
+          const name =
+            parent === undefined
+              ? group.label
+              : `${parent.label} / ${group.label}`;
+          return (
+            <MenuItem
+              key={key}
+              textValue={name}
+              onSelect={() => {
+                onShow(key);
+              }}
+            >
+              <GroupGlyph group={group} />
+              <span className="min-w-0 flex-1 truncate">
+                <span className="sr-only">Show </span>
+                {name}
+              </span>
+              <GroupFigure issues={group.issues} requests={group.requests} />
+            </MenuItem>
+          );
+        })}
+      </Menu>
+    </div>
+  );
+};
 
 /** The quiet mark an archived issue carries in a view that lists them. */
 export const ArchivedMarker: React.FC<{ className?: string }> = ({
@@ -551,6 +717,11 @@ export interface ListRowsProps {
   onToggle: (key: string) => void;
   /** True to nest sub-issues under a parent in the same section. */
   nest?: boolean;
+  /**
+   * Folds or unfolds many keys at once, for Collapse all and Expand all. Left
+   * out, each key that differs is toggled in turn.
+   */
+  onFoldMany?: ((keys: readonly string[], folded: boolean) => void) | undefined;
   /** Files an issue into a group, or undefined when it cannot. */
   createIn?:
     | ((group: IssueGroup, sub?: IssueGroup) => (() => void) | undefined)
@@ -594,75 +765,115 @@ const Rows: React.FC<{
   );
 };
 
-/** Every section, its header and its rows. */
+/**
+ * Every shown section, its header and its rows, then the hidden groups row.
+ * Groups hidden through the board's hidden column keys, or a sub-group hidden
+ * inside its parent, drop out of the list.
+ */
 export const ListRows: React.FC<ListRowsProps> = ({
   sections,
   collapsed,
   onToggle,
   nest = false,
+  onFoldMany,
   createIn,
-}) => (
-  <div
-    style={
-      { [KEY_WIDTH_VAR]: String(keyColumnCh(sections)) } as React.CSSProperties
+}) => {
+  const { shown, hidden } = splitHiddenSections(sections, collapsed);
+  const foldMany = (keys: readonly string[], folded: boolean): void => {
+    if (onFoldMany !== undefined) {
+      onFoldMany(keys, folded);
+      return;
     }
-  >
-    {sections.map(({ group, subs }) => {
-      const grouped = group.field !== 'none';
-      const folded = collapsed.has(group.key);
-      return (
-        <section key={group.key} aria-label={grouped ? group.label : 'Issues'}>
-          {grouped && (
-            <GroupHeader
-              group={group}
-              collapsed={folded}
-              onToggle={() => {
-                onToggle(group.key);
-              }}
-              onCreate={createIn?.(group)}
-            />
-          )}
-          {!folded &&
-            (subs === null ? (
-              <Rows
-                issues={group.issues}
-                label={group.label}
-                nest={nest}
-                collapsed={collapsed}
-                onToggle={onToggle}
+    for (const key of keys) {
+      if (collapsed.has(key) !== folded) onToggle(key);
+    }
+  };
+  const groupKeys = shown
+    .filter(({ group }) => group.field !== 'none')
+    .map(({ group }) => group.key);
+  return (
+    <div
+      style={
+        {
+          [KEY_WIDTH_VAR]: String(keyColumnCh(shown)),
+        } as React.CSSProperties
+      }
+    >
+      {shown.map(({ group, subs }) => {
+        const grouped = group.field !== 'none';
+        const folded = collapsed.has(group.key);
+        const subKeys =
+          subs === null ? [] : subs.map((sub) => `${group.key}/${sub.key}`);
+        return (
+          <section
+            key={group.key}
+            aria-label={grouped ? group.label : 'Issues'}
+          >
+            {grouped && (
+              <GroupHeader
+                group={group}
+                collapsed={folded}
+                onToggle={() => {
+                  onToggle(group.key);
+                }}
+                onCreate={createIn?.(group)}
+                onFoldAll={(fold) => {
+                  foldMany(groupKeys, fold);
+                }}
+                onHide={() => {
+                  onToggle(hiddenColumnKey(group.key));
+                }}
               />
-            ) : (
-              subs.map((sub) => {
-                const subKey = `${group.key}/${sub.key}`;
-                const subFolded = collapsed.has(subKey);
-                return (
-                  <div key={subKey}>
-                    <GroupHeader
-                      nested
-                      group={sub}
-                      collapsed={subFolded}
-                      onToggle={() => {
-                        onToggle(subKey);
-                      }}
-                      onCreate={createIn?.(group, sub)}
-                    />
-                    {!subFolded && (
-                      <Rows
-                        issues={sub.issues}
-                        label={`${group.label}, ${sub.label}`}
-                        nest={nest}
-                        collapsed={collapsed}
-                        onToggle={onToggle}
+            )}
+            {!folded &&
+              (subs === null ? (
+                <Rows
+                  issues={group.issues}
+                  label={group.label}
+                  nest={nest}
+                  collapsed={collapsed}
+                  onToggle={onToggle}
+                />
+              ) : (
+                subs.map((sub) => {
+                  const subKey = `${group.key}/${sub.key}`;
+                  const subFolded = collapsed.has(subKey);
+                  return (
+                    <div key={subKey}>
+                      <GroupHeader
+                        nested
+                        group={sub}
+                        collapsed={subFolded}
+                        onToggle={() => {
+                          onToggle(subKey);
+                        }}
+                        onCreate={createIn?.(group, sub)}
+                        onFoldAll={(fold) => {
+                          foldMany(subKeys, fold);
+                        }}
+                        onHide={() => {
+                          onToggle(hiddenSubGroupKey(group.key, sub.key));
+                        }}
                       />
-                    )}
-                  </div>
-                );
-              })
-            ))}
-        </section>
-      );
-    })}
-  </div>
-);
+                      {!subFolded && (
+                        <Rows
+                          issues={sub.issues}
+                          label={`${group.label}, ${sub.label}`}
+                          nest={nest}
+                          collapsed={collapsed}
+                          onToggle={onToggle}
+                        />
+                      )}
+                    </div>
+                  );
+                })
+              ))}
+          </section>
+        );
+      })}
+      <HiddenGroupsRow hidden={hidden} onShow={onToggle} />
+    </div>
+  );
+};
 
 export default ListRows;
