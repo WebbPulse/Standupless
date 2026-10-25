@@ -76,13 +76,26 @@ def _until(value: Any) -> Any:
         raise ToolError("until must be an ISO 8601 date and time, such as 2026-10-10T09:00:00Z") from exc
 
 
+def _accept_status(call: ToolCall, team_id: str, reference: str) -> str:
+    """The status an accept names, by id or by one exact name, else as given so the refusal lists the team's."""
+    rows = call.repositories.team_config.list_statuses(call.context.workspace_id, team_id)
+    if any(row.status_id == reference for row in rows):
+        return reference
+    folded = reference.strip().casefold()
+    named = [row for row in rows if not row.hidden and row.name.casefold() == folded]
+    return named[0].status_id if len(named) == 1 else reference
+
+
 def _triage_issue(call: ToolCall) -> Any:
     """Work one waiting issue: accept, decline, close as duplicate or snooze it."""
     issue = issue_ref(call, call.require("issue_id"))
     action = call.require("action")
     repositories, context = call.repositories, call.context
     if action == "accept":
-        payload = TriageAccept.model_validate(given_arguments(call, ("status_id", "comment")))
+        arguments = given_arguments(call, ("status_id", "comment"))
+        if arguments.get("status_id") is not None:
+            arguments["status_id"] = _accept_status(call, issue.team_id, str(arguments["status_id"]))
+        payload = TriageAccept.model_validate(arguments)
         return _answer(call, issue_triage.accept(repositories, context, issue.issue_id, payload))
     if action == "decline":
         payload_decline = TriageDecline.model_validate(given_arguments(call, ("reason",)))
@@ -148,7 +161,7 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
             {
                 "issue_id": string("The waiting issue: id or key such as ENG-12"),
                 "action": enum(TRIAGE_ACTIONS, "What to do with the issue"),
-                "status_id": string("accept: the status to accept into"),
+                "status_id": string("accept: the status to accept into, by id or name"),
                 "comment": string("accept: a comment posted on the issue as you, beside the accept"),
                 "reason": string("decline: why, kept in the issue's history"),
                 "duplicate_of_id": string("duplicate: the issue this one duplicates, id or key"),
