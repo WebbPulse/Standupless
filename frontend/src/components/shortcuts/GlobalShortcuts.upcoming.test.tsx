@@ -21,7 +21,7 @@ import ShortcutHelp from './ShortcutHelp';
 import ShortcutProvider from './ShortcutProvider';
 
 const navigate = vi.fn();
-const showToast = vi.fn();
+const showToast = vi.fn<(message: string) => void>();
 const listCycles =
   vi.fn<
     (
@@ -48,7 +48,10 @@ vi.mock('../../lib/toast', async () => {
     await vi.importActual<typeof import('../../lib/toast')>('../../lib/toast');
   return {
     ...actual,
-    showToast: (message: string) => showToast(message),
+    showToast: (message: string) => {
+      showToast(message);
+      return 0;
+    },
   };
 });
 
@@ -92,10 +95,7 @@ const cycle = (
   }) as CycleRead;
 
 /** Renders the global shortcuts on a route, with the help when asked. */
-const renderShortcuts = async (
-  path: string,
-  { help = false, currentUserId = 'user-1' as string | undefined } = {}
-) => {
+const renderShortcuts = async (path: string, { help = false } = {}) => {
   const user = userEvent.setup();
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -103,7 +103,7 @@ const renderShortcuts = async (
         <GlobalShortcuts
           workspace={workspace}
           teams={teams}
-          currentUserId={currentUserId}
+          currentUserId="user-1"
           onShowHelp={() => undefined}
         />
         {help && <ShortcutHelp open onClose={() => undefined} />}
