@@ -174,7 +174,7 @@ def _scope(workspace_id: str, member_id: str) -> str:
     return f"member-activity:{workspace_id}:{member_id}"
 
 
-def _cursor_at(scope: str, created_at: datetime, row_id: str) -> str:
+def _cursor_at(scope: str, created_at: datetime, row_id: str) -> Optional[str]:
     """A cursor that resumes the feed strictly after the row it names."""
     return encode_start_key({"t": created_at.isoformat(), "i": row_id}, scope=scope)
 
