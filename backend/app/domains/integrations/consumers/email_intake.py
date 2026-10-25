@@ -14,6 +14,9 @@ A mail is dropped when SES's verdicts fail it, when no live address it was sent
 to resolves, when it replies to a mail already filed, when its address has
 passed its hourly ceiling, or when its Message-ID was already filed.
 
+The issue keeps the sender as its requester, their address masked, so triage and
+the issue show who asked even when they hold no seat.
+
 A filed mail whose sender writes from a domain one of the workspace's customers
 claims also gets a customer request tying the issue to that customer, through
 `app.common.customer_intake`; a failure there is logged and never fails intake.
@@ -40,13 +43,15 @@ from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.customer_intake import file_intake_request
 from app.common.db.dynamo.attachments import build_attachment, new_upload_id, object_key, stored_bytes
 from app.common.db.dynamo.email_intake import EmailIntake
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import Issue, IssueRequester
 from app.common.email_replies import reply_tokens
 from app.common.issue_rules import triage_on
 from app.common.issue_writes import create_issue
 from app.common.plan_limits import storage_limit_of
 from app.common.recurring_issues import creator_context
+from app.common.requesters import email_requester
 from app.common.upload_rules import ATTACHMENT_CONTENT_TYPES, normalized_content_type, upload_ceiling
+from app.domains.integrations.chat.people import NotLinked, member_context
 from app.domains.integrations.email_intake import intake_domain
 from app.domains.integrations.email_replies import handle_reply
 from app.domains.integrations.intake_mail import (
@@ -237,7 +242,26 @@ def _create(repositories: Repositories, intake: EmailIntake, mail: IntakeMail) -
         body=_body(mail),
         triage=triage_on(repositories, workspace_id, intake.team_id),
     )
-    return create_issue(repositories, replace(context, source=EMAIL), payload, origin_ref=mail.message_id)
+    return create_issue(
+        repositories,
+        replace(context, source=EMAIL),
+        payload,
+        origin_ref=mail.message_id,
+        requester=_requester(repositories, workspace_id, mail),
+    )
+
+
+def _requester(repositories: Repositories, workspace_id: str, mail: IntakeMail) -> IssueRequester:
+    """Who sent the mail, their address masked, and the member behind it when the address is a member's.
+
+    The mail has passed SES's SPF, DKIM and DMARC verdicts by now, so the sender
+    address is the one that sent it and may name a member.
+    """
+    try:
+        user_id: Optional[str] = member_context(repositories, workspace_id, mail.sender_address).user_id
+    except NotLinked:
+        user_id = None
+    return email_requester(mail.sender_name, mail.sender_address, user_id=user_id)
 
 
 def safe_filename(name: str, index: int) -> str:

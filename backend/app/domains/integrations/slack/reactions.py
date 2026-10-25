@@ -10,7 +10,8 @@ the issue's comments from then on.
 The issue is written as the person who reacted when they are a member who can
 create issues in the team, and otherwise as the admin who turned intake on, the
 same fallback email intake uses, so a reaction from someone without a Standupless
-account still files the message. Every message is claimed once per team before
+account still files the message. The message's author is kept as the issue's
+requester, so triage shows who asked even when they hold no seat. Every message is claimed once per team before
 anything is written, so a second reaction, a second person reacting or a
 redelivered event files nothing more. Nothing here calls a model: the title is the
 message's first line.
@@ -31,13 +32,15 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import IssueCreate
 from app.common.change_source import SLACK
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import Issue, IssueRequester
 from app.common.db.dynamo.slack import SlackInstallation
 from app.common.db.dynamo.slack_intake import SlackReactionClaim, SlackReactionIntake, reaction_key
 from app.common.issue_rules import triage_on
 from app.common.issue_writes import create_issue
 from app.common.recurring_issues import creator_context
+from app.common.requesters import slack_requester
 from app.domains.integrations.chat import issues as chat_issues
+from app.domains.integrations.chat.people import NotLinked, member_context
 from app.domains.integrations.slack import install, people, threads
 from app.domains.integrations.slack.api import SlackError
 
@@ -129,6 +132,26 @@ def _creator(
     return replace(context, source=SLACK) if context is not None else None
 
 
+def _requester(
+    repositories: Repositories, installation: SlackInstallation, message: Mapping[str, Any]
+) -> Optional[IssueRequester]:
+    """Who wrote the message, as the issue's requester, linked to their member when Slack's confirmed email names one."""
+    author = str(message.get("user", "") or "")
+    if not author or author == installation.bot_user_id:
+        return None
+    try:
+        profile = install.call(installation, "users.info", {"user": author})
+    except (SlackError, install.BotUnavailable):
+        return None
+    try:
+        user_id: Optional[str] = member_context(
+            repositories, installation.workspace_id, people.email_of(profile)
+        ).user_id
+    except NotLinked:
+        user_id = None
+    return slack_requester(profile, author, user_id=user_id)
+
+
 def _body(text: str, permalink: str) -> str:
     """The issue description: the message as Markdown, then the link back, held to the body cap."""
     tail = f"\n\nFrom Slack: {permalink}" if permalink else ""
@@ -167,7 +190,7 @@ def _file(
     except ValidationError:
         _dropped("unreadable")
         return None
-    issue = create_issue(repositories, context, payload)
+    issue = create_issue(repositories, context, payload, requester=_requester(repositories, installation, message))
     _log.info("Filed a Slack message from an emoji reaction.", extra={"event": "integrations.slack.reaction_filed"})
     threads.pair(
         repositories,

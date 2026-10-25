@@ -12208,6 +12208,91 @@
         "title": "IssueReminderWrite",
         "type": "object"
       },
+      "IssueRequesterRead": {
+        "description": "Who asked for an issue Slack or email intake filed, shown even when they hold no seat.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requester's Slack avatar.",
+            "title": "Avatar Url"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requester's Slack user id.",
+            "title": "External Id"
+          },
+          "handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requester's Slack display name.",
+            "title": "Handle"
+          },
+          "masked_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sender's address, masked as `j***@example.com`; the full address is never kept.",
+            "title": "Masked Email"
+          },
+          "name": {
+            "default": "",
+            "description": "The requester's name, empty when the intake knew none.",
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "description": "The intake the request came through.",
+            "enum": [
+              "slack",
+              "email"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace member behind the requester, when one matched.",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "IssueRequesterRead",
+        "type": "object"
+      },
       "IssueSyncListRead": {
         "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
         "properties": {
@@ -31413,6 +31498,17 @@
             "default": 0,
             "title": "Relation Count",
             "type": "integer"
+          },
+          "requester": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IssueRequesterRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who asked, for an issue Slack or email intake filed on someone's behalf, seat or no seat."
           },
           "sla_breaches_at": {
             "anyOf": [
