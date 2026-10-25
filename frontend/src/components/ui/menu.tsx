@@ -60,7 +60,7 @@ export interface MenuProps {
   children: React.ReactNode;
   className?: string;
   /** Hears the list open and close, for a page whose own keys must stand down meanwhile. */
-  onOpenChange?: (open: boolean) => void;
+  onOpenChange?: ((open: boolean) => void) | undefined;
 }
 
 const ITEM_SELECTOR =
