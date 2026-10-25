@@ -7,6 +7,10 @@ in the cycle it leaves, and each one stamped with that cycle so the planning
 rollup counts the carry-over on both rows. An issue whose status the team does
 not know is left alone rather than guessed at.
 
+Starting a cycle today also queues the team channel posts of the ended cycle's
+completion, counted before the move, and of the new cycle's start, under the
+same delivery ids the next cycle close derives, so neither posts twice.
+
 "End cycle today" moves nothing itself: it ends the current cycle at the close
 of today, and the hourly cycle close rolls its unfinished issues on under the
 same rule once the day is over.
@@ -26,6 +30,13 @@ from fastapi import HTTPException, status
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import CycleRead, CycleStartTodayRead
+from app.common.cycle_announcements import (
+    CYCLE_COMPLETED,
+    CYCLE_STARTED,
+    CycleTally,
+    queue_cycle_announcement,
+    tally_cycle,
+)
 from app.common.cycle_schedule import active_cycle, relative_cycle
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
@@ -139,7 +150,9 @@ def start_cycle_today(
     )
 
     moved = 0
+    tally: Optional[CycleTally] = None
     if current is not None:
+        tally = tally_cycle(repositories, context.workspace_id, team_id, current.cycle_id)
         moved = carry_unfinished(
             repositories,
             context.workspace_id,
@@ -149,6 +162,11 @@ def start_cycle_today(
             actor_id=context.user_id,
             actor_kind="user",
         )
+    if ended is not None and tally is not None:
+        queue_cycle_announcement(
+            ended, CYCLE_COMPLETED, CycleTally(scope=tally.scope, completed=tally.completed, rolled_over=moved)
+        )
+    queue_cycle_announcement(started, CYCLE_STARTED)
     return StartedToday(cycle=started, ended=ended, moved=moved)
 
 

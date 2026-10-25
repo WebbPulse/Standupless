@@ -2703,6 +2703,9 @@ CHANNEL_EVENTS = (
     "project_update_posted",
     "project_update_due",
     "standup_digest",
+    "initiative_update_posted",
+    "cycle_started",
+    "cycle_completed",
 )
 
 CHANNEL_COLUMNS = ["LABEL", "PROVIDER", "URL", "EVENTS", "STATE", "ID"]

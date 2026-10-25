@@ -21,9 +21,18 @@ from webbpulse.events.webhooks import WebhookResponse
 from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.channels import ChannelDestination, ChannelScope, channel_key, new_channel_id
-from app.common.db.dynamo.planning import Project, project_key, project_update_key
+from app.common.db.dynamo.planning import (
+    Cycle,
+    Initiative,
+    Project,
+    cycle_key,
+    initiative_key,
+    initiative_update_key,
+    project_key,
+    project_update_key,
+)
 from app.domains.integrations.channels import delivery, events, urls
-from app.domains.integrations.channels.messages import ChannelMessage, discord_body, render, slack_body
+from app.domains.integrations.channels.messages import EVENT_COLORS, ChannelMessage, discord_body, render, slack_body
 from app.domains.integrations.consumers import dispatch, stream
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE, sqs_record
@@ -974,3 +983,220 @@ def test_purging_a_team_unfollows_it_from_workspace_channels(
     assert kept is not None and kept.team_ids == [OTHER_TEAM] and kept.enabled is True
     assert emptied is not None and emptied.team_ids == [] and emptied.enabled is False
     assert untouched is not None and untouched.enabled is True
+
+
+def initiative(repositories: Any, *, lead: str | None = None, project_teams: tuple[list[str], ...] = ()) -> str:
+    """Store one initiative led by `lead`, holding one project per entry of `project_teams`."""
+    stored = repositories.planning.create_initiative(
+        Initiative(
+            workspace_id=WORKSPACE,
+            planning_key=initiative_key("I1"),
+            initiative_id="I1",
+            name="Grow revenue",
+            team_id=lead,
+            created_by=OWNER,
+        )
+    )
+    for index, team_ids in enumerate(project_teams):
+        project_id = f"P{index + 1}"
+        repositories.planning.create_project(
+            Project(
+                workspace_id=WORKSPACE,
+                planning_key=project_key(project_id),
+                project_id=project_id,
+                team_ids=team_ids,
+                name=f"Project {index + 1}",
+                created_by=OWNER,
+                initiative_id=stored.initiative_id,
+            )
+        )
+    return stored.initiative_id
+
+
+def initiative_update(initiative_id: str = "I1", update_id: str = "U1", **fields: Any) -> dict[str, Any]:
+    """One initiative update row as the planning stream image carries it."""
+    return {
+        "workspace_id": WORKSPACE,
+        "planning_key": initiative_update_key(initiative_id, update_id),
+        "kind": "initiative_update",
+        "initiative_id": initiative_id,
+        "update_id": update_id,
+        "author_id": OWNER,
+        "body": "Ahead of plan",
+        "health": "on_track",
+        "created_at": "2026-10-20T12:00:00+00:00",
+        **fields,
+    }
+
+
+def test_an_initiative_update_reaches_every_team_of_its_projects_and_a_workspace_channel_once(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """Each project team's channel posts once with the health, a workspace channel once, and a redelivery adds nothing."""
+    initiative(repositories, project_teams=([TEAM], [TEAM, OTHER_TEAM]))
+    ours = make_channel(repositories, events_=["initiative_update_posted"], url=DISCORD_URL)
+    theirs = make_channel(repositories, events_=["initiative_update_posted"], team_id=OTHER_TEAM)
+    wide = app_channel(repositories, events_=["initiative_update_posted"])
+    make_channel(repositories, events_=["project_update_posted"])
+
+    stream.handle_record(repositories, record("INSERT", initiative_update(), table="planning"))
+    stream.handle_record(repositories, record("INSERT", initiative_update(), table="planning"))
+
+    assert sorted({job["channel_id"] for job in queue.jobs}) == sorted(
+        [ours.channel_id, theirs.channel_id, wide.channel_id]
+    )
+    assert len({(job["channel_id"], job["delivery_id"]) for job in queue.jobs}) == 3
+    embed = delivery_body(repositories, next(job for job in queue.jobs if job["channel_id"] == ours.channel_id))[
+        "embeds"
+    ][0]
+    assert embed["title"] == "Grow revenue"
+    assert embed["fields"] == [{"name": "Health", "value": "On track", "inline": True}]
+    assert embed["author"] == {"name": "Olive Owner"}
+    assert "I1" in embed["url"] and "U1" in embed["url"]
+
+
+def test_a_private_lead_team_keeps_its_initiative_update(repositories: Any, workspace: str, queue: Queue) -> None:
+    """An initiative led by a private team posts only to that team's channel, never a project team's."""
+    initiative(repositories, lead=TEAM, project_teams=([OTHER_TEAM],))
+    repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "member")
+    ours = make_channel(repositories, events_=["initiative_update_posted"])
+    make_channel(repositories, events_=["initiative_update_posted"], team_id=OTHER_TEAM)
+    app_channel(repositories, events_=["initiative_update_posted"])
+
+    stream.handle_record(repositories, record("INSERT", initiative_update(), table="planning"))
+
+    assert [job["channel_id"] for job in queue.jobs] == [ours.channel_id]
+
+
+def test_a_teamless_initiative_update_reaches_only_all_teams_workspace_channels(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """With no lead team and no project, a workspace channel set to every team posts and a filtered one does not."""
+    initiative(repositories)
+    wide = app_channel(repositories, events_=["initiative_update_posted"])
+    app_channel(repositories, slack_channel_id="C0XYZ", team_ids=[OTHER_TEAM], events_=["initiative_update_posted"])
+    make_channel(repositories, events_=["initiative_update_posted"])
+
+    stream.handle_record(repositories, record("INSERT", initiative_update(), table="planning"))
+    stream.handle_record(
+        repositories, record("MODIFY", initiative_update(body="Edited"), initiative_update(), table="planning")
+    )
+
+    assert [job["channel_id"] for job in queue.jobs] == [wide.channel_id]
+
+
+def test_an_update_of_a_deleted_initiative_posts_nothing(repositories: Any, workspace: str, queue: Queue) -> None:
+    """The initiative is read when the update is announced, and a missing one ends it."""
+    app_channel(repositories, events_=["initiative_update_posted"])
+
+    stream.handle_record(repositories, record("INSERT", initiative_update("GONE"), table="planning"))
+
+    assert queue.jobs == []
+
+
+def cycle(repositories: Any, **fields: Any) -> Cycle:
+    """Store one cycle of TEAM."""
+    values: dict[str, Any] = {
+        "workspace_id": WORKSPACE,
+        "planning_key": cycle_key(TEAM, "C1"),
+        "cycle_id": "C1",
+        "team_id": TEAM,
+        "name": "Sprint 4",
+        "start_date": "2026-10-05",
+        "end_date": "2026-10-18",
+        "goal": "Ship channels",
+        "created_by": OWNER,
+        **fields,
+    }
+    return repositories.planning.create_cycle(Cycle(**values))
+
+
+def test_a_cycle_completion_posts_its_counts_once(repositories: Any, workspace: str, queue: Queue) -> None:
+    """The scope, completed and rolled over counts are fields, and a repeat of the same moment posts nothing more."""
+    cycle(repositories)
+    channel = make_channel(repositories, events_=["cycle_completed"], url=DISCORD_URL)
+    make_channel(repositories, events_=["cycle_started"])
+    counts = {"scope": 9, "completed": 6, "rolled_over": 3}
+
+    assert events.announce_cycle(repositories, WORKSPACE, TEAM, "C1", "cycle_completed", "2026-10-18", counts) == 1
+    events.announce_cycle(repositories, WORKSPACE, TEAM, "C1", "cycle_completed", "2026-10-18", {"scope": 1})
+
+    assert {job["channel_id"] for job in queue.jobs} == {channel.channel_id}
+    assert len({job["delivery_id"] for job in queue.jobs}) == 1
+    embed = delivery_body(repositories, queue.jobs[0])["embeds"][0]
+    assert embed["title"].endswith("Sprint 4")
+    assert embed["color"] == EVENT_COLORS["cycle_completed"]
+    assert embed["fields"] == [
+        {"name": "Scope", "value": "9", "inline": True},
+        {"name": "Completed", "value": "6", "inline": True},
+        {"name": "Rolled over", "value": "3", "inline": True},
+    ]
+
+
+def test_a_cycle_start_posts_its_dates_and_goal_to_slack(repositories: Any, workspace: str, queue: Queue) -> None:
+    """The Slack body names the cycle and carries the dates and the goal."""
+    cycle(repositories)
+    make_channel(repositories, events_=["cycle_started"])
+
+    assert events.announce_cycle(repositories, WORKSPACE, TEAM, "C1", "cycle_started", "2026-10-05") == 1
+
+    text = json.dumps(delivery_body(repositories, queue.jobs[0]))
+    assert "Sprint 4" in text and "2026-10-05 to 2026-10-18" in text and "Ship channels" in text
+
+
+@pytest.mark.parametrize(
+    ("event", "day", "fields"),
+    [
+        ("cycle_started", "2026-10-04", {}),
+        ("cycle_completed", "2026-10-17", {}),
+        ("cycle_started", "2026-10-05", {"cancelled": True}),
+        ("cycle_finished", "2026-10-18", {}),
+    ],
+)
+def test_a_cycle_whose_moment_does_not_match_posts_nothing(
+    repositories: Any, workspace: str, queue: Queue, event: str, day: str, fields: dict[str, Any]
+) -> None:
+    """A date that is not the cycle's own, a cancelled cycle, or an unknown event posts nothing."""
+    cycle(repositories, **fields)
+    make_channel(repositories, events_=["cycle_started", "cycle_completed"])
+
+    assert events.announce_cycle(repositories, WORKSPACE, TEAM, "C1", event, day) == 0
+    assert queue.jobs == []
+
+
+def test_the_dispatch_consumer_posts_a_queued_cycle_completion_once(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """The cycle close's queued job posts once however often it arrives, and a malformed one is dropped."""
+    cycle(repositories)
+    make_channel(repositories, events_=["cycle_completed"], url=DISCORD_URL)
+    job = {
+        "kind": "channel.cycle",
+        "event": "cycle_completed",
+        "workspace_id": WORKSPACE,
+        "team_id": TEAM,
+        "cycle_id": "C1",
+        "date": "2026-10-18",
+        "scope": 4,
+        "completed": 3,
+        "rolled_over": 1,
+    }
+
+    dispatch.handle_record(repositories, sqs_record(job))
+    dispatch.handle_record(repositories, sqs_record(job))
+    dispatch.handle_record(repositories, sqs_record({**job, "date": "not a date"}))
+    dispatch.handle_record(repositories, sqs_record({**job, "cycle_id": ""}))
+
+    assert len({queued["delivery_id"] for queued in queue.jobs}) == 1
+    fields = delivery_body(repositories, queue.jobs[0])["embeds"][0]["fields"]
+    assert [field["value"] for field in fields] == ["4", "3", "1"]
+
+
+def test_the_new_events_are_selectable_and_coloured() -> None:
+    """The three events are in the filter list and carry their own colours."""
+    from app.common.db.dynamo.channels import CHANNEL_EVENTS
+
+    for event in ("initiative_update_posted", "cycle_started", "cycle_completed"):
+        assert event in CHANNEL_EVENTS
+        assert event in EVENT_COLORS

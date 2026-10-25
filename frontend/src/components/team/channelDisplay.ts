@@ -15,6 +15,9 @@ export const CHANNEL_EVENT_LABELS: Record<ChannelEvent, string> = {
   project_update_posted: 'Project update posted',
   project_update_due: 'Project update due',
   standup_digest: 'Standup digest',
+  initiative_update_posted: 'Initiative update posted',
+  cycle_started: 'Cycle started',
+  cycle_completed: 'Cycle completed',
 };
 
 /** A channel's events as one line, in the order the form lists them. */

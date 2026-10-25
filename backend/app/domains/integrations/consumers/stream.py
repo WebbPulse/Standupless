@@ -501,6 +501,8 @@ def handle_record(
             publish(repositories, kind, record, cache, RESOLVERS.get(kind.resource_type))
         if kind is payloads.PROJECT_UPDATE:
             channel_events.on_planning(repositories, record, channel_cache)
+        elif kind is payloads.INITIATIVE_UPDATE:
+            channel_events.on_initiative_update(repositories, record, channel_cache)
     elif physical == table_name("team_config", prefix):
         if _is_label(record):
             publish(repositories, payloads.LABEL, record, cache)

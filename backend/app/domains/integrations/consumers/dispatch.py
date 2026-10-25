@@ -26,6 +26,7 @@ from webbpulse.events import register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.chat_digests import CHAT_DIGEST_JOB
+from app.common.cycle_announcements import CHANNEL_CYCLE_JOB
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
@@ -158,6 +159,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         send_digest(repositories, job)
     elif kind == CHANNEL_STANDUP_JOB:
         _announce_standup(repositories, job)
+    elif kind == CHANNEL_CYCLE_JOB:
+        _announce_cycle(repositories, job)
     elif kind == LEGACY_DELIVER_JOB:
         _log.info(
             "Dropped a webhook job queued in the retired shape.",
@@ -246,6 +249,33 @@ def _announce_standup(repositories: Repositories, job: Mapping[str, Any]) -> Non
         )
         return
     announce_standup_digest(repositories, workspace_id, team_id, day)
+
+
+def _announce_cycle(repositories: Repositories, job: Mapping[str, Any]) -> None:
+    """Post one cycle start or completion, queued by the cycle close or an early start, to the team channels.
+
+    The seed is the cycle, the event and its date, so a job delivered twice, or
+    queued by every hourly sweep of a day, posts once. A job missing a field is dropped.
+    """
+    from app.domains.integrations.channels.events import announce_cycle
+
+    workspace_id = str(job.get("workspace_id", ""))
+    team_id = str(job.get("team_id", ""))
+    cycle_id = str(job.get("cycle_id", ""))
+    event = str(job.get("event", ""))
+    day = str(job.get("date", ""))
+    if not workspace_id or not team_id or not cycle_id or not event or not day:
+        _log.warning(
+            "Dropped a cycle announcement job missing its fields.",
+            extra={"event": "integrations.dispatch.cycle_malformed"},
+        )
+        return
+    counts: dict[str, int] = {}
+    for name in ("scope", "completed", "rolled_over"):
+        value = job.get(name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            counts[name] = value
+    announce_cycle(repositories, workspace_id, team_id, cycle_id, event, day, counts)
 
 
 def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:

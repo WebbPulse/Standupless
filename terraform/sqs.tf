@@ -84,6 +84,25 @@ resource "aws_iam_role_policy" "views_notify_dispatch_queue" {
   })
 }
 
+resource "aws_iam_role_policy" "cycle_announcement_dispatch_queue" {
+  for_each = local.github_queues_enabled ? toset(["issues", "planning"]) : toset([])
+
+  name = "${each.key}-dispatch-queue"
+  role = module.lambda_domain[each.key].role_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "SendCycleAnnouncements"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage", "sqs:GetQueueUrl", "sqs:GetQueueAttributes"]
+        Resource = [module.webhook_dispatch_queue[0].queue_arn]
+      },
+    ]
+  })
+}
+
 locals {
   team_purge_enabled = local.domain_functions_enabled && var.team_purge_enabled
 

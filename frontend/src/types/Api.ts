@@ -4723,6 +4723,9 @@ export const CHANNEL_EVENTS = [
   'project_update_posted',
   'project_update_due',
   'standup_digest',
+  'initiative_update_posted',
+  'cycle_started',
+  'cycle_completed',
 ] as const;
 
 /** One event a team channel may post. */

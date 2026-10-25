@@ -15,13 +15,20 @@ Nothing is sent for a workspace being deleted or a team being deleted.
 `project_update_due` is in the filter so a destination can opt in today. The
 reminder job that decides an update is due calls `announce_project_update_due`,
 and the digest sweep that sends a standup has `announce_standup_digest` post it.
+
+An initiative update reaches the teams of the initiative's projects and its lead
+team, or only the lead team when that team is private, so a private initiative
+never reaches another team's channel. One with no team at all reaches the
+workspace destinations set to every team. A cycle's start and completion are
+queued by the cycle close and by "Start cycle today", and `announce_cycle` posts
+them to the cycle's team.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time as day_time, timezone
 from typing import Any, Callable, Mapping
 
 from webbpulse.events import deserialize_image
@@ -29,13 +36,14 @@ from webbpulse.events import deserialize_image
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.channels import ChannelDestination
-from app.common.db.dynamo.planning import PROJECT_UPDATE
+from app.common.cycle_announcements import CYCLE_COMPLETED, CYCLE_STARTED
+from app.common.db.dynamo.planning import INITIATIVE_UPDATE, PROJECT_UPDATE, Cycle
 from app.common.issue_keys import display_key
 from app.common.project_update_report import report_for_item
 from app.common.standup import StandupDigest, StandupWindowError, build_digest
 from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels.delivery import Enqueue, schedule
-from app.domains.integrations.channels.messages import HEALTH_COLORS, ChannelMessage, excerpt
+from app.domains.integrations.channels.messages import HEALTH_COLORS, ChannelMessage, clip, excerpt
 from app.domains.integrations.outbound.delivery import epoch_to_datetime
 from app.domains.integrations.outbound.payloads import Links
 
@@ -252,6 +260,48 @@ def project_update_candidates(
     return [("project_update_posted", message)], tuple(project.team_ids)
 
 
+def initiative_update_candidates(
+    repositories: Repositories, workspace_id: str, new: Mapping[str, Any]
+) -> tuple[list[Candidate], tuple[str, ...]] | None:
+    """What a new initiative update announces, with the teams it may reach, or `None` when its initiative is gone.
+
+    The teams are the lead team and every team of the initiative's projects, in
+    that order and once each. A private lead team keeps the update to itself, so
+    a private initiative never reaches another team through one of its projects.
+    """
+    initiative = repositories.planning.get_initiative(workspace_id, str(new.get("initiative_id", "")))
+    if initiative is None:
+        return None
+    lead = initiative.team_id or ""
+    teams: tuple[str, ...]
+    if lead and lead in set(repositories.memberships.list_private_team_ids(workspace_id)):
+        teams = (lead,)
+    else:
+        projects = repositories.planning.list_projects(workspace_id)
+        held = [
+            team
+            for project in projects
+            if project.initiative_id == initiative.initiative_id
+            for team in project.team_ids
+        ]
+        teams = tuple(dict.fromkeys(team for team in (lead, *held) if team))
+    health = str(new.get("health", ""))
+    actor = _actor(repositories, new.get("author_id"))
+    message = ChannelMessage(
+        event="initiative_update_posted",
+        subject=initiative.name,
+        url=Links(repositories, workspace_id).initiative_update(
+            initiative.initiative_id, str(new.get("update_id", "")), initiative.name
+        ),
+        summary=f"{actor} posted an initiative update.",
+        actor=actor,
+        detail=excerpt(str(new.get("body", ""))),
+        color=HEALTH_COLORS.get(health),
+        fields=(("Health", HEALTH_NAMES.get(health, health)),) if health else (),
+    )
+    return [("initiative_update_posted", message)], teams
+
+
 def deliver(
     repositories: Repositories,
     workspace_id: str,
@@ -275,12 +325,23 @@ def deliver(
     if not candidates or not destinations:
         return 0
     live = _live(repositories, workspace_id, team_ids)
+    carrying = _carrying(repositories, workspace_id, destinations, live)
+    return _schedule_each(repositories, carrying, candidates, seed=seed, at=at, send=send)
+
+
+def _schedule_each(
+    repositories: Repositories,
+    destinations: list[ChannelDestination],
+    candidates: list[Candidate],
+    *,
+    seed: str,
+    at: datetime | None,
+    send: Enqueue | None,
+) -> int:
+    """Schedule each destination's first wanted candidate, team destinations first and each channel once."""
     events = tuple(event for event, _ in candidates)
     messages = dict(reversed(candidates))
-    ordered = sorted(
-        _carrying(repositories, workspace_id, destinations, live),
-        key=lambda row: (row.scope != "team", row.channel_id),
-    )
+    ordered = sorted(destinations, key=lambda row: (row.scope != "team", row.channel_id))
     claimed: set[str] = set()
     scheduled = 0
     for destination in ordered:
@@ -345,6 +406,130 @@ def on_planning(repositories: Repositories, record: Mapping[str, Any], cache: De
     destinations = [row for row in rows if row.enabled and any(row.covers(team) for team in teams)]
     seed, at = _stamp(record)
     return deliver(repositories, workspace_id, teams, candidates, seed=seed, at=at, destinations=destinations)
+
+
+def _workspace_wide(
+    repositories: Repositories, workspace_id: str, rows: list[ChannelDestination]
+) -> list[ChannelDestination]:
+    """The workspace destinations set to every team, which alone may carry a post that belongs to no team."""
+    workspace = repositories.workspaces.get(workspace_id)
+    if workspace is None or workspace.deletion_scheduled_at is not None or workspace.purging_at is not None:
+        return []
+    return [row for row in rows if row.enabled and row.scope == "workspace" and not row.team_ids]
+
+
+def on_initiative_update(
+    repositories: Repositories, record: Mapping[str, Any], cache: DestinationCache | None = None
+) -> int:
+    """Announce a newly posted initiative update to the channels of its teams, or the whole workspace's."""
+    if record.get("eventName") != "INSERT":
+        return 0
+    new = deserialize_image(record, "NewImage") or {}
+    if str(new.get("kind", "")) != INITIATIVE_UPDATE:
+        return 0
+    workspace_id = str(new.get("workspace_id", ""))
+    if not workspace_id or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
+        return 0
+    rows = _rows(repositories, workspace_id, cache)
+    if not any(row.enabled and "initiative_update_posted" in row.events for row in rows):
+        return 0
+    described = initiative_update_candidates(repositories, workspace_id, new)
+    if described is None:
+        return 0
+    candidates, teams = described
+    seed, at = _stamp(record)
+    if not teams:
+        wide = _workspace_wide(repositories, workspace_id, rows)
+        return _schedule_each(repositories, wide, candidates, seed=seed, at=at, send=None)
+    destinations = [row for row in rows if row.enabled and any(row.covers(team) for team in teams)]
+    return deliver(repositories, workspace_id, teams, candidates, seed=seed, at=at, destinations=destinations)
+
+
+def cycle_message(
+    repositories: Repositories,
+    workspace_id: str,
+    cycle: Cycle,
+    event: str,
+    counts: Mapping[str, int] | None = None,
+) -> ChannelMessage:
+    """The post for one cycle starting or completing, a completion with its scope and what became of it."""
+    team = repositories.teams.get(workspace_id, cycle.team_id)
+    name = cycle.name or (f"Cycle {cycle.number}" if cycle.number else "Cycle")
+    url = Links(repositories, workspace_id).cycle(cycle.team_id, cycle.cycle_id)
+    dates = f"{cycle.start_date} to {cycle.end_date}"
+    if event == CYCLE_STARTED:
+        fields: tuple[tuple[str, str], ...] = (("Dates", dates),)
+        if cycle.goal:
+            fields += (("Goal", clip(cycle.goal, 200)),)
+        summary = "A cycle started."
+    else:
+        tally = counts or {}
+        fields = (
+            ("Scope", str(int(tally.get("scope", 0)))),
+            ("Completed", str(int(tally.get("completed", 0)))),
+            ("Rolled over", str(int(tally.get("rolled_over", 0)))),
+        )
+        summary = "A cycle completed."
+    return ChannelMessage(
+        event=event,
+        subject=name,
+        url=url,
+        summary=summary,
+        key=team.key_prefix if team is not None else "",
+        fields=fields,
+    )
+
+
+def _day_start(day: str) -> datetime | None:
+    """Midnight UTC of one ISO date, the stable moment a cycle's delivery ids derive from."""
+    try:
+        return datetime.combine(date.fromisoformat(day), day_time(), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def announce_cycle(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    cycle_id: str,
+    event: str,
+    day: str,
+    counts: Mapping[str, int] | None = None,
+    *,
+    send: Enqueue | None = None,
+) -> int:
+    """Post one cycle's start or completion to its team's channels that want it, returning how many were scheduled.
+
+    For the dispatch job the cycle close and "Start cycle today" queue. The seed
+    is the cycle, the event and the date it started or ended, so the same moment
+    queued by every hourly sweep of a day, or by an early start and the sweep
+    after it, posts once. A cycle that is gone, cancelled, or whose dates moved
+    since the job was queued posts nothing.
+    """
+    if event not in (CYCLE_STARTED, CYCLE_COMPLETED):
+        return 0
+    teams = (team_id,)
+    destinations = [row for row in _enabled(repositories, workspace_id, teams, None) if event in row.events]
+    at = _day_start(day)
+    if not destinations or at is None:
+        return 0
+    cycle = repositories.planning.get_cycle(workspace_id, team_id, cycle_id)
+    if cycle is None or cycle.cancelled or cycle.team_id != team_id:
+        return 0
+    if day != (cycle.start_date if event == CYCLE_STARTED else cycle.end_date):
+        return 0
+    message = cycle_message(repositories, workspace_id, cycle, event, counts)
+    return deliver(
+        repositories,
+        workspace_id,
+        teams,
+        [(event, message)],
+        seed=f"{event}#{cycle_id}#{day}",
+        at=at,
+        destinations=destinations,
+        send=send,
+    )
 
 
 def announce_project_update_due(

@@ -322,6 +322,10 @@ locals {
         EMAIL_INTAKE_DOMAIN        = local.email_intake_enabled ? local.email_intake_domain : ""
       } : {},
 
+      contains(["issues", "planning"], name) ? {
+        WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
+      } : {},
+
       startswith(name, "integrations") ? {
         GITHUB_APP_SLUG            = var.github_app_slug
         GITHUB_EVENTS_QUEUE_URL    = local.github_queues_enabled ? module.github_events_queue[0].queue_url : ""
