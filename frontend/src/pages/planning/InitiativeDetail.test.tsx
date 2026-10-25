@@ -7,10 +7,12 @@
  * sub-initiatives show as breadcrumbs, a parent picker, a list of children,
  * rolled-up projects and a progress graph, and that the Projects tab lays the
  * initiative's projects out through the projects page, with or without the
- * projects of sub-initiatives.
+ * projects of sub-initiatives, and that the page's keys open the status,
+ * owner, health and target date pickers, rename it, copy its address and
+ * start an update.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,6 +29,10 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import { initiativePath } from '../../lib/paths';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import InitiativeDetail from './InitiativeDetail';
 
 const getInitiative = vi.fn<() => Promise<InitiativeRead>>();
@@ -637,6 +643,125 @@ describe('InitiativeDetail', () => {
       await waitFor(() => {
         expect(getInitiativeProgress).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('keyboard', () => {
+    /** Renders the page inside a shortcut registry, as the workspace shell does. */
+    const renderWithKeys = (entry = '/w/mine/initiatives/ini-1') =>
+      render(
+        <ShortcutProvider>
+          <BoundKeys />
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route
+                path="/w/:slug/initiatives/:id"
+                element={<InitiativeDetail />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </ShortcutProvider>
+      );
+
+    /** Dispatches one key the way the shortcut layer listens for it. */
+    const press = (key: string, init: KeyboardEventInit = {}) => {
+      act(() => {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, ...init })
+        );
+      });
+    };
+
+    it('binds the property keys on the overview', async () => {
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+
+      await keysBound('s', 'a', 'h', 'shift+d', 'r', 'mod+shift+,', 'shift+u');
+    });
+
+    it('opens the status picker on S and saves the choice', async () => {
+      updateInitiative.mockResolvedValue({ ...grow, status: 'completed' });
+      const user = userEvent.setup();
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+      await keysBound('s');
+
+      press('s');
+      await user.click(
+        await screen.findByRole('option', { name: /Completed/ })
+      );
+
+      await waitFor(() => {
+        expect(updateInitiative).toHaveBeenCalledWith(
+          { status: 'completed' },
+          'ini-1'
+        );
+      });
+    });
+
+    it.each([
+      ['a', {}, 'Owner'],
+      ['h', {}, 'Health'],
+      ['D', { shiftKey: true }, 'Target date'],
+    ])('opens a picker on %s', async (key, init, dialog) => {
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+      await keysBound('a', 'h', 'shift+d');
+
+      press(key, init);
+
+      expect(
+        await screen.findByRole('dialog', { name: dialog })
+      ).toBeInTheDocument();
+    });
+
+    it('focuses the name on R', async () => {
+      renderWithKeys();
+      const name = await screen.findByRole('textbox', {
+        name: 'Initiative name',
+      });
+      await keysBound('r');
+
+      press('r');
+
+      expect(name).toHaveFocus();
+    });
+
+    it('copies the initiative URL on Cmd or Ctrl+Shift+,', async () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+      await keysBound('mod+shift+,');
+
+      press('<', { ctrlKey: true, shiftKey: true, code: 'Comma' });
+
+      expect(writeText).toHaveBeenCalledWith(
+        `${globalThis.location.origin}${initiativePath('mine', grow)}`
+      );
+    });
+
+    it('opens the update composer on Shift+U', async () => {
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+      await keysBound('shift+u');
+
+      press('U', { shiftKey: true });
+
+      expect(
+        await screen.findByRole('tab', { name: 'Updates' })
+      ).toHaveAttribute('aria-selected', 'true');
+      expect(
+        await screen.findByText(
+          'No updates yet. Share how the initiative is going and whether it is on track.'
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Write an initiative update/ })
+      ).not.toBeInTheDocument();
     });
   });
 });
