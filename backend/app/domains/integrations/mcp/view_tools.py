@@ -37,6 +37,7 @@ from app.common.api.schemas.views import (
 )
 from app.common.db.dynamo.issue_reminders import REMINDER_ENTITIES
 from app.common.db.dynamo.views import TEAM_SUBSCRIPTION_EVENTS, SavedView
+from app.common.documents import load_readable_document
 from app.common.inbox import (
     INBOX_BUCKETS,
     INBOX_KINDS,
@@ -453,7 +454,7 @@ def _reminder_kind(call: ToolCall) -> str:
 
 
 def _reminder_subject(call: ToolCall, kind: str, value: Any) -> str:
-    """The id of the subject a reminder tool names, resolving an issue key or a project or initiative name."""
+    """The id of a subject the caller can read, resolving an issue key or a project or initiative name."""
     if kind == "issue":
         return issue_ref(call, value).issue_id
     if kind == "project":
@@ -463,7 +464,8 @@ def _reminder_subject(call: ToolCall, kind: str, value: Any) -> str:
     reference = str(value).strip()
     if not reference:
         raise ToolError("entity_id is required")
-    return reference
+    _, document = load_readable_document(call.repositories, call.context, reference)
+    return document.document_id
 
 
 def _set_reminder(call: ToolCall) -> Any:
