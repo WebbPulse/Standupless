@@ -1115,6 +1115,30 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
         """A transaction Put for one status, holding the same key-free condition."""
         return self._repository.put_action(_status_item(status), condition=Attr("config_key").not_exists())
 
+    def put_copied_rows(
+        self,
+        *,
+        statuses: Sequence[Status],
+        labels: Sequence[Label],
+        overrides: Sequence[Override],
+        transitions: Sequence[Transition],
+        templates: Sequence[BaseModel],
+    ) -> None:
+        """Write the rows a team create copies from another team, in batches, before the team row exists."""
+        items = [
+            *(_status_item(row) for row in statuses),
+            *(_label_item(row) for row in labels),
+            *(_override_item(row) for row in overrides),
+            *(as_item(row) for row in transitions),
+            *(as_item(row) for row in templates),
+        ]
+        if items:
+            self._repository.put_many(items)
+
+    def copied_settings_action(self, row: BaseModel) -> dict[str, Any]:
+        """A transaction Put of one settings row a team create copies from another team, stamped now."""
+        return self._repository.put_action(as_item(row.model_copy(update={"updated_at": utc_now()})))
+
     def seed_statuses(self, workspace_id: str, team_id: str) -> list[Status]:
         """Write the default status set for a new team, in contract order."""
         return [self.create_status(status) for status in self.default_statuses(workspace_id, team_id)]

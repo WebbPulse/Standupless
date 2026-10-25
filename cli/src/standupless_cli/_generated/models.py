@@ -2757,6 +2757,7 @@ class SubscribersRead(TypedDict):
 
 
 class TeamCreate(TypedDict):
+    copy_settings_from_team_id: NotRequired[str | None]
     description: NotRequired[str | None]
     estimate_allow_zero: NotRequired[bool]
     estimate_count_unestimated: NotRequired[bool]

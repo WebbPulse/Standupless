@@ -14,7 +14,7 @@ from typing import Any, Callable
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import cycle_schedule, issue_keys, plan_usage, team_join, team_purge, team_workflow
+from app.common import cycle_schedule, issue_keys, plan_usage, team_copy, team_join, team_purge, team_workflow
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -120,6 +120,7 @@ def create_team(
     payload: TeamCreate,
     *,
     can_see: Callable[[str], bool] | None = None,
+    can_read: Callable[[str], bool] | None = None,
 ) -> Team:
     """Create a team, make the creator its admin and seed the statuses it lacks.
 
@@ -130,12 +131,16 @@ def create_team(
     The team takes its plan slot in that transaction too, so racing creates at the
     last slot land one team and refuse the rest. A sub-team's parent pointer rides
     in it as well; `can_see` holds the parent to the teams the caller may read.
-    A sub-team then takes its parent's estimate and cycle settings.
+    A sub-team then takes its parent's estimate and cycle settings. A team made
+    from `copy_settings_from_team_id`, which `can_read` holds to the teams whose
+    content the caller may read, starts with that team's setup as `team_copy`
+    describes, and seeds defaults only for the categories the copy leaves out.
     """
     if payload.private:
         enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
     if payload.parent_team_id is not None:
         check_parent(repositories, workspace_id, None, payload.parent_team_id, can_see=can_see)
+    source = _copy_source(repositories, workspace_id, payload.copy_settings_from_team_id, can_read)
     team = Team(
         workspace_id=workspace_id,
         team_id=new_team_id(),
@@ -148,6 +153,9 @@ def create_team(
         estimate_count_unestimated=payload.estimate_count_unestimated,
         parent_team_id=payload.parent_team_id,
     )
+    copy = team_copy.plan(repositories, source, team.team_id, user_id) if source is not None else None
+    if copy is not None:
+        team = team.model_copy(update=copy.estimates)
     membership = Membership(
         workspace_id=workspace_id,
         member_key=team_member_key(team.team_id, user_id),
@@ -155,8 +163,15 @@ def create_team(
         role="admin",
         team_id=team.team_id,
     )
-    statuses = starting_statuses(repositories, workspace_id, team.team_id, payload.parent_team_id)
+    if copy is not None:
+        statuses = repositories.team_config.default_statuses(
+            workspace_id, team.team_id, categories=copy.missing_categories()
+        )
+    else:
+        statuses = starting_statuses(repositories, workspace_id, team.team_id, payload.parent_team_id)
     try:
+        if copy is not None:
+            team_copy.write_rows(repositories, copy)
         actions = [
             repositories.teams.create_action(team),
             repositories.memberships.put_action(membership),
@@ -166,17 +181,55 @@ def create_team(
             actions.append(repositories.team_config.parent_action(workspace_id, team.team_id, payload.parent_team_id))
         if payload.private:
             actions.append(repositories.memberships.private_team_action(workspace_id, team.team_id))
+        if copy is not None:
+            actions.extend(team_copy.settings_actions(repositories, copy))
         plan_usage.commit(repositories, workspace_id, actions, [plan_usage.Delta(LimitedResource.TEAMS, 1)])
     except ConditionFailed as exc:
+        _discard(repositories, copy)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
     except TransactionCanceled as exc:
+        _discard(repositories, copy)
         if not exc.conditional_check_failed:
             raise
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
+    except Exception:
+        _discard(repositories, copy)
+        raise
+    if copy is not None:
+        _stock_copied_cycles(repositories, workspace_id, team.team_id)
     if payload.parent_team_id is not None:
         inherit_settings(repositories, workspace_id, team.team_id, payload.parent_team_id)
         return load_team(repositories, workspace_id, team.team_id)
     return team
+
+
+COPY_SOURCE_MISSING = "No such team to copy settings from: {team_id}"
+"""The 422 for a copy source that is gone or that the caller may not read."""
+
+
+def _copy_source(
+    repositories: Repositories, workspace_id: str, team_id: str | None, can_read: Callable[[str], bool] | None
+) -> Team | None:
+    """The team a create copies its settings from, or a 422 naming it when the caller may not read it."""
+    if team_id is None:
+        return None
+    source = repositories.teams.get(workspace_id, team_id)
+    if source is None or (can_read is not None and not can_read(team_id)):
+        raise unprocessable(COPY_SOURCE_MISSING.format(team_id=team_id))
+    return source
+
+
+def _discard(repositories: Repositories, copy: team_copy.TeamCopy | None) -> None:
+    """Remove a failed create's copied rows, so a refused create leaves nothing behind."""
+    if copy is not None:
+        team_copy.discard(repositories, copy)
+
+
+def _stock_copied_cycles(repositories: Repositories, workspace_id: str, team_id: str) -> None:
+    """Create the upcoming cycles a team copied with cycles turned on should already have."""
+    saved = repositories.team_config.get_cycle_settings(workspace_id, team_id)
+    if saved is not None and saved.enabled:
+        cycle_schedule.ensure_cycles(repositories.planning, saved)
 
 
 def update_team(

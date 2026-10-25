@@ -16,6 +16,11 @@
  * it has the parent's statuses, labels, estimates and cycle settings from its
  * first moment. Teams nest one level, so the picker lists the hierarchy but
  * offers only top-level teams, and the estimate scale is left to the parent.
+ *
+ * A top-level team can instead copy another team's settings: its statuses,
+ * labels, templates, estimates and cycle, triage, SLA, archive and close
+ * rules, without its members or work. Copying and nesting are exclusive, so
+ * the copy picker is disabled while a parent is picked.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -58,77 +63,76 @@ export interface CreateTeamDialogProps {
   initialParentTeamId?: string | null;
 }
 
-/** The picker value that stands for no parent team. */
-const NO_PARENT = '__none__';
+/** The picker value that stands for no team. */
+const NO_TEAM = '__none__';
 
-/** Props for ParentTeamPicker. */
-interface ParentTeamPickerProps {
+/** Props for TeamPicker. */
+interface TeamPickerProps {
+  id: string;
+  label: string;
+  noneLabel: string;
+  placeholder: string;
+  options: readonly ComboboxOption[];
   teams: readonly TeamRead[];
   value: string | null;
   onChange: (teamId: string | null) => void;
+  disabled?: boolean;
 }
 
 /**
- * The parent team control: a chip that opens a filterable list of the team
- * hierarchy. Sub-teams show under their parents but cannot be picked, since a
- * team nests one level.
+ * A chip that opens a filterable list of teams, with a first option for no
+ * team at all. The parent and copy source pickers share it so they read the
+ * same way.
  */
-const ParentTeamPicker: React.FC<ParentTeamPickerProps> = ({
+const TeamPicker: React.FC<TeamPickerProps> = ({
+  id,
+  label,
+  noneLabel,
+  placeholder,
+  options,
   teams,
   value,
   onChange,
+  disabled = false,
 }) => {
-  const parent = teams.find((team) => team.id === value);
-  const label =
-    value === null
-      ? 'No parent team'
-      : (parent?.name ?? 'A team you cannot see');
-  const options: ComboboxOption[] = useMemo(
-    () => [
-      { value: NO_PARENT, label: 'No parent team' },
-      ...teamTree(teams).map(({ team, nested, parentName }) => ({
-        value: team.id,
-        label: team.name,
-        detail: nested ? 'Sub-team' : team.key_prefix,
-        keywords: [
-          team.key_prefix,
-          ...(parentName === undefined ? [] : [parentName]),
-        ],
-        indent: nested,
-        disabled: nested,
-      })),
-    ],
-    [teams]
+  const picked = teams.find((team) => team.id === value);
+  const shown =
+    value === null ? noneLabel : (picked?.name ?? 'A team you cannot see');
+  const choices: ComboboxOption[] = useMemo(
+    () => [{ value: NO_TEAM, label: noneLabel }, ...options],
+    [noneLabel, options]
   );
   return (
     <Popover
-      label="Parent team"
+      label={label}
       contentClassName="w-64"
       trigger={(trigger) => (
         <button
           type="button"
-          id="create-team-parent"
-          aria-label={`Parent team: ${label}`}
+          id={id}
+          aria-label={`${label}: ${shown}`}
           {...trigger}
+          disabled={disabled}
           className={cn(
             'inline-flex h-7 max-w-full items-center gap-1.5 truncate rounded-sm border border-line px-2 text-sm',
             'hover:border-line-strong hover:bg-raised',
+            'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-transparent',
             value === null ? 'text-text-muted' : 'text-text'
           )}
         >
-          {label}
+          {shown}
         </button>
       )}
     >
       {(close) => (
         <Combobox
-          label="Parent team"
-          placeholder="Pick a parent team"
-          options={options}
-          selected={[value ?? NO_PARENT]}
-          onSelect={(picked) => {
+          label={label}
+          placeholder={placeholder}
+          options={choices}
+          selected={[value ?? NO_TEAM]}
+          onSelect={(chosen) => {
             close();
-            onChange(picked === NO_PARENT ? null : picked);
+            onChange(chosen === NO_TEAM ? null : chosen);
           }}
         />
       )}
@@ -153,7 +157,37 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   const [parentTeamId, setParentTeamId] = useState<string | null>(
     initialParentTeamId
   );
+  const [copyFromTeamId, setCopyFromTeamId] = useState<string | null>(null);
   const parent = teams.find((team) => team.id === parentTeamId);
+  const copySource = teams.find((team) => team.id === copyFromTeamId);
+  const copying = parentTeamId === null && copyFromTeamId !== null;
+  const hierarchy: ComboboxOption[] = useMemo(
+    () =>
+      teamTree(teams).map(({ team, nested, parentName }) => ({
+        value: team.id,
+        label: team.name,
+        detail: nested ? 'Sub-team' : team.key_prefix,
+        keywords: [
+          team.key_prefix,
+          ...(parentName === undefined ? [] : [parentName]),
+        ],
+        indent: nested,
+        disabled: nested,
+      })),
+    [teams]
+  );
+  const topLevel: ComboboxOption[] = useMemo(
+    () =>
+      teamTree(teams)
+        .filter(({ nested }) => !nested)
+        .map(({ team }) => ({
+          value: team.id,
+          label: team.name,
+          detail: team.key_prefix,
+          keywords: [team.key_prefix],
+        })),
+    [teams]
+  );
   const subTeam = initialParentTeamId !== null;
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -179,9 +213,11 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
       team = await createTeam(workspaceId, {
         name: name.trim(),
         key_prefix: keyPrefix,
-        ...(parentTeamId === null
-          ? { estimate_scale: estimateScale }
-          : { parent_team_id: parentTeamId }),
+        ...(parentTeamId !== null
+          ? { parent_team_id: parentTeamId }
+          : copying
+            ? { copy_settings_from_team_id: copyFromTeamId }
+            : { estimate_scale: estimateScale }),
         ...(isPrivate ? { private: true } : {}),
       });
     } catch (caught) {
@@ -257,7 +293,12 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
           <div className="space-y-1">
             <Label htmlFor="create-team-parent">Parent team</Label>
             <div>
-              <ParentTeamPicker
+              <TeamPicker
+                id="create-team-parent"
+                label="Parent team"
+                noneLabel="No parent team"
+                placeholder="Pick a parent team"
+                options={hierarchy}
                 teams={teams}
                 value={parentTeamId}
                 onChange={setParentTeamId}
@@ -266,6 +307,30 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
             <p className="text-xs text-text-faint">
               Optional. Teams nest one level, so only top-level teams can be
               picked.
+            </p>
+          </div>
+        )}
+
+        {topLevel.length > 0 && (
+          <div className="space-y-1">
+            <Label htmlFor="create-team-copy">Copy settings from</Label>
+            <div>
+              <TeamPicker
+                id="create-team-copy"
+                label="Copy settings from"
+                noneLabel="None"
+                placeholder="Pick a team to copy"
+                options={topLevel}
+                teams={teams}
+                value={copyFromTeamId}
+                onChange={setCopyFromTeamId}
+                disabled={parentTeamId !== null}
+              />
+            </div>
+            <p className="text-xs text-text-faint">
+              {parentTeamId === null
+                ? 'Optional. Copies statuses, labels, templates, estimates and workflow settings, not members or issues.'
+                : 'A sub-team takes its settings from its parent.'}
             </p>
           </div>
         )}
@@ -299,7 +364,7 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
             </p>
           </div>
 
-          {parentTeamId === null ? (
+          {parentTeamId === null && !copying ? (
             <SelectField
               id="create-team-estimates"
               label="Estimates"
@@ -318,7 +383,9 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
             <div className="space-y-1">
               <p className="text-sm font-medium">Estimates</p>
               <p className="text-xs text-text-faint">
-                Inherited from {parent?.name ?? 'the parent team'}.
+                {copying
+                  ? `Copied from ${copySource?.name ?? 'the source team'}.`
+                  : `Inherited from ${parent?.name ?? 'the parent team'}.`}
               </p>
             </div>
           )}

@@ -143,6 +143,14 @@ def _parent_arguments(call: ToolCall) -> dict[str, Any]:
     return {"parent_team_id": team_ref(call, value, administer=True).team_id}
 
 
+def _copy_arguments(call: ToolCall) -> dict[str, Any]:
+    """`copy_settings_from_team_id` as a team reference resolved to the id of a team the caller can read."""
+    value = call.arguments.get("copy_settings_from_team_id")
+    if value is None:
+        return {}
+    return {"copy_settings_from_team_id": team_ref(call, value).team_id}
+
+
 def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
     """One team's identity, as every team tool answers it."""
     return {
@@ -492,9 +500,14 @@ def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does, under a parent when one is named."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
     arguments = given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
-    payload = TeamCreate.model_validate({**arguments, **_parent_arguments(call)})
+    payload = TeamCreate.model_validate({**arguments, **_parent_arguments(call), **_copy_arguments(call)})
     team = team_writes.create_team(
-        call.repositories, call.context.workspace_id, call.context.user_id, payload, can_see=call.context.can_find_team
+        call.repositories,
+        call.context.workspace_id,
+        call.context.user_id,
+        payload,
+        can_see=call.context.can_find_team,
+        can_read=call.context.can_see_team,
     )
     audit.record_team_created(call.repositories, call.context, team, private=payload.private)
     body = _team_json(call, team)
@@ -986,10 +999,21 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
             "A private team is seen only by its members, who join by being added. parent_team_id creates it as a "
-            "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings."
+            "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings. "
+            "copy_settings_from_team_id instead starts it with a copy of another team's statuses, labels, "
+            "templates, estimates and cycle, triage, SLA, archive, auto-close and display settings; members, "
+            "issues, cycles, projects and integrations are not copied."
         ),
         scopes=("teams:write",),
-        schema=object_schema(_team_fields(True), required=("name", "key_prefix")),
+        schema=object_schema(
+            {
+                **_team_fields(True),
+                "copy_settings_from_team_id": string(
+                    "Team to copy settings from: id, key such as ENG, or name. Cannot be combined with parent_team_id"
+                ),
+            },
+            required=("name", "key_prefix"),
+        ),
         handler=_create_team,
     ),
     Tool(
