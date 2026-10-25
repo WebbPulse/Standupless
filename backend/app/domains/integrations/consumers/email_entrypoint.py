@@ -2,9 +2,10 @@
 
 Same image as the `integrations` routes, a different command, behind the intake
 queue S3 feeds and no gateway route. It writes the issues mail files, their
-activity, subscriptions and files, and the Message-ID claims, and reads the
-address, the team and the admin it files as, so it carries a bundle of its own
-rather than the integrations domain's.
+activity, subscriptions and files, the Message-ID claims and the customer
+request a sender's domain earns, and reads the address, the team and the admin
+it files as, so it carries a bundle of its own rather than the integrations
+domain's.
 """
 
 from typing import TYPE_CHECKING

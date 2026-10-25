@@ -15,6 +15,8 @@ import pytest
 from fastapi.testclient import TestClient
 from webbpulse.audit import AuditEvent, AuditQuery
 
+from app.common.customer_intake import INTAKE_AUTHOR, file_intake_request, sender_domain
+from app.common.db.dynamo.customers import Customer, CustomerRequest
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import default_triage_settings
 from app.common.db.dynamo.team_templates import FormFieldBlueprint, IssueTemplate, template_key
@@ -140,10 +142,11 @@ def _mail(
     message_id: str = "<m1@mail.example.com>",
     headers: dict[str, str] | None = None,
     files: tuple[tuple[str, str, bytes], ...] = (),
+    sender: str = "Alice Example <alice@example.com>",
 ) -> bytes:
-    """One raw mail from an example.com sender to `to`."""
+    """One raw mail from an example.com sender, unless another is named, to `to`."""
     message = EmailMessage()
-    message["From"] = "Alice Example <alice@example.com>"
+    message["From"] = sender
     message["To"] = to
     message["Subject"] = subject
     message["Message-ID"] = message_id
@@ -427,3 +430,92 @@ def test_safe_filenames_keep_the_extension() -> None:
     """Unsafe characters become underscores and an empty name is numbered."""
     assert consumer.safe_filename("my file (1).pdf", 1) == "my_file_1_.pdf"
     assert consumer.safe_filename("../", 2) == "attachment-2"
+
+
+def _customer(repositories: Any, name: str, domains: list[str]) -> Customer:
+    """One customer of the workspace claiming `domains`."""
+    return repositories.customers.create(Customer(workspace_id=WORKSPACE, name=name, domains=domains, created_by=ADMIN))
+
+
+def _requests(repositories: Any, issue: Issue) -> list[CustomerRequest]:
+    """Every customer request naming one issue."""
+    return repositories.customers.list_for_target(WORKSPACE, "issue", issue.issue_id)
+
+
+def test_a_customer_domain_ties_the_issue_to_that_customer(workspace: str, repositories: Any) -> None:
+    """The sender's domain, in any case, names one customer, quoted by the subject and authored by the intake."""
+    acme = _customer(repositories, "Acme", ["example.com"])
+    _customer(repositories, "Other", ["other.example"])
+    token = _enable(repositories)
+
+    mail = _mail(_address(token), sender="Alice <Alice@EXAMPLE.com>", subject="  The printer   is on fire ")
+    issue = consumer.handle_mail(repositories, mail, s3=FakeS3())
+
+    assert issue is not None
+    [request] = _requests(repositories, issue)
+    assert request.customer_id == acme.customer_id
+    assert request.body == "The printer is on fire"
+    assert request.author_id == INTAKE_AUTHOR
+    assert request.source == "email"
+    assert request.team_ids == [TEAM]
+    assert "alice" not in request.model_dump_json().casefold()
+    assert len(repositories.customers.list_for_customer(WORKSPACE, acme.customer_id)) == 1
+
+
+def test_no_match_a_public_provider_or_two_claimants_files_no_request(workspace: str, repositories: Any) -> None:
+    """Each still files the issue and ties it to no customer."""
+    _customer(repositories, "Mail", ["gmail.com"])
+    _customer(repositories, "Twin one", ["twins.example"])
+    _customer(repositories, "Twin two", ["twins.example"])
+    _customer(repositories, "Parent", ["example.com"])
+    token = _enable(repositories)
+    senders = ("bob@gmail.com", "carol@twins.example", "dave@sub.example.com", "erin@nowhere.example")
+
+    for index, sender in enumerate(senders):
+        mail = _mail(_address(token), sender=sender, message_id=f"<n{index}@mail.example.com>")
+        issue = consumer.handle_mail(repositories, mail, s3=FakeS3())
+        assert issue is not None
+        assert _requests(repositories, issue) == []
+
+    assert repositories.customers.list_requests(WORKSPACE) == []
+
+
+def test_a_redelivery_or_a_second_filing_adds_no_second_request(workspace: str, repositories: Any) -> None:
+    """One request per issue and customer, however often the mail or the filing repeats."""
+    _customer(repositories, "Acme", ["example.com"])
+    token = _enable(repositories)
+    s3 = FakeS3()
+
+    issue = consumer.handle_mail(repositories, _mail(_address(token)), s3=s3)
+    assert consumer.handle_mail(repositories, _mail(_address(token)), s3=s3) is None
+    assert issue is not None
+    assert file_intake_request(repositories, issue, "alice@example.com", "Again") is None
+
+    assert len(_requests(repositories, issue)) == 1
+    assert len(repositories.customers.list_requests(WORKSPACE)) == 1
+
+
+def test_a_failing_customer_lookup_still_files_the_issue(
+    workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A customer request that cannot be filed is logged and the issue stands."""
+    _customer(repositories, "Acme", ["example.com"])
+    token = _enable(repositories)
+
+    def broken(*_args: Any, **_kwargs: Any) -> list[Customer]:
+        raise RuntimeError("table unavailable")
+
+    monkeypatch.setattr(repositories.customers, "list_customers", broken)
+
+    issue = consumer.handle_mail(repositories, _mail(_address(token)), s3=FakeS3())
+
+    assert issue is not None
+    assert len(_issues(repositories)) == 1
+
+
+def test_sender_domains_are_lower_cased_and_need_an_at() -> None:
+    """The domain after the last `@`, folded, or none without one."""
+    assert sender_domain("Alice@Example.COM") == "example.com"
+    assert sender_domain("a@b@acme.example.") == "acme.example"
+    assert sender_domain("nobody") is None
+    assert sender_domain("trailing@") is None

@@ -13,6 +13,10 @@ posts it as a comment.
 A mail is dropped when SES's verdicts fail it, when no live address it was sent
 to resolves, when it replies to a mail already filed, when its address has
 passed its hourly ceiling, or when its Message-ID was already filed.
+
+A filed mail whose sender writes from a domain one of the workspace's customers
+claims also gets a customer request tying the issue to that customer, through
+`app.common.customer_intake`; a failure there is logged and never fails intake.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from app.common.api.schemas.issues import IssueCreate
 from app.common.change_source import EMAIL
 from app.common.core.config import settings
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
+from app.common.customer_intake import file_intake_request
 from app.common.db.dynamo.attachments import build_attachment, new_upload_id, object_key, stored_bytes
 from app.common.db.dynamo.email_intake import EmailIntake
 from app.common.db.dynamo.issues import Issue
@@ -68,8 +73,9 @@ EMAIL_REPOSITORIES: tuple[str, ...] = (
     "inbox",
     "comments",
     "relations",
+    "customers",
 )
-"""What filing a mail writes: the issue and everything an issue create touches, its files and the claims."""
+"""What filing a mail writes: the issue and all an issue create touches, its files, the claims and a request."""
 
 EMAIL_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users", "teams", "github")
 """What filing a mail only reads: the address, the team, the admin it files as and the plan."""
@@ -191,8 +197,20 @@ def _file(repositories: Repositories, intake: EmailIntake, mail: IntakeMail, *, 
         raise
     if issue is not None:
         _attach(repositories, issue, intake.enabled_by, mail.files, s3=s3)
+        _request(repositories, issue, mail)
         _log.info("An intake mail was filed.", extra={"event": "email_intake.filed", "issue_id": issue.issue_id})
     return issue
+
+
+def _request(repositories: Repositories, issue: Issue, mail: IntakeMail) -> None:
+    """Tie the issue to the customer the sender's domain names, logging rather than raising on a failure."""
+    try:
+        file_intake_request(repositories, issue, mail.sender_address, " ".join(mail.subject.split()))
+    except Exception:
+        _log.warning(
+            "An intake customer request could not be filed.",
+            extra={"event": "email_intake.customer_request_failed", "issue_id": issue.issue_id},
+        )
 
 
 def _body(mail: IntakeMail) -> str:
