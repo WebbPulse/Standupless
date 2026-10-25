@@ -1,17 +1,22 @@
 /**
- * Initiatives and customers in the command palette: a typed term lists them
- * by name under their own headings, Open initiative and Open customer open
- * pickers of every one the viewer's reads return, choosing a row opens its
- * page, and a guest is offered neither.
+ * Projects, cycles, saved views, initiatives and customers in the command
+ * palette: a typed term lists them by name under their own headings, up to
+ * eight a group, Open initiative and Open customer open pickers of every one
+ * the viewer's reads return, choosing a row opens its page, and a guest is
+ * offered no initiatives or customers but still finds what their reads return.
  */
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SavedViewDisplayRead } from '../../api/views';
+import { cyclePath } from '../../lib/paths';
 import type {
   CustomerRead,
+  CycleRead,
   InitiativeRead,
+  ProjectRead,
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -22,6 +27,9 @@ const navigate = vi.fn();
 const listInitiatives =
   vi.fn<() => Promise<{ initiatives: InitiativeRead[] }>>();
 const listCustomers = vi.fn<() => Promise<CustomerRead[]>>();
+const listProjects = vi.fn<() => Promise<{ projects: ProjectRead[] }>>();
+const listCycles = vi.fn<() => Promise<{ cycles: CycleRead[] }>>();
+const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 
 vi.mock('../../hooks/useWorkspaceMembers', () => ({
   useWorkspaceMembers: () => [],
@@ -44,7 +52,15 @@ vi.mock('../../api/documents', () => ({
 
 vi.mock('../../api/views', () => ({
   search: () => Promise.resolve([]),
-  listViews: () => Promise.resolve([]),
+  listViews: () => listViews(),
+}));
+
+vi.mock('../../api/planning', () => ({
+  listProjects: async () => ({
+    ...(await listProjects()),
+    next_cursor: null,
+  }),
+  listCycles: async () => ({ ...(await listCycles()), next_cursor: null }),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -100,6 +116,38 @@ const customer = (
     tier: null,
   }) as unknown as CustomerRead;
 
+/** A project with the given id and name. */
+const project = (id: string, name: string): ProjectRead =>
+  ({
+    project_id: id,
+    name,
+    icon: null,
+    color: null,
+  }) as ProjectRead;
+
+/** One of the Engine team's cycles, with the given id, name and status. */
+const cycle = (
+  id: string,
+  name: string,
+  status: CycleRead['status'] = 'active'
+): CycleRead =>
+  ({
+    cycle_id: id,
+    team_id: 'team-1',
+    name,
+    start_date: '2026-10-01',
+    end_date: '2026-10-14',
+    status,
+  }) as CycleRead;
+
+/** A saved view with the given id and name. */
+const view = (id: string, name: string): SavedViewDisplayRead =>
+  ({
+    view_id: id,
+    name,
+    layout: 'list',
+  }) as SavedViewDisplayRead;
+
 /** Renders the open palette for a viewer with the given workspace role. */
 const renderPalette = (role: WorkspaceRole = 'owner') => {
   const user = userEvent.setup();
@@ -132,6 +180,22 @@ beforeEach(() => {
     customer('cus-1', 'Acme Corp', ['acme.test']),
     customer('cus-2', 'Globex'),
   ]);
+  listProjects.mockReset();
+  listProjects.mockResolvedValue({
+    projects: [
+      project('proj-1', 'Billing revamp'),
+      project('proj-2', 'Search rewrite'),
+    ],
+  });
+  listCycles.mockReset();
+  listCycles.mockResolvedValue({
+    cycles: [cycle('cyc-1', 'Autumn hardening'), cycle('cyc-2', 'Cycle 9')],
+  });
+  listViews.mockReset();
+  listViews.mockResolvedValue([
+    view('view-1', 'Hot bugs'),
+    view('view-2', 'Release board'),
+  ]);
 });
 
 describe('a typed term', () => {
@@ -157,6 +221,74 @@ describe('a typed term', () => {
     await user.click(within(group).getByRole('option', { name: /Acme Corp/ }));
 
     expect(navigate).toHaveBeenCalledWith('/w/mine/customers/cus-1');
+  });
+
+  it('lists a matching project and opens it', async () => {
+    const user = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'billing');
+
+    const group = await screen.findByRole('group', { name: 'Projects' });
+    const row = within(group).getByRole('option', { name: /Billing revamp/ });
+    expect(within(group).queryByText('Search rewrite')).toBeNull();
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/projects/proj-1');
+  });
+
+  it('lists a matching cycle of the team in view and opens it', async () => {
+    const user = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'autumn');
+
+    const group = await screen.findByRole('group', { name: 'Cycles' });
+    const row = within(group).getByRole('option', {
+      name: /Autumn hardening/,
+    });
+    expect(within(group).queryByText('Cycle 9')).toBeNull();
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith(cyclePath('mine', 'ENG', 'cyc-1'));
+  });
+
+  it('lists a matching saved view and opens it', async () => {
+    const user = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'release board');
+
+    const group = await screen.findByRole('group', { name: 'Views' });
+    const row = within(group).getByRole('option', { name: /Release board/ });
+    expect(within(group).queryByText('Hot bugs')).toBeNull();
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/views/view-2');
+  });
+
+  it('lists at most eight projects, cycles and views a group', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => index + 1);
+    listProjects.mockResolvedValue({
+      projects: many.map((n) => project(`proj-${n}`, `Zephyr project ${n}`)),
+    });
+    listCycles.mockResolvedValue({
+      cycles: many.map((n) => cycle(`cyc-${n}`, `Zephyr cycle ${n}`)),
+    });
+    listViews.mockResolvedValue(
+      many.map((n) => view(`view-${n}`, `Zephyr view ${n}`))
+    );
+    const user = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'zephyr');
+
+    for (const name of ['Projects', 'Cycles', 'Views']) {
+      const group = await screen.findByRole('group', { name });
+      expect(within(group).getAllByRole('option')).toHaveLength(8);
+    }
+  });
+
+  it('lists projects, cycles and views for a guest', async () => {
+    const user = renderPalette('guest');
+    await user.type(screen.getByRole('combobox'), 'billing');
+
+    const group = await screen.findByRole('group', { name: 'Projects' });
+    expect(
+      within(group).getByRole('option', { name: /Billing revamp/ })
+    ).toBeInTheDocument();
   });
 
   it('lists neither for a guest', async () => {
