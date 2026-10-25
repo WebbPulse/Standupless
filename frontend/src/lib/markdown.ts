@@ -2,9 +2,9 @@
  * A small Markdown parser for issue descriptions and comments. It covers what
  * people write in a tracker (paragraphs, headings, lists and task lists,
  * quotes, fenced code, inline code, emphasis, links, embedded images and
- * videos, @mentions and issue keys) and nothing
- * that would need raw HTML: the output is a tree the renderer turns into React
- * elements, so no string from a comment is ever parsed as markup.
+ * videos, @mentions, issue keys and `<details>` collapsible sections) and
+ * nothing that would need raw HTML: the output is a tree the renderer turns
+ * into React elements, so no string from a comment is ever parsed as markup.
  *
  * Link targets are limited to http, https, mailto and an attachment's content
  * path, so a `javascript:` URL in a comment renders as text rather than as a
@@ -37,6 +37,7 @@ export type BlockNode =
   | { type: 'code'; language: string; value: string }
   | { type: 'quote'; children: BlockNode[] }
   | { type: 'list'; ordered: boolean; start: number; items: ListItem[] }
+  | { type: 'details'; summary: string; children: BlockNode[] }
   | { type: 'rule' };
 
 /** The schemes a link may point at. */
@@ -167,6 +168,9 @@ const QUOTE = /^\s{0,3}>\s?(.*)$/;
 const BULLET = /^\s{0,3}[-*+]\s+(.*)$/;
 const ORDERED = /^\s{0,3}(\d{1,9})[.)]\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
+const DETAILS_OPEN = /^\s{0,3}<details(?:\s[^>]*)?>\s*(.*)$/i;
+const DETAILS_CLOSE = /^\s{0,3}<\/details>\s*$/i;
+const SUMMARY = /^\s*<summary(?:\s[^>]*)?>(.*?)<\/summary>\s*$/i;
 
 /**
  * Whether a line is blank. A line of only `&nbsp;` counts, since older
@@ -175,9 +179,115 @@ const TASK = /^\[([ xX])\]\s+(.*)$/;
 const isBlank = (line: string): boolean =>
   line.replace(NBSP_ENTITY, '').trim() === '';
 
+/** The entities a collapsible section's summary is written with. */
+const SUMMARY_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  '#39': "'",
+  '#x27': "'",
+  nbsp: '\u00a0',
+};
+
+/** An entity the summary reader decodes, so a bare `&` before one is escaped. */
+const SUMMARY_ENTITY = /&(amp|lt|gt|quot|#39|#x27|nbsp);/gi;
+
+/**
+ * A summary as the text it reads as: tags such as GitHub's `<b>` dropped and
+ * the entities the writer uses decoded.
+ */
+export const readSummary = (raw: string): string =>
+  raw
+    .replace(/<[^>]*>/g, '')
+    .replace(
+      SUMMARY_ENTITY,
+      (whole, name: string) => SUMMARY_ENTITIES[name.toLowerCase()] ?? whole
+    )
+    .trim();
+
+/**
+ * A summary's text as it is written between `<summary>` tags, with only what
+ * would read as markup or as an entity escaped, so GitHub shows the same text.
+ */
+export const writeSummary = (text: string): string =>
+  text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/&(?=(amp|lt|gt|quot|#39|#x27|nbsp);)/gi, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+/** A collapsible section found at a line, and the line after it. */
+export interface CollapsibleMatch {
+  summary: string;
+  body: string;
+  end: number;
+}
+
+/**
+ * The `<details>` section that starts at a line, or null. The summary sits on
+ * the opening line or the first line after it, nested sections and fenced
+ * code are skipped while looking for the matching `</details>`, and a section
+ * that never closes is not one, so its tags stay text.
+ */
+export const collapsibleAt = (
+  lines: string[],
+  start: number
+): CollapsibleMatch | null => {
+  const opening = DETAILS_OPEN.exec(lines[start] ?? '');
+  if (opening === null) return null;
+  let index = start + 1;
+  let summary = '';
+  const rest = (opening[1] ?? '').trim();
+  if (rest !== '') {
+    const inline = SUMMARY.exec(rest);
+    if (inline === null) return null;
+    summary = readSummary(inline[1] ?? '');
+  } else {
+    let next = index;
+    while (next < lines.length && isBlank(lines[next] ?? '')) next += 1;
+    const own = SUMMARY.exec(lines[next] ?? '');
+    if (own !== null) {
+      summary = readSummary(own[1] ?? '');
+      index = next + 1;
+    }
+  }
+  const body: string[] = [];
+  let depth = 1;
+  let fence: string | null = null;
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    if (fence !== null) {
+      if (line.trim().startsWith(fence)) fence = null;
+    } else {
+      const opened = FENCE.exec(line);
+      if (opened !== null) fence = opened[1] ?? '```';
+      else if (DETAILS_OPEN.test(line)) depth += 1;
+      else if (DETAILS_CLOSE.test(line)) {
+        depth -= 1;
+        if (depth === 0) {
+          return {
+            summary,
+            body: body
+              .join('\n')
+              .replace(/^\s*\n/, '')
+              .trimEnd(),
+            end: index + 1,
+          };
+        }
+      }
+    }
+    body.push(line);
+    index += 1;
+  }
+  return null;
+};
+
 /** Whether a line starts a block other than a paragraph. */
 const startsBlock = (line: string): boolean =>
   FENCE.test(line) ||
+  DETAILS_OPEN.test(line) ||
   HEADING.test(line) ||
   RULE.test(line) ||
   QUOTE.test(line) ||
@@ -226,6 +336,17 @@ export const parseMarkdown = (source: string): BlockNode[] => {
         language: fence[2] ?? '',
         value: body.join('\n'),
       });
+      continue;
+    }
+
+    const section = collapsibleAt(lines, index);
+    if (section !== null) {
+      blocks.push({
+        type: 'details',
+        summary: section.summary,
+        children: parseMarkdown(section.body),
+      });
+      index = section.end;
       continue;
     }
 

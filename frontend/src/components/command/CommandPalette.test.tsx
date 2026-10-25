@@ -961,3 +961,32 @@ describe('the team preset commands', () => {
     expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG?scope=backlog');
   });
 });
+
+describe('the team go-to commands', () => {
+  it.each([
+    ['active issues', /Go to active issues/, 'G then A'],
+    ['go to backlog', /Go to backlog/, 'G then B'],
+    ['Engine board', /Engine board/, 'G then D'],
+    ['archived issues', /Engine archived issues/, 'G then X'],
+  ])('shows %s with its keys', async (term, name, keys) => {
+    const user = renderPalette({ path: '/w/mine/team/ENG' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard(term);
+
+    const option = await screen.findByRole('option', { name });
+    expect(option).toHaveTextContent(keys);
+  });
+
+  it('opens the current team board', async () => {
+    const user = renderPalette({ path: '/w/mine/team/ENG' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('Engine board');
+    await user.click(
+      await screen.findByRole('option', { name: /Engine board/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG/board');
+  });
+});
