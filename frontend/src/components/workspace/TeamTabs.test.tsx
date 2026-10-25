@@ -1,8 +1,9 @@
 /**
  * The team surface switch: that every tab links to its own route, that the
  * showing one is marked as the current page, and that the links carry the slug
- * and key prefix they were given, and that the Releases and Documents tabs
- * leave while an admin has that area turned off.
+ * and key prefix they were given, that Projects and Views sit after Cycles in
+ * Linear's order, and that the Releases and Documents tabs leave while an
+ * admin has that area turned off.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -38,6 +39,14 @@ describe('TeamTabs', () => {
       'href',
       '/w/mine/team/ENG/cycles'
     );
+    expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute(
+      'href',
+      '/w/mine/projects?team=ENG'
+    );
+    expect(screen.getByRole('link', { name: 'Views' })).toHaveAttribute(
+      'href',
+      '/w/mine/team/ENG/views'
+    );
     expect(screen.getByRole('link', { name: 'Releases' })).toHaveAttribute(
       'href',
       '/w/mine/team/ENG/releases'
@@ -66,6 +75,51 @@ describe('TeamTabs', () => {
     expect(screen.getByRole('link', { name: 'Issues' })).not.toHaveAttribute(
       'aria-current'
     );
+  });
+
+  it('orders the surfaces as Linear does', () => {
+    renderTabs('issues');
+
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(
+      [
+        'Issues',
+        'Board',
+        'Cycles',
+        'Projects',
+        'Views',
+        'Releases',
+        'Documents',
+        'Standup',
+        'Settings',
+      ]
+    );
+  });
+
+  it.each([
+    ['projects', 'Projects'],
+    ['views', 'Views'],
+  ] as const)('marks the %s tab as the current page', (tab, label) => {
+    renderTabs(tab);
+
+    expect(screen.getByRole('link', { name: label })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByRole('link', { name: 'Cycles' })).not.toHaveAttribute(
+      'aria-current'
+    );
+  });
+
+  it('sits in a named navigation landmark every tab of which is focusable', () => {
+    renderTabs('views');
+
+    const nav = screen.getByRole('navigation', { name: 'Team' });
+    const links = screen.getAllByRole('link');
+    links.forEach((link) => {
+      expect(nav).toContainElement(link);
+      link.focus();
+      expect(link).toHaveFocus();
+    });
   });
 
   it('carries the slug and key prefix it was given', () => {
