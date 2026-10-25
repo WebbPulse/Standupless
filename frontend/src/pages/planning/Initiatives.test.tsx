@@ -575,26 +575,26 @@ describe('Initiatives', () => {
       } as InitiativeRead)
     );
     renderPage('?order=manual');
-    const beta = (await screen.findByRole('link', { name: 'Beta' })).closest(
+    const alpha = (await screen.findByRole('link', { name: 'Alpha' })).closest(
       'li'
     );
-    const list = beta?.closest('ul');
-    if (beta === null || list === null || list === undefined)
+    const list = alpha?.closest('ul');
+    if (alpha === null || list === null || list === undefined)
       throw new Error('no row');
     const dataTransfer = {
       effectAllowed: '',
       dropEffect: '',
       setData: vi.fn(),
     };
-    fireEvent.dragStart(beta, { dataTransfer });
-    fireEvent.dragOver(list, { dataTransfer, clientY: -100 });
-    fireEvent.drop(list, { dataTransfer, clientY: -100 });
+    fireEvent.dragStart(alpha, { dataTransfer });
+    fireEvent.dragOver(list, { dataTransfer });
+    fireEvent.drop(list, { dataTransfer });
 
     await waitFor(() => {
       expect(updateInitiative).toHaveBeenCalledTimes(1);
     });
     const [id, body] = updateInitiative.mock.calls[0] ?? [];
-    expect(id).toBe('ini-2');
-    expect((body?.sort_order ?? 'Z') < 'F').toBe(true);
+    expect(id).toBe('ini-1');
+    expect((body?.sort_order ?? '0') > 'V').toBe(true);
   });
 });
