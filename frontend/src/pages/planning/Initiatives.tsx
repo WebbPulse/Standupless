@@ -1103,80 +1103,85 @@ export const Initiatives: React.FC = () => {
             }}
           >
             <LuPlus aria-hidden="true" />
-            New initiative
+            <span className="max-sm:sr-only">New initiative</span>
           </Button>
         ) : undefined
       }
       toolbar={
         isMember ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            <LuListFilter
-              aria-hidden="true"
-              className="mr-0.5 h-3.5 w-3.5 text-text-faint"
-            />
-            <FilterButton
-              field="Status"
-              multiple
-              options={statusOptions}
-              selected={statusFilter}
-              onSelect={(value) => {
-                const status = INITIATIVE_STATUSES.find(
-                  (item) => item === value
-                );
-                if (status === undefined) return;
-                setParam(
-                  'status',
-                  toggleIn<InitiativeStatus>(
-                    statusFilter,
-                    status,
-                    INITIATIVE_STATUSES
-                  )
-                );
-              }}
-            />
-            <FilterButton
-              field="Team"
-              options={teamOptions}
-              selected={teamParam === '' ? [] : [teamParam]}
-              onSelect={(value) => {
-                setParam('team', value === teamParam ? '' : value);
-              }}
-            />
-            <FilterButton
-              field="Owner"
-              options={ownerOptions}
-              selected={ownerFilter === '' ? [] : [ownerFilter]}
-              onSelect={(value) => {
-                setParam('owner', value === ownerFilter ? '' : value);
-              }}
-            />
-            <FilterButton
-              field="Health"
-              multiple
-              options={healthOptions}
-              selected={healthFilter}
-              onSelect={(value) => {
-                if (!isHealthFilterValue(value)) return;
-                setParam('health', toggleIn(healthFilter, value, healthOrder));
-              }}
-            />
-            {hasFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  const next = new URLSearchParams(params);
-                  next.delete('status');
-                  next.delete('owner');
-                  next.delete('health');
-                  next.delete('team');
-                  setParams(next, { replace: true });
+            <div className="flex items-center gap-1.5 max-sm:w-full max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:*:shrink-0 sm:contents">
+              <LuListFilter
+                aria-hidden="true"
+                className="mr-0.5 h-3.5 w-3.5 text-text-faint"
+              />
+              <FilterButton
+                field="Status"
+                multiple
+                options={statusOptions}
+                selected={statusFilter}
+                onSelect={(value) => {
+                  const status = INITIATIVE_STATUSES.find(
+                    (item) => item === value
+                  );
+                  if (status === undefined) return;
+                  setParam(
+                    'status',
+                    toggleIn<InitiativeStatus>(
+                      statusFilter,
+                      status,
+                      INITIATIVE_STATUSES
+                    )
+                  );
                 }}
-              >
-                <LuX aria-hidden="true" />
-                Clear
-              </Button>
-            )}
+              />
+              <FilterButton
+                field="Team"
+                options={teamOptions}
+                selected={teamParam === '' ? [] : [teamParam]}
+                onSelect={(value) => {
+                  setParam('team', value === teamParam ? '' : value);
+                }}
+              />
+              <FilterButton
+                field="Owner"
+                options={ownerOptions}
+                selected={ownerFilter === '' ? [] : [ownerFilter]}
+                onSelect={(value) => {
+                  setParam('owner', value === ownerFilter ? '' : value);
+                }}
+              />
+              <FilterButton
+                field="Health"
+                multiple
+                options={healthOptions}
+                selected={healthFilter}
+                onSelect={(value) => {
+                  if (!isHealthFilterValue(value)) return;
+                  setParam(
+                    'health',
+                    toggleIn(healthFilter, value, healthOrder)
+                  );
+                }}
+              />
+              {hasFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.delete('status');
+                    next.delete('owner');
+                    next.delete('health');
+                    next.delete('team');
+                    setParams(next, { replace: true });
+                  }}
+                >
+                  <LuX aria-hidden="true" />
+                  Clear
+                </Button>
+              )}
+            </div>
             <div className="ml-auto flex items-center gap-1">
               <InitiativesDisplayMenu
                 layout={layout}
