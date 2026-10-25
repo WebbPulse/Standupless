@@ -110,7 +110,7 @@ const loom = (url: URL, host: string): Omit<VideoEmbed, 'url'> | null => {
 const vimeo = (url: URL, host: string): Omit<VideoEmbed, 'url'> | null => {
   const parts = segments(url);
   let id: string | undefined;
-  let hash: string | null = null;
+  let hash: string | null;
   if (host === 'vimeo.com') {
     if (parts.length < 1 || parts.length > 2) return null;
     [id] = parts;

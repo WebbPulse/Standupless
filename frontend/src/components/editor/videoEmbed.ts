@@ -197,7 +197,9 @@ export const VideoEmbed = Node.create({
       url: {
         default: '',
         parseHTML: (element) => element.getAttribute('data-url') ?? '',
-        renderHTML: (attributes) => ({ 'data-url': attributes['url'] }),
+        renderHTML: (attributes: Record<string, unknown>) => ({
+          'data-url': String(attributes['url'] ?? ''),
+        }),
       },
     };
   },
