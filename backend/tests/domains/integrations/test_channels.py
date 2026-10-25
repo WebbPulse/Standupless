@@ -470,7 +470,7 @@ def test_a_project_update_carries_its_progress_report(repositories: Any, workspa
     )
 
     shown, hidden = (delivery_body(repositories, job)["embeds"][0]["description"] for job in queue.jobs)
-    assert "Slipping a week" in shown and "Progress 40% (8 of 20 issues)" in shown
+    assert "Slipping a week" in shown and r"Progress 40% \(8 of 20 issues\)" in shown
     assert "Slipping a week" in hidden and "Progress" not in hidden
 
 
