@@ -27,6 +27,7 @@ def _issue(number: int, links: int, updated_at: datetime) -> Issue:
         title=f"Issue {number}",
         status_id="status",
         relation_count=links,
+        created_by="user",
         created_at=EARLY,
         updated_at=updated_at,
     )
