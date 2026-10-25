@@ -974,10 +974,12 @@ export interface IssueCreate {
   cycle_id?: string | null;
   project_id?: string | null;
   project_milestone_id?: string | null;
-  /** A template that fills the fields left out; the create dialog sends it only for a form. */
+  /** A template that fills the fields left out; the create dialog sends it for a form or a template with sub-issues. */
   template_id?: string | null;
   /** A form template's answers by field key: text, or true and false for a checkbox. */
   form_answers?: Record<string, string | boolean> | null;
+  /** The template sub-issues to create, by key; absent creates every one and an empty list none. */
+  template_sub_issue_keys?: string[] | null;
 }
 
 /** What a template fills: a new issue, a new project, or a new document or update. */
@@ -1045,6 +1047,18 @@ export interface ProjectBlueprint extends ProjectTemplateFields {
   issues: ProjectBlueprintIssue[];
 }
 
+/** One sub-issue an issue template adds under every issue made from it; a key is given when left out, `s1` onwards. */
+export type TemplateSubIssue = Omit<
+  ProjectTemplateIssue,
+  'milestone_key' | 'parent_key'
+>;
+
+/** A saved template sub-issue, which always has its key. */
+export interface TemplateSubIssueRead extends TemplateSubIssue {
+  key: string;
+  label_ids: string[];
+}
+
 /** The answer a form field takes. */
 export type FormFieldType = 'short_text' | 'long_text' | 'select' | 'checkbox';
 
@@ -1097,6 +1111,8 @@ export interface TemplateCreate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** The questions that make an issue template a form. */
   form_fields?: FormField[];
+  /** The sub-issues an issue template creates under each issue made from it. */
+  sub_issues?: TemplateSubIssue[];
 }
 
 /** A template patch: only the fields sent change, and null clears one. */
@@ -1107,6 +1123,8 @@ export interface TemplateUpdate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** Replaces a form's questions; null or an empty list turns the form off. */
   form_fields?: FormField[] | null;
+  /** Replaces an issue template's sub-issues; null or an empty list removes them. */
+  sub_issues?: TemplateSubIssue[] | null;
 }
 
 /**
@@ -1134,6 +1152,8 @@ export interface TemplateRead {
   project?: ProjectBlueprint | null;
   /** A form template's questions; empty, or absent on an older answer, on any other template. */
   form_fields?: FormFieldRead[];
+  /** An issue template's sub-issues, in order; empty, or absent on an older answer, on any other template. */
+  sub_issues?: TemplateSubIssueRead[];
   position: number;
   created_by: string | null;
   created_at: string;

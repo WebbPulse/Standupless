@@ -1161,6 +1161,7 @@ class IssueCreate(TypedDict):
     status_id: NotRequired[str | None]
     team_id: str
     template_id: NotRequired[str | None]
+    template_sub_issue_keys: NotRequired[list[str] | None]
     title: NotRequired[str]
     triage: NotRequired[bool]
 
@@ -4213,6 +4214,7 @@ class TemplateCreate(TypedDict):
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[IssueTemplateItem]]
     title: NotRequired[str | None]
 
 
@@ -4235,6 +4237,7 @@ class TemplateRead(TypedDict):
     project_milestone_id: NotRequired[str | None]
     scope: NotRequired[Literal["team", "parent", "workspace"]]
     status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[IssueBlueprint]]
     team_id: NotRequired[str | None]
     title: NotRequired[str | None]
     updated_at: str
@@ -4254,6 +4257,7 @@ class TemplateUpdate(TypedDict):
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[IssueTemplateItem] | None]
     title: NotRequired[str | None]
 
 

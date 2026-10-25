@@ -24,6 +24,7 @@ from app.common.api.schemas.templates import (
     ROW_KINDS,
     TEMPLATE_ISSUES_MAX,
     TEMPLATE_MILESTONES_MAX,
+    TEMPLATE_SUB_ISSUES_MAX,
     FormFieldType,
     TemplateCreate,
     TemplateRead,
@@ -68,6 +69,7 @@ _FIELDS = (
     "cycle_id",
     "position",
     "form_fields",
+    "sub_issues",
 )
 
 
@@ -137,6 +139,8 @@ def _fields(call: ToolCall, *, patch: bool) -> dict[str, Any]:
         fields["assignee_id"] = resolve_user(call, fields["assignee_id"])
     if call.optional("project") is not None:
         fields["project"] = _project(call, call.arguments["project"])
+    if isinstance(fields.get("sub_issues"), list):
+        fields["sub_issues"] = _items(call, fields["sub_issues"])
     return fields
 
 
@@ -150,13 +154,18 @@ def _project(call: ToolCall, value: Any) -> Any:
     if isinstance(project.get("member_ids"), list):
         project["member_ids"] = [resolve_user(call, member) for member in project["member_ids"]]
     if isinstance(project.get("issues"), list):
-        issues: list[Any] = []
-        for item in project["issues"]:
-            if isinstance(item, dict) and item.get("assignee_id"):
-                item = {**item, "assignee_id": resolve_user(call, item["assignee_id"])}
-            issues.append(item)
-        project["issues"] = issues
+        project["issues"] = _items(call, project["issues"])
     return project
+
+
+def _items(call: ToolCall, items: list[Any]) -> list[Any]:
+    """Template issues with each assignee's `me` or email resolved to a user id."""
+    resolved: list[Any] = []
+    for item in items:
+        if isinstance(item, dict) and item.get("assignee_id"):
+            item = {**item, "assignee_id": resolve_user(call, item["assignee_id"])}
+        resolved.append(item)
+    return resolved
 
 
 def _json(row: IssueTemplate, team_id: Optional[str]) -> dict[str, Any]:
@@ -340,6 +349,31 @@ FORM_FIELDS_PROPERTY: dict[str, Any] = {
     },
 }
 
+SUB_ISSUES_PROPERTY: dict[str, Any] = {
+    "type": ["array", "null"],
+    "maxItems": TEMPLATE_SUB_ISSUES_MAX,
+    "description": (
+        "For an issue template: the sub-issues created under every issue made from it, in order. create_issue's "
+        "template_sub_issue_keys keeps only some. On update it replaces the whole set, and null or an empty list "
+        "removes them."
+    ),
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["title"],
+        "properties": {
+            "key": string("A short key create_issue names it by; defaults to s1, s2 and on"),
+            "title": string("The sub-issue title"),
+            "body": string("The sub-issue body, in Markdown"),
+            "status_id": string("A status of the template's team"),
+            "priority": enum(PRIORITIES, "The sub-issue priority"),
+            "assignee_id": string("The assignee: user id, email or 'me'"),
+            "label_ids": string_list("Labels by id"),
+            "estimate": string("An estimate in the team's scale"),
+        },
+    },
+}
+
 TEMPLATE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_templates",
@@ -363,7 +397,8 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
             "sub-teams and needs team membership; without it every team offers it and it needs workspace admin. "
             "Pass its id or name as template_id to create_issue, to create_project for a project template, or to "
             "create_document, create_project_update or create_initiative_update for a document template. "
-            "form_fields turns an issue template into a form whose answers create_issue takes as form_answers."
+            "form_fields turns an issue template into a form whose answers create_issue takes as form_answers, "
+            "and sub_issues lists the sub-issues create_issue adds under each issue made from it."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -374,6 +409,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 **_field_properties(patch=False),
                 "project": PROJECT_TEMPLATE_PROPERTY,
                 "form_fields": FORM_FIELDS_PROPERTY,
+                "sub_issues": SUB_ISSUES_PROPERTY,
             },
             required=("name",),
         ),
@@ -395,6 +431,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 **_field_properties(patch=True),
                 "project": PROJECT_TEMPLATE_PROPERTY,
                 "form_fields": FORM_FIELDS_PROPERTY,
+                "sub_issues": SUB_ISSUES_PROPERTY,
             },
             required=("template",),
         ),

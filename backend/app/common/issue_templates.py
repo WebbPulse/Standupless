@@ -23,6 +23,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import IssueCreate
 from app.common.api.schemas.templates import (
     ROW_KINDS,
+    IssueTemplateItem,
     ProjectTemplateFields,
     TemplateCreate,
     TemplateSettingsUpdate,
@@ -34,6 +35,7 @@ from app.common.db.dynamo.team_templates import (
     ISSUE_TEMPLATE,
     PROJECT_TEMPLATE,
     TEMPLATE_FIELDS,
+    IssueBlueprint,
     IssueTemplate,
     ProjectBlueprint,
     TemplateSettings,
@@ -57,7 +59,7 @@ from app.common.issue_rules import (
     unprocessable,
 )
 
-LIST_FIELDS: tuple[str, ...] = ("label_ids", "form_fields")
+LIST_FIELDS: tuple[str, ...] = ("label_ids", "form_fields", "sub_issues")
 """The template fields a null clears to empty rather than to `None`."""
 
 DEFAULT_FIELDS: dict[str, str] = {
@@ -256,24 +258,31 @@ def _check_people(repositories: Repositories, workspace_id: str, user_ids: list[
             raise unprocessable(f"No such workspace member: {user_id}")
 
 
-def _check_blueprint(
-    repositories: Repositories, workspace_id: str, team: Optional[Team], fields: ProjectTemplateFields
-) -> ProjectBlueprint:
-    """Hold a project template's people, and each of its issues' fields, to the rows its scope sees, or a 422.
+def _check_items(
+    repositories: Repositories, workspace_id: str, team: Optional[Team], items: list[IssueTemplateItem]
+) -> list[IssueBlueprint]:
+    """Hold each issue a template adds as an issue template of the same scope is, or raise a 422.
 
-    Each issue is held as an issue template of the same scope is, so a team
-    template's issues name the team's statuses and labels and a workspace
-    template's the workspace's.
+    A team template's issues name the team's statuses and labels and a
+    workspace template's the workspace's.
     """
-    _check_people(repositories, workspace_id, [fields.lead_id, *fields.member_ids])
     probe = IssueTemplate(workspace_id=workspace_id, config_key="", template_id="", name="")
-    for item in fields.issues:
+    for item in items:
         sent = item.model_dump(include={"status_id", "label_ids", "estimate", "assignee_id"}, exclude_none=True)
         if not sent.get("label_ids"):
             sent.pop("label_ids", None)
         checked = _check_fields(repositories, workspace_id, team, sent, probe)
         item.label_ids = checked.get("label_ids", item.label_ids)
         item.estimate = checked.get("estimate", item.estimate)
+    return [IssueBlueprint.model_validate(item.model_dump()) for item in items]
+
+
+def _check_blueprint(
+    repositories: Repositories, workspace_id: str, team: Optional[Team], fields: ProjectTemplateFields
+) -> ProjectBlueprint:
+    """Hold a project template's people, and each of its issues' fields, to the rows its scope sees, or a 422."""
+    _check_people(repositories, workspace_id, [fields.lead_id, *fields.member_ids])
+    _check_items(repositories, workspace_id, team, fields.issues)
     return ProjectBlueprint.model_validate(fields.model_dump())
 
 
@@ -316,10 +325,12 @@ def _create(
     team_id = team.team_id if team is not None else None
     kind = ROW_KINDS[payload.kind]
     template_id = new_config_id()
-    fields = payload.model_dump(exclude_unset=True, exclude={"kind", "project", "form_fields"})
+    fields = payload.model_dump(exclude_unset=True, exclude={"kind", "project", "form_fields", "sub_issues"})
     blueprint: Optional[ProjectBlueprint] = None
     if kind != ISSUE_TEMPLATE and payload.form_fields:
         raise unprocessable("form_fields is for an issue template")
+    if kind != ISSUE_TEMPLATE and payload.sub_issues:
+        raise unprocessable("sub_issues is for an issue template")
     if kind == PROJECT_TEMPLATE:
         if _issue_fields_sent(fields):
             raise unprocessable("A project template fills project, not the issue fields")
@@ -330,7 +341,7 @@ def _create(
         _check_document(fields)
     draft = IssueTemplate.model_validate(
         {
-            **payload.model_dump(exclude={"position", "kind", "project", "form_fields"}),
+            **payload.model_dump(exclude={"position", "kind", "project", "form_fields", "sub_issues"}),
             "workspace_id": workspace_id,
             "config_key": template_key(team_id, template_id),
             "template_id": template_id,
@@ -338,6 +349,11 @@ def _create(
             "kind": kind,
             "project": blueprint.model_dump() if blueprint is not None else None,
             "form_fields": [field.model_dump() for field in _check_form(repositories, workspace_id, team, payload)]
+            if kind == ISSUE_TEMPLATE
+            else [],
+            "sub_issues": [
+                item.model_dump() for item in _check_items(repositories, workspace_id, team, payload.sub_issues)
+            ]
             if kind == ISSUE_TEMPLATE
             else [],
             "position": payload.position
@@ -370,11 +386,15 @@ def _update(
     existing = repositories.team_config.get_template(workspace_id, team_id, template_id, None)
     if existing is None:
         raise not_found()
-    fields = payload.model_dump(exclude_unset=True, exclude={"project", "form_fields"})
+    fields = payload.model_dump(exclude_unset=True, exclude={"project", "form_fields", "sub_issues"})
     if "form_fields" in payload.model_fields_set:
         if existing.kind != ISSUE_TEMPLATE and payload.form_fields:
             raise unprocessable("form_fields is for an issue template")
         fields["form_fields"] = _check_form(repositories, workspace_id, team, payload)
+    if "sub_issues" in payload.model_fields_set:
+        if existing.kind != ISSUE_TEMPLATE and payload.sub_issues:
+            raise unprocessable("sub_issues is for an issue template")
+        fields["sub_issues"] = _check_items(repositories, workspace_id, team, payload.sub_issues or [])
     for name in ("name", "position"):
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
@@ -382,7 +402,7 @@ def _update(
         if name in fields and fields[name] is None:
             fields[name] = []
     if existing.kind == PROJECT_TEMPLATE:
-        if _issue_fields_sent(fields) or fields.get("form_fields"):
+        if _issue_fields_sent(fields) or fields.get("form_fields") or fields.get("sub_issues"):
             raise unprocessable("A project template fills project, not the issue fields")
         if "project" in payload.model_fields_set:
             blueprint = _check_blueprint(repositories, workspace_id, team, payload.project or ProjectTemplateFields())
@@ -401,8 +421,9 @@ def _update(
         return stored
     merged = existing.model_copy(update=fields)
     checked = _check_fields(repositories, workspace_id, team, fields, merged)
-    if "form_fields" in fields:
-        checked["form_fields"] = fields["form_fields"]
+    for name in ("form_fields", "sub_issues"):
+        if name in fields:
+            checked[name] = fields[name]
     stored = repositories.team_config.replace_template(existing.model_copy(update=checked))
     if stored is None:
         raise not_found()
@@ -567,8 +588,45 @@ def template_values(
     return {name: value for name, value in values.items() if value is not None}
 
 
-def apply_template(repositories: Repositories, context: AuthzContext, payload: IssueCreate) -> IssueCreate:
-    """The create filled from its template wherever it left a field unset.
+def blueprint_values(repositories: Repositories, workspace_id: str, team: Team, item: IssueBlueprint) -> dict[str, Any]:
+    """The fields one template issue fills in the team it lands in, with anything that team refuses dropped."""
+    team_id = team.team_id
+    values: dict[str, Any] = {"title": item.title, "body": item.body, "priority": item.priority}
+    if item.status_id and lenient(check_status, repositories, workspace_id, team_id, item.status_id) is not None:
+        values["status_id"] = item.status_id
+    if item.label_ids:
+        values["label_ids"] = kept_labels(repositories, workspace_id, team_id, item.label_ids)
+    if item.assignee_id:
+        values["assignee_id"] = lenient(check_assignee, repositories, workspace_id, team_id, item.assignee_id)
+    if item.estimate:
+        values["estimate"] = lenient(check_estimate, item.estimate, team)
+    return {name: value for name, value in values.items() if value is not None}
+
+
+def chosen_sub_issues(template: Optional[IssueTemplate], payload: IssueCreate) -> list[IssueBlueprint]:
+    """The template sub-issues a create keeps, in the template's order.
+
+    With no `template_sub_issue_keys` every one is kept, and an empty list keeps
+    none. A key the template does not hold is a 422, so a stale dialog never
+    files a different sub-issue than the one it showed.
+    """
+    if template is None:
+        return []
+    keys = payload.template_sub_issue_keys
+    if keys is None:
+        return list(template.sub_issues)
+    known = {item.key for item in template.sub_issues}
+    unknown = [key for key in keys if key not in known]
+    if unknown:
+        raise unprocessable(f"{template.name} has no sub-issue {unknown[0]}")
+    wanted = set(keys)
+    return [item for item in template.sub_issues if item.key in wanted]
+
+
+def apply_template(
+    repositories: Repositories, context: AuthzContext, payload: IssueCreate
+) -> tuple[IssueCreate, Optional[IssueTemplate]]:
+    """The create filled from its template wherever it left a field unset, and the template it used.
 
     A create without `template_id` passes through untouched. A template the
     team does not offer the caller is a 422 naming it, and a create still without
@@ -576,6 +634,7 @@ def apply_template(repositories: Repositories, context: AuthzContext, payload: I
     holds and renders the create's `form_answers` and sends it to triage, while
     answers sent with a template that is not a form are a 422.
     """
+    template: Optional[IssueTemplate] = None
     if payload.template_id:
         team = _team(repositories, context.workspace_id, payload.team_id)
         template = find_template(repositories, context, payload.team_id, payload.template_id)
@@ -593,4 +652,4 @@ def apply_template(repositories: Repositories, context: AuthzContext, payload: I
             raise unprocessable(f"{template.name} is not a form template")
     if not payload.title:
         raise unprocessable("title must not be blank")
-    return payload
+    return payload, template

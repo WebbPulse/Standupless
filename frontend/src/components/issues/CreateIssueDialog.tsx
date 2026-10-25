@@ -21,7 +21,10 @@
  * opens and fills only what the caller did not preset, and picking one in the
  * header starts the draft over from that template. The fields stay editable
  * and the dialog sends what they hold, never the template id, so a field the
- * person clears stays cleared.
+ * person clears stays cleared. A template with sub-issues lists them in the
+ * sub-issue rows, where each can be dropped, and the dialog then sends the
+ * template id with every field set explicitly and the keys of the rows kept,
+ * so the server files the issue and its sub-issues together or not at all.
  *
  * A form template is the exception. Its questions sit under the description
  * and the issue waits until every required one is answered, then the dialog
@@ -370,18 +373,16 @@ const toPayload = (
   ...(draft.parent === null ? {} : { parent_id: draft.parent.id }),
 });
 
-/** The create body for a form: the template and its answers, with every field the template could fill set explicitly. */
-const formPayload = (
+/** The create body naming a template, with every field the template could fill set explicitly. */
+const templatePayload = (
   teamId: string,
   title: string,
   body: string,
   draft: Draft,
-  template: TemplateRead,
-  answers: FormAnswers
+  template: TemplateRead
 ): IssueCreate => ({
   ...toPayload(teamId, title, body, draft),
   template_id: template.id,
-  form_answers: sentAnswers(template.form_fields ?? [], answers),
   body: body.trim() === '' ? null : body,
   status_id: draft.statusId === '' ? null : draft.statusId,
   priority: draft.priority,
@@ -391,6 +392,19 @@ const formPayload = (
   project_id: draft.projectId,
   project_milestone_id: draft.projectMilestoneId,
   cycle_id: draft.cycleId,
+});
+
+/** The create body for a form: the template and its answers. */
+const formPayload = (
+  teamId: string,
+  title: string,
+  body: string,
+  draft: Draft,
+  template: TemplateRead,
+  answers: FormAnswers
+): IssueCreate => ({
+  ...templatePayload(teamId, title, body, draft, template),
+  form_answers: sentAnswers(template.form_fields ?? [], answers),
 });
 
 /** The rendered body of a form issue with its description swapped for the one carrying uploaded files. */
@@ -407,11 +421,25 @@ const withResolvedDescription = (
   return rendered.slice(0, at) + next + rendered.slice(at + tail.length);
 };
 
-/** One sub-issue row, filed under the new issue when it is created. */
+/** One sub-issue row, filed under the new issue when it is created; a template's row carries its key and is filed by the server. */
 interface SubIssueRow {
   id: string;
   title: string;
+  templateKey?: string;
 }
+
+/** The rows a template's sub-issues preview as, ahead of the rows typed by hand. */
+const withTemplateRows = (
+  rows: readonly SubIssueRow[],
+  template: TemplateRead | null
+): SubIssueRow[] => [
+  ...(template?.sub_issues ?? []).map((item) => ({
+    id: `template-${template?.id ?? ''}-${item.key}`,
+    title: item.title,
+    templateKey: item.key,
+  })),
+  ...rows.filter((row) => row.templateKey === undefined),
+];
 
 /** One file held until the issue it belongs to exists. */
 interface HeldFile {
@@ -693,7 +721,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       (answer) =>
         answer === true || (typeof answer === 'string' && answer.trim() !== '')
     ) ||
-    subIssues.some((row) => row.title.trim() !== '');
+    subIssues.some(
+      (row) => row.templateKey === undefined && row.title.trim() !== ''
+    );
   const canNest = draft.parent === null;
 
   const prefillOf = (template: TemplateRead): TemplatePrefill =>
@@ -713,6 +743,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setTemplateId(template?.id ?? null);
     setAnswers({});
     setDraft(withTemplate(base, fill));
+    if (base.parent === null) {
+      setSubIssues((rows) => withTemplateRows(rows, template));
+    }
     if (title.trim() === '' || title === templateText.title) {
       setTitle(text.title);
     }
@@ -741,6 +774,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setAnswers({});
     setTemplateText(text);
     setDraft((held) => withTemplate(held, fill));
+    setSubIssues((rows) => withTemplateRows(rows, template));
     setTitle((held) => (held.trim() === '' ? text.title : held));
     if (latestBody.current.trim() === '') {
       replacingBody.current = true;
@@ -1037,6 +1071,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
 
   const createSubIssues = async (parent: IssueRead): Promise<void> => {
     const titles = subIssues
+      .filter((row) => row.templateKey === undefined)
       .map((row) => row.title.trim())
       .filter((text) => text !== '');
     let failed = 0;
@@ -1061,10 +1096,26 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     const original = duplicateOf;
     const sentBody = attached.length === 0 ? body : stripPending(body);
     const form = formTemplate;
-    const payload =
-      form === null
-        ? toPayload(activeTeamId, title, sentBody, draft)
-        : formPayload(activeTeamId, title, sentBody, draft, form, answers);
+    const chosen =
+      templates.find((template) => template.id === templateId) ?? null;
+    const withSubIssues =
+      chosen !== null && (chosen.sub_issues ?? []).length > 0 ? chosen : null;
+    const kept = subIssues.flatMap((row) =>
+      row.templateKey === undefined ? [] : [row.templateKey]
+    );
+    const base =
+      form !== null
+        ? formPayload(activeTeamId, title, sentBody, draft, form, answers)
+        : withSubIssues !== null
+          ? templatePayload(activeTeamId, title, sentBody, draft, withSubIssues)
+          : toPayload(activeTeamId, title, sentBody, draft);
+    const payload: IssueCreate =
+      withSubIssues === null
+        ? base
+        : {
+            ...base,
+            template_sub_issue_keys: draft.parent === null ? kept : [],
+          };
     createIssue(workspaceId, payload)
       .then(async (made) => {
         const issue = await uploadHeld(made, sentBody, form !== null);
@@ -1094,7 +1145,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         replaceBody(templateText.body);
         setAnswers({});
         setAttached([]);
-        setSubIssues([]);
+        setSubIssues(
+          draft.parent === null ? withTemplateRows([], withSubIssues) : []
+        );
         setConfirming(false);
         showToast(
           `Created ${issue.key}`,
@@ -1183,6 +1236,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               setDraft((held) => withSelf(clearTeamScoped(held), selfAssignee));
               setTemplateId(null);
               setAnswers({});
+              setSubIssues((rows) => withTemplateRows(rows, null));
               if (title === templateText.title) setTitle('');
               if (body === templateText.body) replaceBody('');
               setTemplateText(NO_TEXT);
@@ -1523,6 +1577,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                   aria-label={`Sub-issue ${String(index + 1)} title`}
                   placeholder="Sub-issue title"
                   autoComplete="off"
+                  readOnly={row.templateKey !== undefined}
+                  {...(row.templateKey === undefined
+                    ? {}
+                    : { title: 'From the template' })}
                   value={row.title}
                   onChange={(event) => {
                     const next = event.target.value;

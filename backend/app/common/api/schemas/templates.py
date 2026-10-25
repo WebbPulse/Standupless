@@ -8,7 +8,8 @@ and issues a project made from it starts with. A document template, `kind`
 "document", carries only a title and a Markdown body, which a new document or a
 project or initiative update starts from. An issue template with `form_fields`
 is a form: each field is a question an issue filed from it answers, and a select
-option may put a label or a priority on the issue.
+option may put a label or a priority on the issue. An issue template's
+`sub_issues` are created under every issue made from it.
 Fields that need a table read to judge, such as a status of the team, are held
 by the write path in `app.common.issue_templates`.
 """
@@ -37,6 +38,7 @@ from app.common.db.dynamo.team_templates import (
     ISSUE_TEMPLATE,
     PROJECT_TEMPLATE,
     FormFieldBlueprint,
+    IssueBlueprint,
     IssueTemplate,
     ProjectBlueprint,
     TemplateSettings,
@@ -65,6 +67,9 @@ TEMPLATE_ISSUES_MAX = 50
 
 TEMPLATE_ISSUE_BODY_MAX_BYTES = 4096
 """The byte cap on one template issue's body, smaller than an issue's so fifty fit in one item."""
+
+TEMPLATE_SUB_ISSUES_MAX = 25
+"""How many sub-issues one issue template adds under the issue it creates."""
 
 MILESTONE_DESCRIPTION_MAX_BYTES = 2048
 """The byte cap on one template milestone's description."""
@@ -362,6 +367,19 @@ def _check_form(value: Optional[list[FormField]]) -> Optional[list[FormField]]:
     return value
 
 
+def _check_sub_issues(value: Optional[list[IssueTemplateItem]]) -> Optional[list[IssueTemplateItem]]:
+    """Hold an issue template's sub-issues directly under the issue and give each a unique key, `s1` onwards."""
+    if value is None:
+        return None
+    for item in value:
+        if item.milestone_key is not None or item.parent_key is not None:
+            raise ValueError(
+                "A template sub-issue sits directly under the new issue, so it takes no milestone or parent"
+            )
+    _settle_keys(value, "s", "sub-issue")
+    return value
+
+
 def _settle_keys(rows: Sequence[MilestoneTemplate | IssueTemplateItem | FormField], prefix: str, noun: str) -> set[str]:
     """Give each row without a key the next free one, raising on a key used twice."""
     taken = {item.key for item in rows if item.key}
@@ -419,12 +437,19 @@ class TemplateCreate(TemplateFields):
     label_ids: list[str] = Field(default_factory=list)
     project: Optional[ProjectTemplateFields] = None
     form_fields: list[FormField] = Field(default_factory=list, max_length=FORM_FIELDS_MAX)
+    sub_issues: list[IssueTemplateItem] = Field(default_factory=list, max_length=TEMPLATE_SUB_ISSUES_MAX)
 
     @field_validator("form_fields")
     @classmethod
     def check_form_fields(cls, value: list[FormField]) -> list[FormField]:
         """Give every form field a unique key."""
         return _check_form(value) or []
+
+    @field_validator("sub_issues")
+    @classmethod
+    def check_sub_issues(cls, value: list[IssueTemplateItem]) -> list[IssueTemplateItem]:
+        """Give every sub-issue a unique key and keep it directly under the issue."""
+        return _check_sub_issues(value) or []
 
     @field_validator("name")
     @classmethod
@@ -446,12 +471,19 @@ class TemplateUpdate(TemplateFields):
     label_ids: Optional[list[str]] = None
     project: Optional[ProjectTemplateFields] = None
     form_fields: Optional[list[FormField]] = Field(default=None, max_length=FORM_FIELDS_MAX)
+    sub_issues: Optional[list[IssueTemplateItem]] = Field(default=None, max_length=TEMPLATE_SUB_ISSUES_MAX)
 
     @field_validator("form_fields")
     @classmethod
     def check_form_fields(cls, value: Optional[list[FormField]]) -> Optional[list[FormField]]:
         """Give every form field a unique key; null or an empty list turns the form off."""
         return _check_form(value)
+
+    @field_validator("sub_issues")
+    @classmethod
+    def check_sub_issues(cls, value: Optional[list[IssueTemplateItem]]) -> Optional[list[IssueTemplateItem]]:
+        """Give every sub-issue a unique key; null or an empty list removes them all."""
+        return _check_sub_issues(value)
 
     @field_validator("name")
     @classmethod
@@ -474,6 +506,8 @@ class TemplateRead(BaseModel):
     workspace template. `project` is set on a project template only, and a
     document template sets only `title` and `body`. `form_fields` is set on a
     form, an issue template whose issues answer its questions and land in triage.
+    `sub_issues` are the issues an issue template creates under each issue made
+    from it.
     """
 
     id: str
@@ -493,6 +527,7 @@ class TemplateRead(BaseModel):
     cycle_id: Optional[str] = None
     project: Optional[ProjectBlueprint] = None
     form_fields: list[FormFieldBlueprint] = Field(default_factory=list)
+    sub_issues: list[IssueBlueprint] = Field(default_factory=list)
     position: int = 0
     created_by: Optional[str] = None
     created_at: datetime
@@ -525,6 +560,7 @@ class TemplateRead(BaseModel):
             cycle_id=row.cycle_id,
             project=row.project,
             form_fields=list(row.form_fields),
+            sub_issues=list(row.sub_issues),
             position=row.position,
             created_by=row.created_by,
             created_at=row.created_at,

@@ -53,7 +53,7 @@ from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import (
     bulk_update_issues,
-    create_issue,
+    create_issue_tree,
     descending,
     list_issues,
     sort_key,
@@ -557,6 +557,8 @@ def _create_issue(call: ToolCall) -> Any:
     A template fills every field the caller left out, so an argument sent always
     wins over the template's value, as it does in the create dialog. A form
     template holds `form_answers` to its questions, a missing required one included.
+    The template's sub-issues are created with it, all or none, and listed in the
+    answer.
     """
     fields = (
         "team_id",
@@ -581,12 +583,18 @@ def _create_issue(call: ToolCall) -> Any:
         payload["template_id"] = template_ref(call, str(payload["team_id"]), call.optional("template_id")).template_id
     if call.optional("form_answers") is not None:
         payload["form_answers"] = call.arguments["form_answers"]
+    if call.optional("template_sub_issue_keys") is not None:
+        payload["template_sub_issue_keys"] = call.arguments["template_sub_issue_keys"]
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     if payload.get("label_ids"):
         payload["label_ids"] = _label_refs(call, str(payload["team_id"]), payload["label_ids"])
-    created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
-    return {**_answer(call, created), "possible_duplicates": _safe_duplicates(call, created)}
+    created, sub_issues = create_issue_tree(call.repositories, call.context, IssueCreate.model_validate(payload))
+    return {
+        **_answer(call, created),
+        "sub_issues": [{"issue_id": row.issue_id, "issue_key": row.key, "title": row.title} for row in sub_issues],
+        "possible_duplicates": _safe_duplicates(call, created),
+    }
 
 
 def _safe_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
@@ -1211,8 +1219,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
             "and title may then be omitted when the template has one. A form template (one with form_fields) also "
             "takes form_answers keyed by each field's key: required fields must be answered, a select takes one of "
-            "its options, and the answers land in the body and send the issue to triage. "
-            "The answer lists possible_duplicates: open issues whose titles share its terms."
+            "its options, and the answers land in the body and send the issue to triage. A template's sub_issues "
+            "are created under the new issue, all or none; template_sub_issue_keys keeps only those keys. "
+            "The answer lists the sub_issues created and possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -1243,6 +1252,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                     ),
                     "additionalProperties": {"type": ["string", "boolean"]},
                 },
+                "template_sub_issue_keys": string_list(
+                    "The template sub-issues to create, by key (s1, s2, ...); omit for all, [] for none"
+                ),
             },
             required=("team_id",),
         ),

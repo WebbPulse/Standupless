@@ -81,10 +81,12 @@ class MilestoneBlueprint(BaseModel):
 
 
 class IssueBlueprint(BaseModel):
-    """One issue a project template adds.
+    """One issue a project template adds, or one sub-issue an issue template adds under the new issue.
 
     `key` names it inside the template, so `parent_key` can make it a sub-issue
     of an issue listed before it and `milestone_key` can tie it to a milestone.
+    An issue template's sub-issues sit directly under the issue, so they carry
+    neither.
     """
 
     key: str
@@ -150,6 +152,8 @@ class IssueTemplate(BaseModel):
     `project` and leaves the issue fields unset, and a document template sets
     only `title` and `body`. An issue template with `form_fields` is a form: an
     issue filed from it answers each field and lands in the team's triage.
+    `sub_issues` are the issues an issue template creates under each issue
+    made from it, in order.
     """
 
     workspace_id: str
@@ -170,6 +174,7 @@ class IssueTemplate(BaseModel):
     cycle_id: Optional[str] = None
     project: Optional[ProjectBlueprint] = None
     form_fields: list[FormFieldBlueprint] = Field(default_factory=list)
+    sub_issues: list[IssueBlueprint] = Field(default_factory=list)
     position: int = 0
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)

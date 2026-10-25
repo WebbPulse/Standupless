@@ -7973,7 +7973,7 @@
         "type": "object"
       },
       "IssueBlueprint": {
-        "description": "One issue a project template adds.\n\n`key` names it inside the template, so `parent_key` can make it a sub-issue\nof an issue listed before it and `milestone_key` can tie it to a milestone.",
+        "description": "One issue a project template adds, or one sub-issue an issue template adds under the new issue.\n\n`key` names it inside the template, so `parent_key` can make it a sub-issue\nof an issue listed before it and `milestone_key` can tie it to a milestone.\nAn issue template's sub-issues sit directly under the issue, so they carry\nneither.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -8284,7 +8284,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox. `template_sub_issue_keys` keeps\nonly the template sub-issues it names; left out, every one is created.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -8463,6 +8463,21 @@
               }
             ],
             "title": "Template Id"
+          },
+          "template_sub_issue_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Sub Issue Keys"
           },
           "title": {
             "default": "",
@@ -20765,6 +20780,14 @@
             ],
             "title": "Status Id"
           },
+          "sub_issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueTemplateItem"
+            },
+            "maxItems": 25,
+            "title": "Sub Issues",
+            "type": "array"
+          },
           "title": {
             "anyOf": [
               {
@@ -20813,7 +20836,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.\n`sub_issues` are the issues an issue template creates under each issue made\nfrom it.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -20982,6 +21005,13 @@
               }
             ],
             "title": "Status Id"
+          },
+          "sub_issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueBlueprint"
+            },
+            "title": "Sub Issues",
+            "type": "array"
           },
           "team_id": {
             "anyOf": [
@@ -21336,6 +21366,21 @@
               }
             ],
             "title": "Status Id"
+          },
+          "sub_issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IssueTemplateItem"
+                },
+                "maxItems": 25,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Issues"
           },
           "title": {
             "anyOf": [
