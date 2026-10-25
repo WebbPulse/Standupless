@@ -19,9 +19,10 @@ from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.custom_emoji import require_custom_emoji
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.reactions import build_reaction
-from app.common.discussion_reads import group_reactions, normalize_emoji
+from app.common.discussion_reads import group_reactions, reaction_key
 from app.domains.discussion.schemas.discussion import (
     ReactionGroupRead,
     ReactionListRead,
@@ -93,9 +94,11 @@ def add_reaction(
     Idempotent by key, so a second PUT by the same user is the same row and the
     same answer rather than a conflict. Only that emoji's group comes back, because
     that is the one the caller just changed and the rest are already on screen.
+    A custom `:name:` must be an emoji the workspace has.
     """
     issue = _resolve_target(repositories, context, payload.target_id, payload.target_kind, payload.issue_id)
     require_team_member(repositories, context, issue.team_id)
+    require_custom_emoji(repositories, context.workspace_id, payload.emoji)
 
     repositories.reactions.put(
         build_reaction(
@@ -138,5 +141,5 @@ def remove_reaction(
     if not context.can_see_team(issue.team_id):
         raise forbidden()
 
-    repositories.reactions.delete(context.workspace_id, target_id, normalize_emoji(emoji), context.user_id)
+    repositories.reactions.delete(context.workspace_id, target_id, reaction_key(emoji), context.user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

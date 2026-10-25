@@ -11,7 +11,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["workspaces", "memberships", "invites", "api-keys", "counters", "idempotency", "audit", "rate-limits"]
+      tables      = ["workspaces", "memberships", "invites", "api-keys", "counters", "idempotency", "audit", "planning", "rate-limits"]
       read_tables = ["users", "teams"]
     }
     teams = {
@@ -54,7 +54,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["comments", "reactions", "attachments", "subscriptions", "activity", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys", "planning"]
     }
     planning = {
       secrets     = false
@@ -199,10 +199,10 @@ locals {
 
   icon_object_prefixes = {
     identity                  = ["icons/user/"]
-    workspaces                = ["icons/workspace/"]
+    workspaces                = ["icons/workspace/", "icons/emoji/"]
     teams                     = ["icons/team/"]
     teams-purge-consumer      = ["icons/team/"]
-    workspaces-purge-consumer = ["icons/workspace/", "icons/user/"]
+    workspaces-purge-consumer = ["icons/workspace/", "icons/user/", "icons/emoji/"]
   }
 
   lambda_domains = local.domain_functions_enabled ? merge(local.lambda_domains_declared, local.team_purge_functions, local.workspace_export_functions, local.issue_import_functions) : {}

@@ -450,6 +450,20 @@ class CreatedApp(TypedDict):
     slug: str
 
 
+class CustomEmojiCreate(TypedDict):
+    name: str
+    upload_id: str
+
+
+class CustomEmojiRead(TypedDict):
+    created_at: str
+    created_by: str
+    created_by_name: str
+    name: str
+    shortcode: str
+    url: str
+
+
 class CustomerCreate(TypedDict):
     domains: NotRequired[list[str]]
     name: str
@@ -3652,6 +3666,10 @@ class ConnectedAppRead(TypedDict):
     new_scopes: NotRequired[list[str]]
     scopes: list[str]
     workspaces: list[ConnectedAppWorkspaceRead]
+
+
+class CustomEmojiListRead(TypedDict):
+    emoji: list[CustomEmojiRead]
 
 
 class CustomerListRead(TypedDict):

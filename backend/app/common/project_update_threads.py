@@ -21,6 +21,7 @@ from app.common.api.schemas.update_threads import (
     ProjectUpdateCommentRead,
     ProjectUpdateReactionWrite,
 )
+from app.common.custom_emoji import require_custom_emoji
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Project, ProjectUpdateRow
 from app.common.db.dynamo.update_threads import (
@@ -34,7 +35,7 @@ from app.common.discussion_reads import (
     ReactionGroupRead,
     authors_for,
     group_reactions,
-    normalize_emoji,
+    reaction_key,
 )
 from app.common.mentions import mentioned_user_ids
 from app.common.planning_rules import (
@@ -221,6 +222,7 @@ def add_update_reaction(
 ) -> ReactionGroupRead:
     """React to a readable update or one of its replies, answering that emoji's group."""
     update, target_id = _reaction_target(repositories, context, project_id, update_id, payload.comment_id)
+    require_custom_emoji(repositories, context.workspace_id, payload.emoji)
     store = repositories.planning.update_threads
     store.add_reaction(
         build_update_reaction(
@@ -254,5 +256,5 @@ def remove_update_reaction(
     """Take the caller's reaction off an update or one of its replies; a missing one is a no-op."""
     update, target_id = _reaction_target(repositories, context, project_id, update_id, comment_id)
     repositories.planning.update_threads.remove_reaction(
-        context.workspace_id, update.project_id, update.update_id, target_id, normalize_emoji(emoji), context.user_id
+        context.workspace_id, update.project_id, update.update_id, target_id, reaction_key(emoji), context.user_id
     )

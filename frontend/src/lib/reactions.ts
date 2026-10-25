@@ -51,7 +51,8 @@ export const normalizeReaction = (emoji: string): string =>
 
 /** The name this application gives an emoji, or undefined for one it has no name for. */
 export const reactionName = (emoji: string): string | undefined =>
-  REACTION_LABELS[normalizeReaction(emoji)];
+  REACTION_LABELS[normalizeReaction(emoji)] ??
+  (/^:[a-z0-9][a-z0-9_-]{1,31}:$/.test(emoji) ? emoji : undefined);
 
 /**
  * How one reaction group reads to a screen reader, naming the emoji and how

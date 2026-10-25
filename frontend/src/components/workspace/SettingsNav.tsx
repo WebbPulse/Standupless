@@ -102,6 +102,9 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
       >
         Project labels
       </NavLink>
+      <NavLink to={`/w/${workspace.slug}/settings/emoji`} className={tabClass}>
+        Emoji
+      </NavLink>
       <NavLink
         to={`/w/${workspace.slug}/settings/templates`}
         className={tabClass}

@@ -161,6 +161,14 @@
   @apply rounded-xs bg-accent-soft px-0.5 font-medium text-accent;
 }
 
+.rich-markdown .rich-custom-emoji {
+  @apply inline-block h-[1.25em] w-[1.25em] object-contain align-[-0.25em];
+}
+
+.rich-markdown .rich-custom-emoji-code {
+  font-size: 0;
+}
+
 .rich-markdown .rich-reference {
   @apply rounded-xs bg-raised px-1 text-text no-underline;
 }

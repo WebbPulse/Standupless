@@ -16,6 +16,7 @@ import { normalizeReaction, reactionLabel } from '../../lib/reactions';
 import type { ReactionGroup } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
+import { ReactionEmoji } from '../ui/custom-emoji';
 import Popover from '../ui/popover';
 import EmojiPicker from './EmojiPicker';
 
@@ -70,7 +71,9 @@ export const ReactionGroups: React.FC<ReactionGroupsProps> = ({
               void onToggle(group.emoji, group.reacted).catch(() => undefined);
             }}
           >
-            <span aria-hidden="true">{group.emoji}</span>
+            <span aria-hidden="true" className="inline-flex items-center">
+              <ReactionEmoji emoji={group.emoji} />
+            </span>
             <span>{group.count}</span>
           </button>
         ))}

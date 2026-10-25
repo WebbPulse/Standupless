@@ -2586,6 +2586,30 @@
     "path": "/api/workspaces/{workspace_id}/deletion"
   },
   {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/emoji"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/emoji"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/emoji/uploads"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/emoji/{name}"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "workspaces",
     "method": "GET",

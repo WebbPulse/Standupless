@@ -3070,6 +3070,86 @@
         "title": "CursorPage[IssueLinkRead]",
         "type": "object"
       },
+      "CustomEmojiCreate": {
+        "description": "The body that adds a custom emoji: its name and the upload holding its image.",
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "upload_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "upload_id"
+        ],
+        "title": "CustomEmojiCreate",
+        "type": "object"
+      },
+      "CustomEmojiListRead": {
+        "description": "Every custom emoji of a workspace, by name.",
+        "properties": {
+          "emoji": {
+            "items": {
+              "$ref": "#/components/schemas/CustomEmojiRead"
+            },
+            "title": "Emoji",
+            "type": "array"
+          }
+        },
+        "required": [
+          "emoji"
+        ],
+        "title": "CustomEmojiListRead",
+        "type": "object"
+      },
+      "CustomEmojiRead": {
+        "description": "One custom emoji as the picker and the settings page render it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "created_by_name": {
+            "title": "Created By Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shortcode": {
+            "title": "Shortcode",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "shortcode",
+          "url",
+          "created_by",
+          "created_by_name",
+          "created_at"
+        ],
+        "title": "CustomEmojiRead",
+        "type": "object"
+      },
       "CustomerCreate": {
         "description": "The body a customer create takes; only the name is required.",
         "properties": {
@@ -32808,6 +32888,224 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/emoji": {
+      "get": {
+        "description": "Every custom emoji of the workspace, by name, with who uploaded each.",
+        "operationId": "list_custom_emoji_api_workspaces__workspace_id__emoji_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmojiListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Custom Emoji",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "post": {
+        "description": "Name an uploaded image as a custom emoji, resized server side.\n\nThe name is checked for a clash before the image is touched, so a taken name\ncosts no S3 work, and the conditional put settles a race between two people\nclaiming the same name at once; the loser's image is removed.",
+        "operationId": "create_custom_emoji_api_workspaces__workspace_id__emoji_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomEmojiCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmojiRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Custom Emoji",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/emoji/uploads": {
+      "post": {
+        "description": "Sign a PUT for one custom emoji image, which the create call then names.",
+        "operationId": "create_custom_emoji_upload_api_workspaces__workspace_id__emoji_uploads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IconUploadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Custom Emoji Upload",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/emoji/{name}": {
+      "delete": {
+        "description": "Delete one custom emoji and its image, for its uploader or a workspace admin.\n\nText and reactions that used it keep the `:name:` shortcode, which renders as\nplain text from then on.",
+        "operationId": "delete_custom_emoji_api_workspaces__workspace_id__emoji__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Custom Emoji",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/exports": {
       "get": {
         "description": "The workspace's most recent exports, newest first, without download links.",
@@ -45396,7 +45694,7 @@
         ]
       },
       "put": {
-        "description": "React to a target, answering with that emoji's group as it now stands.\n\nIdempotent by key, so a second PUT by the same user is the same row and the\nsame answer rather than a conflict. Only that emoji's group comes back, because\nthat is the one the caller just changed and the rest are already on screen.",
+        "description": "React to a target, answering with that emoji's group as it now stands.\n\nIdempotent by key, so a second PUT by the same user is the same row and the\nsame answer rather than a conflict. Only that emoji's group comes back, because\nthat is the one the caller just changed and the rest are already on screen.\nA custom `:name:` must be an emoji the workspace has.",
         "operationId": "add_reaction_api_workspaces__workspace_id__reactions_put",
         "parameters": [
           {

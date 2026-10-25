@@ -1683,6 +1683,27 @@ export interface IconCommit {
   upload_id: string;
 }
 
+/** One custom workspace emoji: its shortcode, image and who uploaded it. */
+export interface CustomEmojiRead {
+  name: string;
+  shortcode: string;
+  url: string;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+}
+
+/** Every custom emoji of a workspace, by name. */
+export interface CustomEmojiListRead {
+  emoji: CustomEmojiRead[];
+}
+
+/** Names an uploaded image as a custom emoji. */
+export interface CustomEmojiCreate {
+  name: string;
+  upload_id: string;
+}
+
 /** The commit call, which is what makes an upload visible on the issue. */
 export interface FileAttachmentCreate {
   issue_id: string;
