@@ -46,7 +46,7 @@ vi.mock('../MoveIssueDialog', async () => {
     );
   return {
     ...actual,
-    default: ({
+    SelectionMoveDialog: ({
       open,
       issues,
     }: {

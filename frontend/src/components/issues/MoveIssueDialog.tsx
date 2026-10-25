@@ -11,6 +11,7 @@
 import React, { useState } from 'react';
 import { LuUsers } from 'react-icons/lu';
 import { issueCount, moveIssues } from '../../lib/bulkIssueActions';
+import { useTeamsFor } from '../../hooks/useTeams';
 import { canWriteIssues } from '../../lib/capabilities';
 import type { IssueRead, TeamRead, WorkspaceRole } from '../../types/Api';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
@@ -153,5 +154,16 @@ export const IssueTeamRow: React.FC<IssueTeamRowProps> = ({
     <span className="min-w-0 truncate">{team.name}</span>
   </button>
 );
+
+/**
+ * The dialog over the workspace's teams, read only once it mounts, for a
+ * caller such as a list that does not hold them already.
+ */
+export const SelectionMoveDialog: React.FC<
+  Omit<MoveIssueDialogProps, 'teams'>
+> = (props) => {
+  const { data: teams } = useTeamsFor(props.workspaceId, props.open);
+  return <MoveIssueDialog {...props} teams={teams ?? []} />;
+};
 
 export default MoveIssueDialog;

@@ -56,7 +56,6 @@ import type { IssueContextState } from '../../../hooks/useIssueContext';
 import { usePeekIssue } from '../../../hooks/usePeekIssue';
 import { useQuickActions } from '../../../hooks/useQuickActions';
 import { useShortcut } from '../../../hooks/useShortcuts';
-import { useTeamsFor } from '../../../hooks/useTeams';
 import { WorkspaceContext } from '../../../contexts/WorkspaceContextDefinition';
 import { desktopOpenInNewTab } from '../../../lib/desktop';
 import { errorMessage } from '../../../lib/errors';
@@ -132,9 +131,10 @@ import PropertyCommand from './PropertyCommand';
 import { usePropertyValues } from './propertyValues';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
-import MoveIssueDialog, {
+import {
   MOVE_ISSUE_KEYS,
   MOVE_ISSUE_LABEL,
+  SelectionMoveDialog,
 } from '../MoveIssueDialog';
 import RenameIssueDialog from '../RenameIssueDialog';
 import { RELATION_COMMANDS } from '../RelationGlyphs';
@@ -286,7 +286,6 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const [moving, setMoving] = useState<string[] | null>(null);
-  const { data: teams } = useTeamsFor(workspaceId, moving !== null);
   const scrollOnFocus = useRef(false);
 
   const { showSubIssues, completed } = state;
@@ -1446,12 +1445,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         />
       )}
       {moving !== null && movingIssues.length > 0 && (
-        <MoveIssueDialog
+        <SelectionMoveDialog
           open
           workspaceId={workspaceId}
           workspaceRole={workspace?.role}
           issues={movingIssues}
-          teams={teams ?? []}
           onClose={() => {
             setMoving(null);
           }}
