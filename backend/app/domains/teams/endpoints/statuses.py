@@ -20,9 +20,9 @@ from app.common import team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
-    OverrideUpdate,
     StatusCreate,
     StatusListRead,
+    StatusOverrideUpdate,
     StatusRead,
     StatusUpdate,
 )
@@ -69,7 +69,7 @@ def update_status(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> StatusRead:
-    """Rename a status, recategorise it or move it in the order."""
+    """Rename a status, recategorise or describe it, or move it in the order."""
     updated = team_workflow.update_status(repositories, context.workspace_id, str(context.team_id), status_id, payload)
     return StatusRead.from_row(updated)
 
@@ -105,12 +105,12 @@ def delete_status(
 
 @router.patch("/{workspace_id}/teams/{team_id}/statuses/{status_id}/override", response_model=StatusRead)
 def override_status(
-    payload: OverrideUpdate,
+    payload: StatusOverrideUpdate,
     status_id: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> StatusRead:
-    """Hide, show or rename an inherited workspace status in this team, a null name clearing the rename."""
+    """Hide, show, rename or describe an inherited status in this team, a null name or description clearing it."""
     updated = team_workflow.set_status_override(
         repositories, context.workspace_id, str(context.team_id), status_id, payload, can_see=context.can_see_team
     )

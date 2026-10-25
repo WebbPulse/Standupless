@@ -32,6 +32,7 @@ import {
   datePresets,
   shortDateLabel,
   sortStatuses,
+  statusDetail,
   typedDateOption,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
@@ -169,6 +170,7 @@ export const propertyChoices = ({
             label: status.name,
             icon: <StatusIcon status={status} statuses={statuses} />,
             group: STATUS_CATEGORY_LABELS[status.category],
+            ...statusDetail(status),
             ...(teamIds.length === 1 && position <= STATUS_POSITION_COUNT
               ? { shortcut: String(position) }
               : {}),

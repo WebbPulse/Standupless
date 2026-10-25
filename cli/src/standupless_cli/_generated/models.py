@@ -2982,6 +2982,7 @@ class StatusCreate(TypedDict):
         ]
         | None
     ]
+    description: NotRequired[str | None]
     icon: NotRequired[
         Literal[
             "dashed",
@@ -3013,6 +3014,12 @@ class StatusMappingRead(TypedDict):
     status_name: str
 
 
+class StatusOverrideUpdate(TypedDict):
+    description: NotRequired[str | None]
+    hidden: NotRequired[bool | None]
+    name: NotRequired[str | None]
+
+
 class StatusRead(TypedDict):
     category: Literal["backlog", "unstarted", "started", "completed", "cancelled"]
     color: NotRequired[
@@ -3034,6 +3041,7 @@ class StatusRead(TypedDict):
         ]
         | None
     ]
+    description: NotRequired[str | None]
     hidden: NotRequired[bool]
     icon: NotRequired[
         Literal[
@@ -3057,6 +3065,7 @@ class StatusRead(TypedDict):
         | None
     ]
     id: str
+    inherited_description: NotRequired[str | None]
     inherited_name: NotRequired[str | None]
     name: str
     position: int
@@ -3084,6 +3093,7 @@ class StatusUpdate(TypedDict):
         ]
         | None
     ]
+    description: NotRequired[str | None]
     icon: NotRequired[
         Literal[
             "dashed",

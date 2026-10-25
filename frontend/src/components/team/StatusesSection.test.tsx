@@ -499,3 +499,100 @@ describe('a status inherited from the parent team', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('a status description', () => {
+  /** A started status the team inherits with a workspace description. */
+  const described: StatusRead = {
+    id: 'ws-qa',
+    name: 'QA',
+    category: 'started',
+    position: 7,
+    scope: 'workspace',
+    hidden: false,
+    inherited_name: null,
+    description: 'Waiting on a tester',
+    inherited_description: null,
+  };
+
+  it('saves a description typed under a team status on Enter', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    const field = await screen.findByLabelText('Description of In Progress');
+    await user.type(field, '  Someone is on it  {Enter}');
+    await waitFor(() => {
+      expect(updateStatus).toHaveBeenCalledWith('doing', {
+        description: 'Someone is on it',
+      });
+    });
+  });
+
+  it('clears a description that is emptied', async () => {
+    listStatuses.mockResolvedValue([
+      rows[0]!,
+      { ...rows[1]!, description: 'Someone is on it' },
+    ]);
+    const user = userEvent.setup();
+    renderSection();
+    const field = await screen.findByDisplayValue('Someone is on it');
+    await user.clear(field);
+    await user.tab();
+    await waitFor(() => {
+      expect(updateStatus).toHaveBeenCalledWith('doing', { description: null });
+    });
+  });
+
+  it('reverts on Escape without saving', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    const field = await screen.findByLabelText('Description of Todo');
+    await user.type(field, 'Draft{Escape}');
+    expect(field).toHaveValue('');
+    expect(updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('describes an inherited status for the team only', async () => {
+    listStatuses.mockResolvedValue([...rows, described]);
+    const user = userEvent.setup();
+    renderSection();
+    const field = await screen.findByLabelText('Description of QA');
+    expect(field).toHaveValue('Waiting on a tester');
+    await user.clear(field);
+    await user.type(field, 'Two testers sign off{Enter}');
+    await waitFor(() => {
+      expect(overrideStatus).toHaveBeenCalledWith('ws-qa', {
+        description: 'Two testers sign off',
+      });
+    });
+    expect(updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('drops the team description when the inherited one is typed back', async () => {
+    listStatuses.mockResolvedValue([
+      ...rows,
+      {
+        ...described,
+        description: 'Two testers sign off',
+        inherited_description: 'Waiting on a tester',
+      },
+    ]);
+    const user = userEvent.setup();
+    renderSection();
+    const field = await screen.findByLabelText('Description of QA');
+    await user.clear(field);
+    await user.type(field, 'Waiting on a tester{Enter}');
+    await waitFor(() => {
+      expect(overrideStatus).toHaveBeenCalledWith('ws-qa', {
+        description: null,
+      });
+    });
+  });
+
+  it('shows a reader the description as text', async () => {
+    listStatuses.mockResolvedValue([...rows, described]);
+    renderSection(false);
+    expect(await screen.findByText('Waiting on a tester')).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Description of QA')
+    ).not.toBeInTheDocument();
+  });
+});

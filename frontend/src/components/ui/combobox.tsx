@@ -357,7 +357,12 @@ export const Combobox: React.FC<ComboboxProps> = ({
                         {row.icon}
                       </span>
                     )}
-                    <span className="min-w-0 flex-1 truncate">
+                    <span
+                      className="min-w-0 flex-1 truncate"
+                      {...(row.detail === undefined
+                        ? {}
+                        : { title: `${row.label}: ${row.detail}` })}
+                    >
                       {row.label}
                       {row.detail !== undefined && (
                         <span className="ml-1.5 text-text-faint">

@@ -25,7 +25,14 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.schemas.teams import LabelCreate, LabelUpdate, OverrideUpdate, StatusCreate, StatusUpdate
+from app.common.api.schemas.teams import (
+    LabelCreate,
+    LabelUpdate,
+    OverrideUpdate,
+    StatusCreate,
+    StatusOverrideUpdate,
+    StatusUpdate,
+)
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
@@ -332,6 +339,7 @@ def create_status(repositories: Repositories, workspace_id: str, team_id: str, p
             position=position,
             color=payload.color,
             icon=payload.icon,
+            description=payload.description,
         )
     )
 
@@ -339,9 +347,9 @@ def create_status(repositories: Repositories, workspace_id: str, team_id: str, p
 def update_status(
     repositories: Repositories, workspace_id: str, team_id: str, status_id: str, payload: StatusUpdate
 ) -> Status:
-    """Rename, recategorise, recolor or move a status, or 404.
+    """Rename, recategorise, recolor, describe or move a status, or 404.
 
-    An explicit null color or icon removes it so the status falls back to its
+    An explicit null color, icon or description removes it so the status falls back to its
     category default. An icon from another category is a 422. Moving a status to
     a category its stored icon does not fit drops that icon rather than refusing
     the move, because the admin asked for the category, not about the icon.
@@ -611,6 +619,7 @@ def create_workspace_status(repositories: Repositories, workspace_id: str, paylo
             position=position,
             color=payload.color,
             icon=payload.icon,
+            description=payload.description,
             scope=WORKSPACE_SCOPE,
         )
     )
@@ -755,11 +764,11 @@ def set_status_override(
     workspace_id: str,
     team_id: str,
     status_id: str,
-    payload: OverrideUpdate,
+    payload: StatusOverrideUpdate,
     *,
     can_see: TeamFilter | None = None,
 ) -> Status:
-    """Hide, show, rename or clear the rename of an inherited status in one team.
+    """Hide, show, rename or describe an inherited status in one team, or clear the rename or description.
 
     Hiding the team's last visible status of a category is a 409, for the same
     reason deleting it is, and so is hiding one live issues are still in, which
@@ -878,7 +887,10 @@ def _next_override(
     target_id: str,
     payload: OverrideUpdate,
 ) -> Override:
-    """The override a patch leaves: the stored one with the given fields applied, an explicit null name clearing it."""
+    """The override a patch leaves: the stored one with the given fields applied.
+
+    An explicit null name or description clears it back to the inherited one.
+    """
     current = repositories.team_config.get_override(workspace_id, team_id, target, target_id) or Override(
         workspace_id=workspace_id,
         config_key=override_key(team_id, target, target_id),
@@ -893,6 +905,8 @@ def _next_override(
         update["shown"] = not given["hidden"] and _parent_hides(repositories, workspace_id, team_id, target, target_id)
     if "name" in given:
         update["name"] = given["name"] or None
+    if "description" in given:
+        update["description"] = given["description"] or None
     return current.model_copy(update=update)
 
 
@@ -907,7 +921,7 @@ def _parent_hides(repositories: Repositories, workspace_id: str, team_id: str, t
 
 def _store_override(repositories: Repositories, override: Override) -> None:
     """Write an override, or remove it when it no longer changes anything."""
-    if override.hidden or override.shown or override.name:
+    if override.hidden or override.shown or override.name or override.description:
         repositories.team_config.put_override(override)
         return
     repositories.team_config.delete_override(

@@ -85,6 +85,33 @@ describe('StatusPicker', () => {
     ).toHaveTextContent('Doing');
   });
 
+  it('shows a status description beside its name', async () => {
+    const user = userEvent.setup();
+    render(
+      <StatusPicker
+        statuses={[
+          ...statuses.slice(0, 3),
+          { ...statuses[3]!, description: 'Shipped to production' },
+        ]}
+        value="st-2"
+        onChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Status: Todo' }));
+    const done = screen.getByRole('option', { name: /Done/ });
+    expect(done).toHaveTextContent('Shipped to production');
+    expect(
+      within(done).getByTitle('Done: Shipped to production')
+    ).toBeVisible();
+    expect(screen.getByRole('option', { name: /Doing/ })).not.toHaveTextContent(
+      'Shipped'
+    );
+    await user.keyboard('production');
+    const matches = screen.getAllByRole('option');
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toHaveTextContent('Done');
+  });
+
   it('offers Triage first when the team has triage on', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
