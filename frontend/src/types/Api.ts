@@ -1950,7 +1950,12 @@ export type NotificationKind =
   | 'sla_breached'
   | 'review_requested'
   | 'triage_new'
-  | 'view_issue_added';
+  | 'view_issue_added'
+  | 'reaction'
+  | 'issue_completed'
+  | 'issue_cancelled'
+  | 'priority_urgent'
+  | 'blocking_changed';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -1999,7 +2004,7 @@ export interface NotificationRead {
   source?: ChangeSource | null;
   /** The pull request a `review_requested` row points at; null on every other row. */
   url?: string | null;
-  /** The status name a `status_changed` row moved to; absent on older rows. */
+  /** The status a `status_changed` row moved to, a reaction's emoji, or a blocking row's change and other issue; absent on older rows. */
   new_value?: string | null;
   /** The line the row reads, such as "Olive moved to Done"; absent on older clients' fixtures. */
   summary?: string;

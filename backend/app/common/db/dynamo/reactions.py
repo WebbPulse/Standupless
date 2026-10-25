@@ -49,7 +49,12 @@ def reaction_key(emoji: str, user_id: str) -> str:
 
 
 class Reaction(BaseModel):
-    """One user's reaction to one issue or comment."""
+    """One user's reaction to one issue or comment.
+
+    `issue_id` is the issue a comment target belongs to, carried so the notify
+    consumer can read the comment back from the stream image alone; it is empty on
+    rows written before it was recorded.
+    """
 
     ws_target: str
     reaction_key: str
@@ -59,6 +64,7 @@ class Reaction(BaseModel):
     team_id: str
     emoji: str
     user_id: str
+    issue_id: str = ""
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -69,6 +75,8 @@ def build_reaction(
     team_id: str,
     emoji: str,
     user_id: str,
+    *,
+    issue_id: str = "",
 ) -> Reaction:
     """One reaction with both of its keys already composed."""
     return Reaction(
@@ -80,6 +88,7 @@ def build_reaction(
         team_id=team_id,
         emoji=emoji,
         user_id=user_id,
+        issue_id=issue_id,
     )
 
 

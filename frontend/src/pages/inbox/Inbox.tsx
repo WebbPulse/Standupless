@@ -53,8 +53,10 @@ import {
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import {
+  LuBan,
   LuCheck,
   LuCheckCheck,
+  LuCircleCheck,
   LuCalendar,
   LuClock,
   LuDownload,
@@ -64,6 +66,7 @@ import {
   LuInbox,
   LuMailOpen,
   LuSearch,
+  LuSmilePlus,
   LuTarget,
   LuTrash2,
   LuTriangleAlert,
@@ -87,12 +90,17 @@ import {
   unsubscribe,
 } from '../../api/notifications';
 import IssuePane from '../../components/issues/IssuePane';
+import {
+  BlockedIcon,
+  BlockingIcon,
+} from '../../components/issues/RelationGlyphs';
 import { ManageSubscribersKeyContext } from '../../components/issues/IssueSubscribers';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import { IssueHoverTrigger } from '../../components/ui/IssueHoverCard';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
+import { PriorityGlyph } from '../../components/ui/glyphs';
 import {
   ContextMenu,
   Menu,
@@ -627,6 +635,38 @@ const rowSummary = (row: NotificationRead): string => {
   return row.actor_name === '' ? label : `${label} by ${row.actor_name}`;
 };
 
+/** The icon a kind leads its summary with, for kinds whose words alone read too alike. */
+const KIND_ICONS: Partial<Record<InboxKind, React.ReactNode>> = {
+  reaction: (
+    <LuSmilePlus
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
+  issue_completed: (
+    <LuCircleCheck
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-accent"
+    />
+  ),
+  issue_cancelled: (
+    <LuBan aria-hidden="true" className="h-3 w-3 shrink-0 text-text-faint" />
+  ),
+  priority_urgent: <PriorityGlyph priority="urgent" className="h-3 w-3" />,
+  blocking_changed: <BlockedIcon className="h-3 w-3" />,
+};
+
+/** The icon for a blocking row: the blocking flag when this issue blocks another, the blocked flag otherwise. */
+const kindIcon = (row: NotificationRead): React.ReactNode => {
+  if (row.kind !== 'blocking_changed') return KIND_ICONS[row.kind] ?? null;
+  const change = (row.new_value ?? '').split(':')[0];
+  return change === 'blocking' || change === 'no_longer_blocking' ? (
+    <BlockingIcon className="h-3 w-3" />
+  ) : (
+    <BlockedIcon className="h-3 w-3" />
+  );
+};
+
 /** Props for InboxRow. */
 interface InboxRowProps {
   group: InboxGroup;
@@ -797,6 +837,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
               {row.issue_key}
             </span>
           )}
+          {!snoozedUntil && kindIcon(row)}
           <span className="min-w-0 truncate">
             {snoozedUntil
               ? snoozeLabel(snoozedUntil)

@@ -52,6 +52,11 @@ NotificationKind = Literal[
     "reminder",
     "triage_new",
     "view_issue_added",
+    "reaction",
+    "issue_completed",
+    "issue_cancelled",
+    "priority_urgent",
+    "blocking_changed",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -73,6 +78,11 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "reminder",
     "triage_new",
     "view_issue_added",
+    "reaction",
+    "issue_completed",
+    "issue_cancelled",
+    "priority_urgent",
+    "blocking_changed",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -89,6 +99,25 @@ TRIAGE_NEW = "triage_new"
 
 VIEW_ISSUE_ADDED = "view_issue_added"
 """The kind that tells a view's subscriber an issue newly matches it, naming the view in `new_value`."""
+
+REACTION = "reaction"
+"""The kind that tells a comment's author someone reacted to it, naming the emoji in `new_value`."""
+
+ISSUE_COMPLETED = "issue_completed"
+"""The kind a move into a completed status takes for the assignee and subscribers, naming the status in `new_value`."""
+
+ISSUE_CANCELLED = "issue_cancelled"
+"""The kind a move into a cancelled status takes for the assignee and subscribers, naming the status in `new_value`."""
+
+PRIORITY_URGENT = "priority_urgent"
+"""The kind that tells the assignee and subscribers an issue was raised to urgent priority."""
+
+BLOCKING_CHANGED = "blocking_changed"
+"""The kind a blocking link added, removed or resolved takes, `new_value` saying which and naming the other issue.
+
+`new_value` reads `<change>:<other issue key>`, the change one of `blocked_by`,
+`blocking`, `unblocked_by`, `no_longer_blocking` and `blocker_resolved`.
+"""
 
 REMINDER_PREFIX = "reminder#"
 """The partition prefix reminder markers live under, which no inbox can name.

@@ -52,6 +52,7 @@ from app.common.db.dynamo.users import (
     ThemeField,
     User,
     WeekStartField,
+    channel_default,
 )
 from app.common.email import deliver
 from app.common.handles import HANDLE_PATTERN, handle_conflicts, normalise_handle, previous_after_rename
@@ -278,9 +279,9 @@ def _as_read(user: "Any") -> UserRead:
         email_notifications=user.email_notifications,
         notification_preferences={
             kind: NotificationChannels(
-                in_app=bool(user.notification_preferences.get(kind, {}).get("in_app", True)),
-                email=bool(user.notification_preferences.get(kind, {}).get("email", True)),
-                chat=bool(user.notification_preferences.get(kind, {}).get("chat", True)),
+                in_app=bool(user.notification_preferences.get(kind, {}).get("in_app", channel_default(kind, "in_app"))),
+                email=bool(user.notification_preferences.get(kind, {}).get("email", channel_default(kind, "email"))),
+                chat=bool(user.notification_preferences.get(kind, {}).get("chat", channel_default(kind, "chat"))),
             )
             for kind in NOTIFICATION_KINDS
         },
@@ -353,17 +354,18 @@ def _plan_read(plan: AccountDeletionPlan) -> AccountDeletionPlanRead:
 def _merged_preferences(stored: dict[str, dict[str, bool]], changes: dict[Any, NotificationChannelsUpdate]) -> dict:
     """The stored per kind switches with a partial change applied, kept sparse.
 
-    Only a switch that is off is kept, so the row stays small and a channel added
-    later defaults to on for everyone who never touched it.
+    Only a switch that differs from its kind's default is kept, so the row stays
+    small and a channel added later takes its default for everyone who never
+    touched it.
     """
     merged = {kind: dict(channels) for kind, channels in stored.items()}
     for kind, update in changes.items():
         channels = merged.setdefault(str(kind), {})
         for channel, value in update.model_dump(exclude_none=True).items():
-            if value:
+            if value == channel_default(str(kind), channel):
                 channels.pop(channel, None)
             else:
-                channels[channel] = False
+                channels[channel] = value
     return {kind: channels for kind, channels in merged.items() if channels}
 
 

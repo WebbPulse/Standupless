@@ -19,6 +19,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
 from webbpulse.dynamodb import Repository, new_ulid
 
+from app.common.bulk_import import IMPORT_BATCH_ATTRIBUTE
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import RELATIONS
 
@@ -123,12 +124,16 @@ class RelationRepository:
         relation_type: str,
         target_issue_id: str,
         created_by: str,
+        *,
+        import_batch_id: str = "",
     ) -> Relation:
         """Write both directions of one link, answering the forward row.
 
         Idempotent on the pair and type: an existing forward row is returned as it
         stands rather than rewritten, so a repeated call keeps the original
-        `link_id` and `created_at` and the client sees the same link.
+        `link_id` and `created_at` and the client sees the same link. An importer
+        passes its `import_batch_id`, stamped on both rows so the notify consumer
+        stays quiet about links a bulk import wrote.
         """
         existing = self.get(workspace_id, issue_id, relation_type, target_issue_id)
         if existing is not None:
@@ -158,18 +163,21 @@ class RelationRepository:
             created_at=created_at,
         )
 
-        self._put(forward)
-        self._put(inverse)
+        self._put(forward, import_batch_id=import_batch_id)
+        self._put(inverse, import_batch_id=import_batch_id)
         return forward
 
-    def _put(self, relation: Relation) -> None:
+    def _put(self, relation: Relation, *, import_batch_id: str = "") -> None:
         """Write one direction, tolerating a row that is already there.
 
         The two rows are written separately rather than transactionally, so a
         retried call finds one side present; overwriting it with the same content
         is what makes the pair converge instead of raising.
         """
-        self._repository.put(as_relation_item(relation))
+        item = as_relation_item(relation)
+        if import_batch_id:
+            item[IMPORT_BATCH_ATTRIBUTE] = import_batch_id
+        self._repository.put(item)
 
     def list_for_issue(self, workspace_id: str, issue_id: str, *, limit: int = 200) -> list[Relation]:
         """Every link row stored under one issue, both senses, oldest first.
@@ -220,22 +228,26 @@ class RelationRepository:
         )
         return [_as_relation(item) for item in items]
 
-    def delete_link(self, workspace_id: str, issue_id: str, link_id: str) -> Relation | None:
+    def delete_link(self, workspace_id: str, issue_id: str, link_id: str, *, removed_by: str = "") -> Relation | None:
         """Remove both rows of one link, answering this issue's row or `None` when absent.
 
         Found by `link_id` under the issue's own partition, because the caller names
         the link rather than the pair, and the inverse is then keyed off the row
         that was found rather than reconstructed from the request. The removed row
-        is answered so the caller can name what the link pointed at.
+        is answered so the caller can name what the link pointed at. `removed_by`
+        and the time are stamped on each row just before it goes, so the stream's
+        old image names who removed the link and when, and the notify consumer can
+        leave them out.
         """
         for relation in self.list_for_issue(workspace_id, issue_id):
             if relation.link_id != link_id:
                 continue
-            self._delete(workspace_id, relation.relation_key)
+            self._delete(workspace_id, relation.relation_key, removed_by=removed_by)
             inverse_type = INVERSE_TYPES[relation.relation_type]
             self._delete(
                 workspace_id,
                 relation_key(relation.target_issue_id, inverse_type, relation.issue_id),
+                removed_by=removed_by,
             )
             return relation
         return None
@@ -258,11 +270,13 @@ class RelationRepository:
                 removed += 1
         return removed
 
-    def _delete(self, workspace_id: str, key: str) -> bool:
-        """Remove one relation row, reporting whether one was there."""
+    def _delete(self, workspace_id: str, key: str, *, removed_by: str = "") -> bool:
+        """Remove one relation row, reporting whether one was there, stamping who removed it first when named."""
         item = self._repository.get({"workspace_id": workspace_id, "relation_key": key})
         if item is None:
             return False
+        if removed_by:
+            self._repository.put({**item, "removed_by": removed_by, "removed_at": utc_now().isoformat()})
         self._repository.delete(
             {"workspace_id": workspace_id, "relation_key": key},
             condition=Attr("relation_key").exists(),

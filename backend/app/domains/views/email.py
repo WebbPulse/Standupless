@@ -55,6 +55,16 @@ _HEADLINES: Mapping[str, str] = {
     "reminder": "You asked to be reminded about this issue.",
     "triage_new": "A new issue is waiting in triage for your team.",
     "view_issue_added": "An issue was added to a view you follow.",
+    "reaction": "$actor reacted to your comment.",
+    "issue_completed": "$actor completed this issue.",
+    "issue_cancelled": "$actor canceled this issue.",
+    "priority_urgent": "$actor marked this issue as urgent.",
+    "blocking_changed": "$actor changed what blocks this issue.",
+    "blocked_by": "$actor marked this issue as blocked by another.",
+    "blocking": "$actor marked this issue as blocking another.",
+    "unblocked_by": "$actor removed an issue blocking this one.",
+    "no_longer_blocking": "$actor removed an issue this one was blocking.",
+    "blocker_resolved": "$actor resolved an issue blocking this one.",
 }
 
 DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
@@ -80,6 +90,9 @@ _VIEW_REASON = (
     "You are receiving this because you subscribed to a view this issue now matches. "
     "Turn these off in your {product} notification settings."
 )
+_COMMENT_REASON = (
+    "You are receiving this because you wrote the comment. Turn these off in your {product} notification settings."
+)
 _PROJECT_REASON = (
     "You are receiving this because you lead or are a member of this project. "
     "Turn these off in your {product} notification settings."
@@ -97,6 +110,8 @@ def _issue_reason(kind: str) -> str:
         return _TRIAGE_REASON
     if kind == "view_issue_added":
         return _VIEW_REASON
+    if kind == "reaction":
+        return _COMMENT_REASON
     return _ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON
 
 
