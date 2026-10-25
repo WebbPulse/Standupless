@@ -1370,6 +1370,17 @@ export interface ReactionGroup {
 }
 
 /**
+ * The passage of the issue description a root comment is pinned to: the
+ * quoted text and a little of the text either side, which finds it again
+ * among repeats. The description itself is never rewritten.
+ */
+export interface CommentAnchor {
+  quote: string;
+  prefix?: string;
+  suffix?: string;
+}
+
+/**
  * One comment. `parent_comment_id` is one level deep: the contract refuses a
  * reply to a reply with a 409, so the thread renders as roots and their
  * replies rather than an arbitrary tree.
@@ -1394,6 +1405,8 @@ export interface CommentRead {
   github_thread?: GithubThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
+  /** The description passage a root comment is pinned to, when it is. */
+  anchor?: CommentAnchor | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -1461,6 +1474,8 @@ export interface CommentCreate {
   parent_comment_id?: string | null;
   /** Attachments on the same issue to show inline, at most ten. */
   attachment_ids?: string[];
+  /** Pins a new thread to a passage of the description; never on a reply. */
+  anchor?: CommentAnchor | null;
 }
 
 /** The editable field on a comment. Only the author may send it. */

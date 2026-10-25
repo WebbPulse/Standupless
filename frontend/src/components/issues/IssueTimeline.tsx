@@ -8,6 +8,9 @@
  * Both lists are cursor paged newest first on the server. Comments are read to
  * the end, because a thread missing its root reads wrong; activity loads older
  * pages on request from the top, where older entries belong.
+ *
+ * The open threads pinned to passages of the description are reported to the
+ * issue's anchored threads, so the description can highlight their passages.
  */
 
 import React, {
@@ -43,6 +46,7 @@ import type { IconType } from 'react-icons';
 import { Link, useLocation } from 'react-router-dom';
 import { appendComments, listComments } from '../../api/discussion';
 import { appendActivity, listActivity } from '../../api/issues';
+import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import type { QuoteRequest } from '../../hooks/useQuoteRequest';
 import { useThreadTargets } from '../../hooks/useThreadTargets';
@@ -57,6 +61,7 @@ import { errorMessage } from '../../lib/errors';
 import { viaLabel } from '../../lib/changeSource';
 import { actorLabel, avatarOf, type Assignable } from '../../lib/issuePeople';
 import {
+  anchoredThreads,
   buildTimeline,
   commentAttachmentIds,
   type TimelineEvent,
@@ -441,6 +446,11 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   useEffect(() => {
     onCommentAttachments?.(commentAttachmentIds(comments.rows));
   }, [comments.rows, onCommentAttachments]);
+
+  const reportThreads = usePassageThreads()?.setThreads;
+  useEffect(() => {
+    reportThreads?.(anchoredThreads(comments.rows));
+  }, [comments.rows, reportThreads]);
 
   const { hash } = useLocation();
   const scrolledTo = useRef<string | null>(null);

@@ -14,12 +14,23 @@
  * attachment of the issue, embedded by its stable content path.
  *
  * Selecting text in the description offers a Quote button, which hands the
- * passage on as a blockquote for the issue's comment box.
+ * passage on as a blockquote for the issue's comment box. Where the reader
+ * may comment, a Comment button beside it opens a composer under the
+ * description for a thread pinned to that passage. The passages open threads
+ * are pinned to wear a soft highlight, and pressing one scrolls to its thread.
  */
 
-import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { uploadAttachment } from '../../api/discussion';
+import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
 import { updateIssue } from '../../api/issues';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
@@ -30,9 +41,10 @@ import { rememberPreview, useMedia } from '../../lib/mediaContext';
 import { submitKeysLabel } from '../../lib/platform';
 import { attachmentsKey } from '../../lib/queryKeys';
 import { validateBody } from '../../lib/validation';
-import type { IssueRead } from '../../types/Api';
+import type { CommentAnchor, IssueRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
+import PassageComposer from '../discussion/PassageComposer';
 import SelectionQuote from '../discussion/SelectionQuote';
 import { ErrorAlert } from '../ui/alert';
 import Markdown from '../ui/markdown';
@@ -55,6 +67,8 @@ export interface IssueBodyProps {
   onDropFiles?: (files: File[]) => void;
   /** Receives a selected passage as a Markdown blockquote; unset offers no quote. */
   onQuote?: (markdown: string) => void;
+  /** Offers a thread pinned to a selected passage, under an anchored threads provider. */
+  canComment?: boolean;
 }
 
 /** The body text as prose, shared by the editor and its stand in. */
@@ -102,6 +116,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   people,
   onDropFiles,
   onQuote,
+  canComment = false,
 }) => {
   const [dragging, setDragging] = useState(false);
   const [bodyFocused, setBodyFocused] = useState(false);
@@ -112,6 +127,39 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   const editor = useRef<RichMarkdownHandle>(null);
   const { refresh } = useMedia();
   const issueId = issue.id;
+  const passages = usePassageThreads();
+  const [passage, setPassage] = useState<CommentAnchor | null>(null);
+  const [posted, setPosted] = useState<string | null>(null);
+
+  const showPosted = passages?.showThread;
+  const postedListed =
+    posted !== null &&
+    (passages?.threads.some((thread) => thread.commentId === posted) ?? false);
+  useEffect(() => {
+    if (posted === null || !postedListed || showPosted === undefined) return;
+    setPosted(null);
+    showPosted(posted);
+  }, [posted, postedListed, showPosted]);
+
+  const commentOn =
+    canComment && passages !== null
+      ? (range: Range) => {
+          const anchor = editor.current?.passageAt(range) ?? null;
+          if (anchor !== null) setPassage(anchor);
+        }
+      : undefined;
+
+  const openThread =
+    passages === null
+      ? undefined
+      : (event: React.MouseEvent) => {
+          const target = event.target as HTMLElement;
+          const mark = target.closest<HTMLElement>('[data-comment-anchor]');
+          const id = mark?.dataset.commentAnchor;
+          if (id === undefined) return;
+          if (document.getSelection()?.isCollapsed === false) return;
+          passages.showThread(id);
+        };
 
   const uploadFile = useCallback<UploadFile>(
     async (file, onProgress) => {
@@ -223,7 +271,11 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
 
       <div className={cn('space-y-2', dropClass)} {...dropProps}>
         {showBody ? (
-          <SelectionQuote onQuote={onQuote}>
+          <SelectionQuote
+            onQuote={onQuote}
+            onComment={commentOn}
+            {...(openThread === undefined ? {} : { onClick: openThread })}
+          >
             <Suspense
               fallback={
                 <StaticBody
@@ -244,6 +296,15 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
                 className={BODY_CLASS}
                 onCommit={saveBody}
                 onFocusChange={setBodyFocused}
+                {...(passages === null
+                  ? {}
+                  : {
+                      commentAnchors: {
+                        threads: passages.threads,
+                        activeId: passages.activeId,
+                        onLocated: passages.setLocated,
+                      },
+                    })}
                 {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
                 {...(canEdit ? { uploadFile } : {})}
                 {...(canEdit && people !== undefined
@@ -267,6 +328,21 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
         <ErrorAlert message={bodyError} />
         {dragging && (
           <p className="text-xs text-accent">Drop to add to the description</p>
+        )}
+        {passage !== null && (
+          <PassageComposer
+            workspaceId={workspaceId}
+            issueId={issueId}
+            people={people ?? []}
+            anchor={passage}
+            onPosted={(comment) => {
+              setPassage(null);
+              setPosted(comment.comment_id);
+            }}
+            onCancel={() => {
+              setPassage(null);
+            }}
+          />
         )}
       </div>
     </section>

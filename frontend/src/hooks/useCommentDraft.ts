@@ -3,6 +3,8 @@
  * thread when the composer opens, saves what they type after a short pause,
  * discards the draft when the text is emptied, and discards it at once when
  * the comment posts. Drafts are the caller's own and never notify anyone.
+ * A composer that keeps no draft, such as the one pinned to a passage of the
+ * description, passes `enabled` false and the hook does nothing.
  */
 
 import { type RefObject, useCallback, useEffect, useRef } from 'react';
@@ -27,7 +29,8 @@ export const useCommentDraft = (
   workspaceId: string,
   issueId: string,
   parentCommentId: string | undefined,
-  editorRef: RefObject<RichMarkdownHandle | null>
+  editorRef: RefObject<RichMarkdownHandle | null>,
+  enabled = true
 ): CommentDraft => {
   const thread = parentCommentId ?? null;
   const restored = useRef<string | null>(null);
@@ -38,8 +41,11 @@ export const useCommentDraft = (
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const target = useRef({ workspaceId, issueId, thread });
   target.current = { workspaceId, issueId, thread };
+  const active = useRef(enabled);
+  active.current = enabled;
 
   const write = useCallback((markdown: string): void => {
+    if (!active.current) return;
     const body = markdown.trim() === '' ? '' : markdown;
     if (body === saved.current) return;
     const { workspaceId: ws, issueId: issue, thread: parent } = target.current;
@@ -70,6 +76,7 @@ export const useCommentDraft = (
   }, [editorRef]);
 
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     restored.current = null;
     applied.current = false;
@@ -86,7 +93,7 @@ export const useCommentDraft = (
     return () => {
       controller.abort();
     };
-  }, [workspaceId, issueId, thread, restore]);
+  }, [workspaceId, issueId, thread, restore, enabled]);
 
   useEffect(
     () => () => {
@@ -122,6 +129,7 @@ export const useCommentDraft = (
     cancel();
     latest.current = '';
     saved.current = '';
+    if (!active.current) return;
     const { workspaceId: ws, issueId: issue, thread: parent } = target.current;
     deleteDraft(ws, issue, parent).catch(() => undefined);
   }, []);

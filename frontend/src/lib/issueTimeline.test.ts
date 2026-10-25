@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActivityRead, CommentRead } from '../types/Api';
 import type { ActivityContext } from './activityDisplay';
 import {
+  anchoredThreads,
   buildTimeline,
   commentAttachmentIds,
   commentThreads,
@@ -207,5 +208,31 @@ describe('commentAttachmentIds', () => {
       comment('c-2', '2026-09-20T11:00:00Z'),
     ]);
     expect([...ids]).toEqual(['f-1']);
+  });
+});
+
+describe('anchoredThreads', () => {
+  it('lists the open roots pinned to a passage, oldest first', () => {
+    const anchor = { quote: 'the board query', prefix: 'cache ', suffix: '' };
+    const threads = anchoredThreads([
+      comment('c-2', '2026-09-20T11:00:00Z', { anchor }),
+      comment('c-1', '2026-09-20T10:00:00Z', { anchor }),
+      comment('c-3', '2026-09-20T12:00:00Z'),
+      comment('c-4', '2026-09-20T13:00:00Z', {
+        anchor,
+        resolution: {
+          resolved_by: 'u-1',
+          resolved_at: '2026-09-20T14:00:00Z',
+        },
+      }),
+      comment('c-5', '2026-09-20T15:00:00Z', {
+        anchor,
+        parent_comment_id: 'c-1',
+      }),
+    ]);
+    expect(threads).toEqual([
+      { commentId: 'c-1', anchor },
+      { commentId: 'c-2', anchor },
+    ]);
   });
 });
