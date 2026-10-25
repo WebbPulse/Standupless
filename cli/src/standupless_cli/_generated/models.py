@@ -4719,6 +4719,11 @@ class IssueListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class IssueLookupRead(TypedDict):
+    issues: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    resolved: NotRequired[dict[str, str]]
+
+
 class IssueReleaseRead(TypedDict):
     created_at: str
     current_stage: NotRequired[ReleaseStageRead | None]
