@@ -134,7 +134,12 @@ describe('viewQuery', () => {
 
   it('sends the kinds of every chosen type, unread and snoozed', () => {
     expect(
-      viewQuery({ categories: ['due'], showRead: false, showSnoozed: true })
+      viewQuery({
+        ...DEFAULT_VIEW,
+        categories: ['due'],
+        showRead: false,
+        showSnoozed: true,
+      })
     ).toEqual({
       unread: true,
       include_snoozed: true,
