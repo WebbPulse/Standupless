@@ -22,6 +22,7 @@
  * An empty Priority tab shows what lands there with a way to Other instead of
  * a lone Load more, empty pages are paged past on their own, and Load more
  * shows that it is loading and either adds rows or goes away.
+ * On a phone the list and the pane stack, with a back arrow to the list.
  * On a touch screen a long swipe left removes a row and a long swipe right
  * marks it read, each with Undo, and a short swipe holds the row open on the
  * action's button.
@@ -1874,5 +1875,37 @@ describe('inbox touch gestures', () => {
 
     expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
     expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
+  });
+});
+
+describe('the inbox on a phone', () => {
+  it('stacks the list and the pane, showing one at a time below lg', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    const pane = await screen.findByLabelText('Peek iss-1');
+    const list = screen.getByRole('region', { name: 'Notifications' });
+    expect(list).toHaveClass('hidden', 'lg:flex');
+    expect(pane.parentElement).toHaveClass('flex');
+    expect(pane.parentElement).not.toHaveClass('hidden');
+  });
+
+  it('offers a phone-only back arrow to the list while a row is open', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/inbox?n=n-1');
+
+    const back = await screen.findByRole('button', {
+      name: 'Back to notifications',
+    });
+    expect(back).toHaveClass('sm:hidden');
+
+    await user.click(back);
+
+    expect(screen.queryByLabelText('Peek iss-1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      /^\/w\/mine\/inbox$/
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Back to notifications' })
+    ).not.toBeInTheDocument();
   });
 });

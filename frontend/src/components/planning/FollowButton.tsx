@@ -3,7 +3,8 @@
  * updates, health changes and completed milestones reach the caller's Pulse.
  * Leads, members and owners follow by default, so the button reads the state
  * the server works out rather than assuming one, and an explicit choice either
- * way wins over that default.
+ * way wins over that default. On a phone the button keeps only its bell, and
+ * the label stays as its accessible name.
  */
 
 import React, { useState } from 'react';
@@ -95,7 +96,9 @@ export const FollowButton: React.FC<FollowButtonProps> = ({
       ) : (
         <LuBellOff aria-hidden="true" />
       )}
-      {following ? 'Following' : 'Follow'}
+      <span className="max-sm:sr-only">
+        {following ? 'Following' : 'Follow'}
+      </span>
     </Button>
   );
 };
