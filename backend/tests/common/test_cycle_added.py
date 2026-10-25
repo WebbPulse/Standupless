@@ -113,14 +113,14 @@ def test_planned_and_after_start_split_a_cycle() -> None:
 
 
 def test_an_issue_in_no_cycle_or_a_dead_one_never_matches() -> None:
-    """No cycle meets neither phase nor either negation, and neither does a deleted cycle."""
+    """No cycle or a deleted one meets neither phase nor either negation, and no cycle meets no date bound."""
     loose = _issue(cycle_added_at=START)
     orphaned = _issue(cycle_id="gone", cycle_added_at=START)
 
     for issue in (loose, orphaned):
         assert not _filter(cycle_added="planned").matches(issue)
         assert not _filter(cycle_added_not="planned").matches(issue)
-        assert not _filter(cycle_added_after="2026-01-01").matches(issue)
+    assert not _filter(cycle_added_after="2026-01-01").matches(loose)
 
 
 def test_the_date_bounds_compare_the_day_the_issue_joined() -> None:

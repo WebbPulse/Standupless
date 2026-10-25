@@ -210,7 +210,7 @@ def _sla_statuses(raw: Iterable[str] | str | None) -> FilterValues:
 
 
 def _cycle_added_phases(raw: Iterable[str] | str | None, *, name: str = "cycle_added") -> FilterValues:
-    """"Added to cycle" values lower cased, refusing any outside `planned` and `after_start`."""
+    """ "Added to cycle" values lower cased, refusing any outside `planned` and `after_start`."""
     normalised: set[Optional[str]] = set()
     for value in _comma_split(raw):
         candidate = str(value).lower()

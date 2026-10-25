@@ -91,13 +91,13 @@ def test_the_list_splits_planned_from_added_after_start(client: TestClient, work
     assert _titles(client, workspace, cycle_added_before="-1d") == set()
 
 
-def test_an_unknown_phase_is_a_400(client: TestClient, workspace: str) -> None:
+def test_an_unknown_phase_is_a_422(client: TestClient, workspace: str) -> None:
     """A phase the filter does not know is refused rather than matching nothing."""
     sign_in(client, OWNER)
 
     response = client.get(f"/api/workspaces/{workspace}/issues", params={"team_id": TEAM, "cycle_added": "late"})
 
-    assert response.status_code == 400, response.text
+    assert response.status_code == 422, response.text
 
 
 def test_the_backfill_derives_the_moment_from_cycle_history(
