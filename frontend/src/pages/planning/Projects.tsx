@@ -756,7 +756,10 @@ const scopedPreset = (
     : {
         ...scope.preset,
         ...preset,
-        initiative_id: preset.initiative_id ?? scope.preset.initiative_id,
+        ...((preset.initiative_id ?? null) === null &&
+        scope.preset.initiative_id !== undefined
+          ? { initiative_id: scope.preset.initiative_id }
+          : {}),
       };
 
 /** The projects of the whole workspace, grouped, filtered and editable. */
