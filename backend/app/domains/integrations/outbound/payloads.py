@@ -25,6 +25,7 @@ from urllib.parse import quote
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
+from app.common.customer_fields import legacy_tier_id
 from app.common.db.dynamo.planning import Initiative
 from app.common.issue_keys import display_key
 from app.common.readable_ids import readable_id
@@ -119,7 +120,9 @@ INITIATIVE_UPDATE_FIELDS: dict[str, str] = {"body": "body", "health": "health"}
 CUSTOMER_FIELDS: dict[str, str] = {
     "name": "name",
     "domains": "domains",
+    "status_id": "statusId",
     "status": "status",
+    "tier_id": "tierId",
     "tier": "tier",
     "owner_id": "ownerId",
     "revenue": "revenue",
@@ -564,13 +567,22 @@ def _initiative_update(repositories: Repositories, links: Links, workspace_id: s
 
 
 def _customer(repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]) -> Built:
-    """A customer's `data` and URL; a customer belongs to no team, so only workspace wide webhooks hear it."""
+    """A customer's `data` and URL; a customer belongs to no team, so only workspace wide webhooks hear it.
+
+    A customer written before statuses and tiers were configurable holds only
+    the legacy strings, so its ids are derived from them the way the API does.
+    """
     del repositories, workspace_id
     customer_id = str(image.get("customer_id", ""))
     url = links.customer(customer_id)
+    picked = _pick(image, CUSTOMER_FIELDS)
+    if picked["statusId"] is None and picked["status"]:
+        picked["statusId"] = picked["status"]
+    if picked["tierId"] is None and picked["tier"]:
+        picked["tierId"] = legacy_tier_id(str(picked["tier"]))
     data = {
         "id": customer_id,
-        **_pick(image, CUSTOMER_FIELDS),
+        **picked,
         "creatorId": image.get("created_by"),
         "createdAt": image.get("created_at"),
         "updatedAt": image.get("updated_at"),
