@@ -135,7 +135,7 @@ const presetOf = (request: Request): CreateIssuePreset => {
   };
   return Object.fromEntries(
     Object.entries(preset).filter(([, value]) => value !== undefined)
-  ) as CreateIssuePreset;
+  );
 };
 
 /**
