@@ -19,7 +19,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 from app.common.db.dynamo.invites import Invite
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.users import User
-from app.common.db.dynamo.workspaces import Workspace, WorkspaceFeature, is_valid_slug, normalize_accent_color
+from app.common.db.dynamo.workspaces import (
+    Workspace,
+    WorkspaceFeature,
+    is_reserved_slug,
+    is_valid_slug,
+    normalize_accent_color,
+)
 from app.common.icons import icon_url
 from app.common.project_cadence import DEFAULT_INTERVAL_DAYS, check_interval
 
@@ -41,6 +47,16 @@ BULK_MAX_MEMBERS = 200
 """The most members one bulk action names, so a request stays inside one Lambda invocation's time."""
 
 
+def check_slug_value(value: str) -> str:
+    """Normalize a requested slug, refusing one off the contract's alphabet or reserved by the product."""
+    candidate = value.strip().lower()
+    if not is_valid_slug(candidate):
+        raise ValueError("slug must be 3 to 40 characters of a to z, 0 to 9 and hyphens")
+    if is_reserved_slug(candidate):
+        raise ValueError("slug is reserved")
+    return candidate
+
+
 class WorkspaceCreate(BaseModel):
     """The body `POST /api/workspaces` takes."""
 
@@ -52,13 +68,10 @@ class WorkspaceCreate(BaseModel):
     def check_slug(cls, value: str) -> str:
         """Hold the slug to the contract's alphabet before it reaches the table.
 
-        Validating here means a bad slug is a 422 naming the field rather than a
-        conditional write failure that would read as a conflict.
+        Validating here means a bad or reserved slug is a 422 naming the field
+        rather than a conditional write failure that would read as a conflict.
         """
-        candidate = value.strip().lower()
-        if not is_valid_slug(candidate):
-            raise ValueError("slug must be 3 to 40 characters of a to z, 0 to 9 and hyphens")
-        return candidate
+        return check_slug_value(value)
 
     @field_validator("name")
     @classmethod
@@ -103,13 +116,19 @@ class WorkspaceUpdate(BaseModel):
     The name, the accent color, the default project update cadence, the git
     branch name format, who may invite people or create teams and whether
     third-party apps need an admin's approval are editable, and so are the
-    areas of the product that are on.
-    The slug is not: it is the tenant's public handle and changing one
-    would break every link that carries it. An absent field is left alone, and an
+    areas of the product that are on and the slug in the workspace URL. A
+    changed slug keeps the old one as an alias, so links carrying it still land
+    here and no other workspace can take it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    slug: Optional[str] = Field(
+        default=None,
+        min_length=3,
+        max_length=40,
+        description="The workspace URL slug; the old slug keeps redirecting here",
+    )
     accent_color: Optional[str] = Field(default=None, description="The accent as #rrggbb, or null for the default")
     project_update_interval_days: Optional[int] = None
     branch_format: Optional[BranchFormatField] = Field(
@@ -150,6 +169,14 @@ class WorkspaceUpdate(BaseModel):
         """Hold the default project update cadence to the allowed options."""
         return check_interval(value)
 
+    @field_validator("slug")
+    @classmethod
+    def check_slug(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a new slug to the same alphabet and reserved list as creation."""
+        if value is None:
+            return None
+        return check_slug_value(value)
+
     @field_validator("name")
     @classmethod
     def check_name(cls, value: Optional[str]) -> Optional[str]:
@@ -162,6 +189,17 @@ class WorkspaceUpdate(BaseModel):
         return candidate
 
 
+class SlugAvailabilityRead(BaseModel):
+    """Whether a workspace could move to a slug, and why not when it cannot."""
+
+    slug: str
+    available: bool
+    reason: Optional[Literal["invalid", "reserved", "taken", "current"]] = Field(
+        default=None,
+        description="Why the slug is unavailable: invalid, reserved, taken, or current when it is already this workspace's",
+    )
+
+
 class WorkspaceRead(BaseModel):
     """One workspace as the API returns it.
 
@@ -172,6 +210,10 @@ class WorkspaceRead(BaseModel):
     id: str
     name: str
     slug: str
+    retired_slugs: list[str] = Field(
+        default_factory=list,
+        description="Earlier slugs that still redirect to this workspace, oldest first",
+    )
     plan: str
     created_at: datetime
     icon_url: Optional[str] = None
@@ -230,6 +272,7 @@ class WorkspaceRead(BaseModel):
             id=workspace.id,
             name=workspace.name,
             slug=workspace.slug,
+            retired_slugs=list(workspace.retired_slugs),
             plan=workspace.effective_plan(),
             created_at=workspace.created_at,
             icon_url=icon_url(workspace.icon_key),

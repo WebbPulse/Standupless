@@ -48,7 +48,7 @@ def workspace_ids() -> list[str]:
     from app.common.db.dynamo import tables
     from app.common.db.dynamo.base import build_repository
 
-    return sorted(str(item["id"]) for item in build_repository(tables.WORKSPACES).iter_scan())
+    return sorted(str(item["id"]) for item in build_repository(tables.WORKSPACES).iter_scan() if "alias_of" not in item)
 
 
 def run(repositories: Any, workspaces: Sequence[str], *, dry_run: bool) -> tuple[int, int]:

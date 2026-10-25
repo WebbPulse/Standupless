@@ -3219,6 +3219,12 @@
     "auth": "workspace:admin",
     "domain": "workspaces",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slug-availability"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/sso"
   },
   {

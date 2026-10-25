@@ -44,6 +44,7 @@ import { readLastWorkspace, wantsResume } from '../../lib/lastWorkspace';
 import { NEW_WORKSPACE_PATH, workspacePath } from '../../lib/paths';
 import { homeViewPath, preferencesOf } from '../../lib/preferences';
 import { JOINABLE_WORKSPACES_KEY, WORKSPACES_KEY } from '../../lib/queryKeys';
+import { answersToSlug } from '../../lib/workspaceSlug';
 import type { JoinableWorkspaceRead, WorkspaceRead } from '../../types/Api';
 
 /** How often the workspace list is re-read while this page is open. */
@@ -135,7 +136,7 @@ const Workspaces: React.FC = () => {
   const resumed =
     last === null
       ? undefined
-      : workspaces.find((workspace) => workspace.slug === last);
+      : workspaces.find((workspace) => answersToSlug(workspace, last));
   if (settled && resumed !== undefined) {
     return <Navigate to={openPath(resumed.slug)} replace />;
   }

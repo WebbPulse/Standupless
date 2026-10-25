@@ -1,5 +1,5 @@
 /**
- * The workspace settings page: the logo, the accent color, the project update
+ * The workspace settings page: the logo, the workspace URL, the accent color, the project update
  * cadence, members, invites, the GitHub connection, the outbound webhook
  * endpoints, the CSV export, and the danger zone where an owner or admin
  * schedules the workspace's deletion. Every section but the danger zone is for
@@ -22,6 +22,7 @@ import ProjectUpdatesSection from '../../components/workspace/ProjectUpdatesSect
 import WebhooksSection from '../../components/workspace/WebhooksSection';
 import WorkspaceLogoSection from '../../components/workspace/WorkspaceLogoSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import WorkspaceUrlSection from '../../components/workspace/WorkspaceUrlSection';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canInviteMembers, canManageMembers } from '../../lib/capabilities';
 
@@ -42,6 +43,9 @@ const WorkspaceSettings: React.FC = () => {
             <>
               <SettingsAnchor id="logo">
                 <WorkspaceLogoSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="url">
+                <WorkspaceUrlSection workspace={workspace} />
               </SettingsAnchor>
               <SettingsAnchor id="accent">
                 <AccentColorSection workspace={workspace} />

@@ -1378,6 +1378,10 @@ def workspace_view(ctx: typer.Context, as_json: JsonFlag = False) -> None:
 def workspace_update(
     ctx: typer.Context,
     name: Annotated[str | None, typer.Option("--name", help="A new workspace name.")] = None,
+    slug: Annotated[
+        str | None,
+        typer.Option("--slug", help="A new workspace URL slug. Links with the old slug keep redirecting."),
+    ] = None,
     accent_color: Annotated[
         str | None, typer.Option("--accent-color", help="The accent color as #rrggbb, applied for every member.")
     ] = None,
@@ -1386,24 +1390,28 @@ def workspace_update(
     ] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rename the workspace or change its accent color. Needs workspace admin."""
+    """Rename the workspace or change its URL slug or accent color. Needs workspace admin."""
     if accent_color is not None and reset_accent:
         raise ConfigError("Pass --accent-color or --reset-accent, not both.")
     patch: dict[str, Any] = {}
     if name is not None:
         patch["name"] = name
+    if slug is not None:
+        patch["slug"] = slug
     if accent_color is not None:
         patch["accent_color"] = accent_color
     if reset_accent:
         patch["accent_color"] = None
     if not patch:
-        raise ConfigError("Nothing to change. Pass --name, --accent-color or --reset-accent.")
+        raise ConfigError("Nothing to change. Pass --name, --slug, --accent-color or --reset-accent.")
     context = _state(ctx).context()
     updated = context.client.update_workspace(context.workspace_id, cast(WorkspaceUpdate, patch))
     if as_json:
         output.print_json(updated)
         return
-    output.success(f"Updated {updated['name']}; accent is {updated.get('accent_color') or 'the default'}.")
+    output.success(
+        f"Updated {updated['name']} ({updated['slug']}); accent is {updated.get('accent_color') or 'the default'}."
+    )
 
 
 EXPORT_POLL_SECONDS = 3.0

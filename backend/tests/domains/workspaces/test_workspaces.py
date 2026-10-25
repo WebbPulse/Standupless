@@ -118,6 +118,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "id",
         "name",
         "slug",
+        "retired_slugs",
         "plan",
         "created_at",
         "icon_url",

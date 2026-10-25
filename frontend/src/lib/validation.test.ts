@@ -43,6 +43,12 @@ describe('validateSlug', () => {
   it('treats an untouched field as not yet an error', () => {
     expect(validateSlug('')).toBeNull();
   });
+
+  it('refuses a slug the product keeps for itself', () => {
+    for (const value of ['settings', 'api', 'standupless']) {
+      expect(validateSlug(value)).not.toBeNull();
+    }
+  });
 });
 
 describe('validateKeyPrefix', () => {

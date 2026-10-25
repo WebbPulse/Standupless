@@ -108,7 +108,11 @@ class Context:
 
     @property
     def workspace(self) -> WorkspaceRead:
-        """The workspace named by `--workspace`, the env or config, else the key's own."""
+        """The workspace named by `--workspace`, the env or config, else the key's own.
+
+        A slug the workspace retired still matches it, so a config written before
+        a slug change keeps working.
+        """
         if self._workspace is None:
             wanted = self.settings.workspace
             if not wanted:
@@ -117,7 +121,9 @@ class Context:
                 matches = [
                     ws
                     for ws in self.client.list_workspaces()
-                    if wanted in (ws["id"], ws["slug"]) or _norm(ws["name"]) == _norm(wanted)
+                    if wanted in (ws["id"], ws["slug"])
+                    or _norm(ws["name"]) == _norm(wanted)
+                    or wanted in (ws.get("retired_slugs") or [])
                 ]
                 if not matches:
                     raise ResolveError(f"No workspace matches {wanted!r}.")

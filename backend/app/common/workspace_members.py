@@ -29,6 +29,7 @@ from app.common.api.schemas.workspaces import (
     MemberListRead,
     MemberRead,
     MemberUpdate,
+    SlugAvailabilityRead,
     WorkspaceRead,
     WorkspaceUpdate,
     display_name_for,
@@ -36,7 +37,16 @@ from app.common.api.schemas.workspaces import (
 from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
 from app.common.db.dynamo.memberships import Membership
-from app.common.db.dynamo.workspaces import PERMISSION_FIELDS, Workspace, WorkspaceFeature
+from app.common.db.dynamo.workspaces import (
+    PERMISSION_FIELDS,
+    SLUG_CHANGE_LIMIT,
+    SlugChangeLimited,
+    SlugTaken,
+    Workspace,
+    WorkspaceFeature,
+    is_reserved_slug,
+    is_valid_slug,
+)
 from app.common.email import deliver
 from app.common.email.invite import render_invite
 from app.common.plan_limits import LimitedResource
@@ -65,6 +75,13 @@ BULK_SELF = {
     "message": "You cannot change your own membership in a bulk action",
 }
 
+SLUG_TAKEN = {"error_code": "CONFLICT", "message": "That workspace slug is taken"}
+
+SLUG_CHANGE_LIMITED = {
+    "error_code": "RATE_LIMITED",
+    "message": f"The workspace URL can change {SLUG_CHANGE_LIMIT} times a day. Try again tomorrow.",
+}
+
 DEFAULT_MEMBER_STATUSES: frozenset[str] = frozenset({"active", "suspended"})
 
 
@@ -82,9 +99,11 @@ def read_workspace(repositories: Repositories, context: AuthzContext) -> Workspa
 
 
 def update_workspace(repositories: Repositories, context: AuthzContext, payload: WorkspaceUpdate) -> WorkspaceRead:
-    """Rename the workspace or change its accent, update cadence, branch format, permissions or features.
+    """Rename the workspace or change its URL slug, accent, update cadence, branch format, permissions or features.
 
-    The slug is fixed.
+    A slug change goes first, so a slug that is taken (409) or a workspace past
+    its daily slug change limit (429) refuses the whole update. The old slug
+    stays as an alias, so links carrying it still resolve here.
 
     `accent_color` is written only when the body names it, so a rename never
     resets the accent, and an explicit null returns it to the default. Only a
@@ -97,6 +116,13 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
         refuse_api_key_actor(context)
     workspace = repositories.workspaces.get(context.workspace_id)
     previous = _settings_of(workspace)
+    if workspace is not None and payload.slug is not None and payload.slug != workspace.slug:
+        try:
+            workspace = repositories.workspaces.change_slug(context.workspace_id, payload.slug)
+        except SlugTaken as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SLUG_TAKEN) from exc
+        except SlugChangeLimited as exc:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=SLUG_CHANGE_LIMITED) from exc
     if workspace is not None and payload.name is not None:
         workspace = repositories.workspaces.rename(context.workspace_id, payload.name)
     if workspace is not None and "accent_color" in payload.model_fields_set:
@@ -134,12 +160,36 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
     return WorkspaceRead.from_row(workspace, context.role)
 
 
+def slug_availability(repositories: Repositories, context: AuthzContext, slug: str) -> SlugAvailabilityRead:
+    """Whether the caller's workspace could move to `slug`, and why not when it cannot.
+
+    A slug this workspace retired is available again, because taking it back
+    only removes its own alias. A slug any other workspace holds or once held is
+    taken for good.
+    """
+    candidate = slug.strip().lower()
+    workspace = repositories.workspaces.get(context.workspace_id)
+    if workspace is None or workspace.is_purging:
+        raise _not_found()
+    if not is_valid_slug(candidate):
+        return SlugAvailabilityRead(slug=candidate, available=False, reason="invalid")
+    if is_reserved_slug(candidate):
+        return SlugAvailabilityRead(slug=candidate, available=False, reason="reserved")
+    if candidate == workspace.slug:
+        return SlugAvailabilityRead(slug=candidate, available=False, reason="current")
+    holder = repositories.workspaces.slug_holder(candidate)
+    if holder is not None and holder != workspace.id:
+        return SlugAvailabilityRead(slug=candidate, available=False, reason="taken")
+    return SlugAvailabilityRead(slug=candidate, available=True)
+
+
 def _settings_of(workspace: Workspace | None) -> dict[str, object]:
     """The workspace settings an update can change, as the audit log compares them."""
     if workspace is None:
         return {}
     return {
         "name": workspace.name,
+        "slug": workspace.slug,
         "accent_color": workspace.accent_color,
         "project_update_interval_days": workspace.project_update_interval_days,
         "branch_format": workspace.branch_format,

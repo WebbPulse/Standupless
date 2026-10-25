@@ -111,6 +111,7 @@ TEAMS_WRITE_ADMIN = ("teams:write", "admin")
 ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}"): SETTINGS_READ,
     ("PATCH", "/{workspace_id}"): SETTINGS_WRITE_ADMIN,
+    ("GET", "/{workspace_id}/slug-availability"): SETTINGS_READ_ADMIN,
     ("POST", "/{workspace_id}/icon/uploads"): SETTINGS_WRITE_ADMIN,
     ("PUT", "/{workspace_id}/icon"): SETTINGS_WRITE_ADMIN,
     ("DELETE", "/{workspace_id}/icon"): SETTINGS_WRITE_ADMIN,

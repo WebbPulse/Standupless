@@ -47,6 +47,7 @@ from app.domains.workspaces.schemas.workspace import (
     MemberRead,
     MemberStatusField,
     MemberUpdate,
+    SlugAvailabilityRead,
     WorkspaceCreate,
     WorkspaceDeletionRequest,
     WorkspaceListRead,
@@ -193,8 +194,21 @@ def update_workspace(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
-    """Rename a workspace, set its accent color, project update cadence or branch format. The slug is fixed."""
+    """Rename a workspace, change its URL slug, set its accent color, project update cadence or branch format.
+
+    A changed slug keeps the old one as an alias that still resolves here.
+    """
     return workspace_members.update_workspace(repositories, context, payload)
+
+
+@router.get("/{workspace_id}/slug-availability", response_model=SlugAvailabilityRead)
+def check_slug_availability(
+    slug: Annotated[str, Query(min_length=1, max_length=80)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> SlugAvailabilityRead:
+    """Whether the workspace could move to this slug, so the settings field can check as an admin types."""
+    return workspace_members.slug_availability(repositories, context, slug)
 
 
 def _notify_admins(

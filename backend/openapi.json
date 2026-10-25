@@ -22879,6 +22879,43 @@
         "title": "SlackThread",
         "type": "object"
       },
+      "SlugAvailabilityRead": {
+        "description": "Whether a workspace could move to a slug, and why not when it cannot.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "invalid",
+                  "reserved",
+                  "taken",
+                  "current"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the slug is unavailable: invalid, reserved, taken, or current when it is already this workspace's",
+            "title": "Reason"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "available"
+        ],
+        "title": "SlugAvailabilityRead",
+        "type": "object"
+      },
       "SourceTeamMappingRead": {
         "description": "One team of the source tool an API import reads, such as a Shortcut team, and the team it writes into.",
         "properties": {
@@ -30260,6 +30297,14 @@
             ],
             "title": "Purge After"
           },
+          "retired_slugs": {
+            "description": "Earlier slugs that still redirect to this workspace, oldest first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Retired Slugs",
+            "type": "array"
+          },
           "role": {
             "anyOf": [
               {
@@ -30338,7 +30383,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format, who may invite people or create teams and whether\nthird-party apps need an admin's approval are editable, and so are the\nareas of the product that are on.\nThe slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format, who may invite people or create teams and whether\nthird-party apps need an admin's approval are editable, and so are the\nareas of the product that are on and the slug in the workspace URL. A\nchanged slug keeps the old one as an alias, so links carrying it still land\nhere and no other workspace can take it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -30419,6 +30464,20 @@
               }
             ],
             "title": "Project Update Interval Days"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace URL slug; the old slug keeps redirecting here",
+            "title": "Slug"
           },
           "team_creation_permission": {
             "anyOf": [
@@ -33960,7 +34019,7 @@
         ]
       },
       "patch": {
-        "description": "Rename a workspace, set its accent color, project update cadence or branch format. The slug is fixed.",
+        "description": "Rename a workspace, change its URL slug, set its accent color, project update cadence or branch format.\n\nA changed slug keeps the old one as an alias that still resolves here.",
         "operationId": "update_workspace_api_workspaces__workspace_id__patch",
         "parameters": [
           {
@@ -56679,6 +56738,66 @@
         "summary": "Link My Slack",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/slug-availability": {
+      "get": {
+        "description": "Whether the workspace could move to this slug, so the settings field can check as an admin types.",
+        "operationId": "check_slug_availability_api_workspaces__workspace_id__slug_availability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "maxLength": 80,
+              "minLength": 1,
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlugAvailabilityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Check Slug Availability",
+        "tags": [
+          "workspaces"
         ]
       }
     },
