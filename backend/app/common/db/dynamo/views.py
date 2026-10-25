@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
+from app.common.db.dynamo.dashboards import DashboardRows
 from app.common.db.dynamo.tables import VIEWS
 
 ViewKind = Literal["list", "board"]
@@ -343,7 +344,7 @@ class ViewSubscription(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class ViewRepository:
+class ViewRepository(DashboardRows):
     """Reads and writes `views` rows, every method workspace first."""
 
     def __init__(self, repository: Repository | None = None) -> None:

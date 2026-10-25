@@ -364,6 +364,11 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_agent_profile",
         "save_agent_profile",
         "delete_agent_profile",
+        "list_dashboards",
+        "get_dashboard",
+        "create_dashboard",
+        "update_dashboard",
+        "delete_dashboard",
     }
     assert len(TOOLS) == 251
 

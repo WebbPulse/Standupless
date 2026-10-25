@@ -36,7 +36,7 @@ def revoke_share_links(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's views and their subscriptions, its issue drafts and search postings, and its share links."""
+    """Remove the team's views and their subscriptions, its dashboards, its issue drafts and search postings, and its share links."""
     workspace_id, team_id = job.workspace_id, job.team_id
     while views := repositories.views.list_for_team(workspace_id, team_id):
         for view in views:
@@ -44,6 +44,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
             repositories.views.delete_view_subscriptions(workspace_id, view.view_id)
     repositories.views.delete_drafts_for_team(workspace_id, team_id)
     repositories.views.delete_issue_drafts_for_team(workspace_id, team_id)
+    repositories.views.delete_team_dashboards(workspace_id, team_id)
     while repositories.search_index.delete_team_page(workspace_id, team_id):
         if deadline.expired():
             return 0
@@ -75,6 +76,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
                 repositories.views.delete(workspace_id, view.view_key)
                 repositories.views.delete_view_subscriptions(workspace_id, view.view_id)
         repositories.views.clear_favorites(workspace_id, job.user_id)
+        repositories.views.delete_personal_dashboards(workspace_id, job.user_id)
         repositories.views.delete_subscriptions_for_user(workspace_id, job.user_id)
         repositories.views.delete_drafts_for_user(workspace_id, job.user_id)
         repositories.views.delete_issue_drafts_for_user(workspace_id, job.user_id)
