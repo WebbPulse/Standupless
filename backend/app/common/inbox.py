@@ -137,7 +137,9 @@ def list_notifications(
     Snoozed notifications stay out of both lists until their time comes unless
     `include_snoozed` keeps them in, and `snoozed` lists only them, so it cannot be
     combined with `unread`. `kinds` keeps only those notification kinds, and
-    `bucket` only the caller's Priority or Other tab.
+    `bucket` only the caller's Priority or Other tab. An API key restricted to some
+    teams sees only the notifications about those teams and the workspace notices,
+    so a page can come back shorter than `limit` with a cursor still to follow.
     """
     if unread and snoozed:
         raise unprocessable("unread and snoozed cannot be combined")
@@ -162,6 +164,8 @@ def list_notifications(
         start_key=resume_key(cursor, scope),
     )
     rows = [Notification.model_validate(dict(item)) for item in page.items]
+    if context.is_team_restricted:
+        rows = [row for row in rows if not row.team_id or context.can_see_team(row.team_id)]
     items = [
         NotificationRead.from_row(
             row.model_copy(

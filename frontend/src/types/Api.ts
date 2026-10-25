@@ -4232,6 +4232,8 @@ export interface ApiKeyRead {
   expires_at: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
+  /** The teams the key is restricted to, empty when it reaches every team. */
+  team_ids?: string[];
 }
 
 /**
@@ -4243,12 +4245,16 @@ export interface ApiKeyCreatedRead extends ApiKeyRead {
   secret: string;
 }
 
-/** What minting a key takes. `kind` defaults to `user` when it is left out. */
+/**
+ * What minting a key takes. `kind` defaults to `user` when it is left out, and
+ * `team_ids` left out or empty means every team.
+ */
 export interface ApiKeyCreate {
   name: string;
   scopes: string[];
   kind?: ApiKeyKind;
   expires_in_days?: number;
+  team_ids?: string[];
 }
 
 /**

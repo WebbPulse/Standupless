@@ -98,6 +98,7 @@ class ApiKeyCreate(TypedDict):
     kind: NotRequired[Literal["user", "workspace"]]
     name: str
     scopes: list[str]
+    team_ids: NotRequired[list[str] | None]
 
 
 class ApiKeyCreated(TypedDict):
@@ -112,6 +113,7 @@ class ApiKeyCreated(TypedDict):
     revoked_at: NotRequired[str | None]
     scopes: list[str]
     secret: str
+    team_ids: NotRequired[list[str]]
 
 
 class ApiKeyRead(TypedDict):
@@ -125,6 +127,7 @@ class ApiKeyRead(TypedDict):
     prefix: str
     revoked_at: NotRequired[str | None]
     scopes: list[str]
+    team_ids: NotRequired[list[str]]
 
 
 class AppAccessRequestCreate(TypedDict):

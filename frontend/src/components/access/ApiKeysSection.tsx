@@ -10,6 +10,11 @@
  * admin, because the server refuses both to anyone else and an empty panel
  * behind a refused read is worse than a control that was never there.
  *
+ * A key may be restricted to chosen teams. Leaving every team unchecked keeps
+ * the "All teams" default, which is what a key minted before restrictions
+ * existed reaches, and a listed team that has since been deleted simply drops
+ * out of the row.
+ *
  * Export CSV downloads the keys listed, naming each creator by display name and
  * leaving out emails and prefixes, from the list already loaded.
  */
@@ -23,6 +28,7 @@ import {
 } from '@webbpulse/api-client/react';
 import { createApiKey, listApiKeys, revokeApiKey } from '../../api/access';
 import { listMembers } from '../../api/workspaces';
+import { useTeamsFor } from '../../hooks/useTeams';
 import { canManageMembers } from '../../lib/capabilities';
 import {
   MAX_EXPIRY_DAYS,
@@ -44,7 +50,9 @@ import {
   type ApiKeyCreatedRead,
   type ApiKeyKind,
   type ApiKeyListScope,
+  type ApiKeyRead,
   type ApiKeyScope,
+  type TeamRead,
   type WorkspaceRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -73,6 +81,20 @@ const stateTone = (
 ): 'success' | 'danger' | 'warning' =>
   state === 'Active' ? 'success' : state === 'Revoked' ? 'danger' : 'warning';
 
+/** The teams a key reaches, as a row names them. */
+const teamsLabel = (
+  item: Pick<ApiKeyRead, 'team_ids'>,
+  teams: readonly TeamRead[]
+): string => {
+  const ids = item.team_ids ?? [];
+  if (ids.length === 0) return 'All teams';
+  const byId = new Map(teams.map((team) => [team.id, team.name]));
+  const names = ids
+    .map((id) => byId.get(id))
+    .filter((teamName): teamName is string => teamName !== undefined);
+  return names.length === 0 ? 'No remaining teams' : names.join(', ');
+};
+
 /** Lists and mints API keys, and shows a new secret once. */
 export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
   workspace,
@@ -83,6 +105,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
   const [name, setName] = useState('');
   const [kind, setKind] = useState<ApiKeyKind>('user');
   const [scopes, setScopes] = useState<ApiKeyScope[]>(['issues:read']);
+  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [expiry, setExpiry] = useState('');
   const [expiryError, setExpiryError] = useState<string | null>(null);
   const [minted, setMinted] = useState<ApiKeyCreatedRead | null>(null);
@@ -90,6 +113,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
   const [exporting, setExporting] = useState(false);
 
   const queryKey = apiKeysKey(workspace.id, scope);
+  const teams = useTeamsFor(workspace.id).data ?? [];
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listApiKeys(workspace.id, { scope }, signal),
@@ -106,6 +130,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
       scopes: string[];
       kind?: ApiKeyKind;
       expires_in_days?: number;
+      team_ids?: string[];
     }) => createApiKey(workspace.id, body),
     queryKey
   );
@@ -125,6 +150,14 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
     );
   };
 
+  const toggleTeam = (teamId: string): void => {
+    setTeamIds((current) =>
+      current.includes(teamId)
+        ? current.filter((item) => item !== teamId)
+        : [...current, teamId]
+    );
+  };
+
   const onSubmit = (event: React.FormEvent): void => {
     event.preventDefault();
     if (!canSubmit) return;
@@ -139,6 +172,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
       scopes: [...scopes],
       ...(kind === 'workspace' ? { kind } : {}),
       ...(parsed.days === undefined ? {} : { expires_in_days: parsed.days }),
+      ...(teamIds.length === 0 ? {} : { team_ids: [...teamIds] }),
     })
       .then((result) => {
         setMinted(result);
@@ -147,6 +181,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
         setScopes(['issues:read']);
         setExpiry('');
         setKind('user');
+        setTeamIds([]);
       })
       .catch(() => undefined);
   };
@@ -309,6 +344,8 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
                       {kindLabel(item.kind)}
                       <span className="mx-1 text-text-faint">/</span>
                       <span>{item.scopes.join(', ')}</span>
+                      <span className="mx-1 text-text-faint">/</span>
+                      <span>{teamsLabel(item, teams)}</span>
                     </p>
                     <p className="text-xs text-text-faint">
                       Created {dateLabel(item.created_at)}, last used{' '}
@@ -391,6 +428,34 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
                   checked={scopes.includes(value)}
                   onChange={() => {
                     toggleScope(value);
+                  }}
+                />
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-xs font-medium text-text-muted">
+              Teams
+            </legend>
+            <p className="text-xs text-text-muted">
+              A key limited to some teams finds nothing in the others.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Checkbox
+                label="All teams"
+                checked={teamIds.length === 0}
+                onChange={() => {
+                  setTeamIds([]);
+                }}
+              />
+              {teams.map((team) => (
+                <Checkbox
+                  key={team.id}
+                  label={team.name}
+                  checked={teamIds.includes(team.id)}
+                  onChange={() => {
+                    toggleTeam(team.id);
                   }}
                 />
               ))}
