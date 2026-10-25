@@ -42,7 +42,7 @@ export const listAppApprovals = async (
   const response = await apiClient.get<AppApprovalListRead>(
     appApprovalsPath(workspaceId),
     {
-      ...(status === undefined ? {} : { params: { status } }),
+      ...(status === undefined ? {} : { query: { status } }),
       ...signalOptions(signal),
     }
   );
@@ -61,7 +61,7 @@ export const getAppAccessRequest = async (
 ): Promise<AppAccessRequestRead> => {
   const response = await apiClient.get<AppAccessRequestRead>(
     `${appApprovalsPath(workspaceId)}/request`,
-    { params: { ticket }, ...signalOptions(signal) }
+    { query: { ticket }, ...signalOptions(signal) }
   );
   return response.data;
 };
