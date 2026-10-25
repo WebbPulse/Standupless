@@ -8,8 +8,8 @@
  * rolled-up projects and a progress graph, and that the Projects tab lays the
  * initiative's projects out through the projects page, with or without the
  * projects of sub-initiatives, and that the page's keys open the status,
- * owner, health and target date pickers, rename it, copy its address and
- * start an update.
+ * owner, health, start date and target date pickers, rename it, copy its
+ * address and start an update.
  */
 
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -676,7 +676,16 @@ describe('InitiativeDetail', () => {
       renderWithKeys();
       await screen.findByRole('group', { name: 'Properties' });
 
-      await keysBound('s', 'a', 'h', 'shift+d', 'r', 'mod+shift+,', 'shift+u');
+      await keysBound(
+        's',
+        'a',
+        'h',
+        'shift+s',
+        'shift+d',
+        'r',
+        'mod+shift+,',
+        'shift+u'
+      );
     });
 
     it('opens the status picker on S and saves the choice', async () => {
@@ -702,11 +711,12 @@ describe('InitiativeDetail', () => {
     it.each([
       ['a', {}, 'Owner'],
       ['h', {}, 'Health'],
+      ['S', { shiftKey: true }, 'Start date'],
       ['D', { shiftKey: true }, 'Target date'],
     ])('opens a picker on %s', async (key, init, dialog) => {
       renderWithKeys();
       await screen.findByRole('group', { name: 'Properties' });
-      await keysBound('a', 'h', 'shift+d');
+      await keysBound('a', 'h', 'shift+s', 'shift+d');
 
       press(key, init);
 

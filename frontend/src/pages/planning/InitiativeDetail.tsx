@@ -14,6 +14,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  LuCalendar,
   LuCalendarCheck,
   LuChevronRight,
   LuEllipsis,
@@ -778,12 +779,35 @@ export const InitiativeDetail: React.FC = () => {
       />
       <PlanningDatePicker
         variant="chip"
+        field="Start date"
+        edge="start"
+        value={initiative.start_date ?? null}
+        resolution={initiative.start_date_resolution}
+        disabled={!canEdit}
+        icon={<LuCalendar className="h-3.5 w-3.5" />}
+        {...(initiative.target_date === null
+          ? {}
+          : { max: initiative.target_date })}
+        onChange={(value, resolution) => {
+          void update({
+            start_date: value,
+            ...(isCoarse(resolution)
+              ? { start_date_resolution: resolution }
+              : {}),
+          });
+        }}
+      />
+      <PlanningDatePicker
+        variant="chip"
         field="Target date"
         edge="end"
         value={initiative.target_date}
         resolution={initiative.target_date_resolution}
         disabled={!canEdit}
         icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
+        {...(initiative.start_date == null
+          ? {}
+          : { min: initiative.start_date })}
         onChange={(value, resolution) => {
           void update({
             target_date: value,

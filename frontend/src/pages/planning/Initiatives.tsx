@@ -11,9 +11,12 @@
  * ordering a row is dragged among its siblings and the place is stored for
  * every member; dropping a row in another ordering switches to manual. J and
  * K or the arrows move the focus, Enter opens it, x selects and Escape lets go.
+ * The Timeline layout draws the same initiatives as bars from start to target
+ * with their sub-initiatives and projects nested below, under the same zoom,
+ * Today and stepping controls and keys as the projects timeline.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   LuCalendar,
@@ -28,11 +31,14 @@ import {
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import CreateInitiativeDialog from '../../components/planning/CreateInitiativeDialog';
+import InitiativeTimeline from '../../components/planning/InitiativeTimeline';
 import InitiativesDisplayMenu from '../../components/planning/InitiativesDisplayMenu';
 import ProgressRing from '../../components/planning/ProgressRing';
 import ProjectHealthGlyph from '../../components/planning/ProjectHealthGlyph';
 import { TeamKey } from '../../components/planning/ProjectPickers';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
+import { TimelineControls } from '../../components/planning/ProjectTimeline';
+import type { TimelineHandle } from '../../components/planning/TimelineFrame';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button from '../../components/ui/button';
@@ -48,8 +54,10 @@ import { useInitiativesDisplay } from '../../hooks/useInitiativesDisplay';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { useProjectSelection } from '../../hooks/useProjectSelection';
 import { useTeams } from '../../hooks/useTeams';
+import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -90,6 +98,7 @@ import { manualOrderPlacements } from '../../lib/projectList';
 import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { planningDateLabel } from '../../lib/dateResolution';
 import { teamTree } from '../../lib/teamOrder';
+import type { TimelineZoom } from '../../lib/timeline';
 import type {
   InitiativeRead,
   InitiativeStatus,
@@ -107,6 +116,7 @@ const COLUMN_TRACKS: Record<InitiativeColumn, string> = {
   team: '4.5rem',
   owner: '3.5rem',
   projects: '5.5rem',
+  start: '6rem',
   target: '6rem',
   progress: '4.5rem',
 };
@@ -310,6 +320,23 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
           {`${String(projects)} ${projects === 1 ? 'project' : 'projects'}`}
         </span>
       )}
+      {shown.includes('start') && (
+        <span
+          className={cn(
+            'pointer-events-none hidden text-xs whitespace-nowrap tabular-nums md:block',
+            initiative.start_date == null
+              ? 'text-text-faint'
+              : 'text-text-muted'
+          )}
+        >
+          {initiative.start_date == null
+            ? 'No date'
+            : planningDateLabel(
+                initiative.start_date,
+                initiative.start_date_resolution
+              )}
+        </span>
+      )}
       {shown.includes('target') && (
         <span
           className={cn(
@@ -430,10 +457,11 @@ export const Initiatives: React.FC = () => {
   const { data: teamList } = useTeams();
   const teams = useMemo(() => teamList ?? [], [teamList]);
   const [isCreating, setIsCreating] = useState(false);
-  const { apply: applyMoves, move: moveInitiative } = useInitiativeMoves(
-    workspaceId,
-    queryKey
-  );
+  const {
+    apply: applyMoves,
+    move: moveInitiative,
+    put: putInitiative,
+  } = useInitiativeMoves(workspaceId, queryKey);
   const rows = useMemo(
     () => applyMoves(initiatives),
     [applyMoves, initiatives]
@@ -449,6 +477,14 @@ export const Initiatives: React.FC = () => {
     () => initiativeColumnList(display.columns),
     [display.columns]
   );
+  const layout = display.layout;
+  const isTimeline = layout === 'timeline';
+  const { projects } = useWorkspaceProjects(
+    workspaceId,
+    '',
+    isMember && isTimeline
+  );
+  const timeline = useRef<TimelineHandle | null>(null);
 
   const statusText = params.get('status') ?? '';
   const statusFilter = useMemo(
@@ -512,16 +548,16 @@ export const Initiatives: React.FC = () => {
     });
   };
 
-  const groups = useMemo(() => {
+  const showsCompleted =
+    display.completed === 'show' || statusFilter.includes('completed');
+  const ordered = useMemo(() => {
     const filters = {
       status: statusFilter,
       owner: ownerFilter,
       health: healthFilter,
       team: teamFilter,
     };
-    const showsCompleted =
-      display.completed === 'show' || statusFilter.includes('completed');
-    const ordered = orderInitiatives(
+    return orderInitiatives(
       rows.filter(
         (initiative) =>
           matchesInitiativeFilters(initiative, filters) &&
@@ -529,6 +565,17 @@ export const Initiatives: React.FC = () => {
       ),
       display.order
     );
+  }, [
+    rows,
+    statusFilter,
+    ownerFilter,
+    healthFilter,
+    teamFilter,
+    showsCompleted,
+    display.order,
+  ]);
+
+  const groups = useMemo(() => {
     const grouped = ((): InitiativeGroup[] => {
       switch (display.grouping) {
         case 'team':
@@ -575,15 +622,11 @@ export const Initiatives: React.FC = () => {
       .filter((group) => group.count > 0);
   }, [
     rows,
+    ordered,
     members,
     teams,
     collapsed,
-    statusFilter,
-    ownerFilter,
-    healthFilter,
-    teamFilter,
-    display.completed,
-    display.order,
+    showsCompleted,
     display.grouping,
   ]);
 
@@ -600,7 +643,7 @@ export const Initiatives: React.FC = () => {
     count: visible.length,
     onActivate,
     resetKey: `${params.toString()}:${[...collapsed].join(',')}:${String(rows.length)}`,
-    enabled: isMember && !isCreating,
+    enabled: isMember && !isCreating && !isTimeline,
   });
   const selectionOrder = useMemo(
     () => visible.map((initiative) => initiative.initiative_id),
@@ -613,7 +656,7 @@ export const Initiatives: React.FC = () => {
       onFocus: (initiativeId) => {
         setActiveIndex(selectionOrder.indexOf(initiativeId));
       },
-      enabled: isMember && !isCreating,
+      enabled: isMember && !isCreating && !isTimeline,
       label: 'Select initiative',
     }
   );
@@ -637,10 +680,28 @@ export const Initiatives: React.FC = () => {
     for (const placement of placements) {
       const initiative = rows.find((row) => row.initiative_id === placement.id);
       if (initiative !== undefined)
-        moveInitiative(initiative, { sort_order: placement.sort_order });
+        void moveInitiative(initiative, { sort_order: placement.sort_order });
     }
     if (display.order !== 'manual') changeDisplay({ order: 'manual' });
   };
+
+  const timelineControls = {
+    zoom: display.zoom,
+    onZoomChange: (value: TimelineZoom) => {
+      changeDisplay({ zoom: value });
+    },
+    onToday: () => {
+      timeline.current?.scrollToToday();
+    },
+    onStep: (step: -1 | 1) => {
+      timeline.current?.step(step);
+    },
+  };
+  useTimelineShortcuts({
+    ...timelineControls,
+    group: 'Initiatives',
+    enabled: isMember && isTimeline && !isCreating,
+  });
 
   const statusOptions: ComboboxOption[] = INITIATIVE_STATUSES.map((status) => ({
     value: status,
@@ -780,6 +841,10 @@ export const Initiatives: React.FC = () => {
             )}
             <div className="ml-auto flex items-center gap-1">
               <InitiativesDisplayMenu
+                layout={layout}
+                onLayoutChange={(value) => {
+                  changeDisplay({ layout: value });
+                }}
                 grouping={display.grouping}
                 onGroupingChange={(value) => {
                   changeDisplay({ grouping: value });
@@ -798,6 +863,7 @@ export const Initiatives: React.FC = () => {
                 }}
                 onReset={reset}
               />
+              {isTimeline && <TimelineControls {...timelineControls} />}
             </div>
           </div>
         ) : undefined
@@ -810,201 +876,222 @@ export const Initiatives: React.FC = () => {
           />
         </div>
       )}
-      <div>
-        <div
-          role="presentation"
-          style={gridStyle(shown)}
-          className={cn(
-            GRID,
-            'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
+      {isTimeline && isMember && ordered.length > 0 ? (
+        <InitiativeTimeline
+          ref={timeline}
+          initiatives={ordered}
+          projects={projects}
+          slug={slug}
+          workspaceId={workspaceId}
+          zoom={display.zoom}
+          editable={isMember}
+          move={moveInitiative}
+          put={putInitiative}
+          testId="initiatives-timeline"
+        />
+      ) : (
+        <div>
+          {!isTimeline && (
+            <div
+              role="presentation"
+              style={gridStyle(shown)}
+              className={cn(
+                GRID,
+                'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
+              )}
+            >
+              <span>Name</span>
+              {shown.includes('health') && (
+                <span className="hidden truncate text-center md:block">
+                  {INITIATIVE_COLUMN_LABELS.health}
+                </span>
+              )}
+              {shown.includes('team') && (
+                <span className="hidden truncate md:block">
+                  {INITIATIVE_COLUMN_LABELS.team}
+                </span>
+              )}
+              {shown.includes('owner') && (
+                <span className="hidden truncate text-center md:block">
+                  {INITIATIVE_COLUMN_LABELS.owner}
+                </span>
+              )}
+              {shown.includes('projects') && (
+                <span className="hidden md:block">Projects</span>
+              )}
+              {shown.includes('start') && (
+                <span className="hidden md:block">Start</span>
+              )}
+              {shown.includes('target') && (
+                <span className="hidden md:block">Target</span>
+              )}
+              {shown.includes('progress') && (
+                <span className="text-right">
+                  <span className="hidden md:inline">Progress</span>
+                </span>
+              )}
+            </div>
           )}
-        >
-          <span>Name</span>
-          {shown.includes('health') && (
-            <span className="hidden truncate text-center md:block">
-              {INITIATIVE_COLUMN_LABELS.health}
-            </span>
-          )}
-          {shown.includes('team') && (
-            <span className="hidden truncate md:block">
-              {INITIATIVE_COLUMN_LABELS.team}
-            </span>
-          )}
-          {shown.includes('owner') && (
-            <span className="hidden truncate text-center md:block">
-              {INITIATIVE_COLUMN_LABELS.owner}
-            </span>
-          )}
-          {shown.includes('projects') && (
-            <span className="hidden md:block">Projects</span>
-          )}
-          {shown.includes('target') && (
-            <span className="hidden md:block">Target</span>
-          )}
-          {shown.includes('progress') && (
-            <span className="text-right">
-              <span className="hidden md:inline">Progress</span>
-            </span>
+          {!isMember ? (
+            <EmptyState
+              icon={<LuGoal />}
+              message="Initiatives are open to workspace members, not guests."
+            />
+          ) : isLoading && initiatives.length === 0 ? (
+            <SkeletonRows label="Loading initiatives" />
+          ) : groups.length === 0 && error == null ? (
+            initiatives.length > 0 ? (
+              <EmptyState
+                icon={<LuGoal />}
+                message={
+                  hasFilters
+                    ? 'No initiatives match these filters.'
+                    : 'Every initiative here is completed, and completed initiatives are hidden.'
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={<LuGoal />}
+                message="No initiatives yet. An initiative groups projects across teams toward one goal."
+              />
+            )
+          ) : (
+            groups.map((group) => (
+              <section key={group.key} aria-label={group.label}>
+                <div className="sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 text-sm font-medium text-text lg:px-6">
+                  {group.icon}
+                  <span>{group.label}</span>
+                  <span className="text-xs font-normal text-text-faint tabular-nums">
+                    {String(group.count)}
+                  </span>
+                </div>
+                {(() => {
+                  const drag = listDrag?.group === group.key ? listDrag : null;
+                  const siblings =
+                    drag === null
+                      ? []
+                      : group.tree
+                          .filter((row) => siblingsKey(row) === drag.siblings)
+                          .map((row) => row.initiative);
+                  const others = siblings.filter(
+                    (initiative) =>
+                      initiative.initiative_id !== drag?.initiativeId
+                  );
+                  const marker =
+                    drag === null || listSlot === null
+                      ? undefined
+                      : (others[listSlot]?.initiative_id ?? null);
+                  const last = others.at(-1)?.initiative_id;
+                  const lastAt = group.tree.findIndex(
+                    (row) => row.initiative.initiative_id === last
+                  );
+                  let endAt = lastAt;
+                  while (
+                    lastAt >= 0 &&
+                    (group.tree[endAt + 1]?.depth ?? -1) >
+                      (group.tree[lastAt]?.depth ?? 0)
+                  )
+                    endAt += 1;
+                  const endRow =
+                    marker === null
+                      ? group.tree[endAt]?.initiative.initiative_id
+                      : undefined;
+                  return (
+                    <ul
+                      onDragOver={(event) => {
+                        if (drag === null) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        const next = slotIndex(
+                          event.currentTarget,
+                          drag.initiativeId,
+                          event.clientY,
+                          'data-drop-slot'
+                        );
+                        if (next !== listSlot) setListSlot(next);
+                      }}
+                      onDragLeave={(event) => {
+                        if (
+                          drag !== null &&
+                          !event.currentTarget.contains(
+                            event.relatedTarget as Node
+                          )
+                        )
+                          setListSlot(null);
+                      }}
+                      onDrop={(event) => {
+                        if (drag === null) return;
+                        event.preventDefault();
+                        dropAmong(
+                          siblings,
+                          listSlot ??
+                            slotIndex(
+                              event.currentTarget,
+                              drag.initiativeId,
+                              event.clientY,
+                              'data-drop-slot'
+                            )
+                        );
+                      }}
+                    >
+                      {group.tree.map((row) => {
+                        const id = row.initiative.initiative_id;
+                        const position = selectionOrder.indexOf(id);
+                        return (
+                          <InitiativeRow
+                            key={id}
+                            row={row}
+                            slug={slug}
+                            people={members}
+                            teams={teams}
+                            shown={shown}
+                            collapsed={collapsed.has(id)}
+                            onToggle={toggle}
+                            isActive={position === activeIndex}
+                            rowRef={registerItem(position)}
+                            onPointerEnter={() => {
+                              setActiveIndex(position);
+                            }}
+                            selected={selectedIds.has(id)}
+                            onSelect={(range) => {
+                              toggleSelected(id, range);
+                            }}
+                            isDropSlot={
+                              drag !== null &&
+                              siblingsKey(row) === drag.siblings
+                            }
+                            dragging={drag?.initiativeId === id}
+                            dropMark={
+                              marker === id
+                                ? 'before'
+                                : endRow === id
+                                  ? 'after'
+                                  : null
+                            }
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData(
+                                'text/plain',
+                                row.initiative.name
+                              );
+                              setListDrag({
+                                initiativeId: id,
+                                group: group.key,
+                                siblings: siblingsKey(row),
+                              });
+                            }}
+                            onDragEnd={endListDrag}
+                          />
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
+              </section>
+            ))
           )}
         </div>
-        {!isMember ? (
-          <EmptyState
-            icon={<LuGoal />}
-            message="Initiatives are open to workspace members, not guests."
-          />
-        ) : isLoading && initiatives.length === 0 ? (
-          <SkeletonRows label="Loading initiatives" />
-        ) : groups.length === 0 && error == null ? (
-          initiatives.length > 0 ? (
-            <EmptyState
-              icon={<LuGoal />}
-              message={
-                hasFilters
-                  ? 'No initiatives match these filters.'
-                  : 'Every initiative here is completed, and completed initiatives are hidden.'
-              }
-            />
-          ) : (
-            <EmptyState
-              icon={<LuGoal />}
-              message="No initiatives yet. An initiative groups projects across teams toward one goal."
-            />
-          )
-        ) : (
-          groups.map((group) => (
-            <section key={group.key} aria-label={group.label}>
-              <div className="sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 text-sm font-medium text-text lg:px-6">
-                {group.icon}
-                <span>{group.label}</span>
-                <span className="text-xs font-normal text-text-faint tabular-nums">
-                  {String(group.count)}
-                </span>
-              </div>
-              {(() => {
-                const drag = listDrag?.group === group.key ? listDrag : null;
-                const siblings =
-                  drag === null
-                    ? []
-                    : group.tree
-                        .filter((row) => siblingsKey(row) === drag.siblings)
-                        .map((row) => row.initiative);
-                const others = siblings.filter(
-                  (initiative) =>
-                    initiative.initiative_id !== drag?.initiativeId
-                );
-                const marker =
-                  drag === null || listSlot === null
-                    ? undefined
-                    : (others[listSlot]?.initiative_id ?? null);
-                const last = others.at(-1)?.initiative_id;
-                const lastAt = group.tree.findIndex(
-                  (row) => row.initiative.initiative_id === last
-                );
-                let endAt = lastAt;
-                while (
-                  lastAt >= 0 &&
-                  (group.tree[endAt + 1]?.depth ?? -1) >
-                    (group.tree[lastAt]?.depth ?? 0)
-                )
-                  endAt += 1;
-                const endRow =
-                  marker === null
-                    ? group.tree[endAt]?.initiative.initiative_id
-                    : undefined;
-                return (
-                  <ul
-                    onDragOver={(event) => {
-                      if (drag === null) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = 'move';
-                      const next = slotIndex(
-                        event.currentTarget,
-                        drag.initiativeId,
-                        event.clientY,
-                        'data-drop-slot'
-                      );
-                      if (next !== listSlot) setListSlot(next);
-                    }}
-                    onDragLeave={(event) => {
-                      if (
-                        drag !== null &&
-                        !event.currentTarget.contains(
-                          event.relatedTarget as Node
-                        )
-                      )
-                        setListSlot(null);
-                    }}
-                    onDrop={(event) => {
-                      if (drag === null) return;
-                      event.preventDefault();
-                      dropAmong(
-                        siblings,
-                        listSlot ??
-                          slotIndex(
-                            event.currentTarget,
-                            drag.initiativeId,
-                            event.clientY,
-                            'data-drop-slot'
-                          )
-                      );
-                    }}
-                  >
-                    {group.tree.map((row) => {
-                      const id = row.initiative.initiative_id;
-                      const position = selectionOrder.indexOf(id);
-                      return (
-                        <InitiativeRow
-                          key={id}
-                          row={row}
-                          slug={slug}
-                          people={members}
-                          teams={teams}
-                          shown={shown}
-                          collapsed={collapsed.has(id)}
-                          onToggle={toggle}
-                          isActive={position === activeIndex}
-                          rowRef={registerItem(position)}
-                          onPointerEnter={() => {
-                            setActiveIndex(position);
-                          }}
-                          selected={selectedIds.has(id)}
-                          onSelect={(range) => {
-                            toggleSelected(id, range);
-                          }}
-                          isDropSlot={
-                            drag !== null && siblingsKey(row) === drag.siblings
-                          }
-                          dragging={drag?.initiativeId === id}
-                          dropMark={
-                            marker === id
-                              ? 'before'
-                              : endRow === id
-                                ? 'after'
-                                : null
-                          }
-                          onDragStart={(event) => {
-                            event.dataTransfer.effectAllowed = 'move';
-                            event.dataTransfer.setData(
-                              'text/plain',
-                              row.initiative.name
-                            );
-                            setListDrag({
-                              initiativeId: id,
-                              group: group.key,
-                              siblings: siblingsKey(row),
-                            });
-                          }}
-                          onDragEnd={endListDrag}
-                        />
-                      );
-                    })}
-                  </ul>
-                );
-              })()}
-            </section>
-          ))
-        )}
-      </div>
+      )}
 
       {isCreating && (
         <CreateInitiativeDialog

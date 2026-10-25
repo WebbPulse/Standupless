@@ -413,10 +413,12 @@ describe('Initiatives', () => {
     await waitFor(() => {
       expect(updatePreferences).toHaveBeenCalledWith({
         initiatives_display: {
+          layout: 'list',
+          zoom: 'month',
           grouping: 'status',
           order: 'target',
           completed: 'hide',
-          columns: 'health,team,owner,projects,target,progress',
+          columns: 'health,team,owner,projects,start,target,progress',
         },
       });
     });

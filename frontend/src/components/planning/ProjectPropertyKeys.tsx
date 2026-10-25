@@ -37,6 +37,7 @@ export const INITIATIVE_PROPERTY_KEYS: ProjectPropertyKey[] = [
   { keys: 's', label: 'Change status', field: 'Status' },
   { keys: 'a', label: 'Change owner', field: 'Owner' },
   { keys: 'h', label: 'Change health', field: 'Health' },
+  { keys: 'shift+s', label: 'Set start date', field: 'Start date' },
   { keys: 'shift+d', label: 'Set target date', field: 'Target date' },
 ];
 

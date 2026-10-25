@@ -1,12 +1,12 @@
 /**
  * The new initiative dialog: a large name field, a summary, and a footer of
- * property chips for status, owner, lead team and target date, the way a new project is
+ * property chips for status, owner, lead team, start and target date, the way a new project is
  * written. Cmd or Ctrl and Enter creates it from anywhere in the dialog.
  * Opened from a parent's page, it creates a sub-initiative of that parent.
  */
 
 import React, { useState } from 'react';
-import { LuCalendarCheck } from 'react-icons/lu';
+import { LuCalendar, LuCalendarCheck } from 'react-icons/lu';
 import { createInitiative } from '../../api/initiatives';
 import { isCoarse } from '../../lib/dateResolution';
 import { errorMessage } from '../../lib/errors';
@@ -60,6 +60,10 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
   const [status, setStatus] = useState<InitiativeStatus>('planned');
   const [ownerId, setOwnerId] = useState<string | null>(initialOwnerId);
   const [teamId, setTeamId] = useState<string | null>(initialTeamId);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [startResolution, setStartResolution] = useState<DateResolution | null>(
+    null
+  );
   const [targetDate, setTargetDate] = useState<string | null>(null);
   const [targetResolution, setTargetResolution] =
     useState<DateResolution | null>(null);
@@ -78,6 +82,10 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
       owner_id: ownerId,
       ...(teamId === null ? {} : { team_id: teamId }),
       status,
+      ...(startDate === null ? {} : { start_date: startDate }),
+      ...(startDate !== null && isCoarse(startResolution)
+        ? { start_date_resolution: startResolution }
+        : {}),
       target_date: targetDate,
       ...(targetDate !== null && isCoarse(targetResolution)
         ? { target_date_resolution: targetResolution }
@@ -167,10 +175,24 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
           )}
           <PlanningDatePicker
             variant="chip"
+            field="Start date"
+            edge="start"
+            value={startDate}
+            resolution={startResolution}
+            {...(targetDate === null ? {} : { max: targetDate })}
+            onChange={(value, resolution) => {
+              setStartDate(value);
+              setStartResolution(resolution);
+            }}
+            icon={<LuCalendar className="h-3.5 w-3.5" />}
+          />
+          <PlanningDatePicker
+            variant="chip"
             field="Target date"
             edge="end"
             value={targetDate}
             resolution={targetResolution}
+            {...(startDate === null ? {} : { min: startDate })}
             onChange={(value, resolution) => {
               setTargetDate(value);
               setTargetResolution(resolution);

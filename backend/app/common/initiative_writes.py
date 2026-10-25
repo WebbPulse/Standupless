@@ -41,7 +41,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectRead,
 )
-from app.common.date_resolution import settle_date_fields, stored_resolution
+from app.common.date_resolution import DateEdge, settle_date_fields, stored_resolution
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import (
     INITIATIVE_STATUSES,
@@ -276,6 +276,8 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         parent_initiative_id=payload.parent_initiative_id,
         status=payload.status,
         health=payload.health,
+        start_date=payload.start_date,
+        start_date_resolution=stored_resolution(payload.start_date_resolution),
         target_date=payload.target_date,
         target_date_resolution=stored_resolution(payload.target_date_resolution),
         update_interval_days=payload.update_interval_days,
@@ -315,10 +317,17 @@ def update_initiative(
     parent_id = fields.get("parent_initiative_id")
     if parent_id is not None and parent_id != existing.parent_initiative_id:
         require_parent(repositories, context, existing.initiative_id, parent_id)
-    refusal = settle_date_fields(fields, "target_date", "target_date_resolution", "end", existing.target_date)
-    if refusal is not None:
-        raise unprocessable(refusal)
+    dates: tuple[tuple[str, DateEdge, Optional[str]], ...] = (
+        ("start_date", "start", existing.start_date),
+        ("target_date", "end", existing.target_date),
+    )
+    for date_name, edge, current in dates:
+        refusal = settle_date_fields(fields, date_name, f"{date_name}_resolution", edge, current)
+        if refusal is not None:
+            raise unprocessable(refusal)
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
+    if updated.start_date and updated.target_date and updated.target_date < updated.start_date:
+        raise unprocessable("target_date must not be before start_date")
     try:
         stored = repositories.planning.replace_initiative(updated)
     except ConditionFailed as exc:
