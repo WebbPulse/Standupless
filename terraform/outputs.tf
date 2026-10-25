@@ -177,3 +177,13 @@ output "realtime_url" {
   description = "WebSocket URL clients open for change notices (empty before the first image)"
   value       = local.realtime_enabled ? "${aws_apigatewayv2_api.realtime[0].api_endpoint}/${local.realtime_stage}" : ""
 }
+
+output "slack_config_role_arn" {
+  description = "The role the deploy pipeline assumes to read and rotate the Slack App configuration refresh token. The production workspace creates it; staging reports the ARN it was given in slack_config_role_arn."
+  value       = local.slack_config_role_arn
+}
+
+output "slack_config_secret_arn" {
+  description = "ARN of the secret holding SLACK_CONFIG_REFRESH_TOKEN, production only."
+  value       = one(aws_secretsmanager_secret.slack_config[*].arn)
+}

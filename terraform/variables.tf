@@ -262,3 +262,25 @@ variable "billing_business_enabled" {
   type        = bool
   default     = false
 }
+
+variable "slack_config_role_arn" {
+  description = "ARN of the slack-config role in the production account, which this environment's deploy role may assume to apply its Slack App manifest. Production builds its own ARN and ignores this; staging sets it in env/staging.tfvars. Null grants no assume permission."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.slack_config_role_arn == null || can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", var.slack_config_role_arn))
+    error_message = "slack_config_role_arn must be an IAM role ARN."
+  }
+}
+
+variable "slack_config_trusted_role_arns" {
+  description = "Role ARNs, besides production's own deploy role, that the slack-config role trusts. Read only in production, where env/production.tfvars names the staging deploy role. Every ARN must name a role that already exists, or IAM rejects the trust policy."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.slack_config_trusted_role_arns : can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", arn))])
+    error_message = "Every slack_config_trusted_role_arns entry must be an IAM role ARN."
+  }
+}
