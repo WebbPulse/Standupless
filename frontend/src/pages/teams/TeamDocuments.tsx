@@ -1,7 +1,8 @@
 /**
  * One team's documents: the runbooks, specs and notes filed under the team
  * rather than a project or an initiative. It lists them the way a project's
- * overview does, and the palette's "Create document" starts one here.
+ * overview does, J, K and Enter move through them, and the palette's
+ * "Create document" starts one here.
  */
 
 import React from 'react';
@@ -79,6 +80,7 @@ const TeamDocuments: React.FC = () => {
           parentId={team.id}
           canCreate={canCreate}
           people={people}
+          keyboardNav
         />
       </div>
     </WorkspaceShell>
