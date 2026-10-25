@@ -18,6 +18,8 @@ import { keepPastedVideoAsLink } from './videoEmbed';
 
 const YOUTUBE = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 const LOOM = 'https://www.loom.com/share/0123456789abcdef0123456789abcdef';
+const FIGMA =
+  'https://www.figma.com/design/aBcDeFgHiJkLmNoPqRsTuV/My-File?node-id=12-34';
 
 const editors: Editor[] = [];
 
@@ -160,5 +162,28 @@ describe('pasting a video link', () => {
     editor.commands.setTextSelection(7);
     expect(editor.commands.splitListItem('listItem')).toBe(true);
     expect(paste(editor, YOUTUBE)).toBe(false);
+  });
+});
+
+describe('Figma links', () => {
+  it('keep a Figma link alone in its paragraph byte for byte as an embed', () => {
+    const source = `before\n\n${FIGMA}\n\nafter`;
+    const editor = holding(source);
+    expect(types(editor)).toEqual(['paragraph', 'videoEmbed', 'paragraph']);
+    expect(readMarkdown(editor)).toBe(source);
+  });
+
+  it('embed on paste and keep the plain link on Escape', () => {
+    const editor = holding('');
+    expect(paste(editor, FIGMA)).toBe(true);
+    expect(types(editor)[0]).toBe('videoEmbed');
+    expect(keepPastedVideoAsLink(editor)).toBe(true);
+    expect(types(editor)).not.toContain('videoEmbed');
+    expect(readMarkdown(editor)).toBe(`[${FIGMA}](${FIGMA})`);
+  });
+
+  it('leave an http Figma link a link', () => {
+    const editor = holding('');
+    expect(paste(editor, FIGMA.replace('https:', 'http:'))).toBe(false);
   });
 });
