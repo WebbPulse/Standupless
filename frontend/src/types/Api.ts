@@ -2287,9 +2287,13 @@ export interface TriageSummaryRead {
   teams: TriageTeamCount[];
 }
 
-/** Accepts a triage issue, into the named status or the team's first unstarted one. */
+/**
+ * Accepts a triage issue, into the named status or the team's first unstarted
+ * one. A non-blank `comment` is posted on the issue as the person accepting.
+ */
 export interface TriageAccept {
   status_id?: string | null;
+  comment?: string | null;
 }
 
 /** Declines a triage issue, with an optional reason kept in its history. */

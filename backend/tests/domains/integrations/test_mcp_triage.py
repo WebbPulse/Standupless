@@ -131,6 +131,28 @@ def test_triage_issue_works_each_action(client: TestClient, repositories: Any, w
     assert [row["issue_id"] for row in listed["issues"]] == [second["issue_id"]]
 
 
+def test_triage_issue_accept_carries_a_comment(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An accept with a comment posts it on the issue as the caller, beside the move."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    member = mint_for(repositories, MEMBER, SCOPES)
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+    filed = _file(client, member, "Needs a home")
+
+    accepted = answer(
+        tool(
+            client,
+            owner,
+            "triage_issue",
+            {"issue_id": filed["issue_key"], "action": "accept", "status_id": "Todo", "comment": "Picked up"},
+        )
+    )
+
+    assert accepted["in_triage"] is False and accepted["status"] == "Todo"
+    comments = repositories.comments.iter_for_issue(WORKSPACE, filed["issue_id"])
+    assert [(comment.author_id, comment.body) for comment in comments] == [(OWNER, "Picked up")]
+
+
 def test_triage_issue_refuses_a_bad_snooze_and_a_settled_issue(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:

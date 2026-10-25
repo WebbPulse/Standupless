@@ -21301,8 +21301,19 @@
         "type": "object"
       },
       "TriageAccept": {
-        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.",
+        "description": "The body an accept takes: the status the issue moves to, or the team's first unstarted one.\n\n`comment` is posted on the issue by the person accepting, in the same request,\nso a note such as why it was taken in lands beside the accept in the thread.",
         "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
           "status_id": {
             "anyOf": [
               {

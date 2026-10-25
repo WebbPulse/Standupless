@@ -2768,6 +2768,7 @@ class TransitionUpdate(TypedDict, closed=True):
 
 
 class TriageAccept(TypedDict):
+    comment: NotRequired[str | None]
     status_id: NotRequired[str | None]
 
 

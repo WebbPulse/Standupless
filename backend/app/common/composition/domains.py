@@ -247,8 +247,19 @@ _TEAMS_REPOSITORIES = (
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
-_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning", "team_config")
+_ISSUES_REPOSITORIES = (
+    "issues",
+    "relations",
+    "activity",
+    "counters",
+    "subscriptions",
+    "planning",
+    "team_config",
+    "comments",
+)
 """What the issues image writes.
+
+`comments` is for a triage accept posting the note it carries.
 
 `planning` is for a move adding the target team to the issue's project, and
 `team_config` for the recurring issue sweep moving each schedule to its next run.
