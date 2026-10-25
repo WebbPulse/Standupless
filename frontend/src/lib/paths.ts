@@ -235,6 +235,18 @@ export const viewsPath = (slug: string): string =>
 /** The page that composes a new view over every team. */
 export const newViewPath = (slug: string): string => `${viewsPath(slug)}/new`;
 
+/** The dashboards tab of the saved views page. */
+export const dashboardsPath = (slug: string): string =>
+  `${viewsPath(slug)}?tab=dashboards`;
+
+/** The dashboards tab of one team's views page. */
+export const teamDashboardsPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/views?tab=dashboards`;
+
+/** One dashboard. */
+export const dashboardPath = (slug: string, dashboardId: string): string =>
+  `${viewsPath(slug)}/dashboards/${encodeURIComponent(dashboardId)}`;
+
 /** Workspace settings. */
 export const settingsPath = (slug: string): string =>
   `${workspacePath(slug)}/settings`;

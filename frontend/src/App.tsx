@@ -102,6 +102,7 @@ import TeamTriage from './pages/teams/TeamTriage';
 import TeamSettings from './pages/teams/TeamSettings';
 import Search from './pages/search/Search';
 import SharedView from './pages/shared/SharedView';
+import DashboardDetail from './pages/views/DashboardDetail';
 import NewView from './pages/views/NewView';
 import ViewDetail from './pages/views/ViewDetail';
 import Views from './pages/views/Views';
@@ -272,6 +273,10 @@ const App: React.FC = () => (
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="views" element={<Views />} />
           <Route path="views/new" element={<NewView />} />
+          <Route
+            path="views/dashboards/:dashboardId"
+            element={<DashboardDetail />}
+          />
           <Route path="views/:viewId" element={<ViewDetail />} />
           <Route path="members/:userId" element={<MemberDetail />} />
 

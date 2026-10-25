@@ -48,6 +48,7 @@ import { useCustomers } from '../../../hooks/useCustomers';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
+import { widgetSourceFor } from '../../../lib/dashboards';
 import {
   groupFieldsFor,
   filterFieldsFor,
@@ -555,6 +556,10 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     () => insightsFilters(state, scope),
     [state, scope]
   );
+  const panelWidget = useMemo(
+    () => widgetSourceFor(state, scope, view),
+    [state, scope, view]
+  );
 
   const scaleFor = useCallback(
     (teamId: string) =>
@@ -949,6 +954,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             workspaceId={workspaceId}
             scopeKey={scopeKey}
             filters={panelFilters}
+            widget={panelWidget}
             onPick={(field, value) => {
               setState({
                 ...state,

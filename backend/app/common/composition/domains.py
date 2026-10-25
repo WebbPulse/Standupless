@@ -167,6 +167,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.views.endpoints import (
         board,
+        dashboards,
         drafts,
         favorites,
         home,
@@ -183,6 +184,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
         (drafts.router, "/workspaces", ("views",)),
         (board.router, "/workspaces", ("views",)),
         (insights.router, "/workspaces", ("views",)),
+        (dashboards.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
         (members.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),

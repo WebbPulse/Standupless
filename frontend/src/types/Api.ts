@@ -4318,6 +4318,88 @@ export interface InsightsRead {
   points?: InsightPoint[];
 }
 
+/** Where a dashboard is filed: its owner alone, one team, or the whole workspace. */
+export type DashboardScope = 'personal' | 'team' | 'workspace';
+
+/** How a widget draws its breakdown: bars, a table of the bars, or one figure. */
+export type DashboardWidgetKind = 'chart' | 'table' | 'metric';
+
+/** What a widget reads: every team the caller sees, one team, or a saved view. */
+export type DashboardWidgetSource = 'workspace' | 'team' | 'view';
+
+/** How much of a dashboard row a widget takes. */
+export type DashboardWidgetSize = 'half' | 'full';
+
+/** The fields a widget is created with, each defaulted on the server when left out. */
+export interface DashboardWidgetCreate {
+  kind?: DashboardWidgetKind;
+  title?: string | null;
+  source?: DashboardWidgetSource;
+  team_id?: string | null;
+  view_id?: string | null;
+  include_sub_teams?: boolean;
+  filter?: Record<string, unknown>;
+  group_by?: InsightDimension;
+  segment_by?: InsightDimension | null;
+  measure?: InsightMeasure;
+  size?: DashboardWidgetSize;
+}
+
+/** One widget of a dashboard, in the order the dashboard draws it. */
+export interface DashboardWidgetRead {
+  widget_id: string;
+  kind: DashboardWidgetKind;
+  title: string | null;
+  source: DashboardWidgetSource;
+  team_id: string | null;
+  view_id: string | null;
+  include_sub_teams: boolean;
+  filter: Record<string, unknown>;
+  group_by: InsightDimension;
+  segment_by: InsightDimension | null;
+  measure: InsightMeasure;
+  size: DashboardWidgetSize;
+}
+
+/**
+ * A page of widgets over several teams and views. `filter` applies to every
+ * widget on top of its own, and `can_edit` says whether the caller may change it.
+ */
+export interface DashboardRead {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  scope: DashboardScope;
+  team_id: string | null;
+  owner_id: string;
+  filter: Record<string, unknown>;
+  widgets: DashboardWidgetRead[];
+  can_edit: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body that creates a dashboard; the caller owns it. */
+export interface DashboardCreate {
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  scope?: DashboardScope;
+  team_id?: string | null;
+  filter?: Record<string, unknown>;
+  widgets?: DashboardWidgetCreate[];
+}
+
+/** The dashboard fields a patch may change. */
+export interface DashboardUpdate {
+  name?: string;
+  description?: string | null;
+  icon?: string | null;
+  filter?: Record<string, unknown> | null;
+  owner_id?: string;
+}
+
 /** The events a team channel may post, in the order the settings page lists them. */
 export const CHANNEL_EVENTS = [
   'issue_created',

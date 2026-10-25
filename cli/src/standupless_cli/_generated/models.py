@@ -689,6 +689,19 @@ class CycleUpdate(TypedDict):
     team_id: str
 
 
+class DashboardMove(TypedDict):
+    scope: Literal["personal", "team", "workspace"]
+    team_id: NotRequired[str | None]
+
+
+class DashboardUpdate(TypedDict):
+    description: NotRequired[str | None]
+    filter: NotRequired[dict[str, Any] | None]
+    icon: NotRequired[str | None]
+    name: NotRequired[str | None]
+    owner_id: NotRequired[str | None]
+
+
 class DeliveryAttemptRead(TypedDict):
     at: str
     attempt: int
@@ -3517,6 +3530,124 @@ class WebhookEndpointUpdate(TypedDict, closed=True):
     url: NotRequired[str | None]
 
 
+class WidgetCreate(TypedDict):
+    filter: NotRequired[dict[str, Any]]
+    group_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+    ]
+    include_sub_teams: NotRequired[bool]
+    kind: NotRequired[Literal["chart", "table", "metric"]]
+    measure: NotRequired[Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"]]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    size: NotRequired[Literal["half", "full"]]
+    source: NotRequired[Literal["workspace", "team", "view"]]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    view_id: NotRequired[str | None]
+
+
+class WidgetOrder(TypedDict):
+    widget_ids: list[str]
+
+
+class WidgetRead(TypedDict):
+    filter: NotRequired[dict[str, Any]]
+    group_by: Literal[
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
+    ]
+    include_sub_teams: NotRequired[bool]
+    kind: Literal["chart", "table", "metric"]
+    measure: Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    size: Literal["half", "full"]
+    source: Literal["workspace", "team", "view"]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    view_id: NotRequired[str | None]
+    widget_id: str
+
+
+class WidgetUpdate(TypedDict):
+    filter: NotRequired[dict[str, Any] | None]
+    group_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    include_sub_teams: NotRequired[bool | None]
+    kind: NotRequired[Literal["chart", "table", "metric"] | None]
+    measure: NotRequired[Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"] | None]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    size: NotRequired[Literal["half", "full"] | None]
+    source: NotRequired[Literal["workspace", "team", "view"] | None]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    view_id: NotRequired[str | None]
+
+
 class WorkspaceChannelCreate(TypedDict, closed=True):
     discord_channel_id: NotRequired[str | None]
     discord_channel_name: NotRequired[str]
@@ -3871,6 +4002,31 @@ class CustomerRequestListRead(TypedDict):
 class CycleListRead(TypedDict):
     cycles: list[CycleRead]
     next_cursor: NotRequired[str | None]
+
+
+class DashboardCreate(TypedDict):
+    description: NotRequired[str | None]
+    filter: NotRequired[dict[str, Any]]
+    icon: NotRequired[str | None]
+    name: str
+    scope: NotRequired[Literal["personal", "team", "workspace"]]
+    team_id: NotRequired[str | None]
+    widgets: NotRequired[list[WidgetCreate]]
+
+
+class DashboardRead(TypedDict):
+    can_edit: NotRequired[bool]
+    created_at: str
+    description: NotRequired[str | None]
+    filter: NotRequired[dict[str, Any]]
+    icon: NotRequired[str | None]
+    id: str
+    name: str
+    owner_id: str
+    scope: Literal["personal", "team", "workspace"]
+    team_id: NotRequired[str | None]
+    updated_at: str
+    widgets: NotRequired[list[WidgetRead]]
 
 
 class DeletedIssueListRead(TypedDict):
@@ -4707,6 +4863,10 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class DashboardList(TypedDict):
+    dashboards: list[DashboardRead]
 
 
 class DocumentTemplateListRead(TypedDict):

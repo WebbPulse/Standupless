@@ -306,6 +306,11 @@ EXPECTED_TOOLS = frozenset(
         "get_agent_profile",
         "save_agent_profile",
         "delete_agent_profile",
+        "list_dashboards",
+        "get_dashboard",
+        "create_dashboard",
+        "update_dashboard",
+        "delete_dashboard",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.

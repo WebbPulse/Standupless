@@ -562,3 +562,64 @@ def insights_for(
         include_sub_teams=include_sub_teams,
     )
     return build_insights(repositories, context, scope, group_by=group_by, segment_by=segment_by, measure=measure)
+
+
+def stored_issue_filter(context: AuthzContext, stored: Mapping[str, Any]) -> tuple[IssueFilter, bool]:
+    """A filter as a saved view or a dashboard stores it, and whether it means the caller's own subscriptions.
+
+    A stored `team_id` narrows rather than scopes here, read as `team_id_in`, so
+    a dashboard filter naming a team keeps only that team's issues in every
+    widget without moving any widget's source.
+    """
+    subscribed = subscribed_by_caller(stored.get("subscriber_id"), stored.get("match"), context.user_id)
+    keys = {key: value for key, value in stored.items() if key in FILTER_FIELDS and key != "team_id"}
+    if subscribed:
+        keys.pop("subscriber_id", None)
+    team = _scalar(stored.get("team_id"))
+    if team and "team_id_in" not in keys:
+        keys["team_id_in"] = [team]
+    try:
+        return build_issue_filter(user_id=context.user_id, **keys), subscribed
+    except UnknownStatusCategory as exc:
+        raise unprocessable(str(exc)) from exc
+
+
+def combined_insights(
+    repositories: Repositories,
+    context: AuthzContext,
+    *,
+    team_id: Optional[str],
+    view_id: Optional[str],
+    stored_filters: Iterable[Mapping[str, Any]],
+    group_by: str,
+    segment_by: Optional[str],
+    measure: str,
+    include_sub_teams: bool = False,
+) -> InsightsRead:
+    """A breakdown over a team, a view or the workspace with several stored filters all applied.
+
+    The dashboard widget's entry point: the widget's own filter and the
+    dashboard's are each kept whole and ANDed, so neither can widen the other,
+    and visibility is decided by the same scope resolution the insights route uses.
+    """
+    built: list[IssueFilter] = []
+    subscribed = False
+    for stored in stored_filters:
+        wanted, mine = stored_issue_filter(context, stored)
+        built.append(wanted)
+        subscribed = subscribed or mine
+    first = built[0] if built else build_issue_filter(user_id=context.user_id)
+    scope = resolve_scope(
+        repositories,
+        context,
+        first,
+        team_id=team_id,
+        view_id=view_id,
+        subscribed=subscribed,
+        include_sub_teams=include_sub_teams,
+    )
+    extra = built[1:]
+    if scope.filters[0].include_archived:
+        extra = [_with_archived(item) for item in extra]
+    scope = replace(scope, filters=(*scope.filters, *extra))
+    return build_insights(repositories, context, scope, group_by=group_by, segment_by=segment_by, measure=measure)
