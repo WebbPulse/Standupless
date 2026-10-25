@@ -24,9 +24,9 @@
  * Every row also offers its actions to the mouse: hover or select it for
  * quick buttons, or right click it, or press its "more" button, for the full
  * menu, which adds unsubscribing from the issue, copying its link and opening
- * the row in a new tab. Shift S toggles the subscription on the selected
- * row's issue, so the pane beside it gives that key up while the inbox shows
- * it.
+ * the row in a new tab. Cmd or Ctrl, Shift and S toggles the subscription
+ * on the selected row's issue, the same key as in the issue view, so the pane
+ * beside it gives that key up while the inbox shows it.
  *
  * Removing, snoozing or unsubscribing raises a notice with Undo, and Ctrl Z
  * puts it back too. There is no route that restores a deleted notification,
@@ -94,7 +94,7 @@ import {
   BlockedIcon,
   BlockingIcon,
 } from '../../components/issues/RelationGlyphs';
-import { ManageSubscribersKeyContext } from '../../components/issues/IssueSubscribers';
+import { TOGGLE_SUBSCRIPTION_KEYS } from '../../components/issues/view/propertyKeys';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import { IssueHoverTrigger } from '../../components/ui/IssueHoverCard';
@@ -114,6 +114,7 @@ import Spinner from '../../components/ui/spinner';
 import Tooltip from '../../components/ui/tooltip';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCursorPages } from '../../hooks/useCursorPages';
+import { SubscriptionKeyContext } from '../../hooks/useIssueSubscription';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { viaLabel } from '../../lib/changeSource';
@@ -159,7 +160,6 @@ import {
   REMOVE_KEYS,
   SNOOZE_KEYS,
   TOGGLE_READ_KEYS,
-  TOGGLE_SUBSCRIPTION_KEYS,
 } from './InboxRowMenu';
 import { InboxDisplayMenu, InboxFilterMenu } from './InboxViewMenus';
 import { keepPinned, type PinnedRow } from './pinned';
@@ -1844,13 +1844,13 @@ export const Inbox: React.FC = () => {
               onClose={closePane}
             />
           ) : (
-            <ManageSubscribersKeyContext.Provider value={false}>
+            <SubscriptionKeyContext.Provider value={false}>
               <IssuePane
                 key={current.issue_id}
                 issueId={current.issue_id}
                 onClose={closePane}
               />
-            </ManageSubscribersKeyContext.Provider>
+            </SubscriptionKeyContext.Provider>
           )}
         </div>
       </div>

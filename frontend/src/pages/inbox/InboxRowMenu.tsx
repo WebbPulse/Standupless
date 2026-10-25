@@ -27,6 +27,7 @@ import {
   MenuSeparator,
   MenuShortcut,
 } from '../../components/ui/menu';
+import { TOGGLE_SUBSCRIPTION_KEYS } from '../../components/issues/view/propertyKeys';
 import type { InboxGroup } from './groups';
 
 /** The key that toggles read and unread. */
@@ -37,9 +38,6 @@ export const SNOOZE_KEYS = 'h';
 
 /** The key that deletes a row. */
 export const REMOVE_KEYS = 'backspace';
-
-/** The key that toggles the subscription on a row's issue. */
-export const TOGGLE_SUBSCRIPTION_KEYS = 'shift+s';
 
 /**
  * Whether the caller follows one issue, read once while the menu is open:

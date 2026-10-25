@@ -7,22 +7,27 @@
  * Subscribers picker and its Manage subscribers palette entry.
  */
 
-import { useCallback } from 'react';
+import { createContext, useCallback, useContext } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { listSubscribers, subscribe, unsubscribe } from '../api/notifications';
+import { TOGGLE_SUBSCRIPTION_KEYS } from '../components/issues/view/propertyKeys';
 import { errorMessage } from '../lib/errors';
 import { activityKey, subscribersKey } from '../lib/queryKeys';
 import { showErrorToast, showToast } from '../lib/toast';
 import type { SubscribersRead } from '../types/Api';
 import { displayKeys, useShortcut } from './useShortcuts';
 
-/** The shortcut that subscribes to or unsubscribes from the issue. */
-export const TOGGLE_SUBSCRIPTION_KEYS = 'mod+shift+s';
-
 /** A toggle label with its shortcut, for a tooltip. */
 export const subscriptionTitle = (label: string): string =>
   `${label} (${displayKeys(TOGGLE_SUBSCRIPTION_KEYS)[0] ?? ''})`;
+
+/**
+ * Whether the issue view takes the subscribe shortcut. A surface that binds
+ * the same key itself, such as the inbox where it toggles the selected row's
+ * subscription with an undo, turns it off around the issue it shows.
+ */
+export const SubscriptionKeyContext = createContext(true);
 
 /** How often the subscriber list is re-read while the issue is open. */
 const POLL_MS = 30000;
@@ -56,6 +61,7 @@ export const useIssueSubscription = (
 ): IssueSubscription => {
   const auth = useQueryAuth();
   const ready = workspaceId !== '' && issueId !== '';
+  const bindsKey = useContext(SubscriptionKeyContext);
 
   const { data, error } = usePolledQuery(
     ({ signal }) => listSubscribers(workspaceId, issueId, signal),
@@ -133,7 +139,7 @@ export const useIssueSubscription = (
     label,
     scope: 'issue',
     group: 'Issue',
-    enabled: ready && data !== null,
+    enabled: ready && data !== null && bindsKey,
     handler: toggle,
   });
 
