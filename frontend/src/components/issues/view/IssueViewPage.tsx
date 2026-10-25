@@ -48,6 +48,7 @@ import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
 import { useCustomers } from '../../../hooks/useCustomers';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
+import { FOCUS_SAVE_REFUSED } from '../../../lib/focusGrouping';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
 import { widgetSourceFor } from '../../../lib/dashboards';
 import {
@@ -60,6 +61,7 @@ import {
   stateToViewBody,
   stateToViewDisplay,
   stateToViewFilter,
+  usesFocusGrouping,
   viewStateQuery,
   viewVisibility,
   writeViewState,
@@ -404,6 +406,8 @@ export interface IssueViewPageProps {
   statusCategories?: readonly StatusCategory[] | undefined;
   /** A notice above the list, such as the banner of a retired team. */
   notice?: ReactNode;
+  /** True on My issues > Assigned, the one list that offers the Focus grouping. */
+  focusGrouping?: boolean;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -441,6 +445,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   teamDefault,
   statusCategories,
   notice,
+  focusGrouping = false,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -604,7 +609,19 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     }
   );
 
+  const openSaveNew = (): void => {
+    if (usesFocusGrouping(state)) {
+      showErrorToast(FOCUS_SAVE_REFUSED);
+      return;
+    }
+    setSaving('new');
+  };
+
   const saveNew = async (details: ViewDetails): Promise<void> => {
+    if (usesFocusGrouping(state)) {
+      showErrorToast(FOCUS_SAVE_REFUSED);
+      return;
+    }
     const teamId = details.teamId;
     const runsOver =
       teamId === undefined || typeof scope.team_id === 'string'
@@ -683,9 +700,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     scope: 'page',
     group: 'View',
     enabled: !archive && saving === null,
-    handler: () => {
-      setSaving('new');
-    },
+    handler: openSaveNew,
   });
   useShortcut({
     keys: 'mod+s',
@@ -705,9 +720,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         size="sm"
         variant="ghost"
         className="gap-1.5"
-        onClick={() => {
-          setSaving('new');
-        }}
+        onClick={openSaveNew}
       >
         <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
         Save as view
@@ -733,13 +746,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           Discard
         </Button>
         {view !== undefined && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setSaving('new');
-            }}
-          >
+          <Button size="sm" variant="ghost" onClick={openSaveNew}>
             Save as new
           </Button>
         )}
@@ -748,7 +755,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           variant="primary"
           disabled={updating}
           onClick={() => {
-            if (view === undefined) setSaving('new');
+            if (view === undefined) openSaveNew();
             else void saveOver();
           }}
         >
@@ -814,7 +821,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           state={state}
           onChange={setState}
           archive={archive}
-          groupFields={groupFieldsFor(filterContext)}
+          groupFields={groupFieldsFor(filterContext, { focus: focusGrouping })}
           context={filterContext}
           teamDefault={teamDefaultActions}
           customerSorts={isMember}
