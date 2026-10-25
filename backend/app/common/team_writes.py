@@ -20,6 +20,7 @@ from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
     AutoCloseSettingsUpdate,
     CycleSettingsUpdate,
+    ParentAutoCloseSettingsUpdate,
     SlaSettingsUpdate,
     TeamCreate,
     TeamDisplayDefaultsUpdate,
@@ -34,6 +35,7 @@ from app.common.db.dynamo.team_config import (
     ArchiveSettings,
     AutoCloseSettings,
     CycleSettings,
+    ParentAutoCloseSettings,
     SlaSettings,
     Status,
     TeamDisplayDefaults,
@@ -42,6 +44,7 @@ from app.common.db.dynamo.team_config import (
     default_archive_settings,
     default_auto_close_settings,
     default_cycle_settings,
+    default_parent_auto_close_settings,
     default_sla_settings,
     default_team_display_defaults,
 )
@@ -429,6 +432,24 @@ def update_auto_close_settings(
             raise unprocessable("status_id must be a cancelled status of this team")
     current = auto_close_settings(repositories, workspace_id, team_id)
     return repositories.team_config.put_auto_close_settings(current.model_copy(update=changes))
+
+
+def parent_auto_close_settings(repositories: Repositories, workspace_id: str, team_id: str) -> ParentAutoCloseSettings:
+    """Whether a team's parents and sub-issues close together, both off when none was saved."""
+    stored = repositories.team_config.get_parent_auto_close_settings(workspace_id, team_id)
+    return stored or default_parent_auto_close_settings(workspace_id, team_id)
+
+
+def update_parent_auto_close_settings(
+    repositories: Repositories, workspace_id: str, team_id: str, payload: ParentAutoCloseSettingsUpdate
+) -> ParentAutoCloseSettings:
+    """Turn closing a parent with its last sub-issue, or sub-issues with their parent, on or off.
+
+    A field left out or null keeps its stored value.
+    """
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    current = parent_auto_close_settings(repositories, workspace_id, team_id)
+    return repositories.team_config.put_parent_auto_close_settings(current.model_copy(update=changes))
 
 
 def display_defaults(repositories: Repositories, workspace_id: str, team_id: str) -> TeamDisplayDefaults:

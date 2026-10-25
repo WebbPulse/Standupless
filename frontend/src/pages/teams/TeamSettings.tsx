@@ -18,6 +18,7 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import AutoCloseSection from '../../components/team/AutoCloseSection';
+import ParentAutoCloseSection from '../../components/team/ParentAutoCloseSection';
 import CyclesSection from '../../components/team/CyclesSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
@@ -72,6 +73,7 @@ const SECTIONS = [
   { id: 'triage', label: 'Triage' },
   { id: 'sla', label: 'SLAs' },
   { id: 'auto-close', label: 'Auto-close' },
+  { id: 'parent-auto-close', label: 'Parent and sub-issues' },
   { id: 'archive', label: 'Auto-archive' },
   { id: 'standup', label: 'Standup' },
   { id: 'github', label: 'GitHub' },
@@ -332,6 +334,14 @@ const TeamSettings: React.FC = () => {
           {frame(
             'auto-close',
             <AutoCloseSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'parent-auto-close',
+            <ParentAutoCloseSection
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}

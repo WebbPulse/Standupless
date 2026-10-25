@@ -12027,6 +12027,71 @@
         "title": "OverrideUpdate",
         "type": "object"
       },
+      "ParentAutoCloseSettingsRead": {
+        "description": "A team's parent and sub-issue auto-close settings as the API returns them.",
+        "properties": {
+          "close_parent": {
+            "title": "Close Parent",
+            "type": "boolean"
+          },
+          "close_sub_issues": {
+            "title": "Close Sub Issues",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "close_parent",
+          "close_sub_issues"
+        ],
+        "title": "ParentAutoCloseSettingsRead",
+        "type": "object"
+      },
+      "ParentAutoCloseSettingsUpdate": {
+        "description": "The body a team's parent and sub-issue auto-close settings patch takes, each field optional.\n\n`close_parent` closes a parent once every sub-issue is completed or\ncancelled, and `close_sub_issues` closes a parent's open sub-issues once the\nparent is completed or cancelled.",
+        "properties": {
+          "close_parent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Parent"
+          },
+          "close_sub_issues": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Sub Issues"
+          }
+        },
+        "title": "ParentAutoCloseSettingsUpdate",
+        "type": "object"
+      },
       "PipelineStageRead": {
         "description": "One stage of a team's release pipeline.",
         "properties": {
@@ -50116,6 +50181,112 @@
           }
         ],
         "summary": "Put Team Member",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/parent-auto-close-settings": {
+      "get": {
+        "description": "Whether a team closes a parent with its last sub-issue and open sub-issues with their parent.",
+        "operationId": "read_parent_auto_close_settings_api_workspaces__workspace_id__teams__team_id__parent_auto_close_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentAutoCloseSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Parent Auto Close Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Turn closing a parent once every sub-issue is done, or open sub-issues once their parent is, on or off.\n\nThe change applies to the next status move; issues already finished are left as they are.",
+        "operationId": "update_parent_auto_close_settings_api_workspaces__workspace_id__teams__team_id__parent_auto_close_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParentAutoCloseSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentAutoCloseSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Parent Auto Close Settings",
         "tags": [
           "teams"
         ]

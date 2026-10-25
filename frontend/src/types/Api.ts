@@ -2376,6 +2376,20 @@ export interface AutoCloseSettingsUpdate {
   status_id?: string | null;
 }
 
+/** Whether a team closes a parent with its last sub-issue and open sub-issues with their parent. */
+export interface ParentAutoCloseSettingsRead {
+  team_id: string;
+  close_parent: boolean;
+  close_sub_issues: boolean;
+  updated_at: string | null;
+}
+
+/** The switches of a team's parent and sub-issue auto-close; a field left out keeps its value. */
+export interface ParentAutoCloseSettingsUpdate {
+  close_parent?: boolean;
+  close_sub_issues?: boolean;
+}
+
 /** The months after which a team's finished issues are archived. */
 export type ArchivePeriodMonths = 1 | 3 | 6 | 9 | 12;
 

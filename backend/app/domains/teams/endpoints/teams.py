@@ -36,6 +36,8 @@ from app.common.api.schemas.teams import (
     AutoCloseSettingsUpdate,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    ParentAutoCloseSettingsRead,
+    ParentAutoCloseSettingsUpdate,
     SlaSettingsRead,
     SlaSettingsUpdate,
     TeamCreate,
@@ -302,6 +304,33 @@ def update_auto_close_settings(
     team = _load(repositories, context)
     saved = team_writes.update_auto_close_settings(repositories, context.workspace_id, team.team_id, payload)
     return AutoCloseSettingsRead.from_row(saved)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/parent-auto-close-settings", response_model=ParentAutoCloseSettingsRead)
+def read_parent_auto_close_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ParentAutoCloseSettingsRead:
+    """Whether a team closes a parent with its last sub-issue and open sub-issues with their parent."""
+    team = _load(repositories, context)
+    return ParentAutoCloseSettingsRead.from_row(
+        team_writes.parent_auto_close_settings(repositories, context.workspace_id, team.team_id)
+    )
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/parent-auto-close-settings", response_model=ParentAutoCloseSettingsRead)
+def update_parent_auto_close_settings(
+    payload: ParentAutoCloseSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ParentAutoCloseSettingsRead:
+    """Turn closing a parent once every sub-issue is done, or open sub-issues once their parent is, on or off.
+
+    The change applies to the next status move; issues already finished are left as they are.
+    """
+    team = _load(repositories, context)
+    saved = team_writes.update_parent_auto_close_settings(repositories, context.workspace_id, team.team_id, payload)
+    return ParentAutoCloseSettingsRead.from_row(saved)
 
 
 @router.get("/{workspace_id}/teams/{team_id}/archive-settings", response_model=ArchiveSettingsRead)

@@ -34,6 +34,7 @@ from app.common.db.dynamo.team_config import (
     CycleSettings,
     DisplayOptions,
     Label,
+    ParentAutoCloseSettings,
     SlaSettings,
     Status,
     TeamDisplayDefaults,
@@ -558,6 +559,37 @@ class AutoCloseSettingsRead(BaseModel):
             enabled=settings.period_months is not None,
             period_months=settings.period_months,
             status_id=settings.status_id,
+            updated_at=settings.updated_at,
+        )
+
+
+class ParentAutoCloseSettingsUpdate(BaseModel):
+    """The body a team's parent and sub-issue auto-close settings patch takes, each field optional.
+
+    `close_parent` closes a parent once every sub-issue is completed or
+    cancelled, and `close_sub_issues` closes a parent's open sub-issues once the
+    parent is completed or cancelled.
+    """
+
+    close_parent: Optional[bool] = None
+    close_sub_issues: Optional[bool] = None
+
+
+class ParentAutoCloseSettingsRead(BaseModel):
+    """A team's parent and sub-issue auto-close settings as the API returns them."""
+
+    team_id: str
+    close_parent: bool
+    close_sub_issues: bool
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, settings: ParentAutoCloseSettings) -> "ParentAutoCloseSettingsRead":
+        """Build the response from a stored or default settings row."""
+        return cls(
+            team_id=settings.team_id,
+            close_parent=settings.close_parent,
+            close_sub_issues=settings.close_sub_issues,
             updated_at=settings.updated_at,
         )
 
