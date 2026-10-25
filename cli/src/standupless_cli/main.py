@@ -2421,9 +2421,7 @@ def project_edit(
     ctx: typer.Context,
     project: Annotated[str, typer.Argument(help="Project name or id.")],
     name: Annotated[str | None, typer.Option("--name", help="New name.")] = None,
-    description: Annotated[
-        str | None, typer.Option("--description", "-d", help="New description in Markdown.")
-    ] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d", help="New description in Markdown.")] = None,
     description_file: Annotated[
         Path | None,
         typer.Option("--description-file", "-F", help="Read the description from a file, or - for stdin."),
