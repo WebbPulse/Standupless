@@ -5,7 +5,8 @@ code, and which views a caller may read or change is decided once. Reads are bui
 from what the caller may read rather than filtered afterwards. A personal view is
 its owner's alone, a team view needs team membership to create and its owner or a
 team admin to change or delete, and a workspace view is read by every member but a
-guest and changed by its owner or a workspace admin.
+guest and changed by its owner or a workspace admin. Handing a shared view to
+another member is its owner's or a workspace admin's call alone.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any, Optional, Sequence
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
@@ -128,6 +130,41 @@ def require_view_writer(repositories: Repositories, context: AuthzContext, view:
     if view.team_id and (context.is_workspace_admin or team_role(repositories, context, view.team_id) == "admin"):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
+
+
+def may_change_owner(context: AuthzContext, view: SavedView) -> bool:
+    """Whether the caller may hand a view to someone else: its owner or a workspace admin."""
+    return view.owner_id == context.user_id or context.is_workspace_admin
+
+
+def check_new_owner(
+    repositories: Repositories, context: AuthzContext, view: SavedView, owner: str, *, shared: Optional[bool] = None
+) -> None:
+    """Hold that a view may pass to this member, or refuse.
+
+    Only the owner or a workspace admin hands a view over, and only a shared one:
+    a personal view lives under its owner's key and nobody else can read it.
+    `shared` is a move the same patch makes, judged as already made. The new
+    owner must be a member who can read the view, so a guest takes only a view of
+    a team they belong to, and a private team's view stays with its members.
+    """
+    if not may_change_owner(context, view):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
+    scope = view.scope
+    if shared is not None and not view.team_id:
+        scope = "workspace" if shared else "personal"
+    if scope == "personal":
+        raise unprocessable("Share a personal view with a team or the workspace before changing its owner")
+    membership = repositories.memberships.get(context.workspace_id, owner)
+    if membership is None:
+        raise unprocessable("The new owner must be a member of this workspace")
+    team = view.team_id
+    if membership.role == "guest":
+        if team is None or repositories.memberships.get_team_membership(context.workspace_id, team, owner) is None:
+            raise unprocessable("The new owner cannot read this view")
+    if team and repositories.memberships.is_private_team(context.workspace_id, team):
+        if repositories.memberships.get_team_membership(context.workspace_id, team, owner) is None:
+            raise unprocessable("The new owner cannot read this view")
 
 
 def check_filter(value: Optional[dict[str, Any]], entity: str = "issues") -> None:
@@ -244,14 +281,15 @@ def _create(repositories: Repositories, context: AuthzContext, payload: ViewCrea
 def update_saved_view(
     repositories: Repositories, context: AuthzContext, view_id: str, payload: ViewUpdate
 ) -> SavedView:
-    """Change a saved view's name, filter, sort, grouping or display settings.
+    """Change a saved view's name, filter, sort, grouping, display settings or owner.
 
     Only the fields the payload set are written. The display switches take true or
     false and never null, because a switch that could be neither would leave the
     client guessing what the view shows. The filter is judged by what the view
     lists, and only a project view takes a projects arrangement, its named fields
     moving and the rest kept. `collapsed_groups` sent as null clears every fold,
-    as an empty list does.
+    as an empty list does. A new owner is judged against any move to the
+    workspace the same patch makes, and the handover is audited.
     """
     view = load_visible_view(repositories, context, view_id)
     check_filter(payload.filter, "projects" if view.lists_projects else "issues")
@@ -259,6 +297,7 @@ def update_saved_view(
 
     changes = payload.model_dump(exclude_unset=True)
     shared = changes.pop("shared", None)
+    owner = changes.pop("owner_id", None)
     if "projects_display" in changes:
         if not view.lists_projects:
             raise unprocessable("projects_display applies only to a project view")
@@ -281,6 +320,9 @@ def update_saved_view(
         changes["show_completed"] = changes["completed_window"] != "none"
     elif "show_completed" in changes:
         changes["completed_window"] = "all" if changes["show_completed"] else "none"
+    if owner is not None and owner != view.owner_id:
+        check_new_owner(repositories, context, view, owner, shared=shared)
+        changes["owner_id"] = owner
     if shared is not None:
         view = rescope_view(repositories, context, view, shared)
     if not changes:
@@ -290,6 +332,17 @@ def update_saved_view(
     updated = repositories.views.update(context.workspace_id, view.view_key, **changes)
     if updated is None:
         raise not_found()
+    if "owner_id" in changes:
+        audit.record(
+            repositories,
+            context,
+            "view.owner_changed",
+            target_type="view",
+            target_id=updated.view_id,
+            target_label=updated.name,
+            before={"owner_id": view.owner_id},
+            after={"owner_id": updated.owner_id},
+        )
     return updated
 
 

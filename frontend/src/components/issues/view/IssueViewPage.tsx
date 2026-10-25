@@ -93,6 +93,7 @@ import type { StatusCategory, TeamRead } from '../../../types/Api';
 import Button, { IconButton } from '../../ui/button';
 import FavoriteButton from '../../ui/FavoriteButton';
 import ViewSubscribeButton from './ViewSubscribeButton';
+import ViewHeaderMenu from '../../views/ViewOwnerActions';
 import Dialog from '../../ui/dialog';
 import { Input, Textarea } from '../../ui/input';
 import { Menu, MenuItem, MenuLabel } from '../../ui/menu';
@@ -1032,6 +1033,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         >
           <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
         </IconButton>
+        <ViewHeaderMenu workspaceId={workspaceId} slug={slug} view={view} />
       </>
     );
 

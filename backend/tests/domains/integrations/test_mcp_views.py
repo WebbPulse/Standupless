@@ -170,6 +170,29 @@ def test_update_view_is_the_owners_or_a_team_admins(client: TestClient, reposito
     assert (admin["name"], promoted["name"]) == ("A", "B")
 
 
+def test_update_view_hands_a_team_view_to_a_member_by_email(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The owner hands a team view over by email; a team admin who does not own it may not."""
+    view_id = owners_team_view(client, repositories)
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "admin")
+
+    refused = refusal(
+        tool(client, mint_for(repositories, MEMBER, VIEWS), "update_view", {"view_id": view_id, "owner_id": "me"})
+    )
+    handed = answer(
+        tool(
+            client,
+            mint_for(repositories, OWNER, VIEWS),
+            "update_view",
+            {"view_id": view_id, "owner_id": "member@example.com"},
+        )
+    )
+
+    assert FORBIDDEN_TEXT in refused
+    assert handed["owner_id"] == MEMBER
+
+
 def test_another_members_personal_view_is_not_visible(client: TestClient, repositories: Any, workspace: str) -> None:
     """A personal view is found only by its owner, by id or by name."""
     view_id = personal_view(repositories, OWNER, "Owner only")

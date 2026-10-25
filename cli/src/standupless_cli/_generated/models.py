@@ -3683,6 +3683,7 @@ class ViewUpdate(TypedDict):
         | None
     ]
     ordering_reversed: NotRequired[bool | None]
+    owner_id: NotRequired[str | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]

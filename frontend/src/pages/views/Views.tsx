@@ -1,9 +1,9 @@
 /**
  * Every saved view the caller can open, as a dense list: each row shows the
  * view's icon, name, owner, where it is filed and how many issues it selects,
- * with rename, duplicate, favorite, subscribe and delete one menu away. A
- * bell marks the views the caller follows. New view opens
- * the composer, which is the issue list itself, so there is no form to fill
+ * with rename, copy link, duplicate, favorite, subscribe, change owner and
+ * delete one menu away. A bell marks the views the caller follows. New view
+ * opens the composer, which is the issue list itself, so there is no form to fill
  * before seeing what a view would show. Views of issues and views of
  * projects sit under their own tabs; New view on the projects tab opens the
  * projects page, which saves its arrangement as a view. Under a team's route
@@ -58,6 +58,12 @@ import { Select } from '../../components/ui/select';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import DashboardList from './DashboardList';
 import ViewIcon from '../../components/views/ViewIcon';
+import {
+  ChangeViewOwnerDialog,
+  ChangeViewOwnerItem,
+  CopyViewLinkItem,
+  viewOwnerChange,
+} from '../../components/views/ViewOwnerActions';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -228,6 +234,7 @@ const canDeleteView = (
 /** Which dialog is open over the list, and for which view. */
 type Pending =
   | { kind: 'rename'; view: SavedViewDisplayRead }
+  | { kind: 'owner'; view: SavedViewDisplayRead }
   | { kind: 'delete'; view: SavedViewDisplayRead }
   | null;
 
@@ -659,6 +666,7 @@ export const Views: React.FC = () => {
                           />
                           Rename
                         </MenuItem>
+                        <CopyViewLinkItem slug={slug} view={view} />
                         <MenuItem onSelect={() => void duplicate(view)}>
                           <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
                           Duplicate
@@ -688,6 +696,16 @@ export const Views: React.FC = () => {
                             : 'Subscribe'}
                           <SubscriberCount count={view.subscriber_count} />
                         </MenuItem>
+                        <ChangeViewOwnerItem
+                          change={viewOwnerChange(
+                            view,
+                            user?.id,
+                            workspace?.role
+                          )}
+                          onSelect={() => {
+                            setPending({ kind: 'owner', view });
+                          }}
+                        />
                         {canDeleteView(
                           view,
                           user?.id,
@@ -737,6 +755,15 @@ export const Views: React.FC = () => {
             description: pending.view.description ?? null,
           }}
           onSave={(details) => rename(pending.view, details)}
+        />
+      )}
+      {pending?.kind === 'owner' && (
+        <ChangeViewOwnerDialog
+          workspaceId={workspaceId}
+          view={pending.view}
+          onClose={() => {
+            setPending(null);
+          }}
         />
       )}
       {pending?.kind === 'delete' && (

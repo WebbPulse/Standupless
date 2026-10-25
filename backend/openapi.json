@@ -28838,7 +28838,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view. `owner_id` hands a shared view to another\nmember, the owner's or a workspace admin's call.",
         "properties": {
           "collapsed_groups": {
             "anyOf": [
@@ -29044,6 +29044,18 @@
               }
             ],
             "title": "Ordering Reversed"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
           },
           "projects_display": {
             "anyOf": [

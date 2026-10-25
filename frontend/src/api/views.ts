@@ -303,6 +303,8 @@ export interface SavedViewDisplayUpdate extends Omit<
   description?: string | null;
   /** Moves a view without a team between its owner and the whole workspace. */
   shared?: boolean;
+  /** Hands a team or workspace view to another member, the owner's or an admin's call. */
+  owner_id?: string;
   /** A view of projects' new arrangement, merged onto the stored one. */
   projects_display?: Partial<ProjectsDisplayPreference>;
 }
