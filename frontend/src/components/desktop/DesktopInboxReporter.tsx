@@ -1,14 +1,19 @@
 /**
  * Reports the workspace inbox to the desktop app: the unread count for the
  * dock or taskbar badge, and a native notification for each row that arrives
- * while the app is open. It renders nothing, and in a browser it mounts no
+ * while the app is open. While the person has paused notifications or is
+ * outside their working hours the badge still counts but nothing is shown,
+ * unless they let urgent ones through and the row is a direct mention. It
+ * renders nothing, and in a browser it mounts no
  * hooks, so the web app polls nothing extra.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { listInbox } from '../../api/views';
+import { useAuth } from '../../hooks/useAuth';
 import { useInboxCount } from '../../hooks/useSidebarData';
 import { desktopBridge, type DesktopBridge } from '../../lib/desktop';
+import { desktopNotificationAllowed } from '../../lib/notificationPause';
 import { inboxPath } from '../../lib/paths';
 import type { NotificationRead } from '../../types/Api';
 
@@ -38,6 +43,12 @@ const Reporter: React.FC<
   const count = useInboxCount(workspaceId);
   const previous = useRef<number | null>(null);
   const seenSince = useRef<string>('');
+  const { user } = useAuth();
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     seenSince.current = new Date().toISOString();
@@ -75,6 +86,7 @@ const Reporter: React.FC<
           seenSince.current
         );
         for (const row of fresh.reverse()) {
+          if (!desktopNotificationAllowed(userRef.current, row.kind)) continue;
           bridge.notify({
             ...describe(row),
             path: `${inboxPath(slug)}?n=${encodeURIComponent(row.notification_id)}`,

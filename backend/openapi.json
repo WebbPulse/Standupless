@@ -26235,7 +26235,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `email_format`\npicks a digest or one email per notification. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `theme` is the interface theme and `pointer_cursors` whether\ninteractive elements show the pointer cursor. `underline_links` underlines\nlinks in rich text at rest. `code_theme` is the syntax highlighting theme\nof code blocks. `convert_emoticons` is\nwhether the editor turns typed emoticons into emoji. `activity_filter` is\nwhether issue activity shows every change or only comments.\n`sidebar_items` moves the named sidebar items, leaving the others where\nthey are, and `sidebar_badge_style` picks a count or a dot for the unread\nbadges. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. `priority_inbox` turns the\nsplit inbox on or off, and `priority_kinds` replaces the whole set of kinds\nits Priority tab holds. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `email_format`\npicks a digest or one email per notification. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `theme` is the interface theme and `pointer_cursors` whether\ninteractive elements show the pointer cursor. `underline_links` underlines\nlinks in rich text at rest. `code_theme` is the syntax highlighting theme\nof code blocks. `convert_emoticons` is\nwhether the editor turns typed emoticons into emoji. `activity_filter` is\nwhether issue activity shows every change or only comments.\n`sidebar_items` moves the named sidebar items, leaving the others where\nthey are, and `sidebar_badge_style` picks a count or a dot for the unread\nbadges. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again, and `initiatives_display` does the same for\nthe initiatives list. `auto_assign_to_self`, `branch_copy_starts`\nand `branch_copy_assigns` are the Workflow group: assigning issues the person\ncreates to them, and starting and assigning an issue when its git branch name\nis copied. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. `priority_inbox` turns the\nsplit inbox on or off, and `priority_kinds` replaces the whole set of kinds\nits Priority tab holds. `notifications_paused_until` pauses email and\ndesktop notifications until that moment, and null or a moment already past\nresumes them; it may be at most thirty days ahead. `working_hours` sets the\nweekly schedule they arrive in, and null clears it. `urgent_bypasses_pause`\nlets direct mentions and urgent assignments through both. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "activity_filter": {
             "anyOf": [
@@ -26458,6 +26458,18 @@
             ],
             "title": "Notification Preferences"
           },
+          "notifications_paused_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifications Paused Until"
+          },
           "pointer_cursors": {
             "anyOf": [
               {
@@ -26610,6 +26622,17 @@
             ],
             "title": "Underline Links"
           },
+          "urgent_bypasses_pause": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urgent Bypasses Pause"
+          },
           "week_start": {
             "anyOf": [
               {
@@ -26625,6 +26648,16 @@
               }
             ],
             "title": "Week Start"
+          },
+          "working_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkingHours"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "UserPreferencesUpdate",
@@ -26663,7 +26696,7 @@
         "type": "object"
       },
       "UserRead": {
-        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead. `initiatives_display` and\n`initiatives_display_saved` are the same for the initiatives list. `theme`\nis null until the person first saves one. `sidebar_items` names every\nsidebar item with where it sits, `show` unless the person moved it.\n`priority_inbox` says whether the inbox splits into Priority and Other, and\n`priority_kinds` names every kind the Priority tab holds.",
+        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead. `initiatives_display` and\n`initiatives_display_saved` are the same for the initiatives list. `theme`\nis null until the person first saves one. `sidebar_items` names every\nsidebar item with where it sits, `show` unless the person moved it.\n`priority_inbox` says whether the inbox splits into Priority and Other, and\n`priority_kinds` names every kind the Priority tab holds.\n`notifications_paused_until` is the end of a pause still running, null when\nnone is, `working_hours` the schedule notifications reach the person in, and\n`urgent_bypasses_pause` whether direct mentions and urgent assignments come\nthrough either.",
         "properties": {
           "activity_filter": {
             "default": "all",
@@ -26803,6 +26836,18 @@
             "title": "Notification Preferences",
             "type": "object"
           },
+          "notifications_paused_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifications Paused Until"
+          },
           "pointer_cursors": {
             "default": false,
             "title": "Pointer Cursors",
@@ -26911,6 +26956,11 @@
             "title": "Underline Links",
             "type": "boolean"
           },
+          "urgent_bypasses_pause": {
+            "default": false,
+            "title": "Urgent Bypasses Pause",
+            "type": "boolean"
+          },
           "week_start": {
             "default": "monday",
             "enum": [
@@ -26920,6 +26970,16 @@
             ],
             "title": "Week Start",
             "type": "string"
+          },
+          "working_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkingHours"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -28851,6 +28911,35 @@
           }
         },
         "title": "WidgetUpdate",
+        "type": "object"
+      },
+      "WorkingHours": {
+        "description": "The weekly hours a person takes notifications in, read in their own timezone.\n\n`days` names the weekdays, `start` and `end` bound each day as `HH:MM`, and\n`end` comes after `start`, so a day never runs past midnight.",
+        "properties": {
+          "days": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 7,
+            "minItems": 1,
+            "title": "Days",
+            "type": "array"
+          },
+          "end": {
+            "default": "17:00",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "default": "09:00",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "days"
+        ],
+        "title": "WorkingHours",
         "type": "object"
       },
       "WorkspaceChannelCreate": {

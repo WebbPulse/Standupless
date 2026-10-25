@@ -46,6 +46,7 @@ import React, {
 } from 'react';
 import {
   LuActivity,
+  LuBellOff,
   LuBuilding2,
   LuCheck,
   LuChevronRight,
@@ -76,6 +77,9 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { setTeamOrder } from '../../api/teams';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAuth } from '../../hooks/useAuth';
+import { useNotificationPause } from '../../hooks/useNotificationPause';
+import { reminderLabel } from '../../lib/reminders';
+import PauseNotificationsDialog from './PauseNotificationsDialog';
 import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
@@ -627,6 +631,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCollapse,
 }) => {
   const { user, logout } = useAuth();
+  const notificationPause = useNotificationPause();
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const openPause = useCallback(() => {
+    setPauseOpen(true);
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const createIssue = useCreateIssue();
@@ -968,6 +977,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Security &amp; access
           </MenuItem>
           <MenuSeparator />
+          {notificationPause.pausedUntil === null ? (
+            <MenuItem onSelect={openPause}>Pause notifications</MenuItem>
+          ) : (
+            <>
+              <MenuItem
+                onSelect={() => void notificationPause.resume()}
+                textValue="Resume notifications"
+              >
+                Resume notifications
+              </MenuItem>
+              <MenuItem onSelect={openPause}>Change pause</MenuItem>
+            </>
+          )}
+          <MenuSeparator />
           <MenuItem to={PRIVACY_PATH}>Privacy Policy</MenuItem>
           <MenuItem to={TERMS_PATH}>Terms of Service</MenuItem>
           <MenuSeparator />
@@ -1276,6 +1299,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <TruncatedText>{user.display_name ?? user.email}</TruncatedText>
           </span>
         )}
+        {notificationPause.pausedUntil !== null && (
+          <IconButton
+            label={`Notifications paused until ${reminderLabel(notificationPause.pausedUntil)}`}
+            size="sm"
+            onClick={openPause}
+            data-testid="notifications-paused"
+          >
+            <LuBellOff className="h-3.5 w-3.5 text-warning" />
+          </IconButton>
+        )}
         <ThemeToggle />
         <IconButton
           label="Sign out"
@@ -1286,6 +1319,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <LuLogOut className="h-3.5 w-3.5" />
         </IconButton>
       </div>
+      <PauseNotificationsDialog
+        open={pauseOpen}
+        control={notificationPause}
+        workingHours={user?.working_hours ?? null}
+        onClose={() => {
+          setPauseOpen(false);
+        }}
+      />
     </div>
   );
 };

@@ -9,6 +9,13 @@ entries as one message. An urgent entry also writes a marker due at once, so
 its window goes out on the next flush and the window's own marker later finds
 nothing left to send.
 
+An entry for a person who paused notifications or is outside their working
+hours is held instead, in one held window per recipient per workspace, and a
+held marker in its own partition names that window. The flush reads every held
+marker, re-reads the person, and mails a window once they may be reached again,
+so resuming early, changing the schedule or extending a pause all take effect
+on the next run without anything having to be rescheduled.
+
 The rows live in the `inbox` table under partitions no member's inbox can name,
 because an inbox partition is always `<workspace>#<user>` built from the caller's
 own context. That keeps the pending state inside the grant the notify consumer
@@ -18,6 +25,7 @@ already holds, and the table's TTL drops anything a flush never reached.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from itertools import islice
 from typing import Any, Iterable
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -37,6 +45,18 @@ short enough that a window nobody flushes does not linger.
 """
 
 DUE_PARTITION = "digest#due"
+
+HELD_PARTITION = "digest#held"
+"""The partition naming every recipient whose emails wait for a pause or working hours to end."""
+
+HELD_WINDOW = 0
+"""The window number a recipient's held entries are kept under, which no real window starts at."""
+
+HELD_RETENTION = timedelta(days=32)
+"""How long a held row survives, which outlasts the longest pause a person may set."""
+
+HELD_SCAN = 1000
+"""The most held markers one flush reads, so a large pile of paused people costs a bounded read."""
 
 _ENTRY_PREFIX = "digest#"
 
@@ -108,12 +128,17 @@ class DigestEntry(BaseModel):
 
 
 class DueDigest(BaseModel):
-    """One window whose entries are ready to be mailed."""
+    """One window whose entries are ready to be mailed.
+
+    `partition` is where its marker lives: empty for the store's own due
+    partition, or the held partition for a window waiting on a pause.
+    """
 
     workspace_id: str
     recipient_id: str
     window: int
     marker: str
+    partition: str = ""
 
 
 class DigestStore:
@@ -175,6 +200,42 @@ class DigestStore:
         except ConditionFailed:
             pass
 
+    def hold(self, entry: DigestEntry, now: datetime | None = None) -> None:
+        """Keep one entry until its recipient may be reached again, in their held window.
+
+        The marker is written every time rather than only when missing, so its
+        TTL follows the newest entry and a long pause never loses its marker
+        while entries remain.
+        """
+        moment = now or datetime.now(timezone.utc)
+        expiry = int((moment + HELD_RETENTION).timestamp())
+        partition = window_partition(entry.workspace_id, entry.recipient_id, HELD_WINDOW, self._prefix)
+        self._repository.put(as_item(entry, ws_user=partition, expires_at=expiry))
+        self._repository.put(
+            {
+                "ws_user": HELD_PARTITION,
+                "notification_id": f"{entry.workspace_id}#{entry.recipient_id}",
+                "workspace_id": entry.workspace_id,
+                "recipient_id": entry.recipient_id,
+                "window": HELD_WINDOW,
+                "expires_at": expiry,
+            }
+        )
+
+    def held(self, *, limit: int = HELD_SCAN) -> list[DueDigest]:
+        """Every recipient with held entries, at most `limit` of them, for the flush to re-check."""
+        items: Iterable[Any] = self._repository.iter_query(Key("ws_user").eq(HELD_PARTITION), consistent=True)
+        return [
+            DueDigest(
+                workspace_id=str(item["workspace_id"]),
+                recipient_id=str(item["recipient_id"]),
+                window=int(item["window"]),
+                marker=str(item["notification_id"]),
+                partition=HELD_PARTITION,
+            )
+            for item in islice(items, limit)
+        ]
+
     def due(self, cutoff: datetime, *, limit: int) -> list[DueDigest]:
         """The oldest windows that closed at or before `cutoff`, at most `limit` of them."""
         bound = f"{int(cutoff.timestamp()):0{_EPOCH_WIDTH}d}~"
@@ -201,7 +262,7 @@ class DigestStore:
         """
         try:
             self._repository.delete(
-                {"ws_user": self._due_partition, "notification_id": due.marker},
+                {"ws_user": due.partition or self._due_partition, "notification_id": due.marker},
                 condition=Attr("notification_id").exists(),
             )
         except ConditionFailed:
@@ -212,7 +273,7 @@ class DigestStore:
         """Put a claimed window back, so a flush that failed before sending is retried."""
         self._repository.put(
             {
-                "ws_user": self._due_partition,
+                "ws_user": due.partition or self._due_partition,
                 "notification_id": due.marker,
                 "workspace_id": due.workspace_id,
                 "recipient_id": due.recipient_id,

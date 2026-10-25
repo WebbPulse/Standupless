@@ -4,7 +4,8 @@
  * Slack or Discord.
  *
  * Email arrives in the format the person picks: a short digest by default, or
- * one email per notification. Desktop notifications are switched per device,
+ * one email per notification. A pause, or working hours, hold email and
+ * desktop notifications while the inbox still fills. Desktop notifications are switched per device,
  * since the browser holds their permission.
  *
  * The priority inbox switch splits the inbox into Priority and Other tabs, and
@@ -38,6 +39,7 @@ import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import DesktopNotificationsSettings from '../../components/workspace/DesktopNotificationsSettings';
 import DiscordDirectMessages from '../../components/workspace/DiscordDirectMessages';
+import NotificationScheduleSettings from '../../components/workspace/NotificationScheduleSettings';
 import ReturnToast from '../../components/workspace/ReturnToast';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import SlackDirectMessages from '../../components/workspace/SlackDirectMessages';
@@ -608,6 +610,13 @@ const NotificationsSettings: React.FC = () => {
                 </label>
               ))}
             </fieldset>
+
+            <NotificationScheduleSettings
+              user={user}
+              zone={zone}
+              saving={saving}
+              save={save}
+            />
 
             <DesktopNotificationsSettings />
 

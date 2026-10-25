@@ -3303,145 +3303,9 @@ class UrlAttachmentCreate(TypedDict):
     url: str
 
 
-class UserPreferencesUpdate(TypedDict):
-    activity_filter: NotRequired[Literal["all", "comments"] | None]
-    auto_assign_to_self: NotRequired[bool | None]
-    auto_grant_new_scopes: NotRequired[bool | None]
-    branch_copy_assigns: NotRequired[bool | None]
-    branch_copy_starts: NotRequired[bool | None]
-    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"] | None]
-    convert_emoticons: NotRequired[bool | None]
-    email_format: NotRequired[Literal["digest", "immediate"] | None]
-    email_notifications: NotRequired[bool | None]
-    font_size: NotRequired[Literal["small", "default", "large"] | None]
-    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
-    initiatives_display: NotRequired[InitiativesDisplay | None]
-    name_display: NotRequired[Literal["username", "full_name"] | None]
-    notification_preferences: NotRequired[
-        dict[
-            Literal[
-                "assigned",
-                "mentioned",
-                "commented",
-                "status_changed",
-                "subscribed",
-                "project_update",
-                "project_update_comment",
-                "project_update_due",
-                "initiative_update_due",
-                "due_soon",
-                "overdue",
-                "standup_digest",
-                "sla_at_risk",
-                "sla_breached",
-                "review_requested",
-                "reminder",
-                "triage_new",
-                "view_issue_added",
-                "reaction",
-                "issue_completed",
-                "issue_cancelled",
-                "priority_urgent",
-                "blocking_changed",
-                "document_comment",
-                "team_issue_created",
-                "view_project_added",
-                "project_lead_assigned",
-                "project_member_added",
-                "initiative_owner_assigned",
-            ],
-            NotificationChannelsUpdate,
-        ]
-        | None
-    ]
-    pointer_cursors: NotRequired[bool | None]
-    priority_inbox: NotRequired[bool | None]
-    priority_kinds: NotRequired[list[str] | None]
-    projects_display: NotRequired[ProjectsDisplay | None]
-    pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
-    sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
-    sidebar_items: NotRequired[
-        dict[
-            Literal[
-                "home",
-                "inbox",
-                "my_issues",
-                "reviews",
-                "pulse",
-                "projects",
-                "initiatives",
-                "customers",
-                "views",
-                "roadmap",
-                "teams",
-            ],
-            Literal["show", "more", "hide"],
-        ]
-        | None
-    ]
-    theme: NotRequired[Literal["system", "light", "dark"] | None]
-    timezone: NotRequired[str | None]
-    underline_links: NotRequired[bool | None]
-    week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
-
-
 class UserProfileUpdate(TypedDict):
     display_name: NotRequired[str | None]
     full_name: NotRequired[str | None]
-
-
-class UserRead(TypedDict):
-    activity_filter: NotRequired[Literal["all", "comments"]]
-    auto_assign_to_self: NotRequired[bool]
-    auto_grant_new_scopes: NotRequired[bool]
-    avatar_url: NotRequired[str | None]
-    branch_copy_assigns: NotRequired[bool]
-    branch_copy_starts: NotRequired[bool]
-    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"]]
-    convert_emoticons: NotRequired[bool]
-    display_name: str
-    email: str
-    email_format: NotRequired[Literal["digest", "immediate"]]
-    email_notifications: bool
-    email_verified: bool
-    font_size: NotRequired[Literal["small", "default", "large"]]
-    full_name: NotRequired[str]
-    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
-    id: str
-    initiatives_display: NotRequired[InitiativesDisplay]
-    initiatives_display_saved: NotRequired[bool]
-    name_display: NotRequired[Literal["username", "full_name"]]
-    notification_preferences: dict[str, NotificationChannels]
-    pointer_cursors: NotRequired[bool]
-    priority_inbox: NotRequired[bool]
-    priority_kinds: NotRequired[list[str]]
-    projects_display: NotRequired[ProjectsDisplay]
-    projects_display_saved: NotRequired[bool]
-    pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
-    sidebar_badge_style: NotRequired[Literal["count", "dot"]]
-    sidebar_items: NotRequired[
-        dict[
-            Literal[
-                "home",
-                "inbox",
-                "my_issues",
-                "reviews",
-                "pulse",
-                "projects",
-                "initiatives",
-                "customers",
-                "views",
-                "roadmap",
-                "teams",
-            ],
-            Literal["show", "more", "hide"],
-        ]
-    ]
-    theme: NotRequired[Literal["system", "light", "dark"] | None]
-    timezone: NotRequired[str | None]
-    two_factor: NotRequired[bool]
-    underline_links: NotRequired[bool]
-    week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
 
 
 class ValidationErrorDetail(TypedDict):
@@ -3956,6 +3820,12 @@ class WidgetUpdate(TypedDict):
     team_id: NotRequired[str | None]
     title: NotRequired[str | None]
     view_id: NotRequired[str | None]
+
+
+class WorkingHours(TypedDict):
+    days: list[str]
+    end: NotRequired[str]
+    start: NotRequired[str]
 
 
 class WorkspaceChannelCreate(TypedDict, closed=True):
@@ -5196,6 +5066,148 @@ class TriageSettingsUpdate(TypedDict):
 
 class TriageSummaryRead(TypedDict):
     teams: NotRequired[list[TriageTeamCount]]
+
+
+class UserPreferencesUpdate(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"] | None]
+    auto_assign_to_self: NotRequired[bool | None]
+    auto_grant_new_scopes: NotRequired[bool | None]
+    branch_copy_assigns: NotRequired[bool | None]
+    branch_copy_starts: NotRequired[bool | None]
+    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"] | None]
+    convert_emoticons: NotRequired[bool | None]
+    email_format: NotRequired[Literal["digest", "immediate"] | None]
+    email_notifications: NotRequired[bool | None]
+    font_size: NotRequired[Literal["small", "default", "large"] | None]
+    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
+    initiatives_display: NotRequired[InitiativesDisplay | None]
+    name_display: NotRequired[Literal["username", "full_name"] | None]
+    notification_preferences: NotRequired[
+        dict[
+            Literal[
+                "assigned",
+                "mentioned",
+                "commented",
+                "status_changed",
+                "subscribed",
+                "project_update",
+                "project_update_comment",
+                "project_update_due",
+                "initiative_update_due",
+                "due_soon",
+                "overdue",
+                "standup_digest",
+                "sla_at_risk",
+                "sla_breached",
+                "review_requested",
+                "reminder",
+                "triage_new",
+                "view_issue_added",
+                "reaction",
+                "issue_completed",
+                "issue_cancelled",
+                "priority_urgent",
+                "blocking_changed",
+                "document_comment",
+                "team_issue_created",
+                "view_project_added",
+                "project_lead_assigned",
+                "project_member_added",
+                "initiative_owner_assigned",
+            ],
+            NotificationChannelsUpdate,
+        ]
+        | None
+    ]
+    notifications_paused_until: NotRequired[str | None]
+    pointer_cursors: NotRequired[bool | None]
+    priority_inbox: NotRequired[bool | None]
+    priority_kinds: NotRequired[list[str] | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+        | None
+    ]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
+    timezone: NotRequired[str | None]
+    underline_links: NotRequired[bool | None]
+    urgent_bypasses_pause: NotRequired[bool | None]
+    week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
+    working_hours: NotRequired[WorkingHours | None]
+
+
+class UserRead(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"]]
+    auto_assign_to_self: NotRequired[bool]
+    auto_grant_new_scopes: NotRequired[bool]
+    avatar_url: NotRequired[str | None]
+    branch_copy_assigns: NotRequired[bool]
+    branch_copy_starts: NotRequired[bool]
+    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"]]
+    convert_emoticons: NotRequired[bool]
+    display_name: str
+    email: str
+    email_format: NotRequired[Literal["digest", "immediate"]]
+    email_notifications: bool
+    email_verified: bool
+    font_size: NotRequired[Literal["small", "default", "large"]]
+    full_name: NotRequired[str]
+    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
+    id: str
+    initiatives_display: NotRequired[InitiativesDisplay]
+    initiatives_display_saved: NotRequired[bool]
+    name_display: NotRequired[Literal["username", "full_name"]]
+    notification_preferences: dict[str, NotificationChannels]
+    notifications_paused_until: NotRequired[str | None]
+    pointer_cursors: NotRequired[bool]
+    priority_inbox: NotRequired[bool]
+    priority_kinds: NotRequired[list[str]]
+    projects_display: NotRequired[ProjectsDisplay]
+    projects_display_saved: NotRequired[bool]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"]]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+    ]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
+    timezone: NotRequired[str | None]
+    two_factor: NotRequired[bool]
+    underline_links: NotRequired[bool]
+    urgent_bypasses_pause: NotRequired[bool]
+    week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
+    working_hours: NotRequired[WorkingHours | None]
 
 
 class ViewListRead(TypedDict):

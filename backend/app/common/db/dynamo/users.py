@@ -20,6 +20,7 @@ from webbpulse.dynamodb import ConditionFailed, Repository
 
 from app.common.core.config import settings
 from app.common.db.dynamo.tables import USERS
+from app.common.notification_pause import WorkingHours
 
 EMAIL_INDEX = "email_lower-index"
 
@@ -197,6 +198,12 @@ class User(BaseModel):
 
     `email_format` is how notification emails arrive, one of `EMAIL_FORMATS`:
     `digest` by default, or `immediate` for one email per notification.
+
+    `notifications_paused_until` is the end of a pause the person set, and
+    `working_hours` the weekly schedule they take notifications in, read in
+    `timezone`. While either holds, email and desktop notifications wait and the
+    inbox still fills. `urgent_bypasses_pause` lets direct mentions and urgent
+    assignments through regardless, off by default.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -211,6 +218,9 @@ class User(BaseModel):
     priority_inbox: bool = True
     priority_kinds: dict[str, bool] = Field(default_factory=dict)
     email_format: str = "digest"
+    notifications_paused_until: Optional[datetime] = None
+    working_hours: Optional[WorkingHours] = None
+    urgent_bypasses_pause: bool = False
     timezone: Optional[str] = None
     pulse_digest: str = "off"
     home_view: str = "home"

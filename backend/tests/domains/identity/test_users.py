@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 import pytest
@@ -54,6 +55,9 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "priority_inbox": True,
         "priority_kinds": [kind for kind in INBOX_KINDS if kind in DEFAULT_PRIORITY_KINDS],
         "email_format": "digest",
+        "notifications_paused_until": None,
+        "working_hours": None,
+        "urgent_bypasses_pause": False,
         "avatar_url": None,
         "two_factor": False,
         "timezone": None,
@@ -154,6 +158,77 @@ def test_the_email_format_defaults_to_a_digest_and_takes_immediate(client: TestC
 
     assert client.patch("/api/users/me/preferences", json={"email_format": "hourly"}).status_code == 422
     assert client.patch("/api/users/me/preferences", json={"email_format": "digest"}).json()["email_format"] == "digest"
+
+
+def test_a_pause_is_set_read_back_and_resumed(client: TestClient, repositories: Any) -> None:
+    """A pause up to thirty days ahead is kept, an explicit null resumes it, and a longer one is refused."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+
+    response = client.patch("/api/users/me/preferences", json={"notifications_paused_until": until.isoformat()})
+    assert response.status_code == 200
+    assert datetime.fromisoformat(response.json()["notifications_paused_until"]) == until
+    assert repositories.users.get(OWNER).notifications_paused_until == until
+
+    too_long = datetime.now(timezone.utc) + timedelta(days=31)
+    refused = client.patch("/api/users/me/preferences", json={"notifications_paused_until": too_long.isoformat()})
+    assert refused.status_code == 422
+
+    untouched = client.patch("/api/users/me/preferences", json={"email_format": "immediate"})
+    assert untouched.json()["notifications_paused_until"] is not None
+
+    resumed = client.patch("/api/users/me/preferences", json={"notifications_paused_until": None})
+    assert resumed.json()["notifications_paused_until"] is None
+    assert repositories.users.get(OWNER).notifications_paused_until is None
+
+
+def test_a_pause_that_has_ended_reads_as_none(client: TestClient, repositories: Any) -> None:
+    """A stored pause in the past is no pause, so the sidebar never shows a stale indicator."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(
+        OWNER, notifications_paused_until=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    )
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["notifications_paused_until"] is None
+
+
+def test_working_hours_are_set_validated_and_cleared(client: TestClient, repositories: Any) -> None:
+    """A schedule keeps its days in week order, refuses a day that ends before it starts, and null clears it."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch(
+        "/api/users/me/preferences",
+        json={"working_hours": {"days": ["fri", "mon"], "start": "08:30", "end": "16:00"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["working_hours"] == {"days": ["mon", "fri"], "start": "08:30", "end": "16:00"}
+    assert repositories.users.get(OWNER).working_hours.days == ["mon", "fri"]
+
+    for hours in (
+        {"days": ["mon"], "start": "17:00", "end": "09:00"},
+        {"days": [], "start": "09:00", "end": "17:00"},
+        {"days": ["someday"], "start": "09:00", "end": "17:00"},
+        {"days": ["mon"], "start": "9am", "end": "17:00"},
+    ):
+        assert client.patch("/api/users/me/preferences", json={"working_hours": hours}).status_code == 422
+
+    cleared = client.patch("/api/users/me/preferences", json={"working_hours": None})
+    assert cleared.json()["working_hours"] is None
+    assert repositories.users.get(OWNER).working_hours is None
+
+
+def test_urgent_notifications_may_bypass_a_pause(client: TestClient, repositories: Any) -> None:
+    """The bypass is off until the person turns it on."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["urgent_bypasses_pause"] is False
+    response = client.patch("/api/users/me/preferences", json={"urgent_bypasses_pause": True})
+    assert response.json()["urgent_bypasses_pause"] is True
+    assert repositories.users.get(OWNER).urgent_bypasses_pause is True
 
 
 def test_interface_preferences_default_and_change_one_at_a_time(client: TestClient, repositories: Any) -> None:
