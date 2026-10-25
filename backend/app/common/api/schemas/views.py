@@ -547,7 +547,7 @@ DISPLAY_SWITCHES: tuple[str, ...] = (
     "show_archived",
     "group_header",
 )
-"""The view's display switches, booleans, the completed window and the group header, which a patch may set but never clear to null."""
+"""The view's display switches, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):

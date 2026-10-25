@@ -44,7 +44,7 @@ describe('the group header option', () => {
       team_id: null,
     } as unknown as SavedViewDisplayRead;
     expect(viewToState(view).groupHeader).toBe('estimate');
-    const older = { ...view, group_header: undefined };
+    const { group_header: _dropped, ...older } = view;
     expect(viewToState(older).groupHeader).toBe('count');
   });
 
