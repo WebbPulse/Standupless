@@ -30,6 +30,7 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
     ACTIVITY_FILTERS,
+    CODE_THEMES,
     DEFAULT_PRIORITY_KINDS,
     EMAIL_FORMATS,
     FONT_SIZES,
@@ -42,6 +43,7 @@ from app.common.db.dynamo.users import (
     THEMES,
     WEEK_STARTS,
     ActivityFilterField,
+    CodeThemeField,
     EmailFormatField,
     FontSizeField,
     HomeViewField,
@@ -131,6 +133,7 @@ class UserRead(BaseModel):
     theme: Optional[ThemeField] = None
     pointer_cursors: bool = False
     underline_links: bool = False
+    code_theme: CodeThemeField = "app"
     convert_emoticons: bool = True
     activity_filter: ActivityFilterField = "all"
     sidebar_items: dict[SidebarItemField, SidebarVisibilityField] = Field(default_factory=dict)
@@ -196,7 +199,8 @@ class UserPreferencesUpdate(BaseModel):
     Preferences page sets, kept on the row so they follow the person to every
     device. `theme` is the interface theme and `pointer_cursors` whether
     interactive elements show the pointer cursor. `underline_links` underlines
-    links in rich text at rest. `convert_emoticons` is
+    links in rich text at rest. `code_theme` is the syntax highlighting theme
+    of code blocks. `convert_emoticons` is
     whether the editor turns typed emoticons into emoji. `activity_filter` is
     whether issue activity shows every change or only comments.
     `sidebar_items` moves the named sidebar items, leaving the others where
@@ -229,6 +233,7 @@ class UserPreferencesUpdate(BaseModel):
     theme: Optional[ThemeField] = None
     pointer_cursors: Optional[bool] = None
     underline_links: Optional[bool] = None
+    code_theme: Optional[CodeThemeField] = None
     convert_emoticons: Optional[bool] = None
     activity_filter: Optional[ActivityFilterField] = None
     sidebar_items: Optional[dict[SidebarItemField, SidebarVisibilityField]] = None
@@ -322,6 +327,7 @@ def _as_read(user: "Any") -> UserRead:
         theme=user.theme if user.theme in THEMES else None,
         pointer_cursors=bool(user.pointer_cursors),
         underline_links=bool(user.underline_links),
+        code_theme=_known(user.code_theme, CODE_THEMES, "app"),
         convert_emoticons=bool(user.convert_emoticons),
         activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
         sidebar_items=_sidebar_read(user.sidebar_items),
@@ -483,6 +489,7 @@ def update_current_user_preferences(
         "theme",
         "pointer_cursors",
         "underline_links",
+        "code_theme",
         "convert_emoticons",
         "activity_filter",
         "sidebar_badge_style",

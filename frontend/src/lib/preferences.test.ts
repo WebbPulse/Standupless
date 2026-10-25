@@ -138,4 +138,23 @@ describe('preferences', () => {
       false
     );
   });
+
+  it('paints the code theme only when it leaves the app theme', () => {
+    expect(readPreferences().codeTheme).toBe('app');
+    expect(document.documentElement.hasAttribute('data-code-theme')).toBe(
+      false
+    );
+
+    setPreferences({ ...DEFAULT_PREFERENCES, codeTheme: 'dark_high_contrast' });
+
+    expect(document.documentElement.getAttribute('data-code-theme')).toBe(
+      'dark_high_contrast'
+    );
+
+    setPreferences(DEFAULT_PREFERENCES);
+
+    expect(document.documentElement.hasAttribute('data-code-theme')).toBe(
+      false
+    );
+  });
 });
