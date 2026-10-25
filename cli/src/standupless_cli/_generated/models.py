@@ -977,11 +977,17 @@ class DownloadRead(TypedDict):
 class DraftRead(TypedDict):
     body: str
     created_at: str
-    issue_id: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
+    initiative_id: NotRequired[str | None]
+    issue_id: NotRequired[str | None]
     issue_key: NotRequired[str | None]
     issue_title: NotRequired[str | None]
     parent_comment_id: NotRequired[str | None]
-    team_id: str
+    parent_kind: NotRequired[Literal["issue", "document", "project_update", "initiative_update"]]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+    update_id: NotRequired[str | None]
     updated_at: str
 
 

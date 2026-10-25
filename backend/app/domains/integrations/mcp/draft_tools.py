@@ -4,7 +4,7 @@ Every tool runs the drafts routes' own `app.common.comment_drafts`,
 `app.common.issue_drafts` or `app.common.update_drafts` path, which keys each
 draft by the credential's own user, so no argument can reach another member's
 drafts. A comment draft saved here is restored in that member's composer the
-next time they open the issue or the reply thread, a new issue draft is listed
+next time they open the issue, the document, the update thread or the reply thread, a new issue draft is listed
 under Drafts in their create dialog, a status update draft is restored in the
 update composer of its project or initiative, and saving any of them never
 notifies anyone.
@@ -21,7 +21,14 @@ from pydantic import ValidationError
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.drafts import DraftRead, DraftWrite, UpdateDraftRead, UpdateDraftWrite
 from app.common.api.schemas.issue_drafts import DRAFT_ID_PATTERN, IssueDraftRead, IssueDraftWrite
-from app.common.comment_drafts import delete_draft, get_draft, list_drafts, save_draft
+from app.common.comment_drafts import (
+    DraftParent,
+    UpdateThreadRef,
+    delete_draft,
+    get_draft,
+    list_drafts,
+    save_draft,
+)
 from app.common.db.dynamo.views import ISSUE_DRAFTS_MAX, UpdateDraftTarget
 from app.common.issue_drafts import delete_issue_draft, get_issue_draft, list_issue_drafts, save_issue_draft
 from app.common.issue_keys import current
@@ -53,7 +60,22 @@ INITIATIVE = "The initiative's id or name; give this or project_id, not both"
 
 HEALTHS = ("on_track", "at_risk", "off_track")
 
-PARENT = "A top level comment on the same issue whose reply thread the draft belongs to; omit for the issue itself"
+PARENT = (
+    "A top level comment on the same issue or document whose reply thread the draft belongs to; omit for the "
+    "issue or document itself"
+)
+
+COMMENT_ISSUE = "The issue's id, or its key such as ABC-123; give exactly one of issue_id, document_id and update_id"
+
+COMMENT_DOCUMENT = "The document whose comment thread the draft sits on"
+
+COMMENT_UPDATE = (
+    "A project or initiative update whose reply thread the draft sits on; give project_id or initiative_id with it"
+)
+
+UPDATE_PROJECT = "With update_id: the project the update is on, by id or name"
+
+UPDATE_INITIATIVE = "With update_id: the initiative the update is on, by id or name"
 
 
 def _workspace_member(call: ToolCall) -> None:
@@ -62,7 +84,7 @@ def _workspace_member(call: ToolCall) -> None:
 
 
 def _parent(call: ToolCall) -> str | None:
-    """The reply thread argument, with a blank one read as the issue's own thread."""
+    """The reply thread argument, with a blank one read as the parent's own thread."""
     value = call.optional("parent_comment_id")
     text = str(value).strip() if value is not None else ""
     return text or None
@@ -73,24 +95,57 @@ def _draft_json(draft: DraftRead) -> dict[str, Any]:
     return draft.model_dump(mode="json")
 
 
+def _text_argument(call: ToolCall, name: str) -> str | None:
+    """An optional id argument, with a blank one read as absent."""
+    value = call.optional(name)
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _comment_parent(call: ToolCall) -> DraftParent:
+    """The issue, document or update thread a comment draft call names, refusing none or several."""
+    issue = _text_argument(call, "issue_id")
+    document = _text_argument(call, "document_id")
+    update = _text_argument(call, "update_id")
+    if sum(1 for value in (issue, document, update) if value) != 1:
+        raise ToolError("Give exactly one of issue_id, document_id and update_id")
+    if issue:
+        return DraftParent(issue_id=issue_ref(call, issue).issue_id)
+    if document:
+        return DraftParent(document_id=document)
+    target_kind, target_id = _update_target(call)
+    return DraftParent(update=UpdateThreadRef(target_kind, target_id, update or ""))
+
+
+def _parent_json(parent: DraftParent, reply_to: str | None) -> dict[str, Any]:
+    """The parent a discarded draft sat on, as the delete answers it."""
+    if parent.update is not None:
+        return {"update_id": parent.update.update_id}
+    if parent.document_id:
+        return {"document_id": parent.document_id, "parent_comment_id": reply_to}
+    return {"issue_id": parent.issue_id, "parent_comment_id": reply_to}
+
+
 def _set_comment_draft(call: ToolCall) -> Any:
-    """Save the caller's draft on an issue or a reply thread, replacing the one there."""
+    """Save the caller's draft on an issue, document or update thread, replacing the one there."""
     _workspace_member(call)
-    issue = issue_ref(call, call.require("issue_id"))
+    parent = _comment_parent(call)
     try:
         payload = DraftWrite.model_validate({"body": str(call.require("body"))})
     except ValueError as exc:
         raise ToolError("body must be non-blank Markdown of at most 65536 bytes") from exc
-    saved = save_draft(call.repositories, call.context, issue.issue_id, payload.body, parent_comment_id=_parent(call))
+    saved = save_draft(
+        call.repositories, call.context, None, payload.body, parent_comment_id=_parent(call), parent=parent
+    )
     return _draft_json(saved)
 
 
 def _get_comment_draft(call: ToolCall) -> Any:
-    """The caller's draft on an issue or a reply thread, or null when there is none."""
+    """The caller's draft on an issue, document or update thread, or null when there is none."""
     _workspace_member(call)
-    issue = issue_ref(call, call.require("issue_id"))
+    parent = _comment_parent(call)
     try:
-        found = get_draft(call.repositories, call.context, issue.issue_id, parent_comment_id=_parent(call))
+        found = get_draft(call.repositories, call.context, None, parent_comment_id=_parent(call), parent=parent)
     except HTTPException as exc:
         if exc.status_code == status.HTTP_404_NOT_FOUND:
             return {"draft": None}
@@ -99,21 +154,27 @@ def _get_comment_draft(call: ToolCall) -> Any:
 
 
 def _list_comment_drafts(call: ToolCall) -> Any:
-    """The caller's drafts, newest saved first, across the workspace or on one issue."""
+    """The caller's drafts, newest saved first, across the workspace or on one issue, document or update."""
     _workspace_member(call)
-    reference = call.optional("issue_id")
+    reference = _text_argument(call, "issue_id")
     issue_id = issue_ref(call, reference).issue_id if reference else None
-    drafts = list_drafts(call.repositories, call.context, issue_id=issue_id)
+    drafts = list_drafts(
+        call.repositories,
+        call.context,
+        issue_id=issue_id,
+        document_id=_text_argument(call, "document_id"),
+        update_id=_text_argument(call, "update_id"),
+    )
     return {"drafts": [_draft_json(row) for row in drafts]}
 
 
 def _delete_comment_draft(call: ToolCall) -> Any:
     """Discard the caller's draft in one thread, a no-op when there is none."""
     _workspace_member(call)
-    issue = issue_ref(call, call.require("issue_id"))
-    parent = _parent(call)
-    delete_draft(call.repositories, call.context, issue.issue_id, parent_comment_id=parent)
-    return {"deleted": True, "issue_id": issue.issue_id, "parent_comment_id": parent}
+    parent = _comment_parent(call)
+    reply_to = _parent(call)
+    delete_draft(call.repositories, call.context, None, parent_comment_id=reply_to, parent=parent)
+    return {"deleted": True, **_parent_json(parent, reply_to)}
 
 
 def _checked_draft_id(value: Any) -> str:
@@ -250,23 +311,34 @@ def _delete_update_draft(call: ToolCall) -> Any:
     return {"deleted": True, key: target_id}
 
 
+THREAD_ARGUMENTS: dict[str, Any] = {
+    "issue_id": string(COMMENT_ISSUE),
+    "document_id": string(COMMENT_DOCUMENT),
+    "update_id": string(COMMENT_UPDATE),
+    "project_id": string(UPDATE_PROJECT),
+    "initiative_id": string(UPDATE_INITIATIVE),
+    "parent_comment_id": string(PARENT),
+}
+"""The arguments naming one comment draft thread, shared by the comment draft tools that address one."""
+
+
 DRAFT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="set_comment_draft",
         description=(
-            "Stage a comment as your draft on an issue, or on a reply thread with parent_comment_id, for a person "
-            "to review and post. It is restored in the comment box when the issue is opened. One draft per issue "
-            "and per reply thread: saving again replaces it. Drafts are private and never notify anyone; posting "
-            "the comment clears it."
+            "Stage a comment as your draft on an issue, a document or a project or initiative update's reply "
+            "thread, for a person to review and post. Give exactly one of issue_id, document_id and update_id, and "
+            "parent_comment_id for a reply thread of an issue or document. It is restored in the comment box when "
+            "the thread is opened. One draft per thread: saving again replaces it. Drafts are private and never "
+            "notify anyone; posting the comment clears it."
         ),
         scopes=("comments:write",),
         schema=object_schema(
             {
-                "issue_id": string(ISSUE),
+                **THREAD_ARGUMENTS,
                 "body": string("The draft body, in Markdown"),
-                "parent_comment_id": string(PARENT),
             },
-            required=("issue_id", "body"),
+            required=("body",),
         ),
         handler=_set_comment_draft,
         idempotent=True,
@@ -274,36 +346,38 @@ DRAFT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_comment_draft",
         description=(
-            "Your draft on an issue, or on a reply thread with parent_comment_id. Answers draft=null when there "
-            "is none."
+            "Your draft on an issue, a document or an update thread, or on a reply thread with parent_comment_id. "
+            "Give exactly one of issue_id, document_id and update_id. Answers draft=null when there is none."
         ),
         scopes=("issues:read",),
-        schema=object_schema(
-            {"issue_id": string(ISSUE), "parent_comment_id": string(PARENT)},
-            required=("issue_id",),
-        ),
+        schema=object_schema(THREAD_ARGUMENTS),
         handler=_get_comment_draft,
     ),
     Tool(
         name="list_comment_drafts",
         description=(
-            "Your unposted comment drafts, newest saved first, each with its issue key and title. Pass issue_id "
-            "to list only one issue's drafts. Drafts on issues you can no longer see are left out."
+            "Your unposted comment drafts, newest saved first, each with its parent_kind and its issue key and "
+            "title or document title. Pass one of issue_id, document_id and update_id to list only that parent's "
+            "drafts. Drafts on parents you can no longer see are left out."
         ),
         scopes=("issues:read",),
-        schema=object_schema({"issue_id": string(ISSUE)}),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE),
+                "document_id": string(COMMENT_DOCUMENT),
+                "update_id": string("A project or initiative update"),
+            }
+        ),
         handler=_list_comment_drafts,
     ),
     Tool(
         name="delete_comment_draft",
         description=(
-            "Discard your draft on an issue, or on a reply thread with parent_comment_id. A no-op when there is none."
+            "Discard your draft on an issue, a document or an update thread, or on a reply thread with "
+            "parent_comment_id. Give exactly one of issue_id, document_id and update_id. A no-op when there is none."
         ),
         scopes=("comments:write",),
-        schema=object_schema(
-            {"issue_id": string(ISSUE), "parent_comment_id": string(PARENT)},
-            required=("issue_id",),
-        ),
+        schema=object_schema(THREAD_ARGUMENTS),
         handler=_delete_comment_draft,
         destructive=True,
         idempotent=True,

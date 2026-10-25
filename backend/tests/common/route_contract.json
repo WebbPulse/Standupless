@@ -2474,6 +2474,24 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/documents/{document_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/documents/{document_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/documents/{document_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/drafts/new-issues"
   },
@@ -2500,6 +2518,42 @@
     "domain": "views",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}"
   },
   {
     "auth": "workspace:read",

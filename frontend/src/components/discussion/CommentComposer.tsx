@@ -27,7 +27,8 @@
  *
  * A composer given a document posts to that document's thread instead, with
  * `issueId` naming the document so the thread's key is shared. A document
- * thread takes no files, keeps no draft and never syncs to GitHub.
+ * thread takes no files and never syncs to GitHub, and keeps its draft on
+ * the document, one per thread like an issue.
  */
 
 import React, {
@@ -229,10 +230,12 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   const uploads = useAttachmentUploads(workspaceId, issueId);
   const commentDraft = useCommentDraft(
     workspaceId,
-    issueId,
+    documentId !== undefined
+      ? { kind: 'document', id: documentId }
+      : { kind: 'issue', id: issueId },
     parentCommentId,
     editor,
-    anchor === undefined && !onDocument
+    anchor === undefined
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();

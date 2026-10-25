@@ -5,6 +5,8 @@
  * synced to a linked pull request as it posts, with a warning for a public one.
  * Also covers a quote request: it lands after what is written, each request
  * once, and a quote made before the editor arrived lands when it does.
+ * And a document thread restores the caller's saved draft from the document's
+ * own draft listing.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -16,9 +18,11 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CommentDraftParent } from '../../api/drafts';
 import type {
   AttachmentRead,
   CommentRead,
+  DraftRead,
   GithubThreadTargetRead,
 } from '../../types/Api';
 import { readMarkdown } from '../editor/markdownCodec';
@@ -30,8 +34,12 @@ const deleteAttachment = vi.fn<(id: string) => Promise<void>>();
 const syncThread =
   vi.fn<(commentId: string, payload: unknown) => Promise<unknown>>();
 
+const listIssueDrafts =
+  vi.fn<(parent: CommentDraftParent) => Promise<DraftRead[]>>();
+
 vi.mock('../../api/drafts', () => ({
-  listIssueDrafts: () => Promise.resolve([]),
+  listIssueDrafts: (_w: string, parent: CommentDraftParent) =>
+    listIssueDrafts(parent),
   saveDraft: () => Promise.resolve({}),
   deleteDraft: () => Promise.resolve(),
 }));
@@ -108,6 +116,8 @@ beforeEach(() => {
   deleteAttachment.mockResolvedValue(undefined);
   syncThread.mockReset();
   syncThread.mockResolvedValue({});
+  listIssueDrafts.mockReset();
+  listIssueDrafts.mockResolvedValue([]);
 });
 
 describe('the comment composer', () => {
@@ -365,6 +375,36 @@ describe('the comment composer', () => {
 
     await waitFor(() => {
       expect(readMarkdown(editorOf(surface))).toBe('> Again\n\n> Again');
+    });
+  });
+
+  it('restores the saved draft on a document thread', async () => {
+    listIssueDrafts.mockResolvedValue([
+      {
+        parent_kind: 'document',
+        document_id: 'doc-1',
+        parent_comment_id: null,
+        body: 'Half a thought on the doc',
+        created_at: '2026-10-25T00:00:00Z',
+        updated_at: '2026-10-25T00:00:00Z',
+      },
+    ]);
+    render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="doc-1"
+        documentId="doc-1"
+        people={[]}
+      />
+    );
+    const surface = await findSurface();
+
+    await waitFor(() => {
+      expect(readMarkdown(editorOf(surface))).toBe('Half a thought on the doc');
+    });
+    expect(listIssueDrafts).toHaveBeenCalledWith({
+      kind: 'document',
+      id: 'doc-1',
     });
   });
 });

@@ -2,8 +2,8 @@
 
 Each tool runs the drafts routes' own `app.common.comment_drafts` path, so the
 rules asserted here are the routes': a draft is the credential's user's own, one
-per issue and per reply thread, and posting the comment through `add_comment`
-clears the draft it came from.
+per issue, document, update thread and reply thread, and posting the comment
+through `add_comment` clears the draft it came from.
 """
 
 from __future__ import annotations
@@ -12,13 +12,59 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common.db.dynamo.documents import Document, DocumentBody
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.planning import Project, ProjectUpdateRow, project_key, project_update_key
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import GUEST, MEMBER, OWNER
+from tests.domains.integrations.conftest import TEAM
 from tests.domains.integrations.test_mcp import call, tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
 DRAFTS = ("comments:write", "issues:read")
+
+PROJECT = "01JB000000000000000000PJT1"
+
+DOCUMENT = "01JB000000000000000000DOC1"
+
+UPDATE = "01JB00000000000000000UPDP1"
+
+
+def seed_threads(repositories: Any, workspace: str) -> None:
+    """One project on `TEAM` with a document and an update on it."""
+    repositories.planning.create_project(
+        Project(
+            workspace_id=workspace,
+            planning_key=project_key(PROJECT),
+            project_id=PROJECT,
+            team_ids=[TEAM],
+            name="Launch",
+            created_by=OWNER,
+        )
+    )
+    repositories.documents.create(
+        Document(
+            workspace_id=workspace,
+            document_id=DOCUMENT,
+            parent_kind="project",
+            parent_id=PROJECT,
+            title="Launch plan",
+            author_id=OWNER,
+            updated_by=OWNER,
+        ),
+        DocumentBody(workspace_id=workspace, document_id=DOCUMENT, parent_kind="project", parent_id=PROJECT),
+    )
+    repositories.planning.create_project_update(
+        ProjectUpdateRow(
+            workspace_id=workspace,
+            planning_key=project_update_key(PROJECT, UPDATE),
+            update_id=UPDATE,
+            project_id=PROJECT,
+            body="Shipping on schedule",
+            health="on_track",
+            author_id=OWNER,
+        )
+    )
 
 
 def test_a_draft_is_staged_by_key_read_and_listed(client: TestClient, repositories: Any, issue: Issue) -> None:
@@ -122,3 +168,60 @@ def test_the_tools_declare_their_hints(client: TestClient, repositories: Any, is
     assert TOOLS_BY_NAME["set_comment_draft"].destructive is False
     assert advertised["delete_comment_draft"]["annotations"]["destructiveHint"] is True
     assert advertised["set_comment_draft"]["annotations"]["idempotentHint"] is True
+
+
+def test_a_document_draft_is_staged_read_listed_and_discarded(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A document_id names the document's thread, and the draft answers the document's title."""
+    seed_threads(repositories, workspace)
+    secret = mint_for(repositories, MEMBER, DRAFTS)
+
+    saved = answer(tool(client, secret, "set_comment_draft", {"document_id": DOCUMENT, "body": "On the plan"}))
+    read = answer(tool(client, secret, "get_comment_draft", {"document_id": DOCUMENT}))
+    listed = answer(tool(client, secret, "list_comment_drafts", {"document_id": DOCUMENT}))
+    deleted = answer(tool(client, secret, "delete_comment_draft", {"document_id": DOCUMENT}))
+
+    assert (saved["parent_kind"], saved["document_id"], saved["document_title"]) == (
+        "document",
+        DOCUMENT,
+        "Launch plan",
+    )
+    assert read["draft"]["body"] == "On the plan"
+    assert [row["body"] for row in listed["drafts"]] == ["On the plan"]
+    assert deleted == {"deleted": True, "document_id": DOCUMENT, "parent_comment_id": None}
+    assert repositories.views.get_draft(workspace, MEMBER, DOCUMENT) is None
+
+
+def test_an_update_reply_draft_is_staged_by_update_and_project(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An update_id with its project_id names the update's reply thread."""
+    seed_threads(repositories, workspace)
+    secret = mint_for(repositories, MEMBER, DRAFTS)
+
+    saved = answer(
+        tool(client, secret, "set_comment_draft", {"update_id": UPDATE, "project_id": PROJECT, "body": "Nice work"})
+    )
+    listed = answer(tool(client, secret, "list_comment_drafts", {"update_id": UPDATE}))
+    deleted = answer(tool(client, secret, "delete_comment_draft", {"update_id": UPDATE, "project_id": PROJECT}))
+
+    assert (saved["parent_kind"], saved["update_id"], saved["project_id"]) == ("project_update", UPDATE, PROJECT)
+    assert [row["body"] for row in listed["drafts"]] == ["Nice work"]
+    assert deleted == {"deleted": True, "update_id": UPDATE}
+
+
+def test_a_draft_names_exactly_one_parent(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """Naming no parent, or an issue and a document together, is refused before anything is saved."""
+    secret = mint_for(repositories, MEMBER, DRAFTS)
+
+    neither = refusal(tool(client, secret, "set_comment_draft", {"body": "Where"}))
+    both = refusal(
+        tool(client, secret, "set_comment_draft", {"issue_id": "ABC-1", "document_id": DOCUMENT, "body": "Both"})
+    )
+    no_target = refusal(tool(client, secret, "get_comment_draft", {"update_id": UPDATE}))
+
+    assert "exactly one" in neither
+    assert "exactly one" in both
+    assert "project_id" in no_target
+    assert repositories.views.get_draft(issue.workspace_id, MEMBER, issue.issue_id) is None
