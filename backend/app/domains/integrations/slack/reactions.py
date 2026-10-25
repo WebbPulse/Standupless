@@ -135,7 +135,7 @@ def _creator(
 def _requester(
     repositories: Repositories, installation: SlackInstallation, message: Mapping[str, Any]
 ) -> Optional[IssueRequester]:
-    """Who wrote the message, as the issue's requester, linked to their member when Slack's confirmed email names one."""
+    """Who wrote the message, as the requester, linked to their member when Slack's confirmed email names one."""
     author = str(message.get("user", "") or "")
     if not author or author == installation.bot_user_id:
         return None
