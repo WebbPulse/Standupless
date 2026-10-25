@@ -130,6 +130,8 @@
               "child_removed",
               "archived",
               "unarchived",
+              "deleted",
+              "restored",
               "subscriber_added",
               "subscriber_removed",
               "mentioned",
@@ -4424,6 +4426,28 @@
           "team_id"
         ],
         "title": "CycleUpdate",
+        "type": "object"
+      },
+      "DeletedIssueListRead": {
+        "description": "One team's trash: its deleted issues, newest number first, and when each is purged.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "retention_days": {
+            "description": "How many days a deleted issue stays restorable before it is purged.",
+            "title": "Retention Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retention_days"
+        ],
+        "title": "DeletedIssueListRead",
         "type": "object"
       },
       "DeliveryAttemptRead": {
@@ -25903,6 +25927,31 @@
             ],
             "title": "Cycle Id"
           },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the issue was moved to its team's trash, null while it is live.",
+            "title": "Deleted At"
+          },
+          "deleted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user who moved the issue to the trash.",
+            "title": "Deleted By"
+          },
           "due_date": {
             "anyOf": [
               {
@@ -39721,6 +39770,65 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/deleted": {
+      "get": {
+        "description": "One team's recently deleted issues, newest first, each restorable until it is purged.\n\nDeclared before `/issues/{issue_id}` so `deleted` is not swallowed as an id.",
+        "operationId": "list_deleted_issues_api_workspaces__workspace_id__issues_deleted_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedIssueListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Deleted Issues",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/export": {
       "get": {
         "description": "One page of the CSV of every issue the caller may see that the filters keep.\n\nThe filters are the issue list's, so a team list or a saved view exports\nexactly what it shows by sending its own query. Without `team_id` the export\nspans every team the caller can read, which for a workspace admin is the whole\nworkspace, and `include_sub_teams` adds the named team's visible sub-teams as\nthe rolled-up list shows them. Rows come in team order, then by issue number, whatever the list's\nsort, because that order is what lets each page continue a key-bounded read.",
@@ -40840,7 +40948,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}": {
       "delete": {
-        "description": "Delete an issue, reparenting its children and removing its links and history.\n\nA team admin may always delete. Anyone else may delete only an issue they\ncreated and only while it has no children, so an ordinary member cannot orphan\nsomeone else's sub-issues.",
+        "description": "Move an issue to its team's trash, where it stays restorable for 30 days.\n\nA team admin may always delete. Anyone else may delete only an issue they\ncreated and only while it has no sub-issues, so an ordinary member cannot hide\nsomeone else's tree. Its children, links and history wait for a restore.",
         "operationId": "delete_issue_api_workspaces__workspace_id__issues__issue_id__delete",
         "parameters": [
           {
@@ -42601,6 +42709,58 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/permanent": {
+      "delete": {
+        "description": "Delete an issue in the trash for good, which only a team admin may do.\n\nIts sub-issues lose their parent and its links and history are removed, as\nthe hourly sweep does once the 30 days have passed.",
+        "operationId": "delete_issue_permanently_api_workspaces__workspace_id__issues__issue_id__permanent_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Issue Permanently",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/releases": {
       "get": {
         "description": "The releases one issue the caller may read shipped in, newest first.",
@@ -42655,6 +42815,65 @@
           }
         ],
         "summary": "List Issue Releases",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/restore": {
+      "post": {
+        "description": "Bring a deleted issue back from the trash with its sub-issues, links, labels and comments.\n\nAllowed for the same people who may delete it. Idempotent: restoring a live\nissue answers with it unchanged.",
+        "operationId": "restore_issue_api_workspaces__workspace_id__issues__issue_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Restore Issue",
         "tags": [
           "issues"
         ]

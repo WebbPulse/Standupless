@@ -200,15 +200,16 @@ def test_a_caller_outside_the_team_reaches_no_versions(client: TestClient, works
     assert client.post(f"{path}/{version['version_id']}/restore").status_code == 404
 
 
-def test_deleting_the_issue_removes_its_versions(
+def test_purging_the_issue_removes_its_versions(
     client: TestClient, repositories: Any, workspace: str, statuses: Any
 ) -> None:
-    """The versions go with the issue, so nothing is left under its id."""
+    """The versions go with the issue once it leaves the trash, so nothing is left under its id."""
     sign_in(client, OWNER)
     issue = create_issue(client, workspace, body="Original")
     edit(client, workspace, issue["id"], "Edited")
 
-    response = client.delete(f"/api/workspaces/{workspace}/issues/{issue['id']}")
+    assert client.delete(f"/api/workspaces/{workspace}/issues/{issue['id']}").status_code == 204
+    response = client.delete(f"/api/workspaces/{workspace}/issues/{issue['id']}/permanent")
     assert response.status_code == 204, response.text
 
     assert repositories.activity.list_description_versions(workspace, issue["id"]) == []

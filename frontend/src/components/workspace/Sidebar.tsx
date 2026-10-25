@@ -100,6 +100,7 @@ import {
   searchPath,
   settingsTeamsPath,
   teamArchivePath,
+  teamTrashPath,
   teamBoardPath,
   teamCurrentCyclePath,
   teamCyclesPath,
@@ -458,6 +459,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         </MenuItem>
         <MenuItem to={teamArchivePath(slug, team.key_prefix)}>
           Show archived issues
+        </MenuItem>
+        <MenuItem to={teamTrashPath(slug, team.key_prefix)}>
+          Recently deleted
         </MenuItem>
         <MenuItem
           onSelect={() => {

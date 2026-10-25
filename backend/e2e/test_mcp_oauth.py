@@ -214,6 +214,8 @@ EXPECTED_TOOLS = frozenset(
         "test_channel",
         "triage_issue",
         "unarchive_issue",
+        "restore_issue",
+        "list_deleted_issues",
         "unsubscribe_from_issue",
         "unsubscribe_from_view",
         "update_channel",

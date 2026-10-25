@@ -562,6 +562,10 @@ export const describeActivity = (
       return describe('other', ['archived the issue']);
     case 'unarchived':
       return describe('other', ['restored the issue from the archive']);
+    case 'deleted':
+      return describe('other', ['deleted the issue']);
+    case 'restored':
+      return describe('other', ['restored the issue']);
     case 'subscriber_added':
       return describe('assignee', [
         'subscribed',

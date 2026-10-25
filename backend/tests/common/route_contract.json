@@ -927,6 +927,12 @@
     "auth": "workspace:read",
     "domain": "issues",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/deleted"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/export"
   },
   {
@@ -1028,8 +1034,20 @@
   {
     "auth": "workspace:read",
     "domain": "issues",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/permanent"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/releases"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/restore"
   },
   {
     "auth": "workspace:read",

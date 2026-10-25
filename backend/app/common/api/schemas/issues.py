@@ -41,6 +41,8 @@ ActivityKindField = Literal[
     "child_removed",
     "archived",
     "unarchived",
+    "deleted",
+    "restored",
     "subscriber_added",
     "subscriber_removed",
     "mentioned",
@@ -377,6 +379,10 @@ class IssueRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = Field(
+        default=None, description="When the issue was moved to its team's trash, null while it is live."
+    )
+    deleted_by: Optional[str] = Field(default=None, description="The user who moved the issue to the trash.")
     in_triage: bool = False
     snoozed_until: Optional[datetime] = None
     sla_started_at: Optional[datetime] = None
@@ -433,6 +439,8 @@ class IssueRead(BaseModel):
             created_at=issue.created_at,
             updated_at=issue.updated_at,
             archived_at=issue.archived_at,
+            deleted_at=issue.deleted_at,
+            deleted_by=issue.deleted_by,
             in_triage=issue.in_triage,
             snoozed_until=issue.snoozed_until,
             sla_started_at=issue.sla_started_at,
@@ -448,6 +456,13 @@ class IssueRead(BaseModel):
 
 IssueListRead = cursor_page(IssueRead, "issues", model_name="IssueListRead")
 """The body every issue list route answers with, items under `issues`."""
+
+
+class DeletedIssueListRead(BaseModel):
+    """One team's trash: its deleted issues, newest number first, and when each is purged."""
+
+    issues: list[IssueRead] = Field(default_factory=list)
+    retention_days: int = Field(description="How many days a deleted issue stays restorable before it is purged.")
 
 
 TRIAGE_REASON_MAX = 500

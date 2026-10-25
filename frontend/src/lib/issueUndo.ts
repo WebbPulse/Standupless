@@ -12,6 +12,7 @@ import {
   BULK_MAX_ISSUES,
   bulkUpdateIssues,
   moveIssue,
+  restoreIssue,
   updateIssue,
   type IssueBulkPatch,
 } from '../api/issues';
@@ -332,6 +333,37 @@ export const recordArchive = (
       options.onReverted?.(
         answers.flatMap((answer): IssueRead[] => answer.issues)
       );
+    } finally {
+      invalidateQueries([
+        ...(options.invalidate ?? []),
+        ...ids.flatMap((id) => [issueKey(workspaceId, id), activityKey(id)]),
+      ]);
+    }
+  });
+};
+
+/**
+ * Records a delete of the given issues to their team's trash, undone by
+ * restoring each one, as Linear's delete notice offers.
+ */
+export const recordDelete = (
+  workspaceId: string,
+  issues: readonly Pick<IssueRead, 'id' | 'key'>[],
+  options: Omit<RecordOptions, 'message'> = {}
+): void => {
+  if (issues.length === 0) return;
+  const first = issues[0];
+  const subject =
+    issues.length === 1 && first !== undefined
+      ? first.key
+      : `${String(issues.length)} issues`;
+  pushUndo(workspaceId, `Deleted ${subject}`, async () => {
+    const ids = issues.map((issue) => issue.id);
+    try {
+      const restored = await Promise.all(
+        ids.map((id) => restoreIssue(workspaceId, id))
+      );
+      options.onReverted?.(restored);
     } finally {
       invalidateQueries([
         ...(options.invalidate ?? []),

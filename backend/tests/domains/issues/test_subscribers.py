@@ -105,12 +105,13 @@ def test_a_guest_cannot_follow_an_issue_in_a_team_they_are_outside(client: TestC
     assert client.delete(f"{path}/me").status_code == 404
 
 
-def test_deleting_an_issue_removes_its_subscriptions(client: TestClient, people: str, repositories: Any) -> None:
-    """Nothing but the issue names the partition, so its rows go with it."""
+def test_purging_an_issue_removes_its_subscriptions(client: TestClient, people: str, repositories: Any) -> None:
+    """Nothing but the issue names the partition, so its rows go with it once it leaves the trash."""
     sign_in(client, OWNER)
     issue = create_issue(client, people, assignee_id=MEMBER)
 
-    response = client.delete(f"/api/workspaces/{people}/issues/{issue['id']}")
+    assert client.delete(f"/api/workspaces/{people}/issues/{issue['id']}").status_code == 204
+    response = client.delete(f"/api/workspaces/{people}/issues/{issue['id']}/permanent")
     assert response.status_code == 204, response.text
 
     assert repositories.subscriptions.list_for_issue(people, issue["id"]) == []

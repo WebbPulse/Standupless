@@ -343,12 +343,13 @@ def user_ref(call: ToolCall, value: Any) -> str:
     return reference
 
 
-def issue_by_key(call: ToolCall, key: str) -> Issue:
+def issue_by_key(call: ToolCall, key: str, *, include_deleted: bool = False) -> Issue:
     """One issue by its human key, resolved through its team's prefix.
 
     Visibility is the issue's own team's, so a key held before a move answers the
     issue where it now lives, and an unknown prefix answers the same not-found an
-    invisible issue does, so keys cannot be used to probe for teams.
+    invisible issue does, so keys cannot be used to probe for teams. A deleted
+    issue resolves only with `include_deleted`.
     """
     prefix, _, number = key.rpartition("-")
     if not prefix or not number.isdigit():
@@ -358,23 +359,26 @@ def issue_by_key(call: ToolCall, key: str) -> Issue:
     if team is None:
         raise issue_not_found()
 
-    issue = find_issue_by_number(call.repositories, call.context.workspace_id, team.team_id, int(number))
+    issue = find_issue_by_number(
+        call.repositories, call.context.workspace_id, team.team_id, int(number), include_deleted=include_deleted
+    )
     if issue is None or not call.context.can_see_team(issue.team_id):
         raise issue_not_found()
     return issue
 
 
-def issue_ref(call: ToolCall, value: Any) -> Issue:
+def issue_ref(call: ToolCall, value: Any, *, include_deleted: bool = False) -> Issue:
     """One visible issue named by its id or its key.
 
     Both spellings because an agent reading a conversation has the key a person
     wrote and an agent chaining calls has the id a previous tool answered. Ids are
-    ULIDs and carry no dash, so the two cannot be confused.
+    ULIDs and carry no dash, so the two cannot be confused. A deleted issue
+    resolves only with `include_deleted`, which the read and restore tools pass.
     """
     reference = str(value).strip()
     if "-" in reference:
-        return issue_by_key(call, reference)
-    return load_visible_issue(call.repositories, call.context, reference)
+        return issue_by_key(call, reference, include_deleted=include_deleted)
+    return load_visible_issue(call.repositories, call.context, reference, include_deleted=include_deleted)
 
 
 def issue_id_ref(call: ToolCall, value: Any) -> Optional[str]:
@@ -421,6 +425,8 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "created_at": issue.created_at.isoformat(),
         "updated_at": issue.updated_at.isoformat(),
         "archived_at": issue.archived_at.isoformat() if issue.archived_at else None,
+        "deleted_at": issue.deleted_at.isoformat() if issue.deleted_at else None,
+        "deleted_by": issue.deleted_by,
         "in_triage": issue.in_triage,
         "snoozed_until": issue.snoozed_until.isoformat() if issue.snoozed_until else None,
         "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,

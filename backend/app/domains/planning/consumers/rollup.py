@@ -62,6 +62,7 @@ from app.common.db.dynamo.planning import (
     project_key,
 )
 from app.common.estimates import estimate_points, is_unestimated, issue_weight
+from app.common.trash_stream import live_view
 from app.domains.planning.cycle_schedule import is_cycle_schedule, sweep
 
 _log = logging.getLogger(__name__)
@@ -599,13 +600,18 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     added before the claim, since a string set `ADD` is safe to repeat. The
     automatic cycles trigger runs the sweep and nothing else. Projects are
     recounted before the cycle moves, and need no claim because a recount is
-    idempotent.
+    idempotent. An issue moving into the trash counts as its removal and a
+    restore as its creation.
     """
     repositories = _GRANT.narrow(repositories)
     if is_cycle_schedule(record):
         sweep(repositories)
         return
 
+    seen = live_view(record)
+    if seen is None:
+        return
+    record = seen
     workspace_id = workspace_of(record)
     if not workspace_id:
         return

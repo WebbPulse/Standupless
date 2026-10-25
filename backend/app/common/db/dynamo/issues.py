@@ -86,6 +86,8 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "project_id",
     "cycle_carried_from",
     "archived_at",
+    "deleted_at",
+    "deleted_by",
     "in_triage",
     "snoozed_until",
     "sla_started_at",
@@ -179,8 +181,26 @@ def triage_ws_team_status(workspace_id: str, team_id: str) -> str:
     return f"{ws_team(workspace_id, team_id)}#{TRIAGE_SUFFIX}"
 
 
+DELETED_SUFFIX = "deleted"
+
+TRASH_RETENTION_DAYS = 30
+"""How long a deleted issue waits in its team's trash before the sweep purges it."""
+
+
+def trash_ws_team(workspace_id: str, team_id: str) -> str:
+    """The team composite a deleted issue carries instead of its team's.
+
+    One partition per team, used for both `ws_team` and `ws_team_status`, so a
+    deleted issue drops out of every list, board, cycle, project and change feed
+    read without a filter, and the trash page is one key read of the number index.
+    """
+    return f"{ws_team(workspace_id, team_id)}#{DELETED_SUFFIX}"
+
+
 def status_partition_key(issue: Issue, status_id: str) -> str:
-    """The status composite one issue belongs under: archived, triage or its live column."""
+    """The status composite one issue belongs under: trash, archived, triage or its live column."""
+    if issue.deleted_at is not None:
+        return trash_ws_team(issue.workspace_id, issue.team_id)
     if issue.archived_at is not None:
         return archived_ws_team_status(issue.workspace_id, issue.team_id, status_id)
     if issue.in_triage:
@@ -272,6 +292,8 @@ class Issue(BaseModel):
     updated_source: str | None = None
     mentioned_user_ids: list[str] = Field(default_factory=list)
     archived_at: datetime | None = None
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
     in_triage: bool = False
     snoozed_until: datetime | None = None
     sla_started_at: datetime | None = None
@@ -302,6 +324,9 @@ def index_attributes(issue: Issue, status_id: str) -> dict[str, Any]:
     status computes the composite from the value it is about to write, not from the
     one still on the row.
     """
+    if issue.deleted_at is not None:
+        trash = trash_ws_team(issue.workspace_id, issue.team_id)
+        return {"ws_team": trash, "ws_team_status": trash}
     attributes: dict[str, Any] = {
         "ws_team": ws_team(issue.workspace_id, issue.team_id),
         "ws_team_status": status_partition_key(issue, status_id),
@@ -355,6 +380,8 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         *ATTACHMENT_ATTRIBUTE_NAMES,
         "cycle_carried_from",
         "archived_at",
+        "deleted_at",
+        "deleted_by",
         "in_triage",
         "snoozed_until",
         "started_at",
@@ -412,15 +439,18 @@ class IssueRepository:
         """Delete every row this table holds for one workspace, for the workspace purge."""
         return delete_partition(self._repository, ISSUES, workspace_id)
 
-    def get(self, workspace_id: str, issue_id: str) -> Issue | None:
-        """One issue of this workspace, or `None`."""
+    def get(self, workspace_id: str, issue_id: str, *, include_deleted: bool = False) -> Issue | None:
+        """One issue of this workspace, or `None`; a deleted issue only with `include_deleted`."""
         if not workspace_id or not issue_id:
             return None
         item = self._repository.get({"workspace_id": workspace_id, "issue_id": issue_id})
-        return as_issue(item) if item is not None else None
+        if item is None:
+            return None
+        issue = as_issue(item)
+        return issue if include_deleted or issue.deleted_at is None else None
 
     def get_many(self, workspace_id: str, issue_ids: list[str]) -> dict[str, Issue]:
-        """The named issues keyed by id, skipping any that are gone.
+        """The named live issues keyed by id, skipping any that are gone or deleted.
 
         One `BatchGetItem` behind the links list, so rendering a pair's titles costs
         one call rather than one per link row.
@@ -431,7 +461,8 @@ class IssueRepository:
         items = self._repository.batch_get(
             [{"workspace_id": workspace_id, "issue_id": issue_id} for issue_id in wanted]
         )
-        return {str(item["issue_id"]): as_issue(item) for item in items}
+        issues = (as_issue(item) for item in items)
+        return {issue.issue_id: issue for issue in issues if issue.deleted_at is None}
 
     def create(self, issue: Issue) -> Issue:
         """Store a new issue, raising `ConditionFailed` when the id is taken.
@@ -442,7 +473,14 @@ class IssueRepository:
         self._repository.put(as_issue_item(issue), condition=Attr("issue_id").not_exists())
         return issue
 
-    def replace(self, issue: Issue, *, condition: Any = None, keep_import_batch: bool = False) -> Issue:
+    def replace(
+        self,
+        issue: Issue,
+        *,
+        condition: Any = None,
+        keep_import_batch: bool = False,
+        restoring: bool = False,
+    ) -> Issue:
         """Write one issue over an existing row, recomputing its index composites.
 
         Every field and composite is rebuilt from the finished model so the
@@ -454,6 +492,8 @@ class IssueRepository:
         `condition` is ANDed on, and a miss of it or of the existence check raises
         `ConditionFailed`. `keep_import_batch` is the importer's re-run, which
         writes the new batch id so its update stays off the announcing paths too.
+        A deleted row is refused unless `restoring`, so a stale writer can never
+        pull an issue back out of the trash.
         """
         item = as_issue_item(issue)
         dropped = ("workspace_id", "issue_id", *CONSUMER_OWNED_ATTRIBUTES)
@@ -461,6 +501,8 @@ class IssueRepository:
             item.pop(attribute, None)
         read_at = issue.read_revision()
         guard = Attr("issue_id").exists()
+        if not restoring:
+            guard = guard & Attr("deleted_at").not_exists()
         if read_at is not None:
             if read_at:
                 guard = guard & Attr(REVISION).eq(read_at)
@@ -533,6 +575,77 @@ class IssueRepository:
             except ConditionFailed:
                 return None
         return None
+
+    def soft_delete(self, issue: Issue, actor_id: str, now: datetime) -> Issue:
+        """Move one live issue to its team's trash, raising `ConditionFailed` when it is gone or deleted.
+
+        Children keep their `parent_id`, so a restore brings the tree back as it was;
+        the deleted parent simply drops out of every read that resolves it.
+        """
+        deleted = issue.model_copy(update={"deleted_at": now, "deleted_by": actor_id})
+        deleted.at_revision(issue.read_revision())
+        return self.replace(deleted)
+
+    def restore(self, issue: Issue, actor_id: str, now: datetime, *, source: str | None = None) -> Issue:
+        """Take one deleted issue back out of the trash, raising `ConditionFailed` when it is not there.
+
+        `issue` is the deleted row with any repairs already applied, such as a
+        status that no longer exists. `updated_at` moves, so the restored issue
+        sorts as freshly touched and no sweep acts on it within the hour.
+        """
+        restored = issue.model_copy(
+            update={
+                "deleted_at": None,
+                "deleted_by": None,
+                "updated_at": now,
+                "updated_by": actor_id,
+                "updated_source": source,
+            }
+        )
+        restored.at_revision(issue.read_revision())
+        return self.replace(restored, condition=Attr("deleted_at").exists(), restoring=True)
+
+    def iter_trash(self, workspace_id: str, team_id: str, *, max_items: int = 2000) -> list[Issue]:
+        """Every deleted issue of one team, newest number first, from the trash partition."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team").eq(trash_ws_team(workspace_id, team_id)),
+            index_name=KEY_NUMBER_INDEX,
+            ascending=False,
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
+    def iter_trash_due(self, workspace_id: str, team_id: str, cutoff: datetime, *, max_items: int = 200) -> list[Issue]:
+        """The deleted issues of one team deleted before `cutoff`, which the purge sweep removes."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team").eq(trash_ws_team(workspace_id, team_id)),
+            index_name=KEY_NUMBER_INDEX,
+            filter_expression=Attr("deleted_at").lt(serialize_datetime(cutoff)),
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
+    def page_with_trash_after(self, workspace_id: str, team_id: str, after: int, *, limit: int = 25) -> list[Issue]:
+        """Up to `limit` of a team's issues numbered above `after`, live or in its trash, lowest first.
+
+        The team purge's cursor, like `page_after`, reading both partitions so a
+        deleted issue's rows go with its team too.
+        """
+        live = self.page_after(workspace_id, team_id, after, limit=limit)
+        if not workspace_id or not team_id:
+            return live
+        page = self._repository.query(
+            Key("ws_team").eq(trash_ws_team(workspace_id, team_id)) & Key("number").gt(after),
+            index_name=KEY_NUMBER_INDEX,
+            limit=limit,
+            ascending=True,
+        )
+        merged = sorted([*live, *(as_issue(item) for item in page.items)], key=lambda issue: issue.number)
+        return merged[:limit]
 
     def set_progress(self, workspace_id: str, issue_id: str, total: int, completed: int) -> Issue | None:
         """Write one issue's rollup counts, or `None` when the issue is gone.
@@ -635,7 +748,7 @@ class IssueRepository:
                     "#rev": REVISION,
                 },
                 expression_values={":to": to_cycle, ":from": from_cycle, ":changed": changed_stamp(), **REVISION_STEP},
-                condition=Attr("issue_id").exists() & Attr("cycle_id").eq(from_cycle),
+                condition=Attr("issue_id").exists() & Attr("deleted_at").not_exists() & Attr("cycle_id").eq(from_cycle),
                 return_values="ALL_NEW",
             )
         except ConditionFailed:
@@ -657,7 +770,7 @@ class IssueRepository:
                 update_expression="SET #cycle = :cycle, #changed = :changed, " + REVISION_BUMP,
                 expression_names={"#cycle": "cycle_id", "#changed": CHANGED_AT, "#rev": REVISION},
                 expression_values={":cycle": cycle_id, ":changed": changed_stamp(), **REVISION_STEP},
-                condition=Attr("issue_id").exists() & Attr("cycle_id").not_exists(),
+                condition=Attr("issue_id").exists() & Attr("deleted_at").not_exists() & Attr("cycle_id").not_exists(),
                 return_values="ALL_NEW",
             )
         except ConditionFailed:
@@ -810,7 +923,12 @@ class IssueRepository:
         alone: an archive is not an edit and must not reorder the list view.
         """
         stamp = serialize_datetime(archived_at)
-        condition = Attr("issue_id").exists() & Attr("archived_at").not_exists() & Attr("status_id").eq(issue.status_id)
+        condition = (
+            Attr("issue_id").exists()
+            & Attr("deleted_at").not_exists()
+            & Attr("archived_at").not_exists()
+            & Attr("status_id").eq(issue.status_id)
+        )
         if expect_updated_at is not None:
             condition = condition & Attr("updated_at").eq(serialize_datetime(expect_updated_at))
         try:
@@ -869,6 +987,7 @@ class IssueRepository:
                     **REVISION_STEP,
                 },
                 condition=Attr("issue_id").exists()
+                & Attr("deleted_at").not_exists()
                 & Attr("archived_at").exists()
                 & Attr("status_id").eq(issue.status_id),
                 return_values="ALL_NEW",
@@ -932,28 +1051,35 @@ class IssueRepository:
         return [as_issue(item) for item in items]
 
     def delete(self, workspace_id: str, issue_id: str) -> bool:
-        """Hard-delete one issue row, reporting whether one was there."""
-        if self.get(workspace_id, issue_id) is None:
+        """Hard-delete one issue row, live or in the trash, reporting whether one was there."""
+        if self.get(workspace_id, issue_id, include_deleted=True) is None:
             return False
         self._repository.delete({"workspace_id": workspace_id, "issue_id": issue_id})
         return True
 
-    def get_by_number(self, workspace_id: str, team_id: str, number: int) -> Issue | None:
+    def get_by_number(
+        self, workspace_id: str, team_id: str, number: int, *, include_deleted: bool = False
+    ) -> Issue | None:
         """The issue holding one number in one team, or `None`.
 
         Reads `ws_team-key_number-index` rather than scanning the workspace, which
-        is what makes `GET /issues/by-key/{key}` one query.
+        is what makes `GET /issues/by-key/{key}` one query. `include_deleted` also
+        reads the team's trash partition, so a deleted issue's page still resolves.
         """
         if not workspace_id or not team_id:
             return None
-        page = self._repository.query(
-            Key("ws_team").eq(ws_team(workspace_id, team_id)) & Key("number").eq(number),
-            index_name=KEY_NUMBER_INDEX,
-            limit=1,
-        )
-        if not page.items:
-            return None
-        return as_issue(page.items[0])
+        partitions = [ws_team(workspace_id, team_id)]
+        if include_deleted:
+            partitions.append(trash_ws_team(workspace_id, team_id))
+        for partition in partitions:
+            page = self._repository.query(
+                Key("ws_team").eq(partition) & Key("number").eq(number),
+                index_name=KEY_NUMBER_INDEX,
+                limit=1,
+            )
+            if page.items:
+                return as_issue(page.items[0])
+        return None
 
     def list_for_team(
         self,

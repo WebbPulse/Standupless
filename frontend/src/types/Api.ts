@@ -847,6 +847,8 @@ export type ActivityKind =
   | 'child_removed'
   | 'archived'
   | 'unarchived'
+  | 'deleted'
+  | 'restored'
   | 'subscriber_added'
   | 'subscriber_removed'
   | 'mentioned'
@@ -940,6 +942,13 @@ export interface IssueRead {
    */
   archived_at?: string | null;
   /**
+   * When the issue was moved to its team's trash, where it stays restorable
+   * for 30 days. Null or absent for a live issue.
+   */
+  deleted_at?: string | null;
+  /** Who moved the issue to the trash, set alongside `deleted_at`. */
+  deleted_by?: string | null;
+  /**
    * True while the issue waits in its team's triage inbox, filed from outside
    * the team. Optional so a row read before triage existed reads as accepted.
    */
@@ -1001,6 +1010,13 @@ export interface IssueExportRead {
   csv: string;
   rows: number;
   next_cursor?: string | null;
+}
+
+/** One team's recently deleted issues, the most recently deleted first. */
+export interface DeletedIssueListRead {
+  issues: IssueRead[];
+  /** How many days a deleted issue stays restorable before it is purged. */
+  retention_days: number;
 }
 
 /** The body the issue list and children routes answer with. */

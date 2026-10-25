@@ -306,13 +306,26 @@ def test_the_team_of_an_issue_never_changes(client: TestClient, workspace: str, 
     assert response.json()["team_id"] == TEAM
 
 
-def test_deleting_an_issue_reparents_its_children(client: TestClient, workspace: str, statuses: Any) -> None:
-    """A deleted parent leaves its children in place with no parent."""
+def test_deleting_an_issue_keeps_its_children_attached(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A parent in the trash keeps its children, so a restore brings the tree back."""
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Parent")
     child = create_issue(client, workspace, title="Child", parent_id=parent["id"])
 
     assert client.delete(f"/api/workspaces/{workspace}/issues/{parent['id']}").status_code == 204
+
+    remaining = client.get(f"/api/workspaces/{workspace}/issues/{child['id']}").json()
+    assert remaining["parent_id"] == parent["id"]
+
+
+def test_purging_an_issue_reparents_its_children(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A purged parent leaves its children in place with no parent."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Parent")
+    child = create_issue(client, workspace, title="Child", parent_id=parent["id"])
+
+    assert client.delete(f"/api/workspaces/{workspace}/issues/{parent['id']}").status_code == 204
+    assert client.delete(f"/api/workspaces/{workspace}/issues/{parent['id']}/permanent").status_code == 204
 
     remaining = client.get(f"/api/workspaces/{workspace}/issues/{child['id']}").json()
     assert remaining["parent_id"] is None

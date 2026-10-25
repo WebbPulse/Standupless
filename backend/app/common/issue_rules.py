@@ -453,13 +453,16 @@ def require_team_admin(repositories: Repositories, context: AuthzContext, team_i
         )
 
 
-def load_visible_issue(repositories: Repositories, context: AuthzContext, issue_id: str) -> Issue:
+def load_visible_issue(
+    repositories: Repositories, context: AuthzContext, issue_id: str, *, include_deleted: bool = False
+) -> Issue:
     """One issue the caller may read, or a 404.
 
     Every issue route starts here, so an issue in a team the caller is outside is
-    indistinguishable from one that was never created.
+    indistinguishable from one that was never created. A deleted issue is a 404
+    too, unless `include_deleted`, which the reads and the trash actions pass.
     """
-    issue = repositories.issues.get(context.workspace_id, issue_id)
+    issue = repositories.issues.get(context.workspace_id, issue_id, include_deleted=include_deleted)
     if issue is None:
         raise not_found()
     if not context.can_see_team(issue.team_id):

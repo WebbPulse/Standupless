@@ -547,3 +547,40 @@ def test_an_issue_move_refiles_its_comment_postings(dynamo_tables: None, reposit
     assert repositories.search_index.postings(WORKSPACE, other_team, comment_term("gadget")) == [
         comment_doc(comment.comment_id, ISSUE)
     ]
+
+
+def test_a_move_into_the_trash_clears_every_term(dynamo_tables: None, repositories: Any) -> None:
+    """A deleted issue leaves search at once, although its row stays for a restore."""
+    image = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget")
+    trashed = _image(
+        workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget", deleted_at="2026-10-25"
+    )
+    handle_record(repositories, _record("INSERT", new=image))
+
+    handle_record(repositories, _record("MODIFY", new=trashed, old=image))
+
+    assert postings(repositories, "widget") == []
+    assert held_terms(repositories) == []
+
+
+def test_a_restore_indexes_the_issue_again(dynamo_tables: None, repositories: Any) -> None:
+    """Out of the trash, the issue is findable as it was."""
+    image = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget")
+    trashed = _image(
+        workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget", deleted_at="2026-10-25"
+    )
+
+    handle_record(repositories, _record("MODIFY", new=image, old=trashed))
+
+    assert postings(repositories, "widget") == [ISSUE]
+
+
+def test_purging_a_trashed_issue_writes_nothing(dynamo_tables: None, repositories: Any) -> None:
+    """Its postings left with the delete, so the purge has nothing to remove or add."""
+    trashed = _image(
+        workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget", deleted_at="2026-10-25"
+    )
+
+    handle_record(repositories, _record("REMOVE", old=trashed))
+
+    assert held_terms(repositories) == []

@@ -37,8 +37,8 @@ import {
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { mergeIssueDelta } from '../lib/issueDelta';
-import { recordArchive } from '../lib/issueUndo';
-import { showErrorToast, showToast } from '../lib/toast';
+import { recordArchive, recordDelete } from '../lib/issueUndo';
+import { showErrorToast } from '../lib/toast';
 import {
   chunks,
   useOptimisticIssues,
@@ -287,13 +287,27 @@ export const useIssueCollection = (
         );
       }
       if (deleted > 0) {
-        showToast(
-          deleted === 1 ? 'Issue deleted' : `${String(deleted)} issues deleted`
+        const byId = new Map(issues.map((issue) => [issue.id, issue]));
+        const gone = targets.filter((id) => !failed.includes(id));
+        recordDelete(
+          workspaceId,
+          gone.map((id) => ({ id, key: byId.get(id)?.key ?? 'issue' })),
+          {
+            invalidate: [queryKey],
+            onReverted: (written) => {
+              setHidden((held) => {
+                const next = new Set(held);
+                for (const id of gone) next.delete(id);
+                return next;
+              });
+              layOver(written);
+            },
+          }
         );
       }
       invalidateQueries(queryKey);
     },
-    [workspaceId, queryKey]
+    [workspaceId, queryKey, issues, layOver]
   );
 
   const archivedOnly = query.archived_only === true;

@@ -72,6 +72,10 @@ export const teamPath = (slug: string, keyPrefix: string): string =>
 export const teamArchivePath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/archive`;
 
+/** A team's recently deleted issues, restorable until the trash purges them. */
+export const teamTrashPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/trash`;
+
 /** A team's triage inbox: issues filed from outside the team, waiting to be worked. */
 export const teamTriagePath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/triage`;

@@ -72,6 +72,7 @@ import {
   getIssueByKey,
   listChildren,
   listLinks,
+  restoreIssue,
   unarchiveIssue,
   updateIssue,
 } from '../../api/issues';
@@ -121,7 +122,11 @@ import {
   duplicatePath,
   runDuplicate,
 } from '../../lib/issueConversion';
-import { recordArchive, recordPatch } from '../../lib/issueUndo';
+import {
+  recordArchive,
+  recordDelete,
+  recordPatch,
+} from '../../lib/issueUndo';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { reminderLabel } from '../../lib/reminders';
 import { useOptimisticRecord } from '../../lib/optimistic';
@@ -498,7 +503,9 @@ export const IssueView: React.FC<IssueViewProps> = ({
       showErrorToast(errorMessage(cause, 'Could not delete that issue.'));
       return;
     }
-    showToast(`${issue.key} deleted`);
+    recordDelete(workspaceId, [issue], {
+      invalidate: [issueKey(workspaceId, issueRef)],
+    });
     if (onClose === undefined) {
       void navigate(teamPath(slug, team.key_prefix));
     } else {
@@ -507,6 +514,19 @@ export const IssueView: React.FC<IssueViewProps> = ({
   };
 
   const archived = issue !== null && (issue.archived_at ?? null) !== null;
+  const deleted = issue !== null && (issue.deleted_at ?? null) !== null;
+
+  const restoreFromTrash = async (): Promise<void> => {
+    if (issue === null) return;
+    try {
+      receive(await restoreIssue(workspaceId, issue.id));
+    } catch (cause) {
+      showErrorToast(errorMessage(cause, 'Could not restore that issue.'));
+      return;
+    }
+    invalidateQueries([issueKey(workspaceId, issueRef), activityKey(issue.id)]);
+    showToast(`Restored ${issue.key}`);
+  };
 
   const toggleArchive = async (): Promise<void> => {
     if (issue === null) return;
@@ -975,6 +995,33 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-4 py-6 sm:px-8 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-center @min-[860px]:gap-10 @min-[860px]:py-10">
               <div className="contents @min-[860px]:block @min-[860px]:min-w-0 @min-[860px]:max-w-[680px] @min-[860px]:flex-1">
                 <div className="order-1 min-w-0 space-y-6">
+                  {deleted && (
+                    <div
+                      role="status"
+                      className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
+                    >
+                      <LuTrash2
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1">
+                        Deleted {timestampLabel(issue.deleted_at ?? '')}. It
+                        stays in the team&apos;s trash for 30 days before it is
+                        deleted permanently.
+                      </span>
+                      {canAct && (
+                        <button
+                          type="button"
+                          className={LINK_CLASS}
+                          onClick={() => {
+                            void restoreFromTrash();
+                          }}
+                        >
+                          Restore
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {archived && (
                     <div
                       role="status"

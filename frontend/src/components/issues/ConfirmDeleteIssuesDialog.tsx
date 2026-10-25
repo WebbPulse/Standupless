@@ -28,8 +28,8 @@ export const ConfirmDeleteIssuesDialog: React.FC<
     ? 'Delete issue?'
     : `Delete ${String(issues.length)} issues?`;
   const description = single
-    ? `${first.key} ${first.title} will be deleted. This cannot be undone.`
-    : `${issues.map((issue) => issue.key).join(', ')} will be deleted. This cannot be undone.`;
+    ? `${first.key} ${first.title} moves to the team's recently deleted list, where it can be restored for 30 days.`
+    : `${issues.map((issue) => issue.key).join(', ')} move to their team's recently deleted list, where they can be restored for 30 days.`;
 
   return (
     <Dialog open onClose={onClose} title={title} size="sm">
