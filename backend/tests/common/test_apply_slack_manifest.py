@@ -181,9 +181,7 @@ def test_main_applies_nothing_when_the_write_back_fails(
 
     monkeypatch.delenv("SLACK_CONFIG_TOKEN", raising=False)
     monkeypatch.setattr(script, "call", fake_call)
-    monkeypatch.setattr(
-        script, "open_secret", lambda secret_id, region: script.RefreshTokenSecret(client, secret_id)
-    )
+    monkeypatch.setattr(script, "open_secret", lambda secret_id, region: script.RefreshTokenSecret(client, secret_id))
     monkeypatch.setattr(sys, "argv", ["apply_slack_manifest.py", "staging", "--app-id", "A0123456789"])
 
     assert script.main() == 4
