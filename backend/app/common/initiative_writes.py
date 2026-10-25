@@ -222,7 +222,7 @@ def list_initiatives(
 def require_parent(
     repositories: Repositories, context: AuthzContext, initiative_id: Optional[str], parent_id: str
 ) -> None:
-    """Hold that an initiative may sit under a parent, or 422 for a missing or hidden parent, a cycle or too deep a chain."""
+    """Hold that an initiative may sit under a parent: 422 for a hidden or missing parent, a cycle or a deep chain."""
     tree = initiative_tree(repositories, context.workspace_id)
     parent = tree.rows.get(parent_id)
     if parent is not None and not can_see_initiative(context, parent):
