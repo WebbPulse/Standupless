@@ -6,6 +6,7 @@
  */
 
 import { createContext, useContext, useSyncExternalStore } from 'react';
+import type { QueryKey } from '@webbpulse/api-client/react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueWrite } from '../../../hooks/useOptimisticIssues';
 import type { ParentRef } from '../../../lib/issueTree';
@@ -45,6 +46,11 @@ export interface IssueViewEnv {
    */
   canEditIssue?: ((issue: OrderedIssueRead) => boolean) | undefined;
   update: IssueWrite;
+  /**
+   * The view's own read, which a drop outside the view, such as a move to a
+   * sidebar team, re-reads once it lands. Unset re-reads nothing.
+   */
+  queryKey?: QueryKey | undefined;
   /**
    * Files and withdraws customer requests for a drop between customer
    * columns. Unset where the list cannot write requests, which refuses it.

@@ -61,6 +61,7 @@ import {
   isNoOpDrop,
   setCountDragImage,
 } from '../../../lib/boardDrop';
+import { endIssueDrag, startIssueDrag } from '../../../lib/issueDrag';
 import { groupFigure } from '../../../lib/groupHeader';
 import { FOCUS_FIELD } from '../../../lib/focusGrouping';
 import {
@@ -1087,6 +1088,7 @@ export const ListRows: React.FC<ListRowsProps> = ({
       takesDrop(laneField, env));
 
   const endDrag = (): void => {
+    endIssueDrag();
     setDrag(null);
     setSlot(null);
     setHeaderTarget(null);
@@ -1144,10 +1146,15 @@ export const ListRows: React.FC<ListRowsProps> = ({
         const row = event.currentTarget as HTMLElement;
         const ids = draggedIds(issue.id, env.selected, order);
         event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData(
-          'text/plain',
-          ids.map((id) => byId.get(id)?.key ?? id).join('\n')
-        );
+        startIssueDrag(event.dataTransfer, {
+          issues: ids.flatMap((id) => {
+            const held = byId.get(id);
+            return held === undefined ? [] : [held];
+          }),
+          canEdit: (held) => canDragIssue(env, held),
+          update: env.update,
+          queryKey: env.queryKey,
+        });
         setCountDragImage(
           event.dataTransfer,
           row,

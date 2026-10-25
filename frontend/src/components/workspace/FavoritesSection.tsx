@@ -38,6 +38,8 @@ import { TruncatedText } from '../ui/truncated-text';
 import ViewIcon from '../views/ViewIcon';
 import DocumentIcon from '../planning/DocumentIcon';
 import FavoriteFolders from './FavoriteFolders';
+import type { SidebarIssueDrop } from '../../hooks/useSidebarIssueDrop';
+import { favoriteDropTarget } from '../../lib/sidebarIssueDrop';
 
 /** Props for FavoritesSection. */
 export interface FavoritesSectionProps {
@@ -50,6 +52,11 @@ export interface FavoritesSectionProps {
   /** The heading over the section. */
   heading: React.ReactNode;
   onNavigate?: (() => void) | undefined;
+  /**
+   * Lets a favorited team, project or cycle take issues dragged out of a list
+   * or board. Unset, no favorite takes a drop of issues.
+   */
+  issueDrop?: SidebarIssueDrop | undefined;
 }
 
 const GLYPH = 'h-3.5 w-3.5 shrink-0';
@@ -153,6 +160,7 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
   rowClass,
   heading,
   onNavigate,
+  issueDrop,
 }) => {
   const {
     favorites,
@@ -311,6 +319,9 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
           : 'after';
     const above = group[index - 1];
     const below = group[index + 1];
+    const takesIssues = issueDrop?.handlersFor(
+      favoriteDropTarget(favorite, teams)
+    );
     return (
       <div
         key={rowId(favorite)}
@@ -326,13 +337,17 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
           event.dataTransfer.setData('text/plain', rowId(favorite));
           setDraggingId(rowId(favorite));
         }}
-        onDragEnter={() => {
+        onDragEnter={(event) => {
+          if (takesIssues?.onDragOver(event) === true) return;
           if (dragging !== null) setDragOver(rowId(favorite));
         }}
         onDragOver={(event) => {
+          if (takesIssues?.onDragOver(event) === true) return;
           if (dragging !== null) event.preventDefault();
         }}
+        onDragLeave={takesIssues?.onDragLeave}
         onDrop={(event) => {
+          if (takesIssues?.onDrop(event) === true) return;
           event.preventDefault();
           event.stopPropagation();
           if (dragging !== null) moveOnto(dragging, favorite, false);
@@ -355,6 +370,7 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
           to={href}
           end
           draggable={false}
+          data-issue-drop={takesIssues?.over === true ? 'over' : undefined}
           title={
             favorite.issue_key
               ? `${favorite.issue_key} ${favorite.title}`
@@ -364,7 +380,9 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
             cn(
               rowClass(state),
               'pr-8 group-data-[pointer]/nav:hover:text-text pointer-coarse:pr-12',
-              nested && 'pl-8'
+              nested && 'pl-8',
+              takesIssues?.over === true &&
+                'bg-raised text-text ring-1 ring-accent'
             )
           }
           onClick={onNavigate}
