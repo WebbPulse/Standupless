@@ -29,6 +29,8 @@
  * caller's inbox at a moment they pick, and a pending reminder shows above the
  * description with ways to change or cancel it. In a pane beside a list H stays
  * with the list, so the command is reached through the menu and the palette.
+ * Print, on the full page, prints the title, one line of properties and the
+ * description, with the comment threads as endnotes.
  */
 
 import React, {
@@ -58,6 +60,7 @@ import {
   LuListTree,
   LuMaximize2,
   LuPanelRight,
+  LuPrinter,
   LuTrash2,
   LuUnlink,
   LuUsers,
@@ -119,6 +122,8 @@ import {
   subIssueDialogPresets,
 } from '../../lib/subIssueCreation';
 import { timestampLabel } from '../../lib/issueDisplay';
+import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
+import IssuePrintProperties from '../print/IssuePrintProperties';
 import {
   CONVERT_TO_PROJECT_LABEL,
   DUPLICATE_ISSUE_LABEL,
@@ -764,6 +769,13 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <LuHistory aria-hidden="true" className="h-3.5 w-3.5" />
             {`${DESCRIPTION_HISTORY_LABEL}…`}
           </MenuItem>
+          {!embedded && (
+            <MenuItem onSelect={printPage}>
+              <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
+              {PRINT_LABEL}
+              <MenuShortcut keys={PRINT_KEYS} />
+            </MenuItem>
+          )}
           <MenuSeparator />
           <MenuItem onSelect={copyIssueId}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
@@ -881,6 +893,12 @@ export const IssueView: React.FC<IssueViewProps> = ({
         onRun={() => {
           setHistory(true);
         }}
+      />
+      <IssueCommand
+        keys={PRINT_KEYS}
+        label={PRINT_LABEL}
+        enabled={issue !== null && !embedded}
+        onRun={printPage}
       />
       <IssueCommand
         keys={COPY_ISSUE_ID_KEYS}
@@ -1084,6 +1102,13 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       </button>
                     </div>
                   )}
+                  <IssuePrintProperties
+                    issue={issue}
+                    teamName={team?.name}
+                    statuses={options.statuses}
+                    labels={options.labels}
+                    people={options.people}
+                  />
                   <IssueBody
                     workspaceId={workspaceId}
                     issue={issue}
@@ -1141,7 +1166,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
               {team !== undefined && detailsPanel.shown && (
                 <IssuePropertiesPanel
-                  className="order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto"
+                  className="screen-only order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto"
                   workspaceId={workspaceId}
                   slug={slug}
                   issue={issue}

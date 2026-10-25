@@ -385,7 +385,7 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   return (
     <aside
       aria-label="Project progress"
-      className="space-y-6 border-line lg:w-80 lg:shrink-0 lg:border-l lg:pl-6"
+      className="screen-only space-y-6 border-line lg:w-80 lg:shrink-0 lg:border-l lg:pl-6"
     >
       {latestUpdate !== null && (
         <section aria-labelledby="project-latest-update" className="space-y-2">

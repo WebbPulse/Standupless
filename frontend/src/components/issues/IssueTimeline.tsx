@@ -14,6 +14,7 @@
  *
  * A filter in the header shows all activity or comments only. The choice is
  * saved to the account, so it follows the person to every issue and device.
+ * A print leaves the timeline out and lists the open threads as endnotes.
  */
 
 import React, {
@@ -88,6 +89,7 @@ import type {
 } from '../../types/Api';
 import CommentCard from '../discussion/CommentCard';
 import CommentComposer from '../discussion/CommentComposer';
+import PrintEndnotes from '../print/PrintEndnotes';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
 import Menu, { MenuItem } from '../ui/menu';
@@ -584,111 +586,120 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   const headingId = useId();
 
   return (
-    <section aria-labelledby={headingId} className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 id={headingId} className="text-sm font-semibold text-text">
-          Activity
-        </h2>
-        <FilterMenu value={filter} onChange={setFilter} />
-      </div>
-
-      {!commentsOnly && activity.error !== null && (
-        <ErrorAlert
-          message={errorMessage(activity.error, 'Could not load the activity.')}
-        />
-      )}
-      {comments.error !== null && (
-        <ErrorAlert
-          message={errorMessage(comments.error, 'Could not load the comments.')}
-        />
-      )}
-
-      {loading ? (
-        <div
-          role="status"
-          aria-busy="true"
-          aria-label="Loading activity"
-          className="space-y-3"
-        >
-          {[0, 1, 2].map((index) => (
-            <div key={index} className="flex items-center gap-3">
-              <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
-              <Skeleton className={index === 1 ? 'h-3 w-1/2' : 'h-3 w-1/3'} />
-            </div>
-          ))}
+    <>
+      <section aria-labelledby={headingId} className="screen-only space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 id={headingId} className="text-sm font-semibold text-text">
+            Activity
+          </h2>
+          <FilterMenu value={filter} onChange={setFilter} />
         </div>
-      ) : commentsOnly && items.length === 0 && !older.hasMore ? (
-        <p className="py-2 text-xs text-text-faint">No comments yet</p>
-      ) : (
-        <ol aria-label="Timeline" className="relative space-y-1">
-          <span
-            aria-hidden="true"
-            className="absolute top-2 bottom-2 left-2.5 w-px bg-line"
-          />
-          {older.hasMore && (
-            <li className="relative flex min-h-7 items-center gap-3">
-              <span className="relative z-10 h-5 w-5 shrink-0 rounded-full bg-bg" />
-              <button
-                type="button"
-                disabled={older.isPaging}
-                className="rounded-xs text-xs text-text-faint hover:text-text disabled:opacity-50"
-                onClick={older.loadMore}
-              >
-                {older.isPaging ? older.busy : older.idle}
-              </button>
-            </li>
-          )}
-          {items.map((item) => {
-            if (item.type === 'event') {
-              return (
-                <EventRow
-                  key={item.id}
-                  event={item}
-                  people={context.people}
-                  linker={linker}
-                />
-              );
-            }
-            if (item.type === 'group') {
-              return (
-                <GroupRow
-                  key={item.id}
-                  group={item}
-                  people={context.people}
-                  linker={linker}
-                />
-              );
-            }
-            return (
-              <li key={item.id} className="relative z-10 py-2">
-                <CommentCard
-                  comment={item.comment}
-                  replies={item.replies}
-                  people={context.people}
-                  workspaceId={workspaceId}
-                  issueId={issueId}
-                  currentUserId={currentUserId}
-                  canComment={canComment}
-                  isAdmin={isAdmin}
-                  threadTargets={threadTargets}
-                />
-              </li>
-            );
-          })}
-        </ol>
-      )}
 
-      {canComment && (
-        <CommentComposer
-          workspaceId={workspaceId}
-          issueId={issueId}
-          people={context.people}
-          threadTargets={threadTargets}
-          jumpShortcut
-          quote={quote}
-        />
-      )}
-    </section>
+        {!commentsOnly && activity.error !== null && (
+          <ErrorAlert
+            message={errorMessage(
+              activity.error,
+              'Could not load the activity.'
+            )}
+          />
+        )}
+        {comments.error !== null && (
+          <ErrorAlert
+            message={errorMessage(
+              comments.error,
+              'Could not load the comments.'
+            )}
+          />
+        )}
+
+        {loading ? (
+          <div
+            role="status"
+            aria-busy="true"
+            aria-label="Loading activity"
+            className="space-y-3"
+          >
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="flex items-center gap-3">
+                <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+                <Skeleton className={index === 1 ? 'h-3 w-1/2' : 'h-3 w-1/3'} />
+              </div>
+            ))}
+          </div>
+        ) : commentsOnly && items.length === 0 && !older.hasMore ? (
+          <p className="py-2 text-xs text-text-faint">No comments yet</p>
+        ) : (
+          <ol aria-label="Timeline" className="relative space-y-1">
+            <span
+              aria-hidden="true"
+              className="absolute top-2 bottom-2 left-2.5 w-px bg-line"
+            />
+            {older.hasMore && (
+              <li className="relative flex min-h-7 items-center gap-3">
+                <span className="relative z-10 h-5 w-5 shrink-0 rounded-full bg-bg" />
+                <button
+                  type="button"
+                  disabled={older.isPaging}
+                  className="rounded-xs text-xs text-text-faint hover:text-text disabled:opacity-50"
+                  onClick={older.loadMore}
+                >
+                  {older.isPaging ? older.busy : older.idle}
+                </button>
+              </li>
+            )}
+            {items.map((item) => {
+              if (item.type === 'event') {
+                return (
+                  <EventRow
+                    key={item.id}
+                    event={item}
+                    people={context.people}
+                    linker={linker}
+                  />
+                );
+              }
+              if (item.type === 'group') {
+                return (
+                  <GroupRow
+                    key={item.id}
+                    group={item}
+                    people={context.people}
+                    linker={linker}
+                  />
+                );
+              }
+              return (
+                <li key={item.id} className="relative z-10 py-2">
+                  <CommentCard
+                    comment={item.comment}
+                    replies={item.replies}
+                    people={context.people}
+                    workspaceId={workspaceId}
+                    issueId={issueId}
+                    currentUserId={currentUserId}
+                    canComment={canComment}
+                    isAdmin={isAdmin}
+                    threadTargets={threadTargets}
+                  />
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {canComment && (
+          <CommentComposer
+            workspaceId={workspaceId}
+            issueId={issueId}
+            people={context.people}
+            threadTargets={threadTargets}
+            jumpShortcut
+            quote={quote}
+          />
+        )}
+      </section>
+      <PrintEndnotes comments={comments.rows} />
+    </>
   );
 };
 

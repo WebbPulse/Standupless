@@ -9,7 +9,9 @@
  * wide screen, and Move files the document under another project, initiative
  * or team. A comment thread sits under the body, and the actions menu follows
  * or leaves the document and names who follows it, as in Linear: the author
- * and every commenter follow it on their own.
+ * and every commenter follow it on their own. Print, from the menu, the
+ * palette or Cmd or Ctrl+P, prints the title, the byline and the body, with
+ * the comment threads as endnotes.
  */
 
 import React, {
@@ -33,6 +35,7 @@ import {
   LuEllipsis,
   LuFolderInput,
   LuHistory,
+  LuPrinter,
   LuTrash2,
 } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -64,6 +67,7 @@ import Menu, {
   MenuItem,
   MenuLabel,
   MenuSeparator,
+  MenuShortcut,
 } from '../../components/ui/menu';
 import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
@@ -71,12 +75,14 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
 import { useAuth } from '../../hooks/useAuth';
 import { refreshDocumentLists } from '../../hooks/useDocuments';
+import { usePrintCommand } from '../../hooks/usePrintCommand';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { CONFLICT, errorMessage, hasStatus } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
+import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import {
   initiativePath,
   issuePath,
@@ -410,6 +416,8 @@ export const DocumentDetail: React.FC = () => {
     },
   });
 
+  usePrintCommand({ group: 'Document', enabled: page !== null });
+
   const crumbs =
     page === null ? null : (
       <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
@@ -546,6 +554,11 @@ export const DocumentDetail: React.FC = () => {
               )}
               {followers?.subscribed === true ? 'Unsubscribe' : 'Subscribe'}
             </MenuItem>
+            <MenuItem onSelect={printPage}>
+              <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
+              {PRINT_LABEL}
+              <MenuShortcut keys={PRINT_KEYS} />
+            </MenuItem>
             {subscriberList.length > 0 && (
               <>
                 <MenuSeparator />
@@ -602,7 +615,7 @@ export const DocumentDetail: React.FC = () => {
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,48rem)_minmax(0,1fr)]">
-        <article className="mx-auto w-full max-w-3xl min-w-0 space-y-6 px-4 py-8 lg:px-8 xl:col-start-2">
+        <article className="print-page mx-auto w-full max-w-3xl min-w-0 space-y-6 px-4 py-8 lg:px-8 xl:col-start-2">
           {saveState === 'conflict' && (
             <div
               role="alert"
@@ -623,13 +636,15 @@ export const DocumentDetail: React.FC = () => {
             />
           )}
           <header className="space-y-2">
-            <DocumentIconPicker
-              icon={page.icon ?? null}
-              disabled={!page.can_edit}
-              onChange={(icon) => {
-                void write({ icon });
-              }}
-            />
+            <div className={page.icon == null ? 'screen-only' : undefined}>
+              <DocumentIconPicker
+                icon={page.icon ?? null}
+                disabled={!page.can_edit}
+                onChange={(icon) => {
+                  void write({ icon });
+                }}
+              />
+            </div>
             <EditableText
               label="Document title"
               placeholder="Untitled"
@@ -650,6 +665,7 @@ export const DocumentDetail: React.FC = () => {
                   : `Updated by ${personLabel(editorPerson)} `}
                 <RelativeTime value={page.updated_at} />
               </span>
+              <span className="print-only">{`· ${page.parent_name}`}</span>
             </p>
           </header>
           <Suspense
@@ -728,7 +744,7 @@ export const DocumentDetail: React.FC = () => {
             people={isMember ? people : []}
           />
         </article>
-        <aside className="hidden min-w-0 xl:block">
+        <aside className="screen-only hidden min-w-0 xl:block">
           <DocumentOutline
             markdown={outlineSource}
             container={bodyArea}
