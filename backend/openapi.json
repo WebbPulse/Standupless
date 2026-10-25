@@ -22661,7 +22661,12 @@
                     "review_requested",
                     "reminder",
                     "triage_new",
-                    "view_issue_added"
+                    "view_issue_added",
+                    "reaction",
+                    "issue_completed",
+                    "issue_cancelled",
+                    "priority_urgent",
+                    "blocking_changed"
                   ]
                 },
                 "type": "object"
@@ -34971,7 +34976,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 23,
+              "maxItems": 28,
               "title": "Kind",
               "type": "array"
             }

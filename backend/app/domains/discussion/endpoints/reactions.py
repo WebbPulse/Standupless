@@ -105,6 +105,7 @@ def add_reaction(
             issue.team_id,
             payload.emoji,
             context.user_id,
+            issue_id=issue.issue_id,
         )
     )
 

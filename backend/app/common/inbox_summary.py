@@ -36,6 +36,7 @@ _ACTED: dict[str, tuple[str, str]] = {
     "project_update": ("{actor} posted an update", "Project update"),
     "project_update_comment": ("{actor} replied to an update", "Reply on update"),
     "review_requested": ("{actor} requested your review", "Review requested"),
+    "priority_urgent": ("{actor} marked as urgent", "Marked as urgent"),
 }
 
 
@@ -56,7 +57,40 @@ def _view_issue_added(view_name: Optional[str]) -> str:
     return f"Added to {view_name}" if view_name else "Added to a view you follow"
 
 
+def _reaction(actor: str, emoji: Optional[str]) -> str:
+    """Say who reacted to the reader's comment, with the emoji when the row names one."""
+    who = actor or "Someone"
+    return f"{who} reacted {emoji} to your comment" if emoji else f"{who} reacted to your comment"
+
+
+def _closed(actor: str, value: Optional[str], verb: str) -> str:
+    """Say the issue was completed or canceled, naming the status it moved to when the row has one."""
+    who = actor or "Someone"
+    return f"{who} marked as {value}" if value else f"{who} {verb} the issue"
+
+
+BLOCKING_PHRASES: dict[str, str] = {
+    "blocked_by": "Blocked by {key}",
+    "blocking": "Blocking {key}",
+    "unblocked_by": "No longer blocked by {key}",
+    "no_longer_blocking": "No longer blocking {key}",
+    "blocker_resolved": "Blocker {key} resolved",
+}
+"""How each blocking change reads, keyed by the change half of a `blocking_changed` row's `new_value`."""
+
+
+def _blocking_changed(value: Optional[str]) -> str:
+    """Say how the issue's blocking changed and which other issue it names."""
+    change, _, key = (value or "").partition(":")
+    phrase = BLOCKING_PHRASES.get(change)
+    return phrase.format(key=key) if phrase is not None and key else "Blocking changed"
+
+
 _SPECIAL: dict[str, Callable[[Notification, str], str]] = {
+    "reaction": lambda row, actor: _reaction(actor, row.new_value),
+    "issue_completed": lambda row, actor: _closed(actor, row.new_value, "completed"),
+    "issue_cancelled": lambda row, actor: _closed(actor, row.new_value, "canceled"),
+    "blocking_changed": lambda row, actor: _blocking_changed(row.new_value),
     "status_changed": lambda row, actor: _status_changed(actor, row.new_value),
     "initiative_update_due": lambda row, actor: _initiative_update_due(row),
     "view_issue_added": lambda row, actor: _view_issue_added(row.new_value),

@@ -33,6 +33,11 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   review_requested: 'Review requested',
   triage_new: 'New in triage',
   view_issue_added: 'Added to view',
+  reaction: 'Reaction',
+  issue_completed: 'Completed',
+  issue_cancelled: 'Canceled',
+  priority_urgent: 'Marked urgent',
+  blocking_changed: 'Blocking changed',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -153,7 +158,14 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'assignments', label: 'Assignments', kinds: ['assigned'] },
   { id: 'mentions', label: 'Mentions', kinds: ['mentioned'] },
   { id: 'comments', label: 'Comments', kinds: ['commented'] },
-  { id: 'status', label: 'Status changes', kinds: ['status_changed'] },
+  { id: 'reactions', label: 'Reactions', kinds: ['reaction'] },
+  {
+    id: 'status',
+    label: 'Status changes',
+    kinds: ['status_changed', 'issue_completed', 'issue_cancelled'],
+  },
+  { id: 'priority', label: 'Urgent priority', kinds: ['priority_urgent'] },
+  { id: 'blocking', label: 'Blocking', kinds: ['blocking_changed'] },
   { id: 'subscriptions', label: 'Subscriptions', kinds: ['subscribed'] },
   {
     id: 'projects',

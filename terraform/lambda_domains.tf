@@ -459,6 +459,23 @@ locals {
             dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment"] } } }
           })]
         })
+        relations = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["relations"]
+          filter_patterns = [
+            jsonencode({ eventName = ["INSERT"], dynamodb = { NewImage = { relation_type = { S = ["blocks"] } } } }),
+            jsonencode({
+              eventName = ["REMOVE"]
+              dynamodb  = { OldImage = { relation_type = { S = ["blocks"] }, removed_by = { S = [{ exists = true }] } } }
+            }),
+          ]
+        })
+        reactions = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["reactions"]
+          filter_patterns = [jsonencode({
+            eventName = ["INSERT"]
+            dynamodb  = { NewImage = { target_kind = { S = ["comment"] } } }
+          })]
+        })
         } : name == "views-search-consumer" && local.views_search_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]

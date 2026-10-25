@@ -742,7 +742,9 @@ def _link_story(
             continue
         if repositories.relations.get(job.workspace_id, source_id, link_type, target_id) is not None:
             continue
-        row = repositories.relations.link(job.workspace_id, source_id, link_type, target_id, job.requested_by)
+        row = repositories.relations.link(
+            job.workspace_id, source_id, link_type, target_id, job.requested_by, import_batch_id=job.import_id
+        )
         blocked = blocked_side(row)
         if blocked is not None:
             recount_blocked(repositories, job.workspace_id, blocked)

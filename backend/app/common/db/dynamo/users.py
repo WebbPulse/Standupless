@@ -27,6 +27,19 @@ NotificationChannel = Literal["in_app", "email", "chat"]
 
 NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email", "chat")
 
+DEFAULT_OFF_CHANNELS: Mapping[str, frozenset[str]] = {"reaction": frozenset({"email", "chat"})}
+"""The channels a kind starts switched off on, which a person turns on rather than off.
+
+Reactions are frequent and light, so they reach the inbox by default but are
+neither mailed nor sent to chat until someone asks for them, as in Linear.
+"""
+
+
+def channel_default(kind: str, channel: str) -> bool:
+    """Whether one kind reaches one channel for a person who never touched its switch."""
+    return channel not in DEFAULT_OFF_CHANNELS.get(kind, frozenset())
+
+
 PulseDigestField = Literal["off", "daily", "weekly"]
 
 PULSE_DIGESTS: tuple[str, ...] = ("off", "daily", "weekly")
@@ -236,13 +249,13 @@ class User(BaseModel):
     def wants_notification(self, kind: str, channel: str) -> bool:
         """Whether this person wants one kind of notification on one channel.
 
-        Stored sparsely: only a switch the person turned off is on the row, so a new
-        kind or channel defaults to on without a migration. Email also answers to the
+        Stored sparsely: only a switch the person moved away from its default is on
+        the row, so a new kind or channel takes its default without a migration. Email also answers to the
         account wide `email_notifications` switch, which turns every kind off at once.
         """
         if channel == "email" and not self.email_notifications:
             return False
-        return bool(self.notification_preferences.get(kind, {}).get(channel, True))
+        return bool(self.notification_preferences.get(kind, {}).get(channel, channel_default(kind, channel)))
 
     @property
     def immediate_email(self) -> bool:

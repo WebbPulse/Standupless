@@ -211,10 +211,10 @@ def test_a_status_change_notifies_the_assignee(
 def test_a_status_change_names_the_status_it_moved_to(
     client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """The row keeps the new status by name, so the inbox can say "moved to Done"."""
+    """The row keeps the new status by name, so the inbox can say "moved to In Progress"."""
     sign_in(issues_client, OWNER)
     issue = seed_issue(issues_client, workspace, title="Moved", assignee_id=MEMBER)
-    done = statuses["completed"]
+    done = statuses["started"]
 
     handle_record(
         repositories,

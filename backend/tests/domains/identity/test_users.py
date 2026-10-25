@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
-from app.common.db.dynamo.users import SIDEBAR_ITEMS
+from app.common.db.dynamo.users import SIDEBAR_ITEMS, channel_default
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
 ALL_ON = {"in_app": True, "email": True, "chat": True}
@@ -47,7 +47,9 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "full_name": "",
         "email_verified": False,
         "email_notifications": True,
-        "notification_preferences": {kind: ALL_ON for kind in NOTIFICATION_KINDS},
+        "notification_preferences": {
+            kind: {channel: channel_default(kind, channel) for channel in ALL_ON} for kind in NOTIFICATION_KINDS
+        },
         "email_format": "digest",
         "avatar_url": None,
         "two_factor": False,
@@ -537,6 +539,24 @@ def test_turning_a_channel_back_on_keeps_the_row_sparse(client: TestClient, repo
     client.patch("/api/users/me/preferences", json={"notification_preferences": {"assigned": {"email": False}}})
     client.patch("/api/users/me/preferences", json={"notification_preferences": {"assigned": {"email": True}}})
 
+    assert repositories.users.get(OWNER).notification_preferences == {}
+
+
+def test_reactions_default_to_the_inbox_only(client: TestClient, repositories: Any) -> None:
+    """Reactions start with email and chat off, and turning email on is what gets stored."""
+    make_user(repositories, OWNER, "owner@example.com")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+    assert body["notification_preferences"]["reaction"] == {"in_app": True, "email": False, "chat": False}
+    assert repositories.users.get(OWNER).wants_notification("reaction", "email") is False
+
+    client.patch("/api/users/me/preferences", json={"notification_preferences": {"reaction": {"email": True}}})
+    stored = repositories.users.get(OWNER)
+    assert stored.notification_preferences == {"reaction": {"email": True}}
+    assert stored.wants_notification("reaction", "email") is True
+
+    client.patch("/api/users/me/preferences", json={"notification_preferences": {"reaction": {"email": False}}})
     assert repositories.users.get(OWNER).notification_preferences == {}
 
 
