@@ -9,7 +9,10 @@ milestones and updates, its issues with their comments, and then a second walk
 over the issues for sub-issue and relation links, and finally the workspace's
 initiatives and the dependencies between its projects. `phase_index` and
 `after` say where it is, and `cursor` counts the steps so the queue's
-duplicate guard works unchanged.
+duplicate guard works unchanged. Two phases per team are the admin's choice: one
+opens the team's walk by creating a status for each Linear workflow state the
+team has no status of the same name for, so issues land in it, and one closes it
+by bringing the team's Linear issue templates over as team templates.
 
 Every row an import writes gets an id derived from the workspace and the Linear
 id, with the Linear creation time as its time part, so a step that runs twice,
@@ -52,12 +55,15 @@ from app.common.linear_api import (
     CYCLES_QUERY,
     INITIATIVES_QUERY,
     ISSUE_COMMENTS_QUERY,
+    ISSUE_LABELS_QUERY,
     ISSUE_LINKS_QUERY,
     ISSUES_QUERY,
     PROJECT_MILESTONES_QUERY,
     PROJECT_RELATIONS_QUERY,
     PROJECT_UPDATES_QUERY,
     PROJECTS_QUERY,
+    TEMPLATES_QUERY,
+    WORKFLOW_STATES_QUERY,
     LinearAuthFailed,
     LinearClient,
     LinearError,
@@ -81,6 +87,17 @@ PRESET = "linear_api"
 TEAM_PHASES: tuple[str, ...] = ("cycles", "projects", "issues", "links")
 """What one mapped team's walk reads, in order: what issues point at comes before the issues."""
 
+STATUSES_PHASE = "statuses"
+"""The phase a team opens with when the admin chose to create its missing statuses, so issues land in them."""
+
+TEMPLATES_PHASE = "templates"
+"""The phase a team closes with when the admin chose to bring its issue templates over."""
+
+ISSUE_TEMPLATE_TYPE = "issue"
+"""The Linear template type that is an issue template; project and document templates are left in Linear."""
+
+STATUS_NAME_MAX = 60
+
 COUNT_NAMES: tuple[str, ...] = (
     "issues_created",
     "issues_updated",
@@ -94,6 +111,8 @@ COUNT_NAMES: tuple[str, ...] = (
     "sub_issues",
     "relations",
     "project_relations",
+    "statuses",
+    "templates",
 )
 """The tallies a Linear import keeps, which the status read and the summary show."""
 
@@ -148,6 +167,8 @@ class LinearTeamMapping(BaseModel):
     linear_key: str = ""
     name: str = ""
     team_id: str
+    create_statuses: bool = False
+    import_templates: bool = False
 
 
 class KeyGone(Exception):
@@ -265,30 +286,49 @@ def read_teams(api_key: str) -> list[dict[str, Any]]:
     return list_teams(client_factory(api_key))
 
 
-def team_mappings(api_key: str, choices: list[tuple[str, str]]) -> list[LinearTeamMapping]:
+def team_mappings(api_key: str, choices: list[tuple[str, str, bool, bool]]) -> list[LinearTeamMapping]:
     """Check each chosen Linear team against what the key can read, keeping its key and name for the job.
 
-    `choices` pairs a Linear team id with the Standupless team id it goes into.
+    Each choice is a Linear team id, the Standupless team id it goes into, and
+    whether to create the team's missing statuses and import its issue templates.
     Raises `UnknownLinearTeam` for a team the key cannot read or one chosen twice.
     """
     readable = {team["id"]: team for team in read_teams(api_key)}
     mappings: list[LinearTeamMapping] = []
     seen: set[str] = set()
-    for linear_team_id, team_id in choices:
+    for linear_team_id, team_id, create_statuses, import_templates in choices:
         team = readable.get(linear_team_id)
         if team is None or linear_team_id in seen:
             raise UnknownLinearTeam(linear_team_id)
         seen.add(linear_team_id)
         mappings.append(
-            LinearTeamMapping(linear_team_id=linear_team_id, linear_key=team["key"], name=team["name"], team_id=team_id)
+            LinearTeamMapping(
+                linear_team_id=linear_team_id,
+                linear_key=team["key"],
+                name=team["name"],
+                team_id=team_id,
+                create_statuses=create_statuses,
+                import_templates=import_templates,
+            )
         )
     return mappings
 
 
+def team_phases(mapping: LinearTeamMapping) -> tuple[str, ...]:
+    """What one mapped team's walk reads: its statuses first and its templates last when the admin chose them."""
+    opening = (STATUSES_PHASE,) if mapping.create_statuses else ()
+    closing = (TEMPLATES_PHASE,) if mapping.import_templates else ()
+    return (*opening, *TEAM_PHASES, *closing)
+
+
 def phases(job: Any) -> list[tuple[str, Optional[int]]]:
-    """Every phase of one job in order: each mapped team's walk, then the workspace's initiatives and dependencies."""
+    """Every phase of one job in order: each mapped team's walk, then the workspace's initiatives and dependencies.
+
+    A team without the optional phases walks exactly what it always did, so a job
+    queued before they existed keeps its place.
+    """
     steps: list[tuple[str, Optional[int]]] = [
-        (phase, index) for index in range(len(job.linear_teams)) for phase in TEAM_PHASES
+        (phase, index) for index, mapping in enumerate(job.linear_teams) for phase in team_phases(mapping)
     ]
     steps.extend((phase, None) for phase in WORKSPACE_PHASES)
     return steps
@@ -564,6 +604,8 @@ def run_step(repositories: Any, job: Any, client: LinearClient) -> StepResult:
         "projects": _projects_step,
         "issues": _issues_step,
         "links": _links_step,
+        STATUSES_PHASE: _statuses_step,
+        TEMPLATES_PHASE: _templates_step,
     }
     return handlers[phase](repositories, job, client, mapping, context)
 
@@ -803,6 +845,337 @@ def _write_project_update(
     else:
         repositories.planning.replace_project_update(row, keep_import_batch=True)
     result.add("project_updates")
+
+
+def _number(value: Any) -> float:
+    """A Linear sort value as a number, a missing or unreadable one sorting last."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("inf")
+
+
+def read_states(client: LinearClient, linear_team_id: str) -> list[dict[str, Any]]:
+    """Every workflow state of one Linear team, in the order Linear shows them."""
+    nodes: list[dict[str, Any]] = []
+    for page in client.pages(WORKFLOW_STATES_QUERY, ("team", "states"), {"team": linear_team_id}):
+        nodes.extend(page)
+    return sorted(nodes, key=lambda node: (_number(node.get("position")), str(node.get("id") or "")))
+
+
+def _state_name(node: dict[str, Any]) -> str:
+    """A Linear state's name as a status takes it."""
+    return str(node.get("name") or "").strip()[:STATUS_NAME_MAX]
+
+
+def _state_category(node: dict[str, Any]) -> Optional[str]:
+    """The status category a Linear state's type maps to, or `None` for a type Standupless has no category for."""
+    return CATEGORY_BY_STATE_TYPE.get(str(node.get("type") or "").lower())
+
+
+def missing_states(states: list[dict[str, Any]], statuses: list[Any]) -> list[dict[str, Any]]:
+    """The Linear states no visible status of the team shares a name with, in Linear's order, one per name."""
+    names = {row.name.strip().lower() for row in statuses if not row.hidden}
+    missing: list[dict[str, Any]] = []
+    for node in states:
+        name = _state_name(node)
+        if not name or not node.get("id") or _state_category(node) is None or name.lower() in names:
+            continue
+        names.add(name.lower())
+        missing.append(node)
+    return missing
+
+
+def _status_position(states: list[dict[str, Any]], node: dict[str, Any], statuses: list[Any]) -> int:
+    """Where a new status goes so the team keeps Linear's order.
+
+    It follows the status the nearest earlier Linear state of its category
+    became, else it opens its category, else it goes last.
+    """
+    category = _state_category(node)
+    visible = [row for row in statuses if not row.hidden]
+    by_name = {row.name.strip().lower(): row for row in visible}
+    for earlier in reversed(states[: states.index(node)]):
+        if _state_category(earlier) != category:
+            continue
+        row = by_name.get(_state_name(earlier).lower())
+        if row is not None and row.category == category:
+            return int(row.position) + 1
+    same = [int(row.position) for row in visible if row.category == category]
+    if same:
+        return min(same)
+    return max((int(row.position) for row in statuses), default=-1) + 1
+
+
+def _statuses_step(
+    repositories: Any, job: Any, client: LinearClient, mapping: LinearTeamMapping, context: TeamContext
+) -> StepResult:
+    """Create a status for every Linear workflow state the team has no status of the same name for.
+
+    Each lands in the category its Linear type maps to, after the status the
+    state before it became, with the palette color nearest Linear's. Its id comes
+    from the Linear state, so a re-run finds it even after a rename.
+    """
+    from app.common.db.dynamo.team_config import Status, status_key
+    from app.common.status_appearance import nearest_color
+    from app.common.team_workflow import _make_room_in_team
+
+    result = StepResult()
+    states = read_states(client, mapping.linear_team_id)
+    statuses = repositories.team_config.list_statuses(job.workspace_id, mapping.team_id)
+    for node in missing_states(states, statuses):
+        status_id = linear_row_id(job.workspace_id, "status", f"{mapping.team_id}:{node['id']}", node.get("createdAt"))
+        if repositories.team_config.get_status(job.workspace_id, mapping.team_id, status_id) is not None:
+            continue
+        category = _state_category(node) or "backlog"
+        position = _status_position(states, node, statuses)
+        _make_room_in_team(repositories, job.workspace_id, mapping.team_id, "", position)
+        status = Status(
+            workspace_id=job.workspace_id,
+            config_key=status_key(mapping.team_id, status_id),
+            team_id=mapping.team_id,
+            status_id=status_id,
+            name=_state_name(node),
+            category=category,
+            position=position,
+            color=nearest_color(node.get("color")),
+            created_at=_instant(node.get("createdAt")) or utc_now(),
+            import_batch_id=job.import_id,
+        )
+        try:
+            repositories.team_config.create_status(status)
+        except ConditionFailed:
+            continue
+        result.add("statuses")
+        statuses = repositories.team_config.list_statuses(job.workspace_id, mapping.team_id)
+    return result
+
+
+def _template_data(value: Any) -> dict[str, Any]:
+    """A Linear template's `templateData`, which may arrive as an object or as JSON text."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _prose_text(node: Any) -> str:
+    """The markdown a Linear rich text document reads as: paragraphs, headings, lists and line breaks."""
+    if not isinstance(node, dict):
+        return ""
+    kind = node.get("type")
+    if kind == "text":
+        return str(node.get("text") or "")
+    if kind == "hardBreak":
+        return "\n"
+    parts = [_prose_text(child) for child in node.get("content") or []]
+    if kind in ("doc", "blockquote"):
+        return "\n\n".join(part for part in parts if part)
+    if kind in ("bulletList", "orderedList", "taskList"):
+        return "\n".join(part for part in parts if part)
+    if kind in ("listItem", "taskItem"):
+        return "- " + " ".join(part for part in parts if part)
+    if kind == "heading":
+        attrs = node.get("attrs") or {}
+        level = attrs.get("level") if isinstance(attrs, dict) else None
+        depth = level if isinstance(level, int) and 1 <= level <= 6 else 2
+        return "#" * depth + " " + "".join(parts)
+    return "".join(parts)
+
+
+def _template_body(data: dict[str, Any]) -> Optional[str]:
+    """The issue body a Linear issue template fills: its markdown description, else its rich text as markdown."""
+    text = data.get("description")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    rich = data.get("descriptionData")
+    if isinstance(rich, str):
+        try:
+            rich = json.loads(rich)
+        except ValueError:
+            rich = None
+    return _prose_text(rich).strip() or None
+
+
+def _template_label_nodes(client: LinearClient) -> dict[str, dict[str, Any]]:
+    """Every Linear label the key can read by its id, to name the labels a template sets."""
+    nodes: dict[str, dict[str, Any]] = {}
+    for page in client.pages(ISSUE_LABELS_QUERY, ("issueLabels",)):
+        nodes.update({str(node["id"]): node for node in page if node.get("id")})
+    return nodes
+
+
+def issue_templates(client: LinearClient, linear_team_id: str) -> list[dict[str, Any]]:
+    """Every issue template of one Linear team, for the preview."""
+    nodes: list[dict[str, Any]] = []
+    for page in client.pages(TEMPLATES_QUERY, ("team", "templates"), {"team": linear_team_id}):
+        nodes.extend(node for node in page if _is_issue_template(node))
+    return nodes
+
+
+def _is_issue_template(node: dict[str, Any]) -> bool:
+    """Whether a Linear template is a named issue template, the only kind brought over."""
+    named = bool(_template_name(node)) and bool(node.get("id"))
+    return named and str(node.get("type") or "").lower() == ISSUE_TEMPLATE_TYPE
+
+
+def _template_name(node: dict[str, Any]) -> str:
+    """A Linear template's name as a template takes it."""
+    from app.common.api.schemas.templates import TEMPLATE_NAME_MAX
+
+    return str(node.get("name") or "").strip()[:TEMPLATE_NAME_MAX]
+
+
+def _templates_step(
+    repositories: Any, job: Any, client: LinearClient, mapping: LinearTeamMapping, context: TeamContext
+) -> StepResult:
+    """Write one page of a Linear team's issue templates as the mapped team's templates.
+
+    A template brings its title, body, priority, labels matched or created by
+    name, and estimate. One whose name the team already has a template by is
+    skipped, so a re-run writes none twice. The phase is fail-soft the way the
+    project dependencies phase is: a query Linear rejects ends it with a warning.
+    """
+    from app.common.api.schemas.issues import TITLE_MAX
+    from app.common.db.dynamo.team_templates import IssueTemplate, template_key
+
+    result = StepResult()
+    try:
+        page = _page(client, TEMPLATES_QUERY, ("team", "templates"), {"team": mapping.linear_team_id}, job.after)
+    except (LinearAuthFailed, LinearRateLimited):
+        raise
+    except LinearError as exc:
+        if exc.code in TRANSIENT_CODES:
+            raise
+        _log.warning(
+            "Linear rejected the templates query, so the import goes on without them.",
+            extra={"event": "issue.import.linear_templates_skipped", "import_id": job.import_id, "code": exc.code},
+        )
+        team = mapping.linear_key or mapping.name or mapping.linear_team_id
+        result.warn("templates", f"Linear would not list the templates of {team} ({exc.code}), left out")
+        return result
+    rows = repositories.team_config.list_team_templates(job.workspace_id, mapping.team_id)
+    names = {row.name.strip().lower() for row in rows}
+    position = max((row.position for row in rows), default=-1) + 1
+    labels: Optional[dict[str, dict[str, Any]]] = None
+    for node in page.nodes:
+        if not _is_issue_template(node):
+            continue
+        name = _template_name(node)
+        if name.lower() in names:
+            continue
+        template_id = linear_row_id(job.workspace_id, "template", str(node["id"]), node.get("createdAt"))
+        if repositories.team_config.get_template(job.workspace_id, mapping.team_id, template_id) is not None:
+            continue
+        data = _template_data(node.get("templateData"))
+        label_ids: list[str] = []
+        wanted = [str(label_id) for label_id in data.get("labelIds") or [] if label_id]
+        if wanted and labels is None:
+            labels = _template_label_nodes(client)
+        for linear_label_id in wanted:
+            label = (labels or {}).get(linear_label_id)
+            if label is None:
+                continue
+            label_id = _ensure_label(repositories, job.workspace_id, context, label, result)
+            if label_id is not None:
+                label_ids.append(label_id)
+        body, cut = _cap(_template_body(data))
+        if cut:
+            result.warn("templates", f"{name}: the template body was cut to fit")
+        priority = data.get("priority")
+        now = utc_now()
+        template = IssueTemplate(
+            workspace_id=job.workspace_id,
+            config_key=template_key(mapping.team_id, template_id),
+            template_id=template_id,
+            team_id=mapping.team_id,
+            name=name,
+            title=str(data.get("title") or "").strip()[:TITLE_MAX] or None,
+            body=body,
+            priority=_priority(priority) if priority else None,
+            label_ids=list(dict.fromkeys(label_ids)),
+            estimate=_estimate(context, data.get("estimate"), name, result),
+            position=position,
+            created_by=job.requested_by,
+            created_at=_instant(node.get("createdAt")) or now,
+            updated_at=now,
+            import_batch_id=job.import_id,
+        )
+        try:
+            repositories.team_config.create_template(template)
+        except ConditionFailed:
+            continue
+        names.add(name.lower())
+        position += 1
+        result.add("templates")
+    result.next_after = page.end_cursor if page.has_next else None
+    return result
+
+
+def _new_statuses(
+    repositories: Any, workspace_id: str, mapping: LinearTeamMapping, states: list[dict[str, Any]]
+) -> list[str]:
+    """The names of the statuses the statuses phase would create in one team."""
+    statuses = repositories.team_config.list_statuses(workspace_id, mapping.team_id)
+    known = {row.status_id for row in statuses}
+    return [
+        _state_name(node)
+        for node in missing_states(states, statuses)
+        if linear_row_id(workspace_id, "status", f"{mapping.team_id}:{node['id']}", node.get("createdAt")) not in known
+    ]
+
+
+def _new_templates(
+    repositories: Any, workspace_id: str, mapping: LinearTeamMapping, templates: list[dict[str, Any]]
+) -> list[str]:
+    """The names of the templates the templates phase would create in one team."""
+    rows = repositories.team_config.list_team_templates(workspace_id, mapping.team_id)
+    names = {row.name.strip().lower() for row in rows}
+    known = {row.template_id for row in rows}
+    found: list[str] = []
+    for node in templates:
+        name = _template_name(node)
+        template_id = linear_row_id(workspace_id, "template", str(node["id"]), node.get("createdAt"))
+        if name.lower() in names or template_id in known:
+            continue
+        names.add(name.lower())
+        found.append(name)
+    return found
+
+
+def preview(
+    repositories: Any, workspace_id: str, api_key: str, mappings: list[LinearTeamMapping]
+) -> list[dict[str, Any]]:
+    """What each chosen team would gain from the two optional phases, computed without writing anything.
+
+    Both are answered whether or not they are switched on, so the admin sees
+    what switching one on would do. A templates query Linear rejects counts none.
+    """
+    client = client_factory(api_key)
+    teams: list[dict[str, Any]] = []
+    for mapping in mappings:
+        states = read_states(client, mapping.linear_team_id)
+        try:
+            templates = issue_templates(client, mapping.linear_team_id)
+        except (LinearAuthFailed, LinearRateLimited):
+            raise
+        except LinearError as exc:
+            if exc.code in TRANSIENT_CODES:
+                raise
+            templates = []
+        teams.append(
+            {
+                "linear_team_id": mapping.linear_team_id,
+                "linear_key": mapping.linear_key,
+                "name": mapping.name,
+                "team_id": mapping.team_id,
+                "new_statuses": _new_statuses(repositories, workspace_id, mapping, states),
+                "new_templates": _new_templates(repositories, workspace_id, mapping, templates),
+            }
+        )
+    return teams
 
 
 def _issues_step(

@@ -141,6 +141,12 @@ class LinearTeamMappingRead(BaseModel):
     linear_key: str
     name: str
     team_id: str
+    create_statuses: bool = Field(
+        default=False, description="Whether the import creates a status for each Linear state the team lacks."
+    )
+    import_templates: bool = Field(
+        default=False, description="Whether the import brings the team's Linear issue templates over."
+    )
 
 
 class SourceTeamMappingRead(BaseModel):
@@ -330,13 +336,42 @@ class LinearTeamChoice(BaseModel):
 
     linear_team_id: str = Field(min_length=1, max_length=64)
     team_id: str = Field(min_length=1, max_length=64)
+    create_statuses: bool = Field(
+        default=False,
+        description="Create a status, in the matching category, for each Linear workflow state the team "
+        "has no status of the same name for, before the issues are imported.",
+    )
+    import_templates: bool = Field(
+        default=False,
+        description="Bring the Linear team's issue templates over as team templates, skipping a name "
+        "the team already has.",
+    )
 
 
 class LinearImportRequest(BaseModel):
-    """A Linear import: the key, sealed while the job runs and deleted after, and the team mapping."""
+    """A Linear import or its preview: the key, sealed while the job runs and deleted after, and the team mapping."""
 
     api_key: str = Field(min_length=1, max_length=200, description="A Linear personal API key with read access.")
     teams: list[LinearTeamChoice] = Field(min_length=1, max_length=50)
+
+
+class LinearPreviewTeamRead(BaseModel):
+    """What the optional phases of importing one Linear team would create, whether switched on or not."""
+
+    linear_team_id: str
+    linear_key: str
+    name: str
+    team_id: str
+    new_statuses: list[str] = Field(description="The Linear states the team has no status for, by name.")
+    new_templates: list[str] = Field(description="The Linear issue templates the team has no template for, by name.")
+    status_count: int = Field(description="How many statuses creating the missing statuses would add.")
+    template_count: int = Field(description="How many templates importing the templates would add.")
+
+
+class LinearImportPreviewRead(BaseModel):
+    """What a Linear import would create in each team, computed without writing anything."""
+
+    teams: list[LinearPreviewTeamRead]
 
 
 class GitHubImportRepositoryRead(BaseModel):
