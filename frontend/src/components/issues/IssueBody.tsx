@@ -41,6 +41,10 @@ import { rememberPreview, useMedia } from '../../lib/mediaContext';
 import { submitKeysLabel } from '../../lib/platform';
 import { attachmentsKey } from '../../lib/queryKeys';
 import { validateBody } from '../../lib/validation';
+import {
+  DocumentLinkContext,
+  issueDocumentParent,
+} from '../../contexts/DocumentLinkContext';
 import type { CommentAnchor, IssueRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
@@ -287,30 +291,34 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
                 />
               }
             >
-              <RichMarkdownEditor
-                ref={editor}
-                value={body}
-                editable={canEdit}
-                ariaLabel="Description"
-                autoFocus={focusOnLoad}
-                className={BODY_CLASS}
-                onCommit={saveBody}
-                onFocusChange={setBodyFocused}
-                {...(passages === null
-                  ? {}
-                  : {
-                      commentAnchors: {
-                        threads: passages.threads,
-                        activeId: passages.activeId,
-                        onLocated: passages.setLocated,
-                      },
-                    })}
-                {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
-                {...(canEdit ? { uploadFile } : {})}
-                {...(canEdit && people !== undefined
-                  ? { mentionPeople: people }
-                  : {})}
-              />
+              <DocumentLinkContext.Provider
+                value={issueDocumentParent(issue.project_id)}
+              >
+                <RichMarkdownEditor
+                  ref={editor}
+                  value={body}
+                  editable={canEdit}
+                  ariaLabel="Description"
+                  autoFocus={focusOnLoad}
+                  className={BODY_CLASS}
+                  onCommit={saveBody}
+                  onFocusChange={setBodyFocused}
+                  {...(passages === null
+                    ? {}
+                    : {
+                        commentAnchors: {
+                          threads: passages.threads,
+                          activeId: passages.activeId,
+                          onLocated: passages.setLocated,
+                        },
+                      })}
+                  {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
+                  {...(canEdit ? { uploadFile } : {})}
+                  {...(canEdit && people !== undefined
+                    ? { mentionPeople: people }
+                    : {})}
+                />
+              </DocumentLinkContext.Provider>
             </Suspense>
           </SelectionQuote>
         ) : (

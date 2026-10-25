@@ -6,6 +6,7 @@
 
 import { Editor } from '@tiptap/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MERMAID_STARTER } from '../../lib/mermaid';
 import { markdownExtensions } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
@@ -14,6 +15,11 @@ import {
   slashQuery,
   type SlashContext,
 } from './slashCommands';
+
+vi.mock('../../lib/mermaid', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/mermaid')>()),
+  renderMermaid: vi.fn(() => Promise.resolve({ ok: true, svg: '<svg></svg>' })),
+}));
 
 const editors: Editor[] = [];
 
@@ -66,7 +72,9 @@ describe('filterSlashCommands', () => {
       'taskList',
       'blockquote',
       'codeBlock',
+      'diagram',
       'collapsible',
+      'callout',
       'divider',
       'table',
     ]);
@@ -103,6 +111,9 @@ describe('filterSlashCommands', () => {
     expect(ids('div')).toEqual(['divider']);
     expect(ids('toggle')).toEqual(['collapsible']);
     expect(ids('details')).toEqual(['collapsible']);
+    expect(ids('callout')).toEqual(['callout']);
+    expect(ids('warning')).toEqual(['callout']);
+    expect(ids('tip')).toEqual(['callout']);
   });
 });
 
@@ -116,6 +127,7 @@ const WRITES: [string, string][] = [
   ['blockquote', '> Plan'],
   ['codeBlock', '```\nPlan\n```'],
   ['collapsible', '<details>\n<summary>Plan</summary>\n\n</details>'],
+  ['callout', '> [!NOTE]\n> Plan'],
   ['divider', '---\n\nPlan'],
 ];
 
@@ -160,6 +172,21 @@ describe('running a command', () => {
     expect(editor.state.selection.$from.parent.type.name).toBe(
       'collapsibleSummary'
     );
+  });
+
+  it('inserts a Mermaid block holding the starter graph', () => {
+    const editor = editorTyping('/diagram');
+    command('diagram').run(editor, { from: 1, to: 9 }, {});
+    const written = readMarkdown(editor);
+    expect(written).toBe(`\`\`\`mermaid\n${MERMAID_STARTER}\n\`\`\``);
+    writeMarkdown(editor, written);
+    expect(readMarkdown(editor)).toBe(written);
+  });
+
+  it('finds the diagram block by its keywords', () => {
+    expect(ids('mermaid')).toEqual(['diagram']);
+    expect(ids('flow')).toEqual(['diagram']);
+    expect(ids('diag')).toEqual(['diagram']);
   });
 
   it('starts a mention in place of the slash', () => {

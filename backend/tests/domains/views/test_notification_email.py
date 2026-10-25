@@ -89,6 +89,16 @@ def test_a_long_comment_is_cut() -> None:
     assert trimmed.endswith("...")
 
 
+def test_a_callout_reads_as_its_kind_and_text() -> None:
+    """The stored alert marker is editor syntax, so a reader sees the callout's kind."""
+    assert excerpt("> [!WARNING]\n> Deploys pause\n>\n> at noon.\n\nThanks") == (
+        "Warning: Deploys pause at noon. Thanks"
+    )
+    assert excerpt("> [!caution] Hot") == "Danger: Hot"
+    assert excerpt("> [!NOTE]") == "Note"
+    assert excerpt("> plain quote") == "> plain quote"
+
+
 def test_markup_in_a_title_cannot_escape_the_html_part() -> None:
     """The title is user input, so the one escape in the renderer is what holds."""
     message = render(issue_title="<script>alert(1)</script>")

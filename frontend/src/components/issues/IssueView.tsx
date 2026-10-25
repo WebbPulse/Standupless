@@ -134,7 +134,6 @@ import type { IssueRead, IssueUpdate, LinkType } from '../../types/Api';
 import ShareButton from '../access/ShareButton';
 import ReactionBar from '../discussion/ReactionBar';
 import IssueMediaProvider from '../media/IssueMediaProvider';
-import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
 import { ErrorAlert } from '../ui/alert';
 import { Button, IconButton } from '../ui/button';
 import Tooltip from '../ui/tooltip';
@@ -154,6 +153,10 @@ import IssueSubscribeButton from './IssueSubscribeButton';
 import RemindMeDialog from './RemindMeDialog';
 import FavoriteButton from '../ui/FavoriteButton';
 import IssueTimeline from './IssueTimeline';
+import {
+  DocumentLinkContext,
+  issueDocumentParent,
+} from '../../contexts/DocumentLinkContext';
 import IssueTrailNav from './IssueTrailNav';
 import MoveIssueDialog, {
   MOVE_ISSUE_KEYS,
@@ -925,104 +928,106 @@ export const IssueView: React.FC<IssueViewProps> = ({
         )
       ) : (
         <IssueMediaProvider workspaceId={workspaceId} issueId={issue.id}>
-          <PassageThreadsProvider key={issue.id}>
-            <div className="@container relative min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-4 py-6 sm:px-8 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-center @min-[860px]:gap-10 @min-[860px]:py-10">
-                <div className="contents @min-[860px]:block @min-[860px]:min-w-0 @min-[860px]:max-w-[680px] @min-[860px]:flex-1">
-                  <div className="order-1 min-w-0 space-y-6">
-                    {archived && (
-                      <div
-                        role="status"
-                        className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
-                      >
-                        <LuArchive
-                          aria-hidden="true"
-                          className="h-3.5 w-3.5 shrink-0"
-                        />
-                        <span className="min-w-0 flex-1">
-                          Archived {timestampLabel(issue.archived_at ?? '')}. It
-                          is hidden from lists and boards.
-                        </span>
-                        {canAct && (
-                          <button
-                            type="button"
-                            className={LINK_CLASS}
-                            onClick={() => {
-                              void toggleArchive();
-                            }}
-                          >
-                            Restore
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {reminder.reminder !== null && (
-                      <div
-                        role="status"
-                        className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
-                      >
-                        <LuClock
-                          aria-hidden="true"
-                          className="h-3.5 w-3.5 shrink-0"
-                        />
-                        <span className="min-w-0 flex-1">
-                          Reminder set for{' '}
-                          {reminderLabel(reminder.reminder.remind_at)}.
-                        </span>
+          <div className="@container relative min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-4 py-6 sm:px-8 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-center @min-[860px]:gap-10 @min-[860px]:py-10">
+              <div className="contents @min-[860px]:block @min-[860px]:min-w-0 @min-[860px]:max-w-[680px] @min-[860px]:flex-1">
+                <div className="order-1 min-w-0 space-y-6">
+                  {archived && (
+                    <div
+                      role="status"
+                      className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
+                    >
+                      <LuArchive
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1">
+                        Archived {timestampLabel(issue.archived_at ?? '')}. It
+                        is hidden from lists and boards.
+                      </span>
+                      {canAct && (
                         <button
                           type="button"
                           className={LINK_CLASS}
                           onClick={() => {
-                            setReminding(true);
+                            void toggleArchive();
                           }}
                         >
-                          Change
+                          Restore
                         </button>
-                        <button
-                          type="button"
-                          className={LINK_CLASS}
-                          onClick={reminder.cancel}
-                        >
-                          Cancel reminder
-                        </button>
-                      </div>
-                    )}
-                    <IssueBody
-                      workspaceId={workspaceId}
-                      issue={issue}
-                      canEdit={canEdit}
-                      onSaved={receive}
-                      people={options.people}
-                      onDropFiles={attachFiles}
-                      canComment={canEdit}
-                      {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
-                    />
-
-                    <ReactionBar
-                      workspaceId={workspaceId}
-                      targetId={issue.id}
-                      targetKind="issue"
-                      canReact={canEdit}
-                    />
-
-                    {showSubIssues && (
-                      <SubIssues
-                        workspaceId={workspaceId}
-                        slug={slug}
-                        parent={issue}
-                        rows={children.rows}
-                        isLoading={children.isLoading}
-                        error={children.error}
-                        progress={issue.progress}
-                        statuses={options.statuses}
-                        people={options.people}
-                        canEdit={canAct}
-                        currentUserId={currentUserId}
+                      )}
+                    </div>
+                  )}
+                  {reminder.reminder !== null && (
+                    <div
+                      role="status"
+                      className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
+                    >
+                      <LuClock
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
                       />
-                    )}
-                  </div>
+                      <span className="min-w-0 flex-1">
+                        Reminder set for{' '}
+                        {reminderLabel(reminder.reminder.remind_at)}.
+                      </span>
+                      <button
+                        type="button"
+                        className={LINK_CLASS}
+                        onClick={() => {
+                          setReminding(true);
+                        }}
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        className={LINK_CLASS}
+                        onClick={reminder.cancel}
+                      >
+                        Cancel reminder
+                      </button>
+                    </div>
+                  )}
+                  <IssueBody
+                    workspaceId={workspaceId}
+                    issue={issue}
+                    canEdit={canEdit}
+                    onSaved={receive}
+                    people={options.people}
+                    onDropFiles={attachFiles}
+                    canComment={canEdit}
+                    {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
+                  />
 
-                  <div className="order-3 min-w-0 border-t border-line pt-6 @min-[860px]:mt-8">
+                  <ReactionBar
+                    workspaceId={workspaceId}
+                    targetId={issue.id}
+                    targetKind="issue"
+                    canReact={canEdit}
+                  />
+
+                  {showSubIssues && (
+                    <SubIssues
+                      workspaceId={workspaceId}
+                      slug={slug}
+                      parent={issue}
+                      rows={children.rows}
+                      isLoading={children.isLoading}
+                      error={children.error}
+                      progress={issue.progress}
+                      statuses={options.statuses}
+                      people={options.people}
+                      canEdit={canAct}
+                      currentUserId={currentUserId}
+                    />
+                  )}
+                </div>
+
+                <div className="order-3 min-w-0 border-t border-line pt-6 @min-[860px]:mt-8">
+                  <DocumentLinkContext.Provider
+                    value={issueDocumentParent(issue.project_id)}
+                  >
                     <IssueTimeline
                       workspaceId={workspaceId}
                       issueId={issue.id}
@@ -1035,116 +1040,114 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       onCommentAttachments={onCommentAttachments}
                       quote={descriptionQuotes.request}
                     />
-                  </div>
+                  </DocumentLinkContext.Provider>
                 </div>
-
-                {team !== undefined && detailsPanel.shown && (
-                  <IssuePropertiesPanel
-                    className="order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto"
-                    workspaceId={workspaceId}
-                    slug={slug}
-                    issue={issue}
-                    team={team}
-                    teams={teams ?? []}
-                    estimateOptions={estimateOptionsOf(team)}
-                    statuses={options.statuses}
-                    labels={options.labels}
-                    people={options.people}
-                    parents={parents}
-                    projects={projects?.projects ?? []}
-                    cycles={cycles?.cycles ?? []}
-                    links={links}
-                    canEdit={canEdit}
-                    canAct={canAct}
-                    isAdmin={isAdmin}
-                    currentUserId={currentUserId}
-                    hiddenIds={panelHiddenIds}
-                    onUpdate={onUpdate}
-                    {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
-                    onMove={() => {
-                      setMoving(true);
-                    }}
-                    onAddSubIssue={addSubIssue}
-                    onAddRelation={() => {
-                      setRelation('any');
-                    }}
-                    onAddLink={() => {
-                      setLinkOpen(true);
-                    }}
-                    onAttachFiles={attachFiles}
-                    subscription={subscription}
-                  />
-                )}
               </div>
 
-              {parenting && (
-                <SetParentDialog
-                  issues={[issue]}
-                  onPick={(parentId) => {
-                    onUpdate({ parent_id: parentId });
-                  }}
-                  onClose={() => {
-                    setParenting(false);
-                  }}
-                />
-              )}
-              {converting && (
-                <ConvertToProjectDialog
+              {team !== undefined && detailsPanel.shown && (
+                <IssuePropertiesPanel
+                  className="order-2 @min-[860px]:sticky @min-[860px]:top-6 @min-[860px]:max-h-[calc(100dvh-8rem)] @min-[860px]:w-60 @min-[860px]:overflow-y-auto"
                   workspaceId={workspaceId}
+                  slug={slug}
                   issue={issue}
-                  onClose={() => {
-                    setConverting(false);
+                  team={team}
+                  teams={teams ?? []}
+                  estimateOptions={estimateOptionsOf(team)}
+                  statuses={options.statuses}
+                  labels={options.labels}
+                  people={options.people}
+                  parents={parents}
+                  projects={projects?.projects ?? []}
+                  cycles={cycles?.cycles ?? []}
+                  links={links}
+                  canEdit={canEdit}
+                  canAct={canAct}
+                  isAdmin={isAdmin}
+                  currentUserId={currentUserId}
+                  hiddenIds={panelHiddenIds}
+                  onUpdate={onUpdate}
+                  {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
+                  onMove={() => {
+                    setMoving(true);
                   }}
-                  onConverted={(result) => {
-                    void navigate(
-                      convertedPath(slug, result, team?.key_prefix)
-                    );
+                  onAddSubIssue={addSubIssue}
+                  onAddRelation={() => {
+                    setRelation('any');
                   }}
+                  onAddLink={() => {
+                    setLinkOpen(true);
+                  }}
+                  onAttachFiles={attachFiles}
+                  subscription={subscription}
                 />
               )}
-              <MoveIssueDialog
-                open={moving}
-                workspaceId={workspaceId}
-                workspaceRole={workspace?.role}
-                issue={issue}
-                teams={teams ?? []}
-                onClose={() => {
-                  setMoving(false);
-                }}
-                onMoved={onMoved}
-              />
-              <RemindMeDialog
-                open={reminding}
-                issueKey={issue.key}
-                reminder={reminder}
-                onClose={() => {
-                  setReminding(false);
-                }}
-              />
-              <AddLinkDialog
-                workspaceId={workspaceId}
-                issueId={issue.id}
-                open={linkOpen}
-                onClose={() => {
-                  setLinkOpen(false);
-                }}
-              />
-              <AddRelationDialog
-                workspaceId={workspaceId}
-                issueId={issue.id}
-                open={relation !== null}
-                {...(relation === null || relation === 'any'
-                  ? {}
-                  : { initialType: relation })}
-                onClose={() => {
-                  setRelation(null);
-                }}
-                onLinked={() => {
-                  invalidateQueries(issueKey(workspaceId, issueRef));
-                }}
-              />
             </div>
-          </PassageThreadsProvider>
+
+            {parenting && (
+              <SetParentDialog
+                issues={[issue]}
+                onPick={(parentId) => {
+                  onUpdate({ parent_id: parentId });
+                }}
+                onClose={() => {
+                  setParenting(false);
+                }}
+              />
+            )}
+            {converting && (
+              <ConvertToProjectDialog
+                workspaceId={workspaceId}
+                issue={issue}
+                onClose={() => {
+                  setConverting(false);
+                }}
+                onConverted={(result) => {
+                  void navigate(convertedPath(slug, result, team?.key_prefix));
+                }}
+              />
+            )}
+            <MoveIssueDialog
+              open={moving}
+              workspaceId={workspaceId}
+              workspaceRole={workspace?.role}
+              issue={issue}
+              teams={teams ?? []}
+              onClose={() => {
+                setMoving(false);
+              }}
+              onMoved={onMoved}
+            />
+            <RemindMeDialog
+              open={reminding}
+              issueKey={issue.key}
+              reminder={reminder}
+              onClose={() => {
+                setReminding(false);
+              }}
+            />
+            <AddLinkDialog
+              workspaceId={workspaceId}
+              issueId={issue.id}
+              open={linkOpen}
+              onClose={() => {
+                setLinkOpen(false);
+              }}
+            />
+            <AddRelationDialog
+              workspaceId={workspaceId}
+              issueId={issue.id}
+              open={relation !== null}
+              {...(relation === null || relation === 'any'
+                ? {}
+                : { initialType: relation })}
+              onClose={() => {
+                setRelation(null);
+              }}
+              onLinked={() => {
+                invalidateQueries(issueKey(workspaceId, issueRef));
+              }}
+            />
+          </div>
         </IssueMediaProvider>
       )}
     </>

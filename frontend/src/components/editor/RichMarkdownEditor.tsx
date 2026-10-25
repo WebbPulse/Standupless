@@ -67,6 +67,7 @@ import {
 } from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
+import { DocumentLinkMenu } from './DocumentLinkMenu';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
@@ -971,6 +972,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           onHighlight={setReferenceHighlight}
         />
       )}
+      {editable && <DocumentLinkMenu editor={editor} />}
       {linkDraft !== null && (
         <div
           className="absolute z-20 w-72 rounded-md border border-line bg-overlay p-1 shadow-overlay"

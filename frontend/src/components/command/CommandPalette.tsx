@@ -34,6 +34,13 @@
  * ago, and a typed term narrows them along with everything else. With an issue
  * in view its own actions come first and the recent issues follow them, so
  * Enter runs the first action rather than leaving the issue.
+ *
+ * With issues in focus a typed term also matches the values their properties
+ * can take, as Linear does, so "urgent" offers "Set priority to Urgent" and a
+ * teammate's name offers "Assign to" them. The values come from the page that
+ * published the subject and write through its pickers, so the undo is the
+ * pickers' own. They follow the commands that matched, values whose name
+ * starts with the term first, and only the first few are listed.
  */
 
 import React, {
@@ -182,6 +189,9 @@ const RESULT_LIMIT = 20;
 
 /** How many documents a term lists, since the rest are a narrower term away. */
 const DOCUMENT_LIMIT = 8;
+
+/** How many property values a term lists, since the rest are a narrower term away. */
+const VALUE_LIMIT = 8;
 
 /** How often an open search re-reads while its term is unchanged. */
 const POLL_MS = 60000;
@@ -1166,6 +1176,34 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         built.push({ heading: group.heading, commands: here });
     }
 
+    const offered = subject?.values;
+    if (!isKey && deferred !== '' && offered !== undefined) {
+      const lowered = deferred.toLowerCase();
+      const values = offered()
+        .filter((value) => matchesTerm([value.label, value.keywords], deferred))
+        .map((value, at) => ({
+          value,
+          at,
+          lead: value.name.toLowerCase().startsWith(lowered) ? 0 : 1,
+        }))
+        .sort((left, right) => left.lead - right.lead || left.at - right.at)
+        .slice(0, VALUE_LIMIT)
+        .map(({ value }) => ({
+          id: `value-${value.id}`,
+          label: value.label,
+          keywords: value.keywords,
+          icon: (
+            <span className="inline-flex h-4 w-4 items-center justify-center">
+              {value.icon}
+            </span>
+          ),
+          run: value.run,
+        }));
+      if (values.length > 0) {
+        built.push({ heading: 'Change property', commands: values });
+      }
+    }
+
     const results = (data ?? []).filter(
       (result) => !shownRecent.has(`recent-${result.issue_id}`)
     );
@@ -1280,6 +1318,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     issueActions,
     pageActions,
     issueKey,
+    subject,
     data,
     documents,
     members,

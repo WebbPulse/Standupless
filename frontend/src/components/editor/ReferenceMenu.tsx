@@ -1,12 +1,13 @@
 /**
  * The list the `#` reference picker opens under the caret: issues with their
  * status glyph and key, projects with their own mark, and documents with the
- * project or initiative they belong to. It only draws; the editor owns the
- * query, the highlight and what a pick writes.
+ * project or initiative they belong to. The `[[` picker draws it over
+ * documents only, with a last row that creates one. It only draws; the
+ * editor owns the query, the highlight and what a pick writes.
  */
 
 import React from 'react';
-import { LuFileText } from 'react-icons/lu';
+import { LuFileText, LuPlus } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import { referenceLabel, type ReferenceItem } from '../../lib/references';
 import type { StatusLike } from '../../lib/statusAppearance';
@@ -26,6 +27,14 @@ export interface ReferenceMenuProps {
   left: number;
   onChoose: (item: ReferenceItem) => void;
   onHighlight: (index: number) => void;
+  /** Names the listbox. Defaults to the `#` picker's name. */
+  ariaLabel?: string;
+  /** Replaces the hint shown when there is nothing to pick. */
+  hint?: string;
+  /** The title a last row creates a document under, or none for no such row. */
+  createTitle?: string | null;
+  /** Called when the create row is picked. */
+  onCreate?: () => void;
 }
 
 /** The status an issue hit carries, in the shape the glyph resolves. */
@@ -121,17 +130,21 @@ export const ReferenceMenu: React.FC<ReferenceMenuProps> = ({
   left,
   onChoose,
   onHighlight,
+  ariaLabel = 'Reference an issue, project or document',
+  hint,
+  createTitle = null,
+  onCreate,
 }) => (
   <ul
     role="listbox"
-    aria-label="Reference an issue, project or document"
+    aria-label={ariaLabel}
     aria-busy={loading}
     className="absolute z-20 w-80 overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-overlay"
     style={{ top, left }}
   >
-    {items.length === 0 ? (
+    {items.length === 0 && createTitle === null ? (
       <li className="px-2 py-1.5 text-sm text-text-faint">
-        {emptyHint(searchable, loading)}
+        {hint ?? emptyHint(searchable, loading)}
       </li>
     ) : (
       items.map((item, index) => (
@@ -156,6 +169,28 @@ export const ReferenceMenu: React.FC<ReferenceMenuProps> = ({
           <ItemText item={item} />
         </li>
       ))
+    )}
+    {createTitle !== null && (
+      <li
+        role="option"
+        aria-selected={items.length === highlight}
+        data-kind="create-document"
+        className={cn(
+          'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
+          items.length === highlight ? 'bg-raised text-text' : 'text-text-muted'
+        )}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          onCreate?.();
+        }}
+        onMouseEnter={() => {
+          onHighlight(items.length);
+        }}
+      >
+        <LuPlus aria-hidden="true" className="h-3 w-3 shrink-0" />
+        <span className="shrink-0">Create document:</span>
+        <span className="min-w-0 flex-1 truncate text-text">{createTitle}</span>
+      </li>
     )}
   </ul>
 );

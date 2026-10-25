@@ -110,14 +110,43 @@ def _media_label(match: "re.Match[str]") -> str:
     return f"[{kind}: {alt}]" if alt else f"[{kind}]"
 
 
+CALLOUT_BLOCK = re.compile(
+    r"^ {0,3}>[ \t]?\[!(?P<kind>note|tip|important|warning|caution)\][ \t]*(?P<rest>.*)(?P<body>(?:\n {0,3}>.*)*)",
+    re.IGNORECASE | re.MULTILINE,
+)
+"""A GitHub alert callout, such as `> [!NOTE]`, with the quoted lines under it."""
+
+CALLOUT_LABELS = {
+    "note": "Note",
+    "tip": "Tip",
+    "important": "Important",
+    "warning": "Warning",
+    "caution": "Danger",
+}
+"""The name each alert kind reads as, matching the editor's kind switcher."""
+
+QUOTE_PREFIX = re.compile(r"^ {0,3}>[ \t]?", re.MULTILINE)
+"""The marker that opens each line of a quote."""
+
+
+def _callout_text(match: "re.Match[str]") -> str:
+    """The plain text a callout reads as in an email, its kind leading its body."""
+    label = CALLOUT_LABELS[match.group("kind").lower()]
+    body = QUOTE_PREFIX.sub("", match.group("body"))
+    text = " ".join(f"{match.group('rest')} {body}".split())
+    return f"{label}: {text}" if text else label
+
+
 def excerpt(body: str) -> str:
     """One comment cut to `EXCERPT_LIMIT`, with an ellipsis when it was cut.
 
     Embedded images and videos read as a short label rather than a URL, because
     the content URL needs a token the email cannot carry; the issue link beside
-    the excerpt is where the reader sees them.
+    the excerpt is where the reader sees them. A callout reads as its kind and
+    its text rather than the alert marker GitHub stores it with.
     """
-    collapsed = " ".join(MARKDOWN_IMAGE.sub(_media_label, body).split())
+    readable = CALLOUT_BLOCK.sub(_callout_text, MARKDOWN_IMAGE.sub(_media_label, body))
+    collapsed = " ".join(readable.split())
     if len(collapsed) <= EXCERPT_LIMIT:
         return collapsed
     return collapsed[:EXCERPT_LIMIT].rstrip() + "..."

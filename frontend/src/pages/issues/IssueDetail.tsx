@@ -5,32 +5,37 @@
  * workspace shell, where the bar shows the issue's place in the list it was
  * opened from, and j, k and Escape step through that list or return to it.
  * Move to team gives the issue a new key, and an old key that still resolves
- * is replaced in the address with the current one.
+ * is replaced in the address with the current one. The page holds the threads
+ * pinned to passages of the description, so the description and the timeline
+ * share them.
  */
 
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import IssueView from '../../components/issues/IssueView';
+import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 
 /** The full page for one issue. */
 export const IssueDetail: React.FC = () => {
   const { key } = useParams<{ key: string }>();
   return (
-    <IssueView
-      issueRef={key ?? ''}
-      frame={({ title, label, titleAccessory, actions, content }) => (
-        <WorkspaceShell
-          flush
-          title={title}
-          tabTitle={label}
-          titleAccessory={titleAccessory}
-          actions={actions}
-        >
-          {content}
-        </WorkspaceShell>
-      )}
-    />
+    <PassageThreadsProvider key={key}>
+      <IssueView
+        issueRef={key ?? ''}
+        frame={({ title, label, titleAccessory, actions, content }) => (
+          <WorkspaceShell
+            flush
+            title={title}
+            tabTitle={label}
+            titleAccessory={titleAccessory}
+            actions={actions}
+          >
+            {content}
+          </WorkspaceShell>
+        )}
+      />
+    </PassageThreadsProvider>
   );
 };
 

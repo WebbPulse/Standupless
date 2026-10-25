@@ -113,6 +113,7 @@ import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
+import { usePropertyValues } from './propertyValues';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
 import RenameIssueDialog from '../RenameIssueDialog';
@@ -940,7 +941,6 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     write: update,
     cyclesFor: (teamId) => forTeam(teamId).cycles,
   });
-  usePublishIssueSubject(subjectOf(targets));
   useShortcut({
     keys: 'mod+b',
     label: 'Toggle list and board',
@@ -1114,6 +1114,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       parentOf,
     ]
   );
+
+  const values = usePropertyValues(targets, env, canCommand);
+  usePublishIssueSubject(subjectOf(targets), values);
 
   const resolve = (ids: readonly string[]): OrderedIssueRead[] =>
     ids

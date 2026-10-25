@@ -102,3 +102,34 @@ describe('Markdown', () => {
     expect(container.textContent).toContain('<details>');
   });
 });
+
+describe('Markdown callouts', () => {
+  it('renders a GitHub alert as a callout of its kind with its body', () => {
+    const { container } = render(
+      <Markdown source={'> [!WARNING]\n> Deploys pause at **noon**.'} />
+    );
+
+    const callout = screen.getByRole('note', { name: 'Warning' });
+    expect(callout).toHaveAttribute('data-kind', 'warning');
+    expect(callout.querySelector('.callout-icon svg')).not.toBeNull();
+    expect(callout.querySelector('strong')?.textContent).toBe('noon');
+    expect(container.querySelector('blockquote')).toBeNull();
+    expect(container.textContent).not.toContain('[!WARNING]');
+  });
+
+  it('draws CAUTION as the danger kind', () => {
+    render(<Markdown source={'> [!CAUTION]\n> Hot'} />);
+
+    expect(screen.getByRole('note', { name: 'Danger' })).toHaveAttribute(
+      'data-kind',
+      'danger'
+    );
+  });
+
+  it('keeps a plain quote a quote', () => {
+    const { container } = render(<Markdown source={'> quoted'} />);
+
+    expect(container.querySelector('blockquote')).not.toBeNull();
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+});
