@@ -73,7 +73,7 @@ def test_the_listing_answers_the_flag_and_count(client: TestClient, workspace: s
     create_view(client, workspace, name="Quiet", shared=True)
     client.put(subscription(client, workspace, followed["view_id"]))
 
-    response = client.get(f"/api/workspaces/{workspace}/views")
+    response = client.get(f"/api/workspaces/{workspace}/views", params={"scope": "all"})
 
     assert response.status_code == 200, response.text
     rows = {row["name"]: row for row in response.json()["views"]}
