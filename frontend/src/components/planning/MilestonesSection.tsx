@@ -6,7 +6,8 @@
  * narrowed to it. Alt with an arrow key moves the focused row a step, and
  * Alt+Shift with an arrow sends it to the top or bottom, so the order is not a
  * pointer-only control. A milestone that outgrew its project converts into a
- * project of its own from its menu.
+ * project of its own from its menu, and the menu copies a link that opens the
+ * project's issues narrowed to that milestone.
  */
 
 import React, { useState } from 'react';
@@ -15,12 +16,14 @@ import {
   LuCalendarCheck,
   LuEllipsis,
   LuGripVertical,
+  LuLink,
   LuListFilter,
   LuMilestone,
   LuPlus,
   LuTrash2,
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
+import { copyText } from '../../lib/copyIssue';
 import { reorderKey } from '../../lib/milestones';
 import {
   measureUnit,
@@ -50,6 +53,8 @@ export interface MilestonesSectionProps {
   onConvert?: (milestone: MilestoneRead) => void;
   /** Opens the project's issues narrowed to one milestone. */
   onOpenIssues: (milestoneId: string) => void;
+  /** The full address that opens the project on one milestone, which its Copy link copies. */
+  milestoneUrl?: (milestoneId: string) => string;
 }
 
 /** Props for MilestoneRow. */
@@ -64,6 +69,7 @@ interface MilestoneRowProps {
   onDelete: () => void;
   onConvert?: (() => void) | undefined;
   onOpenIssues: () => void;
+  url?: string | undefined;
   onMove: (to: number) => void;
   onDragStart: () => void;
   onDragEnter: () => void;
@@ -83,6 +89,7 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
   onDelete,
   onConvert,
   onOpenIssues,
+  url,
   onMove,
   onDragStart,
   onDragEnter,
@@ -201,6 +208,16 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
           <LuListFilter aria-hidden="true" className="h-3.5 w-3.5" />
           View issues
         </MenuItem>
+        {url !== undefined && (
+          <MenuItem
+            onSelect={() => {
+              copyText(url, 'Link to the milestone copied');
+            }}
+          >
+            <LuLink aria-hidden="true" className="h-3.5 w-3.5" />
+            Copy link
+          </MenuItem>
+        )}
         {canEdit && (
           <>
             <MenuItem
@@ -296,6 +313,7 @@ export const MilestonesSection: React.FC<MilestonesSectionProps> = ({
   onDelete,
   onConvert,
   onOpenIssues,
+  milestoneUrl,
 }) => {
   const [adding, setAdding] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -362,6 +380,7 @@ export const MilestonesSection: React.FC<MilestonesSectionProps> = ({
               onOpenIssues={() => {
                 onOpenIssues(milestone.milestone_id);
               }}
+              url={milestoneUrl?.(milestone.milestone_id)}
               onMove={(to) => {
                 move(index, to);
               }}

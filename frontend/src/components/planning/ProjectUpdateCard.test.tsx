@@ -5,6 +5,8 @@
  * only when asked, that a reply posts through the shared editor and reacts on
  * itself by comment id, that an initiative update carries the same thread
  * under its own routes, and that each kind of update draws its progress report.
+ * The menu copies either kind of update as Markdown, with the author, date
+ * and health over its text, and confirms it with a toast.
  *
  * The emoji dataset is loaded once before the tests, so its cold import is not
  * paid inside a wait.
@@ -21,7 +23,16 @@ import type {
   ProjectUpdateRead,
   ReactionGroup,
 } from '../../types/Api';
-import ProjectUpdateCard from './ProjectUpdateCard';
+import ProjectUpdateCard, { updateMarkdown } from './ProjectUpdateCard';
+
+const showToast = vi.fn();
+
+vi.mock('../../lib/toast', () => ({
+  showToast: (message: string) => {
+    showToast(message);
+  },
+  showErrorToast: vi.fn(),
+}));
 
 const listProjectUpdateComments =
   vi.fn<(...args: unknown[]) => Promise<ProjectUpdateCommentRead[]>>();
@@ -116,6 +127,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  showToast.mockReset();
   listProjectUpdateComments.mockReset();
   createProjectUpdateComment.mockReset();
   addProjectUpdateReaction.mockReset();
@@ -407,5 +419,99 @@ describe('ProjectUpdateCard initiative report', () => {
   it('shows no report on an update from before snapshots', () => {
     renderCard(initiativeUpdate());
     expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+});
+
+describe('ProjectUpdateCard Copy as Markdown', () => {
+  const people = [
+    {
+      user_id: 'user-1',
+      email: 'ada@example.com',
+      display_name: 'Ada Lovelace',
+      avatar_url: null,
+      full_name: null,
+    },
+  ];
+
+  /** Puts a clipboard on the navigator and returns what it was written. */
+  const stubClipboard = () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  };
+
+  it('copies a project update with its author, date and health', async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    render(
+      <ProjectUpdateCard
+        update={update({ body: 'Shipping on schedule\n\n- API done\n' })}
+        people={people}
+        onEdit={() => Promise.resolve()}
+        onDelete={() => Promise.resolve()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Update actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Copy as Markdown' })
+    );
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Update copied as Markdown');
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      '**Ada Lovelace** · 2026-10-20 · On track\n\nShipping on schedule\n\n- API done\n'
+    );
+  });
+
+  it('copies an initiative update the same way', async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    const initiativeUpdate: InitiativeUpdateRead = {
+      update_id: 'upd-4',
+      initiative_id: 'ini-1',
+      workspace_id: 'ws-1',
+      body: 'Two projects slipped',
+      health: 'off_track',
+      author_id: 'user-1',
+      created_at: '2026-10-21T09:30:00Z',
+      updated_at: '2026-10-21T09:30:00Z',
+      edited_at: null,
+      can_edit: false,
+    };
+    render(
+      <ProjectUpdateCard
+        update={initiativeUpdate}
+        people={people}
+        subject="initiative"
+        onEdit={() => Promise.resolve()}
+        onDelete={() => Promise.resolve()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Update actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Copy as Markdown' })
+    );
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        '**Ada Lovelace** · 2026-10-21 · Off track\n\nTwo projects slipped\n'
+      );
+    });
+    expect(showToast).toHaveBeenCalledWith('Update copied as Markdown');
+  });
+
+  it('gives only the header for an update with no text', () => {
+    expect(
+      updateMarkdown(
+        { body: '  ', health: 'at_risk', created_at: '2026-10-22T00:00:00Z' },
+        'Ada Lovelace'
+      )
+    ).toBe('**Ada Lovelace** · 2026-10-22 · At risk\n');
   });
 });

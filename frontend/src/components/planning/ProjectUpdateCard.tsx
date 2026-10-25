@@ -16,7 +16,9 @@
  * the report for everyone, and updates from before snapshots show none.
  *
  * The card carries the element id `update-<id>`, so a link from an email, a
- * webhook or the inbox that ends in that hash scrolls straight to it.
+ * webhook or the inbox that ends in that hash scrolls straight to it. Its menu
+ * copies that link, or the update itself as Markdown: the author, the date and
+ * the health on one line, then the text.
  */
 
 import React, { useState } from 'react';
@@ -24,6 +26,7 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   LuCopy,
   LuEllipsis,
+  LuFileText,
   LuMessageSquare,
   LuPencil,
   LuTrash2,
@@ -33,6 +36,7 @@ import {
   removeProjectUpdateReaction,
   type UpdateParent,
 } from '../../api/projectUpdateThreads';
+import { copyText } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
@@ -63,6 +67,24 @@ import ProjectUpdateThread from './ProjectUpdateThread';
 
 /** The element id an update renders under, so a hash can scroll to it. */
 const anchorOf = (updateId: string): string => `update-${updateId}`;
+
+/**
+ * An update as Markdown: the author in bold, the day it was posted and the
+ * health it called on one line, then its text as stored. The same update
+ * always gives the same text.
+ */
+export const updateMarkdown = (
+  update: Pick<StatusUpdateRead, 'body' | 'health' | 'created_at'>,
+  author: string
+): string => {
+  const header = [
+    `**${author}**`,
+    update.created_at.slice(0, 10),
+    PROJECT_HEALTH_LABELS[update.health],
+  ].join(' · ');
+  const body = update.body.replace(/\s+$/, '');
+  return `${body === '' ? header : `${header}\n\n${body}`}\n`;
+};
 
 /** Props for HealthPill: the health an update called. */
 interface HealthPillProps {
@@ -292,14 +314,11 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     const url = new URL(globalThis.location.href);
     url.searchParams.set('tab', 'updates');
     url.hash = anchorOf(update.update_id);
-    void navigator.clipboard
-      .writeText(url.toString())
-      .then(() => {
-        showToast('Link to the update copied');
-      })
-      .catch(() => {
-        showErrorToast('Could not copy the link.');
-      });
+    copyText(url.toString(), 'Link to the update copied');
+  };
+
+  const copyMarkdown = (): void => {
+    copyText(updateMarkdown(update, author), 'Update copied as Markdown');
   };
 
   return (
@@ -330,6 +349,10 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             <MenuItem onSelect={copyLink}>
               <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
               Copy link
+            </MenuItem>
+            <MenuItem onSelect={copyMarkdown}>
+              <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+              Copy as Markdown
             </MenuItem>
             {update.can_edit && (
               <>
