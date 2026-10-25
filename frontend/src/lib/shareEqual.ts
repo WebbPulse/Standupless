@@ -17,7 +17,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 /** The string id a plain object carries, or undefined. */
 const idOf = (value: unknown): string | undefined => {
   if (!isPlainObject(value)) return undefined;
-  const id = value.id;
+  const id = value['id'];
   return typeof id === 'string' ? id : undefined;
 };
 
