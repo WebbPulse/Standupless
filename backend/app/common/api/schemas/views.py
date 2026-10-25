@@ -136,6 +136,7 @@ NotificationKindField = Literal[
     "sla_breached",
     "reminder",
     "triage_new",
+    "view_issue_added",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -528,7 +529,9 @@ class ViewRead(BaseModel):
     """One saved view as the API returns it.
 
     `favorite` is the caller's own star, not a property of the view, so the same
-    view reads differently to two members. `projects_display` is the arrangement of
+    view reads differently to two members, and so is `subscribed`, whether the
+    caller follows the view to hear about issues entering it. `subscriber_count`
+    is how many members follow it. `projects_display` is the arrangement of
     a project view and null on an issue view.
     """
 
@@ -556,12 +559,16 @@ class ViewRead(BaseModel):
     color: Optional[str] = None
     description: Optional[str] = None
     favorite: bool = False
+    subscribed: bool = False
+    subscriber_count: int = 0
     owner_id: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, view: SavedView, *, favorite: bool = False) -> "ViewRead":
+    def from_row(
+        cls, view: SavedView, *, favorite: bool = False, subscribed: bool = False, subscriber_count: int = 0
+    ) -> "ViewRead":
         """Build the response shape from a stored view row."""
         return cls(
             view_id=view.view_id,
@@ -588,6 +595,8 @@ class ViewRead(BaseModel):
             color=view.color,
             description=view.description,
             favorite=favorite,
+            subscribed=subscribed,
+            subscriber_count=subscriber_count,
             owner_id=view.owner_id,
             created_at=view.created_at,
             updated_at=view.updated_at,

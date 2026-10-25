@@ -55,6 +55,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.inbox import (
     PROJECT_UPDATE_REPLIED,
     TRIAGE_NEW,
+    VIEW_ISSUE_ADDED,
     Notification,
     expires_at,
     inbox_partition,
@@ -69,6 +70,7 @@ from app.common.team_privacy import person_can_see_team
 from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
+from app.domains.views.consumers.view_watch import image_issue, newly_entered
 from app.domains.views.email import excerpt
 
 _log = logging.getLogger(__name__)
@@ -346,6 +348,9 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     record twice, so a person assigned and mentioned in one write gets the
     assignment alone. An issue entering a team's triage inbox, created there or
     sent back, tells everyone on that team's triage duty when the team notifies.
+    An issue newly matching a saved view tells each of the view's subscribers,
+    naming the view in `new_value`, unless the record already earned them
+    something more specific.
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
@@ -406,6 +411,17 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
             plan(new_assignee, STATUS_CHANGED, f"{issue_id}#status#{new_status}", **moved_to)
         for recipient_id in sorted(set(repositories.subscriptions.user_ids(workspace_id, issue_id))):
             plan(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}", **moved_to)
+
+    changed_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
+    before = image_issue(old_image) if old_image else None
+    if before is not None or not old_image:
+        for entry in newly_entered(repositories, workspace_id, before, image_issue(new_image)):
+            plan(
+                entry.user_id,
+                VIEW_ISSUE_ADDED,
+                f"{issue_id}#view#{entry.view.view_id}#{changed_at}",
+                new_value=entry.view.name,
+            )
 
     written = 0
     for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):

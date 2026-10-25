@@ -133,6 +133,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'An issue enters the triage inbox of a team where you are on triage duty.',
   },
+  view_issue_added: {
+    title: 'Issues added to views you follow',
+    detail:
+      'An issue newly matches a saved view you subscribed to. Issues already in the view stay quiet.',
+  },
 };
 
 /** The kinds that only ever reach the inbox, so their email switch is off and locked. */

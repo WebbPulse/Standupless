@@ -1748,6 +1748,10 @@ export interface SavedViewRead {
   sort: IssueSort;
   group_by: ViewGroupBy | null;
   owner_id: string;
+  /** Whether the caller follows the view and hears when issues enter it. */
+  subscribed?: boolean;
+  /** How many members follow the view. */
+  subscriber_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -1890,7 +1894,8 @@ export type NotificationKind =
   | 'sla_at_risk'
   | 'sla_breached'
   | 'review_requested'
-  | 'triage_new';
+  | 'triage_new'
+  | 'view_issue_added';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
