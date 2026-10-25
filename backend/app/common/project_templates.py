@@ -20,10 +20,9 @@ from app.common.api.schemas.issues import IssueCreate
 from app.common.api.schemas.planning import ProjectCreate, SkippedTemplateIssueRead
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, ProjectMilestone, milestone_key, new_planning_id
-from app.common.db.dynamo.team_templates import PROJECT_TEMPLATE, IssueBlueprint, IssueTemplate, ProjectBlueprint
-from app.common.db.dynamo.teams import Team
-from app.common.issue_rules import check_assignee, check_estimate, check_status, unprocessable
-from app.common.issue_templates import find_template, kept_labels, lenient
+from app.common.db.dynamo.team_templates import PROJECT_TEMPLATE, IssueTemplate, ProjectBlueprint
+from app.common.issue_rules import unprocessable
+from app.common.issue_templates import blueprint_values, find_template
 from app.common.issue_writes import FreshRows, create_issue
 from app.common.milestone_writes import sort_order_after
 
@@ -75,21 +74,6 @@ def fill_project(
     if merged.start_date and merged.target_date and merged.target_date < merged.start_date:
         merged = merged.model_copy(update={name: None for name in ("start_date", "target_date") if name in filled})
     return merged
-
-
-def _issue_values(repositories: Repositories, workspace_id: str, team: Team, item: IssueBlueprint) -> dict[str, Any]:
-    """The fields one template issue fills in the team it lands in, with anything that team refuses dropped."""
-    team_id = team.team_id
-    values: dict[str, Any] = {"title": item.title, "body": item.body, "priority": item.priority}
-    if item.status_id and lenient(check_status, repositories, workspace_id, team_id, item.status_id) is not None:
-        values["status_id"] = item.status_id
-    if item.label_ids:
-        values["label_ids"] = kept_labels(repositories, workspace_id, team_id, item.label_ids)
-    if item.assignee_id:
-        values["assignee_id"] = lenient(check_assignee, repositories, workspace_id, team_id, item.assignee_id)
-    if item.estimate:
-        values["estimate"] = lenient(check_estimate, item.estimate, team)
-    return {name: value for name, value in values.items() if value is not None}
 
 
 def issue_team(template: IssueTemplate, project: Project) -> str:
@@ -159,7 +143,7 @@ def add_template_rows(
         parent = issues.get(item.parent_key or "")
         payload = IssueCreate.model_validate(
             {
-                **_issue_values(repositories, workspace_id, team, item),
+                **blueprint_values(repositories, workspace_id, team, item),
                 "team_id": team_id,
                 "project_id": project.project_id,
                 "project_milestone_id": milestones.get(item.milestone_key or ""),

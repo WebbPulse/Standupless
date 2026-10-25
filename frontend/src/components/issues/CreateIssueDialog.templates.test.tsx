@@ -3,8 +3,9 @@
  * as it opens, a preset winning over the template, a template named by the
  * caller in place of the default, picking one from the header chip and going
  * back to none, a field the person clears staying cleared, a prefilled
- * draft nobody touched closing without the discard guard, and a form's chosen
- * option previewing the labels and priority it maps to.
+ * draft nobody touched closing without the discard guard, a form's chosen
+ * option previewing the labels and priority it maps to, and a template's
+ * sub-issues previewed as rows that can be dropped before the save.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -461,6 +462,77 @@ describe('a form template', () => {
           label_ids: [],
         })
       );
+    });
+  });
+});
+
+describe('a template with sub-issues', () => {
+  const checklist = template({
+    id: 'tp-3',
+    name: 'Launch',
+    title: 'Launch: ',
+    sub_issues: [
+      { key: 's1', title: 'Write the notes', label_ids: [] },
+      { key: 's2', title: 'Announce it', label_ids: [] },
+    ],
+  });
+
+  it('previews the sub-issues and sends the keys of the rows kept', async () => {
+    listTeamTemplates.mockResolvedValue({
+      templates: [checklist],
+      default_template_id: 'tp-3',
+    });
+    const user = userEvent.setup();
+    renderDialog();
+
+    const first = await screen.findByRole('textbox', {
+      name: 'Sub-issue 1 title',
+    });
+    expect(first).toHaveValue('Write the notes');
+    expect(
+      screen.getByRole('textbox', { name: 'Sub-issue 2 title' })
+    ).toHaveValue('Announce it');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove sub-issue 1' })
+    );
+    await user.type(titleBox(), 'v2');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledTimes(1);
+    });
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Launch: v2',
+      template_id: 'tp-3',
+      template_sub_issue_keys: ['s2'],
+    });
+  });
+
+  it('sends no keys once every template row is dropped', async () => {
+    listTeamTemplates.mockResolvedValue({
+      templates: [checklist],
+      default_template_id: 'tp-3',
+    });
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findByRole('textbox', { name: 'Sub-issue 2 title' });
+    await user.click(
+      screen.getByRole('button', { name: 'Remove sub-issue 2' })
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Remove sub-issue 1' })
+    );
+    await user.type(titleBox(), 'v3');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledTimes(1);
+    });
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({
+      template_id: 'tp-3',
+      template_sub_issue_keys: [],
     });
   });
 });

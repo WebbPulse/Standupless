@@ -34,6 +34,7 @@ from app.common.db.dynamo.issues import (
 )
 from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, Label
+from app.common.db.dynamo.team_templates import IssueTemplate
 from app.common.estimates import estimate_points, is_unestimated
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_archive import archive_issue, unarchive_issue
@@ -62,7 +63,7 @@ from app.common.issue_rules import (
     subscribe_touched,
     unprocessable,
 )
-from app.common.issue_templates import apply_template
+from app.common.issue_templates import apply_template, blueprint_values, chosen_sub_issues
 from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
@@ -426,7 +427,76 @@ class FreshRows:
 def create_issue(
     repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
 ) -> Issue:
-    """Create an issue, allocating its key from the team's counter.
+    """Create an issue and the sub-issues its template adds, answering the issue."""
+    return create_issue_tree(repositories, context, payload, fresh=fresh)[0]
+
+
+def create_issue_tree(
+    repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
+) -> tuple[Issue, list[Issue]]:
+    """Create an issue and the sub-issues its template adds, all of them or none.
+
+    The sub-issues the create keeps are made under the new issue in the
+    template's order, in its project, milestone and cycle. Sub-issues are one
+    level deep, so a create that names a parent and keeps any is refused before
+    anything is written. When one of them fails, every row this create wrote is
+    removed and the 422 names the sub-issue, so a parent is never left half
+    built.
+    """
+    fresh = fresh or FreshRows()
+    issue, template, filled = _create_one(repositories, context, payload, fresh)
+    created: list[Issue] = []
+    try:
+        team = repositories.teams.get(context.workspace_id, issue.team_id)
+        if team is None:
+            raise not_found()
+        for item in chosen_sub_issues(template, filled):
+            child = IssueCreate.model_validate(
+                {
+                    **blueprint_values(repositories, context.workspace_id, team, item),
+                    "team_id": issue.team_id,
+                    "parent_id": issue.issue_id,
+                    "project_id": issue.project_id,
+                    "project_milestone_id": issue.project_milestone_id,
+                    "cycle_id": issue.cycle_id,
+                }
+            )
+            known = FreshRows(
+                project=fresh.project, milestones=fresh.milestones, issues={**fresh.issues, issue.issue_id: issue}
+            )
+            try:
+                created.append(_create_one(repositories, context, child, known)[0])
+            except HTTPException as exc:
+                raise unprocessable(
+                    f"Could not create the sub-issue {item.title}: {_reason(exc)}. Nothing was created."
+                ) from exc
+    except BaseException:
+        for row in [*reversed(created), issue]:
+            _remove_new_issue(repositories, context, row)
+        raise
+    return issue, created
+
+
+def _reason(exc: HTTPException) -> str:
+    """The message an `HTTPException` carried, without its trailing full stop."""
+    detail: Any = exc.detail
+    message = detail.get("message") if isinstance(detail, dict) else None
+    return (message if isinstance(message, str) else str(detail)).rstrip(".")
+
+
+def _remove_new_issue(repositories: Repositories, context: AuthzContext, issue: Issue) -> None:
+    """Remove an issue this request just wrote, with its history and subscriptions, leaving a tombstone."""
+    workspace_id = context.workspace_id
+    repositories.activity.delete_for_issue(workspace_id, issue.issue_id)
+    repositories.subscriptions.delete_for_issue(workspace_id, issue.issue_id)
+    repositories.issues.delete(workspace_id, issue.issue_id)
+    repositories.activity.record_tombstone(workspace_id, issue.team_id, issue.issue_id, context.user_id)
+
+
+def _create_one(
+    repositories: Repositories, context: AuthzContext, payload: IssueCreate, fresh: FreshRows
+) -> tuple[Issue, Optional[IssueTemplate], IssueCreate]:
+    """Create one issue, allocating its key from the team's counter, and answer the template and the filled create.
 
     A named template fills the fields the payload leaves out before anything is
     validated, so a template's rows are held to the same checks as typed ones.
@@ -437,12 +507,13 @@ def create_issue(
     unassigned issue landing in a triage inbox whose team assigns its duty goes
     to the member on duty.
     """
-    fresh = fresh or FreshRows()
     require_team_member(repositories, context, payload.team_id)
     team = repositories.teams.get(context.workspace_id, payload.team_id)
     if team is None:
         raise not_found()
-    payload = apply_template(repositories, context, payload)
+    payload, template = apply_template(repositories, context, payload)
+    if chosen_sub_issues(template, payload) and payload.parent_id:
+        raise unprocessable("Sub-issues are one level deep, so a sub-issue cannot add its template's sub-issues")
 
     requested_triage = payload.triage
     status_ref = payload.status_id
@@ -557,7 +628,7 @@ def create_issue(
         )
     subscribe_touched(repositories, created, None)
     record_issue_mentions(repositories, context, created, None, created.body, place="description")
-    return created
+    return created, template, payload
 
 
 def update_issue(repositories: Repositories, context: AuthzContext, issue: Issue, attributes: dict[str, Any]) -> Issue:

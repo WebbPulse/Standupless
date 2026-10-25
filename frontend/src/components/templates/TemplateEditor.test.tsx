@@ -2,7 +2,8 @@
  * The template editor on team settings: creating a template sends only what
  * was filled, moving one rewrites the positions that changed, deleting asks
  * first, inherited templates are listed read only with where they come from,
- * and a caller who may not edit sees no controls.
+ * a caller who may not edit sees no controls, and sub-issues are added,
+ * reordered and removed.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -168,5 +169,104 @@ describe('the template editor', () => {
     expect(
       screen.queryByRole('button', { name: 'Make Bug report recurring' })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('template sub-issues', () => {
+  it('creates a template with its sub-issues in order', async () => {
+    const user = userEvent.setup();
+    renderEditor([]);
+
+    await user.click(screen.getByRole('button', { name: 'New template' }));
+    await user.type(screen.getByLabelText('Template name'), 'Launch');
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+    await user.type(
+      screen.getByLabelText('Sub-issue 1 title'),
+      'Write the notes'
+    );
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+    await user.type(screen.getByLabelText('Sub-issue 2 title'), 'Announce it');
+    await user.type(screen.getByLabelText('Sub-issue 2 description'), 'Post');
+    await user.click(
+      screen.getByRole('button', { name: 'Move sub-issue 2 up' })
+    );
+    await user.click(screen.getByRole('button', { name: 'Create template' }));
+
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+    expect(create.mock.calls[0]?.[0]).toEqual({
+      name: 'Launch',
+      sub_issues: [
+        {
+          key: 's2',
+          title: 'Announce it',
+          body: 'Post',
+          status_id: null,
+          priority: null,
+          assignee_id: null,
+          label_ids: [],
+          estimate: null,
+        },
+        {
+          key: 's1',
+          title: 'Write the notes',
+          body: null,
+          status_id: null,
+          priority: null,
+          assignee_id: null,
+          label_ids: [],
+          estimate: null,
+        },
+      ],
+    });
+  });
+
+  it('holds the save while a sub-issue has no title', async () => {
+    const user = userEvent.setup();
+    renderEditor([]);
+
+    await user.click(screen.getByRole('button', { name: 'New template' }));
+    await user.type(screen.getByLabelText('Template name'), 'Launch');
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Create template' })
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole('button', { name: 'Remove sub-issue 1' })
+    );
+    expect(
+      screen.getByRole('button', { name: 'Create template' })
+    ).toBeEnabled();
+  });
+
+  it('removes a saved sub-issue on edit', async () => {
+    const user = userEvent.setup();
+    renderEditor([
+      template({
+        name: 'Launch',
+        sub_issues: [
+          { key: 's1', title: 'Write the notes', label_ids: [] },
+          { key: 's2', title: 'Announce it', label_ids: [] },
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText('2 sub-issues')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit Launch' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Remove sub-issue 1' })
+    );
+    await user.click(screen.getByRole('button', { name: /^Save/ }));
+
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(1);
+    });
+    expect(update.mock.calls[0]?.[1]).toMatchObject({
+      sub_issues: [
+        expect.objectContaining({ key: 's2', title: 'Announce it' }),
+      ],
+    });
   });
 });
