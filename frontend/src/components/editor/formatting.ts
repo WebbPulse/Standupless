@@ -154,7 +154,7 @@ export const FORMAT_GROUPS: FormatAction[][] = [
       id: 'orderedList',
       label: 'Numbered list',
       icon: LuListOrdered,
-      keys: ['mod', 'shift', '7'],
+      keys: ['mod', 'shift', '9'],
       isActive: (editor) => editor.isActive('orderedList'),
       run: (editor) => {
         editor.chain().focus().toggleOrderedList().run();
@@ -164,7 +164,7 @@ export const FORMAT_GROUPS: FormatAction[][] = [
       id: 'taskList',
       label: 'Checklist',
       icon: LuListTodo,
-      keys: ['mod', 'shift', '9'],
+      keys: ['mod', 'shift', '7'],
       isActive: (editor) => editor.isActive('taskList'),
       run: (editor) => {
         editor.chain().focus().toggleTaskList().run();

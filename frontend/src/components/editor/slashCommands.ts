@@ -47,6 +47,8 @@ export interface SlashCommand {
   keywords: string[];
   /** The Markdown that types the same block, shown at the row's end. */
   hint?: string;
+  /** The chord that does the same, as `mod`, `shift`, `alt` and a key. */
+  keys?: string[];
   /** Whether the surface can run it. Unset means always. */
   available?: (context: SlashContext) => boolean;
   run: (editor: Editor, range: Range, context: SlashContext) => void;
@@ -84,6 +86,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: LuList,
     keywords: ['bullet', 'unordered', 'ul', 'list'],
     hint: '-',
+    keys: ['mod', 'shift', '8'],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).toggleBulletList().run();
     },
@@ -94,6 +97,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: LuListOrdered,
     keywords: ['ordered', 'ol', 'list', 'number'],
     hint: '1.',
+    keys: ['mod', 'shift', '9'],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).toggleOrderedList().run();
     },
@@ -104,6 +108,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: LuListTodo,
     keywords: ['todo', 'task', 'checkbox', 'list'],
     hint: '[ ]',
+    keys: ['mod', 'shift', '7'],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).toggleTaskList().run();
     },

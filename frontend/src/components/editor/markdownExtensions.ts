@@ -32,7 +32,7 @@ import { Extension } from '@tiptap/core';
 import HardBreak from '@tiptap/extension-hard-break';
 import Link from '@tiptap/extension-link';
 import Paragraph from '@tiptap/extension-paragraph';
-import { TaskItem, TaskList } from '@tiptap/extension-list';
+import { TaskItem } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
 import { Markdown, type MarkdownManager } from '@tiptap/markdown';
@@ -45,7 +45,11 @@ import { isLinkTarget } from '../../lib/markdown';
 import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
-import { EditorShortcuts } from './editorShortcuts';
+import {
+  EditorShortcuts,
+  LinearOrderedList,
+  LinearTaskList,
+} from './editorShortcuts';
 import { DocumentLinkSuggestion } from './DocumentLinkSuggestion';
 import { EmojiSuggestion } from './EmojiSuggestion';
 import { EmoticonConversion } from './emoticons';
@@ -307,11 +311,13 @@ export const markdownExtensions = (
       hardBreak: false,
       paragraph: false,
       codeBlock: false,
+      orderedList: false,
       heading: { levels: [1, 2, 3, 4, 5, 6] },
     }),
     CollapsingParagraph,
     NewlineBreak,
     HighlightedCodeBlock,
+    LinearOrderedList,
     BoundedLink.configure({
       openOnClick: false,
       autolink: true,
@@ -320,7 +326,7 @@ export const markdownExtensions = (
       isAllowedUri: (url) => isLinkTarget(url),
       HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
     }),
-    TaskList,
+    LinearTaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: false } }),
     SpreadsheetPaste,
