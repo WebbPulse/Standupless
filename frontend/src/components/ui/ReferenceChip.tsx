@@ -38,6 +38,7 @@ import {
   type LinkedReference,
 } from '../../lib/references';
 import type { ProjectIconName } from '../../types/Api';
+import { ProjectHoverTrigger } from './ProjectHoverCard';
 
 /** The classes every reference chip shares with the issue chip. */
 const REFERENCE_CHIP_CLASS =
@@ -64,7 +65,11 @@ interface ResolvedChipProps {
   href: string;
 }
 
-/** A linked project, with its own mark and current name. */
+/**
+ * A linked project, with its own mark and current name. Resting on it opens
+ * the project's hover card, except when the read has settled with no project,
+ * which leaves the plain chip a reader without access already sees.
+ */
 const ProjectChip: React.FC<ResolvedChipProps> = ({
   workspaceId,
   slug,
@@ -73,7 +78,7 @@ const ProjectChip: React.FC<ResolvedChipProps> = ({
   href,
 }) => {
   const auth = useQueryAuth();
-  const { data: project } = usePolledQuery(
+  const { data: project, isLoading } = usePolledQuery(
     ({ signal }) => getProject(workspaceId, target.id, undefined, signal),
     {
       intervalMs: LOOKUP_POLL_MS,
@@ -81,23 +86,28 @@ const ProjectChip: React.FC<ResolvedChipProps> = ({
       auth,
     }
   );
+  const hidden = project === null && !isLoading;
   return (
-    <Link
-      to={projectPath(slug, {
-        project_id: target.id,
-        name: project?.name,
-      })}
-      title={project?.name}
-      data-reference="project"
-      data-md-href={href}
-      className={REFERENCE_CHIP_CLASS}
-    >
-      <ProjectMark
-        icon={project?.icon ?? null}
-        color={project?.color ?? null}
-      />
-      <span className="min-w-0 truncate">{project?.name ?? fallback}</span>
-    </Link>
+    <ProjectHoverTrigger projectId={target.id} disabled={hidden}>
+      {(trigger) => (
+        <Link
+          {...trigger}
+          to={projectPath(slug, {
+            project_id: target.id,
+            name: project?.name,
+          })}
+          data-reference="project"
+          data-md-href={href}
+          className={REFERENCE_CHIP_CLASS}
+        >
+          <ProjectMark
+            icon={project?.icon ?? null}
+            color={project?.color ?? null}
+          />
+          <span className="min-w-0 truncate">{project?.name ?? fallback}</span>
+        </Link>
+      )}
+    </ProjectHoverTrigger>
   );
 };
 

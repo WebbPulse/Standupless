@@ -49,6 +49,7 @@ import { isPastDue } from '../../../lib/viewerTimezone';
 import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
 import { PriorityGlyph } from '../../ui/glyphs';
+import { ProjectHoverTrigger } from '../../ui/ProjectHoverCard';
 import { StatusIcon } from '../../ui/StatusIcon';
 import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import type { PopoverTriggerProps } from '../../ui/popover';
@@ -727,15 +728,20 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
         <PullRequestChip issue={issue} className={hide} />
       )}
       {shows('project') && project !== undefined && (
-        <NavChipLink
-          tooltip={`Open project: ${project.name}`}
-          to={projectPath(slug, project, keyPrefix)}
-          wrapperClassName={card ? '' : 'hidden lg:inline-flex'}
-          className={CHIP_CLASS}
-        >
-          <LuBox aria-hidden="true" className="h-3 w-3" />
-          <span className="truncate">{project.name}</span>
-        </NavChipLink>
+        <ProjectHoverTrigger projectId={project.project_id}>
+          {(trigger) => (
+            <NavChipLink
+              tooltip={`Open project: ${project.name}`}
+              to={projectPath(slug, project, keyPrefix)}
+              wrapperClassName={card ? '' : 'hidden lg:inline-flex'}
+              className={CHIP_CLASS}
+              trigger={trigger}
+            >
+              <LuBox aria-hidden="true" className="h-3 w-3" />
+              <span className="truncate">{project.name}</span>
+            </NavChipLink>
+          )}
+        </ProjectHoverTrigger>
       )}
       {shows('milestone') && milestone !== undefined && (
         <Chip
