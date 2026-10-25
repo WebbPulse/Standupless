@@ -52,6 +52,7 @@ def test_a_manifest_points_at_its_own_environment(name: str, host: str, command:
         "link_shared",
         "message.channels",
         "message.groups",
+        "reaction_added",
         "tokens_revoked",
     ]
     assert settings["interactivity"] == {"is_enabled": True, "request_url": f"{api}/interactions"}

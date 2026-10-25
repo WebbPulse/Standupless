@@ -2804,6 +2804,24 @@ class SlackInstallUrlRead(TypedDict):
     url: str
 
 
+class SlackIntakeRead(TypedDict):
+    channel_ids: NotRequired[list[str]]
+    configured: bool
+    emoji: NotRequired[str | None]
+    enabled: NotRequired[bool]
+    installed: bool
+    reinstall: NotRequired[bool]
+    updated_at: NotRequired[str | None]
+
+
+ChannelId: TypeAlias = str
+
+
+class SlackIntakeWrite(TypedDict):
+    channel_ids: list[ChannelId]
+    emoji: str
+
+
 class SlackLinkRead(TypedDict):
     available: bool
     configured: bool

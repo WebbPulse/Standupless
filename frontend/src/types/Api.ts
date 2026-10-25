@@ -4979,6 +4979,27 @@ export interface SlackChannelRead {
   is_private: boolean;
 }
 
+/**
+ * A team's Slack emoji reaction intake. `enabled` is false until a team admin
+ * picks an emoji and channels, and `reinstall` says the Slack App was added
+ * before it could read reactions, so it has to be connected again.
+ */
+export interface SlackIntakeRead {
+  configured: boolean;
+  installed: boolean;
+  enabled: boolean;
+  reinstall: boolean;
+  emoji: string | null;
+  channel_ids: string[];
+  updated_at: string | null;
+}
+
+/** The emoji a team files Slack messages with and the channels it listens in. */
+export interface SlackIntakeWrite {
+  emoji: string;
+  channel_ids: string[];
+}
+
 /** Whether this environment has a Discord App and whether this workspace added it to a server. */
 export interface DiscordConnectionRead {
   configured: boolean;
