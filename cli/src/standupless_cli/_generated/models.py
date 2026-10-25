@@ -703,6 +703,21 @@ class CycleSettingsRead(TypedDict):
     updated_at: NotRequired[str | None]
 
 
+class CycleSettingsSaved(TypedDict):
+    auto_add_completed: bool
+    auto_add_started: bool
+    cooldown_weeks: int
+    duration_weeks: int
+    enabled: bool
+    kept_cycles: NotRequired[int]
+    move_unfinished: bool
+    removed_cycles: NotRequired[int]
+    start_weekday: int
+    team_id: str
+    upcoming_count: int
+    updated_at: NotRequired[str | None]
+
+
 class CycleSettingsUpdate(TypedDict):
     auto_add_completed: NotRequired[bool | None]
     auto_add_started: NotRequired[bool | None]
