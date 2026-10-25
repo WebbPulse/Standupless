@@ -51,6 +51,7 @@ import { insightsFilters, narrowTo } from '../../../lib/insights';
 import {
   groupFieldsFor,
   filterFieldsFor,
+  namedTeamIds,
   parseViewState,
   sameViewState,
   sharedChange,
@@ -64,6 +65,7 @@ import {
   type ViewState,
 } from '../../../lib/issueView';
 import { viewPath, viewsPath } from '../../../lib/paths';
+import { teamFilterTeams } from '../../../lib/teamRetirement';
 import ShareButton from '../../access/ShareButton';
 import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
@@ -516,10 +518,11 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
   const isMember = workspace !== null && workspace.role !== 'guest';
   const { customers } = useCustomers(workspaceId, isMember);
+  const namedTeams = useMemo(() => namedTeamIds(state), [state]);
   const filterContext = useMemo(
     () => ({
       ...lists.context,
-      teams: teams.map((team) => ({
+      teams: teamFilterTeams(teams, namedTeams).map((team) => ({
         id: team.id,
         name: team.name,
         key: team.key_prefix,
@@ -533,7 +536,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           }
         : {}),
     }),
-    [lists.context, teams, isMember, customers]
+    [lists.context, teams, namedTeams, isMember, customers]
   );
   const viewLists = useMemo(
     () => ({ ...lists, context: filterContext }),

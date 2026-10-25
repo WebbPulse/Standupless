@@ -4,6 +4,7 @@
  * issues still open and search still finds them.
  */
 
+import { ApiError, getErrorCode } from '@webbpulse/api-client';
 import type { TeamRead } from '../types/Api';
 
 /** Whether a team is retired. */
@@ -19,3 +20,32 @@ export const activeTeams = <T extends Pick<TeamRead, 'retired_at'>>(
 export const retiredTeams = <T extends Pick<TeamRead, 'retired_at'>>(
   teams: readonly T[]
 ): T[] => teams.filter(isRetired);
+
+/**
+ * The teams a team filter offers: every active team, plus any retired team
+ * the filter already names so an explicit choice stays visible and editable.
+ */
+export const teamFilterTeams = <T extends Pick<TeamRead, 'id' | 'retired_at'>>(
+  teams: readonly T[],
+  named: ReadonlySet<string>
+): T[] => teams.filter((team) => !isRetired(team) || named.has(team.id));
+
+/** The code the retire route answers while a team still has open issues. */
+export const TEAM_HAS_OPEN_ISSUES = 'TEAM_HAS_OPEN_ISSUES';
+
+/**
+ * How many open issues held a retire back, read from the refusal's details,
+ * or null when the failure was anything else.
+ */
+export const openIssueCount = (error: unknown): number | null => {
+  if (
+    !(error instanceof ApiError) ||
+    getErrorCode(error) !== TEAM_HAS_OPEN_ISSUES
+  ) {
+    return null;
+  }
+  const body = error.body as
+    { details?: { open_issue_count?: unknown } | null } | null | undefined;
+  const count = body?.details?.open_issue_count;
+  return typeof count === 'number' ? count : null;
+};

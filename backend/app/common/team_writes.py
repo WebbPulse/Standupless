@@ -634,12 +634,14 @@ def retire_team(repositories: Repositories, workspace_id: str, team_id: str, act
 
     A team already retired answers unchanged, so a retry is safe. A parent with
     an active sub-team is a 409, since the sub-team would be left under a
-    read-only parent.
+    read-only parent, and so is a team still holding open issues, which could
+    no longer be finished once it is read-only.
     """
     team = load_team(repositories, workspace_id, team_id)
     if team_retirement.is_retired(team):
         return team, False
     team_retirement.check_retirable(repositories.teams, team)
+    team_retirement.check_no_open_issues(repositories, team)
     retired = repositories.teams.set_retired(workspace_id, team_id, actor_id)
     if retired is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)

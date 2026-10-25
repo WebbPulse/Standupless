@@ -1105,7 +1105,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Retire a team: it leaves the sidebar and team pickers, and its issues, projects and cycles stay "
             "readable and searchable but can no longer be changed. A parent with active sub-teams cannot be "
-            "retired. Needs team admin. Undo with unretire_team. team_id: id, key such as ENG, or name."
+            "retired, and neither can a team with open issues: the refusal names how many are left. Needs team "
+            "admin. Undo with unretire_team. team_id: id, key such as ENG, or name."
         ),
         scopes=("teams:write",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),

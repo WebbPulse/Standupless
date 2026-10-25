@@ -125,7 +125,8 @@ def resolve_scope(
 
     A saved view brings its team and its live filter. A request naming a team
     other than the view's is a 422 rather than a silent pick of one of them. With
-    neither a team nor a view, every team the caller can see is read.
+    neither a team nor a view, every active team the caller can see is read,
+    and a retired one only when a team filter names it.
     `include_sub_teams` rolls the team's sub-teams in as the issue list does,
     leaving out any the caller cannot see.
     """
@@ -151,7 +152,8 @@ def resolve_scope(
             filters[0] = _with_archived(wanted)
         filters.append(view_filter)
 
-    teams = listed_teams(repositories, context, team_id or None, include_sub_teams=include_sub_teams)
+    named: frozenset[str] = frozenset().union(*(each.named_team_ids for each in filters))
+    teams = listed_teams(repositories, context, team_id or None, include_sub_teams=include_sub_teams, named=named)
     return InsightScope(team_ids=teams, filters=tuple(filters), subscribed=subscribed, view_id=view_id)
 
 

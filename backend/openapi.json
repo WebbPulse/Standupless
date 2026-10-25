@@ -54953,7 +54953,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/retire": {
       "post": {
-        "description": "Retire a team: it leaves the sidebar and pickers, and its issues, projects and cycles turn read-only.\n\nRetiring a team already retired answers it unchanged. A parent team with an\nactive sub-team is a 409 until the sub-team is retired or moved.",
+        "description": "Retire a team: it leaves the sidebar and pickers, and its issues, projects and cycles turn read-only.\n\nRetiring a team already retired answers it unchanged. A parent team with an\nactive sub-team is a 409 until the sub-team is retired or moved, and a team\nwith open issues, any not completed or cancelled, is a 409\n`TEAM_HAS_OPEN_ISSUES` carrying `details.open_issue_count`.",
         "operationId": "retire_team_api_workspaces__workspace_id__teams__team_id__retire_post",
         "parameters": [
           {

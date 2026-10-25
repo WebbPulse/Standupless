@@ -12,12 +12,17 @@ from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
 
+from app.common.db.dynamo.team_config import FINISHED_CATEGORIES
+
 if TYPE_CHECKING:
+    from app.common.api.dependencies.repositories import Repositories
     from app.common.db.dynamo.teams import Team, TeamRepository
 
 TEAM_RETIRED_CODE = "TEAM_RETIRED"
 
 TEAM_NOT_RETIRABLE_CODE = "TEAM_NOT_RETIRABLE"
+
+TEAM_HAS_OPEN_ISSUES_CODE = "TEAM_HAS_OPEN_ISSUES"
 
 
 def is_retired(team: "Team | None") -> bool:
@@ -75,3 +80,35 @@ def check_unretirable(teams: "TeamRepository", team: "Team") -> None:
     parent = teams.get(team.workspace_id, team.parent_team_id)
     if parent is not None and parent.retired_at is not None:
         raise not_retirable(f"Un-retire its parent team {parent.key_prefix} first")
+
+
+def open_issue_count(repositories: "Repositories", team: "Team") -> int:
+    """How many live issues of a team are neither completed nor cancelled, triage included."""
+    open_ids = [
+        row.status_id
+        for row in repositories.team_config.list_statuses(team.workspace_id, team.team_id)
+        if row.category not in FINISHED_CATEGORIES
+    ]
+    return repositories.issues.count_open(team.workspace_id, team.team_id, open_ids)
+
+
+def has_open_issues(count: int, key_prefix: str) -> HTTPException:
+    """The 409 a retire of a team still holding open issues answers, carrying the count."""
+    noun = "issue" if count == 1 else "issues"
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error_code": TEAM_HAS_OPEN_ISSUES_CODE,
+            "message": (
+                f"Team {key_prefix} still has {count} open {noun}. Complete, cancel or move them before retiring it."
+            ),
+            "details": {"open_issue_count": count},
+        },
+    )
+
+
+def check_no_open_issues(repositories: "Repositories", team: "Team") -> None:
+    """Refuse retiring a team while any of its live issues is still open."""
+    count = open_issue_count(repositories, team)
+    if count:
+        raise has_open_issues(count, team.key_prefix)

@@ -2524,3 +2524,16 @@ export const sharedChange = (
   view.team_id === null && shared !== (view.scope === 'workspace')
     ? { shared }
     : {};
+
+/**
+ * The team ids a view's team clauses ask for by name, top level and in groups.
+ * A team the view names stays in reach after it retires.
+ */
+export const namedTeamIds = (
+  state: Pick<ViewState, 'filters' | 'groups'>
+): Set<string> =>
+  new Set(
+    [...state.filters, ...state.groups.flatMap((group) => group.filters)]
+      .filter((clause) => clause.field === 'team' && clause.op === 'is')
+      .flatMap((clause) => clause.values)
+  );

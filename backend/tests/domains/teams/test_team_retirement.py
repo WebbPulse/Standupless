@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from webbpulse.audit import AuditEvent, AuditQuery
 
 from app.common.composition.domains import DOMAINS
+from app.common.db.dynamo.issues import Issue
 from app.common.composition.wiring import build_domain_app
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, add_team_member, make_team, make_workspace, sign_in
 
@@ -46,6 +47,24 @@ def workspace(repositories: Any) -> str:
     make_team(repositories, WORKSPACE, OTHER_TEAM, "ACT")
     add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "member")
     return WORKSPACE
+
+
+def seed_issue(repositories: Any, number: int, category: str, *, in_triage: bool = False) -> Issue:
+    """Put one issue of `TEAM` in the first status of a category, or awaiting triage."""
+    statuses = repositories.team_config.list_statuses(WORKSPACE, TEAM)
+    status_id = next(row.status_id for row in statuses if row.category == category)
+    return repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            team_id=TEAM,
+            key=f"RET-{number}",
+            number=number,
+            title=f"Issue {number}",
+            status_id=status_id,
+            created_by=OWNER,
+            in_triage=in_triage,
+        )
+    )
 
 
 def logged(repositories: Any, action: str) -> list[AuditEvent]:
@@ -152,3 +171,31 @@ def test_no_team_nests_under_a_retired_parent(client: TestClient, workspace: str
     assert created.json()["error_code"] == "TEAM_RETIRED"
     assert moved.status_code == 409, moved.text
     assert moved.json()["error_code"] == "TEAM_RETIRED"
+
+
+def test_a_team_with_open_issues_is_not_retired(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Open and triage issues block the retire with their count; completed and cancelled ones do not."""
+    seed_issue(repositories, 1, "started")
+    seed_issue(repositories, 2, "backlog")
+    seed_issue(repositories, 3, "unstarted", in_triage=True)
+    seed_issue(repositories, 4, "completed")
+    seed_issue(repositories, 5, "cancelled")
+    sign_in(client, ADMIN)
+
+    blocked = client.post(f"{BASE}/teams/{TEAM}/retire")
+
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error_code"] == "TEAM_HAS_OPEN_ISSUES"
+    assert blocked.json()["details"] == {"open_issue_count": 3}
+    assert "3 open issues" in blocked.json()["message"]
+    assert repositories.teams.get(WORKSPACE, TEAM).retired_at is None
+    assert logged(repositories, "team.retired") == []
+
+
+def test_a_team_whose_issues_are_all_finished_retires(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Only completed and cancelled issues left, the team retires."""
+    seed_issue(repositories, 1, "completed")
+    seed_issue(repositories, 2, "cancelled")
+    sign_in(client, ADMIN)
+
+    assert client.post(f"{BASE}/teams/{TEAM}/retire").status_code == 200

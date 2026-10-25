@@ -62,3 +62,22 @@ def test_a_retired_teams_trash_refuses_delete_restore_and_purge(
 
     repositories.teams.set_retired(workspace, TEAM, None)
     assert client.post(f"{base}/{trashed['id']}/restore").status_code == 200
+
+
+def test_a_workspace_list_leaves_retired_teams_out_unless_filtered_on(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """With no team named the list spans active teams only, and a team filter naming a retired one still reads it."""
+    sign_in(client, OWNER)
+    legacy = create_issue(client, workspace, title="Legacy work")
+    active = create_issue(client, workspace, team_id=OTHER_TEAM, title="Active work")
+    repositories.teams.set_retired(workspace, TEAM, OWNER)
+    base = f"/api/workspaces/{workspace}/issues"
+
+    default = [row["id"] for row in client.get(base).json()["issues"]]
+    filtered = [row["id"] for row in client.get(base, params={"team_id_in": TEAM}).json()["issues"]]
+    both = client.get(base, params=[("team_id_in", TEAM), ("team_id_in", OTHER_TEAM)]).json()["issues"]
+
+    assert default == [active["id"]]
+    assert filtered == [legacy["id"]]
+    assert sorted(row["id"] for row in both) == sorted([legacy["id"], active["id"]])

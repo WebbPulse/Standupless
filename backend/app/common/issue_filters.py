@@ -314,6 +314,12 @@ class IssueFilter:
     customer_index: Optional[CustomerIndex] = field(default=None, compare=False)
 
     @property
+    def named_team_ids(self) -> frozenset[str]:
+        """Every team a team filter asks for by name, in this filter or any of its groups."""
+        own = frozenset(team_id for team_id in self.team_ids if team_id is not None)
+        return own.union(*(group.named_team_ids for group in self.groups))
+
+    @property
     def needs_categories(self) -> bool:
         """Whether matching needs each status's category, which costs a config read."""
         own = bool(
