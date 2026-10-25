@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderedIssueRead } from '../api/issues';
-import type { FavoriteRead, TeamRead } from '../types/Api';
+import type { TeamRead } from '../types/Api';
 import {
   dropTargetKey,
   favoriteDropTarget,
@@ -209,13 +209,13 @@ describe('favoriteDropTarget', () => {
   it('reads a team, project or cycle favorite as a target', () => {
     expect(
       favoriteDropTarget(
-        { kind: 'team', target_id: 'b', title: 'Design' } as FavoriteRead,
+        { kind: 'team', target_id: 'b', title: 'Design' },
         teams
       )
     ).toEqual({ kind: 'team', team: teams[0] });
     expect(
       favoriteDropTarget(
-        { kind: 'project', target_id: 'p-1', title: 'Billing' } as FavoriteRead,
+        { kind: 'project', target_id: 'p-1', title: 'Billing' },
         teams
       )
     ).toEqual({ kind: 'project', projectId: 'p-1', name: 'Billing' });
@@ -226,7 +226,7 @@ describe('favoriteDropTarget', () => {
           target_id: 'c-1',
           title: 'Cycle 4',
           team_id: 'b',
-        } as FavoriteRead,
+        },
         teams
       )
     ).toEqual({ kind: 'cycle', cycleId: 'c-1', teamId: 'b', name: 'Cycle 4' });
@@ -235,19 +235,19 @@ describe('favoriteDropTarget', () => {
   it('takes no drop on a view, a document or a cycle without its team', () => {
     expect(
       favoriteDropTarget(
-        { kind: 'view', target_id: 'v-1', title: 'Bugs' } as FavoriteRead,
+        { kind: 'view', target_id: 'v-1', title: 'Bugs' },
         teams
       )
     ).toBeNull();
     expect(
       favoriteDropTarget(
-        { kind: 'document', target_id: 'd-1', title: 'Spec' } as FavoriteRead,
+        { kind: 'document', target_id: 'd-1', title: 'Spec' },
         teams
       )
     ).toBeNull();
     expect(
       favoriteDropTarget(
-        { kind: 'cycle', target_id: 'c-1', title: 'Lost' } as FavoriteRead,
+        { kind: 'cycle', target_id: 'c-1', title: 'Lost' },
         teams
       )
     ).toBeNull();
