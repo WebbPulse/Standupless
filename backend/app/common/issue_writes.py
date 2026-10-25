@@ -137,6 +137,11 @@ def status_rank(issue: Issue, ranks: StatusRanks) -> tuple[int, int]:
     return ranks.get((issue.team_id, issue.status_id), (len(STATUS_CATEGORIES), 0))
 
 
+def links_key(issue: Issue) -> tuple[int, datetime, str, int]:
+    """The link count sort's key: most links first, then the latest update, then the issue key."""
+    return (issue.relation_count, issue.updated_at, issue.team_id, -issue.number)
+
+
 def sort_key(sort: str, ranks: Optional[StatusRanks] = None, customers: Optional[CustomerIndex] = None) -> Any:
     """The key one sort orders a merged fan-out by.
 
@@ -180,6 +185,8 @@ def sort_key(sort: str, ranks: Optional[StatusRanks] = None, customers: Optional
         )
     if sort == "completed_desc":
         return lambda issue: (issue.completed_at is not None, issue.completed_at or NEVER, issue.issue_id)
+    if sort == "links_desc":
+        return links_key
     return lambda issue: (issue.updated_at, issue.issue_id)
 
 

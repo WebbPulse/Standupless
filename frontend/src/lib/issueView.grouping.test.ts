@@ -16,6 +16,7 @@ import {
   GROUP_FIELDS,
   groupIssues,
   moveChange,
+  ORDERING_LABELS,
   ORDERINGS,
   parentsIn,
   parseViewState,
@@ -421,6 +422,38 @@ describe('the new orderings', () => {
     ]);
     expect(estimatePoints('XXXL')).toBe(21);
     expect(estimatePoints('soon')).toBe(0);
+  });
+
+  it('offers link count, labelled as such', () => {
+    expect(ORDERINGS).toContain('links_desc');
+    expect(ORDERING_LABELS.links_desc).toBe('Link count');
+  });
+
+  it('orders by link count, ties to the latest update then the key', () => {
+    const early = '2026-10-01T00:00:00Z';
+    const late = '2026-10-02T00:00:00Z';
+    const rows = [
+      issue({ id: 'a', number: 1, relation_count: 0, updated_at: late }),
+      issue({ id: 'b', number: 2, relation_count: 3, updated_at: early }),
+      issue({ id: 'c', number: 3, relation_count: 3, updated_at: early }),
+      issue({ id: 'd', number: 4, relation_count: 3, updated_at: late }),
+      issue({ id: 'e', number: 5, updated_at: early }),
+    ];
+
+    expect(ids(sortIssues(rows, 'links_desc'))).toEqual([
+      'd',
+      'b',
+      'c',
+      'a',
+      'e',
+    ]);
+    expect(ids(sortIssues(rows, 'links_desc', { reverse: true }))).toEqual([
+      'e',
+      'a',
+      'c',
+      'b',
+      'd',
+    ]);
   });
 
   it('reverses an ordering over a value every row has', () => {

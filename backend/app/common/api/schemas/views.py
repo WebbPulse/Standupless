@@ -38,6 +38,7 @@ SortField = Literal[
     "customer_important_desc",
     "customer_revenue_desc",
     "completed_desc",
+    "links_desc",
 ]
 
 ViewKindField = Literal["list", "board"]

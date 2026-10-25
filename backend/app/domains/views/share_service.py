@@ -415,6 +415,8 @@ def shared_sort_key(sort: str, ranks: Optional[Mapping[str, tuple[int, int]]] = 
         return lambda issue: (issue.start_date is None, issue.start_date or "", issue.issue_id)
     if sort == "estimate_desc":
         return lambda issue: (not is_unestimated(issue.estimate), estimate_points(issue.estimate), issue.issue_id)
+    if sort == "links_desc":
+        return lambda issue: (issue.relation_count, issue.updated_at, issue.team_id, -issue.number)
     return lambda issue: (issue.updated_at, issue.issue_id)
 
 

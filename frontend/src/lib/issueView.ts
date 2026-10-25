@@ -558,6 +558,7 @@ export const ORDERINGS: IssueListSort[] = [
   'start_asc',
   'due_asc',
   'estimate_desc',
+  'links_desc',
   'sla_asc',
   'key_asc',
   'customer_requests_desc',
@@ -578,6 +579,7 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   status_asc: 'Status',
   start_asc: 'Start date',
   estimate_desc: 'Estimate',
+  links_desc: 'Link count',
   customer_requests_desc: 'Customer requests',
   customer_important_desc: 'Important customer requests',
   customer_revenue_desc: 'Customer revenue',
@@ -2289,6 +2291,13 @@ export const sortIssues = (
         return (
           estimatePoints(right.estimate) - estimatePoints(left.estimate) ||
           right.id.localeCompare(left.id)
+        );
+      case 'links_desc':
+        return (
+          (right.relation_count ?? 0) - (left.relation_count ?? 0) ||
+          right.updated_at.localeCompare(left.updated_at) ||
+          right.team_id.localeCompare(left.team_id) ||
+          left.number - right.number
         );
       case 'status_asc': {
         const [leftCategory, leftPosition] = statusRank(left, options.context);
