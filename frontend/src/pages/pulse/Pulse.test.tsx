@@ -264,6 +264,41 @@ describe('the Pulse page', () => {
     expect(listPulse).toHaveBeenCalledWith('ws-1', { scope: 'for_me' });
   });
 
+  it('lists what the feed is about beside it, newest first with its latest health', async () => {
+    listPulse.mockResolvedValue(
+      pageOf([
+        entry({
+          event_id: 'ev-3',
+          event_type: 'milestone_completed',
+          update_id: null,
+          body: null,
+          health: null,
+          milestone_id: 'm-1',
+          milestone_name: 'Beta',
+        }),
+        initiativeEntry(),
+        entry({ event_id: 'ev-1' }),
+      ])
+    );
+    renderPage();
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'In this feed',
+    });
+    const rows = within(panel).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(
+      within(rows[0]!).getByRole('link', { name: 'Launch' })
+    ).toHaveAttribute('href', '/w/mine/projects/p-1');
+    expect(within(rows[0]!).getByText('At risk')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('2 entries')).toBeInTheDocument();
+    expect(
+      within(rows[1]!).getByRole('link', { name: 'Growth' })
+    ).toHaveAttribute('href', '/w/mine/initiatives/i-1');
+    expect(within(rows[1]!).getByText('On track')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('1 entry')).toBeInTheDocument();
+  });
+
   it('marks unread entries and moves the read marker once', async () => {
     listPulse.mockResolvedValue(
       pageOf([entry({ unread: true }), entry({ event_id: 'ev-0' })])

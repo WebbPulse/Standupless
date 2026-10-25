@@ -29,6 +29,24 @@ export const entryHref = (slug: string, item: PulseItemRead): string => {
     : projectPath(slug, project);
 };
 
+/** Where the page of what an entry is about lives; empty when it has none. */
+export const subjectHref = (slug: string, item: PulseItemRead): string => {
+  if (item.subject_type === 'initiative') {
+    return item.initiative_id === null
+      ? ''
+      : initiativePath(slug, {
+          initiative_id: item.initiative_id,
+          name: item.initiative_name,
+        });
+  }
+  return item.project_id === null
+    ? ''
+    : projectPath(slug, {
+        project_id: item.project_id,
+        name: item.project_name,
+      });
+};
+
 /** The name of what an entry is about. */
 export const subjectName = (item: PulseItemRead): string =>
   (item.subject_type === 'initiative'
