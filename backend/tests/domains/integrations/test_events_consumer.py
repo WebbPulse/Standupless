@@ -1165,6 +1165,111 @@ def test_a_closed_pull_request_rule_may_still_move_an_issue_back(
     assert status_of(repositories, issue.issue_id) == status_ids["unstarted"]
 
 
+def test_a_referencing_pull_request_leaves_an_issue_its_merged_fix_put_on_staging(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A `Refs` pull request opened and readied after the `Fixes` merge never moves the issue back to In Review."""
+    place(repositories, issue, preset["In Review"])
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed", merged=True, state="closed", title="A change", body="Fixes ABC-1", base="staging"
+            )
+        ),
+    )
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+
+    for action in ("opened", "ready_for_review"):
+        events.handle_record(
+            repositories,
+            sqs_record(
+                pull_request_event(
+                    action=action, title="Other work", body="Refs ABC-1", base="staging", number=8, node_id="PR_refs"
+                )
+            ),
+        )
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 2
+
+
+def test_an_abandoned_referencing_pull_request_leaves_an_issue_its_merged_fix_moved(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Once a closing pull request has merged, a `pr_closed` rule is held to forward only as well."""
+    add_rule(repositories, "pr_closed", status_ids["unstarted"])
+    place(repositories, issue, preset["In Review"])
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed", merged=True, state="closed", title="A change", body="Fixes ABC-1", base="staging"
+            )
+        ),
+    )
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed", state="closed", title="Other work", body="Refs ABC-1", number=8, node_id="PR_refs"
+            )
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+
+
+def test_a_merged_promotion_still_moves_an_issue_forward_after_its_fix_merged(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Forward moves still land once a closing pull request merged, so the promotion takes the issue to Done."""
+    place(repositories, issue, preset["In Review"])
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed", merged=True, state="closed", title="A change", body="Fixes ABC-1", base="staging"
+            )
+        ),
+    )
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed",
+                merged=True,
+                state="closed",
+                title="Promote staging to main",
+                body="Fixes ABC-1",
+                base="main",
+                number=9,
+                node_id="PR_promote",
+            )
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
 FORK_AUTHOR_ID = 7070
 
 MEMBER_GITHUB_ID = 5151
