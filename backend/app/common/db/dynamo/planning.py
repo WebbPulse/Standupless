@@ -83,6 +83,15 @@ PROJECT_LABEL_KEY_PREFIX = "project_label#"
 label row.
 """
 
+PROJECT_STATUS = "project_status"
+
+PROJECT_STATUS_KEY_PREFIX = "project_status#"
+"""Where the workspace's own project statuses are filed, one row per status.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+status row. A workspace with no rows reads the six seeded defaults.
+"""
+
 PROJECT_LINK = "project_link"
 
 PROJECT_LINK_KEY_PREFIX = "project_link#"
@@ -117,6 +126,9 @@ PULSE_READ = "pulse_read"
 
 PULSE_READ_PREFIX = "pulse_read#"
 """Where each person's Pulse read marker is filed."""
+
+CYCLE_FEED = "cycle_feed"
+"""The kind of one person's cycle calendar feed row for one team."""
 
 PulseSubject = Literal["project", "initiative"]
 
@@ -303,6 +315,11 @@ def project_label_key(label_id: str) -> str:
     return f"{PROJECT_LABEL_KEY_PREFIX}{label_id}"
 
 
+def project_status_key(status_id: str) -> str:
+    """The sort key of one project status row."""
+    return f"{PROJECT_STATUS_KEY_PREFIX}{status_id}"
+
+
 def project_link_prefix(project_id: str) -> str:
     """The sort key prefix every Resources link of one project shares."""
     return f"{PROJECT_LINK_KEY_PREFIX}{project_id}#"
@@ -355,6 +372,20 @@ def pulse_read_key(user_id: str) -> str:
 def cycle_prefix(team_id: str) -> str:
     """The sort key prefix every cycle of one team shares."""
     return f"team#{team_id}#cycle#"
+
+
+def cycle_feed_prefix(team_id: str) -> str:
+    """The sort key prefix every cycle calendar feed of one team shares.
+
+    Filed under `cyclefeed#` rather than `cycle#`, so a cycle listing never reads a
+    feed row, while the team purge still clears it beside the team's cycles.
+    """
+    return f"team#{team_id}#cyclefeed#"
+
+
+def cycle_feed_key(team_id: str, user_id: str) -> str:
+    """The sort key of one person's cycle calendar feed for one team."""
+    return f"{cycle_feed_prefix(team_id)}{user_id}"
 
 
 def cycle_history_prefix(team_id: str, cycle_id: str | None = None) -> str:
@@ -579,6 +610,9 @@ class Project(BaseModel):
     `sort_order` is the workspace-wide manual position, a base 62 fractional
     key; None on a row never placed, which the manual ordering puts last.
     `archived_at` is when the project was archived, None while it is live.
+    `status` is the category the project's status sits in, which every rule
+    reads, and `status_id` the workspace project status itself; None on a row
+    written before custom statuses, which reads as its category's seeded default.
     """
 
     workspace_id: str
@@ -592,6 +626,7 @@ class Project(BaseModel):
     start_date: str | None = None
     target_date: str | None = None
     status: str = "backlog"
+    status_id: str | None = None
     icon: str | None = None
     color: str | None = None
     health: str | None = None
@@ -622,6 +657,11 @@ class Project(BaseModel):
     def progress(self) -> RollupCounts:
         """The buckets progress is measured by: points when a team estimates, issue counts otherwise."""
         return self.points if self.measure == "points" else self.counts
+
+    @property
+    def effective_status_id(self) -> str:
+        """The project status the row sits in, its category's seeded default when none was stored."""
+        return self.status_id or self.status
 
 
 class Initiative(BaseModel):
@@ -756,6 +796,34 @@ class ProjectLabel(BaseModel):
             self.planning_key = project_label_key(self.label_id)
 
 
+class ProjectStatusRow(BaseModel):
+    """One project status of the workspace, a named stage inside one fixed category.
+
+    `category` is one of `PROJECT_STATUSES` and never changes, so every rule that
+    reads a project's category holds however the status is renamed. `position`
+    orders the statuses within their category. A null `color` draws the
+    category's own tone.
+    """
+
+    workspace_id: str
+    planning_key: str = ""
+    status_id: str = Field(default_factory=new_planning_id)
+    kind: str = PROJECT_STATUS
+    name: str
+    category: str
+    color: str | None = None
+    description: str | None = None
+    position: int = 0
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def model_post_init(self, _context: Any) -> None:
+        """Derive the sort key from the id when none was given."""
+        if not self.planning_key:
+            self.planning_key = project_status_key(self.status_id)
+
+
 class ProjectLink(BaseModel):
     """One external link in a project's Resources section.
 
@@ -888,6 +956,7 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
 
 
 PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "status_id",
     "target_date",
     "start_date",
     "lead_id",
@@ -1148,6 +1217,20 @@ def is_current_project(item: Mapping[str, Any]) -> bool:
     carries no `team_ids`. Neither is readable as a project, so both are skipped.
     """
     return str(item.get("kind", "")) == PROJECT and bool(item.get("team_ids"))
+
+
+class CycleFeed(BaseModel):
+    """One person's cycle calendar feed for one team, holding only the token's hash.
+
+    The token itself is answered once, when it is minted, and never stored, so a
+    read of this table cannot reproduce a working feed URL.
+    """
+
+    workspace_id: str
+    team_id: str
+    user_id: str
+    token_hash: str
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class CycleSnapshot(BaseModel):
@@ -1554,6 +1637,43 @@ class PlanningRepository:
         self._repository.put(item, condition=condition)
         return label
 
+    def get_project_status(self, workspace_id: str, status_id: str) -> ProjectStatusRow | None:
+        """One stored project status of the workspace, or `None`; the seeded defaults are not read here."""
+        if not status_id:
+            return None
+        item = self._get(workspace_id, project_status_key(status_id))
+        if item is None or str(item.get("kind", "")) != PROJECT_STATUS:
+            return None
+        return ProjectStatusRow.model_validate(dict(item))
+
+    def list_project_statuses(self, workspace_id: str, *, max_items: int = 1000) -> list[ProjectStatusRow]:
+        """Every stored project status of the workspace, by category then position; empty before the first edit."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_STATUS_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [ProjectStatusRow.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_STATUS]
+        order = {category: index for index, category in enumerate(PROJECT_STATUSES)}
+        return sorted(rows, key=lambda row: (order.get(row.category, len(order)), row.position, row.status_id))
+
+    def put_project_status(self, row: ProjectStatusRow, *, create: bool) -> ProjectStatusRow:
+        """Store a new project status or write an edited one, raising `ConditionFailed` on a taken or missing key."""
+        item = row.model_dump(mode="json")
+        for name in ("color", "description"):
+            if item.get(name) is None:
+                item.pop(name, None)
+        condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
+        self._repository.put(item, condition=condition)
+        return row
+
+    def delete_project_status(self, workspace_id: str, status_id: str) -> None:
+        """Remove one project status row; the projects in it are moved by the caller first."""
+        if not workspace_id or not status_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "planning_key": project_status_key(status_id)})
+
     def get_project_link(self, workspace_id: str, project_id: str, link_id: str) -> ProjectLink | None:
         """One Resources link of one project, or `None`; the project is part of the key."""
         if not project_id or not link_id:
@@ -1888,6 +2008,25 @@ class PlanningRepository:
                 "read_at": _stored_time(read_at),
             }
         )
+
+    def get_cycle_feed(self, workspace_id: str, team_id: str, user_id: str) -> CycleFeed | None:
+        """One person's cycle calendar feed for one team, or `None` when they hold none."""
+        item = self._get(workspace_id, cycle_feed_key(team_id, user_id))
+        if item is None or str(item.get("kind", "")) != CYCLE_FEED:
+            return None
+        return CycleFeed.model_validate(dict(item))
+
+    def put_cycle_feed(self, feed: CycleFeed) -> CycleFeed:
+        """Store one person's feed for one team, replacing and so revoking any earlier token."""
+        item = feed.model_dump(mode="json")
+        item["planning_key"] = cycle_feed_key(feed.team_id, feed.user_id)
+        item["kind"] = CYCLE_FEED
+        self._repository.put(item)
+        return feed
+
+    def delete_cycle_feed(self, workspace_id: str, team_id: str, user_id: str) -> bool:
+        """Revoke one person's feed for one team, reporting whether one was there."""
+        return self.delete(workspace_id, cycle_feed_key(team_id, user_id))
 
     def claim_milestone_completion(self, workspace_id: str, project_id: str, milestone_id: str) -> bool:
         """Mark a milestone's completion as posted to Pulse, answering false when it already was or is gone."""
@@ -2373,6 +2512,8 @@ class PlanningRepository:
         page = self._query_prefix(workspace_id, cycle_prefix(team_id), limit, None)
         if not page.items:
             page = self._query_prefix(workspace_id, cycle_history_prefix(team_id), limit, None)
+        if not page.items:
+            page = self._query_prefix(workspace_id, cycle_feed_prefix(team_id), limit, None)
         if not page.items:
             return 0
         return self._repository.delete_many(

@@ -33,6 +33,10 @@
  * A thread pinned to a passage of the description opens with that passage.
  * Pressing it scrolls to the highlight in the description, and when the
  * description no longer holds the text the thread says so and keeps the quote.
+ *
+ * Given a `documentId`, the card is a thread on that document: every write goes
+ * through the document's routes, `issueId` names the document so the thread
+ * list's key is shared, and GitHub sync and the activity feed play no part.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
@@ -57,9 +61,12 @@ import {
 } from 'react-icons/lu';
 import {
   deleteComment,
+  deleteDocumentComment,
   resolveThread,
+  setDocumentThreadResolved,
   unresolveThread,
   updateComment,
+  updateDocumentComment,
 } from '../../api/discussion';
 import { syncThread, unsyncThread } from '../../api/integrations';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
@@ -112,6 +119,8 @@ interface ReaderProps {
   isAdmin: boolean;
   /** Where a thread may be synced on GitHub; empty offers no sync. */
   threadTargets?: GithubThreadTargetRead[];
+  /** The document the thread sits on, in place of an issue. */
+  documentId?: string;
 }
 
 /** Props for one comment inside a card. */
@@ -183,6 +192,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
   canComment,
   isAdmin,
   threadTargets = [],
+  documentId,
   onReply,
   onToggleResolved,
   onQuote,
@@ -201,12 +211,22 @@ const CommentItem: React.FC<CommentItemProps> = ({
 
   const { mutate: save, isMutating: isSaving } = useMutationWithRefetch(
     (body: string) =>
-      updateComment(workspaceId, comment.comment_id, issueId, body),
+      documentId !== undefined
+        ? updateDocumentComment(
+            workspaceId,
+            documentId,
+            comment.comment_id,
+            body
+          )
+        : updateComment(workspaceId, comment.comment_id, issueId, body),
     queryKey
   );
 
   const { mutate: remove } = useMutationWithRefetch(
-    () => deleteComment(workspaceId, comment.comment_id, issueId),
+    () =>
+      documentId !== undefined
+        ? deleteDocumentComment(workspaceId, documentId, comment.comment_id)
+        : deleteComment(workspaceId, comment.comment_id, issueId),
     queryKey
   );
 
@@ -283,7 +303,8 @@ const CommentItem: React.FC<CommentItemProps> = ({
   const canDelete = isAuthor || isAdmin;
   const isRoot = comment.parent_comment_id === null;
   const thread = isRoot ? (comment.github_thread ?? null) : null;
-  const canSync = isRoot && canComment && thread === null;
+  const canSync =
+    isRoot && canComment && thread === null && documentId === undefined;
   const isResolved = isRoot && (comment.resolution ?? null) !== null;
   const quote = canComment ? onQuote : undefined;
   const quoted = quoteMarkdown(comment.body);
@@ -330,6 +351,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
               targetId={comment.comment_id}
               targetKind="comment"
               issueId={issueId}
+              {...(documentId === undefined ? {} : { documentId })}
               reactions={[]}
               canReact
               refetchKey={commentsKey(issueId)}
@@ -478,6 +500,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 onCancel={() => {
                   setEditing(false);
                 }}
+                selectionIssue={{ issueId }}
               />
             </Suspense>
             <div className="flex items-center justify-end gap-1.5">
@@ -525,6 +548,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
               targetId={comment.comment_id}
               targetKind="comment"
               issueId={issueId}
+              {...(documentId === undefined ? {} : { documentId })}
               reactions={comment.reactions}
               canReact={canComment}
               refetchKey={commentsKey(issueId)}
@@ -563,14 +587,40 @@ export const CommentCard: React.FC<CommentCardProps> = ({
     resolution !== null || located === null || located.has(commentId);
   const active = passages !== null && passages.activeId === commentId;
 
+  const { documentId } = reader;
+  const refreshActivity = (): void => {
+    if (documentId === undefined) {
+      invalidateQueries([activityKey(reader.issueId)]);
+    }
+  };
+
   const { mutate: resolve } = useMutationWithRefetch(
-    () => resolveThread(reader.workspaceId, reader.issueId, comment.comment_id),
+    () =>
+      documentId !== undefined
+        ? setDocumentThreadResolved(
+            reader.workspaceId,
+            documentId,
+            comment.comment_id,
+            true
+          )
+        : resolveThread(reader.workspaceId, reader.issueId, comment.comment_id),
     queryKey
   );
 
   const { mutate: unresolve } = useMutationWithRefetch(
     () =>
-      unresolveThread(reader.workspaceId, reader.issueId, comment.comment_id),
+      documentId !== undefined
+        ? setDocumentThreadResolved(
+            reader.workspaceId,
+            documentId,
+            comment.comment_id,
+            false
+          )
+        : unresolveThread(
+            reader.workspaceId,
+            reader.issueId,
+            comment.comment_id
+          ),
     queryKey
   );
 
@@ -589,7 +639,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
         setExpanded(false);
         setReplying(false);
         quotes.clear();
-        invalidateQueries([activityKey(reader.issueId)]);
+        refreshActivity();
         showToast('Thread resolved');
       })
       .catch((failure: unknown) => {
@@ -600,7 +650,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
   const markOpen = (): void => {
     void unresolve()
       .then(() => {
-        invalidateQueries([activityKey(reader.issueId)]);
+        refreshActivity();
         showToast('Thread reopened');
       })
       .catch((failure: unknown) => {
@@ -729,6 +779,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
             <CommentComposer
               workspaceId={reader.workspaceId}
               issueId={reader.issueId}
+              {...(documentId === undefined ? {} : { documentId })}
               people={people}
               parentCommentId={comment.comment_id}
               placeholder="Leave a reply..."
@@ -738,9 +789,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
               onPosted={() => {
                 setReplying(false);
                 quotes.clear();
-                if (resolution !== null) {
-                  invalidateQueries([activityKey(reader.issueId)]);
-                }
+                if (resolution !== null) refreshActivity();
               }}
               onCancel={() => {
                 setReplying(false);

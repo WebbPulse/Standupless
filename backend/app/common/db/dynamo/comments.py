@@ -94,6 +94,10 @@ class Comment(BaseModel):
     mirrored to a GitHub pull request or issue, and `resolution` on a root
     whose thread was marked resolved. `anchor` is set on a root comment started
     from a selected passage of the description.
+
+    `document_id` is set on a comment on a document rather than an issue. Such a
+    row is partitioned under the document, carries the document id as its
+    `issue_id` so every per-thread read works unchanged, and has no team.
     """
 
     ws_issue: str
@@ -113,6 +117,7 @@ class Comment(BaseModel):
     github_thread: GithubThread | None = None
     resolution: ThreadResolution | None = None
     anchor: CommentAnchor | None = None
+    document_id: str | None = None
 
 
 def build_comment(
@@ -127,6 +132,7 @@ def build_comment(
     attachment_ids: list[str] | None = None,
     source: str | None = None,
     anchor: CommentAnchor | None = None,
+    document_id: str | None = None,
 ) -> Comment:
     """One comment with its partition key already composed.
 
@@ -145,6 +151,7 @@ def build_comment(
         attachment_ids=list(attachment_ids or []),
         source=source,
         anchor=anchor,
+        document_id=document_id,
     )
 
 
@@ -165,6 +172,8 @@ def as_comment_item(comment: Comment) -> dict[str, Any]:
         item.pop("resolution", None)
     if item.get("anchor") is None:
         item.pop("anchor", None)
+    if not item.get("document_id"):
+        item.pop("document_id", None)
     return item
 
 

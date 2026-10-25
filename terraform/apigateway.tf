@@ -37,12 +37,15 @@ locals {
       "/api/workspaces/{workspace_id}/comments",
       "/api/workspaces/{workspace_id}/reactions",
       "/api/workspaces/{workspace_id}/attachments",
+      "/api/workspaces/{workspace_id}/documents/{document_id}/comments",
+      "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers",
     ]
 
     planning = [
       "/api/workspaces/{workspace_id}/cycles",
       "/api/workspaces/{workspace_id}/projects",
       "/api/workspaces/{workspace_id}/project-labels",
+      "/api/workspaces/{workspace_id}/project-statuses",
       "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
       "/api/workspaces/{workspace_id}/pulse",
@@ -178,6 +181,13 @@ locals {
     "GET /api/workspaces/{workspace_id}/attachments/{attachment_id}/content" = { integration = "discussion", authorization_type = "NONE" }
   } : {}
 
+  # A calendar app subscribing to a team's cycles sends no identity token. The
+  # feed token in the query is the credential, and the planning function answers
+  # the same 404 for any token that is unknown, revoked or no longer entitled.
+  cycle_calendar_route_keys = contains(local.routed_lambda_domains, "planning") ? {
+    "GET /api/workspaces/{workspace_id}/teams/{team_id}/cycles.ics" = { integration = "planning", authorization_type = "NONE" }
+  } : {}
+
   # Workspace, team and person icons load through plain <img> elements, which
   # send no identity token. The workspaces function redirects only exact icon
   # keys, whose random last segment is the credential, and 404s any other path.
@@ -245,6 +255,7 @@ locals {
     local.discord_route_keys,
     local.share_link_public_route_keys,
     local.attachment_content_route_keys,
+    local.cycle_calendar_route_keys,
     local.icon_content_route_keys,
     local.billing_webhook_route_keys,
     local.scim_route_keys,

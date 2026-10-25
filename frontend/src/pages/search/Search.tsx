@@ -27,6 +27,7 @@ import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import { StatusIcon } from '../../components/ui/StatusIcon';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
@@ -38,10 +39,7 @@ import {
   issuePath,
   projectPath,
 } from '../../lib/paths';
-import {
-  INITIATIVE_STATUS_LABELS,
-  PROJECT_STATUS_LABELS,
-} from '../../lib/planningDisplay';
+import { INITIATIVE_STATUS_LABELS } from '../../lib/planningDisplay';
 import {
   STATUS_CATEGORY_LABELS,
   STATUS_CATEGORY_ORDER,
@@ -129,6 +127,7 @@ const SectionHeading: React.FC<{
 /** Searches issues, projects, initiatives, documents and comments across the visible teams. */
 export const Search: React.FC = () => {
   const { workspace } = useWorkspace();
+  const { statusOf: projectStatusOf } = useProjectStatuses();
   const navigate = useNavigate();
   const auth = useQueryAuth();
   const [params, setParams] = useSearchParams();
@@ -462,7 +461,8 @@ export const Search: React.FC = () => {
                       >
                         <ProjectStatusGlyph
                           status={project.status}
-                          name={PROJECT_STATUS_LABELS[project.status]}
+                          name={projectStatusOf(project).name}
+                          color={projectStatusOf(project).color}
                         />
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
                           {project.name}
@@ -474,7 +474,7 @@ export const Search: React.FC = () => {
                             .join(', ')}
                         </span>
                         <span className="w-20 shrink-0 truncate text-right text-xs text-text-faint">
-                          {PROJECT_STATUS_LABELS[project.status]}
+                          {projectStatusOf(project).name}
                         </span>
                       </Link>
                     </li>
@@ -548,7 +548,11 @@ export const Search: React.FC = () => {
                         className="flex items-start border-b border-line px-4 py-2 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6"
                       >
                         <Link
-                          to={`${issuePath(slug, comment.issue_key)}#comment-${comment.comment_id}`}
+                          to={`${
+                            comment.document_id
+                              ? documentPath(slug, comment.document_id)
+                              : issuePath(slug, comment.issue_key)
+                          }#comment-${comment.comment_id}`}
                           data-hover="parent"
                           className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xs"
                         >
@@ -559,10 +563,14 @@ export const Search: React.FC = () => {
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-2">
                               <span className="w-16 shrink-0 truncate font-mono text-xs text-text-faint">
-                                {comment.issue_key}
+                                {comment.document_id
+                                  ? 'Doc'
+                                  : comment.issue_key}
                               </span>
                               <span className="truncate text-sm font-medium text-text">
-                                {comment.issue_title}
+                                {comment.document_id
+                                  ? (comment.document_title ?? 'Document')
+                                  : comment.issue_title}
                               </span>
                             </span>
                             <span className="mt-0.5 line-clamp-2 text-xs text-text-muted">

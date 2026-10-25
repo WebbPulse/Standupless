@@ -78,6 +78,7 @@ import {
 import { listCycles, listProjects } from '../../api/planning';
 import { useAttachFiles } from '../../hooks/useAttachFiles';
 import { useAuth } from '../../hooks/useAuth';
+import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
@@ -406,6 +407,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const canEdit = canWriteIssues(workspace?.role, team?.role);
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const currentUserId = user?.id ?? '';
+  const branchNaming = useBranchNaming(options.people, currentUserId);
 
   const parents = options.parents.filter(
     (candidate) =>
@@ -761,7 +763,8 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       currentUserId,
                       apply: onUpdate,
                     }
-                  : undefined
+                  : undefined,
+                branchNaming
               );
             }}
           >

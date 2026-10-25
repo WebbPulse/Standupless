@@ -16,6 +16,7 @@ import logging
 import re
 from typing import Any, cast, get_args
 
+from app.common.api.dependencies.authz import missing_scopes
 from app.common.api.pagination import digest_scope
 from app.common.api.schemas.insights import INSIGHT_DIMENSIONS, INSIGHT_MEASURES
 from app.common.api.schemas.issues import (
@@ -40,6 +41,7 @@ from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.document_comments import create_document_comment, document_comment_page
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
@@ -679,7 +681,8 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
     """One comment as the tools answer it."""
     return {
         "comment_id": comment.comment_id,
-        "issue_id": comment.issue_id,
+        "issue_id": None if comment.document_id else comment.issue_id,
+        "document_id": comment.document_id,
         "parent_comment_id": comment.parent_comment_id,
         "author_id": comment.author_id,
         "body": comment.body,
@@ -709,6 +712,8 @@ def _add_comment(call: ToolCall) -> Any:
     `quote` pins a new thread to the first place the description shows that text,
     with the context either side found here, so an agent names only the words.
     """
+    if _document_target(call):
+        return _add_document_comment(call)
     issue = issue_ref(call, call.require("issue_id"))
     parent = call.optional("parent_comment_id")
     quote = call.optional("quote")
@@ -783,8 +788,51 @@ def _list_github_thread_targets(call: ToolCall) -> Any:
     return {"targets": thread_sync.thread_targets(call.repositories, issue)}
 
 
+def _document_target(call: ToolCall) -> bool:
+    """Whether a comment tool names a document rather than an issue, refusing a call that names both or neither."""
+    named_document = bool(call.optional("document_id"))
+    named_issue = bool(call.optional("issue_id"))
+    if named_document == named_issue:
+        raise ToolError(
+            "Missing or conflicting target: name either issue_id or issue_key, or document_id, but only one"
+        )
+    return named_document
+
+
+def _add_document_comment(call: ToolCall) -> Any:
+    """Add a comment, or a reply to a top level comment, to a document through the route's path."""
+    for name in ("quote", "sync_to_github", "github_target"):
+        if call.optional(name) is not None:
+            raise ToolError(f"{name} is for issue comments only")
+    parent = call.optional("parent_comment_id")
+    created = create_document_comment(
+        call.repositories,
+        call.context,
+        str(call.require("document_id")),
+        str(call.require("body")),
+        parent_comment_id=str(parent) if parent else None,
+    )
+    return _comment_json(created)
+
+
+def _list_document_comments(call: ToolCall) -> Any:
+    """One page of a document's comments, oldest first, for a credential that may read documents."""
+    if missing_scopes(call.context.scopes, ("projects:read",)):
+        raise ToolError("Missing scope: projects:read")
+    rows, next_cursor = document_comment_page(
+        call.repositories,
+        call.context,
+        str(call.require("document_id")),
+        cursor=call.optional("cursor"),
+        limit=limit(call.optional("limit")),
+    )
+    return {"comments": [_comment_json(row) for row in rows], "next_cursor": next_cursor}
+
+
 def _list_comments(call: ToolCall) -> Any:
-    """One page of an issue's comments, oldest first, replies carrying their parent."""
+    """One page of an issue's or a document's comments, oldest first, replies carrying their parent."""
+    if _document_target(call):
+        return _list_document_comments(call)
     issue = issue_ref(call, call.require("issue_id"))
     rows, next_cursor = comment_page(
         call.repositories,
@@ -1365,9 +1413,18 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_comments",
-        description="One page of an issue's comments, oldest first. Replies carry parent_comment_id.",
+        description=(
+            "One page of an issue's or a document's comments, oldest first; name issue_id or document_id. "
+            "Replies carry parent_comment_id. A document also needs projects:read."
+        ),
         scopes=("issues:read",),
-        schema=object_schema({"issue_id": string(ISSUE_REF), **page_properties()}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "document_id": string("A document to read the thread of, instead of an issue"),
+                **page_properties(),
+            }
+        ),
         handler=_list_comments,
     ),
     Tool(
@@ -1412,13 +1469,17 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="add_comment",
-        description="Add a comment to an issue, or a reply to a top level comment with parent_comment_id.",
+        description=(
+            "Add a comment to an issue or a document, naming issue_id or document_id, or a reply to a top "
+            "level comment with parent_comment_id. Commenting subscribes you."
+        ),
         scopes=("comments:write",),
         schema=object_schema(
             {
                 "issue_id": string(ISSUE_REF),
+                "document_id": string("A document to comment on, instead of an issue"),
                 "body": string("The comment body, in Markdown; @mentions notify"),
-                "parent_comment_id": string("A top level comment on the same issue to reply to"),
+                "parent_comment_id": string("A top level comment on the same issue or document to reply to"),
                 "quote": string(
                     "Pin a new thread to this passage of the issue description, copied as it reads; the "
                     "description highlights it. Not for replies"
@@ -1432,7 +1493,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                     "needed when there is more than one"
                 ),
             },
-            required=("issue_id", "body"),
+            required=("body",),
         ),
         handler=_add_comment,
     ),

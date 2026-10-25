@@ -42,6 +42,7 @@ from app.common.api.schemas.planning import (
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
+from app.common.cycle_rollover import start_cycle_today_read
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.db.dynamo.issues import Issue
@@ -74,6 +75,12 @@ from app.common.project_writes import (
     update_project,
 )
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
+from app.domains.integrations.mcp.project_status_tools import (
+    STATUS_HELP,
+    project_status_fields,
+    status_filter_value,
+    status_names,
+)
 from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
@@ -101,8 +108,6 @@ from app.domains.integrations.mcp.transport import ToolError
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
 
-PROJECT_STATUSES: tuple[str, ...] = ("backlog", "planned", "in_progress", "paused", "completed", "canceled")
-
 PROJECT_HEALTHS: tuple[str, ...] = get_args(ProjectHealthField)
 
 PROJECT_PRIORITIES: tuple[str, ...] = get_args(ProjectPriorityField)
@@ -118,7 +123,6 @@ PROJECT_FIELDS: tuple[str, ...] = (
     "description",
     "start_date",
     "target_date",
-    "status",
     "icon",
     "color",
     "health",
@@ -244,8 +248,12 @@ def _cycle_json(cycle: CycleRead) -> dict[str, Any]:
     }
 
 
-def _project_json(project: ProjectRead) -> dict[str, Any]:
-    """One project as the tools answer it, its teams narrowed to the visible ones."""
+def _project_json(project: ProjectRead, names: dict[str, str]) -> dict[str, Any]:
+    """One project as the tools answer it, its teams narrowed to the visible ones.
+
+    `status` is the category every rule reads, and `status_id` and `status_name`
+    the workspace project status the project sits in.
+    """
     return {
         "project_id": project.project_id,
         "slug_id": project.slug_id,
@@ -254,6 +262,8 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "description": project.description,
         "lead_id": project.lead_id,
         "status": project.status,
+        "status_id": project.status_id,
+        "status_name": names.get(project.status_id, project.status),
         "health": project.health,
         "priority": project.priority,
         "icon": project.icon,
@@ -383,6 +393,18 @@ def _update_cycle(call: ToolCall) -> Any:
     return _cycle_json(update_cycle(call.repositories, call.context, cycle_id, CycleUpdate.model_validate(payload)))
 
 
+def _start_cycle_today(call: ToolCall) -> Any:
+    """Start the next upcoming cycle today, ending the current one and rolling its open issues in."""
+    team_id = _team_id(call)
+    cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
+    result = start_cycle_today_read(call.repositories, call.context, team_id, cycle_id)
+    return {
+        "cycle": _cycle_json(result.cycle),
+        "ended": None if result.ended is None else _cycle_json(result.ended),
+        "moved_issues": result.moved_issues,
+    }
+
+
 def _delete_cycle(call: ToolCall) -> Any:
     """Delete a cycle as a team administrator; its issues stay, with no cycle."""
     team_id = _team_id(call)
@@ -471,7 +493,7 @@ def _list_projects(call: ToolCall) -> Any:
         call.context,
         team_id=team_id,
         initiative_id=initiative_id_ref(call, initiative) if initiative is not None else None,
-        status_filter=str(status_filter) if status_filter else None,
+        status_filter=status_filter_value(call, status_filter) if status_filter else None,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
         include_sub_teams=call.optional("include_sub_teams", False) is True,
@@ -483,7 +505,8 @@ def _list_projects(call: ToolCall) -> Any:
         label_id=project_label_ids(call, labels, allow_none=True) if labels is not None else None,
         include_archived=call.optional("include_archived", False) is True,
     )
-    return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
+    names = status_names(call)
+    return {"projects": [_project_json(row, names) for row in rows], "next_cursor": next_cursor}
 
 
 def _optional_flag(call: ToolCall, name: str) -> Optional[bool]:
@@ -502,7 +525,7 @@ def _get_project(call: ToolCall) -> Any:
     read = fill_one(
         call.repositories, call.context, ProjectRead.from_row(project, visible, default_interval_days=default_days)
     )
-    body = _project_json(read)
+    body = _project_json(read, status_names(call))
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
     body["links"] = [
@@ -519,6 +542,7 @@ def _project_payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]
             payload[name] = call.arguments[name]
         elif nullable_fields and call.present(name) and name in CLEARABLE_FIELDS:
             payload[name] = None
+    payload.update(project_status_fields(call, call.optional("status"), call.optional("status_id")))
     if call.optional("team_ids") is not None:
         teams = call.arguments["team_ids"]
         if not isinstance(teams, list):
@@ -564,7 +588,7 @@ def _create_project(call: ToolCall) -> Any:
         teams = fields.get("team_ids") or []
         fields["template_id"] = project_template_ref(call, teams, call.arguments["template_id"]).template_id
     payload = ProjectCreate.model_validate(fields)
-    return _project_json(create_project(call.repositories, call.context, payload))
+    return _project_json(create_project(call.repositories, call.context, payload), status_names(call))
 
 
 def _convert_issue_to_project(call: ToolCall) -> Any:
@@ -572,7 +596,7 @@ def _convert_issue_to_project(call: ToolCall) -> Any:
     issue = issue_ref(call, call.require("issue_id"))
     project, closed, moved = convert_to_project(call.repositories, call.context, issue)
     return {
-        "project": _project_json(project),
+        "project": _project_json(project, status_names(call)),
         "issue": summary_json(call.repositories.teams, closed),
         "moved_issues": [summary_json(call.repositories.teams, child) for child in moved],
     }
@@ -605,19 +629,19 @@ def _update_project(call: ToolCall) -> Any:
     if choice is not None:
         fields["open_issues"] = choice
     payload = ProjectUpdate.model_validate(fields)
-    return _project_json(update_project(call.repositories, call.context, project_id, payload))
+    return _project_json(update_project(call.repositories, call.context, project_id, payload), status_names(call))
 
 
 def _archive_project(call: ToolCall) -> Any:
     """Archive a project, hiding it from the projects list until it is restored."""
     project_id = _project_id(call, call.require("project_id"))
-    return _project_json(set_project_archived(call.repositories, call.context, project_id, True))
+    return _project_json(set_project_archived(call.repositories, call.context, project_id, True), status_names(call))
 
 
 def _unarchive_project(call: ToolCall) -> Any:
     """Restore an archived project to the projects list."""
     project_id = _project_id(call, call.require("project_id"))
-    return _project_json(set_project_archived(call.repositories, call.context, project_id, False))
+    return _project_json(set_project_archived(call.repositories, call.context, project_id, False), status_names(call))
 
 
 def _delete_project(call: ToolCall) -> Any:
@@ -824,7 +848,8 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "lead_id": nullable("The lead: user id, email, 'me' for the caller, or null"),
     "start_date": nullable("Start date, YYYY-MM-DD"),
     "target_date": nullable("Target date, YYYY-MM-DD"),
-    "status": enum(PROJECT_STATUSES, "The project status"),
+    "status": string(STATUS_HELP),
+    "status_id": string("The project status by id or name, as list_project_statuses names it"),
     "team_ids": string_list(
         "Every team the project is on, each an id, key such as ENG, or name; the caller must write in each one added"
     ),
@@ -918,6 +943,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         handler=_update_cycle,
     ),
     Tool(
+        name="start_cycle_today",
+        description=(
+            "Start a team's next upcoming cycle today. The current cycle ends yesterday and its "
+            "unfinished issues move into the started cycle, which keeps its end date. "
+            "Refused for any cycle but the next upcoming one."
+        ),
+        scopes=("cycles:write",),
+        schema=object_schema(
+            {"team_id": string(TEAM_HELP), "cycle_id": string(CYCLE_HELP)},
+            required=("team_id", "cycle_id"),
+        ),
+        handler=_start_cycle_today,
+    ),
+    Tool(
         name="delete_cycle",
         description=(
             "Permanently delete a cycle and its burn-up history. Its issues stay but lose their cycle. "
@@ -961,7 +1000,10 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         schema=object_schema(
             {
                 "team_id": string(f"Only projects on this team. {TEAM_HELP}"),
-                "status": enum(PROJECT_STATUSES, "Only projects in this status"),
+                "status": string(
+                    "Only projects in this project status, by id or name, or every status of a category "
+                    "(backlog, planned, in_progress or started, paused, completed, canceled)"
+                ),
                 "initiative_id": string(f"Only projects in this initiative. {INITIATIVE_HELP}"),
                 "include_sub_teams": {
                     "type": "boolean",

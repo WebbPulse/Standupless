@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { LuGoal } from 'react-icons/lu';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { groupValue, type ProjectGroup } from '../../lib/projectList';
 import type {
   IssuePriority,
@@ -32,9 +33,19 @@ export const ProjectGroupGlyph: React.FC<ProjectGroupGlyphProps> = ({
   teams,
 }) => {
   const value = groupValue(group);
+  const { byId } = useProjectStatuses();
   switch (group.kind) {
-    case 'status':
-      return <ProjectStatusGlyph status={value as ProjectStatus} />;
+    case 'status': {
+      const status = byId.get(value);
+      return (
+        <ProjectStatusGlyph
+          status={
+            group.category ?? status?.category ?? (value as ProjectStatus)
+          }
+          color={status?.color ?? null}
+        />
+      );
+    }
     case 'health':
       return (
         <ProjectHealthGlyph

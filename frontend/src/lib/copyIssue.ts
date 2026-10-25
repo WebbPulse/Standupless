@@ -17,7 +17,7 @@ import type {
   StatusCategory,
   StatusRead,
 } from '../types/Api';
-import { gitBranchName } from './gitBranch';
+import { gitBranchName, type BranchNaming } from './gitBranch';
 import { PRIORITY_LABELS } from './issueDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { issuePath } from './paths';
@@ -132,15 +132,17 @@ export interface BranchStart {
 }
 
 /**
- * Copies the git branch name for an issue and names it in the toast. With
- * `start`, a landed copy also applies the workflow preferences' patch, if any.
+ * Copies the git branch name for an issue, in the workspace's format given by
+ * `naming`, and names it in the toast. With `start`, a landed copy also
+ * applies the workflow preferences' patch, if any.
  */
 export const copyBranchName = (
   key: string,
   title: string,
-  start?: BranchStart
+  start?: BranchStart,
+  naming?: BranchNaming
 ): void => {
-  const branch = gitBranchName(key, title);
+  const branch = gitBranchName(key, title, naming);
   copyText(branch, `Copied ${branch}`, () => {
     if (start === undefined) return;
     const patch = branchStartPatch(

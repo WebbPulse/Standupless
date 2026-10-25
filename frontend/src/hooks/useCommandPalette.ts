@@ -19,10 +19,16 @@ import {
 
 /**
  * A picker inside the palette that a shortcut can open it straight onto, such
- * as `O` then `P` landing on the project list.
+ * as `O` then `P` landing on the project list or Alt+C on the issue templates.
  */
 export type PalettePicker =
-  'favorites' | 'projects' | 'cycles' | 'teams' | 'views';
+  | 'favorites'
+  | 'projects'
+  | 'cycles'
+  | 'teams'
+  | 'views'
+  | 'template'
+  | 'workspaces';
 
 /** What {@link useCommandPalette} hands back to the shell. */
 export interface CommandPaletteState {

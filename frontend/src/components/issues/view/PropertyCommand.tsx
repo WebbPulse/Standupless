@@ -8,6 +8,7 @@
 
 import React, { useState } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
+import { useProjectStatuses } from '../../../hooks/useProjectStatuses';
 import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
 import { Combobox } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
@@ -43,6 +44,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
   const env = useIssueViewEnv();
   const [today] = useState(() => new Date());
   const triageTeams = useTriageTeamIds();
+  const { statuses: projectStatuses } = useProjectStatuses();
 
   if (property === null || issues.length === 0) return null;
 
@@ -54,6 +56,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
       triageTeams,
       today,
       onDone: onClose,
+      projectStatuses,
     });
 
   const subject =

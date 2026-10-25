@@ -155,6 +155,30 @@ describe('the branch name', () => {
     expect(writeText).toHaveBeenCalledWith('ghs-1-fix-login');
   });
 
+  it("copies the branch in the workspace's format with the copier's handle", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <GithubLinksSection
+        workspaceId="ws-1"
+        issueId="iss-1"
+        issueKey="GHS-1"
+        title="Fix login"
+        branchNaming={{ format: 'user_key_title', handle: 'Avery' }}
+      />
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Copy git branch name' })
+    );
+
+    expect(writeText).toHaveBeenCalledWith('avery/ghs-1-fix-login');
+  });
+
   it('hides the section but keeps the shortcut when nothing is linked', async () => {
     listIssueLinks.mockResolvedValue({ items: [], next_cursor: null });
     const registry = createShortcutRegistry();

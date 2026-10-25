@@ -215,6 +215,7 @@ const renderDialog = (
     currentUserId?: string;
     preset?: CreateIssuePreset;
     people?: Assignable[];
+    initialExpanded?: boolean;
   } = {}
 ) =>
   render(
@@ -890,5 +891,30 @@ describe('auto-assign to self', () => {
         title: 'Ship it',
       });
     });
+  });
+});
+
+describe('expanded', () => {
+  it('opens collapsed by default', async () => {
+    renderDialog();
+
+    expect(
+      await screen.findByRole('button', { name: 'Expand' })
+    ).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('opens expanded when asked and can still collapse', async () => {
+    const user = userEvent.setup();
+    renderDialog({ initialExpanded: true });
+
+    const toggle = await screen.findByRole('button', { name: 'Collapse' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(toggle);
+
+    expect(screen.getByRole('button', { name: 'Expand' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
   });
 });

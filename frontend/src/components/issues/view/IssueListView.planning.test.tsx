@@ -24,6 +24,11 @@ import {
 import type { CycleRead, ProjectRead } from '../../../types/Api';
 import IssueListView from './IssueListView';
 
+vi.mock(
+  '../../../hooks/useProjectStatuses',
+  () => import('../../../test/projectStatuses')
+);
+
 /** One open issue with no plan yet. */
 const issue: OrderedIssueRead = {
   id: 'iss-1',

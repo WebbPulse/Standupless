@@ -19,6 +19,11 @@ import type { ViewLayout } from '../../../api/views';
 import { defaultViewState, type IssueContext } from '../../../lib/issueView';
 import IssueListView from './IssueListView';
 
+vi.mock(
+  '../../../hooks/useProjectStatuses',
+  () => import('../../../test/projectStatuses')
+);
+
 /** One issue in a status, ranked by its priority inside the column. */
 const make = (
   id: string,

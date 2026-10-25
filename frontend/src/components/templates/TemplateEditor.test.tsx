@@ -16,6 +16,11 @@ import type {
 } from '../../types/Api';
 import TemplateEditor, { type TemplateEditorActions } from './TemplateEditor';
 
+vi.mock(
+  '../../hooks/useProjectStatuses',
+  () => import('../../test/projectStatuses')
+);
+
 /** A saved template, each test filling what it needs. */
 const template = (fields: Partial<TemplateRead>): TemplateRead => ({
   id: 'tp-1',

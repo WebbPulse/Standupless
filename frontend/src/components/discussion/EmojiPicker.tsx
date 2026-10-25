@@ -2,11 +2,14 @@
  * The reaction picker: a search box, the quick picks, and every Unicode emoji
  * in its groups, the way Linear's picker reads. Any single emoji is a valid
  * reaction, so the full list is offered, and the quick picks keep the common
- * ones one tap away while the rest of the list loads.
+ * ones one tap away while the rest of the list loads. The workspace's own
+ * custom emoji lead the full list in a Custom section and join the search,
+ * picked as their `:name:` shortcode.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../lib/cn';
+import { useCustomEmoji } from '../../lib/customEmoji';
 import {
   loadEmojiCatalog,
   searchEmoji,
@@ -18,6 +21,7 @@ import {
   normalizeReaction,
   reactionName,
 } from '../../lib/reactions';
+import { ReactionEmoji } from '../ui/custom-emoji';
 import { Input } from '../ui/input';
 
 /** Props for EmojiPicker: what to do with a pick and which the reader holds. */
@@ -51,7 +55,9 @@ const EmojiButton: React.FC<{
       onPick(emoji);
     }}
   >
-    <span aria-hidden="true">{emoji}</span>
+    <span aria-hidden="true" className="inline-flex items-center">
+      <ReactionEmoji emoji={emoji} />
+    </span>
   </button>
 );
 
@@ -90,6 +96,14 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
   const [query, setQuery] = useState('');
   const [catalog, setCatalog] = useState<EmojiEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const customSet = useCustomEmoji();
+  const custom = useMemo(
+    () =>
+      [...customSet.values()]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((row) => ({ emoji: row.shortcode, name: row.shortcode })),
+    [customSet]
+  );
 
   useEffect(() => {
     let live = true;
@@ -122,10 +136,19 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
   }));
 
   const searching = query.trim() !== '';
-  const results = useMemo(
-    () => (searching && catalog !== null ? searchEmoji(catalog, query) : []),
-    [catalog, query, searching]
-  );
+  const results = useMemo(() => {
+    if (!searching) return [];
+    const needle = query.trim().toLowerCase().replaceAll(':', '');
+    const customHits = custom.filter((entry) => entry.emoji.includes(needle));
+    const unicodeHits =
+      catalog === null
+        ? []
+        : searchEmoji(catalog, query).map((entry) => ({
+            emoji: entry.emoji,
+            name: sentenceCase(entry.label),
+          }));
+    return [...customHits, ...unicodeHits];
+  }, [catalog, custom, query, searching]);
   const sections = useMemo(
     () => (catalog === null ? [] : sectionsOf(catalog)),
     [catalog]
@@ -156,10 +179,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
           results.length > 0 ? (
             <Section
               title="Results"
-              entries={results.map((entry) => ({
-                emoji: entry.emoji,
-                name: sentenceCase(entry.label),
-              }))}
+              entries={results}
               held={held}
               onPick={onPick}
             />
@@ -178,6 +198,14 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
               held={held}
               onPick={onPick}
             />
+            {custom.length > 0 && (
+              <Section
+                title="Custom"
+                entries={custom}
+                held={held}
+                onPick={onPick}
+              />
+            )}
             {sections.map((section) => (
               <Section
                 key={section.group}

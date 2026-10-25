@@ -24,6 +24,10 @@
  *
  * A composer given an anchor starts a thread pinned to that passage of the
  * description. It keeps no draft, since it lives only as long as its popover.
+ *
+ * A composer given a document posts to that document's thread instead, with
+ * `issueId` naming the document so the thread's key is shared. A document
+ * thread takes no files, keeps no draft and never syncs to GitHub.
  */
 
 import React, {
@@ -39,7 +43,7 @@ import {
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import { LuArrowUp, LuCheck, LuGithub, LuPaperclip } from 'react-icons/lu';
-import { createComment } from '../../api/discussion';
+import { createComment, createDocumentComment } from '../../api/discussion';
 import { syncThread } from '../../api/integrations';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
 import { useCommentDraft } from '../../hooks/useCommentDraft';
@@ -100,6 +104,8 @@ export interface CommentComposerProps {
   quote?: QuoteRequest | null;
   /** The passage of the description a new thread is pinned to. */
   anchor?: CommentAnchor;
+  /** The document this posts to, in place of the issue. */
+  documentId?: string;
 }
 
 /** Props for ThreadSyncToggle. */
@@ -209,7 +215,9 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   jumpShortcut = false,
   quote = null,
   anchor,
+  documentId,
 }) => {
+  const onDocument = documentId !== undefined;
   const [draft, setDraft] = useState('');
   const [chosenKey, setChosenKey] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
@@ -224,7 +232,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     issueId,
     parentCommentId,
     editor,
-    anchor === undefined
+    anchor === undefined && !onDocument
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
@@ -278,18 +286,25 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
 
   const { mutate: post, isMutating } = useMutationWithRefetch(
     (body: string, attachmentIds: string[]) =>
-      createComment(workspaceId, issueId, {
-        body,
-        ...(parentCommentId === undefined
-          ? {}
-          : { parent_comment_id: parentCommentId }),
-        ...(attachmentIds.length === 0
-          ? {}
-          : { attachment_ids: attachmentIds }),
-        ...(anchor === undefined || parentCommentId !== undefined
-          ? {}
-          : { anchor }),
-      }),
+      documentId !== undefined
+        ? createDocumentComment(workspaceId, documentId, {
+            body,
+            ...(parentCommentId === undefined
+              ? {}
+              : { parent_comment_id: parentCommentId }),
+          })
+        : createComment(workspaceId, issueId, {
+            body,
+            ...(parentCommentId === undefined
+              ? {}
+              : { parent_comment_id: parentCommentId }),
+            ...(attachmentIds.length === 0
+              ? {}
+              : { attachment_ids: attachmentIds }),
+            ...(anchor === undefined || parentCommentId !== undefined
+              ? {}
+              : { anchor }),
+          }),
     commentsKey(issueId)
   );
 
@@ -307,7 +322,8 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     [sendFile, refresh, workspaceId, issueId]
   );
 
-  const syncTargets = parentCommentId === undefined ? threadTargets : [];
+  const syncTargets =
+    parentCommentId === undefined && !onDocument ? threadTargets : [];
   const chosen =
     syncTargets.find((target) => targetKey(target) === chosenKey) ?? null;
 
@@ -346,7 +362,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
       .then((created) => {
         if (chosen !== null) syncPosted(created.comment_id, chosen);
         setChosenKey(null);
-        invalidateQueries(attachmentsKey(issueId));
+        if (!onDocument) invalidateQueries(attachmentsKey(issueId));
         uploads.settle(linked);
         commentDraft.clear();
         editor.current?.setMarkdown('');
@@ -373,7 +389,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         dragging ? 'border-accent bg-accent-soft/40' : ''
       )}
       onDragOver={(event) => {
-        if (!dragHasFiles(event.dataTransfer)) return;
+        if (onDocument || !dragHasFiles(event.dataTransfer)) return;
         event.preventDefault();
         setDragging(true);
       }}
@@ -387,6 +403,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         setDragging(false);
       }}
       onDrop={(event) => {
+        if (onDocument) return;
         const files = filesFrom(event.dataTransfer);
         if (files.length === 0) return;
         event.preventDefault();
@@ -408,7 +425,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           className={textClass}
           density="compact"
           mentionPeople={people}
-          uploadFile={uploadFile}
+          {...(onDocument ? {} : { uploadFile })}
           onCommit={() => false}
           onChange={(markdown, uploading) => {
             setDraft(markdown);
@@ -417,33 +434,40 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           }}
           onSubmit={submit}
           onFocusChange={setFocused}
+          selectionIssue={{ issueId }}
           {...(onCancel === undefined ? {} : { onCancel })}
         />
       </Suspense>
 
       <div className="flex items-center gap-1 px-2 pb-2">
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          hidden
-          accept={UPLOAD_CONTENT_TYPES.join(',')}
-          aria-label="Attach files"
-          onChange={(event) => {
-            editor.current?.insertFiles(Array.from(event.target.files ?? []));
-            event.target.value = '';
-          }}
-        />
-        <IconButton
-          label="Attach files"
-          size="sm"
-          onClick={() => {
-            picker.current?.click();
-          }}
-        >
-          <LuPaperclip className="h-3.5 w-3.5" />
-        </IconButton>
-        {syncTargets.length > 0 ? (
+        {!onDocument && (
+          <>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              hidden
+              accept={UPLOAD_CONTENT_TYPES.join(',')}
+              aria-label="Attach files"
+              onChange={(event) => {
+                editor.current?.insertFiles(
+                  Array.from(event.target.files ?? [])
+                );
+                event.target.value = '';
+              }}
+            />
+            <IconButton
+              label="Attach files"
+              size="sm"
+              onClick={() => {
+                picker.current?.click();
+              }}
+            >
+              <LuPaperclip className="h-3.5 w-3.5" />
+            </IconButton>
+          </>
+        )}
+        {onDocument ? null : syncTargets.length > 0 ? (
           <ThreadSyncToggle
             targets={syncTargets}
             chosen={chosen}

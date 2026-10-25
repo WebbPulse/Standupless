@@ -67,6 +67,7 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("releases", "releases", "ReleaseRepository", "planning"),
         _spec("documents", "documents", "DocumentRepository", "planning"),
         _spec("customers", "customers", "CustomerRepository", "planning"),
+        _spec("custom_emoji", "custom_emoji", "CustomEmojiRepository", "planning"),
         _spec("github", "github", "GithubRepository", "github"),
         _spec("api_keys", "identity_stores", "ApiKeyStoreRepository", "api-keys"),
         _spec("share_links", "identity_stores", "ShareTokenStoreRepository", "share-tokens"),

@@ -69,6 +69,19 @@ const getDiscordConnection =
 const getDiscordInstallUrl =
   vi.fn<(workspaceId: string, teamId?: string) => Promise<InstallUrlRead>>();
 const assign = vi.fn();
+const updateWorkspace =
+  vi.fn<(workspaceId: string, body: unknown) => Promise<WorkspaceRead>>();
+
+vi.mock('../../api/workspaces', async () => {
+  const actual = await vi.importActual<typeof import('../../api/workspaces')>(
+    '../../api/workspaces'
+  );
+  return {
+    ...actual,
+    updateWorkspace: (workspaceId: string, body: unknown) =>
+      updateWorkspace(workspaceId, body),
+  };
+});
 
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
@@ -268,6 +281,7 @@ beforeEach(() => {
     getDiscordConnection,
     getDiscordInstallUrl,
     assign,
+    updateWorkspace,
   ]) {
     mock.mockReset();
   }
@@ -306,6 +320,58 @@ describe('the workspace integrations page', () => {
     ).toBeInTheDocument();
     expect(getSlackConnection).not.toHaveBeenCalled();
     expect(listChannels).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Branch format')).not.toBeInTheDocument();
+  });
+
+  it('previews the branch format and saves the one an admin picks', async () => {
+    const context = resolved('admin');
+    useWorkspaceMock.mockReturnValue(context);
+    updateWorkspace.mockResolvedValue(context.workspace as WorkspaceRead);
+    renderPage();
+
+    const select = await screen.findByLabelText('Branch format');
+    expect(select).toHaveValue('key_title');
+    expect(screen.getByTestId('branch-format-preview')).toHaveTextContent(
+      'eng-123-fix-the-login-redirect'
+    );
+
+    await userEvent.selectOptions(select, 'user_key_title');
+
+    await waitFor(() => {
+      expect(updateWorkspace).toHaveBeenCalledWith('ws-1', {
+        branch_format: 'user_key_title',
+      });
+    });
+    expect(context.refresh).toHaveBeenCalled();
+  });
+
+  it('shows each saved format in the preview', async () => {
+    const context = resolved('admin');
+    useWorkspaceMock.mockReturnValue({
+      ...context,
+      workspace: {
+        ...(context.workspace as WorkspaceRead),
+        branch_format: 'user_key_title',
+      },
+    });
+    const { unmount } = renderPage();
+
+    expect(
+      await screen.findByTestId('branch-format-preview')
+    ).toHaveTextContent('username/eng-123-fix-the-login-redirect');
+    unmount();
+
+    useWorkspaceMock.mockReturnValue({
+      ...context,
+      workspace: {
+        ...(context.workspace as WorkspaceRead),
+        branch_format: 'key',
+      },
+    });
+    renderPage();
+    expect(
+      await screen.findByTestId('branch-format-preview')
+    ).toHaveTextContent(/^eng-123$/);
   });
 
   it('connects Slack for the whole workspace, returning to this page', async () => {

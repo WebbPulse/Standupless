@@ -9,8 +9,9 @@
  * timeline; groups by health or priority; and hides completed projects
  * outside the chosen window. The Display menu also hides and shows list
  * columns, reverses the groups, groups again inside each group, keeps only
- * the projects a filtered team leads, and drops empty board columns, and the
- * blocked and blocking filters narrow the rows. Save as view stores the filters and the
+ * the projects a filtered team leads, and drops empty board columns. On the
+ * timeline it zooms, steps earlier and later, and offers only the properties
+ * the timeline draws. The blocked and blocking filters narrow the rows. Save as view stores the filters and the
  * arrangement as a view of projects and opens it. A board card edits its
  * properties in place and from its context menu, a column header menu hides,
  * collapses and isolates its column, and a drop into a swimlane changes both
@@ -68,6 +69,15 @@ const archiveProject = vi.fn<(id: string) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const createView =
   vi.fn<(body: Record<string, unknown>) => Promise<SavedViewDisplayRead>>();
+
+vi.mock('../../api/projectStatuses', () => ({
+  projectStatusesPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-statuses`,
+  listProjectStatuses: () => Promise.resolve([]),
+  createProjectStatus: vi.fn(),
+  updateProjectStatus: vi.fn(),
+  deleteProjectStatus: vi.fn(),
+}));
 
 vi.mock('../../api/projectLabels', () => ({
   projectLabelsPath: (workspaceId: string) =>
@@ -1116,6 +1126,88 @@ describe('Projects', () => {
 
     expect(await screen.findByTestId('projects-timeline')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
+  });
+
+  describe('timeline display options', () => {
+    beforeEach(() => {
+      listProjects.mockResolvedValue({
+        projects: [
+          {
+            ...launch,
+            start_date: '2026-09-01',
+            priority: 'high',
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    it('zooms from the Display menu as well as the toolbar', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/projects?layout=timeline');
+      await screen.findByTestId('projects-timeline');
+
+      await user.click(screen.getByRole('button', { name: 'Display' }));
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: 'Zoom' }),
+        'quarter'
+      );
+
+      expect(screen.getByRole('radio', { name: 'Quarters' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+    });
+
+    it('offers only the properties the timeline draws and hides them', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/projects?layout=timeline');
+      await screen.findByTestId('projects-timeline');
+      await waitFor(() => {
+        expect(
+          document.querySelector('[data-timeline-property="progress"]')
+        ).not.toBeNull();
+      });
+      expect(
+        document.querySelector('[data-timeline-property="priority"]')
+      ).not.toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Display' }));
+      expect(screen.queryByRole('button', { name: 'Summary' })).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Progress' }));
+      await user.click(screen.getByRole('button', { name: 'Priority' }));
+
+      expect(
+        document.querySelector('[data-timeline-property="progress"]')
+      ).toBeNull();
+      expect(
+        document.querySelector('[data-timeline-property="priority"]')
+      ).toBeNull();
+    });
+
+    it('shows the properties a URL keeps on', async () => {
+      renderPage('/w/mine/projects?layout=timeline&columns=status');
+      await screen.findByTestId('projects-timeline');
+      await waitFor(() => {
+        expect(
+          document.querySelector('[data-timeline-property="status"]')
+        ).not.toBeNull();
+      });
+      expect(
+        document.querySelector('[data-timeline-property="progress"]')
+      ).toBeNull();
+    });
+
+    it('steps the view earlier and later', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/projects?layout=timeline');
+      await screen.findByTestId('projects-timeline');
+
+      await user.click(screen.getByRole('button', { name: 'Later' }));
+      await user.click(screen.getByRole('button', { name: 'Earlier' }));
+
+      expect(screen.getByTestId('projects-timeline')).toBeInTheDocument();
+    });
   });
 
   describe('timeline dependency lines', () => {

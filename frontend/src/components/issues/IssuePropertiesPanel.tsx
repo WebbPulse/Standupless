@@ -27,6 +27,7 @@ import {
 } from 'react-icons/lu';
 import type { IssueSubscription } from '../../hooks/useIssueSubscription';
 import { useTriageOn } from '../../hooks/useTriageTeams';
+import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
@@ -207,6 +208,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
   }, [opening]);
 
   const { workspace } = useWorkspace();
+  const branchNaming = useBranchNaming(people, currentUserId);
   const isMember = workspace !== null && workspace.role !== 'guest';
   const disabled = !canEdit;
   const scaleOn = team.estimate_scale !== 'off';
@@ -514,6 +516,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           issueId={issue.id}
           issueKey={issue.key}
           title={issue.title}
+          branchNaming={branchNaming}
           {...(canEdit
             ? {
                 branchStart: {

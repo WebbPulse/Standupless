@@ -3,7 +3,7 @@
  * editor and by the tests that hold it to round trip fidelity.
  */
 
-import type { Editor } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 
 /** Fenced code and inline code, which the output clean up must not touch. */
 const CODE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/;
@@ -38,6 +38,23 @@ const tidyOutput = (markdown: string): string =>
  */
 export const readMarkdown = (editor: Editor): string =>
   tidyOutput(editor.getMarkdown()).replace(/^\n+/, '').replace(/\s+$/, '');
+
+/**
+ * A range of the editor's document as Markdown, written the way the whole
+ * document would be, or the empty string for an empty range.
+ */
+export const readRangeMarkdown = (
+  editor: Editor,
+  from: number,
+  to: number
+): string => {
+  const manager = editor.markdown;
+  if (from >= to || manager === undefined) return '';
+  const content = editor.state.doc.slice(from, to).content.toJSON() as
+    JSONContent[] | null;
+  if (content === null) return '';
+  return tidyOutput(manager.serialize({ type: 'doc', content })).trim();
+};
 
 /** Replaces the editor's document with a Markdown source, off the undo stack. */
 export const writeMarkdown = (editor: Editor, source: string): void => {

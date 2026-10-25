@@ -36,7 +36,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.users import STALE_ACCOUNT_PURGE
 from app.common.db.dynamo.workspaces import STALE_PURGE
-from app.common.icons import delete_icon_objects, user_owner, workspace_owner
+from app.common.icons import delete_icon_objects, emoji_owner, user_owner, workspace_owner
 from app.common.team_purge import Deadline, PurgeJob
 from app.domains.workspaces.consumers import sso_recheck
 
@@ -176,6 +176,7 @@ def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline
     _close_workspace(repositories, job.workspace_id)
     repositories.audit.delete_for_workspace(job.workspace_id)
     delete_icon_objects(workspace_owner(job.workspace_id).prefix)
+    delete_icon_objects(emoji_owner(job.workspace_id).prefix)
     repositories.workspaces.delete_purged(job.workspace_id)
     _log.info(
         "A workspace purge finished.",

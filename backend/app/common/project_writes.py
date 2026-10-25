@@ -58,6 +58,12 @@ from app.common.project_cadence import workspace_interval
 from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
 from app.common.project_link_writes import with_links
 from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
+from app.common.project_statuses import (
+    choose_project_status,
+    project_in_filter,
+    status_filter_match,
+    workspace_project_statuses,
+)
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
@@ -65,6 +71,7 @@ from app.common.sub_teams import listed_teams
 NOT_NULLABLE = (
     "name",
     "status",
+    "status_id",
     "team_ids",
     "priority",
     "member_ids",
@@ -72,9 +79,6 @@ NOT_NULLABLE = (
     "sort_order",
 )
 """Patch fields that may be omitted but never cleared, because every project has one."""
-
-STATUS_VALUES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled", "done")
-"""What the list's status filter accepts, including the legacy `done`."""
 
 CLOSED_STATUSES = frozenset({"completed", "canceled"})
 """The project statuses that close a project, after which its open issues are asked about."""
@@ -177,10 +181,11 @@ def list_projects(
     the named project labels, `none` standing for a project with no label.
     Archived projects are left out unless `include_archived` is set, as Linear
     hides them from its lists, though they still count as blockers.
+    `status_filter` names a workspace project status, or a category to keep
+    every status in it, the legacy `done` included.
     """
-    wanted_status = None if status_filter is None else normalise_project_status(status_filter)
-    if status_filter is not None and status_filter not in STATUS_VALUES:
-        raise unprocessable(f"Unknown project status: {status_filter}")
+    statuses = workspace_project_statuses(repositories, context.workspace_id) if status_filter is not None else []
+    wanted_status = None if status_filter is None else status_filter_match(statuses, status_filter)
     wanted_teams: set[str] | None = None
     if team_id is not None:
         require_team_reader(repositories, context, team_id)
@@ -214,7 +219,7 @@ def list_projects(
             continue
         if wanted_teams is not None and wanted_teams.isdisjoint(teams):
             continue
-        if wanted_status is not None and row.status != wanted_status:
+        if wanted_status is not None and not project_in_filter(statuses, row, wanted_status):
             continue
         if initiative_id is not None and row.initiative_id != initiative_id:
             continue
@@ -251,7 +256,8 @@ def list_projects(
     narrowed = f"{team_id}:subs" if include_sub_teams and team_id is not None else team_id or "all"
     customers = f"{customer_scope(wanted_customers)}!{customer_scope(unwanted_customers)}"
     scope = (
-        f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
+        f"projects:{context.workspace_id}:{narrowed}:{':'.join(wanted_status) if wanted_status else 'all'}"
+        f":{initiative_id or 'all'}"
         f":{customers}:{sort or PROJECT_DEFAULT_SORT}"
     )
     if wanted_labels:
@@ -317,6 +323,14 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     if payload.initiative_id is not None:
         require_initiative_target(repositories, context, payload.initiative_id)
     require_project_labels(repositories, context.workspace_id, payload.label_ids)
+    explicit = "status" in payload.model_fields_set or payload.status_id is None
+    chosen = choose_project_status(
+        repositories,
+        context.workspace_id,
+        status_value=payload.status if explicit else None,
+        status_id=payload.status_id,
+    )
+    category, status_id = chosen if chosen is not None else (payload.status, payload.status)
 
     first = order_key_first(row.sort_order for row in repositories.planning.list_projects(context.workspace_id))
     project_id = new_planning_id()
@@ -330,7 +344,8 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         lead_id=payload.lead_id,
         start_date=payload.start_date,
         target_date=payload.target_date,
-        status=payload.status,
+        status=category,
+        status_id=status_id,
         icon=payload.icon,
         color=payload.color,
         health=payload.health,
@@ -339,7 +354,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         label_ids=list(payload.label_ids),
         update_interval_days=payload.update_interval_days,
         initiative_id=payload.initiative_id,
-        completed_at=utc_now() if payload.status in CLOSED_STATUSES else None,
+        completed_at=utc_now() if category in CLOSED_STATUSES else None,
         sort_order=first,
         created_by=context.user_id,
     )
@@ -491,6 +506,15 @@ def update_project(
         require_initiative_access(context)
         if fields["initiative_id"] is not None:
             require_initiative_target(repositories, context, fields["initiative_id"])
+    chosen = choose_project_status(
+        repositories,
+        context.workspace_id,
+        status_value=fields.pop("status", None),
+        status_id=fields.pop("status_id", None),
+        current=existing,
+    )
+    if chosen is not None:
+        fields["status"], fields["status_id"] = chosen
 
     now = utc_now()
     updated = existing.model_copy(update={**fields, "updated_at": now})

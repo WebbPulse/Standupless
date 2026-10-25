@@ -372,7 +372,7 @@ def handle_record(
         queue_pr_labels(repositories, record)
         channel_events.on_issue(repositories, record, channel_cache)
     elif physical == table_name("comments", prefix):
-        if from_bulk_import(record):
+        if from_bulk_import(record) or _on_document(record):
             return
         publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)
@@ -394,6 +394,12 @@ def handle_record(
             "Ignored a stream record from an unexpected table.",
             extra={"event": "integrations.stream.unknown_source", "table": physical},
         )
+
+
+def _on_document(record: Mapping[str, Any]) -> bool:
+    """Whether a `comments` record is on a document, which has no webhook, GitHub mirror or channel post."""
+    image = deserialize_image(record, "NewImage") or deserialize_image(record, "OldImage") or {}
+    return bool(image.get("document_id"))
 
 
 def build_router(repositories: Repositories | None = None) -> APIRouter:

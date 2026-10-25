@@ -3,7 +3,7 @@
  * `/w/:slug`. Each page renders its own {@link WorkspaceShell}, so anything
  * that must outlive a page change lives here instead: the shortcut registry,
  * the command palette, the peek pane, the one create issue dialog, the create
- * team dialog, the create project and initiative dialogs, the shortcut help overlay, the shared team list, the mention
+ * team dialog, the create project and initiative dialogs, the Leave workspace confirmation, the shortcut help overlay, the shared team list, the mention
  * directory and the one toast stack every page raises notices into.
  *
  * It also records the workspace as the one this browser last opened, which
@@ -41,6 +41,7 @@ import {
 } from '../../hooks/useCustomizeSidebar';
 import type { CreateTeamState } from '../../hooks/useCreateTeam';
 import { CreatePlanningContext } from '../../hooks/useCreatePlanning';
+import { usePublishCustomEmoji } from '../../hooks/useCustomEmojiList';
 import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -77,6 +78,7 @@ import CreatePlanningHost, {
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import CustomizeSidebarDialog from './CustomizeSidebarDialog';
+import LeaveWorkspaceProvider from './LeaveWorkspaceProvider';
 import { PeekProvider } from './PeekPane';
 import WorkspaceShell from './WorkspaceShell';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -97,6 +99,8 @@ interface CreateIssueHostProps {
   currentUserId: string | undefined;
   /** What the caller asked the draft to start on. */
   preset: CreateIssuePreset;
+  /** Whether the dialog opens expanded. */
+  expanded: boolean;
 }
 
 /** The dialog preset a create request carries, leaving out what it does not set. */
@@ -112,6 +116,13 @@ const presetOf = (request: Request): CreateIssuePreset => ({
   ...(request.templateId === undefined
     ? {}
     : { templateId: request.templateId }),
+  ...(request.title === undefined ? {} : { title: request.title }),
+  ...(request.description === undefined
+    ? {}
+    : { description: request.description }),
+  ...(request.relatedIssueId === undefined
+    ? {}
+    : { relatedIssueId: request.relatedIssueId }),
 });
 
 /**
@@ -127,6 +138,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   onCreatedMore,
   currentUserId,
   preset,
+  expanded,
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
@@ -159,6 +171,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       onCreatedMore={onCreatedMore}
       {...(currentUserId === undefined ? {} : { currentUserId })}
       preset={preset}
+      initialExpanded={expanded}
       onClose={onClose}
     />
   );
@@ -196,11 +209,11 @@ const WorkspaceRouteError: React.FC<RouteErrorFallbackProps> = (props) => (
 
 /** Renders the overlays and the page beneath them, inside the team list. */
 const WorkspaceOverlays: React.FC = () => {
-  const { workspace } = useWorkspace();
+  const { workspace, workspaces } = useWorkspace();
   const { teams } = useTeam(undefined);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const palette = useCommandPalette();
   const [helpOpen, setHelpOpen] = useState(false);
   const [request, setRequest] = useState<Request | null>(null);
@@ -226,6 +239,7 @@ const WorkspaceOverlays: React.FC = () => {
     rememberWorkspace(slug);
   }, [slug]);
   useWorkspaceSwitchCacheClear(workspaceId);
+  usePublishCustomEmoji(workspaceId);
 
   const writable = useMemo(
     () => teams.filter((team) => canWriteIssues(role, team.role)),
@@ -378,6 +392,8 @@ const WorkspaceOverlays: React.FC = () => {
                           teams={teams}
                           onShowShortcuts={showHelp}
                           currentUserId={user?.id}
+                          workspaces={workspaces ?? []}
+                          onLogOut={() => void logout()}
                         />
                       </>
                     )}
@@ -398,6 +414,7 @@ const WorkspaceOverlays: React.FC = () => {
                         onCreatedMore={onIssueCreatedMore}
                         currentUserId={user?.id}
                         preset={presetOf(request)}
+                        expanded={request.expanded === true}
                       />
                     )}
 
@@ -445,7 +462,9 @@ const WorkspaceOverlays: React.FC = () => {
 export const WorkspaceLayout: React.FC = () => (
   <TeamsProvider>
     <SidebarDataProvider>
-      <WorkspaceOverlays />
+      <LeaveWorkspaceProvider>
+        <WorkspaceOverlays />
+      </LeaveWorkspaceProvider>
     </SidebarDataProvider>
   </TeamsProvider>
 );

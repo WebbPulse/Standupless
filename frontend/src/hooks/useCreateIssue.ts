@@ -12,7 +12,10 @@
  * the request, exposed as {@link CreateIssueState.request}, and handed to the
  * dialog as its starting draft. A team change in the dialog drops them, since
  * each is scoped to the team it was chosen in. `templateId` names the template
- * the draft starts from in place of the team's default.
+ * the draft starts from in place of the team's default. `title` and
+ * `description` start the draft on text, such as a selection, and
+ * `relatedIssueId` relates the new issue to the one the text came from.
+ * `expanded` opens the dialog already expanded, as `V` does.
  *
  * {@link CreateIssueState.hasDraft} says whether the viewer has a draft saved
  * in this workspace, so the new issue button can show that pressing it brings
@@ -21,6 +24,12 @@
 
 import { createContext, useContext } from 'react';
 import type { IssueRead } from '../types/Api';
+
+/** The keys that open the template picker, Alt+C (Option+C) as in Linear. */
+export const CREATE_FROM_TEMPLATE_KEYS = 'alt+c';
+
+/** The key that opens the dialog already expanded, `V` as in Linear. */
+export const CREATE_FULLSCREEN_KEYS = 'v';
 
 /** What a caller may preset on the dialog. */
 export interface CreateIssueOptions {
@@ -34,6 +43,14 @@ export interface CreateIssueOptions {
   parentKey?: string;
   /** A template the draft starts from, in place of the team's default. */
   templateId?: string;
+  /** The title the draft starts with, such as a selected line of text. */
+  title?: string;
+  /** The description Markdown the draft starts with, beside `title`. */
+  description?: string;
+  /** An issue the new one is filed as related to. */
+  relatedIssueId?: string;
+  /** Whether the dialog opens expanded, as `V` opens it. */
+  expanded?: boolean;
   /** Called with the new issue after the dialog closes on success. */
   onCreated?: (issue: IssueRead) => void;
 }

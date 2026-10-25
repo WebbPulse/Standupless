@@ -9,8 +9,8 @@
  * Workspace administration is admin only, but the team list, the workflow
  * and labels every team inherits (read only below admin), the plan, a person's own
  * API keys, connected apps, MCP and CLI setup and private agent profiles are not, and notification
- * preferences are personal, so the workspace, security, integrations, audit log, export and import links are gated and the
- * others are not. That mirrors what the server allows rather than hiding a page somebody
+ * preferences are personal, so the security, integrations, audit log, export and import links are gated and the
+ * others are not. The workspace page is open to every member for its Leave workspace row. That mirrors what the server allows rather than hiding a page somebody
  * is entitled to open.
  */
 
@@ -71,11 +71,9 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
         Security & access
       </NavLink>
       <span aria-hidden="true" className="mx-1 my-1.5 w-px bg-line" />
-      {canManageMembers(workspace.role) && (
-        <NavLink to={`/w/${workspace.slug}/settings`} end className={tabClass}>
-          Workspace
-        </NavLink>
-      )}
+      <NavLink to={`/w/${workspace.slug}/settings`} end className={tabClass}>
+        Workspace
+      </NavLink>
       {canManageMembers(workspace.role) && (
         <NavLink
           to={`/w/${workspace.slug}/settings/security`}
@@ -101,6 +99,15 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
         className={tabClass}
       >
         Project labels
+      </NavLink>
+      <NavLink to={`/w/${workspace.slug}/settings/emoji`} className={tabClass}>
+        Emoji
+      </NavLink>
+      <NavLink
+        to={`/w/${workspace.slug}/settings/project-statuses`}
+        className={tabClass}
+      >
+        Project statuses
       </NavLink>
       <NavLink
         to={`/w/${workspace.slug}/settings/templates`}

@@ -15,7 +15,10 @@
  *
  * Selecting text floats a compact formatting toolbar over it, and typing `/`
  * at the start of a line or after a space opens an insert menu of blocks, both
- * writing only what the Markdown shortcuts already write.
+ * writing only what the Markdown shortcuts already write. A surface given a
+ * selection issue source also offers filing an issue from the selection, which
+ * opens the workspace's create dialog on the selected text and puts the new
+ * issue's key in its place.
  *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
  * Escape puts back the last committed text. Text input made only of control
@@ -41,6 +44,7 @@ import React, {
 } from 'react';
 import { TeamsContext } from '../../contexts/TeamsContextDefinition';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
+import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useKeyboardFocus } from '../../hooks/useKeyboardFocus';
 import { useReferenceResults } from '../../hooks/useReferenceResults';
 import { filesFrom, normalizeLinkUrl } from '../../lib/attachments';
@@ -68,6 +72,7 @@ import {
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
+import { toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
@@ -79,6 +84,10 @@ import {
   type UploadFile,
 } from './mediaNodes';
 import { ReferenceMenu } from './ReferenceMenu';
+import {
+  createIssueFromSelection,
+  type SelectionIssueSource,
+} from './selectionIssue';
 import {
   passageOfRange,
   useCommentAnchors,
@@ -155,6 +164,11 @@ export interface RichMarkdownEditorProps {
   onFocusChange?: (focused: boolean) => void;
   /** The comment threads pinned to passages of this document, highlighted. */
   commentAnchors?: CommentAnchorsBinding;
+  /**
+   * Where an issue filed from the selection lands and what it relates to.
+   * Unset leaves the selection toolbar without the create issue button.
+   */
+  selectionIssue?: SelectionIssueSource;
   /** Receives the imperative handle. */
   ref?: React.Ref<RichMarkdownHandle>;
 }
@@ -224,6 +238,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   mentionPeople,
   onFocusChange,
   commentAnchors,
+  selectionIssue,
   ref,
 }) => {
   const surface = useRef<HTMLDivElement>(null);
@@ -377,7 +392,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           'aria-multiline': 'true',
           'aria-label': ariaLabel,
         },
-        handleKeyDown: (_view, event) => {
+        handleKeyDown: (view, event) => {
           const mod = event.metaKey || event.ctrlKey;
           const inserting = slashState.current;
           if (inserting.slash !== null && inserting.matches.length > 0) {
@@ -457,6 +472,12 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           }
           if (mod && event.key === 'Enter') {
             event.preventDefault();
+            if (
+              view.editable &&
+              toggleChecklistItem(view.state, view.dispatch, event.shiftKey)
+            ) {
+              return true;
+            }
             const submit = handlers.current.onSubmit;
             if (submit !== undefined) {
               submit();
@@ -805,13 +826,31 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     [editor, adopt]
   );
 
+  const issueCreator = useCreateIssue();
+  const canCreateIssue = selectionIssue !== undefined && issueCreator.canCreate;
+  const selectionIssueRef = useRef({ selectionIssue, open: issueCreator.open });
+  selectionIssueRef.current = { selectionIssue, open: issueCreator.open };
+
   const formatContext = useMemo<FormatContext>(
     () => ({
       openLink: () => {
         openLinkRef.current();
       },
+      ...(canCreateIssue
+        ? {
+            createIssue: () => {
+              const { selectionIssue: source, open } =
+                selectionIssueRef.current;
+              if (source === undefined) return;
+              editor.view.dispatch(
+                editor.state.tr.setMeta(formattingToolbarKey, 'hide')
+              );
+              createIssueFromSelection(editor, source, open);
+            },
+          }
+        : {}),
     }),
-    []
+    [canCreateIssue, editor]
   );
 
   const applyLink = (): void => {

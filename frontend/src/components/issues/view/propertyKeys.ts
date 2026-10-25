@@ -54,6 +54,12 @@ export const REMOVE_LABELS_KEYS = 'mod+shift+l';
 export const COMMENT_ISSUE_KEYS = 'mod+m';
 
 /**
+ * The keys that subscribe to or unsubscribe from an issue, the same in the
+ * issue view and the inbox, as in Linear.
+ */
+export const TOGGLE_SUBSCRIPTION_KEYS = 'mod+shift+s';
+
+/**
  * The key each property opens on in a layout. The board gives `l` to moving
  * to the next column, as `h` moves to the previous one, so labels move to
  * Shift+L there.

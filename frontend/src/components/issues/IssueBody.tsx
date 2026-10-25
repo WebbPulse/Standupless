@@ -314,6 +314,14 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
                       })}
                   {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
                   {...(canEdit ? { uploadFile } : {})}
+                  {...(canEdit
+                    ? {
+                        selectionIssue: {
+                          teamId: issue.team_id,
+                          issueId: issue.id,
+                        },
+                      }
+                    : {})}
                   {...(canEdit && people !== undefined
                     ? { mentionPeople: people }
                     : {})}

@@ -11,7 +11,7 @@
  * in the issue bar, the shortcuts and the command palette always agree.
  */
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { LuBell, LuBellOff, LuUserPlus, LuX } from 'react-icons/lu';
 import {
   subscriptionTitle,
@@ -34,13 +34,6 @@ import RailSection from './RailSection';
 
 /** The shortcut that opens the subscriber picker, also listed in the palette. */
 export const MANAGE_SUBSCRIBERS_KEYS = 'shift+s';
-
-/**
- * Whether the picker takes its shortcut. A surface that binds the same key
- * itself, such as the inbox where it toggles the selected row's subscription,
- * turns it off around the issue it shows.
- */
-export const ManageSubscribersKeyContext = createContext(true);
 
 /** How each reason reads beside a subscriber's name. */
 const REASON_LABELS: Record<SubscriptionReason, string> = {
@@ -117,14 +110,13 @@ export const IssueSubscribers: React.FC<IssueSubscribersProps> = ({
   const Icon = subscribed ? LuBellOff : LuBell;
   const chosen = subscribers.map((subscriber) => subscriber.user_id);
   const options = subscriberOptions(people, subscribers, currentUserId);
-  const bindsKey = useContext(ManageSubscribersKeyContext);
 
   useShortcut({
     keys: MANAGE_SUBSCRIBERS_KEYS,
     label: 'Manage subscribers',
     scope: 'issue',
     group: 'Issue',
-    enabled: data !== null && bindsKey,
+    enabled: data !== null,
     handler: () => {
       setPicking(true);
     },

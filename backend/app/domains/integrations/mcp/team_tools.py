@@ -23,6 +23,7 @@ from app.common.api.schemas.teams import (
     CycleSettingsUpdate,
     LabelCreate,
     LabelUpdate,
+    ParentAutoCloseSettingsUpdate,
     SlaSettingsUpdate,
     StatusCreate,
     StatusUpdate,
@@ -54,6 +55,7 @@ from app.common.db.dynamo.team_config import (
     AutoCloseSettings,
     CycleSettings,
     Label,
+    ParentAutoCloseSettings,
     SlaSettings,
     Status,
 )
@@ -141,6 +143,14 @@ def _parent_arguments(call: ToolCall) -> dict[str, Any]:
     return {"parent_team_id": team_ref(call, value, administer=True).team_id}
 
 
+def _copy_arguments(call: ToolCall) -> dict[str, Any]:
+    """`copy_settings_from_team_id` as a team reference resolved to the id of a team the caller can read."""
+    value = call.arguments.get("copy_settings_from_team_id")
+    if value is None:
+        return {}
+    return {"copy_settings_from_team_id": team_ref(call, value).team_id}
+
+
 def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
     """One team's identity, as every team tool answers it."""
     return {
@@ -221,6 +231,11 @@ def _auto_close_settings_json(settings: AutoCloseSettings) -> dict[str, Any]:
         "period_months": settings.period_months,
         "status_id": settings.status_id,
     }
+
+
+def _parent_auto_close_settings_json(settings: ParentAutoCloseSettings) -> dict[str, Any]:
+    """Whether a team's parents and sub-issues close together, as the tools answer it."""
+    return {"close_parent": settings.close_parent, "close_sub_issues": settings.close_sub_issues}
 
 
 def _display_defaults_json(call: ToolCall, team_id: str) -> dict[str, Any]:
@@ -461,6 +476,9 @@ def _get_team(call: ToolCall) -> Any:
     body["auto_close_settings"] = _auto_close_settings_json(
         team_writes.auto_close_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["parent_auto_close_settings"] = _parent_auto_close_settings_json(
+        team_writes.parent_auto_close_settings(call.repositories, workspace_id, team.team_id)
+    )
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
@@ -482,9 +500,14 @@ def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does, under a parent when one is named."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
     arguments = given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
-    payload = TeamCreate.model_validate({**arguments, **_parent_arguments(call)})
+    payload = TeamCreate.model_validate({**arguments, **_parent_arguments(call), **_copy_arguments(call)})
     team = team_writes.create_team(
-        call.repositories, call.context.workspace_id, call.context.user_id, payload, can_see=call.context.can_find_team
+        call.repositories,
+        call.context.workspace_id,
+        call.context.user_id,
+        payload,
+        can_see=call.context.can_find_team,
+        can_read=call.context.can_see_team,
     )
     audit.record_team_created(call.repositories, call.context, team, private=payload.private)
     body = _team_json(call, team)
@@ -569,6 +592,16 @@ def _update_auto_close_settings(call: ToolCall) -> Any:
     payload = AutoCloseSettingsUpdate.model_validate(arguments)
     saved = team_writes.update_auto_close_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_auto_close_settings_json(saved)}
+
+
+def _update_parent_auto_close_settings(call: ToolCall) -> Any:
+    """Turn closing a parent with its last sub-issue, or open sub-issues with their parent, on or off."""
+    team = admin_team(call)
+    payload = ParentAutoCloseSettingsUpdate.model_validate(given_arguments(call, ("close_parent", "close_sub_issues")))
+    saved = team_writes.update_parent_auto_close_settings(
+        call.repositories, call.context.workspace_id, team.team_id, payload
+    )
+    return {"team_id": team.team_id, **_parent_auto_close_settings_json(saved)}
 
 
 def _update_display_defaults(call: ToolCall) -> Any:
@@ -966,10 +999,21 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
             "A private team is seen only by its members, who join by being added. parent_team_id creates it as a "
-            "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings."
+            "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings. "
+            "copy_settings_from_team_id instead starts it with a copy of another team's statuses, labels, "
+            "templates, estimates and cycle, triage, SLA, archive, auto-close and display settings; members, "
+            "issues, cycles, projects and integrations are not copied."
         ),
         scopes=("teams:write",),
-        schema=object_schema(_team_fields(True), required=("name", "key_prefix")),
+        schema=object_schema(
+            {
+                **_team_fields(True),
+                "copy_settings_from_team_id": string(
+                    "Team to copy settings from: id, key such as ENG, or name. Cannot be combined with parent_team_id"
+                ),
+            },
+            required=("name", "key_prefix"),
+        ),
         handler=_create_team,
     ),
     Tool(
@@ -1054,6 +1098,26 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id",),
         ),
         handler=_update_auto_close_settings,
+        administers_team=True,
+    ),
+    Tool(
+        name="update_team_parent_auto_close_settings",
+        description=(
+            "Turn on or off closing a team's parent issue in its first completed status once every sub-issue "
+            "is completed or cancelled (close_parent), and closing a parent's open sub-issues in the same kind "
+            "of status once the parent is completed or cancelled (close_sub_issues). Both are off by default; "
+            "a field left out keeps its value. Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "close_parent": boolean("Close a parent once every sub-issue is completed or cancelled"),
+                "close_sub_issues": boolean("Close open sub-issues once their parent is completed or cancelled"),
+            },
+            required=("team_id",),
+        ),
+        handler=_update_parent_auto_close_settings,
         administers_team=True,
     ),
     Tool(

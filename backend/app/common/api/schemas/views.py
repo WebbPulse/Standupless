@@ -9,6 +9,7 @@ widens when a field is renamed.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
 
@@ -74,6 +75,9 @@ CompletedWindowField = Literal["all", "past_week", "past_month", "none"]
 
 COMPLETED_WINDOWS: tuple[str, ...] = get_args(CompletedWindowField)
 
+PROJECT_STATUS_ID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
+"""The shape of a workspace project status id a view's status filter may name beside a category."""
+
 
 def completed_window_of(window: Optional[str], show_completed: Optional[bool]) -> CompletedWindowField:
     """The window a stored view shows, read from `show_completed` when it predates the window."""
@@ -137,6 +141,12 @@ NotificationKindField = Literal[
     "reminder",
     "triage_new",
     "view_issue_added",
+    "reaction",
+    "issue_completed",
+    "issue_cancelled",
+    "priority_urgent",
+    "blocking_changed",
+    "document_comment",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -385,7 +395,7 @@ def unknown_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
 def invalid_project_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
     """Every key of a project view's filter that is unknown or holds a value the projects page cannot apply.
 
-    A status must be one the projects page offers, and `sub_teams`, `is_blocked`
+    A status must be a category or a workspace project status id, and `sub_teams`, `is_blocked`
     and `is_blocking` `true` or `false`, so a stored view never names a filter the
     page would quietly drop.
     """
@@ -411,7 +421,7 @@ def _project_entry_well_formed(key: str, entry: Any) -> bool:
     if key in PROJECT_SCALAR_FILTER_FIELDS and not isinstance(entry, str):
         return False
     if key == "status":
-        return all(item in PROJECT_STATUSES for item in values)
+        return all(item in PROJECT_STATUSES or PROJECT_STATUS_ID_PATTERN.match(item) for item in values)
     return True
 
 
@@ -637,7 +647,9 @@ class NotificationRead(BaseModel):
     An `initiative_update_due` reminder names its initiative, carries an empty
     `team_id` and says in `due_state` whether the update is due or overdue.
     `summary` is the line the row reads, naming who acted and, for a status change,
-    the status it moved to, which `new_value` also carries on its own.
+    the status it moved to, which `new_value` also carries on its own. A
+    `document_comment` names its document in `document_id` and `document_title`
+    and the comment in `comment_id`, with the issue fields and `team_id` empty.
     """
 
     notification_id: str
@@ -657,6 +669,8 @@ class NotificationRead(BaseModel):
     standup_date: Optional[str] = None
     url: Optional[str] = None
     new_value: Optional[str] = None
+    document_id: Optional[str] = None
+    document_title: Optional[str] = None
     summary: str = ""
     actor_id: str
     actor_name: str
@@ -687,6 +701,8 @@ class NotificationRead(BaseModel):
             standup_date=notification.standup_date,
             url=notification.url,
             new_value=notification.new_value,
+            document_id=notification.document_id,
+            document_title=notification.document_title,
             summary=notification_summary(notification),
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,

@@ -108,6 +108,9 @@ export const Roadmap: React.FC = () => {
     onToday: () => {
       timeline.current?.scrollToToday();
     },
+    onStep: (step: -1 | 1) => {
+      timeline.current?.step(step);
+    },
   };
   useTimelineShortcuts({ ...controls, group: 'Roadmap' });
 

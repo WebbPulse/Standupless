@@ -21,7 +21,12 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'assigned',
   'mentioned',
   'commented',
+  'reaction',
   'status_changed',
+  'issue_completed',
+  'issue_cancelled',
+  'priority_urgent',
+  'blocking_changed',
   'subscribed',
   'project_update',
   'project_update_comment',
@@ -36,6 +41,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'review_requested',
   'triage_new',
   'view_issue_added',
+  'document_comment',
 ];
 
 /** The route an issue's subscribers are read from. */

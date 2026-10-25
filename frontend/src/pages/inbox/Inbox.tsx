@@ -24,9 +24,9 @@
  * Every row also offers its actions to the mouse: hover or select it for
  * quick buttons, or right click it, or press its "more" button, for the full
  * menu, which adds unsubscribing from the issue, copying its link and opening
- * the row in a new tab. Shift S toggles the subscription on the selected
- * row's issue, so the pane beside it gives that key up while the inbox shows
- * it.
+ * the row in a new tab. Cmd or Ctrl, Shift and S toggles the subscription
+ * on the selected row's issue, the same key as in the issue view, so the pane
+ * beside it gives that key up while the inbox shows it.
  *
  * Removing, snoozing or unsubscribing raises a notice with Undo, and Ctrl Z
  * puts it back too. There is no route that restores a deleted notification,
@@ -53,17 +53,21 @@ import {
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import {
+  LuBan,
   LuCheck,
   LuCheckCheck,
+  LuCircleCheck,
   LuCalendar,
   LuClock,
   LuDownload,
   LuEllipsis,
+  LuFileText,
   LuGitPullRequest,
   LuGoal,
   LuInbox,
   LuMailOpen,
   LuSearch,
+  LuSmilePlus,
   LuTarget,
   LuTrash2,
   LuTriangleAlert,
@@ -87,12 +91,17 @@ import {
   unsubscribe,
 } from '../../api/notifications';
 import IssuePane from '../../components/issues/IssuePane';
-import { ManageSubscribersKeyContext } from '../../components/issues/IssueSubscribers';
+import {
+  BlockedIcon,
+  BlockingIcon,
+} from '../../components/issues/RelationGlyphs';
+import { TOGGLE_SUBSCRIPTION_KEYS } from '../../components/issues/view/propertyKeys';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import { IssueHoverTrigger } from '../../components/ui/IssueHoverCard';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
+import { PriorityGlyph } from '../../components/ui/glyphs';
 import {
   ContextMenu,
   Menu,
@@ -106,6 +115,7 @@ import Spinner from '../../components/ui/spinner';
 import Tooltip from '../../components/ui/tooltip';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCursorPages } from '../../hooks/useCursorPages';
+import { SubscriptionKeyContext } from '../../hooks/useIssueSubscription';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { viaLabel } from '../../lib/changeSource';
@@ -117,6 +127,7 @@ import { compactAge, fullTimestamp } from '../../lib/relativeTime';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { pushUndo, UNDO_TOAST_MS } from '../../lib/undo';
 import {
+  documentPath,
   exportSettingsPath,
   importSettingsPath,
   initiativePath,
@@ -151,7 +162,6 @@ import {
   REMOVE_KEYS,
   SNOOZE_KEYS,
   TOGGLE_READ_KEYS,
-  TOGGLE_SUBSCRIPTION_KEYS,
 } from './InboxRowMenu';
 import { InboxDisplayMenu, InboxFilterMenu } from './InboxViewMenus';
 import { keepPinned, type PinnedRow } from './pinned';
@@ -226,6 +236,13 @@ const isReviewRow = (row: NotificationRead): boolean =>
   row.kind === 'review_requested';
 
 /**
+ * Whether a row is about a comment on a document. It has no team and no issue,
+ * and `document_id` and `document_title` carry what it is about.
+ */
+const isDocumentRow = (row: NotificationRead): boolean =>
+  row.kind === 'document_comment';
+
+/**
  * Whether a row is about one issue, so it offers the issue-only actions:
  * unsubscribing and copying the issue's link.
  */
@@ -236,7 +253,8 @@ const isIssueRow = (row: NotificationRead): boolean =>
   !isChannelRow(row) &&
   !isJobRow(row) &&
   !isStandupRow(row) &&
-  !isReviewRow(row);
+  !isReviewRow(row) &&
+  !isDocumentRow(row);
 
 /** Opens a review request's pull request on GitHub in a new tab. */
 const openPullRequest = (row: NotificationRead): void => {
@@ -245,39 +263,92 @@ const openPullRequest = (row: NotificationRead): void => {
 
 /** What a row is about, as its actions name it: an issue key, a project, an initiative or a team standup. */
 const subjectName = (row: NotificationRead): string =>
-  isProjectRow(row)
-    ? (row.project_name ?? 'Project')
-    : isInitiativeRow(row)
-      ? (row.initiative_name ?? 'Initiative')
-      : isChannelRow(row) || isJobRow(row)
-        ? row.issue_title
-        : isStandupRow(row)
-          ? `${row.issue_title} standup`
-          : row.issue_key;
+  isDocumentRow(row)
+    ? (row.document_title ?? 'Document')
+    : isProjectRow(row)
+      ? (row.project_name ?? 'Project')
+      : isInitiativeRow(row)
+        ? (row.initiative_name ?? 'Initiative')
+        : isChannelRow(row) || isJobRow(row)
+          ? row.issue_title
+          : isStandupRow(row)
+            ? `${row.issue_title} standup`
+            : row.issue_key;
 
 /** Where opening a row goes: its issue, its project's or initiative's updates, team settings, the standup or Reviews. */
 const rowPath = (slug: string, row: NotificationRead): string =>
-  isReviewRow(row)
-    ? reviewsPath(slug)
-    : isProjectRow(row)
-      ? projectUpdatesTabPath(slug, row.project_id ?? '')
-      : isInitiativeRow(row)
-        ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
-        : isChannelRow(row)
-          ? row.issue_key
-            ? teamSettingsPath(slug, row.issue_key)
-            : integrationsSettingsPath(slug)
-          : isExportRow(row)
-            ? exportSettingsPath(slug)
-            : isImportRow(row)
-              ? importSettingsPath(slug)
-              : isStandupRow(row)
-                ? `${teamStandupPath(slug, row.issue_key)}${
-                    row.standup_date
-                      ? `?date=${encodeURIComponent(row.standup_date)}`
-                      : ''
-                  }`
-                : issuePath(slug, row.issue_key);
+  isDocumentRow(row)
+    ? documentPath(slug, row.document_id ?? '')
+    : isReviewRow(row)
+      ? reviewsPath(slug)
+      : isProjectRow(row)
+        ? projectUpdatesTabPath(slug, row.project_id ?? '')
+        : isInitiativeRow(row)
+          ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
+          : isChannelRow(row)
+            ? row.issue_key
+              ? teamSettingsPath(slug, row.issue_key)
+              : integrationsSettingsPath(slug)
+            : isExportRow(row)
+              ? exportSettingsPath(slug)
+              : isImportRow(row)
+                ? importSettingsPath(slug)
+                : isStandupRow(row)
+                  ? `${teamStandupPath(slug, row.issue_key)}${
+                      row.standup_date
+                        ? `?date=${encodeURIComponent(row.standup_date)}`
+                        : ''
+                    }`
+                  : issuePath(slug, row.issue_key);
+
+/** Props for DocumentCommentPane: the selected row and how to leave it. */
+interface DocumentCommentPaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a document comment, which opens the document where the thread sits. */
+const DocumentCommentPane: React.FC<DocumentCommentPaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
+  return (
+    <aside
+      aria-label="Document comment"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuFileText aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      <p className="text-sm text-text">
+        {actor} commented on{' '}
+        <span className="font-medium">{subjectName(row)}</span>
+      </p>
+      {row.summary ? (
+        <p className="text-xs text-text-muted">{row.summary}</p>
+      ) : null}
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open the document
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 /** Props for ReviewRequestPane: the selected row and how to leave it. */
 interface ReviewRequestPaneProps {
@@ -627,6 +698,38 @@ const rowSummary = (row: NotificationRead): string => {
   return row.actor_name === '' ? label : `${label} by ${row.actor_name}`;
 };
 
+/** The icon a kind leads its summary with, for kinds whose words alone read too alike. */
+const KIND_ICONS: Partial<Record<InboxKind, React.ReactNode>> = {
+  reaction: (
+    <LuSmilePlus
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
+  issue_completed: (
+    <LuCircleCheck
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-accent"
+    />
+  ),
+  issue_cancelled: (
+    <LuBan aria-hidden="true" className="h-3 w-3 shrink-0 text-text-faint" />
+  ),
+  priority_urgent: <PriorityGlyph priority="urgent" className="h-3 w-3" />,
+  blocking_changed: <BlockedIcon className="h-3 w-3" />,
+};
+
+/** The icon for a blocking row: the blocking flag when this issue blocks another, the blocked flag otherwise. */
+const kindIcon = (row: NotificationRead): React.ReactNode => {
+  if (row.kind !== 'blocking_changed') return KIND_ICONS[row.kind] ?? null;
+  const change = (row.new_value ?? '').split(':')[0];
+  return change === 'blocking' || change === 'no_longer_blocking' ? (
+    <BlockingIcon className="h-3 w-3" />
+  ) : (
+    <BlockedIcon className="h-3 w-3" />
+  );
+};
+
 /** Props for InboxRow. */
 interface InboxRowProps {
   group: InboxGroup;
@@ -731,7 +834,10 @@ const InboxRow: React.FC<InboxRowProps> = ({
               group.unread ? 'font-medium text-text' : 'text-text-muted'
             )}
           >
-            {isProjectRow(row) || isInitiativeRow(row) || isStandupRow(row)
+            {isProjectRow(row) ||
+            isInitiativeRow(row) ||
+            isStandupRow(row) ||
+            isDocumentRow(row)
               ? subjectName(row)
               : row.issue_title}
           </span>
@@ -754,7 +860,12 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </Tooltip>
         </span>
         <span className="flex w-full items-center gap-1.5 text-xs text-text-muted">
-          {isProjectRow(row) ? (
+          {isDocumentRow(row) ? (
+            <LuFileText
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isProjectRow(row) ? (
             <LuTarget
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
@@ -797,6 +908,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
               {row.issue_key}
             </span>
           )}
+          {!snoozedUntil && kindIcon(row)}
           <span className="min-w-0 truncate">
             {snoozedUntil
               ? snoozeLabel(snoozedUntil)
@@ -923,6 +1035,9 @@ const SEARCH_KEYS = 'mod+f';
 
 /** The keys that offer to delete every read notification, as Linear binds them. */
 const DELETE_READ_KEYS = 'shift+backspace';
+
+/** The keys that mark every notification read, as Linear binds them. */
+const MARK_ALL_READ_KEYS = 'alt+u';
 
 /** Which rows a bulk delete removes: the read ones or every one. */
 type ClearScope = 'read' | 'all';
@@ -1540,7 +1655,7 @@ export const Inbox: React.FC = () => {
     },
   });
   useShortcut({
-    keys: 'shift+r',
+    keys: MARK_ALL_READ_KEYS,
     label: readAllLabel,
     group: 'Inbox',
     enabled: allGroups.length > 0 && !isReadingAll,
@@ -1647,6 +1762,7 @@ export const Inbox: React.FC = () => {
             >
               <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
               {readAllLabel}
+              <MenuShortcut keys={MARK_ALL_READ_KEYS} />
             </MenuItem>
             <MenuSeparator />
             <MenuItem
@@ -1756,6 +1872,13 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isDocumentRow(current) ? (
+            <DocumentCommentPane
+              key={current.notification_id}
+              row={current}
+              slug={slug}
+              onClose={closePane}
+            />
           ) : isReviewRow(current) ? (
             <ReviewRequestPane
               key={current.notification_id}
@@ -1799,13 +1922,13 @@ export const Inbox: React.FC = () => {
               onClose={closePane}
             />
           ) : (
-            <ManageSubscribersKeyContext.Provider value={false}>
+            <SubscriptionKeyContext.Provider value={false}>
               <IssuePane
                 key={current.issue_id}
                 issueId={current.issue_id}
                 onClose={closePane}
               />
-            </ManageSubscribersKeyContext.Provider>
+            </SubscriptionKeyContext.Provider>
           )}
         </div>
       </div>

@@ -18,6 +18,8 @@ import type {
   ArchiveSettingsUpdate,
   AutoCloseSettingsRead,
   AutoCloseSettingsUpdate,
+  ParentAutoCloseSettingsRead,
+  ParentAutoCloseSettingsUpdate,
   CycleSettingsRead,
   CycleSettingsUpdate,
   LabelCreate,
@@ -139,6 +141,12 @@ export const autoCloseSettingsPath = (
   workspaceId: string,
   teamId: string
 ): string => `${teamPath(workspaceId, teamId)}/auto-close-settings`;
+
+/** The route a team's parent and sub-issue auto-close settings are read and changed at. */
+export const parentAutoCloseSettingsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `${teamPath(workspaceId, teamId)}/parent-auto-close-settings`;
 
 /** The route a team's auto-archive period is read and changed at. */
 export const archiveSettingsPath = (
@@ -649,6 +657,32 @@ export const updateAutoCloseSettings = async (
 ): Promise<AutoCloseSettingsRead> => {
   const response = await apiClient.patch<AutoCloseSettingsRead>(
     autoCloseSettingsPath(workspaceId, teamId),
+    body
+  );
+  return response.data;
+};
+
+/** Reads whether a team closes parents and sub-issues together, both off when never set. */
+export const getParentAutoCloseSettings = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<ParentAutoCloseSettingsRead> => {
+  const response = await apiClient.get<ParentAutoCloseSettingsRead>(
+    parentAutoCloseSettingsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Turns a team's parent or sub-issue auto-close on or off. Team admin only. */
+export const updateParentAutoCloseSettings = async (
+  workspaceId: string,
+  teamId: string,
+  body: ParentAutoCloseSettingsUpdate
+): Promise<ParentAutoCloseSettingsRead> => {
+  const response = await apiClient.patch<ParentAutoCloseSettingsRead>(
+    parentAutoCloseSettingsPath(workspaceId, teamId),
     body
   );
   return response.data;

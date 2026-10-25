@@ -1,10 +1,12 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
+ * `V` to create one in fullscreen,
+ * Alt+C to pick a template of the team in context and create from it,
  * `G` then a letter to go somewhere: the team's active issues, backlog,
  * board, archive, cycles and, as in Linear, `G` then `V` for its current
  * cycle among them, with `G` then Shift+V for views,
- * `O` then a letter to open a favorite, project, cycle, team or view from a
- * picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
+ * `O` then a letter to open a favorite, project, cycle, team, view or
+ * workspace from a picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
  * list of every shortcut. Registered through the
  * same registry as any page's own shortcuts, so the help overlay and the
  * command palette list them without a second source of truth.
@@ -16,8 +18,16 @@ import {
   usePaletteControls,
   type PalettePicker,
 } from '../../hooks/useCommandPalette';
-import { useCreateIssue } from '../../hooks/useCreateIssue';
+import {
+  CREATE_FROM_TEMPLATE_KEYS,
+  CREATE_FULLSCREEN_KEYS,
+  useCreateIssue,
+} from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
+import {
+  SIDEBAR_TOGGLE_KEYS,
+  toggleSidebarCollapsed,
+} from '../../hooks/useSidebarLayout';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
 import {
   currentOrFirstTeam,
@@ -104,6 +114,20 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
       createIssue.open();
     },
     enabled: createIssue.canCreate,
+  });
+  useShortcut({
+    keys: CREATE_FULLSCREEN_KEYS,
+    label: 'Create issue in fullscreen',
+    handler: () => {
+      createIssue.open({ expanded: true });
+    },
+    enabled: createIssue.canCreate,
+  });
+  useShortcut({
+    keys: CREATE_FROM_TEMPLATE_KEYS,
+    label: 'Create issue from template',
+    handler: pick('template'),
+    enabled: createIssue.canCreate && canPick && team !== undefined,
   });
   useShortcut({
     keys: 'g i',
@@ -210,6 +234,12 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     handler: go(viewsLanding(slug, insideTeam)),
   });
   useShortcut({
+    keys: SIDEBAR_TOGGLE_KEYS,
+    label: 'Toggle sidebar',
+    group: NAVIGATION,
+    handler: toggleSidebarCollapsed,
+  });
+  useShortcut({
     keys: 'o f',
     label: 'Open favorite',
     group: OPEN,
@@ -242,6 +272,13 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: 'Open view',
     group: OPEN,
     handler: pick('views'),
+    enabled: canPick,
+  });
+  useShortcut({
+    keys: 'o w',
+    label: 'Switch workspace',
+    group: OPEN,
+    handler: pick('workspaces'),
     enabled: canPick,
   });
   useShortcut({

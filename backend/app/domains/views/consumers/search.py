@@ -18,7 +18,9 @@ converges on the same state. Nothing here is incremented.
 
 Postings are filed under the issue's team, so an issue that moved to another
 team has every old posting deleted from the old team's partition and its whole
-term set written under the new one, rather than a difference.
+term set written under the new one, rather than a difference. A comment on a
+document has no team, so it is filed under the workspace's `DOCUMENT_COMMENTS`
+slot instead.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.composition.consumers import CONSUMERS
-from app.common.db.dynamo.search_index import comment_doc, comment_terms, issue_terms, legacy_terms
+from app.common.db.dynamo.search_index import DOCUMENT_COMMENTS, comment_doc, comment_terms, issue_terms, legacy_terms
 
 _log = logging.getLogger(__name__)
 
@@ -116,7 +118,8 @@ def _handle_comment(
     issue_id = _text(image, "issue_id")
     comment_id = _text(image, "comment_id")
     row_team = _text(image, "team_id")
-    if not workspace_id or not issue_id or not comment_id or not row_team:
+    document_id = _text(image, "document_id")
+    if not workspace_id or not issue_id or not comment_id or not (row_team or document_id):
         return
     removed = str(record.get("eventName", "")).upper() == "REMOVE"
     wanted = set() if removed else comment_terms(new_image)
@@ -125,7 +128,7 @@ def _handle_comment(
     departed = held - wanted
     if not appeared and not departed:
         return
-    team_id = _comment_team(repositories, workspace_id, issue_id, row_team)
+    team_id = DOCUMENT_COMMENTS if document_id else _comment_team(repositories, workspace_id, issue_id, row_team)
     repositories.search_index.apply(
         workspace_id, team_id, comment_doc(comment_id, issue_id), appeared=appeared, departed=departed
     )

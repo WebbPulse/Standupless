@@ -396,6 +396,21 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     path: (slug) => `${settingsPath(slug)}/project-labels`,
   },
   {
+    id: 'emoji',
+    title: 'Emoji',
+    scope: 'workspace',
+    paletteLabel: 'Custom emoji',
+    synonyms: ['custom emoji', 'emoticons', 'reactions'],
+    path: (slug) => `${settingsPath(slug)}/emoji`,
+  },
+  {
+    id: 'project-statuses',
+    title: 'Project statuses',
+    scope: 'workspace',
+    synonyms: ['project stages', 'project workflow', 'project states'],
+    path: (slug) => `${settingsPath(slug)}/project-statuses`,
+  },
+  {
     id: 'templates',
     title: 'Templates',
     scope: 'workspace',
@@ -709,6 +724,17 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
     title: 'Auto-close',
     paletteLabel: 'Auto-close settings',
     synonyms: ['team auto close', 'autoclose', 'stale'],
+  },
+  {
+    id: 'parent-auto-close',
+    title: 'Parent and sub-issues',
+    paletteLabel: 'Parent and sub-issue auto-close settings',
+    synonyms: [
+      'auto-close parent issues',
+      'auto-close sub-issues',
+      'subissues',
+      'child issues',
+    ],
   },
   {
     id: 'archive',

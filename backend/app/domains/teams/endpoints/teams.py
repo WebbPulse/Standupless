@@ -36,6 +36,8 @@ from app.common.api.schemas.teams import (
     AutoCloseSettingsUpdate,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    ParentAutoCloseSettingsRead,
+    ParentAutoCloseSettingsUpdate,
     SlaSettingsRead,
     SlaSettingsUpdate,
     TeamCreate,
@@ -121,10 +123,16 @@ def create_team(
     be recreated: the prefix is taken, so a retry 409s while issue creation 422s on
     the missing statuses. All or nothing means a failure leaves the prefix free.
     A parent team must be one the caller can find, and a team created under one
-    records the parent change as joining it later does.
+    records the parent change as joining it later does. A team copied from
+    another must copy one whose content the caller can read.
     """
     team = team_writes.create_team(
-        repositories, context.workspace_id, context.user_id, payload, can_see=context.can_find_team
+        repositories,
+        context.workspace_id,
+        context.user_id,
+        payload,
+        can_see=context.can_find_team,
+        can_read=context.can_see_team,
     )
     audit.record_team_created(repositories, context, team, private=payload.private)
     return TeamRead.from_row(team, "admin", member_count=1, is_member=True, private=payload.private)
@@ -302,6 +310,33 @@ def update_auto_close_settings(
     team = _load(repositories, context)
     saved = team_writes.update_auto_close_settings(repositories, context.workspace_id, team.team_id, payload)
     return AutoCloseSettingsRead.from_row(saved)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/parent-auto-close-settings", response_model=ParentAutoCloseSettingsRead)
+def read_parent_auto_close_settings(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ParentAutoCloseSettingsRead:
+    """Whether a team closes a parent with its last sub-issue and open sub-issues with their parent."""
+    team = _load(repositories, context)
+    return ParentAutoCloseSettingsRead.from_row(
+        team_writes.parent_auto_close_settings(repositories, context.workspace_id, team.team_id)
+    )
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/parent-auto-close-settings", response_model=ParentAutoCloseSettingsRead)
+def update_parent_auto_close_settings(
+    payload: ParentAutoCloseSettingsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ParentAutoCloseSettingsRead:
+    """Turn closing a parent once every sub-issue is done, or open sub-issues once their parent is, on or off.
+
+    The change applies to the next status move; issues already finished are left as they are.
+    """
+    team = _load(repositories, context)
+    saved = team_writes.update_parent_auto_close_settings(repositories, context.workspace_id, team.team_id, payload)
+    return ParentAutoCloseSettingsRead.from_row(saved)
 
 
 @router.get("/{workspace_id}/teams/{team_id}/archive-settings", response_model=ArchiveSettingsRead)

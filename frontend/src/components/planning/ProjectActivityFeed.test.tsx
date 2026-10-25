@@ -14,6 +14,11 @@ import ProjectActivityFeed from './ProjectActivityFeed';
 
 const feed = vi.fn<() => ProjectActivity>();
 
+vi.mock(
+  '../../hooks/useProjectStatuses',
+  () => import('../../test/projectStatuses')
+);
+
 vi.mock('../../hooks/useProjectActivity', () => ({
   useProjectActivity: () => feed(),
 }));

@@ -10,7 +10,8 @@
  * The row itself is `ReactionGroups`, shared with project update threads.
  *
  * A comment is partitioned by its issue, so a comment target carries `issueId`
- * on every read and write; the API answers 404 without it.
+ * on every read and write; the API answers 404 without it. A comment on a
+ * document carries `documentId` in its place.
  */
 
 import React from 'react';
@@ -36,6 +37,8 @@ export interface ReactionBarProps {
   targetKind: ReactionTarget;
   /** The issue a comment target was written on. Required for a comment. */
   issueId?: string;
+  /** The document a comment target was written on, sent in place of `issueId`. */
+  documentId?: string;
   /** The groups from an inline read, or undefined to read them here. */
   reactions?: ReactionGroup[];
   canReact: boolean;
@@ -55,6 +58,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
   targetId,
   targetKind,
   issueId,
+  documentId,
   reactions,
   canReact,
   refetchKey,
@@ -83,7 +87,11 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({
         target_id: targetId,
         target_kind: targetKind,
         emoji,
-        ...(issueId === undefined ? {} : { issue_id: issueId }),
+        ...(documentId !== undefined
+          ? { document_id: documentId }
+          : issueId === undefined
+            ? {}
+            : { issue_id: issueId }),
       };
       if (reacted) {
         await removeReaction(workspaceId, target);

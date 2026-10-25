@@ -1,10 +1,13 @@
-"""The notify consumer: turns issue, comment, subscription and project update stream records into inbox rows.
+"""The notify consumer: turns issue, comment, subscription, project update, reaction and link records into inbox rows.
 
-It reads four streams on one route, the `issues` table's, the `comments` table's,
+It reads six streams on one route, the `issues` table's, the `comments` table's,
 the `subscriptions` table's, filtered to inserted rows one member made for
-another, and the `planning` table's, filtered to inserted project updates and
-replies on them, and tells them apart by `eventSourceARN` rather than by guessing from the attributes present,
-because a filtered record carries no marker of its own.
+another, the `planning` table's, filtered to inserted project updates and
+replies on them, the `reactions` table's, filtered to new reactions on
+comments, and the `relations` table's, filtered to blocking links added or
+removed by a person, and tells them apart by `eventSourceARN` rather than by
+guessing from the attributes present, because a filtered record carries no
+marker of its own.
 
 A project has no subscriptions of its own, so a project update reaches the
 project's lead and members, never its author. A reply on an update reaches the
@@ -40,7 +43,7 @@ rather than a duplicate badge.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from fastapi import APIRouter
@@ -53,7 +56,12 @@ from app.common.comment_drafts import clear_posted_draft
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import (
+    BLOCKING_CHANGED,
+    ISSUE_CANCELLED,
+    ISSUE_COMPLETED,
+    PRIORITY_URGENT,
     PROJECT_UPDATE_REPLIED,
+    REACTION,
     TRIAGE_NEW,
     VIEW_ISSUE_ADDED,
     Notification,
@@ -66,10 +74,12 @@ from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
 from app.common.issue_keys import display_key
+from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.team_privacy import person_can_see_team
 from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
+from app.domains.views.consumers.document_comments import handle_document_comment
 from app.domains.views.consumers.view_watch import image_issue, newly_entered
 from app.domains.views.email import excerpt
 
@@ -95,6 +105,14 @@ ANCESTOR_DEPTH = 16
 
 A reply chain is one level deep by contract, so this only bounds a malformed or
 future-deeper thread rather than cutting a legitimate one short.
+"""
+
+REACTION_WINDOW = timedelta(hours=1)
+"""How long reactions on one comment fold into the single inbox row the first one wrote.
+
+The row's id is built from the start of the window rather than the reaction's own
+time, so a second reaction in the same window lands on the existing row and the
+conditional put drops it, and a burst of reactions is one notification.
 """
 
 MAX_RECIPIENTS_PER_EVENT = 100
@@ -267,11 +285,14 @@ def write_notification(
     headline_key: str | None = None,
     source: str | None = None,
     new_value: str | None = None,
+    coalesce_at: datetime | None = None,
 ) -> bool:
     """Write one inbox row, unless the recipient is the actor or cannot see it.
 
     `new_value` is what the subject became, such as the status name a change moved
     to, so the row can say "moved to Done" without a read at render time.
+    `coalesce_at`, when given, stands in for `created_at` in the id alone, so every
+    record sharing it folds into one row.
 
     The recipient's preferences for this kind decide the rest. With the inbox off
     the row is still written but already read, so it never raises the badge and
@@ -303,7 +324,9 @@ def write_notification(
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
     row = Notification(
         ws_user=inbox_partition(workspace_id, recipient_id),
-        notification_id=notification_id(created_at, kind, recipient_id, source_id),
+        notification_id=notification_id(
+            coalesce_at if coalesce_at is not None else created_at, kind, recipient_id, source_id
+        ),
         workspace_id=workspace_id,
         kind=kind,
         issue_id=issue.issue_id,
@@ -344,7 +367,10 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     losing an issue is not news the contract sends. A description mention notifies
     only the people the description names now and did not before, so editing a
     description that already mentions someone does not ping them again. A status
-    change reaches every subscriber and the assignee. Nobody hears about the same
+    change reaches every subscriber and the assignee, as `issue_completed` or
+    `issue_cancelled` when it closes the issue, and closing it also tells the
+    followers of every issue it was blocking. A raise to urgent priority reaches
+    the same people as `priority_urgent`. Nobody hears about the same
     record twice, so a person assigned and mentioned in one write gets the
     assignment alone. An issue entering a team's triage inbox, created there or
     sent back, tells everyone on that team's triage duty when the team notifies.
@@ -404,13 +430,30 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 
     new_status = _text(new_image, "status_id")
     old_status = _text(old_image, "status_id")
+    resolved = False
+    followers: list[str] | None = None
     if old_image and new_status and new_status != old_status:
         status = repositories.team_config.get_status(workspace_id, issue.team_id, new_status)
+        previous = repositories.team_config.get_status(workspace_id, issue.team_id, old_status) if old_status else None
+        category = status.category if status is not None else ""
+        resolved = category in COMPLETED_CATEGORIES and (
+            previous is None or previous.category not in COMPLETED_CATEGORIES
+        )
         moved_to = {"new_value": status.name} if status is not None and status.name else {}
-        if new_assignee:
-            plan(new_assignee, STATUS_CHANGED, f"{issue_id}#status#{new_status}", **moved_to)
-        for recipient_id in sorted(set(repositories.subscriptions.user_ids(workspace_id, issue_id))):
-            plan(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}", **moved_to)
+        kind = STATUS_KINDS.get(category, STATUS_CHANGED)
+        followers = issue_followers(repositories, workspace_id, issue_id, new_assignee)
+        for recipient_id in followers:
+            plan(recipient_id, kind, f"{issue_id}#status#{new_status}", **moved_to)
+
+    if (
+        old_image
+        and _text(new_image, "priority") == URGENT_PRIORITY
+        and _text(old_image, "priority") != URGENT_PRIORITY
+    ):
+        if followers is None:
+            followers = issue_followers(repositories, workspace_id, issue_id, new_assignee)
+        for recipient_id in followers:
+            plan(recipient_id, PRIORITY_URGENT, f"{issue_id}#priority#{URGENT_PRIORITY}")
 
     changed_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
     before = image_issue(old_image) if old_image else None
@@ -442,6 +485,76 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 **extra,
             )
         )
+    if resolved:
+        written += notify_blocker_resolved(
+            repositories,
+            issue,
+            actor_id=actor_id,
+            actor_display=display,
+            created_at=created_at,
+            status_id=new_status,
+            source=_text(new_image, "updated_source") or None,
+        )
+    return written
+
+
+STATUS_KINDS: Mapping[str, str] = {"completed": ISSUE_COMPLETED, "cancelled": ISSUE_CANCELLED}
+"""The kind a move into each closing status category takes in place of a plain status change."""
+
+
+def issue_followers(repositories: Repositories, workspace_id: str, issue_id: str, assignee_id: str) -> list[str]:
+    """Who hears about a change to one issue: its assignee first, then its subscribers in id order."""
+    subscribers = sorted(set(repositories.subscriptions.user_ids(workspace_id, issue_id)))
+    return [user_id for user_id in dict.fromkeys([assignee_id, *subscribers]) if user_id]
+
+
+def notify_blocker_resolved(
+    repositories: Repositories,
+    blocker: Any,
+    *,
+    actor_id: str,
+    actor_display: str,
+    created_at: datetime | None,
+    status_id: str,
+    source: str | None,
+) -> int:
+    """Tell the followers of every issue a just closed blocker was blocking, answering how many rows were written.
+
+    Each row is about the blocked issue, naming the blocker in `new_value`, since
+    that is the issue its reader can now move on.
+    """
+    workspace_id = blocker.workspace_id
+    blocker_key = display_key(repositories.teams, workspace_id, blocker.team_id, blocker.key)
+    written = 0
+    for relation in repositories.relations.list_for_issue(workspace_id, blocker.issue_id):
+        if relation.relation_type != "blocks":
+            continue
+        blocked = repositories.issues.get(workspace_id, relation.target_issue_id)
+        if blocked is None:
+            continue
+        audience = issue_followers(repositories, workspace_id, blocked.issue_id, blocked.assignee_id or "")
+        for recipient_id in cap_recipients(
+            [user_id for user_id in audience if user_id != actor_id],
+            workspace_id=workspace_id,
+            source=f"blocker_resolved#{blocker.issue_id}",
+        ):
+            written += int(
+                write_notification(
+                    repositories,
+                    workspace_id=workspace_id,
+                    recipient_id=recipient_id,
+                    kind=BLOCKING_CHANGED,
+                    issue=blocked,
+                    comment_id=None,
+                    actor_id=actor_id,
+                    actor_display=actor_display,
+                    created_at=created_at,
+                    source_id=f"{blocked.issue_id}#blocker_resolved#{blocker.issue_id}#{status_id}",
+                    headline_key="blocker_resolved",
+                    source=source,
+                    new_value=f"blocker_resolved:{blocker_key}",
+                )
+            )
     return written
 
 
@@ -463,6 +576,8 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     """
     if from_bulk_import(record):
         return 0
+    if (deserialize_image(record, "NewImage") or {}).get("document_id"):
+        return handle_document_comment(repositories, record, limit=MAX_RECIPIENTS_PER_EVENT)
     event = str(record.get("eventName", "")).upper()
     if event == "MODIFY":
         return handle_comment_edit(repositories, record)
@@ -851,6 +966,139 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     return written
 
 
+def coalescing_window(moment: datetime | None) -> datetime | None:
+    """The start of the `REACTION_WINDOW` one reaction falls in, or `None` when it carries no time."""
+    if moment is None:
+        return None
+    width = int(REACTION_WINDOW.total_seconds())
+    return datetime.fromtimestamp(int(moment.timestamp()) // width * width, tz=timezone.utc)
+
+
+def handle_reaction_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify from one `reactions` record, answering how many rows were written.
+
+    Only a new reaction on a comment is news, and it reaches the comment's author
+    alone, never someone reacting to their own comment. Reactions on one comment
+    within one `REACTION_WINDOW` fold into the row the first wrote, which names
+    that reactor and emoji. A row written before reactions carried their issue
+    cannot be read back to its comment and notifies nobody.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT":
+        return 0
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image or _text(new_image, "target_kind") != "comment":
+        return 0
+
+    workspace_id = _text(new_image, "workspace_id")
+    issue_id = _text(new_image, "issue_id")
+    comment_id = _text(new_image, "target_id")
+    actor_id = _text(new_image, "user_id")
+    if not workspace_id or not issue_id or not comment_id or not actor_id:
+        return 0
+
+    comment = repositories.comments.get(workspace_id, issue_id, comment_id)
+    if comment is None or not comment.author_id or comment.author_id == actor_id:
+        return 0
+    issue = repositories.issues.get(workspace_id, issue_id)
+    if issue is None:
+        return 0
+
+    reacted_at = _stamped_at(new_image)
+    return int(
+        write_notification(
+            repositories,
+            workspace_id=workspace_id,
+            recipient_id=comment.author_id,
+            kind=REACTION,
+            issue=issue,
+            comment_id=comment_id,
+            actor_id=actor_id,
+            actor_display=actor_name(repositories, actor_id),
+            created_at=reacted_at,
+            source_id=f"{comment_id}#reaction",
+            comment_excerpt=comment.body,
+            new_value=_text(new_image, "emoji") or None,
+            coalesce_at=coalescing_window(reacted_at),
+        )
+    )
+
+
+BLOCKING_CHANGES: Mapping[tuple[bool, bool], str] = {
+    (True, True): "blocked_by",
+    (True, False): "blocking",
+    (False, True): "unblocked_by",
+    (False, False): "no_longer_blocking",
+}
+"""The change a `blocking_changed` row names.
+
+Keyed by whether the link was added and whether the reader's issue is the blocked side.
+"""
+
+
+def handle_relation_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify from one `relations` record, answering how many rows were written.
+
+    Only the `blocks` row of a blocking link is read, so a link announces once
+    rather than once per direction. Adding or removing it tells the followers of
+    both issues, each row about the follower's own issue and naming the other in
+    `new_value`. The actor is the link's creator, or on a removal the `removed_by`
+    the delete stamped; a removal without one, such as an issue's links going
+    with the issue, and a link a bulk import wrote, notify nobody.
+    """
+    event = str(record.get("eventName", "")).upper()
+    if event == "INSERT":
+        if from_bulk_import(record):
+            return 0
+        image = deserialize_image(record, "NewImage")
+        actor_id = _text(image, "created_by") if image else ""
+        stamped = _stamped_at(image) if image else None
+    elif event == "REMOVE":
+        image = deserialize_image(record, "OldImage")
+        actor_id = _text(image, "removed_by") if image else ""
+        stamped = _stamped_at({"created_at": image.get("removed_at")}) if image else None
+    else:
+        return 0
+    if not image or not actor_id or _text(image, "relation_type") != "blocks":
+        return 0
+
+    workspace_id = _text(image, "workspace_id")
+    blocker = repositories.issues.get(workspace_id, _text(image, "issue_id")) if workspace_id else None
+    blocked = repositories.issues.get(workspace_id, _text(image, "target_issue_id")) if workspace_id else None
+    if blocker is None or blocked is None:
+        return 0
+
+    added = event == "INSERT"
+    link_id = _text(image, "link_id")
+    display = actor_name(repositories, actor_id)
+    written = 0
+    for subject, other, is_blocked in ((blocked, blocker, True), (blocker, blocked, False)):
+        change = BLOCKING_CHANGES[(added, is_blocked)]
+        other_key = display_key(repositories.teams, workspace_id, other.team_id, other.key)
+        audience = issue_followers(repositories, workspace_id, subject.issue_id, subject.assignee_id or "")
+        for recipient_id in cap_recipients(
+            [user_id for user_id in audience if user_id != actor_id],
+            workspace_id=workspace_id,
+            source=f"relation#{link_id}",
+        ):
+            written += int(
+                write_notification(
+                    repositories,
+                    workspace_id=workspace_id,
+                    recipient_id=recipient_id,
+                    kind=BLOCKING_CHANGED,
+                    issue=subject,
+                    comment_id=None,
+                    actor_id=actor_id,
+                    actor_display=display,
+                    created_at=stamped,
+                    source_id=f"{subject.issue_id}#{change}#{link_id}",
+                    headline_key=change,
+                    new_value=f"{change}:{other_key}",
+                )
+            )
+    return written
+
+
 def clear_comment_draft(repositories: Repositories, record: Mapping[str, Any]) -> bool:
     """Clear the author's draft in the thread a new comment was posted to, reporting whether one went.
 
@@ -886,7 +1134,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     are imported here rather than at the top because they build on this module's
     writers.
 
-    A record whose ARN names none of the four tables is ignored rather than raised on: a
+    A record whose ARN names none of the six tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
@@ -921,6 +1169,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_subscription_record(repositories, record)
     elif physical == table_name("planning", prefix):
         written = handle_planning_record(repositories, record)
+    elif physical == table_name("reactions", prefix):
+        written = handle_reaction_record(repositories, record)
+    elif physical == table_name("relations", prefix):
+        written = handle_relation_record(repositories, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",

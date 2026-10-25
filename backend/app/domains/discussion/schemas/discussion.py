@@ -275,7 +275,9 @@ class CommentRead(BaseModel):
     `github_thread` is set on a root comment whose thread is synced to a GitHub
     pull request or issue, and `resolution` on a root whose thread is resolved,
     which a reader collapses to one line. `anchor` is set on a root pinned to a
-    passage of the issue description.
+    passage of the issue description. `document_id` is set on a comment on a
+    document, whose `issue_id` then repeats the document id and whose `team_id`
+    is empty.
     """
 
     comment_id: str
@@ -296,6 +298,7 @@ class CommentRead(BaseModel):
     github_thread: Optional[GithubThread] = None
     resolution: Optional[ThreadResolution] = None
     anchor: Optional[CommentAnchor] = None
+    document_id: Optional[str] = None
 
     @classmethod
     def from_row(
@@ -332,6 +335,7 @@ class CommentRead(BaseModel):
             github_thread=comment.github_thread,
             resolution=comment.resolution,
             anchor=comment.anchor,
+            document_id=comment.document_id,
         )
 
 
@@ -405,18 +409,45 @@ class CommentUpdate(BaseModel):
         return _check_body(value)
 
 
+class DocumentCommentCreate(BaseModel):
+    """The body a comment on a document takes: text, and the root it replies to if any."""
+
+    body: str = Field(min_length=1)
+    parent_comment_id: Optional[str] = None
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: str) -> str:
+        """Hold the body to the shared byte cap."""
+        return _check_body(value)
+
+
+class DocumentCommentUpdate(BaseModel):
+    """The body an edit of a comment on a document takes."""
+
+    body: str = Field(min_length=1)
+
+    @field_validator("body")
+    @classmethod
+    def check_body(cls, value: str) -> str:
+        """Hold the body to the shared byte cap."""
+        return _check_body(value)
+
+
 class ReactionWrite(BaseModel):
     """The body a reaction `PUT` takes.
 
     `issue_id` is required for a `comment` target and ignored for an `issue` one,
     because a comment's partition is its issue and the route reads the comment back
-    to hold that the pair really goes together.
+    to hold that the pair really goes together. A comment on a document names its
+    document in `document_id` instead.
     """
 
     target_id: str = Field(min_length=1)
     target_kind: TargetKindField
     emoji: str = Field(min_length=1)
     issue_id: Optional[str] = None
+    document_id: Optional[str] = None
 
     @field_validator("emoji")
     @classmethod

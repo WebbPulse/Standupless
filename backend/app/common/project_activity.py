@@ -45,7 +45,17 @@ TRACKED_FIELDS: tuple[str, ...] = (
     "team_ids",
     "initiative_id",
 )
-"""The project properties a change to is recorded, the ones Linear's project activity names."""
+"""The project properties a change to is recorded, the ones Linear's project activity names.
+
+`status` is recorded as the workspace project status id, so a move between two
+statuses of one category is named, and a seeded default reads as its category.
+"""
+
+
+def _tracked(project: Project, name: str) -> Any:
+    """One tracked property's value, the status read as the project's status id."""
+    return project.effective_status_id if name == "status" else getattr(project, name)
+
 
 MILESTONE_FIELDS: tuple[str, ...] = ("name", "target_date")
 """The milestone properties a change to is recorded."""
@@ -110,11 +120,11 @@ def record_project_changes(
             after.project_id,
             "field_changed",
             field=name,
-            from_value=getattr(before, name),
-            to_value=getattr(after, name),
+            from_value=_tracked(before, name),
+            to_value=_tracked(after, name),
         )
         for name in TRACKED_FIELDS
-        if _changed(getattr(before, name), getattr(after, name))
+        if _changed(_tracked(before, name), _tracked(after, name))
     ]
     return repositories.planning.record_project_activity(rows)
 

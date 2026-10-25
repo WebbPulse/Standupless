@@ -33,6 +33,12 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   review_requested: 'Review requested',
   triage_new: 'New in triage',
   view_issue_added: 'Added to view',
+  reaction: 'Reaction',
+  issue_completed: 'Completed',
+  issue_cancelled: 'Canceled',
+  priority_urgent: 'Marked urgent',
+  blocking_changed: 'Blocking changed',
+  document_comment: 'Document comment',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -79,6 +85,8 @@ export const groupKey = (row: NotificationRead): string => {
     return row.project_id ? `project:${row.project_id}` : alone;
   if (row.kind === 'initiative_update_due')
     return row.initiative_id ? `initiative:${row.initiative_id}` : alone;
+  if (row.kind === 'document_comment')
+    return row.document_id ? `document:${row.document_id}` : alone;
   if (STANDALONE_KINDS.has(row.kind) || !row.issue_id) return alone;
   return `issue:${row.issue_id}`;
 };
@@ -153,7 +161,14 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'assignments', label: 'Assignments', kinds: ['assigned'] },
   { id: 'mentions', label: 'Mentions', kinds: ['mentioned'] },
   { id: 'comments', label: 'Comments', kinds: ['commented'] },
-  { id: 'status', label: 'Status changes', kinds: ['status_changed'] },
+  { id: 'reactions', label: 'Reactions', kinds: ['reaction'] },
+  {
+    id: 'status',
+    label: 'Status changes',
+    kinds: ['status_changed', 'issue_completed', 'issue_cancelled'],
+  },
+  { id: 'priority', label: 'Urgent priority', kinds: ['priority_urgent'] },
+  { id: 'blocking', label: 'Blocking', kinds: ['blocking_changed'] },
   { id: 'subscriptions', label: 'Subscriptions', kinds: ['subscribed'] },
   {
     id: 'projects',
@@ -171,6 +186,7 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'reviews', label: 'Reviews', kinds: ['review_requested'] },
   { id: 'triage', label: 'Triage', kinds: ['triage_new'] },
   { id: 'views', label: 'Views', kinds: ['view_issue_added'] },
+  { id: 'documents', label: 'Documents', kinds: ['document_comment'] },
   { id: 'standups', label: 'Standups', kinds: ['standup_digest'] },
   {
     id: 'notices',

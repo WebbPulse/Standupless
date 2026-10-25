@@ -6,9 +6,11 @@
  * domain are offered beside them and joined in one click. Sent from the home
  * page, it resumes the workspace last opened in this browser when that is
  * still one of the caller's, and falls back to the choice when it is not.
+ * A row's Leave confirms, removes the caller and reads the list again, which
+ * forwards into the one workspace left.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,11 +30,17 @@ const listWorkspaces = vi.fn<() => Promise<WorkspaceRead[]>>();
 
 const listJoinableWorkspaces = vi.fn<() => Promise<JoinableWorkspaceRead[]>>();
 const joinWorkspace = vi.fn<(workspaceId: string) => Promise<MemberRead>>();
+const removeMember =
+  vi.fn<(workspaceId: string, userId: string) => Promise<void>>();
+const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 
 vi.mock('../../api/workspaces', () => ({
   listWorkspaces: () => listWorkspaces(),
   listJoinableWorkspaces: () => listJoinableWorkspaces(),
   joinWorkspace: (workspaceId: string) => joinWorkspace(workspaceId),
+  removeMember: (workspaceId: string, userId: string) =>
+    removeMember(workspaceId, userId),
+  listMembers: () => listMembers(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -116,6 +124,8 @@ beforeEach(() => {
   listWorkspaces.mockReset();
   listJoinableWorkspaces.mockReset();
   joinWorkspace.mockReset();
+  removeMember.mockReset();
+  listMembers.mockReset();
   listJoinableWorkspaces.mockResolvedValue([]);
   localStorage.removeItem(LAST_WORKSPACE_STORAGE_KEY);
 });
@@ -278,5 +288,28 @@ describe('Workspaces', () => {
     await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
 
     expect(await screen.findByText(/Workspace page/)).toBeInTheDocument();
+  });
+
+  it('leaves a workspace from its row and forwards into the one left', async () => {
+    listWorkspaces.mockResolvedValue([mine, theirs]);
+    removeMember.mockImplementation(() => {
+      listWorkspaces.mockResolvedValue([mine]);
+      return Promise.resolve();
+    });
+    const user = userEvent.setup();
+    renderAt();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Leave Theirs' })
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Leave Theirs' });
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Leave workspace' })
+    );
+
+    await waitFor(() => {
+      expect(removeMember).toHaveBeenCalledWith('ws-2', 'user-1');
+    });
+    expect(await screen.findByText('Workspace page mine')).toBeInTheDocument();
   });
 });

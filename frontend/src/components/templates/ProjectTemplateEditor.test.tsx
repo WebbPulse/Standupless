@@ -17,6 +17,11 @@ import type {
 import ProjectTemplateEditor from './ProjectTemplateEditor';
 import type { TemplateEditorActions } from './TemplateEditor';
 
+vi.mock(
+  '../../hooks/useProjectStatuses',
+  () => import('../../test/projectStatuses')
+);
+
 const blueprint: ProjectBlueprint = {
   description: 'Ship the feature',
   lead_id: null,

@@ -66,6 +66,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         approved_domains,
         audit,
         billing,
+        custom_emoji,
         exports,
         icons,
         scim,
@@ -82,6 +83,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (approved_domains.router, "/workspaces", ("workspaces",)),
         (workspaces.router, "/workspaces", ("workspaces",)),
         (icons.router, "/workspaces", ("workspaces",)),
+        (custom_emoji.router, "/workspaces", ("workspaces",)),
         (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
@@ -228,7 +230,16 @@ authorization never writes a membership, and a token can only ever be issued for
 workspace the consenting user already belongs to.
 """
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "counters", "idempotency", "audit")
+_WORKSPACES_REPOSITORIES = (
+    "workspaces",
+    "memberships",
+    "invites",
+    "api_keys",
+    "counters",
+    "idempotency",
+    "audit",
+    "custom_emoji",
+)
 
 _WORKSPACES_READ_REPOSITORIES = ("users", "teams")
 
@@ -308,10 +319,11 @@ def _discussion_routers() -> "Sequence[RouterSpec]":
     that partitions them rides along as a query parameter. Every route still starts
     from an issue, so visibility is decided against one team.
     """
-    from app.domains.discussion.endpoints import attachments, comments, reactions
+    from app.domains.discussion.endpoints import attachments, comments, document_comments, reactions
 
     return [
         (comments.router, "/workspaces", ("discussion",)),
+        (document_comments.router, "/workspaces", ("discussion",)),
         (reactions.router, "/workspaces", ("discussion",)),
         (attachments.router, "/workspaces", ("discussion",)),
     ]
@@ -395,7 +407,22 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
 
 _DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions", "activity")
 
-_DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys")
+_DISCUSSION_READ_REPOSITORIES = (
+    "memberships",
+    "workspaces",
+    "users",
+    "teams",
+    "issues",
+    "api_keys",
+    "planning",
+    "documents",
+    "custom_emoji",
+)
+"""What the discussion image reads.
+
+`planning` and `documents` are for comments on a document, whose visibility is
+decided against the project, initiative or team the document sits under.
+"""
 
 _INTEGRATIONS_REPOSITORIES = (
     "github",
@@ -431,6 +458,7 @@ with the trail each save, restore and delete leaves.
 
 _INTEGRATIONS_READ_REPOSITORIES = (
     "users",
+    "custom_emoji",
     "api_keys",
     "oauth_links",
     "search_index",
@@ -447,12 +475,14 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.planning.endpoints import (
         customers,
+        cycle_calendar,
         cycles,
         documents,
         initiatives,
         milestones,
         project_labels,
         project_links,
+        project_statuses,
         project_updates,
         projects,
         pulse,
@@ -460,9 +490,11 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     )
 
     return [
+        (cycle_calendar.router, "/workspaces", ("planning",)),
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
         (project_labels.router, "/workspaces", ("planning",)),
+        (project_statuses.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_links.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
@@ -508,6 +540,7 @@ path, which allocates their keys from `counters`.
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",
+    "custom_emoji",
     "workspaces",
     "users",
     "teams",

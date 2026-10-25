@@ -266,8 +266,14 @@ RELATIONS = TableSpec(
             range_key=KeyAttribute("relation_type"),
         ),
     ),
+    stream_view_type="NEW_AND_OLD_IMAGES",
 )
-"""One row per direction, so both issues list a pair without a second write path."""
+"""One row per direction, so both issues list a pair without a second write path.
+
+The stream feeds the notify consumer, which tells both sides of a blocking link
+when it is added or removed; a removal's actor is stamped on the row just before
+it goes, so the old image carries it.
+"""
 
 ACTIVITY = TableSpec(
     suffix="activity",
@@ -358,12 +364,14 @@ REACTIONS = TableSpec(
     suffix="reactions",
     partition_key=KeyAttribute("ws_target"),
     sort_key=KeyAttribute("reaction_key"),
+    stream_view_type="NEW_IMAGE",
 )
 """Keyed by `<emoji>#<user_id>`, so the caller already knows the key.
 
 That is what makes a reaction a `PUT` and a `DELETE` on the pair rather than a
 create returning an id: there is no id to hand back, and a second `PUT` by the
-same user is the same row rather than a duplicate.
+same user is the same row rather than a duplicate. The stream feeds the notify
+consumer, which tells a comment's author about a new reaction on it.
 """
 
 ATTACHMENTS = TableSpec(

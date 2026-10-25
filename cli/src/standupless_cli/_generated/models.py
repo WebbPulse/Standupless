@@ -450,6 +450,20 @@ class CreatedApp(TypedDict):
     slug: str
 
 
+class CustomEmojiCreate(TypedDict):
+    name: str
+    upload_id: str
+
+
+class CustomEmojiRead(TypedDict):
+    created_at: str
+    created_by: str
+    created_by_name: str
+    name: str
+    shortcode: str
+    url: str
+
+
 class CustomerCreate(TypedDict):
     domains: NotRequired[list[str]]
     name: str
@@ -524,6 +538,17 @@ class CustomerRequestRead(TypedDict):
     target_title: NotRequired[str]
     updated_at: NotRequired[str | None]
     workspace_id: str
+
+
+class CycleCalendarFeedCreate(TypedDict):
+    team_id: str
+
+
+class CycleCalendarFeedRead(TypedDict):
+    active: bool
+    created_at: NotRequired[str | None]
+    team_id: str
+    url: NotRequired[str | None]
 
 
 class CycleCapacityRead(TypedDict):
@@ -608,6 +633,16 @@ class CycleSettingsUpdate(TypedDict):
     move_unfinished: NotRequired[bool | None]
     start_weekday: NotRequired[int | None]
     upcoming_count: NotRequired[int | None]
+
+
+class CycleStartToday(TypedDict):
+    team_id: str
+
+
+class CycleStartTodayRead(TypedDict):
+    cycle: CycleRead
+    ended: NotRequired[CycleRead | None]
+    moved_issues: NotRequired[int]
 
 
 class CycleUpdate(TypedDict):
@@ -724,6 +759,15 @@ class DisplayOptionsBody(TypedDict):
         ]
         | None
     ]
+
+
+class DocumentCommentCreate(TypedDict):
+    body: str
+    parent_comment_id: NotRequired[str | None]
+
+
+class DocumentCommentUpdate(TypedDict):
+    body: str
 
 
 class DocumentCreate(TypedDict):
@@ -1485,6 +1529,8 @@ class NotificationRead(TypedDict):
     actor_name: str
     comment_id: NotRequired[str | None]
     created_at: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
     due_state: NotRequired[Literal["due", "overdue"] | None]
     expires_at: int
     initiative_id: NotRequired[str | None]
@@ -1511,6 +1557,18 @@ class NotificationRead(TypedDict):
 class OverrideUpdate(TypedDict):
     hidden: NotRequired[bool | None]
     name: NotRequired[str | None]
+
+
+class ParentAutoCloseSettingsRead(TypedDict):
+    close_parent: bool
+    close_sub_issues: bool
+    team_id: str
+    updated_at: NotRequired[str | None]
+
+
+class ParentAutoCloseSettingsUpdate(TypedDict):
+    close_parent: NotRequired[bool | None]
+    close_sub_issues: NotRequired[bool | None]
 
 
 class PipelineStageRead(TypedDict):
@@ -1610,6 +1668,7 @@ class ProjectCreate(TypedDict):
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]]
+    status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
@@ -1698,6 +1757,34 @@ class ProjectRelationRead(TypedDict):
     type: Literal["blocks", "blocked_by"]
 
 
+class ProjectStatusCreate(TypedDict):
+    category: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    name: str
+    position: NotRequired[int | None]
+
+
+class ProjectStatusRead(TypedDict):
+    category: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+    color: NotRequired[str | None]
+    created_at: str
+    description: NotRequired[str | None]
+    id: str
+    is_default: bool
+    name: str
+    position: int
+    project_count: NotRequired[int]
+    updated_at: str
+
+
+class ProjectStatusUpdate(TypedDict):
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    name: NotRequired[str | None]
+    position: NotRequired[int | None]
+
+
 class ProjectTemplateFields(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
@@ -1767,6 +1854,7 @@ class ProjectUpdate(TypedDict):
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
+    status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
@@ -1887,6 +1975,7 @@ class ReactionListRead(TypedDict):
 
 
 class ReactionWrite(TypedDict):
+    document_id: NotRequired[str | None]
     emoji: str
     issue_id: NotRequired[str | None]
     target_id: str
@@ -2093,6 +2182,7 @@ class RoadmapEntryRead(TypedDict):
     progress: NotRequired[CountsRead]
     start_date: NotRequired[str | None]
     status: str
+    status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]
@@ -2137,6 +2227,8 @@ class SearchCommentRead(TypedDict):
     author_id: str
     comment_id: str
     created_at: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
     issue_id: str
     issue_key: str
     issue_title: str
@@ -2162,6 +2254,7 @@ class SearchProjectRead(TypedDict):
     name: str
     project_id: str
     status: str
+    status_id: NotRequired[str]
     target_date: NotRequired[str | None]
     team_ids: NotRequired[list[str]]
     updated_at: str
@@ -2664,6 +2757,7 @@ class SubscribersRead(TypedDict):
 
 
 class TeamCreate(TypedDict):
+    copy_settings_from_team_id: NotRequired[str | None]
     description: NotRequired[str | None]
     estimate_allow_zero: NotRequired[bool]
     estimate_count_unestimated: NotRequired[bool]
@@ -2946,6 +3040,12 @@ class UserPreferencesUpdate(TypedDict):
                 "reminder",
                 "triage_new",
                 "view_issue_added",
+                "reaction",
+                "issue_completed",
+                "issue_cancelled",
+                "priority_urgent",
+                "blocking_changed",
+                "document_comment",
             ],
             NotificationChannelsUpdate,
         ]
@@ -3429,6 +3529,7 @@ class WorkspaceRead(TypedDict):
     auth_policy_allowed_methods: NotRequired[list[str] | None]
     auth_policy_blocked: NotRequired[bool]
     auth_policy_reason: NotRequired[Literal["two_factor", "sign_in_method", "sso"] | None]
+    branch_format: NotRequired[Literal["key_title", "user_key_title", "key"]]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
@@ -3451,6 +3552,7 @@ class WorkspaceSummaryRead(TypedDict):
 
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
+    branch_format: NotRequired[Literal["key_title", "user_key_title", "key"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
 
@@ -3616,6 +3718,7 @@ class CommentRead(TypedDict):
     body: str
     comment_id: str
     created_at: str
+    document_id: NotRequired[str | None]
     edited_at: NotRequired[str | None]
     github_thread: NotRequired[GithubThread | None]
     issue_id: str
@@ -3637,6 +3740,10 @@ class ConnectedAppRead(TypedDict):
     new_scopes: NotRequired[list[str]]
     scopes: list[str]
     workspaces: list[ConnectedAppWorkspaceRead]
+
+
+class CustomEmojiListRead(TypedDict):
+    emoji: list[CustomEmojiRead]
 
 
 class CustomerListRead(TypedDict):
@@ -4080,6 +4187,7 @@ class ProjectRead(TypedDict):
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]
+    status_id: NotRequired[str]
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]
@@ -4093,6 +4201,10 @@ class ProjectRead(TypedDict):
 class ProjectRelationListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     relations: list[ProjectRelationRead]
+
+
+class ProjectStatusListRead(TypedDict):
+    statuses: list[ProjectStatusRead]
 
 
 class ProjectUpdateCommentRead(TypedDict):

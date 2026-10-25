@@ -24,6 +24,7 @@ import ProjectStatusGlyph from '../../../components/planning/ProjectStatusGlyph'
 import UpdateDueBadge from '../../../components/planning/UpdateDueBadge';
 import { Kbd } from '../../../components/ui/badge';
 import RelativeTime from '../../../components/ui/relative-time';
+import { useProjectStatuses } from '../../../hooks/useProjectStatuses';
 import { cn } from '../../../lib/cn';
 import {
   completionPercent,
@@ -359,6 +360,8 @@ export const ProjectRow: React.FC<
   HomeRowProps & { project: ProjectRead; href: string }
 > = ({ project, href, isActive, rowRef, onPointerEnter }) => {
   const percent = progressPercent(project);
+  const { statusOf } = useProjectStatuses();
+  const status = statusOf(project);
   return (
     <li
       ref={rowRef}
@@ -366,7 +369,12 @@ export const ProjectRow: React.FC<
       onPointerEnter={onPointerEnter}
       className={rowClass(isActive)}
     >
-      <ProjectStatusGlyph status={project.status} percent={percent} />
+      <ProjectStatusGlyph
+        status={project.status}
+        percent={percent}
+        name={status.name}
+        color={status.color}
+      />
       <Link
         to={href}
         data-hover="parent"
@@ -441,6 +449,12 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   review_requested: 'requested your review',
   triage_new: 'New in triage',
   view_issue_added: 'Added to view',
+  reaction: 'reacted to your comment',
+  issue_completed: 'completed',
+  issue_cancelled: 'canceled',
+  priority_urgent: 'marked as urgent',
+  blocking_changed: 'changed blocking',
+  document_comment: 'commented on a document',
 };
 
 /** One unread notification. */
@@ -452,7 +466,10 @@ export const InboxRow: React.FC<
   const subject =
     item.issue_title !== ''
       ? item.issue_title
-      : (item.project_name ?? item.initiative_name ?? item.issue_key);
+      : (item.project_name ??
+        item.initiative_name ??
+        item.document_title ??
+        item.issue_key);
   return (
     <li
       ref={rowRef}

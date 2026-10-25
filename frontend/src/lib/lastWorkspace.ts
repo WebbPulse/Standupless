@@ -41,3 +41,13 @@ export const rememberWorkspace = (slug: string): void => {
     return;
   }
 };
+
+/** Drops the remembered workspace when it is `slug`, such as one just left. */
+export const forgetWorkspace = (slug: string): void => {
+  if (readLastWorkspace() !== slug) return;
+  try {
+    globalThis.localStorage.removeItem(LAST_WORKSPACE_STORAGE_KEY);
+  } catch {
+    return;
+  }
+};

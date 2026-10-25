@@ -1,0 +1,107 @@
+[
+  {
+    "key": "GHS-1",
+    "title": "Fix login",
+    "format": "key_title",
+    "handle": "",
+    "expected": "ghs-1-fix-login"
+  },
+  {
+    "key": "ENG-12",
+    "title": "  Crème brûlée: the API's 500!  ",
+    "format": "key_title",
+    "handle": "",
+    "expected": "eng-12-creme-brulee-the-api-s-500"
+  },
+  {
+    "key": "ENG-12",
+    "title": "Don't crash on résumé upload!",
+    "format": "key_title",
+    "handle": "",
+    "expected": "eng-12-don-t-crash-on-resume-upload"
+  },
+  {
+    "key": "ENG-3",
+    "title": "!!!",
+    "format": "key_title",
+    "handle": "",
+    "expected": "eng-3"
+  },
+  {
+    "key": "ENG-4",
+    "title": "",
+    "format": "key_title",
+    "handle": "",
+    "expected": "eng-4"
+  },
+  {
+    "key": "ENG-5",
+    "title": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+    "format": "key_title",
+    "handle": "",
+    "expected": "eng-5-word-word-word-word-word-word-word-word-word-word-word"
+  },
+  {
+    "key": "STUP-1",
+    "title": "X",
+    "format": "user_key_title",
+    "handle": "tyler",
+    "expected": "tyler/stup-1-x"
+  },
+  {
+    "key": "STUP-1",
+    "title": "Fix login",
+    "format": "user_key_title",
+    "handle": "Tyler.Webb",
+    "expected": "tyler-webb/stup-1-fix-login"
+  },
+  {
+    "key": "STUP-1",
+    "title": "Fix login",
+    "format": "user_key_title",
+    "handle": "Zoë Ünder",
+    "expected": "zoe-under/stup-1-fix-login"
+  },
+  {
+    "key": "STUP-1",
+    "title": "Fix login",
+    "format": "user_key_title",
+    "handle": "",
+    "expected": "stup-1-fix-login"
+  },
+  {
+    "key": "STUP-1",
+    "title": "Fix login",
+    "format": "user_key_title",
+    "handle": "!!!",
+    "expected": "stup-1-fix-login"
+  },
+  {
+    "key": "STUP-497",
+    "title": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+    "format": "user_key_title",
+    "handle": "tyler-webb",
+    "expected": "tyler-webb/stup-497-word-word-word-word-word-word-word-word"
+  },
+  {
+    "key": "STUP-497",
+    "title": "Fix login",
+    "format": "user_key_title",
+    "handle": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/stup-497"
+  },
+  {
+    "key": "ENG-12",
+    "title": "Fix login",
+    "format": "key",
+    "handle": "",
+    "expected": "eng-12"
+  },
+  {
+    "key": "ENG-12",
+    "title": "Fix login",
+    "format": "key",
+    "handle": "tyler",
+    "expected": "eng-12"
+  }
+]

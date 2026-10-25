@@ -2590,7 +2590,7 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line. `anchor` is set on a root pinned to a\npassage of the issue description.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line. `anchor` is set on a root pinned to a\npassage of the issue description. `document_id` is set on a comment on a\ndocument, whose `issue_id` then repeats the document id and whose `team_id`\nis empty.",
         "properties": {
           "anchor": {
             "anyOf": [
@@ -2628,6 +2628,17 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
           },
           "edited_at": {
             "anyOf": [
@@ -3068,6 +3079,86 @@
           "items"
         ],
         "title": "CursorPage[IssueLinkRead]",
+        "type": "object"
+      },
+      "CustomEmojiCreate": {
+        "description": "The body that adds a custom emoji: its name and the upload holding its image.",
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "upload_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "upload_id"
+        ],
+        "title": "CustomEmojiCreate",
+        "type": "object"
+      },
+      "CustomEmojiListRead": {
+        "description": "Every custom emoji of a workspace, by name.",
+        "properties": {
+          "emoji": {
+            "items": {
+              "$ref": "#/components/schemas/CustomEmojiRead"
+            },
+            "title": "Emoji",
+            "type": "array"
+          }
+        },
+        "required": [
+          "emoji"
+        ],
+        "title": "CustomEmojiListRead",
+        "type": "object"
+      },
+      "CustomEmojiRead": {
+        "description": "One custom emoji as the picker and the settings page render it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "created_by_name": {
+            "title": "Created By Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shortcode": {
+            "title": "Shortcode",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "shortcode",
+          "url",
+          "created_by",
+          "created_by_name",
+          "created_at"
+        ],
+        "title": "CustomEmojiRead",
         "type": "object"
       },
       "CustomerCreate": {
@@ -3658,6 +3749,63 @@
         "title": "CustomerRequestRead",
         "type": "object"
       },
+      "CycleCalendarFeedCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/cycles/calendar-feed` takes.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "CycleCalendarFeedCreate",
+        "type": "object"
+      },
+      "CycleCalendarFeedRead": {
+        "description": "The caller's cycle calendar feed for one team.\n\n`url` carries the feed token, so it is answered only by the call that minted\nit: the token is stored as a hash and cannot be read back. A read of an\nexisting feed says it is `active` with a null `url`, and minting again revokes\nthe old URL.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "team_id",
+          "active"
+        ],
+        "title": "CycleCalendarFeedRead",
+        "type": "object"
+      },
       "CycleCapacityRead": {
         "description": "The active or next cycle's current scope, which capacity guidance weighs.",
         "properties": {
@@ -4160,6 +4308,49 @@
           }
         },
         "title": "CycleSettingsUpdate",
+        "type": "object"
+      },
+      "CycleStartToday": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today` takes.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "CycleStartToday",
+        "type": "object"
+      },
+      "CycleStartTodayRead": {
+        "description": "What starting a cycle today changed.\n\n`ended` is the cycle that was current, now ending yesterday, or null when no\ncycle was running. `moved_issues` counts its unfinished issues rolled into\nthe started cycle.",
+        "properties": {
+          "cycle": {
+            "$ref": "#/components/schemas/CycleRead"
+          },
+          "ended": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CycleRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "moved_issues": {
+            "default": 0,
+            "title": "Moved Issues",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cycle"
+        ],
+        "title": "CycleStartTodayRead",
         "type": "object"
       },
       "CycleUpdate": {
@@ -4677,6 +4868,47 @@
           }
         },
         "title": "DisplayOptionsBody",
+        "type": "object"
+      },
+      "DocumentCommentCreate": {
+        "description": "The body a comment on a document takes: text, and the root it replies to if any.",
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "DocumentCommentCreate",
+        "type": "object"
+      },
+      "DocumentCommentUpdate": {
+        "description": "The body an edit of a comment on a document takes.",
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "DocumentCommentUpdate",
         "type": "object"
       },
       "DocumentCreate": {
@@ -11597,7 +11829,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty, and a `project_update_comment` one also names the reply in\n`comment_id`. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.\n`summary` is the line the row reads, naming who acted and, for a status change,\nthe status it moved to, which `new_value` also carries on its own.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty, and a `project_update_comment` one also names the reply in\n`comment_id`. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.\n`summary` is the line the row reads, naming who acted and, for a status change,\nthe status it moved to, which `new_value` also carries on its own. A\n`document_comment` names its document in `document_id` and `document_title`\nand the comment in `comment_id`, with the issue fields and `team_id` empty.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -11622,6 +11854,28 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Title"
           },
           "due_state": {
             "anyOf": [
@@ -11845,6 +12099,71 @@
           }
         },
         "title": "OverrideUpdate",
+        "type": "object"
+      },
+      "ParentAutoCloseSettingsRead": {
+        "description": "A team's parent and sub-issue auto-close settings as the API returns them.",
+        "properties": {
+          "close_parent": {
+            "title": "Close Parent",
+            "type": "boolean"
+          },
+          "close_sub_issues": {
+            "title": "Close Sub Issues",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "close_parent",
+          "close_sub_issues"
+        ],
+        "title": "ParentAutoCloseSettingsRead",
+        "type": "object"
+      },
+      "ParentAutoCloseSettingsUpdate": {
+        "description": "The body a team's parent and sub-issue auto-close settings patch takes, each field optional.\n\n`close_parent` closes a parent once every sub-issue is completed or\ncancelled, and `close_sub_issues` closes a parent's open sub-issues once the\nparent is completed or cancelled.",
+        "properties": {
+          "close_parent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Parent"
+          },
+          "close_sub_issues": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Sub Issues"
+          }
+        },
+        "title": "ParentAutoCloseSettingsUpdate",
         "type": "object"
       },
       "PipelineStageRead": {
@@ -12349,6 +12668,7 @@
           },
           "status": {
             "default": "backlog",
+            "description": "The status category; alone it lands on the category's default status",
             "enum": [
               "backlog",
               "planned",
@@ -12359,6 +12679,19 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace project status; its category wins over `status`",
+            "title": "Status Id"
           },
           "target_date": {
             "anyOf": [
@@ -13283,6 +13616,7 @@
             "title": "Start Date"
           },
           "status": {
+            "description": "The category of the project's status, which every rule reads",
             "enum": [
               "backlog",
               "planned",
@@ -13301,6 +13635,12 @@
             "description": "Issues per status id, beside the category totals in `counts`",
             "title": "Status Counts",
             "type": "object"
+          },
+          "status_id": {
+            "default": "",
+            "description": "The workspace project status the project sits in",
+            "title": "Status Id",
+            "type": "string"
           },
           "target_date": {
             "anyOf": [
@@ -13472,6 +13812,226 @@
           "created_at"
         ],
         "title": "ProjectRelationRead",
+        "type": "object"
+      },
+      "ProjectStatusCreate": {
+        "description": "The body a project status create takes; it lands last in its category unless a position is given.",
+        "properties": {
+          "category": {
+            "enum": [
+              "backlog",
+              "planned",
+              "in_progress",
+              "paused",
+              "completed",
+              "canceled"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "name",
+          "category"
+        ],
+        "title": "ProjectStatusCreate",
+        "type": "object"
+      },
+      "ProjectStatusListRead": {
+        "description": "The body the project statuses list route answers with, by category then position.",
+        "properties": {
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectStatusRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "statuses"
+        ],
+        "title": "ProjectStatusListRead",
+        "type": "object"
+      },
+      "ProjectStatusRead": {
+        "description": "One project status as the API returns it, with how many projects sit in it.",
+        "properties": {
+          "category": {
+            "enum": [
+              "backlog",
+              "planned",
+              "in_progress",
+              "paused",
+              "completed",
+              "canceled"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A `#rrggbb` colour, or null to draw the category's tone",
+            "title": "Color"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "description": "Whether this is the status a bare category value lands on",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "project_count": {
+            "default": 0,
+            "description": "Projects the caller can see that sit in the status",
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "position",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectStatusRead",
+        "type": "object"
+      },
+      "ProjectStatusUpdate": {
+        "description": "The body a project status patch takes; an omitted field keeps its value, a null colour or description clears it.\n\nThe category never changes: a status lives in the category it was made in.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "title": "ProjectStatusUpdate",
         "type": "object"
       },
       "ProjectTemplateFields": {
@@ -13834,7 +14394,21 @@
                 "type": "null"
               }
             ],
+            "description": "The status category; a project already in it keeps its status",
             "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace project status to move the project to",
+            "title": "Status Id"
           },
           "target_date": {
             "anyOf": [
@@ -14839,8 +15413,19 @@
         "type": "object"
       },
       "ReactionWrite": {
-        "description": "The body a reaction `PUT` takes.\n\n`issue_id` is required for a `comment` target and ignored for an `issue` one,\nbecause a comment's partition is its issue and the route reads the comment back\nto hold that the pair really goes together.",
+        "description": "The body a reaction `PUT` takes.\n\n`issue_id` is required for a `comment` target and ignored for an `issue` one,\nbecause a comment's partition is its issue and the route reads the comment back\nto hold that the pair really goes together. A comment on a document names its\ndocument in `document_id` instead.",
         "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
           "emoji": {
             "minLength": 1,
             "title": "Emoji",
@@ -16835,6 +17420,18 @@
             "title": "Status",
             "type": "string"
           },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A project's workspace project status, null on a cycle",
+            "title": "Status Id"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -17073,7 +17670,7 @@
         "type": "object"
       },
       "SearchCommentRead": {
-        "description": "One comment whose body holds every term, with its issue and an excerpt around the first match.",
+        "description": "One comment whose body holds every term, with its issue or document and an excerpt around the first match.\n\nA comment on a document carries `document_id` and `document_title`, its\n`issue_id` is the document id, and its issue key, title and team are empty.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -17087,6 +17684,28 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Title"
           },
           "issue_id": {
             "title": "Issue Id",
@@ -17242,6 +17861,12 @@
           },
           "status": {
             "title": "Status",
+            "type": "string"
+          },
+          "status_id": {
+            "default": "",
+            "description": "The workspace project status the project sits in",
+            "title": "Status Id",
             "type": "string"
           },
           "target_date": {
@@ -20105,8 +20730,20 @@
         "type": "object"
       },
       "TeamCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits. `copy_settings_from_team_id` starts the team\nwith a copy of another team's workflow, labels, templates and settings\ninstead; a sub-team already inherits, so the two are exclusive.",
         "properties": {
+          "copy_settings_from_team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copy Settings From Team Id"
+          },
           "description": {
             "anyOf": [
               {
@@ -22618,7 +23255,13 @@
                     "review_requested",
                     "reminder",
                     "triage_new",
-                    "view_issue_added"
+                    "view_issue_added",
+                    "reaction",
+                    "issue_completed",
+                    "issue_cancelled",
+                    "priority_urgent",
+                    "blocking_changed",
+                    "document_comment"
                   ]
                 },
                 "type": "object"
@@ -24967,6 +25610,17 @@
             "description": "Why the authentication policy refuses the caller's session, when it does.",
             "title": "Auth Policy Reason"
           },
+          "branch_format": {
+            "default": "key_title",
+            "description": "How copied git branch names are built: key_title, user_key_title or key",
+            "enum": [
+              "key_title",
+              "user_key_title",
+              "key"
+            ],
+            "title": "Branch Format",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -25097,7 +25751,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color and the default project update cadence are\neditable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence and the git\nbranch name format are editable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -25110,6 +25764,23 @@
             ],
             "description": "The accent as #rrggbb, or null for the default",
             "title": "Accent Color"
+          },
+          "branch_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "key_title",
+                  "user_key_title",
+                  "key"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How copied git branch names are built: key_title, user_key_title or key",
+            "title": "Branch Format"
           },
           "name": {
             "anyOf": [
@@ -28385,7 +29056,7 @@
         ]
       },
       "patch": {
-        "description": "Rename a workspace or set its accent color. The slug is fixed.",
+        "description": "Rename a workspace, set its accent color, project update cadence or branch format. The slug is fixed.",
         "operationId": "update_workspace_api_workspaces__workspace_id__patch",
         "parameters": [
           {
@@ -31235,6 +31906,170 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/cycles/calendar-feed": {
+      "delete": {
+        "description": "Revoke the caller's feed for one team; revoking none is not an error.",
+        "operationId": "revoke_cycle_calendar_feed_api_workspaces__workspace_id__cycles_calendar_feed_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Revoke Cycle Calendar Feed",
+        "tags": [
+          "planning"
+        ]
+      },
+      "get": {
+        "description": "Whether the caller holds a cycle calendar feed for one team, never its URL.",
+        "operationId": "read_cycle_calendar_feed_api_workspaces__workspace_id__cycles_calendar_feed_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleCalendarFeedRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Cycle Calendar Feed",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Mint the caller's feed URL for one team, revoking any URL minted before.\n\nThe answer is the only place the token ever appears; the row keeps its hash.",
+        "operationId": "mint_cycle_calendar_feed_api_workspaces__workspace_id__cycles_calendar_feed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CycleCalendarFeedCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleCalendarFeedRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Mint Cycle Calendar Feed",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/cycles/velocity": {
       "get": {
         "description": "A team's completed work over its last completed cycles, and the cycle to plan next.\n\nEach cycle's figures are its value on its end date, so issues a cycle close\ncarried out the day after still count toward the scope it ended with and not\ntoward its completed work. Registered before the cycle id route so `velocity`\nis never read as a cycle id.",
@@ -31558,6 +32393,74 @@
           }
         ],
         "summary": "Read Cycle History",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today": {
+      "post": {
+        "description": "Start the team's next upcoming cycle today, as Linear's \"Start cycle today\" does.\n\nThe current cycle ends yesterday and its unfinished issues roll into the\nstarted one under the cycle close's own rule, while the started cycle keeps\nits end date. A 409 answers a cycle that is not the next upcoming one, and a\ncurrent cycle that itself started today.",
+        "operationId": "start_cycle_today_api_workspaces__workspace_id__cycles__cycle_id__start_today_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cycle_id",
+            "required": true,
+            "schema": {
+              "title": "Cycle Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CycleStartToday"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleStartTodayRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Cycle Today",
         "tags": [
           "planning"
         ]
@@ -32337,6 +33240,630 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/comments": {
+      "get": {
+        "description": "One page of a document's thread, oldest first.",
+        "operationId": "list_document_comments_api_workspaces__workspace_id__documents__document_id__comments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Document Comments",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "post": {
+        "description": "Add a comment or a reply to a document, subscribing the author and everyone it mentions.",
+        "operationId": "post_document_comment_api_workspaces__workspace_id__documents__document_id__comments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCommentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Post Document Comment",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/comments/{comment_id}": {
+      "delete": {
+        "description": "Remove one comment on a document, as its author or anyone who may delete the document.",
+        "operationId": "remove_document_comment_api_workspaces__workspace_id__documents__document_id__comments__comment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Document Comment",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "patch": {
+        "description": "Rewrite one's own comment on a document.",
+        "operationId": "patch_document_comment_api_workspaces__workspace_id__documents__document_id__comments__comment_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCommentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Patch Document Comment",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/comments/{comment_id}/resolution": {
+      "delete": {
+        "description": "Reopen one resolved thread on a document, answering its root comment.",
+        "operationId": "unresolve_document_thread_api_workspaces__workspace_id__documents__document_id__comments__comment_id__resolution_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unresolve Document Thread",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "description": "Resolve one thread on a document, answering its root comment.",
+        "operationId": "resolve_document_thread_api_workspaces__workspace_id__documents__document_id__comments__comment_id__resolution_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Resolve Document Thread",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers": {
+      "get": {
+        "description": "Everyone following a document, and whether the caller is among them.",
+        "operationId": "get_document_subscribers_api_workspaces__workspace_id__documents__document_id__subscribers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Document Subscribers",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers/{user_id}": {
+      "delete": {
+        "description": "Stop following a document as the caller, `me` naming them.",
+        "operationId": "delete_document_subscriber_api_workspaces__workspace_id__documents__document_id__subscribers__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Document Subscriber",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "description": "Follow a document as the caller, `me` naming them.",
+        "operationId": "put_document_subscriber_api_workspaces__workspace_id__documents__document_id__subscribers__user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Document Subscriber",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/documents/{document_id}/versions": {
       "get": {
         "description": "A document's earlier versions, newest first.",
@@ -32689,6 +34216,224 @@
         "summary": "Write Draft",
         "tags": [
           "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/emoji": {
+      "get": {
+        "description": "Every custom emoji of the workspace, by name, with who uploaded each.",
+        "operationId": "list_custom_emoji_api_workspaces__workspace_id__emoji_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmojiListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Custom Emoji",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "post": {
+        "description": "Name an uploaded image as a custom emoji, resized server side.\n\nThe name is checked for a clash before the image is touched, so a taken name\ncosts no S3 work, and the conditional put settles a race between two people\nclaiming the same name at once; the loser's image is removed.",
+        "operationId": "create_custom_emoji_api_workspaces__workspace_id__emoji_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomEmojiCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmojiRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Custom Emoji",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/emoji/uploads": {
+      "post": {
+        "description": "Sign a PUT for one custom emoji image, which the create call then names.",
+        "operationId": "create_custom_emoji_upload_api_workspaces__workspace_id__emoji_uploads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IconUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IconUploadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Custom Emoji Upload",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/emoji/{name}": {
+      "delete": {
+        "description": "Delete one custom emoji and its image, for its uploader or a workspace admin.\n\nText and reactions that used it keep the `:name:` shortcode, which renders as\nplain text from then on.",
+        "operationId": "delete_custom_emoji_api_workspaces__workspace_id__emoji__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Custom Emoji",
+        "tags": [
+          "workspaces"
         ]
       }
     },
@@ -34860,7 +36605,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 23,
+              "maxItems": 29,
               "title": "Kind",
               "type": "array"
             }
@@ -42197,6 +43942,246 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/project-statuses": {
+      "get": {
+        "description": "Every project status by category then position, each with how many projects the caller can see sit in it.",
+        "operationId": "list_statuses_api_workspaces__workspace_id__project_statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Statuses",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a project status to a category, as a workspace admin; a taken name answers 409.",
+        "operationId": "add_status_api_workspaces__workspace_id__project_statuses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectStatusCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Status",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/project-statuses/{status_id}": {
+      "delete": {
+        "description": "Delete a project status and move its projects onto a replacement in the same category, as a workspace admin.",
+        "operationId": "remove_status_api_workspaces__workspace_id__project_statuses__status_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "replacement_status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Status Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Status",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Rename, recolour, redescribe or reorder a project status, as a workspace admin.",
+        "operationId": "edit_status_api_workspaces__workspace_id__project_statuses__status_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "title": "Status Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Status",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
         "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one. `sort=customer_requests_desc` puts the\nmost requested projects first, `customer_important_desc` the most important\nrequests and `customer_revenue_desc` the highest summed customer revenue,\ntarget date breaking ties; each fills `customer_request_count`. Guests may\nuse none of them.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none. Archived projects are left out unless\n`include_archived` is set.",
@@ -45166,6 +47151,22 @@
               ],
               "title": "Issue Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "document_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Id"
+            }
           }
         ],
         "responses": {
@@ -45245,6 +47246,22 @@
               ],
               "title": "Issue Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "document_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Id"
+            }
           }
         ],
         "responses": {
@@ -45280,7 +47297,7 @@
         ]
       },
       "put": {
-        "description": "React to a target, answering with that emoji's group as it now stands.\n\nIdempotent by key, so a second PUT by the same user is the same row and the\nsame answer rather than a conflict. Only that emoji's group comes back, because\nthat is the one the caller just changed and the rest are already on screen.",
+        "description": "React to a target, answering with that emoji's group as it now stands.\n\nIdempotent by key, so a second PUT by the same user is the same row and the\nsame answer rather than a conflict. Only that emoji's group comes back, because\nthat is the one the caller just changed and the rest are already on screen.\nA custom `:name:` must be an emoji the workspace has.",
         "operationId": "add_reaction_api_workspaces__workspace_id__reactions_put",
         "parameters": [
           {
@@ -47187,7 +49204,7 @@
         ]
       },
       "post": {
-        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.\nA parent team must be one the caller can find, and a team created under one\nrecords the parent change as joining it later does.",
+        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.\nA parent team must be one the caller can find, and a team created under one\nrecords the parent change as joining it later does. A team copied from\nanother must copy one whose content the caller can read.",
         "operationId": "create_team_api_workspaces__workspace_id__teams_post",
         "parameters": [
           {
@@ -47764,6 +49781,67 @@
         "summary": "Update Cycle Settings",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/cycles.ics": {
+      "get": {
+        "description": "A team's cycles as an iCalendar feed, on a feed token.\n\nThe last three completed cycles, the current one and every upcoming one, each\nan all-day event. The token's owner must still be able to read the team.",
+        "operationId": "read_cycle_calendar_api_workspaces__workspace_id__teams__team_id__cycles_ics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/calendar": {}
+            },
+            "description": "The team's cycles as iCalendar."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Read Cycle Calendar",
+        "tags": [
+          "planning"
         ]
       }
     },
@@ -49420,6 +51498,112 @@
           }
         ],
         "summary": "Put Team Member",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/parent-auto-close-settings": {
+      "get": {
+        "description": "Whether a team closes a parent with its last sub-issue and open sub-issues with their parent.",
+        "operationId": "read_parent_auto_close_settings_api_workspaces__workspace_id__teams__team_id__parent_auto_close_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentAutoCloseSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Parent Auto Close Settings",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Turn closing a parent once every sub-issue is done, or open sub-issues once their parent is, on or off.\n\nThe change applies to the next status move; issues already finished are left as they are.",
+        "operationId": "update_parent_auto_close_settings_api_workspaces__workspace_id__teams__team_id__parent_auto_close_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParentAutoCloseSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentAutoCloseSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Parent Auto Close Settings",
         "tags": [
           "teams"
         ]

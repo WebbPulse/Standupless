@@ -144,7 +144,7 @@ def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str
     issue = load_visible_issue(repositories, context, issue_id)
     require_team_member(repositories, context, issue.team_id)
 
-    removed = repositories.relations.delete_link(context.workspace_id, issue_id, link_id)
+    removed = repositories.relations.delete_link(context.workspace_id, issue_id, link_id, removed_by=context.user_id)
     if removed is None:
         raise not_found()
 

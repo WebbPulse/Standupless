@@ -1,7 +1,8 @@
 /**
  * The compact toolbar that floats over selected text, as in Linear: the
  * inline marks and a link, the three heading levels, the three lists, and the
- * quote and code block. Each button shows whether its formatting is already on
+ * quote and code block, then a button that files an issue from the selection
+ * where the surface allows it. Each formatting button shows whether its formatting is already on
  * and names its keys in its tooltip, so the toolbar also teaches the chords.
  *
  * Buttons never take focus from the document, so pressing one formats the
@@ -12,9 +13,11 @@ import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import React from 'react';
+import { LuCirclePlus } from 'react-icons/lu';
 import Tooltip from '../ui/tooltip';
 import {
   actionTooltip,
+  CREATE_ISSUE_LABEL,
   FORMAT_ACTIONS,
   FORMAT_GROUPS,
   formattingToolbarKey,
@@ -40,6 +43,7 @@ export const FormattingButtons: React.FC<FormattingButtonsProps> = ({
         FORMAT_ACTIONS.map((action) => [action.id, action.isActive(current)])
       ) as Record<string, boolean>,
   });
+  const createIssue = context.createIssue;
 
   return (
     <div
@@ -77,6 +81,25 @@ export const FormattingButtons: React.FC<FormattingButtonsProps> = ({
           })}
         </React.Fragment>
       ))}
+      {createIssue !== undefined && (
+        <>
+          <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
+          <Tooltip text={CREATE_ISSUE_LABEL} side="top">
+            <button
+              type="button"
+              aria-label={CREATE_ISSUE_LABEL}
+              data-action="createIssue"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-muted hover:bg-hover hover:text-text active:bg-press"
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onClick={createIssue}
+            >
+              <LuCirclePlus aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+        </>
+      )}
     </div>
   );
 };

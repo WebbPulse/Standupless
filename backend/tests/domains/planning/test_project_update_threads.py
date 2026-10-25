@@ -169,6 +169,30 @@ def test_a_reaction_must_be_one_emoji_on_a_real_reply(client: TestClient, worksp
     assert client.put(path, json={"emoji": "👍", "comment_id": "01JB0000000000000000NOPE01"}).status_code == 404
 
 
+def test_a_custom_emoji_reacts_on_an_update(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A workspace's custom shortcode is a reaction; one it does not have is refused."""
+    from app.common.db.dynamo.custom_emoji import CustomEmoji
+
+    repositories.custom_emoji.create(
+        CustomEmoji(
+            workspace_id=WORKSPACE, name="ship-it", image_key=f"icons/emoji/{WORKSPACE}/{'a' * 22}", created_by=MEMBER
+        )
+    )
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    update = _post_update(client, workspace, project_id)
+    path = _reactions(workspace, project_id, update["update_id"])
+
+    added = client.put(path, json={"emoji": ":ship-it:"})
+    assert added.status_code == 200, added.text
+    assert added.json()["emoji"] == ":ship-it:"
+    missing = client.put(path, json={"emoji": ":not-ours:"})
+    assert missing.status_code == 422
+    assert missing.json()["error_code"] == "UNKNOWN_EMOJI"
+    assert client.delete(path, params={"emoji": ":ship-it:"}).status_code == 204
+    assert _feed(client, workspace, project_id)[0]["reactions"] == []
+
+
 def test_deleting_a_reply_removes_its_reactions(client: TestClient, repositories: Any, workspace: str) -> None:
     """No reaction outlives the reply it was on."""
     sign_in(client, MEMBER)

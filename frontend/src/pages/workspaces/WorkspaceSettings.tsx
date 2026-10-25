@@ -2,9 +2,10 @@
  * The workspace settings page: the logo, the accent color, the project update
  * cadence, members, invites, the GitHub connection, the outbound webhook
  * endpoints, the CSV export, and the danger zone where an owner or admin
- * schedules the workspace's deletion. Every section here is for an owner or admin, so a
- * member reaching this route is told rather than shown empty panels whose reads
- * the API would refuse anyway. The section nav is rendered either way, because
+ * schedules the workspace's deletion. Every section but the danger zone is for
+ * an owner or admin, so a member reaching this route is told rather than shown
+ * empty panels whose reads the API would refuse anyway, and is still offered
+ * the danger zone's Leave workspace. The section nav is rendered either way, because
  * the API key and share link pages beside this one are open to any member.
  */
 
@@ -22,9 +23,9 @@ import WebhooksSection from '../../components/workspace/WebhooksSection';
 import WorkspaceLogoSection from '../../components/workspace/WorkspaceLogoSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canDeleteWorkspace, canManageMembers } from '../../lib/capabilities';
+import { canManageMembers } from '../../lib/capabilities';
 
-/** Renders the logo, accent color, member, invite, GitHub and webhook management for this workspace. */
+/** Renders the logo, accent color, member, invite, GitHub and webhook management for this workspace, and its danger zone. */
 const WorkspaceSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
@@ -63,15 +64,13 @@ const WorkspaceSettings: React.FC = () => {
               <SettingsAnchor id="export">
                 <ExportSection workspace={workspace} />
               </SettingsAnchor>
-              {canDeleteWorkspace(workspace.role) && (
-                <DangerZoneSection workspace={workspace} />
-              )}
             </>
           ) : (
             <p className="text-sm text-text-muted">
               Only an owner or an admin can manage this workspace.
             </p>
           )}
+          <DangerZoneSection workspace={workspace} />
         </div>
       )}
     </WorkspaceShell>

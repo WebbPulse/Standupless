@@ -5,8 +5,12 @@
  */
 
 import { orderBetween } from '../api/issues';
-import { progressPercent, PROJECT_STATUS_LABELS } from './planningDisplay';
-import { PROJECT_STATUS_ORDER } from './planningModel';
+import { progressPercent } from './planningDisplay';
+import {
+  DEFAULT_PROJECT_STATUSES,
+  listOrderedProjectStatuses,
+  projectStatusOf,
+} from './projectStatuses';
 import { personLabel, type Assignable } from './issuePeople';
 import { PRIORITY_LABELS } from './issueDisplay';
 import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from './projectLook';
@@ -15,6 +19,8 @@ import type {
   IssuePriority,
   ProjectHealth,
   ProjectRead,
+  ProjectStatus,
+  ProjectStatusRead,
   TeamRead,
 } from '../types/Api';
 
@@ -193,6 +199,16 @@ export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
   'created',
   'updated',
   'completed',
+  'progress',
+];
+
+/** The properties the timeline can show beside each name and on each bar, in chip order. */
+export const TIMELINE_PROJECT_COLUMNS: ProjectColumn[] = [
+  'priority',
+  'status',
+  'health',
+  'teams',
+  'lead',
   'progress',
 ];
 
@@ -502,6 +518,10 @@ export interface ProjectGroup {
   label: string;
   kind: ProjectGrouping;
   rows: ProjectRead[];
+  /** A status group's category, which a move into it sets beside the status id. */
+  category?: ProjectStatus;
+  /** Whether a status group is its category's default, where a bare category lands. */
+  isDefaultStatus?: boolean;
 }
 
 /** The group key projects with no lead sit under. */
@@ -527,6 +547,8 @@ export interface GroupOptions {
   keepEmpty?: boolean;
   /** The filtered team and the sub-teams it rolls up, which alone get team groups. */
   teamIds?: readonly string[] | null;
+  /** The workspace's project statuses, which status groups run by. */
+  statuses?: readonly ProjectStatusRead[];
 }
 
 /**
@@ -584,18 +606,30 @@ export const groupProjects = (
   switch (grouping) {
     case 'none':
       return [{ key: 'all', label: 'Projects', kind: 'none', rows: projects }];
-    case 'status':
+    case 'status': {
+      const statuses = options.statuses ?? DEFAULT_PROJECT_STATUSES;
+      const byId = new Map(statuses.map((status) => [status.id, status]));
       return byValue(
         projects,
         grouping,
-        (project) => project.status,
-        PROJECT_STATUS_ORDER.map((status) => ({
-          value: status,
-          label: PROJECT_STATUS_LABELS[status],
+        (project) => projectStatusOf(project, statuses).id,
+        listOrderedProjectStatuses(statuses).map((status) => ({
+          value: status.id,
+          label: status.name,
         })),
         (value) => value,
         keepEmpty
-      );
+      ).map((group) => {
+        const status = byId.get(groupValue(group));
+        return status === undefined
+          ? group
+          : {
+              ...group,
+              category: status.category,
+              isDefaultStatus: status.is_default,
+            };
+      });
+    }
     case 'health':
       return byValue(
         projects,
@@ -713,6 +747,7 @@ export type ProjectMove = Partial<
   Pick<
     ProjectRead,
     | 'status'
+    | 'status_id'
     | 'health'
     | 'priority'
     | 'initiative_id'
@@ -726,13 +761,23 @@ export type ProjectMove = Partial<
 
 /**
  * The change that moves a project into a group on the board, or null when
- * the group is not one value a project holds, such as a team.
+ * the group is not one value a project holds, such as a team. A move into a
+ * category's default status from another category names only the category.
  */
-export const groupPatch = (group: ProjectGroup): ProjectMove | null => {
+export const groupPatch = (
+  group: ProjectGroup,
+  project?: ProjectRead
+): ProjectMove | null => {
   const value = groupValue(group);
   switch (group.kind) {
     case 'status':
-      return { status: value as ProjectRead['status'] };
+      if (group.category === undefined)
+        return { status: value as ProjectStatus };
+      return group.isDefaultStatus === true &&
+        project !== undefined &&
+        project.status !== group.category
+        ? { status: group.category }
+        : { status: group.category, status_id: value };
     case 'health':
       return { health: value === 'none' ? null : (value as ProjectHealth) };
     case 'priority':
@@ -752,7 +797,7 @@ export const inGroup = (project: ProjectRead, group: ProjectGroup): boolean => {
   const value = groupValue(group);
   switch (group.kind) {
     case 'status':
-      return project.status === value;
+      return (project.status_id ?? project.status) === value;
     case 'health':
       return (project.health ?? 'none') === value;
     case 'priority':
@@ -782,7 +827,7 @@ export const dropPatch = (
   let patch: ProjectMove = {};
   for (const group of groups) {
     if (inGroup(project, group)) continue;
-    const change = groupPatch(group);
+    const change = groupPatch(group, project);
     if (change === null) return null;
     patch = { ...patch, ...change };
   }

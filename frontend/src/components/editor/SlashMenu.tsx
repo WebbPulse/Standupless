@@ -1,12 +1,13 @@
 /**
  * The insert menu a `/` opens under the caret, drawn the way the `#`
  * reference picker is: a listbox of rows with a glyph, a name and, at the end,
- * the Markdown that types the same block. It only draws; the editor owns the
- * query, the highlight and what a pick does.
+ * the Markdown that types the same block, with its chord as the tooltip. It
+ * only draws; the editor owns the query, the highlight and what a pick does.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { cn } from '../../lib/cn';
+import { shortcutLabel } from './formatting';
 import type { SlashCommand } from './slashCommands';
 
 /** Props for SlashMenu. */
@@ -53,6 +54,11 @@ export const SlashMenu: React.FC<SlashMenuProps> = ({
             role="option"
             aria-selected={index === highlight}
             data-command={command.id}
+            title={
+              command.keys === undefined
+                ? undefined
+                : `${command.label}  ${shortcutLabel(command.keys)}`
+            }
             className={cn(
               'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
               index === highlight ? 'bg-raised text-text' : 'text-text-muted'

@@ -59,7 +59,15 @@ export const shouldShowToolbar = (
 export interface FormatContext {
   /** Opens the surface's link field at the selection. */
   openLink: () => void;
+  /**
+   * Files an issue from the selection. Unset when the surface or the person
+   * cannot, which leaves the button out.
+   */
+  createIssue?: () => void;
 }
+
+/** The name and tooltip of the button that files an issue from the selection. */
+export const CREATE_ISSUE_LABEL = 'Create issue from selection';
 
 /** One toolbar button. */
 export interface FormatAction {
@@ -154,7 +162,7 @@ export const FORMAT_GROUPS: FormatAction[][] = [
       id: 'orderedList',
       label: 'Numbered list',
       icon: LuListOrdered,
-      keys: ['mod', 'shift', '7'],
+      keys: ['mod', 'shift', '9'],
       isActive: (editor) => editor.isActive('orderedList'),
       run: (editor) => {
         editor.chain().focus().toggleOrderedList().run();
@@ -164,7 +172,7 @@ export const FORMAT_GROUPS: FormatAction[][] = [
       id: 'taskList',
       label: 'Checklist',
       icon: LuListTodo,
-      keys: ['mod', 'shift', '9'],
+      keys: ['mod', 'shift', '7'],
       isActive: (editor) => editor.isActive('taskList'),
       run: (editor) => {
         editor.chain().focus().toggleTaskList().run();

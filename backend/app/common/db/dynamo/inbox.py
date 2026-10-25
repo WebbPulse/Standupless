@@ -52,6 +52,12 @@ NotificationKind = Literal[
     "reminder",
     "triage_new",
     "view_issue_added",
+    "reaction",
+    "issue_completed",
+    "issue_cancelled",
+    "priority_urgent",
+    "blocking_changed",
+    "document_comment",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -73,6 +79,12 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "reminder",
     "triage_new",
     "view_issue_added",
+    "reaction",
+    "issue_completed",
+    "issue_cancelled",
+    "priority_urgent",
+    "blocking_changed",
+    "document_comment",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -89,6 +101,28 @@ TRIAGE_NEW = "triage_new"
 
 VIEW_ISSUE_ADDED = "view_issue_added"
 """The kind that tells a view's subscriber an issue newly matches it, naming the view in `new_value`."""
+
+REACTION = "reaction"
+"""The kind that tells a comment's author someone reacted to it, naming the emoji in `new_value`."""
+
+ISSUE_COMPLETED = "issue_completed"
+"""The kind a move into a completed status takes for the assignee and subscribers, naming the status in `new_value`."""
+
+ISSUE_CANCELLED = "issue_cancelled"
+"""The kind a move into a cancelled status takes for the assignee and subscribers, naming the status in `new_value`."""
+
+PRIORITY_URGENT = "priority_urgent"
+"""The kind that tells the assignee and subscribers an issue was raised to urgent priority."""
+
+BLOCKING_CHANGED = "blocking_changed"
+"""The kind a blocking link added, removed or resolved takes, `new_value` saying which and naming the other issue.
+
+`new_value` reads `<change>:<other issue key>`, the change one of `blocked_by`,
+`blocking`, `unblocked_by`, `no_longer_blocking` and `blocker_resolved`.
+"""
+
+DOCUMENT_COMMENTED = "document_comment"
+"""The kind a new comment on a document takes, reaching its subscribers and anyone mentioned, in the inbox only."""
 
 REMINDER_PREFIX = "reminder#"
 """The partition prefix reminder markers live under, which no inbox can name.
@@ -207,6 +241,8 @@ class Notification(BaseModel):
     initiative fields, and `due_state` saying whether the update is due or overdue.
     A status change carries the status it moved to in `new_value`, by name as it
     read when the row was written; rows written before that field existed have none.
+    A document comment carries an empty `team_id` and names its document in
+    `document_id` and `document_title`.
     """
 
     ws_user: str
@@ -227,6 +263,8 @@ class Notification(BaseModel):
     standup_date: str | None = None
     url: str | None = None
     new_value: str | None = None
+    document_id: str | None = None
+    document_title: str | None = None
     actor_id: str
     actor_name: str
     source: str | None = None

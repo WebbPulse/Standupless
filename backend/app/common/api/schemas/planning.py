@@ -415,6 +415,46 @@ CycleListRead = cursor_page(CycleRead, "cycles", model_name="CycleListRead")
 """The body the cycle list route answers with, items under `cycles`."""
 
 
+class CycleStartToday(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today` takes."""
+
+    team_id: str = Field(min_length=1)
+
+
+class CycleStartTodayRead(BaseModel):
+    """What starting a cycle today changed.
+
+    `ended` is the cycle that was current, now ending yesterday, or null when no
+    cycle was running. `moved_issues` counts its unfinished issues rolled into
+    the started cycle.
+    """
+
+    cycle: CycleRead
+    ended: Optional[CycleRead] = None
+    moved_issues: int = 0
+
+
+class CycleCalendarFeedCreate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/cycles/calendar-feed` takes."""
+
+    team_id: str = Field(min_length=1)
+
+
+class CycleCalendarFeedRead(BaseModel):
+    """The caller's cycle calendar feed for one team.
+
+    `url` carries the feed token, so it is answered only by the call that minted
+    it: the token is stored as a hash and cannot be read back. A read of an
+    existing feed says it is `active` with a null `url`, and minting again revokes
+    the old URL.
+    """
+
+    team_id: str
+    active: bool
+    created_at: Optional[datetime] = None
+    url: Optional[str] = None
+
+
 class CycleHistoryPoint(BaseModel):
     """One day of a cycle's burn-up, in issues and in estimate points.
 
@@ -535,7 +575,12 @@ class ProjectCreate(BaseModel):
     lead_id: Optional[str] = Field(default=None, min_length=1)
     start_date: Optional[str] = None
     target_date: Optional[str] = None
-    status: ProjectStatusField = "backlog"
+    status: ProjectStatusField = Field(
+        default="backlog", description="The status category; alone it lands on the category's default status"
+    )
+    status_id: Optional[str] = Field(
+        default=None, min_length=1, description="The workspace project status; its category wins over `status`"
+    )
     icon: Optional[ProjectIconField] = None
     color: Optional[str] = None
     health: Optional[ProjectHealthField] = None
@@ -662,7 +707,12 @@ class ProjectUpdate(BaseModel):
     lead_id: Optional[str] = Field(default=None, min_length=1)
     start_date: Optional[str] = None
     target_date: Optional[str] = None
-    status: Optional[ProjectStatusField] = None
+    status: Optional[ProjectStatusField] = Field(
+        default=None, description="The status category; a project already in it keeps its status"
+    )
+    status_id: Optional[str] = Field(
+        default=None, min_length=1, description="The workspace project status to move the project to"
+    )
     icon: Optional[ProjectIconField] = None
     color: Optional[str] = None
     health: Optional[ProjectHealthField] = None
@@ -925,7 +975,8 @@ class ProjectRead(BaseModel):
     lead_id: Optional[str] = None
     start_date: Optional[str] = None
     target_date: Optional[str] = None
-    status: ProjectStatusField
+    status: ProjectStatusField = Field(description="The category of the project's status, which every rule reads")
+    status_id: str = Field(default="", description="The workspace project status the project sits in")
     icon: Optional[str] = None
     color: Optional[str] = None
     health: Optional[ProjectHealthField] = None
@@ -1026,6 +1077,7 @@ class ProjectRead(BaseModel):
             start_date=project.start_date,
             target_date=project.target_date,
             status=project.status,  # pyright: ignore[reportArgumentType]
+            status_id=project.effective_status_id,
             icon=project.icon,
             color=project.color,
             health=project.health,  # pyright: ignore[reportArgumentType]
@@ -1383,6 +1435,7 @@ class RoadmapEntryRead(BaseModel):
     target_date: Optional[str] = None
     start_date: Optional[str] = None
     status: str
+    status_id: Optional[str] = Field(default=None, description="A project's workspace project status, null on a cycle")
     icon: Optional[str] = None
     color: Optional[str] = None
     health: Optional[str] = None
@@ -1427,6 +1480,7 @@ class RoadmapEntryRead(BaseModel):
             target_date=project.target_date,
             start_date=project.start_date,
             status=project.status,
+            status_id=project.effective_status_id,
             icon=project.icon,
             color=project.color,
             health=project.health,

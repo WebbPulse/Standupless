@@ -59,7 +59,7 @@ from standupless_cli._generated.models import (
     WorkspaceExportCreate,
     WorkspaceUpdate,
 )
-from standupless_cli.branch import branch_name
+from standupless_cli.branch import DEFAULT_BRANCH_FORMAT, branch_handle, branch_name
 from standupless_cli.client import ApiError, Issue, StanduplessClient, download
 from standupless_cli.config import (
     ConfigError,
@@ -1018,11 +1018,23 @@ def issue_branch(
 ) -> None:
     """Print the git branch name for an issue, the same one the web app suggests.
 
-    Try `git switch -c "$(standupless issue branch ENG-12)"`.
+    The name follows the workspace's branch format, and a format that leads with
+    a username uses the key's own person. Try
+    `git switch -c "$(standupless issue branch ENG-12)"`.
     """
     context = _state(ctx).context()
     issue = context.issue(key)
-    typer.echo(branch_name(issue["key"], issue["title"]))
+    branch_format = context.workspace.get("branch_format") or DEFAULT_BRANCH_FORMAT
+    handle = ""
+    if branch_format == "user_key_title":
+        try:
+            me = context.client.get_me()
+        except ApiError as error:
+            if error.error_code != "WORKSPACE_KEY_HAS_NO_USER":
+                raise
+        else:
+            handle = branch_handle(me.get("display_name"), me.get("email"))
+    typer.echo(branch_name(issue["key"], issue["title"], branch_format, handle))
 
 
 @team_app.command("list")

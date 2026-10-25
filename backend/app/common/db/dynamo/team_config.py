@@ -12,7 +12,9 @@ scan of this small table rather than an index of its own.
 The auto-archive period is one row at `team#<pid>#archive`, found by the hourly
 archive sweep in the same scan as the finished statuses it reads issues from.
 The auto-close period and target status are one row at `team#<pid>#autoclose`,
-found by the same hourly run with a scan of its own.
+found by the same hourly run with a scan of its own. Whether a parent closes
+once its sub-issues are all done, and whether open sub-issues close with their
+parent, is one row at `team#<pid>#parentclose`, read by the rollup consumer.
 
 A team's default display options for its issue list, board and projects page
 are one row at `team#<pid>#display`, read when a member opens one of those pages
@@ -172,6 +174,15 @@ STALE_CATEGORIES: tuple[str, ...] = ("backlog",)
 def auto_close_settings_key(team_id: str) -> str:
     """The sort key of one team's auto-close settings row."""
     return f"team#{team_id}#autoclose"
+
+
+PARENT_AUTO_CLOSE_SETTINGS = "parent_auto_close_settings"
+"""The `kind` a team's parent and sub-issue auto-close settings row carries."""
+
+
+def parent_auto_close_settings_key(team_id: str) -> str:
+    """The sort key of one team's parent and sub-issue auto-close settings row."""
+    return f"team#{team_id}#parentclose"
 
 
 DISPLAY_DEFAULTS = "display_defaults"
@@ -507,6 +518,31 @@ class AutoCloseSettings(BaseModel):
 def default_auto_close_settings(workspace_id: str, team_id: str) -> AutoCloseSettings:
     """The auto-close setting a team that never chose one reads as: off."""
     return AutoCloseSettings(workspace_id=workspace_id, config_key=auto_close_settings_key(team_id), team_id=team_id)
+
+
+class ParentAutoCloseSettings(BaseModel):
+    """Whether a team's parents and sub-issues close together, one row per team, both off by default.
+
+    `close_parent` moves a parent to the team's first completed status once every
+    sub-issue is completed or cancelled. `close_sub_issues` moves a parent's open
+    sub-issues to the first status of the parent's new category once the parent
+    is completed or cancelled.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = PARENT_AUTO_CLOSE_SETTINGS
+    close_parent: bool = False
+    close_sub_issues: bool = False
+    updated_at: datetime | None = None
+
+
+def default_parent_auto_close_settings(workspace_id: str, team_id: str) -> ParentAutoCloseSettings:
+    """The parent and sub-issue auto-close settings a team that never saved them reads as: both off."""
+    return ParentAutoCloseSettings(
+        workspace_id=workspace_id, config_key=parent_auto_close_settings_key(team_id), team_id=team_id
+    )
 
 
 class DisplayOptions(BaseModel):
@@ -1079,6 +1115,30 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
         """A transaction Put for one status, holding the same key-free condition."""
         return self._repository.put_action(_status_item(status), condition=Attr("config_key").not_exists())
 
+    def put_copied_rows(
+        self,
+        *,
+        statuses: Sequence[Status],
+        labels: Sequence[Label],
+        overrides: Sequence[Override],
+        transitions: Sequence[Transition],
+        templates: Sequence[BaseModel],
+    ) -> None:
+        """Write the rows a team create copies from another team, in batches, before the team row exists."""
+        items = [
+            *(_status_item(row) for row in statuses),
+            *(_label_item(row) for row in labels),
+            *(_override_item(row) for row in overrides),
+            *(as_item(row) for row in transitions),
+            *(as_item(row) for row in templates),
+        ]
+        if items:
+            self._repository.put_many(items)
+
+    def copied_settings_action(self, row: BaseModel) -> dict[str, Any]:
+        """A transaction Put of one settings row a team create copies from another team, stamped now."""
+        return self._repository.put_action(as_item(row.model_copy(update={"updated_at": utc_now()})))
+
     def seed_statuses(self, workspace_id: str, team_id: str) -> list[Status]:
         """Write the default status set for a new team, in contract order."""
         return [self.create_status(status) for status in self.default_statuses(workspace_id, team_id)]
@@ -1384,6 +1444,21 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
         self._repository.put(as_item(stored))
         return stored
 
+    def get_parent_auto_close_settings(self, workspace_id: str, team_id: str) -> ParentAutoCloseSettings | None:
+        """One team's stored parent and sub-issue auto-close settings, or `None` when it never saved them."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "config_key": parent_auto_close_settings_key(team_id)}
+        )
+        return ParentAutoCloseSettings.model_validate(dict(item)) if item is not None else None
+
+    def put_parent_auto_close_settings(self, settings: ParentAutoCloseSettings) -> ParentAutoCloseSettings:
+        """Store one team's parent and sub-issue auto-close settings whole, stamped with the time of the write."""
+        stored = settings.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
     def get_display_defaults(self, workspace_id: str, team_id: str) -> TeamDisplayDefaults | None:
         """One team's stored display defaults, or `None` when it never saved any."""
         if not workspace_id or not team_id:
@@ -1529,6 +1604,11 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
             removed += 1
         if self.get_auto_close_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
+            removed += 1
+        if self.get_parent_auto_close_settings(workspace_id, team_id) is not None:
+            self._repository.delete(
+                {"workspace_id": workspace_id, "config_key": parent_auto_close_settings_key(team_id)}
+            )
             removed += 1
         if self.get_display_defaults(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": display_defaults_key(team_id)})

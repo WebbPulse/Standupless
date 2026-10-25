@@ -235,6 +235,9 @@ export type EstimateScale =
 export type StatusCategory =
   'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
 
+/** How a workspace builds the git branch names its members copy. */
+export type BranchFormat = 'key_title' | 'user_key_title' | 'key';
+
 /** One workspace the signed in user belongs to. */
 export interface WorkspaceRead {
   id: string;
@@ -260,6 +263,8 @@ export interface WorkspaceRead {
   auth_policy_blocked?: boolean;
   /** Why the policy refuses the session, when it does. */
   auth_policy_reason?: AuthPolicyReason | null;
+  /** How every member's copied git branch names are built. */
+  branch_format?: BranchFormat;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -511,6 +516,7 @@ export interface WorkspaceUpdate {
   /** The accent as #rrggbb, or null to return to the Standupless default. */
   accent_color?: string | null;
   project_update_interval_days?: ProjectUpdateInterval;
+  branch_format?: BranchFormat;
 }
 
 /** One member of a workspace. */
@@ -630,6 +636,11 @@ export interface TeamCreate {
   private?: boolean;
   /** A top-level team to sit under, inheriting its statuses and labels. */
   parent_team_id?: string | null;
+  /**
+   * A team whose statuses, labels, templates, estimates and workflow settings
+   * the new team starts with. Exclusive with `parent_team_id`.
+   */
+  copy_settings_from_team_id?: string | null;
 }
 
 /** The editable fields on a team. */
@@ -1509,6 +1520,8 @@ export interface CommentRead {
   resolution?: ThreadResolution | null;
   /** The description passage a root comment is pinned to, when it is. */
   anchor?: CommentAnchor | null;
+  /** The document the comment was written on; null on an issue's comment. */
+  document_id?: string | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -1601,6 +1614,8 @@ export interface ReactionWrite {
   target_kind: ReactionTarget;
   emoji: string;
   issue_id?: string;
+  /** The document a comment target was written on, in place of `issue_id`. */
+  document_id?: string;
 }
 
 /** Whether an attachment is a link or bytes in the bucket. */
@@ -1680,6 +1695,27 @@ export interface IconUploadRead {
 
 /** The commit call that makes an uploaded icon current. */
 export interface IconCommit {
+  upload_id: string;
+}
+
+/** One custom workspace emoji: its shortcode, image and who uploaded it. */
+export interface CustomEmojiRead {
+  name: string;
+  shortcode: string;
+  url: string;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+}
+
+/** Every custom emoji of a workspace, by name. */
+export interface CustomEmojiListRead {
+  emoji: CustomEmojiRead[];
+}
+
+/** Names an uploaded image as a custom emoji. */
+export interface CustomEmojiCreate {
+  name: string;
   upload_id: string;
 }
 
@@ -1860,6 +1896,7 @@ export interface SearchProjectRead {
   project_id: string;
   name: string;
   status: ProjectStatus;
+  status_id?: string;
   health: ProjectHealth | null;
   icon: string | null;
   color: string | null;
@@ -1890,6 +1927,9 @@ export interface SearchCommentRead {
   author_id: string;
   snippet: string;
   created_at: string;
+  /** The document a hit was written on; issue fields are empty when set. */
+  document_id?: string | null;
+  document_title?: string | null;
 }
 
 /** The kinds of record a search can be narrowed to. */
@@ -1950,7 +1990,13 @@ export type NotificationKind =
   | 'sla_breached'
   | 'review_requested'
   | 'triage_new'
-  | 'view_issue_added';
+  | 'view_issue_added'
+  | 'reaction'
+  | 'issue_completed'
+  | 'issue_cancelled'
+  | 'priority_urgent'
+  | 'blocking_changed'
+  | 'document_comment';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -1991,6 +2037,9 @@ export interface NotificationRead {
   due_state?: 'due' | 'overdue' | null;
   /** The digest date a `standup_digest` row is about; null on every other row. */
   standup_date?: string | null;
+  /** The document a `document_comment` row is about; null on every other row. */
+  document_id?: string | null;
+  document_title?: string | null;
   actor_id: string;
   actor_name: string;
   unread: boolean;
@@ -1999,7 +2048,7 @@ export interface NotificationRead {
   source?: ChangeSource | null;
   /** The pull request a `review_requested` row points at; null on every other row. */
   url?: string | null;
-  /** The status name a `status_changed` row moved to; absent on older rows. */
+  /** The status a `status_changed` row moved to, a reaction's emoji, or a blocking row's change and other issue; absent on older rows. */
   new_value?: string | null;
   /** The line the row reads, such as "Olive moved to Done"; absent on older clients' fixtures. */
   summary?: string;
@@ -2272,6 +2321,33 @@ export interface CycleUpdate {
   cancelled?: boolean;
 }
 
+/** Starting a team's next upcoming cycle today. The team names the row. */
+export interface CycleStartToday {
+  team_id: string;
+}
+
+/**
+ * What starting a cycle today changed: the started cycle, the current one it
+ * ended, which is null in a cooldown, and how many open issues moved across.
+ */
+export interface CycleStartTodayRead {
+  cycle: CycleRead;
+  ended: CycleRead | null;
+  moved_issues: number;
+}
+
+/**
+ * The caller's cycle calendar feed for one team. `url` is present only on the
+ * answer to minting, the one time the secret URL is shown; a read says only
+ * whether a feed is active.
+ */
+export interface CycleCalendarFeedRead {
+  team_id: string;
+  active: boolean;
+  created_at?: string | null;
+  url?: string | null;
+}
+
 /**
  * A team's automatic cycle schedule. `start_weekday` counts from 0 for Monday
  * to 6 for Sunday, and `updated_at` is null until the schedule is first saved.
@@ -2321,6 +2397,20 @@ export interface AutoCloseSettingsRead {
 export interface AutoCloseSettingsUpdate {
   period_months?: AutoClosePeriodMonths | null;
   status_id?: string | null;
+}
+
+/** Whether a team closes a parent with its last sub-issue and open sub-issues with their parent. */
+export interface ParentAutoCloseSettingsRead {
+  team_id: string;
+  close_parent: boolean;
+  close_sub_issues: boolean;
+  updated_at: string | null;
+}
+
+/** The switches of a team's parent and sub-issue auto-close; a field left out keeps its value. */
+export interface ParentAutoCloseSettingsUpdate {
+  close_parent?: boolean;
+  close_sub_issues?: boolean;
 }
 
 /** The months after which a team's finished issues are archived. */
@@ -2537,6 +2627,8 @@ export interface ProjectRead {
   start_date: string | null;
   target_date: string | null;
   status: ProjectStatus;
+  /** The workspace project status the project sits in, within `status`. */
+  status_id?: string;
   icon: ProjectIconName | null;
   color: string | null;
   health: ProjectHealth | null;
@@ -2605,6 +2697,48 @@ export interface ProjectLabelRead {
   project_count: number;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * One workspace project status: a named stage inside one of the six fixed
+ * categories, which every rule reads. The six seeded defaults have the
+ * category as their id.
+ */
+export interface ProjectStatusRead {
+  id: string;
+  name: string;
+  category: ProjectStatus;
+  color: string | null;
+  description: string | null;
+  position: number;
+  /** The first status of its category, where a bare category lands. */
+  is_default: boolean;
+  /** How many projects the caller can see sit in the status. */
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the project status list answers with, by category then position. */
+export interface ProjectStatusListRead {
+  statuses: ProjectStatusRead[];
+}
+
+/** A new project status; names are unique ignoring case. */
+export interface ProjectStatusCreate {
+  name: string;
+  category: ProjectStatus;
+  color?: string | null;
+  description?: string | null;
+  position?: number;
+}
+
+/** The editable fields on a project status; a null color clears it. */
+export interface ProjectStatusUpdate {
+  name?: string;
+  color?: string | null;
+  description?: string | null;
+  position?: number;
 }
 
 /** The body the project label list answers with, in name order. */
@@ -2711,6 +2845,8 @@ export interface ProjectCreate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  /** A workspace project status by id; `status` then may only name its category. */
+  status_id?: string;
   icon?: ProjectIconName | null;
   color?: string | null;
   health?: ProjectHealth | null;
@@ -2734,6 +2870,8 @@ export interface ProjectUpdate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  /** A workspace project status by id; a bare category keeps a status already in it. */
+  status_id?: string;
   icon?: ProjectIconName | null;
   color?: string | null;
   health?: ProjectHealth | null;
@@ -3154,7 +3292,8 @@ export interface PulseFollowRead {
 /** The filters the project list reads. Without a team it is workspace wide. */
 export interface ProjectListQuery {
   team_id?: string;
-  status?: ProjectStatus;
+  /** A category, or one workspace project status by id. */
+  status?: string;
   /** Only the projects in this initiative. */
   initiative_id?: string;
   /** With `team_id`, also list the projects of its sub-teams the caller can see. */
@@ -3191,6 +3330,8 @@ export interface RoadmapEntryRead {
   target_date: string | null;
   start_date: string | null;
   status: string;
+  /** A project entry's workspace project status. */
+  status_id?: string | null;
   icon?: ProjectIconName | null;
   color?: string | null;
   health?: ProjectHealth | null;

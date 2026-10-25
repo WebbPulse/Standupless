@@ -8,7 +8,8 @@
  * and both dates edit from the row without opening it. The board puts
  * projects in columns by the grouping and moves them between columns by
  * dragging, and can drop columns that hold nothing; the timeline draws them
- * as bars from start to target date. Rows group by status, health, priority,
+ * as bars from start to target date with the chosen properties beside each
+ * name, stepping earlier or later a screen at a time. Rows group by status, health, priority,
  * initiative, lead or team in either direction, the list can group again
  * inside each group, rows order by date, name, priority or progress, and
  * closed projects show for all time, a recent window or not at all. Filters
@@ -135,6 +136,7 @@ import { useProjectsDisplayDefault } from '../../hooks/useProjectsDisplayDefault
 import { useTeam } from '../../hooks/useTeam';
 import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
@@ -149,16 +151,18 @@ import {
 } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPath, viewPath } from '../../lib/paths';
+import { progressPercent } from '../../lib/planningDisplay';
+import { canEditProject } from '../../lib/planningModel';
 import {
-  PROJECT_STATUS_LABELS,
-  progressPercent,
-} from '../../lib/planningDisplay';
-import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
+  listOrderedProjectStatuses,
+  matchesStatusFilter,
+} from '../../lib/projectStatuses';
 import {
   CUSTOMER_PROJECT_ORDERINGS,
   DEFAULT_PROJECTS_DISPLAY,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
+  TIMELINE_PROJECT_COLUMNS,
   columnList,
   columnValue,
   directedGroups,
@@ -553,6 +557,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           <ProjectStatusPicker
             variant="rail"
             value={project.status}
+            statusId={project.status_id}
             percent={percent}
             disabled={!editable}
             onChange={closePrompt.changeStatus}
@@ -830,13 +835,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   );
   const teamFilter = params.get('team') ?? baseOf('team');
   const statusText = params.get('status') ?? baseOf('status');
+  const { statuses } = useProjectStatuses();
   const statusFilter = useMemo(
-    () =>
-      statusText
-        .split(',')
-        .filter((value): value is ProjectStatus =>
-          PROJECT_STATUS_ORDER.includes(value as ProjectStatus)
-        ),
+    () => orderedStatuses(statusText.split(',')),
     [statusText]
   );
   const leadFilter = params.get('lead') ?? baseOf('lead');
@@ -998,9 +999,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     () =>
       applyMoves(projects)
         .filter((project) => scopeIncludes?.(project) ?? true)
-        .filter(
-          (project) =>
-            statusFilter.length === 0 || statusFilter.includes(project.status)
+        .filter((project) =>
+          matchesStatusFilter(project, statusFilter, statuses)
         )
         .filter((project) =>
           leadFilter === ''
@@ -1033,6 +1033,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       scopeIncludes,
       projectsById,
       statusFilter,
+      statuses,
       leadFilter,
       labelFilter,
       blockedFilter,
@@ -1071,11 +1072,21 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       directedGroups(
         groupProjects(sorted, grouping, people, teams, {
           initiatives,
+          statuses,
           teamIds: leadTeamIds,
         }),
         direction
       ),
-    [sorted, grouping, people, teams, initiatives, leadTeamIds, direction]
+    [
+      sorted,
+      grouping,
+      people,
+      teams,
+      initiatives,
+      statuses,
+      leadTeamIds,
+      direction,
+    ]
   );
   const columns = useMemo(
     () =>
@@ -1085,6 +1096,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             groupProjects(sorted, grouping, people, teams, {
               initiatives,
               keepEmpty: true,
+              statuses,
               teamIds: leadTeamIds,
             }),
             direction
@@ -1099,9 +1111,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             )
               return false;
             if (column.kind !== 'status') return true;
-            const status = groupValue(column) as ProjectStatus;
-            if (statusFilter.length > 0) return statusFilter.includes(status);
-            return closed !== 'none' || !CLOSED_STATUSES.has(status);
+            if (statusFilter.length > 0) {
+              const status = groupValue(column);
+              return statusFilter.some(
+                (value) =>
+                  value === status ||
+                  (value === column.category &&
+                    !statuses.some((row) => row.id === value))
+              );
+            }
+            return (
+              closed !== 'none' ||
+              column.category === undefined ||
+              !CLOSED_STATUSES.has(column.category)
+            );
           }),
     [
       layout,
@@ -1115,6 +1138,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       display.empty,
       scopedInitiatives,
       statusFilter,
+      statuses,
       closed,
     ]
   );
@@ -1410,7 +1434,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   };
 
   const toggleStatus = (status: string): void => {
-    const held = statusFilter as string[];
+    const held = statusFilter;
     setParam(
       'status',
       orderedStatuses(
@@ -1491,6 +1515,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     onToday: () => {
       timeline.current?.scrollToToday();
     },
+    onStep: (step: -1 | 1) => {
+      timeline.current?.step(step);
+    },
   };
   useTimelineShortcuts({
     ...timelineControls,
@@ -1498,13 +1525,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     enabled: layout === 'timeline',
   });
 
-  const statusOptions: ComboboxOption[] = PROJECT_STATUS_ORDER.map(
-    (status) => ({
-      value: status,
-      label: PROJECT_STATUS_LABELS[status],
-      icon: <ProjectStatusGlyph status={status} />,
-    })
-  );
+  const statusOptions: ComboboxOption[] = listOrderedProjectStatuses(
+    statuses
+  ).map((status) => ({
+    value: status.id,
+    label: status.name,
+    icon: <ProjectStatusGlyph status={status.category} color={status.color} />,
+  }));
   const leadOptions: ComboboxOption[] = [
     { value: NO_LEAD, label: 'No lead' },
     ...people.map((person) => ({
@@ -1804,19 +1831,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
                 : {})}
               {...(layout === 'timeline'
                 ? {
+                    zoom,
+                    onZoomChange: timelineControls.onZoomChange,
                     dependencies: display.dependencies,
                     onDependenciesChange: (value: DependencyLinesChoice) => {
                       changeDisplay({ dependencies: value });
                     },
                   }
                 : {})}
-              {...(layout !== 'timeline'
-                ? {
-                    columns: shownColumns,
-                    onColumnsChange: (value: ProjectColumn[]) => {
-                      changeDisplay({ columns: columnValue(value) });
-                    },
-                  }
+              columns={shownColumns}
+              onColumnsChange={(value: ProjectColumn[]) => {
+                changeDisplay({ columns: columnValue(value) });
+              }}
+              {...(layout === 'timeline'
+                ? { chips: TIMELINE_PROJECT_COLUMNS }
                 : {})}
               onReset={reset}
               defaultActions={
@@ -1900,10 +1928,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           ) : (
             sections.map(({ group, subs }) => {
               const open = isOpen(group);
-              const status =
-                group.kind === 'status'
-                  ? (group.key.slice('status:'.length) as ProjectStatus)
-                  : null;
+              const statusPreset =
+                group.kind === 'status' ? groupPatch(group) : null;
               const list = (
                 items: ProjectRead[],
                 start: number,
@@ -2034,13 +2060,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
                           {String(group.rows.length)}
                         </span>
                       </button>
-                      {canCreate && status !== null && (
+                      {canCreate && statusPreset !== null && (
                         <IconButton
-                          label={`New ${PROJECT_STATUS_LABELS[status].toLowerCase()} project`}
+                          label={`New ${group.label.toLowerCase()} project`}
                           size="sm"
                           className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                           onClick={() => {
-                            setCreating({ preset: { status } });
+                            setCreating({ preset: statusPreset });
                           }}
                         >
                           <LuPlus className="h-3.5 w-3.5" />
@@ -2152,6 +2178,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           workspaceRole={workspace?.role}
           zoom={zoom}
           showDependencies={display.dependencies === 'show'}
+          columns={shownColumns}
           folded={folded}
           onToggleGroup={toggleFolded}
           refreshKey={queryKey}
@@ -2166,6 +2193,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           teams={writableTeams}
           initialTeamIds={creating.teamIds ?? initialTeamIds}
           initialStatus={creating.preset.status ?? 'planned'}
+          {...(creating.preset.status_id === undefined
+            ? {}
+            : { initialStatusId: creating.preset.status_id })}
           preset={scopedPreset(creating.preset, scope)}
           onClose={() => {
             setCreating(null);

@@ -27,6 +27,8 @@ WorkspaceRoleField = Literal["owner", "admin", "member", "guest"]
 
 InvitableRoleField = Literal["admin", "member", "guest"]
 
+BranchFormatField = Literal["key_title", "user_key_title", "key"]
+
 
 class WorkspaceCreate(BaseModel):
     """The body `POST /api/workspaces` takes."""
@@ -60,8 +62,8 @@ class WorkspaceCreate(BaseModel):
 class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
-    The name, the accent color and the default project update cadence are
-    editable. The slug is not: it is the tenant's public handle and changing one
+    The name, the accent color, the default project update cadence and the git
+    branch name format are editable. The slug is not: it is the tenant's public handle and changing one
     would break every link that carries it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
     """
@@ -69,6 +71,10 @@ class WorkspaceUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     accent_color: Optional[str] = Field(default=None, description="The accent as #rrggbb, or null for the default")
     project_update_interval_days: Optional[int] = None
+    branch_format: Optional[BranchFormatField] = Field(
+        default=None,
+        description="How copied git branch names are built: key_title, user_key_title or key",
+    )
 
     @field_validator("accent_color")
     @classmethod
@@ -127,6 +133,10 @@ class WorkspaceRead(BaseModel):
         default=None,
         description="The sign-in methods the workspace allows, when the caller's way of signing in is not one.",
     )
+    branch_format: BranchFormatField = Field(
+        default="key_title",
+        description="How copied git branch names are built: key_title, user_key_title or key",
+    )
 
     @classmethod
     def from_row(
@@ -159,6 +169,7 @@ class WorkspaceRead(BaseModel):
             auth_policy_blocked=auth_policy_blocked,
             auth_policy_reason=auth_policy_reason,  # pyright: ignore[reportArgumentType]
             auth_policy_allowed_methods=auth_policy_allowed_methods,
+            branch_format=workspace.branch_format,  # pyright: ignore[reportArgumentType]
         )
 
 

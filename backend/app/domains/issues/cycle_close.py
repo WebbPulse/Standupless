@@ -25,9 +25,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Mapping, Sequence
 
-from app.common.db.dynamo.activity import build_activity
+from app.common.cycle_rollover import carry_unfinished
 from app.common.db.dynamo.planning import Cycle
-from app.common.issue_rules import COMPLETED_CATEGORIES
 
 _log = logging.getLogger(__name__)
 
@@ -36,9 +35,6 @@ CYCLE_CLOSE_SOURCE = "standupless.cycle-close"
 
 LOOKBACK_DAYS = 7
 """How far back a sweep looks for an ended cycle, so a missed run heals itself."""
-
-SYSTEM_ACTOR = "system"
-"""The actor a carry-over is recorded under."""
 
 
 def is_cycle_close(record: Mapping[str, Any]) -> bool:
@@ -87,32 +83,7 @@ def close_cycle(repositories: Any, ended: Cycle, today: str) -> tuple[int, bool]
     if target is None:
         return 0, False
 
-    categories = {
-        status.status_id: status.category
-        for status in repositories.team_config.list_statuses(workspace_id, ended.team_id)
-    }
-    moved = 0
-    for issue in repositories.issues.iter_for_cycle(workspace_id, ended.team_id, ended.cycle_id):
-        category = categories.get(issue.status_id)
-        if category is None or category in COMPLETED_CATEGORIES:
-            continue
-        if repositories.issues.carry_to_cycle(workspace_id, issue.issue_id, ended.cycle_id, target.cycle_id) is None:
-            continue
-        repositories.activity.record(
-            build_activity(
-                workspace_id,
-                issue.team_id,
-                issue.issue_id,
-                SYSTEM_ACTOR,
-                "field_changed",
-                actor_kind="system",
-                field="cycle_id",
-                from_value=ended.cycle_id,
-                to_value=target.cycle_id,
-            )
-        )
-        moved += 1
-    return moved, True
+    return carry_unfinished(repositories, workspace_id, ended.team_id, ended.cycle_id, target.cycle_id), True
 
 
 def moves_unfinished(repositories: Any, workspace_id: str, team_id: str) -> bool:

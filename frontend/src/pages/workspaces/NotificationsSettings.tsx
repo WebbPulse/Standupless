@@ -4,7 +4,8 @@
  * Slack or Discord.
  *
  * Email arrives in the format the person picks: a short digest by default, or
- * one email per notification.
+ * one email per notification. Desktop notifications are switched per device,
+ * since the browser holds their permission.
  *
  * Preferences belong to the person, not to the workspace, so a change here
  * applies in every workspace they are a member of. Each switch saves as soon
@@ -32,6 +33,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Checkbox from '../../components/ui/checkbox';
 import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
+import DesktopNotificationsSettings from '../../components/workspace/DesktopNotificationsSettings';
 import DiscordDirectMessages from '../../components/workspace/DiscordDirectMessages';
 import ReturnToast from '../../components/workspace/ReturnToast';
 import SettingsNav from '../../components/workspace/SettingsNav';
@@ -138,12 +140,95 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'An issue newly matches a saved view you subscribed to. Issues already in the view stay quiet.',
   },
+  reaction: {
+    title: 'Reactions',
+    detail:
+      'Someone reacts to a comment you wrote. Reactions within an hour arrive as one notification.',
+  },
+  issue_completed: {
+    title: 'Issue completed',
+    detail: 'An issue you are subscribed to or assigned is completed.',
+  },
+  issue_cancelled: {
+    title: 'Issue canceled',
+    detail: 'An issue you are subscribed to or assigned is canceled.',
+  },
+  priority_urgent: {
+    title: 'Marked as urgent',
+    detail:
+      'An issue you are subscribed to or assigned has its priority raised to urgent.',
+  },
+  blocking_changed: {
+    title: 'Blocking changes',
+    detail:
+      'An issue you are subscribed to or assigned gains or loses a blocking relation, or a blocker is resolved.',
+  },
+  document_comment: {
+    title: 'Document comments',
+    detail:
+      'Someone comments on a document you follow or mentions you in one. These stay in your inbox.',
+  },
+};
+
+/** One heading in the settings list and the kinds listed under it. */
+interface KindSection {
+  title: string;
+  kinds: readonly NotificationKind[];
+}
+
+/** The headings the settings list groups kinds under, in order. */
+const KIND_SECTIONS: readonly KindSection[] = [
+  {
+    title: 'Assignments and mentions',
+    kinds: ['assigned', 'mentioned', 'subscribed', 'review_requested'],
+  },
+  {
+    title: 'Comments and reactions',
+    kinds: ['commented', 'reaction', 'document_comment'],
+  },
+  {
+    title: 'Issue changes',
+    kinds: [
+      'status_changed',
+      'issue_completed',
+      'issue_cancelled',
+      'priority_urgent',
+      'blocking_changed',
+    ],
+  },
+  {
+    title: 'Dates and SLAs',
+    kinds: ['due_soon', 'overdue', 'reminder', 'sla_at_risk', 'sla_breached'],
+  },
+  {
+    title: 'Teams and views',
+    kinds: ['triage_new', 'view_issue_added', 'standup_digest'],
+  },
+  {
+    title: 'Projects and initiatives',
+    kinds: [
+      'project_update',
+      'project_update_comment',
+      'project_update_due',
+      'initiative_update_due',
+    ],
+  },
+];
+
+/** Every section, plus one for any kind no heading names yet, so no switch goes missing. */
+const sectionsFor = (kinds: readonly NotificationKind[]): KindSection[] => {
+  const named = new Set(KIND_SECTIONS.flatMap((section) => section.kinds));
+  const rest = kinds.filter((kind) => !named.has(kind));
+  return rest.length === 0
+    ? [...KIND_SECTIONS]
+    : [...KIND_SECTIONS, { title: 'Other', kinds: rest }];
 };
 
 /** The kinds that only ever reach the inbox, so their email switch is off and locked. */
 const IN_APP_ONLY: ReadonlySet<NotificationKind> = new Set([
   'project_update_comment',
   'review_requested',
+  'document_comment',
 ]);
 
 /** The kinds a chat direct message never carries: the standup digest is a digest already, and review requests stay in the inbox. */
@@ -151,10 +236,16 @@ const NOT_IN_CHAT: ReadonlySet<NotificationKind> = new Set([
   'standup_digest',
   'project_update_comment',
   'review_requested',
+  'document_comment',
 ]);
 
 /** The switches a kind shows when the profile has no entry for it. */
 const ALL_ON: NotificationChannels = { in_app: true, email: true, chat: true };
+
+/** Kinds that start with only the inbox on, matching the server's defaults. */
+const INBOX_DEFAULT: Partial<Record<NotificationKind, NotificationChannels>> = {
+  reaction: { in_app: true, email: false, chat: false },
+};
 
 /** Every timezone the browser knows, with `current` kept even when it is not among them. */
 const zoneChoices = (current: string): string[] => {
@@ -267,7 +358,7 @@ const NotificationsSettings: React.FC = () => {
   };
 
   const channelsOf = (kind: NotificationKind): NotificationChannels =>
-    user?.notification_preferences?.[kind] ?? ALL_ON;
+    user?.notification_preferences?.[kind] ?? INBOX_DEFAULT[kind] ?? ALL_ON;
 
   const onLinkChange = (stored: SlackLinkRead): void => {
     setLinkSaved(stored);
@@ -443,6 +534,8 @@ const NotificationsSettings: React.FC = () => {
               ))}
             </fieldset>
 
+            <DesktopNotificationsSettings />
+
             {slackLink !== null && slackLink.configured && (
               <SlackDirectMessages
                 workspaceId={workspaceId}
@@ -468,79 +561,98 @@ const NotificationsSettings: React.FC = () => {
                 <span className="text-center">Email</span>
                 <span className="text-center">Chat</span>
               </div>
-              <ul>
-                {NOTIFICATION_KINDS.map((kind) => {
-                  const channels = channelsOf(kind);
-                  const copy = KIND_COPY[kind];
-                  return (
-                    <li
-                      key={kind}
-                      className={`${COLUMNS} min-h-row border-b border-line py-2 last:border-b-0`}
-                    >
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="text-sm font-medium text-text">
-                          {copy.title}
-                        </p>
-                        <p className="text-xs text-text-faint">{copy.detail}</p>
-                      </div>
-                      <div className="flex justify-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`${copy.title} in your inbox`}
-                          className="h-3.5 w-3.5 rounded-xs border-line-strong"
-                          checked={channels.in_app}
-                          disabled={saving}
-                          onChange={(event) => {
-                            save({
-                              notification_preferences: {
-                                [kind]: { in_app: event.target.checked },
-                              },
-                            });
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`${copy.title} by email`}
-                          className="h-3.5 w-3.5 rounded-xs border-line-strong"
-                          checked={
-                            emailOn && channels.email && !IN_APP_ONLY.has(kind)
-                          }
-                          disabled={saving || !emailOn || IN_APP_ONLY.has(kind)}
-                          onChange={(event) => {
-                            save({
-                              notification_preferences: {
-                                [kind]: { email: event.target.checked },
-                              },
-                            });
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`${copy.title} in chat`}
-                          className="h-3.5 w-3.5 rounded-xs border-line-strong"
-                          checked={
-                            chatOn &&
-                            channels.chat !== false &&
-                            !NOT_IN_CHAT.has(kind)
-                          }
-                          disabled={saving || !chatOn || NOT_IN_CHAT.has(kind)}
-                          onChange={(event) => {
-                            save({
-                              notification_preferences: {
-                                [kind]: { chat: event.target.checked },
-                              },
-                            });
-                          }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              {sectionsFor(NOTIFICATION_KINDS).map((section) => (
+                <section
+                  key={section.title}
+                  aria-label={section.title}
+                  className="[&:last-child_li:last-child]:border-b-0"
+                >
+                  <h3 className="border-b border-line bg-surface px-3 py-1.5 text-xs font-medium text-text-muted">
+                    {section.title}
+                  </h3>
+                  <ul>
+                    {section.kinds.map((kind) => {
+                      const channels = channelsOf(kind);
+                      const copy = KIND_COPY[kind];
+                      return (
+                        <li
+                          key={kind}
+                          className={`${COLUMNS} min-h-row border-b border-line py-2`}
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <p className="text-sm font-medium text-text">
+                              {copy.title}
+                            </p>
+                            <p className="text-xs text-text-faint">
+                              {copy.detail}
+                            </p>
+                          </div>
+                          <div className="flex justify-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`${copy.title} in your inbox`}
+                              className="h-3.5 w-3.5 rounded-xs border-line-strong"
+                              checked={channels.in_app}
+                              disabled={saving}
+                              onChange={(event) => {
+                                save({
+                                  notification_preferences: {
+                                    [kind]: { in_app: event.target.checked },
+                                  },
+                                });
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`${copy.title} by email`}
+                              className="h-3.5 w-3.5 rounded-xs border-line-strong"
+                              checked={
+                                emailOn &&
+                                channels.email &&
+                                !IN_APP_ONLY.has(kind)
+                              }
+                              disabled={
+                                saving || !emailOn || IN_APP_ONLY.has(kind)
+                              }
+                              onChange={(event) => {
+                                save({
+                                  notification_preferences: {
+                                    [kind]: { email: event.target.checked },
+                                  },
+                                });
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`${copy.title} in chat`}
+                              className="h-3.5 w-3.5 rounded-xs border-line-strong"
+                              checked={
+                                chatOn &&
+                                channels.chat !== false &&
+                                !NOT_IN_CHAT.has(kind)
+                              }
+                              disabled={
+                                saving || !chatOn || NOT_IN_CHAT.has(kind)
+                              }
+                              onChange={(event) => {
+                                save({
+                                  notification_preferences: {
+                                    [kind]: { chat: event.target.checked },
+                                  },
+                                });
+                              }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
             </div>
           </>
         )}

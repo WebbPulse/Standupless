@@ -28,7 +28,9 @@ recently created matches rather than a read of every match.
 
 Comments are posted in the same partitions under `c:` prefixed terms, so a
 comment search is the same merge join over the same teams, and a hit is shown
-only when its issue still exists in a team the caller sees. Projects and
+only when its issue still exists in a team the caller sees. Comments on documents
+sit in the workspace's `DOCUMENT_COMMENTS` slot and are answered alongside
+document hits, each checked against the parents the caller reads. Projects and
 initiatives are few per workspace, so they are matched in memory against one
 read of each, the same read the documents search already makes, with the
 visibility the project and initiative reads apply: a project is visible through
@@ -52,6 +54,7 @@ from app.common.api.dependencies.scopes import PROJECTS_READ
 from app.common.api.schemas.documents import DocumentSummaryRead
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import (
+    DOCUMENT_COMMENTS,
     SearchQuery,
     comment_term,
     parse_query,
@@ -60,7 +63,7 @@ from app.common.db.dynamo.search_index import (
     truncate_body,
 )
 from app.common.db.dynamo.team_config import Status
-from app.common.documents import search_documents
+from app.common.documents import readable_parents, search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import TRIAGE_STATUS_CATEGORY, TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME
@@ -380,6 +383,7 @@ def _project_hits(
                     project_id=project.project_id,
                     name=project.name,
                     status=project.status,
+                    status_id=project.effective_status_id,
                     health=project.health,
                     icon=project.icon,
                     color=project.color,
@@ -484,6 +488,76 @@ def _comment_hits(
     return hits[:limit]
 
 
+def _document_comment_hits(
+    repositories: Repositories,
+    context: AuthzContext,
+    workspace_id: str,
+    team_id: Optional[str],
+    query: SearchQuery,
+    limit: int,
+) -> list[SearchCommentRead]:
+    """Comments on documents the caller reads that match the query, newest first.
+
+    Answered on the same terms as document hits: a workspace-wide search by a
+    caller who may read projects. Each hit's document is checked against the
+    parents the caller reads, so a posting on a document out of sight or gone is
+    skipped and replaced rather than shrinking the page.
+    """
+    if team_id or not _reads_projects(context):
+        return []
+    clauses = [[comment_term(term) for term in clause] for clause in query.clauses()]
+    matches = _matching_ids(repositories, workspace_id, [DOCUMENT_COMMENTS], clauses)
+    parents = readable_parents(repositories, context)
+    hits: list[SearchCommentRead] = []
+    while len(hits) < limit:
+        batch = [split_comment_doc(doc) for _, doc in zip(range(limit - len(hits)), matches)]
+        if not batch:
+            break
+        for pair in batch:
+            if pair is None:
+                continue
+            comment_id, document_id = pair
+            found = repositories.documents.get(workspace_id, document_id)
+            if found is None or (found[0].parent_kind, found[0].parent_id) not in parents:
+                continue
+            comment = repositories.comments.get(workspace_id, document_id, comment_id)
+            if comment is None or (query.needs_check and not query.prefix_in(comment.body)):
+                continue
+            hits.append(
+                SearchCommentRead(
+                    comment_id=comment.comment_id,
+                    issue_id=document_id,
+                    issue_key="",
+                    issue_title="",
+                    team_id="",
+                    author_id=comment.author_id,
+                    snippet=snippet(comment.body, query.highlights),
+                    created_at=comment.created_at,
+                    document_id=document_id,
+                    document_title=found[0].title,
+                )
+            )
+    return hits[:limit]
+
+
+def _comments(
+    repositories: Repositories,
+    context: AuthzContext,
+    workspace_id: str,
+    teams: list[str],
+    team_id: Optional[str],
+    query: SearchQuery,
+    limit: int,
+) -> list[SearchCommentRead]:
+    """Issue and document comment hits together, newest first, capped at `limit`."""
+    merged = [
+        *_comment_hits(repositories, context, workspace_id, teams, query, limit),
+        *_document_comment_hits(repositories, context, workspace_id, team_id, query, limit),
+    ]
+    merged.sort(key=lambda hit: hit.created_at, reverse=True)
+    return merged[:limit]
+
+
 @router.get("/{workspace_id}/search", response_model=SearchRead)
 def search(
     workspace_id: str = Path(..., min_length=1),
@@ -533,7 +607,9 @@ def search(
         return SearchRead(results=[], documents=documents, initiatives=initiatives)
 
     projects = _project_hits(repositories, context, teams, query, limit) if "projects" in kinds else []
-    comments = _comment_hits(repositories, context, workspace_id, teams, query, limit) if "comments" in kinds else []
+    comments = (
+        _comments(repositories, context, workspace_id, teams, team_id, query, limit) if "comments" in kinds else []
+    )
     results: list[SearchResultRead] = []
     if "issues" in kinds:
         matches = _matching_ids(repositories, workspace_id, teams, query.clauses())

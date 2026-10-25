@@ -26,6 +26,10 @@ team's active cycle, when the team has automatic cycles on with the auto-add
 setting, which is Linear's "auto-add started issues". The write is conditional
 on the issue still having no cycle.
 
+A status change from an open status into a completed or cancelled one closes the
+issue's parent once every sibling is finished, or its open sub-issues, when the
+team turned on `close_parent` or `close_sub_issues`; see `parent_auto_close`.
+
 Any record that lands an issue with a running SLA timer in a new status, team or
 deadline is checked against the status category, and a finished issue loses the
 timer, so a write path that skipped `apply_sla` cannot leave a breach behind.
@@ -49,7 +53,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.relation_effects import recount_blocked_by, recount_blockers_of, recount_blocking
-from app.domains.issues import auto_archive, auto_close, recurring, sla_repair
+from app.domains.issues import auto_archive, auto_close, parent_auto_close, recurring, sla_repair
 from app.domains.issues.cycle_close import is_cycle_close, sweep
 
 _log = logging.getLogger(__name__)
@@ -289,7 +293,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """Recount every parent and blocked issue one stream record made stale, or detach a deleted milestone.
 
     A record that leaves a running SLA timer on a finished issue also has the
-    timer cleared.
+    timer cleared, and one that finishes an issue closes its parent or its open
+    sub-issues when the team turned that on.
 
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch. The hourly trigger runs the
@@ -318,6 +323,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     finished = sla_repair.finished_timer(record)
     if finished is not None:
         sla_repair.clear_if_finished(repositories, *finished)
+
+    parent_auto_close.apply(repositories, record)
 
     stale = parents_to_recount(record)
     blocker = status_moved(record)

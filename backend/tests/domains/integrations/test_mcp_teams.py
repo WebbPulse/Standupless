@@ -156,6 +156,27 @@ def test_create_team_nests_under_a_parent_in_one_call(client: TestClient, reposi
     )
 
 
+def test_create_team_copies_another_teams_settings(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A copy source named by key gives the new team its own copies of the source's labels."""
+    create_label(repositories, WORKSPACE, TEAM, LabelCreate(name="Bug", color="#ff0000"))
+    secret = mint_for(repositories, MEMBER, ("teams:write", "teams:read"))
+
+    arguments = {"name": "Copy", "key_prefix": "CPY", "copy_settings_from_team_id": "ABC"}
+    created = answer(tool(client, secret, "create_team", arguments))
+
+    copied = repositories.team_config.list_labels(WORKSPACE, created["team_id"])
+    assert [(row.name, row.team_id) for row in copied] == [("Bug", created["team_id"])]
+    assert created["parent_team_id"] is None
+
+
+def test_create_team_refuses_a_copy_beside_a_parent(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Copying settings and nesting under a parent are exclusive."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+
+    arguments = {"name": "Both", "key_prefix": "BOTH", "parent_team_id": "ABC", "copy_settings_from_team_id": "XYZ"}
+    assert "copy_settings_from_team_id" in refusal(tool(client, secret, "create_team", arguments))
+
+
 def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member is refused as the route refuses, a guest outside the team sees nothing."""
     member = mint_for(repositories, MEMBER, ("teams:write",))

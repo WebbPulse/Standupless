@@ -3,7 +3,8 @@
  * with its role and removal controls, the invite list with its create and
  * revoke, the one-time token panel, and the gate that keeps all of it away from
  * a caller who is neither an owner nor an admin, the logo upload and removal,
- * the project update cadence, and the danger zone's typed name, step-up, scheduled banner and cancel.
+ * the project update cadence, the danger zone's typed name, step-up, scheduled banner and cancel,
+ * and its Leave workspace row, offered to a member and held back from the last owner.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -59,7 +60,12 @@ vi.mock('../../api/identityClient', () => ({
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: true,
-    user: null,
+    user: {
+      id: 'user-1',
+      email: 'someone@example.com',
+      display_name: 'Someone',
+      email_verified: true,
+    },
     isLoading: false,
     isBusy: false,
     login: vi.fn(),
@@ -560,5 +566,52 @@ describe('the danger zone', () => {
       expect(cancelWorkspaceDeletion).toHaveBeenCalledTimes(1);
     });
     expect(context.refresh).toHaveBeenCalled();
+  });
+});
+
+describe('the Leave workspace row', () => {
+  it('lets a member leave after confirming in a dialog that names the workspace', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    removeMember.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Leave workspace' }));
+    const dialog = screen.getByRole('dialog', { name: 'Leave Mine' });
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Leave workspace' })
+    );
+
+    await waitFor(() => {
+      expect(removeMember).toHaveBeenCalledWith('user-1');
+    });
+    expect(listMembers).not.toHaveBeenCalled();
+  });
+
+  it('is disabled for the last owner, with the reason', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        'You are the only owner of Mine. Make another member an owner before you leave.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Leave workspace' })
+    ).toBeDisabled();
+  });
+
+  it('is open to an owner while another owner remains', async () => {
+    listMembers.mockResolvedValue([
+      { ...member, user_id: 'user-1', role: 'owner' },
+      { ...member, role: 'owner' },
+    ]);
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Leave workspace' })
+      ).toBeEnabled();
+    });
   });
 });

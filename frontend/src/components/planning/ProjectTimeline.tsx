@@ -15,7 +15,11 @@
  * and a focused bar opens the same links from its menu key or Shift+F10.
  * A page can hide the lines and the dots that draw them, leaving the links
  * themselves in the bar menu.
- * Each dated milestone draws as a diamond on its project's lane.
+ * Each dated milestone draws as a diamond on its project's lane. A page can
+ * choose which of priority, status, health, teams and lead sit beside each
+ * name and whether each bar names its progress, and the controls step the
+ * view a screen earlier or later as well as back to today and through the
+ * zoom levels.
  */
 
 import React, {
@@ -30,6 +34,7 @@ import React, {
 import {
   LuArrowLeft,
   LuArrowRight,
+  LuChevronLeft,
   LuChevronRight,
   LuMinus,
   LuPlus,
@@ -42,12 +47,15 @@ import { TeamKey } from './ProjectPickers';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import MilestoneGlyph from './MilestoneGlyph';
 import ProjectIcon from './ProjectIcon';
+import ProjectStatusGlyph from './ProjectStatusGlyph';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
+import { PriorityGlyph } from '../ui/glyphs';
 import { ContextMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import type { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { PRIORITY_LABELS } from '../../lib/issueDisplay';
 import {
   personAvatar,
   personLabel,
@@ -56,11 +64,8 @@ import {
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
-import {
-  milestoneProgress,
-  PROJECT_STATUS_LABELS,
-  progressPercent,
-} from '../../lib/planningDisplay';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
+import { milestoneProgress, progressPercent } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
   dependencyLines,
@@ -71,7 +76,7 @@ import {
   type DependencyLine,
   type LinkSide,
 } from '../../lib/projectDependencies';
-import type { ProjectGroup } from '../../lib/projectList';
+import type { ProjectColumn, ProjectGroup } from '../../lib/projectList';
 import {
   PX_PER_DAY,
   TIMELINE_ZOOMS,
@@ -106,6 +111,17 @@ const DEFAULT_SPAN = 14;
 
 /** How far from the left edge today sits when the view jumps to it. */
 const TODAY_INSET = 160;
+
+/** The share of the view one step earlier or later moves it by. */
+const STEP_SHARE = 0.8;
+
+/** The properties a timeline shows when its page does not choose. */
+const DEFAULT_TIMELINE_COLUMNS: readonly ProjectColumn[] = [
+  'health',
+  'teams',
+  'lead',
+  'progress',
+];
 
 /** Roughly how wide a bar label is, so it can be kept in view. */
 const labelWidth = (name: string): number =>
@@ -168,6 +184,8 @@ interface TimelineRowProps {
   range: TimelineRange;
   pxPerDay: number;
   view: ViewWindow;
+  /** The properties shown beside the name and on the bar. */
+  columns: readonly ProjectColumn[];
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
   onReveal: (day: number) => void;
   /** This project is where the link being dragged would land. */
@@ -215,6 +233,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   range,
   pxPerDay,
   view,
+  columns,
   refreshKey,
   onReveal,
   linkTarget,
@@ -237,6 +256,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   );
   const project = value ?? server;
   const [drag, setDrag] = useState<DragState | null>(null);
+  const { statusOf } = useProjectStatuses();
   const editable = canEditProject(workspaceRole, project, teams);
   const percent = progressPercent(project);
   const lead = people.find((person) => person.user_id === project.lead_id);
@@ -244,6 +264,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   const projectTeams = teams.filter((team) =>
     project.team_ids.includes(team.id)
   );
+  const has = (column: ProjectColumn): boolean => columns.includes(column);
 
   const saved = barDays(project.start_date, project.target_date);
   const bar: BarDays | null =
@@ -362,16 +383,45 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
         >
           {project.name}
         </Link>
-        {project.health !== null && (
+        {has('priority') && project.priority !== 'none' && (
+          <span
+            data-timeline-property="priority"
+            title={PRIORITY_LABELS[project.priority]}
+            className="flex shrink-0 text-text-muted"
+          >
+            <PriorityGlyph
+              priority={project.priority}
+              name={PRIORITY_LABELS[project.priority]}
+            />
+          </span>
+        )}
+        {has('status') && (
+          <span
+            data-timeline-property="status"
+            title={statusOf(project).name}
+            className="flex shrink-0"
+          >
+            <ProjectStatusGlyph
+              status={project.status}
+              color={statusOf(project).color}
+              percent={percent}
+              name={statusOf(project).name}
+            />
+          </span>
+        )}
+        {has('health') && project.health !== null && (
           <ProjectHealthGlyph
             health={project.health}
             name={healthLabel(project.health)}
           />
         )}
-        {projectTeams.slice(0, 2).map((team) => (
-          <TeamKey key={team.id} keyPrefix={team.key_prefix} />
-        ))}
-        {lead !== undefined && (
+        {has('teams') &&
+          projectTeams
+            .slice(0, 2)
+            .map((team) => (
+              <TeamKey key={team.id} keyPrefix={team.key_prefix} />
+            ))}
+        {has('lead') && lead !== undefined && (
           <span title={personLabel(lead)}>
             <Avatar
               name={personLabel(lead)}
@@ -416,7 +466,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
               aria-valuenow={bar.start}
               aria-valuetext={dates}
               aria-readonly={!editable}
-              title={`${project.name}\n${PROJECT_STATUS_LABELS[project.status]} · ${healthLabel(project.health)} · ${dates}`}
+              title={`${project.name}\n${statusOf(project).name} · ${healthLabel(project.health)} · ${dates}`}
               onPointerDown={beginDrag('move')}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
@@ -486,9 +536,14 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
                 style={{ left: labelLeft, maxWidth: inside ? width - 16 : 290 }}
               >
                 {project.name}
-                <span className="ml-1.5 font-normal text-text-faint tabular-nums">
-                  {`${String(percent)}%`}
-                </span>
+                {has('progress') && (
+                  <span
+                    data-timeline-property="progress"
+                    className="ml-1.5 font-normal text-text-faint tabular-nums"
+                  >
+                    {`${String(percent)}%`}
+                  </span>
+                )}
               </span>
             </div>
             {editable &&
@@ -645,6 +700,8 @@ const TimelineGroup: React.FC<TimelineGroupProps> = ({
 export interface ProjectTimelineHandle {
   /** Scrolls the view so today sits near its left edge. */
   scrollToToday: () => void;
+  /** Moves the view most of a screen earlier, or later. */
+  step: (direction: -1 | 1) => void;
 }
 
 /** Props for ProjectTimeline: the grouped rows and how to draw them. */
@@ -660,6 +717,8 @@ export interface ProjectTimelineProps {
   zoom: TimelineZoom;
   /** Whether the lines between blocking and blocked projects draw, true by default. */
   showDependencies?: boolean;
+  /** The properties shown beside each name and on each bar, a lean set by default. */
+  columns?: readonly ProjectColumn[];
   folded: string[];
   onToggleGroup: (key: string) => void;
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
@@ -680,6 +739,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   workspaceRole,
   zoom,
   showDependencies = true,
+  columns = DEFAULT_TIMELINE_COLUMNS,
   folded,
   onToggleGroup,
   refreshKey,
@@ -737,8 +797,18 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
       scrollToToday: () => {
         scrollToDay(today);
       },
+      step: (direction) => {
+        const node = scroller.current;
+        if (node === null) return;
+        const width = Math.max(0, node.clientWidth - NAME_WIDTH);
+        node.scrollLeft = Math.max(
+          0,
+          node.scrollLeft + direction * Math.round(width * STEP_SHARE)
+        );
+        readView();
+      },
     }),
-    [scrollToDay, today]
+    [scrollToDay, today, readView]
   );
 
   const hasRows = projects.length > 0;
@@ -1236,6 +1306,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
                     range={range}
                     pxPerDay={pxPerDay}
                     view={view}
+                    columns={columns}
                     refreshKey={refreshKey}
                     onReveal={(day) => {
                       scrollToDay(day, 24);
@@ -1263,18 +1334,43 @@ export interface TimelineControlsProps {
   zoom: TimelineZoom;
   onZoomChange: (zoom: TimelineZoom) => void;
   onToday: () => void;
+  /** Moves the view earlier or later, left out where the page offers no stepping. */
+  onStep?: (direction: -1 | 1) => void;
 }
 
-/** The Today button and the zoom scale a timeline's toolbar carries. */
+/** The earlier, Today and later buttons and the zoom scale a timeline's toolbar carries. */
 export const TimelineControls: React.FC<TimelineControlsProps> = ({
   zoom,
   onZoomChange,
   onToday,
+  onStep,
 }) => (
   <>
+    {onStep !== undefined && (
+      <IconButton
+        label="Earlier"
+        size="sm"
+        onClick={() => {
+          onStep(-1);
+        }}
+      >
+        <LuChevronLeft className="h-3.5 w-3.5" />
+      </IconButton>
+    )}
     <Button variant="ghost" size="sm" onClick={onToday}>
       Today
     </Button>
+    {onStep !== undefined && (
+      <IconButton
+        label="Later"
+        size="sm"
+        onClick={() => {
+          onStep(1);
+        }}
+      >
+        <LuChevronRight className="h-3.5 w-3.5" />
+      </IconButton>
+    )}
     <IconButton
       label="Zoom out"
       size="sm"

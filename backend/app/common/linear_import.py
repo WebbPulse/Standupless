@@ -1037,7 +1037,9 @@ def _links_step(
                 continue
             if repositories.relations.get(job.workspace_id, issue_id, link_type, target_id) is not None:
                 continue
-            link = repositories.relations.link(job.workspace_id, issue_id, link_type, target_id, job.requested_by)
+            link = repositories.relations.link(
+                job.workspace_id, issue_id, link_type, target_id, job.requested_by, import_batch_id=job.import_id
+            )
             blocked = blocked_side(link)
             if blocked is not None:
                 recount_blocked(repositories, job.workspace_id, blocked)

@@ -3,7 +3,9 @@
  * darker app background, one inset panel beside it holding the page bar, the
  * page and the peek pane, and the resolving, error and not-found states the
  * slug lookup can land in. On a phone the sidebar becomes a drawer opened from
- * the page bar and the panel runs edge to edge.
+ * the page bar and the panel runs edge to edge. On a desktop the viewer can
+ * drag the sidebar's edge to resize it and collapse it with `[`, after which
+ * the left edge shows it as an overlay on hover.
  *
  * The command palette, the shortcut layer and the dialogs that outlive a page
  * live one level up in {@link WorkspaceLayout}. The shell renders the peek
@@ -17,9 +19,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { LuMenu, LuX } from 'react-icons/lu';
+import { LuMenu, LuPanelLeftOpen, LuX } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
+import { useDesktopNotifications } from '../../hooks/useDesktopNotifications';
 import { useDesktopTabTitle } from '../../hooks/useDesktopTabTitle';
+import { useSidebarLayout } from '../../hooks/useSidebarLayout';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -30,6 +34,7 @@ import TextLink from '../ui/link';
 import PageHeader from '../ui/page-header';
 import { PeekPane } from './PeekPane';
 import Sidebar from './Sidebar';
+import SidebarResizeHandle from './SidebarResizeHandle';
 
 /** Props for WorkspaceShell: the page bar contents and the body to frame. */
 export interface WorkspaceShellProps {
@@ -93,12 +98,16 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   useDesktopTabTitle(
     tabTitle ?? textTitle ?? (title === undefined ? workspace?.name : undefined)
   );
+  useDesktopNotifications(workspace);
   const location = useLocation();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const drawerOpen = openedAt === location.pathname;
   const setDrawerOpen = (open: boolean) =>
     setOpenedAt(open ? location.pathname : null);
   const drawer = useRef<HTMLDivElement>(null);
+  const layout = useSidebarLayout();
+  const [peeking, setPeeking] = useState(false);
+  const showPeek = layout.collapsed && peeking;
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -156,17 +165,61 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
     </IconButton>
   );
 
+  const expandButton = layout.collapsed && (
+    <IconButton
+      label="Expand sidebar"
+      size="sm"
+      className="hidden lg:inline-flex"
+      onClick={() => {
+        setPeeking(false);
+        layout.setCollapsed(false);
+      }}
+    >
+      <LuPanelLeftOpen className="h-4 w-4" />
+    </IconButton>
+  );
+
   return (
     <div
       className="relative flex min-h-0 flex-1 overflow-clip bg-app"
       data-testid="signed-in"
     >
-      <aside
-        data-testid="sidebar-frame"
-        className="relative hidden min-h-0 w-sidebar shrink-0 overflow-hidden lg:block"
-      >
-        <Sidebar workspace={workspace} />
-      </aside>
+      {layout.collapsed ? (
+        <div
+          data-testid="sidebar-hover-zone"
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 z-40 hidden w-2 lg:block"
+          onMouseEnter={() => setPeeking(true)}
+        />
+      ) : (
+        <aside
+          data-testid="sidebar-frame"
+          className="relative hidden min-h-0 shrink-0 overflow-hidden lg:block"
+          style={{ width: layout.width }}
+        >
+          <Sidebar
+            workspace={workspace}
+            onCollapse={() => layout.setCollapsed(true)}
+          />
+          <SidebarResizeHandle
+            width={layout.width}
+            onResize={layout.setWidth}
+            onReset={layout.resetWidth}
+          />
+        </aside>
+      )}
+
+      {showPeek && (
+        <aside
+          data-testid="sidebar-peek"
+          aria-label="Sidebar"
+          className="absolute inset-y-2 left-0 z-40 hidden min-h-0 animate-[drawer-in_140ms_ease-out] overflow-hidden rounded-r-lg border border-l-0 border-line shadow-overlay lg:block"
+          style={{ width: layout.width }}
+          onMouseLeave={() => setPeeking(false)}
+        >
+          <Sidebar workspace={workspace} />
+        </aside>
+      )}
 
       {drawerOpen && (
         <div
@@ -201,7 +254,10 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
 
       <div
         data-testid="content-panel"
-        className="flex min-w-0 flex-1 overflow-hidden bg-bg lg:my-2 lg:mr-2 lg:rounded-lg lg:border lg:border-line lg:shadow-xs"
+        className={cn(
+          'flex min-w-0 flex-1 overflow-hidden bg-bg lg:my-2 lg:mr-2 lg:rounded-lg lg:border lg:border-line lg:shadow-xs',
+          layout.collapsed && 'lg:ml-2'
+        )}
       >
         <main className="flex min-w-0 flex-1 flex-col">
           <PageHeader
@@ -212,6 +268,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
             leading={
               <>
                 {menuButton}
+                {expandButton}
                 {leading}
               </>
             }
