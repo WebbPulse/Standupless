@@ -2,7 +2,8 @@
  * One project's page. Covers that it reads the project from the id alone,
  * that the overview shows the summary and the progress, that a status,
  * health, priority, member, icon and colour change is written in place, that the issues tab lists the project's issues, that
- * milestones are added, renamed, reordered and open their issues, and that
+ * milestones are added, renamed, reordered, open their issues and convert
+ * into a project of their own, and that
  * deleting is offered only to an admin and returns to the list. The updates
  * tab opens from `?tab=updates`, lists updates under their anchors, posts,
  * edits and deletes them, and a quiet live project nudges for one. The
@@ -44,6 +45,10 @@ const createMilestone = vi.fn<(body: unknown) => Promise<MilestoneRead>>();
 const updateMilestone =
   vi.fn<(id: string, body: unknown) => Promise<MilestoneRead>>();
 const deleteMilestone = vi.fn<(id: string) => Promise<void>>();
+const convertMilestoneToProject =
+  vi.fn<
+    (id: string) => Promise<{ project: ProjectRead; moved_issue_ids: string[] }>
+  >();
 const listProjectUpdates =
   vi.fn<(query: unknown) => Promise<ProjectUpdateListRead>>();
 const listProjectActivity =
@@ -134,6 +139,8 @@ vi.mock('../../api/planning', () => ({
   updateMilestone: (_w: string, _p: string, id: string, body: unknown) =>
     updateMilestone(id, body),
   deleteMilestone: (_w: string, _p: string, id: string) => deleteMilestone(id),
+  convertMilestoneToProject: (_w: string, _p: string, id: string) =>
+    convertMilestoneToProject(id),
   listProjectUpdates: (_w: string, _p: string, query: unknown) =>
     listProjectUpdates(query),
   listProjectActivity: (_w: string, _p: string, query: unknown) =>
@@ -732,6 +739,37 @@ describe('ProjectDetail', () => {
       'aria-selected',
       'true'
     );
+  });
+
+  it('converts a milestone into a project after naming its issue count', async () => {
+    const user = userEvent.setup();
+    listMilestones.mockResolvedValue([milestone('ms-1', 'Alpha', 'V')]);
+    convertMilestoneToProject.mockResolvedValue({
+      project: { ...launch, project_id: 'prj-2', name: 'Alpha' },
+      moved_issue_ids: ['iss-1', 'iss-2'],
+    });
+    renderPage();
+
+    await screen.findByRole('list', { name: 'Milestones' });
+    await user.click(screen.getByRole('button', { name: 'Alpha actions' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Convert to project' })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(/Its 2 issues move into the new project/)
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Convert to project' })
+    );
+
+    await waitFor(() => {
+      expect(convertMilestoneToProject).toHaveBeenCalledWith('ms-1');
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 
   it('deletes the project and returns to the list', async () => {

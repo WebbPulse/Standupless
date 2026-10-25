@@ -131,6 +131,12 @@ describe('describeProjectActivity', () => {
       'removed milestone Beta'
     );
     expect(
+      sentence({ kind: 'milestone_converted', from: 'Beta', to: 'Beta' })
+    ).toBe('converted milestone Beta into project Beta');
+    expect(
+      sentence({ kind: 'converted_from_milestone', from: 'Beta', to: 'Launch' })
+    ).toBe('created the project from milestone Beta of Launch');
+    expect(
       sentence({
         kind: 'milestone_changed',
         field: 'name',

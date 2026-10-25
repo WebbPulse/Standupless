@@ -1646,6 +1646,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/milestones/{milestone_id}/convert-to-project"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/relations"
   },

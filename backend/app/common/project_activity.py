@@ -159,6 +159,37 @@ def record_milestone_removed(repositories: Repositories, context: AuthzContext, 
     )
 
 
+def record_milestone_converted(
+    repositories: Repositories,
+    context: AuthzContext,
+    milestone: ProjectMilestone,
+    source_name: str,
+    project_id: str,
+    project_name: str,
+) -> None:
+    """Record a milestone turned into a project on both feeds, each naming the milestone and the other project."""
+    repositories.planning.record_project_activity(
+        [
+            _row(
+                context,
+                milestone.project_id,
+                "milestone_converted",
+                from_value=milestone.name,
+                to_value=project_name,
+                milestone_id=milestone.milestone_id,
+            ),
+            _row(
+                context,
+                project_id,
+                "converted_from_milestone",
+                from_value=milestone.name,
+                to_value=source_name,
+                milestone_id=milestone.milestone_id,
+            ),
+        ]
+    )
+
+
 def record_milestone_changes(
     repositories: Repositories, context: AuthzContext, before: ProjectMilestone, after: ProjectMilestone
 ) -> None:

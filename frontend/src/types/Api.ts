@@ -3027,6 +3027,12 @@ export interface MilestoneListRead {
   next_cursor: string | null;
 }
 
+/** A milestone turned into its own project: the new project and the issues moved into it. */
+export interface MilestoneConversionRead {
+  project: ProjectRead;
+  moved_issue_ids: string[];
+}
+
 /** A new milestone. Without a `sort_order` it lands after the last one. */
 export interface MilestoneCreate {
   name: string;
@@ -3153,6 +3159,8 @@ export type ProjectActivityKind =
   | 'milestone_added'
   | 'milestone_removed'
   | 'milestone_changed'
+  | 'milestone_converted'
+  | 'converted_from_milestone'
   | 'link_added'
   | 'link_removed'
   | 'link_changed'

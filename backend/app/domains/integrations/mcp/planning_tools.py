@@ -50,6 +50,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.issue_conversion import convert_to_project
 from app.common.issue_keys import current
 from app.common.issue_writes import bulk_update_issues
+from app.common.milestone_conversion import convert_milestone_to_project
 from app.common.milestone_writes import create_milestone, delete_milestone, update_milestone
 from app.common.planning_rules import (
     counts_unestimated,
@@ -758,6 +759,19 @@ def _delete_milestone(call: ToolCall) -> Any:
     return {"deleted": True, "milestone_id": milestone_id, "project_id": project_id}
 
 
+def _convert_milestone_to_project(call: ToolCall) -> Any:
+    """Turn a milestone into a project of its own through the route's own path."""
+    project_id = _project_id(call, call.require("project_id"))
+    load_readable_project(call.repositories, call.context, project_id)
+    milestone_id = _milestone_id(call, project_id, call.require("milestone_id"))
+    project, moved = convert_milestone_to_project(call.repositories, call.context, project_id, milestone_id)
+    return {
+        "project": _project_json(project, status_names(call)),
+        "milestone_id": milestone_id,
+        "moved_issues": [summary_json(call.repositories.teams, issue) for issue in moved],
+    }
+
+
 def _create_project_link(call: ToolCall) -> Any:
     """Add a Resources link after a project's last one, through the route's own path."""
     project_id = _project_id(call, call.require("project_id"))
@@ -1267,6 +1281,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         ),
         handler=_delete_milestone,
         destructive=True,
+    ),
+    Tool(
+        name="convert_milestone_to_project",
+        description=(
+            "Turn a milestone into a project of its own. The project takes the milestone's name, description "
+            "and target date, and the source project's teams, lead and priority; every issue on the milestone "
+            "moves into it with no milestone, and the milestone is deleted."
+        ),
+        scopes=("milestones:write", "projects:write", "issues:write"),
+        schema=object_schema(
+            {"project_id": string(PROJECT_HELP), "milestone_id": string(MILESTONE_HELP)},
+            required=("project_id", "milestone_id"),
+        ),
+        handler=_convert_milestone_to_project,
     ),
     Tool(
         name="create_project_link",

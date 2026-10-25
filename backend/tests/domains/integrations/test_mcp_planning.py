@@ -98,6 +98,7 @@ def test_destructive_tools_say_so(name: str) -> None:
         ("create_milestone", ("milestones:write",)),
         ("update_milestone", ("milestones:write",)),
         ("delete_milestone", ("milestones:write",)),
+        ("convert_milestone_to_project", ("milestones:write", "projects:write", "issues:write")),
         ("create_project_link", ("projects:write",)),
         ("update_project_link", ("projects:write",)),
         ("delete_project_link", ("projects:write",)),
@@ -765,8 +766,8 @@ def test_cycle_tools_answer_the_renamed_key(
     assert removed["not_in_cycle"] == ["ALP-2"]
 
 
-def _open_issue(repositories: Any, project_id: str) -> str:
-    """One unstarted issue of TEAM in a project, returning its id."""
+def _open_issue(repositories: Any, project_id: str, milestone_id: str | None = None) -> str:
+    """One unstarted issue of TEAM in a project, on a milestone when one is named, returning its id."""
     statuses = {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
     issue = repositories.issues.create(
         Issue(
@@ -778,6 +779,7 @@ def _open_issue(repositories: Any, project_id: str) -> str:
             title="Still open",
             status_id=statuses["unstarted"],
             project_id=project_id,
+            project_milestone_id=milestone_id,
             created_by=OWNER,
         )
     )
@@ -987,3 +989,46 @@ def test_project_dates_round_trip_their_resolution(
     assert created["target_date_label"] == "H1 2027"
     assert (updated["target_date"], updated["target_date_resolution"]) == ("2027-03-03", "day")
     assert fetched["start_date_resolution"] == "month"
+
+
+def test_convert_milestone_to_project_moves_its_issues(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A milestone named by name becomes a project holding its issues, and the milestone is gone."""
+    secret = mint_for(repositories, MEMBER, MILESTONES + ("projects:write", "issues:read", "issues:write"))
+    issue_id = _open_issue(repositories, planning["project_id"], planning["milestone_id"])
+
+    converted = answer(
+        tool(
+            client,
+            secret,
+            "convert_milestone_to_project",
+            {"project_id": "Home project", "milestone_id": "Home milestone"},
+        )
+    )
+
+    assert converted["project"]["name"] == "Home milestone"
+    assert converted["milestone_id"] == planning["milestone_id"]
+    assert [row["issue_key"] for row in converted["moved_issues"]] == ["ABC-7"]
+    moved = repositories.issues.get(WORKSPACE, issue_id)
+    assert moved.project_id == converted["project"]["project_id"]
+    assert moved.project_milestone_id is None
+    assert repositories.planning.list_milestones(WORKSPACE, planning["project_id"]) == []
+
+
+def test_convert_milestone_to_project_refuses_a_guest_outside_the_project(
+    client: TestClient, repositories: Any, elsewhere: dict[str, str]
+) -> None:
+    """A guest cannot convert a milestone of a project it cannot see."""
+    secret = mint_for(repositories, GUEST, MILESTONES + ("projects:write", "issues:read", "issues:write"))
+
+    text = refusal(
+        tool(
+            client,
+            secret,
+            "convert_milestone_to_project",
+            {"project_id": elsewhere["project_id"], "milestone_id": elsewhere["milestone_id"]},
+        )
+    )
+
+    assert text == NOT_VISIBLE

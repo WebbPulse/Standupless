@@ -83,6 +83,7 @@ EXPECTED_TOOLS = frozenset(
         "delete_issue_relation",
         "delete_label",
         "delete_milestone",
+        "convert_milestone_to_project",
         "create_project_link",
         "update_project_link",
         "delete_project_link",
