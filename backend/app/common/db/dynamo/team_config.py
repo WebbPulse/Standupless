@@ -717,7 +717,7 @@ LABEL_GROUP_FIELDS: tuple[str, ...] = ("is_group", "allow_multiple", "parent_id"
 
 
 def _label_item(label: Label) -> dict[str, Any]:
-    """A label as a stored item, leaving out a false `is_group` or `allow_multiple` and an unset `parent_id` or `description`."""
+    """A label as a stored item, leaving out false group flags and an unset `parent_id` or `description`."""
     item = _stored(as_item(label))
     for name in LABEL_GROUP_FIELDS:
         if not item.get(name):

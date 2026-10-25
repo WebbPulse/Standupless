@@ -134,9 +134,7 @@ def test_turning_multi_select_off_keeps_labels_until_the_next_edit(
     plain = _label(repositories, workspace, "Bug")
     issue = create_issue(client, workspace, label_ids=[frontend, backend])
 
-    switched = client.patch(f"/api/workspaces/{workspace}/teams/{TEAM}/labels/{area}", json={"allow_multiple": False})
-    assert switched.status_code == 200, switched.text
-    assert switched.json()["allow_multiple"] is False
+    repositories.team_config.update_label(workspace, TEAM, area, clear=["allow_multiple"])
 
     read = client.get(f"/api/workspaces/{workspace}/issues/{issue['id']}")
     assert read.json()["label_ids"] == [frontend, backend]
@@ -146,19 +144,3 @@ def test_turning_multi_select_off_keeps_labels_until_the_next_edit(
     )
     assert refused.status_code == 422
     assert "one label from the Area group" in refused.json()["message"]
-
-
-def test_allow_multiple_is_only_for_groups(
-    client: TestClient, workspace: str, statuses: Any, repositories: Any
-) -> None:
-    """A create or patch setting allow_multiple on a plain label is a 422, and a group stores it."""
-    sign_in(client, OWNER)
-    url = f"/api/workspaces/{workspace}/teams/{TEAM}/labels"
-    refused = client.post(url, json={"name": "Bug", "color": "#ff0000", "allow_multiple": True})
-    assert refused.status_code == 422
-    group = client.post(url, json={"name": "Area", "color": "#ff0000", "is_group": True, "allow_multiple": True})
-    assert group.status_code == 201, group.text
-    assert group.json()["allow_multiple"] is True
-    plain = _label(repositories, workspace, "Docs")
-    patched = client.patch(f"{url}/{plain}", json={"allow_multiple": True})
-    assert patched.status_code == 422

@@ -170,6 +170,19 @@ def test_a_workspace_group_switches_multi_select_for_every_team(client: TestClie
     assert off.json()["allow_multiple"] is False
 
 
+def test_allow_multiple_is_only_for_groups(client: TestClient, teams: tuple[str, str]) -> None:
+    """A create or patch setting allow_multiple on a plain label is a 422, and a group stores it."""
+    refused = client.post(
+        f"{BASE}/teams/{TEAM}/labels", json={"name": "Bug", "color": "#ff0000", "allow_multiple": True}
+    )
+    assert refused.status_code == 422
+    group = _team_label(client, "Area", is_group=True, allow_multiple=True)
+    assert group["allow_multiple"] is True
+    plain = _team_label(client, "Docs")
+    patched = client.patch(f"{BASE}/teams/{TEAM}/labels/{plain['id']}", json={"allow_multiple": True})
+    assert patched.status_code == 422
+
+
 def test_deleting_a_group_keeps_its_children(client: TestClient, teams: tuple[str, str]) -> None:
     """The children stay as plain labels once their group is gone."""
     group = _team_label(client, "Area", is_group=True)
