@@ -867,7 +867,8 @@ export type IssueSort =
   | 'customer_requests_desc'
   | 'customer_important_desc'
   | 'customer_revenue_desc'
-  | 'completed_desc';
+  | 'completed_desc'
+  | 'links_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';

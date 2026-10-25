@@ -5321,7 +5321,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -20200,7 +20201,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -26152,7 +26154,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -26213,7 +26216,8 @@
               "customer_requests_desc",
               "customer_important_desc",
               "customer_revenue_desc",
-              "completed_desc"
+              "completed_desc",
+              "links_desc"
             ],
             "title": "Sort",
             "type": "string"
@@ -26712,7 +26716,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -26804,7 +26809,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -43182,7 +43188,8 @@
                 "customer_requests_desc",
                 "customer_important_desc",
                 "customer_revenue_desc",
-                "completed_desc"
+                "completed_desc",
+                "links_desc"
               ],
               "title": "Sort",
               "type": "string"

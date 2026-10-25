@@ -783,6 +783,7 @@ class DisplayOptionsBody(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -2486,6 +2487,7 @@ class ShareLinkCreate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -3402,6 +3404,7 @@ class ViewCreate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -3427,6 +3430,7 @@ class ViewCreate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -3551,6 +3555,7 @@ class ViewUpdate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -3576,6 +3581,7 @@ class ViewUpdate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]

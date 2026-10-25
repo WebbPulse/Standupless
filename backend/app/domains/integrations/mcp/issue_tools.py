@@ -113,7 +113,7 @@ SORT_HELP = (
     "customer_requests_desc puts the most customer requests first, customer_important_desc the most "
     "important ones and customer_revenue_desc the highest summed revenue of the customers asking; "
     "completed_desc puts the latest completed_at "
-    "first and issues not completed last"
+    "first and issues not completed last; links_desc puts the most linked issues first"
 )
 
 REVERSE_HELP = "Turn the sort around, issues without the sorted value still last, default false"
