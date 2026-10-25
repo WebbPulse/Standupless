@@ -144,7 +144,7 @@ describe('parseNewIssueParams', () => {
   it('reads label and labels as comma separated lists', () => {
     const parsed = parseNewIssueParams('?labels=Bug,+Frontend&label=lb-9,');
 
-    expect(parsed.labels).toEqual(['Bug', 'Frontend', 'lb-9']);
+    expect(parsed.labels).toEqual(['lb-9', 'Bug', 'Frontend']);
   });
 
   it('reads links as url and title pairs and drops ones that are not web links', () => {
