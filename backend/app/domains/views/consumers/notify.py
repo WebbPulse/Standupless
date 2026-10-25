@@ -227,6 +227,7 @@ def digest_entry(row: Notification, **fields: Any) -> DigestEntry:
         issue_id=row.issue_id,
         issue_key=row.issue_key,
         issue_title=row.issue_title,
+        comment_id=row.comment_id or "",
         project_id=row.project_id or "",
         project_name=row.project_name or "",
         initiative_id=row.initiative_id or "",

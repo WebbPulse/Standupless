@@ -36,7 +36,7 @@ locals {
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity", "relations"]
     }
     views-notify-consumer = {
-      secrets     = false
+      secrets     = true
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
@@ -186,8 +186,8 @@ locals {
 
   email_intake_functions = var.email_intake_enabled ? {
     integrations-email-consumer = {
-      secrets     = false
-      ses         = false
+      secrets     = true
+      ses         = true
       memory      = 1024
       tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "planning", "attachments", "idempotency", "inbox", "comments", "relations", "rate-limits"]
       read_tables = ["workspaces", "memberships", "users", "teams", "github"]
@@ -319,6 +319,7 @@ locals {
 
       name == "views-notify-consumer" ? {
         WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
+        EMAIL_INTAKE_DOMAIN        = local.email_intake_enabled ? local.email_intake_domain : ""
       } : {},
 
       startswith(name, "integrations") ? {

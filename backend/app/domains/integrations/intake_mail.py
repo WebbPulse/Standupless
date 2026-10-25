@@ -61,7 +61,9 @@ class IntakeMail:
 
     `message_id` is the mail's own Message-ID, or a digest of the raw bytes when
     it has none, so a redelivery is still recognised. `rejected` names why the
-    mail must be dropped, and is empty when it may be filed.
+    mail must be dropped, and is empty when it may be filed. `automated` marks
+    mail a machine sent, such as an auto reply or a bounce, which nothing is
+    ever sent back to.
     """
 
     message_id: str
@@ -73,6 +75,7 @@ class IntakeMail:
     body: str
     files: tuple[IntakeFile, ...] = field(default_factory=tuple)
     rejected: str = ""
+    automated: bool = False
 
 
 def message_ids(value: Optional[str]) -> list[str]:
@@ -307,6 +310,25 @@ def attached_files(message: EmailMessage) -> tuple[IntakeFile, ...]:
     return tuple(files)
 
 
+_AUTOMATED_SENDERS = ("mailer-daemon@", "postmaster@", "no-reply@", "noreply@")
+
+_BULK_PRECEDENCE = frozenset({"bulk", "list", "junk", "auto_reply"})
+
+
+def automated(message: EmailMessage, sender: str) -> bool:
+    """Whether a machine sent this mail, by RFC 3834 headers, bulk precedence or a daemon sender."""
+    submitted = str(message.get("Auto-Submitted", "") or "").strip().lower()
+    if submitted and submitted != "no":
+        return True
+    if str(message.get("Precedence", "") or "").strip().lower() in _BULK_PRECEDENCE:
+        return True
+    if message.get("X-Autoreply") or message.get("X-Autorespond") or message.get("List-Id"):
+        return True
+    if str(message.get("Return-Path", "") or "").strip() == "<>":
+        return True
+    return not sender or sender.startswith(_AUTOMATED_SENDERS)
+
+
 def parse_mail(raw: bytes) -> IntakeMail:
     """Read one raw mail into what filing needs, its rejection reason included."""
     message = cast(EmailMessage, message_from_bytes(raw, policy=policy.default))
@@ -324,4 +346,5 @@ def parse_mail(raw: bytes) -> IntakeMail:
         body=body_text(message),
         files=attached_files(message),
         rejected=rejection(message),
+        automated=automated(message, address.strip().lower()),
     )
