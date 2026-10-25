@@ -2,7 +2,9 @@
  * One project. The overview leads with the name and a row of property chips
  * under it, then the description, the milestones, the Resources links and
  * the issues, with a side panel of progress: the numbers, a graph over the
- * project's days and each milestone's share done. The issues tab is the project's issues as a
+ * project's days, a breakdown by assignee, label and priority whose rows
+ * filter the issues tab, and each milestone's share done, which scopes the
+ * panel to that milestone. The issues tab is the project's issues as a
  * list or board that groups and filters by milestone too. Every property
  * edits in place and shows at once, and a failed write is undone with a
  * notice. The chip row also names the projects this one is blocked by and
@@ -54,7 +56,9 @@ import CustomerRequestsSection from '../../components/customers/CustomerRequests
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
-import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
+import ProjectIssuesView, {
+  PROJECT_VIEW_BASE,
+} from '../../components/planning/ProjectIssuesView';
 import {
   CadencePicker,
   DependencyPicker,
@@ -101,7 +105,14 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage, hasStatus, NOT_FOUND } from '../../lib/errors';
+import type { BreakdownField } from '../../lib/cycleBreakdown';
 import { personLabel } from '../../lib/issuePeople';
+import {
+  filterValuesFor,
+  narrowFilters,
+  parseViewState,
+  writeViewState,
+} from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
 import { progressPercent, updateNudge } from '../../lib/planningDisplay';
@@ -239,7 +250,14 @@ export const ProjectDetail: React.FC = () => {
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
-  const { statuses, people } = usePlanningTeamLists(workspaceId, teamIds);
+  const { statuses, labels, people } = usePlanningTeamLists(
+    workspaceId,
+    teamIds
+  );
+  const breakdownContext = useMemo(
+    () => ({ labels, people, projects: [] }),
+    [labels, people]
+  );
   const issuesKey = ['projectIssues', workspaceId, projectId] as const;
   const issues = usePlanningIssues(
     workspaceId,
@@ -361,6 +379,62 @@ export const ProjectDetail: React.FC = () => {
       throw failure;
     }
     void refetch();
+  };
+
+  const viewState = useMemo(
+    () => parseViewState(params, PROJECT_VIEW_BASE),
+    [params]
+  );
+  const activeFilters = useMemo(() => {
+    const held: Partial<Record<BreakdownField, string[]>> = {};
+    for (const clause of viewState.filters) {
+      if (
+        clause.op === 'is' &&
+        (clause.field === 'assignee' ||
+          clause.field === 'label' ||
+          clause.field === 'priority')
+      ) {
+        held[clause.field as BreakdownField] = clause.values;
+      }
+    }
+    return held;
+  }, [viewState.filters]);
+  const filterIssuesBy = (
+    field: BreakdownField,
+    value: string | null,
+    milestoneId: string | null
+  ): void => {
+    if (value === null) {
+      setParams(
+        writeViewState(
+          {
+            ...viewState,
+            filters: viewState.filters.filter(
+              (clause) => clause.field !== field
+            ),
+          },
+          PROJECT_VIEW_BASE,
+          params
+        ),
+        { replace: true }
+      );
+      return;
+    }
+    let filters = narrowFilters(
+      viewState.filters,
+      field,
+      filterValuesFor(field, value, { statuses, labels })
+    );
+    if (milestoneId !== null) {
+      filters = narrowFilters(filters, 'milestone', [milestoneId]);
+    }
+    const held = writeViewState(
+      { ...viewState, filters },
+      PROJECT_VIEW_BASE,
+      params
+    );
+    held.set('tab', 'issues');
+    setParams(held);
   };
 
   const openMilestoneIssues = (milestoneId: string): void => {
@@ -866,6 +940,10 @@ export const ProjectDetail: React.FC = () => {
               complete={!issues.isLoading && !issues.hasMore}
               milestones={milestones.milestones}
               onOpenMilestone={openMilestoneIssues}
+              context={breakdownContext}
+              isLoadingIssues={issues.isLoading}
+              activeFilters={activeFilters}
+              onFilter={filterIssuesBy}
               latestUpdate={updates.latest}
               history={history}
               {...(latestAuthor === undefined ? {} : { latestAuthor })}
