@@ -311,6 +311,12 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** Every unread count, which the inbox page reads for its Priority and Other tabs. */
+export const inboxCountsKey = (workspaceId: string): QueryKey => [
+  'inbox-counts',
+  workspaceId,
+];
+
 /** The caller's favorites, read by the sidebar and every star toggle alike. */
 export const favoritesKey = (workspaceId: string): QueryKey => [
   'favorites',

@@ -17,6 +17,8 @@
  * rows, and unsubscribing from it, or with Cmd or Ctrl Shift S, offers
  * Undo. Ctrl F opens quick search over the loaded rows, Show unread first reorders them
  * without a new read, and Shift Backspace offers to delete every read row.
+ * With the split inbox on, the Priority and Other tabs each read their own
+ * bucket and show their unread counts, and Mark all read keeps to the open tab.
  */
 
 import {
@@ -33,9 +35,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  InboxCountRead,
   NotificationListRead,
   NotificationRead,
   SubscribersRead,
+  UserPreferencesUpdate,
+  UserRead,
   WorkspaceRead,
 } from '../../types/Api';
 import { fromLocalInput, toLocalInput } from '../../lib/reminders';
@@ -49,9 +54,14 @@ import BoundKeys from '../../test/BoundKeys';
 import { boundKeys, keysBound } from '../../test/shortcuts';
 import Inbox from './Inbox';
 
+const auth = vi.hoisted(() => ({ user: null as UserRead | null }));
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
+const getInboxCounts = vi.fn<() => Promise<Required<InboxCountRead>>>();
+const updatePreferences =
+  vi.fn<(body: UserPreferencesUpdate) => Promise<UserRead>>();
 const markRead = vi.fn<(body: unknown) => Promise<number>>();
-const markAllRead = vi.fn<(kinds?: string[]) => Promise<number>>();
+const markAllRead =
+  vi.fn<(kinds?: string[], bucket?: string) => Promise<number>>();
 const deleteNotification = vi.fn<(id: string) => Promise<void>>();
 const clearInbox = vi.fn<(body: unknown) => Promise<number>>();
 const markUnread = vi.fn<(body: unknown) => Promise<number>>();
@@ -73,13 +83,14 @@ vi.mock('../../api/notifications', async () => {
     listSubscribers: (_w: string, issueId: string) => listSubscribers(issueId),
     subscribe: (_w: string, issueId: string) => subscribe(issueId),
     unsubscribe: (_w: string, issueId: string) => unsubscribe(issueId),
+    updatePreferences: (body: UserPreferencesUpdate) => updatePreferences(body),
   };
 });
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: true,
-    user: null,
+    user: auth.user,
     isLoading: false,
     isBusy: false,
     login: vi.fn(),
@@ -95,7 +106,9 @@ vi.mock('../../api/views', async () => {
     ...actual,
     listInbox: (_w: string, query: unknown) => listInbox(query),
     markRead: (_w: string, body: unknown) => markRead(body),
-    markAllRead: (_w: string, kinds?: string[]) => markAllRead(kinds),
+    getInboxCounts: () => getInboxCounts(),
+    markAllRead: (_w: string, kinds?: string[], bucket?: string) =>
+      markAllRead(kinds, bucket),
     deleteNotification: (_w: string, id: string) => deleteNotification(id),
     clearInbox: (_w: string, body: unknown) => clearInbox(body),
     markUnread: (_w: string, body: unknown) => markUnread(body),
@@ -224,6 +237,17 @@ afterEach(() => {
 
 beforeEach(() => {
   clearUndo();
+  auth.user = null;
+  globalThis.localStorage.removeItem('standupless.inbox.tab');
+  getInboxCounts.mockReset();
+  getInboxCounts.mockResolvedValue({
+    unread: 5,
+    priority_unread: 2,
+    other_unread: 3,
+    priority_inbox: true,
+    badge: 2,
+  });
+  updatePreferences.mockReset();
   listInbox.mockReset();
   markRead.mockReset();
   markAllRead.mockReset();
@@ -341,7 +365,10 @@ describe('inbox', () => {
     );
 
     await waitFor(() => {
-      expect(markAllRead).toHaveBeenCalledWith(['mentioned', 'commented']);
+      expect(markAllRead).toHaveBeenCalledWith(
+        ['mentioned', 'commented'],
+        'all'
+      );
     });
   });
 
@@ -1378,5 +1405,97 @@ describe('inbox row menu', () => {
     await keysBound('enter');
 
     expect(boundKeys()).not.toContain('mod+shift+s');
+  });
+});
+
+describe('split inbox', () => {
+  const splitUser = (): UserRead => ({
+    id: 'user-1',
+    email: 'member@example.com',
+    display_name: 'member',
+    email_verified: true,
+    priority_inbox: true,
+    priority_kinds: ['mentioned', 'assigned'],
+  });
+
+  beforeEach(() => {
+    auth.user = splitUser();
+    updatePreferences.mockResolvedValue({
+      ...splitUser(),
+      priority_inbox: false,
+    });
+  });
+
+  it('opens on the Priority tab with each tab unread count', async () => {
+    renderPage();
+
+    const tab = await screen.findByRole('tab', { name: /^Priority/ });
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByLabelText('2 unread')).toBeInTheDocument();
+    expect(screen.getByLabelText('3 unread')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(listInbox).toHaveBeenCalledWith(
+        expect.objectContaining({ bucket: 'priority' })
+      );
+    });
+  });
+
+  it('reads the Other bucket once its tab is picked', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('tab', { name: /^Other/ }));
+
+    await waitFor(() => {
+      expect(listInbox).toHaveBeenCalledWith(
+        expect.objectContaining({ bucket: 'other' })
+      );
+    });
+    expect(screen.getByRole('tab', { name: /^Other/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+  });
+
+  it('marks only the open tab read', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Mark all read' }));
+
+    await waitFor(() => {
+      expect(markAllRead).toHaveBeenCalledWith([], 'priority');
+    });
+  });
+
+  it('turns the split off from the Display menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Use priority inbox' })
+    );
+
+    await waitFor(() => {
+      expect(updatePreferences).toHaveBeenCalledWith({
+        priority_inbox: false,
+      });
+    });
+  });
+
+  it('keeps the single list with no bucket while the split is off', async () => {
+    auth.user = { ...splitUser(), priority_inbox: false };
+    renderPage();
+
+    await screen.findByText('Cache the token');
+
+    expect(screen.queryByRole('tablist', { name: 'Inbox tabs' })).toBeNull();
+    const [query] = listInbox.mock.calls[0] ?? [];
+    expect(query).not.toHaveProperty('bucket');
+    expect(getInboxCounts).not.toHaveBeenCalled();
   });
 });

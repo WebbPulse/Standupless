@@ -673,3 +673,101 @@ def test_a_row_says_who_changed_what(client: TestClient, workspace: str, reposit
     assert by_id["01N0000000000000000000B000"]["new_value"] is None
     assert by_id["01N0000000000000000000C000"]["summary"] == "Olive Owner assigned you"
     assert by_id["01N0000000000000000000D000"]["summary"] == "New comment"
+
+
+def _split_inbox(repositories: Any) -> None:
+    """One unread mention and one unread comment, which land in Priority and Other by default."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", kind="mentioned", minutes=0)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", kind="commented", minutes=1)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", kind="assigned", minutes=2, unread=False)
+
+
+def test_the_bucket_keeps_the_list_to_one_tab(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Priority holds the default priority kinds, Other everything else, and all both."""
+    _split_inbox(repositories)
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox"
+
+    assert _ids(client.get(url, params={"bucket": "priority"})) == [
+        "01N0000000000000000000C000",
+        "01N0000000000000000000A000",
+    ]
+    assert _ids(client.get(url, params={"bucket": "other"})) == ["01N0000000000000000000B000"]
+    assert len(_ids(client.get(url, params={"bucket": "all"}))) == 3
+    assert _ids(client.get(url, params={"bucket": "other", "kind": "mentioned"})) == []
+    assert client.get(url, params={"bucket": "starred"}).status_code == 422
+
+
+def test_the_count_splits_unread_and_the_badge_follows_priority(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """With the split on the badge counts Priority only; turned off it counts everything."""
+    _split_inbox(repositories)
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox/count"
+
+    assert client.get(url).json() == {
+        "unread": 2,
+        "priority_unread": 1,
+        "other_unread": 1,
+        "priority_inbox": True,
+        "badge": 1,
+    }
+
+    repositories.users.update(MEMBER, priority_inbox=False)
+
+    split_off = client.get(url).json()
+    assert split_off["priority_inbox"] is False
+    assert split_off["badge"] == 2
+
+
+def test_a_custom_priority_set_moves_kinds_between_tabs(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A kind the person adds joins Priority, and a default they remove drops to Other."""
+    _split_inbox(repositories)
+    repositories.users.update(MEMBER, priority_kinds={"commented": True, "mentioned": False})
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox"
+
+    assert _ids(client.get(url, params={"bucket": "priority"})) == [
+        "01N0000000000000000000C000",
+        "01N0000000000000000000B000",
+    ]
+    assert _ids(client.get(url, params={"bucket": "other"})) == ["01N0000000000000000000A000"]
+
+
+def test_marking_all_read_keeps_to_the_bucket(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Mark all read inside the Other tab leaves the Priority tab unread."""
+    _split_inbox(repositories)
+
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/inbox/read", json={"all": True, "bucket": "other"})
+
+    assert response.json()["updated"] == 1
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000A000").unread is True
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000B000").unread is False
+
+
+def test_a_bucket_without_all_is_rejected(client: TestClient, workspace: str) -> None:
+    """`bucket` narrows a mark of everything, so beside ids it is refused."""
+    sign_in(client, MEMBER)
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/read",
+        json={"notification_ids": ["01N0000000000000000000A000"], "bucket": "priority"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_clearing_keeps_to_the_bucket(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Clearing the Priority tab deletes only its rows."""
+    _split_inbox(repositories)
+
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"bucket": "priority"})
+
+    assert response.json()["deleted"] == 2
+    assert _ids(client.get(f"/api/workspaces/{workspace}/inbox")) == ["01N0000000000000000000B000"]

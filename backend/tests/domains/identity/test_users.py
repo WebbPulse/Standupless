@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
-from app.common.db.dynamo.users import SIDEBAR_ITEMS, channel_default
+from app.common.db.dynamo.users import DEFAULT_PRIORITY_KINDS, SIDEBAR_ITEMS, channel_default
+from app.common.inbox import INBOX_KINDS
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
 ALL_ON = {"in_app": True, "email": True, "chat": True}
@@ -50,6 +51,8 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "notification_preferences": {
             kind: {channel: channel_default(kind, channel) for channel in ALL_ON} for kind in NOTIFICATION_KINDS
         },
+        "priority_inbox": True,
+        "priority_kinds": [kind for kind in INBOX_KINDS if kind in DEFAULT_PRIORITY_KINDS],
         "email_format": "digest",
         "avatar_url": None,
         "two_factor": False,
@@ -633,3 +636,41 @@ def test_a_token_without_a_row_is_not_found(client: TestClient) -> None:
     response = client.get("/api/users/me")
     assert response.status_code == 404
     assert response.json()["error_code"] == "NOT_FOUND"
+
+
+def test_the_priority_inbox_starts_split_on_the_default_kinds(client: TestClient, repositories: Any) -> None:
+    """The split is on by default and its Priority tab holds the default kinds."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+
+    assert body["priority_inbox"] is True
+    assert set(body["priority_kinds"]) == set(DEFAULT_PRIORITY_KINDS)
+
+
+def test_the_priority_kinds_are_replaced_whole_and_stored_sparse(client: TestClient, repositories: Any) -> None:
+    """Only the kinds that differ from the defaults are stored, so later kinds keep their default."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+    chosen = [kind for kind in DEFAULT_PRIORITY_KINDS if kind != "reminder"] + ["commented"]
+
+    body = client.patch("/api/users/me/preferences", json={"priority_kinds": chosen}).json()
+
+    assert set(body["priority_kinds"]) == set(chosen)
+    assert repositories.users.get(OWNER).priority_kinds == {"commented": True, "reminder": False}
+
+    reset = client.patch("/api/users/me/preferences", json={"priority_kinds": sorted(DEFAULT_PRIORITY_KINDS)}).json()
+
+    assert set(reset["priority_kinds"]) == set(DEFAULT_PRIORITY_KINDS)
+    assert repositories.users.get(OWNER).priority_kinds == {}
+
+
+def test_the_priority_inbox_turns_off_and_refuses_an_unknown_kind(client: TestClient, repositories: Any) -> None:
+    """Turning the split off is one flag, and a kind no row can carry is a 422."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.patch("/api/users/me/preferences", json={"priority_inbox": False}).json()["priority_inbox"] is False
+    assert repositories.users.get(OWNER).priority_inbox is False
+    assert client.patch("/api/users/me/preferences", json={"priority_kinds": ["nonsense"]}).status_code == 422

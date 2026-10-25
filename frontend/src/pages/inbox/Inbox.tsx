@@ -51,7 +51,9 @@ import React, {
 import {
   invalidateQueries,
   useMutationWithRefetch,
+  usePolledQuery,
 } from '@webbpulse/api-client/react';
+import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   LuBan,
   LuCheck,
@@ -79,6 +81,7 @@ import {
   appendNotifications,
   clearInbox,
   deleteNotification,
+  getInboxCounts,
   listInbox,
   markAllRead,
   markRead,
@@ -115,6 +118,7 @@ import Spinner from '../../components/ui/spinner';
 import Tooltip from '../../components/ui/tooltip';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCursorPages } from '../../hooks/useCursorPages';
+import { usePriorityInbox } from '../../hooks/usePriorityInbox';
 import { SubscriptionKeyContext } from '../../hooks/useIssueSubscription';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -138,8 +142,13 @@ import {
   teamSettingsPath,
   teamStandupPath,
 } from '../../lib/paths';
-import { inboxCountKey, inboxKey, subscribersKey } from '../../lib/queryKeys';
-import type { InboxKind, NotificationRead } from '../../types/Api';
+import {
+  inboxCountKey,
+  inboxCountsKey,
+  inboxKey,
+  subscribersKey,
+} from '../../lib/queryKeys';
+import type { InboxBucket, InboxKind, NotificationRead } from '../../types/Api';
 import {
   DEFAULT_VIEW,
   batches,
@@ -1019,6 +1028,38 @@ const storeView = (view: InboxView): void => {
   }
 };
 
+/** One tab of the split inbox. */
+type InboxTab = Exclude<InboxBucket, 'all'>;
+
+/** Where the inbox keeps the viewer's last tab between visits. */
+const TAB_STORAGE_KEY = 'standupless.inbox.tab';
+
+/** The tabs of the split inbox, in the order they show. */
+const INBOX_TABS: { id: InboxTab; label: string }[] = [
+  { id: 'priority', label: 'Priority' },
+  { id: 'other', label: 'Other' },
+];
+
+/** The stored tab, or Priority when storage is empty or out of reach. */
+const loadTab = (): InboxTab => {
+  try {
+    return globalThis.localStorage.getItem(TAB_STORAGE_KEY) === 'other'
+      ? 'other'
+      : 'priority';
+  } catch {
+    return 'priority';
+  }
+};
+
+/** Remembers the tab for the next visit, quietly when storage is out of reach. */
+const storeTab = (tab: InboxTab): void => {
+  try {
+    globalThis.localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    return;
+  }
+};
+
 /** What an empty list says, given the view that emptied it. */
 const emptyMessage = (view: InboxView): string =>
   view.categories.length > 0
@@ -1069,6 +1110,7 @@ export const Inbox: React.FC = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState<InboxView>(loadView);
+  const [tab, setTab] = useState<InboxTab>(loadTab);
   const [unreadOverrides, setUnreadOverrides] = useState<
     Record<string, UnreadOverride>
   >({});
@@ -1089,14 +1131,38 @@ export const Inbox: React.FC = () => {
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const enabled = workspaceId !== '';
-  const queryKey = inboxKey(workspaceId, viewSlice(view));
-  const query = useMemo(() => viewQuery(view), [view]);
+  const auth = useQueryAuth();
+  const priority = usePriorityInbox(workspaceId);
+  const bucket: InboxBucket = priority.enabled ? tab : 'all';
+  const queryKey = inboxKey(workspaceId, `${viewSlice(view)}|${bucket}`);
+  const query = useMemo(
+    () => ({
+      ...viewQuery(view),
+      ...(bucket === 'all' ? {} : { bucket }),
+    }),
+    [view, bucket]
+  );
+  const { data: counts } = usePolledQuery(
+    ({ signal }) => getInboxCounts(workspaceId, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: enabled && priority.enabled,
+      queryKey: inboxCountsKey(workspaceId),
+      auth,
+    }
+  );
   const readAllLabel = markAllLabel(view);
   const selectedId = params.get(SELECTED_PARAM);
 
   const changeView = useCallback((next: InboxView) => {
     setView(next);
     storeView(next);
+    setPinned(null);
+  }, []);
+
+  const changeTab = useCallback((next: InboxTab) => {
+    setTab(next);
+    storeTab(next);
     setPinned(null);
   }, []);
 
@@ -1184,7 +1250,11 @@ export const Inbox: React.FC = () => {
     [fetched]
   );
 
-  const refetchKeys = [queryKey, inboxCountKey(workspaceId)];
+  const refetchKeys = [
+    queryKey,
+    inboxCountKey(workspaceId),
+    inboxCountsKey(workspaceId),
+  ];
 
   const { mutate: readMany, error: readError } = useMutationWithRefetch(
     (notificationIds: string[]) => {
@@ -1233,7 +1303,7 @@ export const Inbox: React.FC = () => {
     isMutating: isReadingAll,
     error: readAllError,
   } = useMutationWithRefetch(
-    () => markAllRead(workspaceId, query.kind ?? []),
+    () => markAllRead(workspaceId, query.kind ?? [], bucket),
     refetchKeys
   );
 
@@ -1247,6 +1317,7 @@ export const Inbox: React.FC = () => {
         read_only: scope === 'read',
         ...(query.include_snoozed === true ? { include_snoozed: true } : {}),
         ...(query.kind === undefined ? {} : { kinds: query.kind }),
+        ...(bucket === 'all' ? {} : { bucket }),
       }),
     refetchKeys
   );
@@ -1276,7 +1347,11 @@ export const Inbox: React.FC = () => {
         for (const id of hold.ids)
           void deleteNotification(workspaceId, id).catch(() => undefined);
       }
-      if (pending.length > 0) invalidateQueries([inboxCountKey(workspaceId)]);
+      if (pending.length > 0)
+        invalidateQueries([
+          inboxCountKey(workspaceId),
+          inboxCountsKey(workspaceId),
+        ]);
     };
     window.addEventListener('pagehide', flush);
     return () => {
@@ -1697,6 +1772,49 @@ export const Inbox: React.FC = () => {
     <WorkspaceShell
       title="Inbox"
       flush
+      toolbar={
+        priority.enabled ? (
+          <div
+            role="tablist"
+            aria-label="Inbox tabs"
+            className="flex items-center gap-1"
+          >
+            {INBOX_TABS.map((option) => {
+              const unread =
+                option.id === 'priority'
+                  ? counts?.priority_unread
+                  : counts?.other_unread;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === option.id}
+                  onClick={() => {
+                    changeTab(option.id);
+                  }}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
+                    tab === option.id
+                      ? 'bg-raised text-text'
+                      : 'text-text-muted hover:text-text'
+                  )}
+                >
+                  {option.label}
+                  {unread !== undefined && unread > 0 && (
+                    <span
+                      aria-label={`${unread >= 100 ? '99+' : String(unread)} unread`}
+                      className="rounded-sm bg-raised px-1 text-2xs tabular-nums text-text-muted"
+                    >
+                      {unread >= 100 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : undefined
+      }
       actions={
         <div className="flex items-center gap-1.5">
           {searching ? (
@@ -1746,7 +1864,11 @@ export const Inbox: React.FC = () => {
             </Tooltip>
           )}
           <InboxFilterMenu view={view} onChange={changeView} />
-          <InboxDisplayMenu view={view} onChange={changeView} />
+          <InboxDisplayMenu
+            view={view}
+            onChange={changeView}
+            priority={priority}
+          />
           <Menu
             label="Inbox actions"
             align="end"

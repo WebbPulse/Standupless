@@ -19,6 +19,7 @@ import {
   emptyInboxPage,
   getBoard,
   getInboxCount,
+  getInboxCounts,
   getView,
   inboxCountPath,
   inboxClearPath,
@@ -355,6 +356,32 @@ describe('the inbox', () => {
     );
   });
 
+  it('reads the badge as the Priority count while the inbox is split', async () => {
+    get.mockResolvedValue({ data: { unread: 7, badge: 3 } });
+
+    await expect(getInboxCount(WS)).resolves.toBe(3);
+  });
+
+  it('reads every count for the split inbox tabs', async () => {
+    get.mockResolvedValue({
+      data: {
+        unread: 7,
+        priority_unread: 3,
+        other_unread: 4,
+        priority_inbox: true,
+        badge: 3,
+      },
+    });
+
+    await expect(getInboxCounts(WS)).resolves.toEqual({
+      unread: 7,
+      priority_unread: 3,
+      other_unread: 4,
+      priority_inbox: true,
+      badge: 3,
+    });
+  });
+
   it('reads a missing count as nothing unread rather than failing', async () => {
     get.mockResolvedValue({ data: {} });
 
@@ -392,6 +419,17 @@ describe('the inbox', () => {
     expect(post).toHaveBeenCalledWith(
       '/workspaces/ws-mine/inbox/read',
       { all: true, kinds: ['mentioned'] },
+      undefined
+    );
+  });
+
+  it('narrows marking every row read to one tab of the split inbox', async () => {
+    post.mockResolvedValue({ data: { updated: 1 } });
+
+    await expect(markAllRead(WS, [], 'priority')).resolves.toBe(1);
+    expect(post).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/inbox/read',
+      { all: true, bucket: 'priority' },
       undefined
     );
   });

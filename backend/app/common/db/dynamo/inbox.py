@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Callable, Iterable, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -145,6 +145,9 @@ UNREAD_INDEX = "ws_user-unread-index"
 COUNT_CAP = 100
 
 SNOOZE_MAX = RETENTION
+
+SPLIT_COUNT_SCAN = 1000
+"""The most unread rows the split inbox counts read through, so a huge unread pile costs a bounded read."""
 
 
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -417,6 +420,24 @@ class InboxRepository:
             limit=COUNT_CAP + 1,
         )
         return min(len(page.items), COUNT_CAP)
+
+    def split_unread_counts(self, workspace_id: str, user_id: str, priority: Callable[[str], bool]) -> tuple[int, int]:
+        """How many unread notifications fall in the Priority tab and in Other, each capped.
+
+        Walks the sparse index as `unread_count` does, sorting each row by its kind,
+        and stops once both tabs reach the cap or the bounded read runs out.
+        """
+        held = [0, 0]
+        for item in self._repository.iter_query(
+            Key("ws_user").eq(inbox_partition(workspace_id, user_id)) & Key("unread_at").lte(instant(utc_now())),
+            index_name=UNREAD_INDEX,
+            max_items=SPLIT_COUNT_SCAN,
+            page_size=COUNT_CAP + 1,
+        ):
+            held[0 if priority(str(item.get("kind", ""))) else 1] += 1
+            if held[0] >= COUNT_CAP and held[1] >= COUNT_CAP:
+                break
+        return min(held[0], COUNT_CAP), min(held[1], COUNT_CAP)
 
     def mark_read(self, workspace_id: str, user_id: str, notification_ids: Iterable[str]) -> int:
         """Mark the named notifications read, reporting how many changed.
