@@ -138,6 +138,8 @@ EXPECTED_TOOLS = frozenset(
         "list_github_transitions",
         "list_invites",
         "list_issue_activity",
+        "list_issue_description_versions",
+        "restore_issue_description",
         "list_issue_relations",
         "list_issue_subscribers",
         "list_issues",

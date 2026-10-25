@@ -17,6 +17,8 @@ import type {
   ActivityRead,
   IssueConversionRead,
   IssueCreate,
+  IssueDescriptionVersionListRead,
+  IssueDescriptionVersionRead,
   IssueExportRead,
   IssueListQuery,
   IssueListRead,
@@ -586,6 +588,37 @@ export const listActivity = async (
     activity: Array.isArray(body?.activity) ? body.activity : [],
     next_cursor: body?.next_cursor ?? null,
   };
+};
+
+/** The route an issue's description versions are read from. */
+const descriptionVersionsPath = (
+  workspaceId: string,
+  issueId: string
+): string => `${issuePath(workspaceId, issueId)}/description-versions`;
+
+/** Lists an issue's kept description versions, newest first. */
+export const listDescriptionVersions = async (
+  workspaceId: string,
+  issueId: string,
+  signal?: AbortSignal
+): Promise<IssueDescriptionVersionRead[]> => {
+  const response = await apiClient.get<IssueDescriptionVersionListRead>(
+    descriptionVersionsPath(workspaceId, issueId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data?.versions) ? response.data.versions : [];
+};
+
+/** Makes one earlier description version the issue's current text. */
+export const restoreDescriptionVersion = async (
+  workspaceId: string,
+  issueId: string,
+  versionId: string
+): Promise<IssueRead> => {
+  const response = await apiClient.post<IssueRead>(
+    `${descriptionVersionsPath(workspaceId, issueId)}/${versionId}/restore`
+  );
+  return response.data;
 };
 
 /** An empty page, for a query that is disabled before its ids are known. */

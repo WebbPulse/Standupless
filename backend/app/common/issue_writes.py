@@ -38,6 +38,7 @@ from app.common.db.dynamo.team_templates import IssueTemplate
 from app.common.estimates import estimate_points, is_unestimated
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_archive import archive_issue, unarchive_issue
+from app.common.issue_descriptions import get_description_version, record_description_version, seal_latest_version
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
@@ -633,6 +634,7 @@ def _create_one(
             ]
         )
     subscribe_touched(repositories, created, None)
+    record_description_version(repositories, context, None, created)
     record_issue_mentions(repositories, context, created, None, created.body, place="description")
     return created, template, payload
 
@@ -647,6 +649,18 @@ def update_issue(repositories: Repositories, context: AuthzContext, issue: Issue
     if not attributes:
         return issue
     return store_patch(repositories, context, issue, apply_patch(repositories, context, issue, attributes))
+
+
+def restore_description(repositories: Repositories, context: AuthzContext, issue: Issue, version_id: str) -> Issue:
+    """Put one earlier version of a visible issue's description back as its current text.
+
+    Runs the ordinary patch, so the caller needs write rights in the team and the
+    restore records a body change in the history and a version of its own.
+    """
+    version = get_description_version(repositories, issue, version_id)
+    require_team_member(repositories, context, issue.team_id)
+    seal_latest_version(repositories, issue)
+    return update_issue(repositories, context, issue, {"body": version.body})
 
 
 def apply_patch(
@@ -802,6 +816,7 @@ def store_patch(
             )
         )
     if issue.body != stored.body:
+        record_description_version(repositories, context, issue, stored)
         record_issue_mentions(repositories, context, stored, issue.body, stored.body, place="description")
     return stored
 

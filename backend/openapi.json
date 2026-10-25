@@ -8497,6 +8497,77 @@
         "title": "IssueCreate",
         "type": "object"
       },
+      "IssueDescriptionVersionListRead": {
+        "description": "An issue's description versions, newest first, the newest being the current text.",
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/IssueDescriptionVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "title": "IssueDescriptionVersionListRead",
+        "type": "object"
+      },
+      "IssueDescriptionVersionRead": {
+        "description": "One saved version of an issue's description: the text, who wrote it and when.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "edited_at": {
+            "format": "date-time",
+            "title": "Edited At",
+            "type": "string"
+          },
+          "edited_by": {
+            "title": "Edited By",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "issue_id",
+          "body",
+          "edited_by",
+          "edited_at"
+        ],
+        "title": "IssueDescriptionVersionRead",
+        "type": "object"
+      },
       "IssueExportRead": {
         "description": "One page of a CSV export.\n\n`csv` is RFC 4180 text with CRLF line endings, and the first page starts with\nthe header row, so the pages concatenated in order are the whole file. The\nexport is finished when `next_cursor` is null; a page may hold no rows and still\ncarry a cursor when it stopped at its read budget.",
         "properties": {
@@ -39328,6 +39399,134 @@
         "summary": "Add Issue Request",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions": {
+      "get": {
+        "description": "An issue's saved description versions, newest first, capped per issue.",
+        "operationId": "list_issue_description_versions_api_workspaces__workspace_id__issues__issue_id__description_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDescriptionVersionListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Description Versions",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/description-versions/{version_id}/restore": {
+      "post": {
+        "description": "Make one earlier description version the issue's current text, as an edit by the caller.",
+        "operationId": "restore_issue_description_version_api_workspaces__workspace_id__issues__issue_id__description_versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Restore Issue Description Version",
+        "tags": [
+          "issues"
         ]
       }
     },

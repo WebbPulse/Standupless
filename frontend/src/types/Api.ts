@@ -1383,6 +1383,21 @@ export interface ActivityListRead {
   next_cursor: string | null;
 }
 
+/** One kept version of an issue's description: the text, who wrote it and when. */
+export interface IssueDescriptionVersionRead {
+  version_id: string;
+  issue_id: string;
+  body: string;
+  edited_by: string;
+  edited_at: string;
+  source?: ChangeSource | null;
+}
+
+/** An issue's description versions, newest first; the newest is the current text. */
+export interface IssueDescriptionVersionListRead {
+  versions: IssueDescriptionVersionRead[];
+}
+
 /**
  * A person as a comment, attachment or notification denormalises them, so a
  * thread renders a name without a second read of the membership list.

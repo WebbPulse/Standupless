@@ -1166,6 +1166,15 @@ class IssueCreate(TypedDict):
     triage: NotRequired[bool]
 
 
+class IssueDescriptionVersionRead(TypedDict):
+    body: str
+    edited_at: str
+    edited_by: str
+    issue_id: str
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    version_id: str
+
+
 class IssueExportRead(TypedDict):
     csv: str
     next_cursor: NotRequired[str | None]
@@ -3733,6 +3742,10 @@ class InviteListRead(TypedDict):
 class IssueBulkRead(TypedDict):
     issues: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
     skipped: NotRequired[list[str]]
+
+
+class IssueDescriptionVersionListRead(TypedDict):
+    versions: list[IssueDescriptionVersionRead]
 
 
 class IssueImportPreviewRead(TypedDict):
