@@ -170,6 +170,17 @@ describe('ShortcutHelp', () => {
     expect(within(row).getByText('U')).toBeInTheDocument();
   });
 
+  it('lists the block move chords under Editor', () => {
+    renderHelp();
+    const editor = within(screen.getByRole('region', { name: 'Editor' }));
+    const up = editor.getByText('Move block up').closest('li');
+    const down = editor.getByText('Move block down').closest('li');
+    if (up === null || down === null) throw new Error('no row');
+
+    expect(within(up).getByText('\u2191')).toBeInTheDocument();
+    expect(within(down).getByText('\u2193')).toBeInTheDocument();
+  });
+
   it('focuses the search on open', () => {
     renderHelp();
 

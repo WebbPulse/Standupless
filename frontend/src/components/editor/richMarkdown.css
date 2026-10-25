@@ -261,3 +261,21 @@
   > .rich-collapsible-body {
   @apply hidden;
 }
+
+.rich-block-grip {
+  @apply pointer-events-none absolute z-10 flex h-6 w-[18px] cursor-grab items-center justify-center rounded-xs fill-current text-text-faint opacity-0 transition-opacity duration-100 select-none hover:bg-raised hover:text-text-muted active:cursor-grabbing;
+}
+
+.rich-block-grip[data-visible] {
+  @apply pointer-events-auto opacity-100;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .rich-block-grip {
+    @apply hidden;
+  }
+}
+
+.rich-drop-cursor {
+  @apply rounded-full bg-accent;
+}

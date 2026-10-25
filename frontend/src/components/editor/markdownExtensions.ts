@@ -47,6 +47,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
 import { escapeInlineMath } from '../../lib/math';
+import { BlockHandle } from './blockHandle';
 import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
@@ -329,6 +330,7 @@ export const markdownExtensions = (
       codeBlock: false,
       orderedList: false,
       heading: { levels: [1, 2, 3, 4, 5, 6] },
+      dropcursor: { color: false, width: 2, class: 'rich-drop-cursor' },
     }),
     CollapsingParagraph,
     NewlineBreak,
@@ -357,6 +359,7 @@ export const markdownExtensions = (
     CollapsibleSectionKit,
     Callout,
     EditorShortcuts,
+    BlockHandle,
     MentionChips,
     EmojiSuggestion,
     EmoticonConversion,

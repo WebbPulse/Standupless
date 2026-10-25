@@ -1523,6 +1523,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 ariaLabel="Description"
                 placeholder={BODY_PLACEHOLDER}
                 autoFocus={focusBodyOnLoad}
+                blockHandles={expanded}
                 className={cn(
                   'text-sm leading-6 text-text',
                   expanded ? 'min-h-64' : 'min-h-16'
