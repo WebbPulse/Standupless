@@ -120,7 +120,7 @@ const keepsRawText = (view: EditorView): boolean => {
   const { $from } = view.state.selection;
   if ($from.parent.type.spec.code === true) return true;
   for (let depth = $from.depth; depth > 0; depth -= 1) {
-    if ($from.node(depth).type.spec.tableRole === 'table') return true;
+    if ($from.node(depth).type.spec['tableRole'] === 'table') return true;
   }
   return false;
 };
