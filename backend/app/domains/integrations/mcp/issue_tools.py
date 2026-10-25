@@ -671,7 +671,8 @@ def _update_issue(call: ToolCall) -> Any:
 
     Only the arguments present are written. A null clears the fields that can be
     unset, such as the parent, cycle, project or assignee, and is ignored on the
-    ones that cannot.
+    ones that cannot. `base_body_version` guards a new body against overwriting
+    a description someone else changed since it was read.
     """
     issue = issue_ref(call, call.require("issue_id"))
     patch: dict[str, Any] = {}
@@ -689,6 +690,8 @@ def _update_issue(call: ToolCall) -> Any:
         patch["status_id"] = _status_ref(call, issue.team_id, str(patch["status_id"]))
     if patch.get("label_ids"):
         patch["label_ids"] = _label_refs(call, issue.team_id, patch["label_ids"])
+    if call.optional("base_body_version") is not None:
+        patch["base_body_version"] = call.arguments["base_body_version"]
     attributes = IssueUpdate.model_validate(patch).model_dump(exclude_unset=True)
     return _answer(call, update_issue(call.repositories, call.context, issue, attributes))
 
@@ -1413,6 +1416,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "title": string("A new title"),
                 "body": nullable("A new body, in Markdown"),
+                "base_body_version": string(
+                    "The body_version the new body was written against; when the description changed since, "
+                    "the update is refused with the current body and version instead of overwriting it"
+                ),
                 "status_id": string(
                     "A new status of the same team, by id or name; 'triage' sends it to triage, "
                     "and a real status accepts an issue waiting there"

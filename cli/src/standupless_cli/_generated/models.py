@@ -911,6 +911,7 @@ class DocumentMentionRead(TypedDict):
 
 
 class DocumentPatch(TypedDict):
+    base_body_version: NotRequired[str | None]
     base_updated_at: NotRequired[str | None]
     body: NotRequired[str | None]
     icon: NotRequired[str | None]
@@ -922,6 +923,7 @@ class DocumentPatch(TypedDict):
 class DocumentRead(TypedDict):
     author_id: str
     body: str
+    body_version: NotRequired[str]
     can_delete: NotRequired[bool]
     can_edit: NotRequired[bool]
     created_at: str
@@ -1537,6 +1539,7 @@ class IssueTemplateItem(TypedDict):
 
 class IssueUpdate(TypedDict):
     assignee_id: NotRequired[str | None]
+    base_body_version: NotRequired[str | None]
     body: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     due_date: NotRequired[str | None]
@@ -4116,6 +4119,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     blocked_by_open_count: NotRequired[int]
     blocking_count: NotRequired[int]
     body: NotRequired[str | None]
+    body_version: NotRequired[str]
     cancelled_at: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     created_at: str
