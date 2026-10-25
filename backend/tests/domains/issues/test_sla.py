@@ -592,14 +592,16 @@ def test_a_paused_status_after_triage(workspace: str, repositories: Any, statuse
 def test_archiving_drops_a_timer_started_in_triage(
     workspace: str, repositories: Any, statuses: "dict[str, Any]"
 ) -> None:
-    """Creation mode still drops the timer of an archived issue."""
+    """An archived issue reads as no SLA in creation mode, and its next watched change drops the timer."""
     _enable(repositories, start_mode="on_creation")
     issue = _triaged(statuses["unstarted"].status_id)
     apply_sla(repositories, None, issue, START)
+    archived = issue.model_copy(update={"archived_at": START + timedelta(hours=1)})
 
-    archived = _move(repositories, issue, START + timedelta(hours=1), archived_at=START + timedelta(hours=1))
+    moved = _move(repositories, archived, START + timedelta(hours=2), priority="high")
 
-    assert (archived.sla_started_at, archived.sla_breaches_at) == (None, None)
+    assert sla_status(archived, START + timedelta(hours=1)) == "none"
+    assert (moved.sla_started_at, moved.sla_breaches_at) == (None, None)
 
 
 def test_changing_the_mode_leaves_a_running_timer_alone(
