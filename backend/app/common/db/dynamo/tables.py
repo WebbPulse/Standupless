@@ -502,6 +502,28 @@ rows so no item nears the 400 KB limit. No index reaches across users, so no rea
 can list another person's profiles.
 """
 
+REALTIME_CONNECTIONS = TableSpec(
+    suffix="realtime_connections",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("connection_key"),
+    indexes=(
+        IndexSpec(
+            name="connection_id-index",
+            hash_key=KeyAttribute("connection_id"),
+            projection="KEYS_ONLY",
+        ),
+    ),
+    ttl_attribute="expires_at",
+)
+"""The open WebSocket connections, one partition per workspace.
+
+The sort key is `<user_id>#<connection_id>`, so the fan-out reads a workspace's
+connections in one query and a member's count is a `begins_with` on the same
+partition. `connection_id-index` resolves the row a `$disconnect` names, which
+carries a connection id and nothing else. Rows age out by `expires_at` a little
+after API Gateway's two hour connection limit, so a missed disconnect cleans itself.
+"""
+
 RATE_LIMITS = TableSpec(
     suffix="rate-limits",
     partition_key=KeyAttribute("pk"),
@@ -533,6 +555,7 @@ TABLES: tuple[TableSpec, ...] = (
     IDEMPOTENCY,
     AUDIT,
     AGENT_PROFILES,
+    REALTIME_CONNECTIONS,
 )
 
 EXPORTED_TABLES: tuple[TableSpec, ...] = (*TABLES, RATE_LIMITS)

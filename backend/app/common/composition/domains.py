@@ -484,7 +484,14 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "api_keys",
     "oauth_links",
     "search_index",
+    "realtime_connections",
 )
+"""What the integrations image reads and never writes.
+
+`realtime_connections` is here so the image carries the repository its WebSocket
+and stream consumers write under their own grants. No route of the domain's own
+function reaches it.
+"""
 
 
 def _planning_routers() -> "Sequence[RouterSpec]":

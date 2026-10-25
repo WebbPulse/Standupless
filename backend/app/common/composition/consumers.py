@@ -130,7 +130,7 @@ CONSUMERS: Dict[str, ConsumerScope] = {
         ConsumerScope(
             name="integrations-stream-consumer",
             domain="integrations",
-            repositories=("github",),
+            repositories=("github", "realtime_connections"),
             read_repositories=(
                 "memberships",
                 "workspaces",
@@ -144,6 +144,12 @@ CONSUMERS: Dict[str, ConsumerScope] = {
                 "documents",
                 "customers",
             ),
+        ),
+        ConsumerScope(
+            name="integrations-realtime-consumer",
+            domain="integrations",
+            repositories=("realtime_connections",),
+            read_repositories=("memberships",),
         ),
     )
 }
