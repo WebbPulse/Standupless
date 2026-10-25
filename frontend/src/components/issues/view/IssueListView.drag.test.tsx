@@ -144,7 +144,7 @@ const row = (id: string): HTMLElement => {
 const transfer = () => ({
   setData: vi.fn(),
   getData: vi.fn(),
-  setDragImage: vi.fn(),
+  setDragImage: vi.fn<(image: Element, x: number, y: number) => void>(),
   effectAllowed: 'all',
   dropEffect: 'none',
 });
@@ -198,7 +198,9 @@ describe('dragging list rows', () => {
 
     expect(update).toHaveBeenCalledTimes(1);
     expect(update.mock.calls[0]?.[0]).toEqual(['a2']);
-    expect(changeFor('a2')).toEqual({ sort_order: expect.any(String) });
+    const placed = changeFor('a2');
+    expect(Object.keys(placed ?? {})).toEqual(['sort_order']);
+    expect(typeof placed?.sort_order).toBe('string');
     expect(onStateChange).toHaveBeenCalledWith(
       expect.objectContaining({ ordering: 'manual', reverse: false })
     );
@@ -269,10 +271,9 @@ describe('dragging list rows', () => {
     fireEvent.dragOver(header, { dataTransfer: data });
     fireEvent.drop(header, { dataTransfer: data });
 
-    expect(changeFor('a1')).toEqual({
-      status_id: 'st-c',
-      sort_order: expect.any(String),
-    });
+    const placed = changeFor('a1');
+    expect(placed?.status_id).toBe('st-c');
+    expect(typeof placed?.sort_order).toBe('string');
   });
 
   it('carries the whole selection in one write with a count badge', () => {
@@ -284,10 +285,9 @@ describe('dragging list rows', () => {
     dragTo(row('a1'), row('c1'), true, data);
 
     expect(data.setDragImage).toHaveBeenCalledTimes(1);
-    const [ghost] = data.setDragImage.mock.calls[0] ?? [];
-    expect(
-      within(ghost as HTMLElement).getByText('2 issues')
-    ).toBeInTheDocument();
+    const ghost = data.setDragImage.mock.calls[0]?.[0];
+    if (!(ghost instanceof HTMLElement)) throw new Error('no drag image');
+    expect(within(ghost).getByText('2 issues')).toBeInTheDocument();
     expect(update).toHaveBeenCalledTimes(1);
     const [ids, , options] = update.mock.calls[0] ?? [];
     expect(ids).toEqual(['a1', 'a2']);
