@@ -24,7 +24,10 @@
  * and leaves the account's own arrangement alone. Projects on the list and
  * the board select the way issues do, with x, Shift and an arrow, a Shift
  * click or Cmd and A, and the bar that rises sets status, lead, priority,
- * target date, labels or initiative on all of them, or deletes them.
+ * target date, labels or initiative on all of them, or deletes them. Handed
+ * a scope, such as an initiative's projects, the page renders as a tab
+ * inside another page: it keeps only the scope's projects, files new ones
+ * into it, keeps its arrangement in the URL alone, and offers no saved view.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -106,7 +109,9 @@ import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
-import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import WorkspaceShell, {
+  type WorkspaceShellProps,
+} from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useProjectLabels } from '../../hooks/useProjectLabels';
@@ -142,6 +147,7 @@ import {
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
+  DEFAULT_PROJECTS_DISPLAY,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
   columnList,
@@ -699,16 +705,63 @@ type Saving = 'new' | 'details' | null;
 type FilterField =
   'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer' | 'label';
 
+/** A narrower set of projects the page shows as a tab of another page. */
+export interface ProjectsScope {
+  /** Whether a project belongs in the scope. */
+  includes: (project: ProjectRead) => boolean;
+  /** The initiatives the scope covers, the only ones an initiative grouping draws. */
+  initiativeIds?: ReadonlySet<string>;
+  /** What a project created here starts with, such as its initiative. */
+  preset: ProjectMove;
+  /** Controls the scope adds beside the New project button. */
+  actions?: React.ReactNode;
+  /** What the page says when the scope holds no project. */
+  emptyMessage: string;
+  /** Called after a project is created here. */
+  onCreated?: () => void;
+}
+
 /** Props for Projects. */
 export interface ProjectsProps {
   /** A view of projects the page opens as, its stored filters and arrangement the base. */
   view?: SavedViewDisplayRead;
   /** What sits before the title, the way back to the views list for a view. */
   leading?: React.ReactNode;
+  /** Shows only these projects, as a tab inside another page. */
+  scope?: ProjectsScope;
 }
 
+/** The frame of a scoped page: its toolbar and actions in one bar above the body. */
+const ScopedFrame: React.FC<WorkspaceShellProps> = ({
+  toolbar,
+  actions,
+  children,
+}) => (
+  <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-10 items-center gap-2 border-b border-line px-4 py-1.5 lg:px-6">
+      <div className="min-w-0 flex-1">{toolbar}</div>
+      {actions}
+    </div>
+    {children}
+  </div>
+);
+
+/** A scoped page's preset under a board column's, keeping the scope's initiative. */
+const scopedPreset = (
+  preset: ProjectMove,
+  scope: ProjectsScope | undefined
+): ProjectMove =>
+  scope === undefined
+    ? preset
+    : {
+        ...scope.preset,
+        ...preset,
+        initiative_id: preset.initiative_id ?? scope.preset.initiative_id,
+      };
+
 /** The projects of the whole workspace, grouped, filtered and editable. */
-export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
+export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
+  const Shell = scope === undefined ? WorkspaceShell : ScopedFrame;
   const { workspace } = useWorkspace();
   const { user } = useAuth();
   const slug = workspace?.slug ?? '';
@@ -768,13 +821,17 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       workspaceRole: workspace?.role,
       team: filteredTeam,
       workspacePage: teamFilter === '',
-      enabled: base === undefined,
+      enabled: base === undefined && scope === undefined,
     });
   const {
     display,
     change: changeDisplay,
     reset,
-  } = useProjectsDisplay(base?.display, displayDefault);
+  } = useProjectsDisplay(
+    base?.display ??
+      (scope === undefined ? undefined : DEFAULT_PROJECTS_DISPLAY),
+    displayDefault
+  );
   const {
     layout,
     group: grouping,
@@ -850,10 +907,21 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     labels: false,
   });
 
-  const { initiatives } = useInitiatives(
+  const { initiatives: allInitiatives } = useInitiatives(
     workspaceId,
     grouping === 'initiative' || subGrouping === 'initiative'
   );
+  const scopedInitiatives = scope?.initiativeIds;
+  const initiatives = useMemo(
+    () =>
+      scopedInitiatives === undefined
+        ? allInitiatives
+        : allInitiatives.filter((initiative) =>
+            scopedInitiatives.has(initiative.initiative_id)
+          ),
+    [allInitiatives, scopedInitiatives]
+  );
+  const scopeIncludes = scope?.includes;
   const { apply: applyMoves, move: moveProject } = useProjectMoves(
     workspaceId,
     queryKey
@@ -882,6 +950,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const rows = useMemo(
     () =>
       applyMoves(projects)
+        .filter((project) => scopeIncludes?.(project) ?? true)
         .filter(
           (project) =>
             statusFilter.length === 0 || statusFilter.includes(project.status)
@@ -914,6 +983,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     [
       applyMoves,
       projects,
+      scopeIncludes,
       projectsById,
       statusFilter,
       leadFilter,
@@ -970,6 +1040,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           ).filter((column) => {
             if (display.empty === 'hide' && column.rows.length === 0)
               return false;
+            if (
+              scopedInitiatives !== undefined &&
+              column.kind === 'initiative' &&
+              groupValue(column) === 'none' &&
+              column.rows.length === 0
+            )
+              return false;
             if (column.kind !== 'status') return true;
             const status = groupValue(column) as ProjectStatus;
             if (statusFilter.length > 0) return statusFilter.includes(status);
@@ -984,6 +1061,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       initiatives,
       direction,
       display.empty,
+      scopedInitiatives,
       statusFilter,
       closed,
     ]
@@ -1276,7 +1354,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     label: 'Save as view',
     scope: 'page',
     group: 'Projects',
-    enabled: saving === null && creating === null,
+    enabled: scope === undefined && saving === null && creating === null,
     handler: () => {
       setSaving('new');
     },
@@ -1428,7 +1506,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   );
 
   return (
-    <WorkspaceShell
+    <Shell
       title={view?.name ?? 'Projects'}
       {...(leading === undefined ? {} : { leading })}
       {...(view === undefined
@@ -1446,7 +1524,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       flush
       actions={
         <div className="flex items-center gap-1.5">
-          {view === undefined ? (
+          {scope?.actions}
+          {scope !== undefined ? null : view === undefined ? (
             <Button
               size="sm"
               variant="ghost"
@@ -1636,7 +1715,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   }
                 : {})}
               onReset={reset}
-              defaultActions={defaultActionsFor(display)}
+              defaultActions={
+                scope === undefined ? defaultActionsFor(display) : undefined
+              }
               customerOrdering={isMember}
             />
             {layout === 'timeline' && (
@@ -1708,7 +1789,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               message={
                 hasFilters
                   ? 'No projects match these filters.'
-                  : 'No projects yet. A project is a dated body of work that one or more teams share.'
+                  : (scope?.emptyMessage ??
+                    'No projects yet. A project is a dated body of work that one or more teams share.')
               }
             />
           ) : (
@@ -1950,7 +2032,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           message={
             hasFilters
               ? 'No projects match these filters.'
-              : 'No projects yet. A project is a dated body of work that one or more teams share.'
+              : (scope?.emptyMessage ??
+                'No projects yet. A project is a dated body of work that one or more teams share.')
           }
         />
       ) : (
@@ -1979,13 +2062,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           teams={writableTeams}
           initialTeamIds={creating.teamIds ?? initialTeamIds}
           initialStatus={creating.preset.status ?? 'planned'}
-          preset={creating.preset}
+          preset={scopedPreset(creating.preset, scope)}
           onClose={() => {
             setCreating(null);
           }}
           onCreated={(project) => {
             setCreating(null);
             invalidateQueries(queryKey);
+            scope?.onCreated?.();
             void navigate(projectPath(slug, project.project_id));
           }}
         />
@@ -2070,7 +2154,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           onClear={clearSelection}
         />
       )}
-    </WorkspaceShell>
+    </Shell>
   );
 };
 
