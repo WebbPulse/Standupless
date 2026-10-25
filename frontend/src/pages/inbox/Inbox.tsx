@@ -140,6 +140,7 @@ import {
   type InitiativeRef,
   integrationsSettingsPath,
   issuePath,
+  projectPath,
   projectUpdatesTabPath,
   reviewsPath,
   teamSettingsPath,
@@ -189,11 +190,12 @@ const PAGE_SIZE = 50;
 /** The URL parameter holding the selected notification. */
 const SELECTED_PARAM = 'n';
 
-/** Whether a row is about a project update rather than an issue. */
+/** Whether a row is about a project rather than an issue: one of its updates, or its entering a view. */
 const isProjectRow = (row: NotificationRead): boolean =>
   row.kind === 'project_update' ||
   row.kind === 'project_update_comment' ||
-  row.kind === 'project_update_due';
+  row.kind === 'project_update_due' ||
+  row.kind === 'view_project_added';
 
 /**
  * Whether a row reminds an initiative's owner that its update is due or
@@ -302,33 +304,38 @@ const rowPath = (slug: string, row: NotificationRead): string =>
     ? documentPath(slug, row.document_id ?? '')
     : isReviewRow(row)
       ? reviewsPath(slug)
-      : isProjectRow(row)
-        ? projectUpdatesTabPath(slug, {
+      : row.kind === 'view_project_added'
+        ? projectPath(slug, {
             project_id: row.project_id ?? '',
             name: row.project_name,
           })
-        : isInitiativeRow(row)
-          ? initiativeUpdatesTabPath(slug, {
-              initiative_id: row.initiative_id ?? '',
-              name: row.initiative_name,
+        : isProjectRow(row)
+          ? projectUpdatesTabPath(slug, {
+              project_id: row.project_id ?? '',
+              name: row.project_name,
             })
-          : isChannelRow(row)
-            ? row.issue_key
-              ? teamSettingsPath(slug, row.issue_key)
-              : integrationsSettingsPath(slug)
-            : isExportRow(row)
-              ? exportSettingsPath(slug)
-              : isImportRow(row)
-                ? importSettingsPath(slug)
-                : isAppApprovalRow(row)
-                  ? connectedAppsPath(slug)
-                  : isStandupRow(row)
-                    ? `${teamStandupPath(slug, row.issue_key)}${
-                        row.standup_date
-                          ? `?date=${encodeURIComponent(row.standup_date)}`
-                          : ''
-                      }`
-                    : issuePath(slug, row.issue_key);
+          : isInitiativeRow(row)
+            ? initiativeUpdatesTabPath(slug, {
+                initiative_id: row.initiative_id ?? '',
+                name: row.initiative_name,
+              })
+            : isChannelRow(row)
+              ? row.issue_key
+                ? teamSettingsPath(slug, row.issue_key)
+                : integrationsSettingsPath(slug)
+              : isExportRow(row)
+                ? exportSettingsPath(slug)
+                : isImportRow(row)
+                  ? importSettingsPath(slug)
+                  : isAppApprovalRow(row)
+                    ? connectedAppsPath(slug)
+                    : isStandupRow(row)
+                      ? `${teamStandupPath(slug, row.issue_key)}${
+                          row.standup_date
+                            ? `?date=${encodeURIComponent(row.standup_date)}`
+                            : ''
+                        }`
+                      : issuePath(slug, row.issue_key);
 
 /** Props for DocumentCommentPane: the selected row and how to leave it. */
 interface DocumentCommentPaneProps {
@@ -661,7 +668,12 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <LuTarget aria-hidden="true" className="h-8 w-8 text-text-faint" />
-      {row.kind === 'project_update_due' ? (
+      {row.kind === 'view_project_added' ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{project}</span> was added to{' '}
+          <span className="font-medium">{row.new_value ?? 'a view'}</span>
+        </p>
+      ) : row.kind === 'project_update_due' ? (
         <p className="text-sm text-text">
           An update is due on <span className="font-medium">{project}</span>
         </p>
@@ -687,7 +699,9 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          Open project updates
+          {row.kind === 'view_project_added'
+            ? 'Open project'
+            : 'Open project updates'}
         </Button>
       </div>
     </aside>

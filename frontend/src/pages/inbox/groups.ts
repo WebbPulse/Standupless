@@ -35,6 +35,7 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   review_requested: 'Review requested',
   triage_new: 'New in triage',
   view_issue_added: 'New issue in view',
+  view_project_added: 'New project in view',
   reaction: 'Reaction',
   issue_completed: 'Completed',
   issue_cancelled: 'Canceled',
@@ -78,6 +79,7 @@ const PROJECT_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
   'project_update',
   'project_update_comment',
   'project_update_due',
+  'view_project_added',
 ]);
 
 /**
@@ -191,7 +193,11 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'reviews', label: 'Reviews', kinds: ['review_requested'] },
   { id: 'triage', label: 'Triage', kinds: ['triage_new'] },
   { id: 'teams', label: 'Team issues', kinds: ['team_issue_created'] },
-  { id: 'views', label: 'Views', kinds: ['view_issue_added'] },
+  {
+    id: 'views',
+    label: 'Views',
+    kinds: ['view_issue_added', 'view_project_added'],
+  },
   { id: 'documents', label: 'Documents', kinds: ['document_comment'] },
   { id: 'standups', label: 'Standups', kinds: ['standup_digest'] },
   {

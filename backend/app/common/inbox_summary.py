@@ -59,6 +59,11 @@ def _view_issue_added(view_name: Optional[str]) -> str:
     return f"New issue in {view_name}" if view_name else "New issue in a view you follow"
 
 
+def _view_project_added(view_name: Optional[str]) -> str:
+    """Name the followed view a project entered, or only that it entered one when the row has no name."""
+    return f"New project in {view_name}" if view_name else "New project in a view you follow"
+
+
 def _reaction(actor: str, emoji: Optional[str]) -> str:
     """Say who reacted to the reader's comment, with the emoji when the row names one."""
     who = actor or "Someone"
@@ -111,6 +116,7 @@ _SPECIAL: dict[str, Callable[[Notification, str], str]] = {
     "status_changed": lambda row, actor: _status_changed(actor, row.new_value),
     "initiative_update_due": lambda row, actor: _initiative_update_due(row),
     "view_issue_added": lambda row, actor: _view_issue_added(row.new_value),
+    "view_project_added": lambda row, actor: _view_project_added(row.new_value),
 }
 
 

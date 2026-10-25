@@ -84,6 +84,7 @@ import {
 } from '../../components/planning/ProjectBulkCommand';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
+import ViewSubscribeButton from '../../components/issues/view/ViewSubscribeButton';
 import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
 import { isCoarse } from '../../lib/dateResolution';
 import {
@@ -1675,15 +1676,18 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               Save as view
             </Button>
           ) : (
-            <IconButton
-              label="Edit view details"
-              size="sm"
-              onClick={() => {
-                setSaving('details');
-              }}
-            >
-              <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
-            </IconButton>
+            <>
+              <ViewSubscribeButton workspaceId={workspaceId} view={view} />
+              <IconButton
+                label="Edit view details"
+                size="sm"
+                onClick={() => {
+                  setSaving('details');
+                }}
+              >
+                <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+              </IconButton>
+            </>
           )}
           {canCreate && (
             <Button

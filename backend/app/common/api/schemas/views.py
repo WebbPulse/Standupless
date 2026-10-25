@@ -180,6 +180,7 @@ NotificationKindField = Literal[
     "blocking_changed",
     "document_comment",
     "team_issue_created",
+    "view_project_added",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(

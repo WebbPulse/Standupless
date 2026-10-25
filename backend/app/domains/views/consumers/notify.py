@@ -3,7 +3,7 @@
 It reads six streams on one route, the `issues` table's, the `comments` table's,
 the `subscriptions` table's, filtered to inserted rows one member made for
 another, the `planning` table's, filtered to inserted project updates and
-replies on them, the `reactions` table's, filtered to new reactions on
+replies on them and to written projects, the `reactions` table's, filtered to new reactions on
 comments, and the `relations` table's, filtered to blocking links added or
 removed by a person, and tells them apart by `eventSourceARN` rather than by
 guessing from the attributes present, because a filtered record carries no
@@ -12,7 +12,8 @@ marker of its own.
 A project has no subscriptions of its own, so a project update reaches the
 project's lead and members, never its author. A reply on an update reaches the
 update's author, everyone who replied before and anyone it mentions, in the inbox
-only.
+only. A project created or changed into a saved project view reaches the view's
+subscribers, except the person whose write moved it there, each time it enters.
 
 Who hears about an issue is its subscribers, as in Linear: a comment or a status
 change reaches everyone following the issue except the person who made it, while
@@ -65,15 +66,17 @@ from app.common.db.dynamo.inbox import (
     TEAM_ISSUE_CREATED,
     TRIAGE_NEW,
     VIEW_ISSUE_ADDED,
+    VIEW_PROJECT_ADDED,
     Notification,
     expires_at,
     inbox_partition,
     notification_id,
 )
 from app.common.db.dynamo.notify_digests import DigestEntry
-from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
+from app.common.db.dynamo.planning import PROJECT, PROJECT_UPDATE, Project
 from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
+from app.common.db.dynamo.views import SavedView
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.project_update_report import report_for_item
@@ -83,6 +86,7 @@ from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
 from app.domains.views.consumers.document_comments import handle_document_comment
+from app.domains.views.consumers.project_view_watch import image_project, newly_entered_projects
 from app.domains.views.consumers.view_watch import image_issue, newly_entered
 from app.domains.views.email import excerpt
 
@@ -943,16 +947,124 @@ def handle_update_reply(repositories: Repositories, new_image: Mapping[str, Any]
     return written
 
 
+def write_view_project_notification(
+    repositories: Repositories,
+    *,
+    project: Project,
+    recipient_id: str,
+    view_id: str,
+    view_name: str,
+    actor_id: str,
+    actor_display: str,
+) -> bool:
+    """Write one inbox row telling a project view's subscriber a project entered it, and mail it as they chose.
+
+    The recipient must still see one of the project's teams, which the row
+    carries. The id is keyed on the write's time, so a project that leaves the
+    view and comes back notifies again while a redelivered record stays one row.
+    """
+    if not recipient_id or recipient_id == actor_id:
+        return False
+    team_id = receiving_team(repositories, project, recipient_id)
+    if not team_id:
+        return False
+    recipient = repositories.users.get(recipient_id)
+    in_app = recipient.wants_notification(VIEW_PROJECT_ADDED, "in_app") if recipient is not None else True
+    email = recipient is not None and recipient.wants_notification(VIEW_PROJECT_ADDED, "email")
+    chat = wants_chat(repositories, recipient, VIEW_PROJECT_ADDED, project.workspace_id)
+    if not in_app and not email and not chat:
+        return False
+
+    stamped = (
+        project.updated_at if project.updated_at.tzinfo is not None else project.updated_at.replace(tzinfo=timezone.utc)
+    )
+    source_id = f"{project.project_id}#view#{view_id}#{stamped.isoformat()}"
+    row = Notification(
+        ws_user=inbox_partition(project.workspace_id, recipient_id),
+        notification_id=notification_id(stamped, VIEW_PROJECT_ADDED, recipient_id, source_id),
+        workspace_id=project.workspace_id,
+        kind=VIEW_PROJECT_ADDED,
+        team_id=team_id,
+        project_id=project.project_id,
+        project_name=project.name,
+        new_value=view_name,
+        actor_id=actor_id,
+        actor_name=actor_display,
+        recipient_id=recipient_id,
+        created_at=stamped,
+        unread_at=stamped.isoformat() if in_app else None,
+        expires_at=expires_at(stamped),
+    )
+    if not repositories.inbox.create(row):
+        return False
+    if email:
+        hold_for_digest(repositories, row, recipient=recipient)
+    if chat:
+        hold_for_chat(repositories, row)
+    return True
+
+
+def handle_project_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify the project view subscribers a created or changed project newly entered a view of.
+
+    Each subscriber hears once per write, about the first of their views it
+    entered, and never about their own write. A write that changes nothing a
+    view reads, such as a rollup of the project's issue counts, is skipped
+    before any read.
+    """
+    after = image_project(deserialize_image(record, "NewImage"))
+    if after is None:
+        return 0
+    old_image = deserialize_image(record, "OldImage")
+    before = image_project(old_image) if old_image else None
+    if old_image and before is None:
+        return 0
+    entries = newly_entered_projects(repositories, after.workspace_id, before, after)
+    if not entries:
+        return 0
+    actor_id = after.created_by if before is None else (after.updated_by or "")
+    chosen: dict[str, SavedView] = {}
+    for entry in entries:
+        if entry.user_id != actor_id:
+            chosen.setdefault(entry.user_id, entry.view)
+    if not chosen:
+        return 0
+    display = actor_name(repositories, actor_id)
+    written = 0
+    for recipient_id in cap_recipients(
+        list(chosen), workspace_id=after.workspace_id, source=f"project#{after.project_id}"
+    ):
+        view = chosen[recipient_id]
+        written += int(
+            write_view_project_notification(
+                repositories,
+                project=after,
+                recipient_id=recipient_id,
+                view_id=view.view_id,
+                view_name=view.name,
+                actor_id=actor_id,
+                actor_display=display,
+            )
+        )
+    return written
+
+
 def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
     """Notify from one `planning` record, answering how many rows were written.
 
-    Only a newly posted project update or reply is news. An update reaches the
+    A newly posted project update or reply is news, and so is a project created
+    or changed into a saved project view someone follows. An update reaches the
     project's lead and members, each once, except its author; an edit or a delete
-    notifies nobody, and neither does a row a bulk import wrote.
+    of an update notifies nobody, and neither does a row a bulk import wrote.
     """
-    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+    if from_bulk_import(record):
         return 0
+    event = str(record.get("eventName", "")).upper()
     new_image = deserialize_image(record, "NewImage")
+    if event in ("INSERT", "MODIFY") and new_image and _text(new_image, "kind") == PROJECT:
+        return handle_project_record(repositories, record)
+    if event != "INSERT":
+        return 0
     if new_image and _text(new_image, "kind") == PROJECT_UPDATE_COMMENT:
         return handle_update_reply(repositories, new_image)
     if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:

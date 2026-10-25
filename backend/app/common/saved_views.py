@@ -395,18 +395,16 @@ def view_reads(repositories: Repositories, context: AuthzContext, views: Sequenc
 def set_view_subscription(
     repositories: Repositories, context: AuthzContext, view_id: str, subscribed: bool
 ) -> SavedView:
-    """Follow or stop following an issue view the caller may read, answering the view.
+    """Follow or stop following a view the caller may read, answering the view.
 
-    A follower hears about each issue that newly matches the view from then on;
-    issues that already matched stay quiet, because the subscription only watches
-    transitions. Following twice, or unfollowing a view not followed, is a no-op.
-    A project view lists projects, which never enter a view the way an issue
-    does, so it refuses a subscription with a 422.
+    A follower hears about each issue, or for a project view each project, that
+    newly matches the view from then on; rows that already matched stay quiet,
+    because the subscription only watches transitions. Following twice, or
+    unfollowing a view not followed, is a no-op.
     """
     view = load_visible_view(repositories, context, view_id)
     if not subscribed:
         repositories.views.unsubscribe(context.workspace_id, view.view_id, context.user_id)
         return view
-    require_issue_view(view)
     repositories.views.subscribe(context.workspace_id, view, context.user_id)
     return view

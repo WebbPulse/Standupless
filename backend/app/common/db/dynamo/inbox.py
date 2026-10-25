@@ -60,6 +60,7 @@ NotificationKind = Literal[
     "blocking_changed",
     "document_comment",
     "team_issue_created",
+    "view_project_added",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -88,6 +89,7 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "blocking_changed",
     "document_comment",
     "team_issue_created",
+    "view_project_added",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -104,6 +106,12 @@ TRIAGE_NEW = "triage_new"
 
 VIEW_ISSUE_ADDED = "view_issue_added"
 """The kind that tells a view's subscriber an issue newly matches it, naming the view in `new_value`."""
+
+VIEW_PROJECT_ADDED = "view_project_added"
+"""The kind that tells a project view's subscriber a project entered it, naming the view in `new_value`.
+
+Unlike an issue view, a project that leaves the view and comes back notifies again.
+"""
 
 REACTION = "reaction"
 """The kind that tells a comment's author someone reacted to it, naming the emoji in `new_value`."""

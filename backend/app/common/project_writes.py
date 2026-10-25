@@ -528,7 +528,7 @@ def update_project(
             raise unprocessable(refusal)
 
     now = utc_now()
-    updated = existing.model_copy(update={**fields, "updated_at": now})
+    updated = existing.model_copy(update={**fields, "updated_at": now, "updated_by": context.user_id})
     check_project_dates(updated.start_date, updated.target_date)
 
     closed = normalise_project_status(updated.status) in CLOSED_STATUSES
@@ -611,7 +611,9 @@ def set_project_archived(
     stored = existing
     if (existing.archived_at is not None) != archived:
         now = utc_now()
-        updated = existing.model_copy(update={"archived_at": now if archived else None, "updated_at": now})
+        updated = existing.model_copy(
+            update={"archived_at": now if archived else None, "updated_at": now, "updated_by": context.user_id}
+        )
         try:
             stored = repositories.planning.replace_project(updated)
         except ConditionFailed as exc:

@@ -143,9 +143,10 @@ def subscribe_view(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
-    """Follow an issue view the caller may read, to hear about each issue that newly matches it.
+    """Follow a view the caller may read, to hear about each issue, or project, that newly matches it.
 
-    Issues already in the view stay quiet. A project view answers 422.
+    Rows already in the view stay quiet. A project view notifies with
+    `view_project_added` each time a project enters it, again after it left.
     """
     view = set_view_subscription(repositories, context, view_id, True)
     return view_read(repositories, context, view, favorite=view.view_id in favorite_ids(repositories, context))

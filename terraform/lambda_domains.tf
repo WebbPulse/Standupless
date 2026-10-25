@@ -482,10 +482,13 @@ locals {
         })
         planning = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["planning"]
-          filter_patterns = [jsonencode({
-            eventName = ["INSERT"]
-            dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment"] } } }
-          })]
+          filter_patterns = [
+            jsonencode({
+              eventName = ["INSERT"]
+              dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment"] } } }
+            }),
+            jsonencode({ eventName = ["INSERT", "MODIFY"], dynamodb = { NewImage = { kind = { S = ["project"] } } } }),
+          ]
         })
         relations = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["relations"]

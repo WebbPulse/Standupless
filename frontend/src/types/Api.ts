@@ -2135,6 +2135,7 @@ export type NotificationKind =
   | 'review_requested'
   | 'triage_new'
   | 'view_issue_added'
+  | 'view_project_added'
   | 'reaction'
   | 'issue_completed'
   | 'issue_cancelled'

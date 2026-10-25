@@ -42,6 +42,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'triage_new',
   'view_issue_added',
   'team_issue_created',
+  'view_project_added',
   'document_comment',
 ];
 

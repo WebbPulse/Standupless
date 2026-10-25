@@ -660,27 +660,25 @@ export const Views: React.FC = () => {
                             ? 'Remove from favorites'
                             : 'Add to favorites'}
                         </MenuItem>
-                        {!listsProjects(view) && (
-                          <MenuItem
-                            onSelect={() => void toggleSubscription(view)}
-                          >
-                            {view.subscribed === true ? (
-                              <LuBellOff
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5"
-                              />
-                            ) : (
-                              <LuBell
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5"
-                              />
-                            )}
-                            {view.subscribed === true
-                              ? 'Unsubscribe'
-                              : 'Subscribe'}
-                            <SubscriberCount count={view.subscriber_count} />
-                          </MenuItem>
-                        )}
+                        <MenuItem
+                          onSelect={() => void toggleSubscription(view)}
+                        >
+                          {view.subscribed === true ? (
+                            <LuBellOff
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5"
+                            />
+                          ) : (
+                            <LuBell
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5"
+                            />
+                          )}
+                          {view.subscribed === true
+                            ? 'Unsubscribe'
+                            : 'Subscribe'}
+                          <SubscriberCount count={view.subscriber_count} />
+                        </MenuItem>
                         {canDeleteView(
                           view,
                           user?.id,
