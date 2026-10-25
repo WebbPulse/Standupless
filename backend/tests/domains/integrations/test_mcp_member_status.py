@@ -1,4 +1,4 @@
-"""The `set_my_status` MCP tool, and the status `list_users` and `list_workspace_members` answer.
+"""The `set_my_status` MCP tool, and the status the member listing tools answer.
 
 The tool runs the same `app.common.member_status` call the status routes run, so
 these hold that it writes the caller's own status alone, refuses without
@@ -17,7 +17,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.memberships import StoredUserStatus
 from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import GUEST, MEMBER, OWNER
-from tests.domains.integrations.conftest import WORKSPACE
+from tests.domains.integrations.conftest import TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
@@ -105,3 +105,22 @@ def test_a_guest_sees_status_only_for_their_teams(client: TestClient, repositori
 
     assert users[GUEST]["user_status"]["text"] == "In meetings"
     assert users[MEMBER]["user_status"] is None
+
+
+def test_team_scoped_member_tools_answer_the_status(client: TestClient, repositories: Any, workspace: str) -> None:
+    """`list_users` with `team_id` and `list_team_members` carry the status, emoji, away flag and end included."""
+    until = utc_now() + timedelta(days=3)
+    repositories.memberships.set_user_status(
+        WORKSPACE, GUEST, StoredUserStatus(emoji="🌴", text="On vacation", away=True, until=until)
+    )
+    secret = mint_for(repositories, OWNER, STATUS_SCOPES)
+
+    users = by_id(answer(tool(client, secret, "list_users", {"team_id": TEAM}))["users"])
+    members = by_id(answer(tool(client, secret, "list_team_members", {"team_id": TEAM}))["members"])
+
+    for rows in (users, members):
+        current = rows[GUEST]["user_status"]
+        assert current["emoji"] == "🌴"
+        assert current["text"] == "On vacation"
+        assert current["away"] is True
+        assert current["until"] is not None
