@@ -199,7 +199,7 @@ def test_a_restricted_key_finds_nothing_in_another_team(client: TestClient, repo
         f"/teams/{OTHER_TEAM}/statuses",
         f"/issues/{OTHER_ISSUE}",
         "/issues/by-key/XYZ-1",
-        f"/cycles/{cycle}",
+        f"/cycles/{cycle}?team_id={OTHER_TEAM}",
         f"/projects/{project}",
     ):
         response = client.get(f"/api/workspaces/{workspace}{path}")
