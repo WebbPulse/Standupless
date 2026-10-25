@@ -169,19 +169,27 @@ def plan_move(
     )
 
 
-def _activity(context: AuthzContext, before: Issue, after: Issue) -> list[Activity]:
-    """The history a move writes on the moved issue: the move itself, then each field it changed."""
+def _activity(context: AuthzContext, before: Issue, after: Issue, actor_id: str | None = None) -> list[Activity]:
+    """The history a move writes on the moved issue: the move itself, then each field it changed.
+
+    `actor_id` records the move as the system rather than the caller, as a
+    triage rule's move is.
+    """
+    actor = actor_id or context.user_id
+    actor_kind = "system" if actor_id else "user"
+    source = "system" if actor_id else context.source
     rows = [
         build_activity(
             context.workspace_id,
             after.team_id,
             after.issue_id,
-            context.user_id,
+            actor,
             "field_changed",
+            actor_kind=actor_kind,
             field=MOVED_FIELD,
             from_value={"id": before.team_id, "key": before.key},
             to_value={"id": after.team_id, "key": after.key},
-            source=context.source,
+            source=source,
         )
     ]
     rows.extend(
@@ -189,19 +197,27 @@ def _activity(context: AuthzContext, before: Issue, after: Issue) -> list[Activi
             context.workspace_id,
             after.team_id,
             after.issue_id,
-            context.user_id,
+            actor,
             "field_changed",
+            actor_kind=actor_kind,
             field=field,
             from_value=jsonable(old),
             to_value=jsonable(new),
-            source=context.source,
+            source=source,
         )
         for field, old, new in changed_fields(before, after, PATCHABLE_FIELDS)
     )
     return rows
 
 
-def _store(repositories: Repositories, context: AuthzContext, before: Issue, planned: Issue, target: Team) -> Issue:
+def _store(
+    repositories: Repositories,
+    context: AuthzContext,
+    before: Issue,
+    planned: Issue,
+    target: Team,
+    actor_id: str | None = None,
+) -> Issue:
     """Allocate the target's next number, write the moved issue and everything that records it.
 
     The number is allocated only once every value has been decided, because a
@@ -215,8 +231,8 @@ def _store(repositories: Repositories, context: AuthzContext, before: Issue, pla
             "number": number,
             "key": issue_key(target.key_prefix, number),
             "updated_at": utc_now(),
-            "updated_by": context.user_id,
-            "updated_source": context.source,
+            "updated_by": actor_id or context.user_id,
+            "updated_source": "system" if actor_id else context.source,
         }
     )
     apply_sla(repositories, before, moved)
@@ -227,8 +243,8 @@ def _store(repositories: Repositories, context: AuthzContext, before: Issue, pla
     except ConditionFailed as exc:
         raise not_found() from exc
     repositories.counters.record_moved_issue(workspace_id, before.team_id, before.number, stored.issue_id)
-    repositories.activity.record_many(_activity(context, before, stored))
-    repositories.activity.record_tombstone(workspace_id, before.team_id, stored.issue_id, context.user_id)
+    repositories.activity.record_many(_activity(context, before, stored, actor_id))
+    repositories.activity.record_tombstone(workspace_id, before.team_id, stored.issue_id, actor_id or context.user_id)
     subscribe_touched(repositories, stored, before)
     return stored
 
@@ -239,7 +255,8 @@ def move_issue(repositories: Repositories, context: AuthzContext, issue: Issue, 
     The caller must be able to write in both teams. Moving to the team the issue
     is already in answers it untouched. Every issue is planned before any is
     written, so a target that cannot take the issue at all, such as one with no
-    statuses, fails with nothing changed.
+    statuses, fails with nothing changed. An issue still waiting in triage runs
+    the target team's triage rules.
     """
     require_team_member(repositories, context, issue.team_id)
     require_team_member(repositories, context, team_id)
@@ -264,4 +281,43 @@ def move_issue(repositories: Repositories, context: AuthzContext, issue: Issue, 
         )
     for child, planned_child in children:
         _store(repositories, context, child, planned_child, target)
+    if stored.in_triage:
+        from app.common.triage_rules import run_triage_rules
+
+        stored = run_triage_rules(repositories, context, stored)[0]
     return stored
+
+
+def move_for_rule(
+    repositories: Repositories,
+    context: AuthzContext,
+    issue: Issue,
+    target: Team,
+    children: list[Issue] | None,
+    *,
+    in_triage: bool,
+    actor_id: str,
+) -> tuple[Issue, list[Issue]]:
+    """Move an issue a triage rule sent to another team, with its sub-issues, recorded as `actor_id`.
+
+    No membership is asked of the caller, since the team's admins chose the move
+    when they saved the rule. The issue waits in the target's triage when
+    `in_triage`, and otherwise files straight into its status there. `children`
+    are the sub-issues this request just wrote, read from the index when `None`.
+    """
+    workspace_id = context.workspace_id
+    rows = children if children is not None else list(repositories.issues.iter_children(workspace_id, issue.issue_id))
+    planned = plan_move(repositories, context, issue, target, parent_id=None).model_copy(
+        update={"in_triage": in_triage}
+    )
+    planned_children = [
+        (child, plan_move(repositories, context, child, target, parent_id=issue.issue_id)) for child in rows
+    ]
+    _join_projects(repositories, workspace_id, target.team_id, [planned, *(row for _, row in planned_children)])
+    stored = _store(repositories, context, issue, planned, target, actor_id)
+    if issue.parent_id:
+        repositories.activity.record_many(
+            child_activity(repositories, workspace_id, actor_id, stored, issue.parent_id, None, "system")
+        )
+    moved = [_store(repositories, context, child, row, target, actor_id) for child, row in planned_children]
+    return stored, moved

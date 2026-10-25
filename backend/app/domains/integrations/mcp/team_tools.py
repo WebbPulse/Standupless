@@ -30,6 +30,7 @@ from app.common.api.schemas.teams import (
     TeamDisplayDefaultsRead,
     TeamDisplayDefaultsUpdate,
     TeamUpdate,
+    TriageSettingsRead,
     display_name,
 )
 from app.common.api.schemas.views import (
@@ -63,6 +64,7 @@ from app.common.issue_rules import require_team_admin, require_team_reader, team
 from app.common.labels import create_label, label_path, ordered_labels
 from app.common.saved_views import readable_views
 from app.common.status_appearance import ICONS_BY_CATEGORY, STATUS_COLORS, STATUS_ICONS
+from app.common.triage_rules import rule_warnings
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
@@ -464,11 +466,13 @@ def _get_team(call: ToolCall) -> Any:
     )
     body["sla_settings"] = _sla_settings_json(team_writes.sla_settings(call.repositories, workspace_id, team.team_id))
     triage = issue_triage.triage_settings(call.repositories, workspace_id, team.team_id)
+    read = TriageSettingsRead.from_row(triage, rule_warnings(call.repositories, triage))
     body["triage_settings"] = {
-        "enabled": triage.enabled,
-        "responsible_user_ids": list(triage.responsible_user_ids),
-        "responsibility_action": triage.responsibility_action,
-        "require_priority": triage.require_priority,
+        "enabled": read.enabled,
+        "responsible_user_ids": list(read.responsible_user_ids),
+        "responsibility_action": read.responsibility_action,
+        "require_priority": read.require_priority,
+        "rules": [rule.model_dump(mode="json") for rule in read.rules],
     }
     body["display_defaults"] = _display_defaults_json(call, team.team_id)
     return body

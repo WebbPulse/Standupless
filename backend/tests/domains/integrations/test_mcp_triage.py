@@ -88,6 +88,7 @@ def test_the_switch_routes_outside_issues_into_triage(client: TestClient, reposi
         "responsible_user_ids": [],
         "responsibility_action": "notify",
         "require_priority": False,
+        "rules": [],
     }
     assert switched == {"team_id": TEAM, **settings}
     assert filed["in_triage"] is True
@@ -289,3 +290,31 @@ def test_a_guest_cannot_be_put_on_duty(client: TestClient, repositories: Any, wo
     )
 
     assert "triage duty" in refused
+
+
+def test_an_agent_saves_triage_rules_and_they_run(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Rules sent through the settings tool read back from get_team and apply to the next issue in triage."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    rule = {
+        "name": "Crashes are urgent",
+        "filter": {"text": "crash"},
+        "actions": {"priority": "urgent", "assignee_id": "me"},
+    }
+
+    saved = answer(
+        tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True, "rules": [rule]})
+    )
+    team = answer(tool(client, owner, "get_team", {"team_id": "ABC"}))
+    filed = _file(client, owner, "App crash on launch")
+    quiet = _file(client, owner, "Typo on the pricing page")
+
+    [stored] = saved["rules"]
+    assert stored["name"] == "Crashes are urgent" and stored["enabled"] is True and stored["warning"] is None
+    assert stored["actions"]["assignee_id"] == OWNER
+    assert team["triage_settings"]["rules"] == saved["rules"]
+    assert filed["priority"] == "urgent" and filed["assignee_id"] == OWNER
+    assert quiet["priority"] == "none"
+
+    cleared = answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "rules": []}))
+    assert cleared["rules"] == []

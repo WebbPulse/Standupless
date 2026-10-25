@@ -447,7 +447,7 @@ def create_issue_tree(
     level deep, so a create that names a parent and keeps any is refused before
     anything is written. When one of them fails, every row this create wrote is
     removed and the 422 names the sub-issue, so a parent is never left half
-    built.
+    built. An issue landing in triage then runs its team's triage rules.
     """
     fresh = fresh or FreshRows()
     issue, template, filled = _create_one(repositories, context, payload, fresh)
@@ -480,6 +480,11 @@ def create_issue_tree(
         for row in [*reversed(created), issue]:
             _remove_new_issue(repositories, context, row)
         raise
+    if issue.in_triage:
+        from app.common.triage_rules import issue_origin, run_triage_rules
+
+        origin = issue_origin(context, from_form=bool(template is not None and template.form_fields))
+        return run_triage_rules(repositories, context, issue, origin=origin, children=created)
     return issue, created
 
 
@@ -750,6 +755,7 @@ def store_patch(
     `triage_outcome`, and one sent back records `pending`. `condition` makes the
     write depend on the stored row as well. Raises the 404 when the issue was
     deleted after it was read, or when the stored row no longer meets `condition`.
+    An issue sent back to triage runs its team's triage rules.
     """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
     if issue.in_triage and not updated.in_triage:
@@ -803,6 +809,10 @@ def store_patch(
         )
     if issue.body != stored.body:
         record_issue_mentions(repositories, context, stored, issue.body, stored.body, place="description")
+    if stored.in_triage and not issue.in_triage:
+        from app.common.triage_rules import run_triage_rules
+
+        return run_triage_rules(repositories, context, stored)[0]
     return stored
 
 

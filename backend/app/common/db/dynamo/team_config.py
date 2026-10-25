@@ -575,13 +575,57 @@ MAX_TRIAGE_RESPONSIBLE = 25
 """The most members one team may put on triage duty."""
 
 
+MAX_TRIAGE_RULES = 50
+"""The most triage rules one team may keep."""
+
+TriageRuleSource = Literal["web", "form", "mcp", "cli", "api", "github", "system"]
+"""Where an issue that entered triage came from, as a triage rule filters on it."""
+
+
+class TriageRuleFilter(BaseModel):
+    """What an issue entering triage must match for a rule to apply; every set field must hold.
+
+    A list matches when the issue has any of its values, and `text` matches a
+    case-insensitive substring of the title or description. An empty filter
+    matches every issue.
+    """
+
+    label_ids: list[str] = Field(default_factory=list)
+    priorities: list[str] = Field(default_factory=list)
+    creator_ids: list[str] = Field(default_factory=list)
+    sources: list[TriageRuleSource] = Field(default_factory=list)
+    text: str | None = None
+
+
+class TriageRuleActions(BaseModel):
+    """What a matching rule does to the issue; `team_id` moves it to another team."""
+
+    add_label_ids: list[str] = Field(default_factory=list)
+    priority: str | None = None
+    assignee_id: str | None = None
+    project_id: str | None = None
+    team_id: str | None = None
+
+
+class TriageRule(BaseModel):
+    """One ordered triage rule: a filter, the actions it takes and whether later rules still run."""
+
+    rule_id: str
+    name: str
+    enabled: bool = True
+    continue_after: bool = False
+    filter: TriageRuleFilter = Field(default_factory=TriageRuleFilter)
+    actions: TriageRuleActions = Field(default_factory=TriageRuleActions)
+
+
 class TriageSettings(BaseModel):
     """A team's triage inbox: its switch, who is on duty for it and what accepting needs.
 
     Off until a team turns it on, so a team that never saved the row behaves as
     it always has. `responsible_user_ids` are notified, or one of them assigned,
-    each time an issue enters the inbox, and `require_priority` holds an accept
-    until the issue has a priority.
+    each time an issue enters the inbox, `require_priority` holds an accept
+    until the issue has a priority, and `rules` run in order on every issue that
+    enters it.
     """
 
     workspace_id: str
@@ -592,6 +636,7 @@ class TriageSettings(BaseModel):
     responsible_user_ids: list[str] = Field(default_factory=list)
     responsibility_action: TriageAction = "notify"
     require_priority: bool = False
+    rules: list[TriageRule] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 

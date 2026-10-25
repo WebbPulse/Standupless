@@ -51,6 +51,7 @@ from app.common.issue_writes import apply_patch, store_patch
 from app.common.plan_features import Feature, enforce_feature
 from app.common.relation_effects import cancelled_status
 from app.common.triage_duty import can_be_on_duty, require_priority
+from app.common.triage_rules import saved_rules
 
 SNOOZE_MIN = timedelta(minutes=1)
 
@@ -60,7 +61,13 @@ TRIAGE_READ_CAP = 1000
 """The most waiting issues one team's inbox reads, far past any inbox worked by hand."""
 
 
-AUDITED_FIELDS: tuple[str, ...] = ("enabled", "responsible_user_ids", "responsibility_action", "require_priority")
+AUDITED_FIELDS: tuple[str, ...] = (
+    "enabled",
+    "responsible_user_ids",
+    "responsibility_action",
+    "require_priority",
+    "rules",
+)
 """The triage settings a change to is recorded in the audit log."""
 
 
@@ -72,7 +79,7 @@ def triage_settings(repositories: Repositories, workspace_id: str, team_id: str)
 
 def _audited(settings: TriageSettings) -> dict[str, Any]:
     """The audited fields of one settings row, as the audit log stores them."""
-    return {name: getattr(settings, name) for name in AUDITED_FIELDS}
+    return settings.model_dump(mode="json", include=set(AUDITED_FIELDS))
 
 
 def update_triage_settings(
@@ -83,11 +90,14 @@ def update_triage_settings(
     Turning it on needs a plan that includes triage. Turning it off never does, so
     a downgrade never traps a team with an inbox it cannot switch off. Everyone
     put on duty must be a workspace member other than a guest who can see the
-    team, since duty may assign them issues there. The change is audited.
+    team, since duty may assign them issues there. `rules` replaces the whole
+    ordered list, each rule checked against the team. The change is audited.
     """
     workspace_id = context.workspace_id
     current = triage_settings(repositories, workspace_id, team.team_id)
-    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True, exclude={"rules"})
+    if payload.rules is not None:
+        changes["rules"] = saved_rules(repositories, workspace_id, team.team_id, current.rules, payload.rules)
     if changes.get("enabled") is True and not current.enabled:
         enforce_feature(repositories, workspace_id, Feature.TRIAGE)
     for user_id in changes.get("responsible_user_ids", []):
