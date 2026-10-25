@@ -833,6 +833,9 @@ class DisplayOptionsBody(TypedDict):
                 "updated_at",
                 "time_in_status",
                 "release",
+                "sla",
+                "customers",
+                "customer_revenue",
             ]
         ]
         | None
@@ -3522,6 +3525,9 @@ class ViewCreate(TypedDict):
                 "updated_at",
                 "time_in_status",
                 "release",
+                "sla",
+                "customers",
+                "customer_revenue",
             ]
         ]
         | None
@@ -3676,6 +3682,9 @@ class ViewUpdate(TypedDict):
                 "updated_at",
                 "time_in_status",
                 "release",
+                "sla",
+                "customers",
+                "customer_revenue",
             ]
         ]
         | None

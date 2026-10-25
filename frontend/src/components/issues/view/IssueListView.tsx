@@ -75,6 +75,7 @@ import {
   narrowFilters,
   parentsIn,
   shownIssues,
+  showsCustomerProperties,
   type CustomerMove,
   sortIssues,
   statusGroupKey,
@@ -205,7 +206,8 @@ export interface IssueListViewProps {
   statusCategories?: readonly StatusCategory[] | undefined;
   /**
    * Which customers requested each issue, read by the page while the view
-   * groups by customer. Left out, customer groups hold no issue.
+   * groups by customer or shows a customer property. Left out, customer
+   * groups hold no issue and rows show no customers.
    */
   customerRequests?: CustomerRequestMap | undefined;
 }
@@ -292,7 +294,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const byCustomer =
     customerRequests !== undefined &&
     listContext.customers !== undefined &&
-    (state.groupBy === 'customer' || state.subGroupBy === 'customer');
+    (state.groupBy === 'customer' ||
+      state.subGroupBy === 'customer' ||
+      showsCustomerProperties(state.visible));
   const context = useMemo(
     () => ({
       ...listContext,

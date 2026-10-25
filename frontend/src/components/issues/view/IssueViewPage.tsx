@@ -62,6 +62,7 @@ import {
   parseViewState,
   sameViewState,
   sharedChange,
+  showsCustomerProperties,
   stateToViewBody,
   stateToViewDisplay,
   stateToViewFilter,
@@ -532,7 +533,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const customerRequests = useCustomerRequestMap(
     workspaceId,
     isMember &&
-      (state.groupBy === 'customer' || state.subGroupBy === 'customer')
+      (state.groupBy === 'customer' ||
+        state.subGroupBy === 'customer' ||
+        showsCustomerProperties(state.visible))
   );
   const releaseIndex = useReleaseIndex(workspaceId, teamIds.length > 0);
   const namedTeams = useMemo(() => namedTeamIds(state), [state]);

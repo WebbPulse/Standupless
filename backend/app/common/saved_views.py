@@ -26,6 +26,7 @@ from app.common.api.schemas.views import (
     completed_window_of,
     invalid_project_filter_keys,
     malformed_filter_keys,
+    stored_visible_properties,
     unknown_filter_keys,
 )
 from app.common.db.dynamo.base import utc_now
@@ -191,7 +192,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         sub_group_by=payload.sub_group_by,
         ordering=payload.ordering,
         ordering_reversed=payload.ordering_reversed,
-        visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
+        visible_properties=stored_visible_properties(payload.visible_properties),
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,
         show_completed=window != "none",
@@ -270,6 +271,8 @@ def update_saved_view(
             if name == "group_header":
                 raise unprocessable("group_header must be count or estimate")
             raise unprocessable(f"{name} must be true or false")
+    if changes.get("visible_properties") is not None:
+        changes["visible_properties"] = stored_visible_properties(changes["visible_properties"])
     if "completed_window" in changes:
         changes["show_completed"] = changes["completed_window"] != "none"
     elif "show_completed" in changes:

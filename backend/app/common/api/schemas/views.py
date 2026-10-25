@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
+from typing import Annotated, Any, Literal, Mapping, Optional, Sequence, Union, get_args
 
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator
 from webbpulse.http import cursor_page
@@ -70,6 +70,9 @@ VisiblePropertyField = Literal[
     "updated_at",
     "time_in_status",
     "release",
+    "sla",
+    "customers",
+    "customer_revenue",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
@@ -447,6 +450,31 @@ def _project_entry_well_formed(key: str, entry: Any) -> bool:
 VISIBLE_PROPERTIES: tuple[str, ...] = get_args(VisiblePropertyField)
 
 
+SLA_HIDDEN = "-sla"
+"""The stored marker of a property list that hides the SLA badge, never seen by a client.
+
+Every list saved before `sla` became a property showed the badge, so a stored
+list holding neither `sla` nor this marker reads back with `sla` on.
+"""
+
+
+def stored_visible_properties(value: Optional[Sequence[str]]) -> Optional[list[str]]:
+    """The property list as it is stored, marking a list without `sla` as one that hides the badge."""
+    if value is None:
+        return None
+    shown = [item for item in value if item != SLA_HIDDEN]
+    return shown if "sla" in shown else [*shown, SLA_HIDDEN]
+
+
+def read_visible_properties(stored: Optional[Sequence[str]]) -> Optional[list[str]]:
+    """The property list a client reads from a stored one, with `sla` on for a list saved before it existed."""
+    if stored is None:
+        return None
+    if SLA_HIDDEN in stored:
+        return [item for item in stored if item != SLA_HIDDEN]
+    return list(stored) if "sla" in stored else [*stored, "sla"]
+
+
 def _unique(value: Optional[list[str]]) -> Optional[list[str]]:
     """A list with repeats dropped and first-seen order kept."""
     if value is None:
@@ -617,7 +645,7 @@ class ViewRead(BaseModel):
             sub_group_by=view.sub_group_by,
             ordering=view.ordering,
             ordering_reversed=view.ordering_reversed is True,
-            visible_properties=list(view.visible_properties) if view.visible_properties is not None else None,
+            visible_properties=read_visible_properties(view.visible_properties),
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,
             show_completed=view.show_completed is not False,

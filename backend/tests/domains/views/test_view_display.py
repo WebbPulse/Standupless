@@ -11,6 +11,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common.api.schemas.views import SLA_HIDDEN, ViewRead, read_visible_properties, stored_visible_properties
+from app.common.db.dynamo.views import SavedView
 from tests.domains.helpers import MEMBER, sign_in
 
 
@@ -304,3 +306,55 @@ def test_the_group_header_defaults_to_the_count_and_round_trips(client: TestClie
     assert client.patch(path, json={"group_header": None}).status_code == 422
     assert client.patch(path, json={"group_header": "points"}).status_code == 422
     assert _create(client, workspace, group_header="points").status_code == 422
+
+
+def test_the_sla_and_customer_properties_round_trip(client: TestClient, workspace: str) -> None:
+    """A view may show the SLA badge, the requesting customers and their summed revenue."""
+    sign_in(client, MEMBER)
+
+    created = _create(client, workspace, visible_properties=["id", "sla", "customers", "customer_revenue"])
+
+    assert created.status_code == 201, created.text
+    assert created.json()["visible_properties"] == ["id", "sla", "customers", "customer_revenue"]
+    read = client.get(f"/api/workspaces/{workspace}/views/{created.json()['view_id']}").json()
+    assert read["visible_properties"] == ["id", "sla", "customers", "customer_revenue"]
+
+
+def test_a_view_that_hides_the_sla_badge_keeps_it_hidden(client: TestClient, workspace: str) -> None:
+    """A list without sla saved now reads back without it, through create and patch alike."""
+    sign_in(client, MEMBER)
+    view = _create(client, workspace, visible_properties=["id", "sla"]).json()
+
+    patched = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"visible_properties": ["id"]})
+
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["visible_properties"] == ["id"]
+    assert client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}").json()["visible_properties"] == ["id"]
+
+
+def test_a_list_saved_before_the_sla_property_reads_with_it_on() -> None:
+    """Every view saved before sla was a property showed the badge, so its stored list reads with sla added."""
+    legacy = SavedView(
+        workspace_id="w",
+        view_key="k",
+        view_id="v",
+        name="Old",
+        owner_id="u",
+        visible_properties=["id", "labels"],
+    )
+
+    assert ViewRead.from_row(legacy).visible_properties == ["id", "labels", "sla"]
+    assert stored_visible_properties(["id"]) == ["id", SLA_HIDDEN]
+    assert stored_visible_properties(["id", "sla"]) == ["id", "sla"]
+    assert stored_visible_properties([SLA_HIDDEN, "sla"]) == ["sla"]
+    assert stored_visible_properties(None) is None
+    assert read_visible_properties(["id", SLA_HIDDEN]) == ["id"]
+    assert read_visible_properties(["sla", "id"]) == ["sla", "id"]
+    assert read_visible_properties(None) is None
+
+
+def test_the_hidden_sla_marker_is_not_a_property_a_client_may_send(client: TestClient, workspace: str) -> None:
+    """The stored marker stays internal, so a create naming it is refused."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace, visible_properties=["-sla"]).status_code == 422

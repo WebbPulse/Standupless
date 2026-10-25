@@ -5433,11 +5433,14 @@
                     "created_at",
                     "updated_at",
                     "time_in_status",
-                    "release"
+                    "release",
+                    "sla",
+                    "customers",
+                    "customer_revenue"
                   ],
                   "type": "string"
                 },
-                "maxItems": 19,
+                "maxItems": 22,
                 "type": "array"
               },
               {
@@ -26598,11 +26601,14 @@
                     "created_at",
                     "updated_at",
                     "time_in_status",
-                    "release"
+                    "release",
+                    "sla",
+                    "customers",
+                    "customer_revenue"
                   ],
                   "type": "string"
                 },
-                "maxItems": 19,
+                "maxItems": 22,
                 "type": "array"
               },
               {
@@ -27188,11 +27194,14 @@
                     "created_at",
                     "updated_at",
                     "time_in_status",
-                    "release"
+                    "release",
+                    "sla",
+                    "customers",
+                    "customer_revenue"
                   ],
                   "type": "string"
                 },
-                "maxItems": 19,
+                "maxItems": 22,
                 "type": "array"
               },
               {

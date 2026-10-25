@@ -117,6 +117,56 @@ describe('DisplayMenu', () => {
     );
   });
 
+  it('offers the customer properties only where customers can be read, and SLA always', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={vi.fn<(state: ViewState) => void>()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    expect(screen.getByRole('button', { name: 'SLA' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Customers' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Customer revenue' })
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={vi.fn<(state: ViewState) => void>()}
+        customerSorts
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Customers' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Customer revenue' })
+    ).toBeInTheDocument();
+  });
+
+  it('turns the SLA badge off from its property', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn<(state: ViewState) => void>();
+    render(
+      <DisplayMenu state={defaultViewState('list')} onChange={onChange} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('button', { name: 'SLA' }));
+
+    expect(onChange.mock.calls[0]?.[0].visible).not.toContain('sla');
+  });
+
   it('leaves team out of a single team list', async () => {
     const user = userEvent.setup();
     render(
