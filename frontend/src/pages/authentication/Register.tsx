@@ -146,7 +146,10 @@ const Register: React.FC = () => {
           or
           <span className="h-px flex-1 bg-line" />
         </div>
-        <OAuthProviderButtons returnTo={returnTo} disabled={isSubmitting} />
+        <OAuthProviderButtons
+          {...(returnTo === undefined ? {} : { returnTo })}
+          disabled={isSubmitting}
+        />
       </div>
 
       <AuthRedirectLink
