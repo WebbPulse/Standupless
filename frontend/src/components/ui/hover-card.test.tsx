@@ -114,7 +114,7 @@ describe('HoverCard', () => {
   it('opens from keyboard focus and closes on blur', () => {
     render(<Harness />);
     const link = trigger();
-    link.matches = (selector: string) => selector === ':focus-visible';
+    vi.spyOn(link, 'matches').mockReturnValue(true);
 
     fireEvent.focus(link);
     wait(HOVER_CARD_OPEN_DELAY_MS);

@@ -42,9 +42,7 @@ vi.mock('../../hooks/useTeamOptions', () => ({
         user_id: 'u-1',
         email: 'ada@example.com',
         display_name: 'ada',
-        avatar_url: null,
-        full_name: null,
-      },
+      } as TeamOptions['people'][number],
     ],
     projects: [
       {
