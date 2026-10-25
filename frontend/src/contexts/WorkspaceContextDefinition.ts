@@ -11,6 +11,8 @@ import type { WorkspaceRead } from '../types/Api';
 export interface WorkspaceContextType {
   /** The workspace the slug resolved to, or null while resolving or on failure. */
   workspace: WorkspaceRead | null;
+  /** Every workspace the caller belongs to, for the workspace switcher. */
+  workspaces?: readonly WorkspaceRead[];
   /** True until the workspace list first settles. */
   isLoading: boolean;
   /** True once the list settled and held no workspace with this slug. */

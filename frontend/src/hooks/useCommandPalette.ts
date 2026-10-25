@@ -22,7 +22,13 @@ import {
  * as `O` then `P` landing on the project list or Alt+C on the issue templates.
  */
 export type PalettePicker =
-  'favorites' | 'projects' | 'cycles' | 'teams' | 'views' | 'template';
+  | 'favorites'
+  | 'projects'
+  | 'cycles'
+  | 'teams'
+  | 'views'
+  | 'template'
+  | 'workspaces';
 
 /** What {@link useCommandPalette} hands back to the shell. */
 export interface CommandPaletteState {

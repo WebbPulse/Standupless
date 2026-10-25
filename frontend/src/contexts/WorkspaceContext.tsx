@@ -52,6 +52,7 @@ export const WorkspaceProvider: React.FC = () => {
         : (data.find((item) => item.slug === slug) ?? null);
     return {
       workspace,
+      workspaces: data ?? [],
       isLoading,
       notFound: !isLoading && error === null && workspace === null,
       error,

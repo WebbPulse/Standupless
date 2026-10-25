@@ -4,8 +4,8 @@
  * `G` then a letter to go somewhere: the team's active issues, backlog,
  * board, archive, cycles and, as in Linear, `G` then `V` for its current
  * cycle among them, with `G` then Shift+V for views,
- * `O` then a letter to open a favorite, project, cycle, team or view from a
- * picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
+ * `O` then a letter to open a favorite, project, cycle, team, view or
+ * workspace from a picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
  * list of every shortcut. Registered through the
  * same registry as any page's own shortcuts, so the help overlay and the
  * command palette list them without a second source of truth.
@@ -262,6 +262,13 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: 'Open view',
     group: OPEN,
     handler: pick('views'),
+    enabled: canPick,
+  });
+  useShortcut({
+    keys: 'o w',
+    label: 'Switch workspace',
+    group: OPEN,
+    handler: pick('workspaces'),
     enabled: canPick,
   });
   useShortcut({

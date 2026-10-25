@@ -7,7 +7,8 @@
  * team's triage entry survives a navigation that mounts a new sidebar while
  * the triage summary is being re-read, and that a team with cycles on offers
  * its current cycle under Cycles, and that each person's sidebar
- * customization shows, tucks into More or hides each item and draws dot badges.
+ * customization shows, tucks into More or hides each item and draws dot badges,
+ * and that the workspace menu lists the caller's workspaces and logs out.
  */
 
 import {
@@ -64,7 +65,11 @@ const auth = vi.hoisted(() => {
     email: 'me@example.com',
     display_name: 'Me',
   };
-  return { user, login: vi.fn<(user: Record<string, unknown>) => void>() };
+  return {
+    user,
+    login: vi.fn<(user: Record<string, unknown>) => void>(),
+    logout: vi.fn<() => Promise<void>>(),
+  };
 });
 const updatePreferences =
   vi.fn<(changes: Record<string, unknown>) => Promise<unknown>>();
@@ -76,7 +81,7 @@ vi.mock('../../hooks/useAuth', () => ({
     isLoading: false,
     isBusy: false,
     login: auth.login,
-    logout: vi.fn(),
+    logout: auth.logout,
     checkAuthStatus: vi.fn(),
   }),
 }));
@@ -277,6 +282,8 @@ beforeEach(() => {
   globalThis.localStorage.clear();
   auth.user = { email: 'me@example.com', display_name: 'Me' };
   auth.login.mockReset();
+  auth.logout.mockReset();
+  auth.logout.mockResolvedValue(undefined);
   updatePreferences.mockReset();
   updatePreferences.mockImplementation((changes) =>
     Promise.resolve({ ...auth.user, ...changes })
@@ -389,6 +396,78 @@ describe('where the switcher sends each role for settings', () => {
     expect(
       await screen.findByRole('menuitem', { name: 'Workspace settings' })
     ).toHaveAttribute('href', '/w/mine/settings');
+  });
+});
+
+describe('the workspace menu', () => {
+  /** Mounts the sidebar inside a workspace context holding `workspaces`. */
+  const renderWithWorkspaces = (workspaces: WorkspaceRead[]) =>
+    render(
+      <WorkspaceContext.Provider
+        value={{
+          workspace: workspace('owner'),
+          workspaces,
+          isLoading: false,
+          notFound: false,
+          error: null,
+          refresh: () => Promise.resolve(),
+        }}
+      >
+        <MemoryRouter initialEntries={['/w/mine']}>
+          <Routes>
+            <Route
+              path="/w/:slug"
+              element={<Sidebar workspace={workspace('owner')} />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </WorkspaceContext.Provider>
+    );
+
+  it('lists every workspace the caller belongs to, the current one checked, then All workspaces and Log out', async () => {
+    const user = userEvent.setup();
+    renderWithWorkspaces([
+      workspace('owner'),
+      { ...workspace('member'), id: 'ws-2', name: 'Acme', slug: 'acme' },
+    ]);
+
+    await user.click(await screen.findByRole('button', { name: /Mine/ }));
+
+    expect(
+      await screen.findByRole('menuitem', { name: 'Mine (current)' })
+    ).toHaveAttribute('href', '/w/mine');
+    expect(screen.getByRole('menuitem', { name: 'Acme' })).toHaveAttribute(
+      'href',
+      '/w/acme'
+    );
+    const labels = screen
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(labels.slice(-2)).toEqual(['All workspaces', 'Log out']);
+  });
+
+  it('shows the one workspace and Create workspace when the caller has only one', async () => {
+    const user = userEvent.setup();
+    renderWithWorkspaces([workspace('owner')]);
+
+    await user.click(await screen.findByRole('button', { name: /Mine/ }));
+
+    expect(
+      await screen.findByRole('menuitem', { name: 'Mine (current)' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Create workspace' })
+    ).toHaveAttribute('href', '/workspaces/new');
+  });
+
+  it('logs out from the menu', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    await user.click(await screen.findByRole('button', { name: /Mine/ }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Log out' }));
+
+    expect(auth.logout).toHaveBeenCalled();
   });
 });
 

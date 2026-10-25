@@ -204,11 +204,11 @@ const WorkspaceRouteError: React.FC<RouteErrorFallbackProps> = (props) => (
 
 /** Renders the overlays and the page beneath them, inside the team list. */
 const WorkspaceOverlays: React.FC = () => {
-  const { workspace } = useWorkspace();
+  const { workspace, workspaces } = useWorkspace();
   const { teams } = useTeam(undefined);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const palette = useCommandPalette();
   const [helpOpen, setHelpOpen] = useState(false);
   const [request, setRequest] = useState<Request | null>(null);
@@ -387,6 +387,8 @@ const WorkspaceOverlays: React.FC = () => {
                           teams={teams}
                           onShowShortcuts={showHelp}
                           currentUserId={user?.id}
+                          workspaces={workspaces ?? []}
+                          onLogOut={() => void logout()}
                         />
                       </>
                     )}
