@@ -378,14 +378,16 @@ class LabelCreate(BaseModel):
 
     `is_group` makes a label group, which holds child labels and is never put on
     an issue itself. `parent_id` puts the new label in an existing group of the
-    same scope. A group cannot sit in another group. `description` is what a
-    repository the team syncs with shows beside the label.
+    same scope. A group cannot sit in another group. `allow_multiple` lets an
+    issue carry several labels of a new group rather than one. `description` is
+    what a repository the team syncs with shows beside the label.
     """
 
     name: str = Field(min_length=1, max_length=60)
     color: str
     description: Optional[str] = Field(default=None, max_length=LABEL_DESCRIPTION_MAX)
     is_group: bool = False
+    allow_multiple: bool = False
     parent_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("color")
@@ -403,13 +405,15 @@ class LabelUpdate(BaseModel):
 
     `parent_id` moves a label into a group of the same scope, and an explicit
     null takes it out of its group, and an explicit null or empty `description`
-    clears it. A field left out keeps its current value.
+    clears it. `allow_multiple` switches a group between one label per issue and
+    several. A field left out keeps its current value.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     color: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=LABEL_DESCRIPTION_MAX)
     parent_id: Optional[str] = Field(default=None, min_length=1)
+    allow_multiple: Optional[bool] = None
 
     @field_validator("color")
     @classmethod
@@ -426,7 +430,8 @@ class LabelUpdate(BaseModel):
 class LabelRead(BaseModel):
     """One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.
 
-    `is_group` marks a label group and `parent_id` names the group a label is in.
+    `is_group` marks a label group, `allow_multiple` a group whose labels an issue
+    may carry several of, and `parent_id` names the group a label is in.
     """
 
     id: str
@@ -437,6 +442,7 @@ class LabelRead(BaseModel):
     hidden: bool = False
     inherited_name: Optional[str] = None
     is_group: bool = False
+    allow_multiple: bool = False
     parent_id: Optional[str] = None
 
     @classmethod
@@ -451,6 +457,7 @@ class LabelRead(BaseModel):
             hidden=label.hidden,
             inherited_name=label.inherited_name,
             is_group=label.is_group,
+            allow_multiple=label.allow_multiple,
             parent_id=label.parent_id,
         )
 

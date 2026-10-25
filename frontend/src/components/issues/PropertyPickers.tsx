@@ -27,7 +27,12 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
-import { labelPath, labelSections, toggleLabel } from '../../lib/labelGroups';
+import {
+  allowsMultiple,
+  labelPath,
+  labelSections,
+  toggleLabel,
+} from '../../lib/labelGroups';
 import { PRIORITIES, PRIORITY_LABELS } from '../../lib/issueDisplay';
 import {
   isPickable,
@@ -443,7 +448,9 @@ export interface LabelsPickerProps extends PickerBaseProps {
 /**
  * Picks any number of labels. The list stays open while toggling, so several
  * labels are one visit, and typed text that matches nothing can become a new
- * label when the caller may create one.
+ * label when the caller may create one. A label of an exclusive group shows a
+ * radio mark and swaps out its sibling, and one of a group that allows
+ * multiple labels shows a checkbox and adds.
  */
 export const LabelsPicker: React.FC<LabelsPickerProps> = ({
   labels,
@@ -467,6 +474,9 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
       value: label.id,
       label: label.name,
       ...(section.group === undefined ? {} : { group: section.group.name }),
+      ...(section.group === undefined || allowsMultiple(section.group)
+        ? {}
+        : { exclusive: true }),
       icon: <LabelDot color={label.color} />,
     }))
   );

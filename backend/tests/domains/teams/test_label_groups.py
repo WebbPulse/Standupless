@@ -146,6 +146,30 @@ def test_a_move_that_would_double_a_group_on_an_issue_is_a_409(
     assert "1 issue carries Backend" in response.json()["message"]
 
 
+def test_a_multi_select_group_takes_a_move_of_a_carried_label(
+    client: TestClient, teams: tuple[str, str], repositories: Any
+) -> None:
+    """A group that allows multiple labels takes a move an exclusive one refuses."""
+    group = _team_label(client, "Area", is_group=True, allow_multiple=True)
+    inside = _team_label(client, "Frontend", parent_id=group["id"])
+    outside = _team_label(client, "Backend")
+    _issue(repositories, TEAM, 1, [inside["id"], outside["id"]])
+    response = client.patch(f"{BASE}/teams/{TEAM}/labels/{outside['id']}", json={"parent_id": group["id"]})
+    assert response.status_code == 200, response.text
+
+
+def test_a_workspace_group_switches_multi_select_for_every_team(client: TestClient, teams: tuple[str, str]) -> None:
+    """The workspace label patch turns allow_multiple on and off, and every team reads it."""
+    group = _workspace_label(client, "Type", is_group=True)
+    assert group["allow_multiple"] is False
+    on = client.patch(f"{BASE}/labels/{group['id']}", json={"allow_multiple": True})
+    assert on.status_code == 200, on.text
+    for team_id in teams:
+        assert _team_labels(client, team_id)[group["id"]]["allow_multiple"] is True
+    off = client.patch(f"{BASE}/labels/{group['id']}", json={"allow_multiple": False})
+    assert off.json()["allow_multiple"] is False
+
+
 def test_deleting_a_group_keeps_its_children(client: TestClient, teams: tuple[str, str]) -> None:
     """The children stay as plain labels once their group is gone."""
     group = _team_label(client, "Area", is_group=True)

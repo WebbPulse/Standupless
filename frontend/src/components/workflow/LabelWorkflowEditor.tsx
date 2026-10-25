@@ -2,7 +2,8 @@
  * The label list both label settings pages draw, in name order with each
  * group's labels under it. A label the caller may edit carries its color
  * picker, an inline name and a menu to move it between groups, merge it into
- * another label of the same scope, or delete it.
+ * another label of the same scope, or delete it. A group's menu opens its
+ * settings, where it can allow several of its labels on one issue.
  * On a team page the workspace's labels and groups appear among the team's
  * own, marked as inherited and offered only the team overrides.
  */
@@ -10,7 +11,11 @@
 import React, { useState } from 'react';
 import { LuEllipsis, LuFolder } from 'react-icons/lu';
 import { errorMessage } from '../../lib/errors';
-import { isLabelGroup, labelSections } from '../../lib/labelGroups';
+import {
+  allowsMultiple,
+  isLabelGroup,
+  labelSections,
+} from '../../lib/labelGroups';
 import { STATUS_COLOR_VALUES } from '../../lib/statusAppearance';
 import { isInherited, sortLabels, visibleRows } from '../../lib/workflow';
 import type {
@@ -136,6 +141,74 @@ const MergeLabelDialog: React.FC<MergeLabelDialogProps> = ({
   );
 };
 
+/** Props for GroupSettingsDialog. */
+interface GroupSettingsDialogProps {
+  group: LabelRead | null;
+  onCancel: () => void;
+  onSave: (group: LabelRead, allowMultiple: boolean) => void;
+}
+
+/** Edits one label group's settings: whether an issue may carry several of its labels. */
+const GroupSettingsDialog: React.FC<GroupSettingsDialogProps> = ({
+  group,
+  onCancel,
+  onSave,
+}) => {
+  const [allowMultiple, setAllowMultiple] = useState<boolean | null>(null);
+  const checked = allowMultiple ?? allowsMultiple(group ?? undefined);
+  const close = (): void => {
+    setAllowMultiple(null);
+    onCancel();
+  };
+  return (
+    <Dialog
+      open={group !== null}
+      onClose={close}
+      title={`Edit ${group?.name ?? 'group'}`}
+      size="sm"
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setAllowMultiple(null);
+          if (group !== null) onSave(group, checked);
+        }}
+      >
+        <label className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2">
+          <span className="space-y-0.5">
+            <span className="block text-sm text-text">
+              Allow multiple labels from this group
+            </span>
+            <span className="block text-xs text-text-muted">
+              When off, picking a label swaps out the group's other label.
+              Turning it off leaves issues as they are until their labels next
+              change.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={checked}
+            onChange={(event) => {
+              setAllowMultiple(event.target.checked);
+            }}
+            className="h-4 w-7 cursor-pointer accent-accent"
+          />
+        </label>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary">
+            Save
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+};
+
 /** Lists labels and edits the ones the caller may change. */
 export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   labels,
@@ -154,6 +227,7 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   const [isAdding, setIsAdding] = useState(false);
   const [deleting, setDeleting] = useState<LabelRead | null>(null);
   const [merging, setMerging] = useState<LabelRead | null>(null);
+  const [editingGroup, setEditingGroup] = useState<LabelRead | null>(null);
 
   const { override, reset, merge } = actions;
   const visible = visibleRows(labels);
@@ -258,6 +332,9 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
           className="h-3.5 w-3.5 shrink-0 text-text-muted"
         />
       )}
+      {isLabelGroup(label) && allowsMultiple(label) && !editable(label) && (
+        <span className="text-xs text-text-faint">Multiple</span>
+      )}
       {editable(label) ? (
         <>
           <LabelColorPicker
@@ -285,6 +362,9 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
               onRename(label, event.target.value);
             }}
           />
+          {isLabelGroup(label) && allowsMultiple(label) && (
+            <span className="text-xs text-text-faint">Multiple</span>
+          )}
           <div className="ml-auto">
             <Menu
               label={`${label.name} actions`}
@@ -299,6 +379,18 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
                 </IconButton>
               )}
             >
+              {isLabelGroup(label) && (
+                <>
+                  <MenuItem
+                    onSelect={() => {
+                      setEditingGroup(label);
+                    }}
+                  >
+                    Edit group
+                  </MenuItem>
+                  <MenuSeparator />
+                </>
+              )}
               {!isLabelGroup(label) &&
                 ownGroups
                   .filter((group) => group.id !== label.parent_id)
@@ -495,6 +587,21 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
           }}
         />
       )}
+
+      <GroupSettingsDialog
+        group={editingGroup}
+        onCancel={() => {
+          setEditingGroup(null);
+        }}
+        onSave={(group, allowMultiple) => {
+          setEditingGroup(null);
+          if (allowMultiple === allowsMultiple(group)) return;
+          run(
+            actions.update(group, { allow_multiple: allowMultiple }),
+            `Could not change the settings of ${group.name}.`
+          );
+        }}
+      />
 
       <ConfirmDeleteDialog
         open={deleting !== null}

@@ -335,7 +335,8 @@ class Label(BaseModel):
     Read through a team, a workspace label carries the same resolved fields a
     workspace status does. `is_group` and `parent_id` are absent on rows that are
     neither a group nor in one, which is every row written before groups existed,
-    and `description` is absent on a label that has none.
+    and `description` is absent on a label that has none. `allow_multiple` lets an
+    issue carry several labels of a group and is absent on an exclusive one.
     """
 
     workspace_id: str
@@ -346,6 +347,7 @@ class Label(BaseModel):
     color: str
     description: str | None = None
     is_group: bool = False
+    allow_multiple: bool = False
     parent_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     scope: str = TEAM_SCOPE
@@ -710,12 +712,12 @@ def _status_item(status: Status) -> dict[str, Any]:
     return item
 
 
-LABEL_GROUP_FIELDS: tuple[str, ...] = ("is_group", "parent_id", "description")
+LABEL_GROUP_FIELDS: tuple[str, ...] = ("is_group", "allow_multiple", "parent_id", "description")
 """The label fields left off a row when unset, so a plain label stores what it always did."""
 
 
 def _label_item(label: Label) -> dict[str, Any]:
-    """A label as a stored item, leaving out a false `is_group` and an unset `parent_id` or `description`."""
+    """A label as a stored item, leaving out a false `is_group` or `allow_multiple` and an unset `parent_id` or `description`."""
     item = _stored(as_item(label))
     for name in LABEL_GROUP_FIELDS:
         if not item.get(name):

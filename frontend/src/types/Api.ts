@@ -782,6 +782,8 @@ export interface LabelRead {
   inherited_name?: string | null;
   /** Whether this is a label group, which holds labels and never sits on an issue. */
   is_group?: boolean;
+  /** Whether an issue may carry several labels of this group rather than one. */
+  allow_multiple?: boolean;
   /** The group this label sits in, or null outside one. */
   parent_id?: string | null;
   /** A short description, carried to linked GitHub repositories. */
@@ -814,6 +816,8 @@ export interface LabelCreate {
   color: string;
   /** Makes a label group. Set only at creation. */
   is_group?: boolean;
+  /** For a group, lets an issue carry several of its labels. */
+  allow_multiple?: boolean;
   /** The group to put the label in, of the same scope. */
   parent_id?: string | null;
   /** A short description, up to 100 characters. */
@@ -828,6 +832,8 @@ export interface LabelUpdate {
   parent_id?: string | null;
   /** A short description, or null to clear it. */
   description?: string | null;
+  /** For a group, whether an issue may carry several of its labels. */
+  allow_multiple?: boolean;
 }
 
 /**

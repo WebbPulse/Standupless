@@ -447,7 +447,10 @@ def _color(value: Any, name: str) -> str:
 def _ensure_label(
     repositories: Any, workspace_id: str, context: TeamContext, node: dict[str, Any], result: StepResult
 ) -> Optional[str]:
-    """The id of the team label one Linear label maps to, creating it and its group when missing."""
+    """The id of the team label one Linear label maps to, creating it and its group when missing.
+
+    A group Linear marks `multiSelect` is created allowing multiple labels.
+    """
     from app.common.api.schemas.teams import LabelCreate
     from app.common.labels import create_label
 
@@ -469,6 +472,7 @@ def _ensure_label(
                         name=group_name,
                         color=_color(parent.get("color") if parent else None, group_name),
                         is_group=True,
+                        allow_multiple=bool(parent) and parent.get("groupType") == "multiSelect",
                     ),
                 )
                 result.add("labels")

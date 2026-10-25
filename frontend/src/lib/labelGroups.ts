@@ -2,7 +2,8 @@
  * Label groups as the pickers, filters and editors see them. A group is a
  * label with `is_group` set that holds the labels naming it in `parent_id`.
  * No issue carries a group, and an issue carries at most one label of each
- * group, so picking a second one swaps rather than adds, as in Linear.
+ * group, so picking a second one swaps rather than adds, as in Linear. A group
+ * with `allow_multiple` set lets an issue carry several of its labels.
  */
 
 import type { LabelRead } from '../types/Api';
@@ -10,6 +11,21 @@ import type { LabelRead } from '../types/Api';
 /** Whether a label is a group rather than a label an issue can carry. */
 export const isLabelGroup = (label: LabelRead): boolean =>
   label.is_group === true;
+
+/** Whether a group lets an issue carry several of its labels. */
+export const allowsMultiple = (group: LabelRead | undefined): boolean =>
+  group?.allow_multiple === true;
+
+/** The parent id of a label held to one per group, or null when it is loose or its group allows several. */
+const exclusiveParent = (
+  labels: readonly LabelRead[],
+  labelId: string
+): string | null => {
+  const parent = labels.find((label) => label.id === labelId)?.parent_id;
+  if (parent === undefined || parent === null) return null;
+  const group = labels.find((label) => label.id === parent);
+  return allowsMultiple(group) ? null : parent;
+};
 
 /** The group a label sits in, when it is in one listed here. */
 export const groupOf = (
@@ -74,6 +90,7 @@ export const labelSections = <T extends LabelRead>(
 /**
  * The ids an issue keeps once `labelId` is picked: the label added and any
  * other label of its group dropped, or the label dropped when already held.
+ * A group that allows multiple labels keeps its other labels.
  */
 export const toggleLabel = (
   labels: readonly LabelRead[],
@@ -81,8 +98,7 @@ export const toggleLabel = (
   labelId: string
 ): string[] => {
   if (value.includes(labelId)) return value.filter((id) => id !== labelId);
-  const picked = labels.find((label) => label.id === labelId);
-  const parent = picked?.parent_id ?? null;
+  const parent = exclusiveParent(labels, labelId);
   const kept =
     parent === null
       ? [...value]
@@ -94,7 +110,7 @@ export const toggleLabel = (
 
 /**
  * The labels an issue already carries that adding `adding` would replace,
- * because they sit in the same group as one of the added labels.
+ * because they sit in the same exclusive group as one of the added labels.
  */
 export const replacedSiblings = (
   labels: readonly LabelRead[],
@@ -103,7 +119,7 @@ export const replacedSiblings = (
 ): string[] => {
   const groups = new Set(
     adding
-      .map((id) => labels.find((label) => label.id === id)?.parent_id ?? null)
+      .map((id) => exclusiveParent(labels, id))
       .filter((parent): parent is string => parent !== null)
   );
   if (groups.size === 0) return [];
