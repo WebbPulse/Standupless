@@ -5,6 +5,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { AuthProvider, type AnyAuthClient } from '@webbpulse/auth/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AccountDeletionPlanRead, UserRead } from '../../types/Api';
@@ -62,12 +63,26 @@ const clearPlan: AccountDeletionPlanRead = {
   leaving: [{ id: 'w2', name: 'Team Space', slug: 'team-space' }],
 };
 
+/** The client the shared step-up reads from context. */
+const fakeClient = {
+  subscribe: () => () => undefined,
+  getState: () => ({ sessionEnded: null }),
+  initialize: () => Promise.resolve(),
+  stepUpWithPasskey: () => stepUpWithPasskey(),
+  stepUp: vi.fn(),
+};
+
 /** Mounts the panel inside a router, which its workspace links require. */
 const renderPanel = () =>
   render(
-    <MemoryRouter>
-      <AccountDeletionPanel />
-    </MemoryRouter>
+    <AuthProvider
+      client={fakeClient as unknown as AnyAuthClient}
+      initializeOnMount={false}
+    >
+      <MemoryRouter>
+        <AccountDeletionPanel />
+      </MemoryRouter>
+    </AuthProvider>
   );
 
 beforeEach(() => {

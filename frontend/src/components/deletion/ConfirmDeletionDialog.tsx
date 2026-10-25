@@ -7,9 +7,10 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useStepUp } from '../../hooks/useStepUp';
+import { type ProactiveStepUp, useStepUp } from '@webbpulse/auth/react';
 import { confirmationMatches } from '../../lib/deletion';
 import { errorMessage } from '../../lib/errors';
+import { lockoutMessage } from '../../lib/lockout';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
@@ -38,6 +39,28 @@ export interface ConfirmDeletionDialogProps {
   failureMessage: string;
 }
 
+/** The proof a step-up was last attempted with. */
+type StepUpAttempt = 'passkey' | 'code';
+
+/**
+ * The step-up's state in the dialog's own words: the lockout wait while one
+ * holds, a refusal as the server worded it, and a fixed sentence for a throw.
+ */
+const stepUpMessage = (
+  stepUp: ProactiveStepUp,
+  attempt: StepUpAttempt
+): string | null => {
+  if (stepUp.locked) return lockoutMessage(stepUp.lockedFor * 1000);
+  const { error } = stepUp;
+  if (error === null) return null;
+  if (error instanceof Error) {
+    return attempt === 'passkey'
+      ? 'Could not check your passkey. Try a code instead.'
+      : 'Could not check that code.';
+  }
+  return error.message;
+};
+
 /** A typed confirmation followed by a step-up, then the deletion request. */
 export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
   open,
@@ -52,14 +75,15 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
   onConfirm,
   failureMessage,
 }) => {
-  const stepUp = useStepUp();
+  const stepUp = useStepUp({ mode: 'proactive' });
+  const [attempt, setAttempt] = useState<StepUpAttempt>('passkey');
   const [typed, setTyped] = useState('');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   const matches = confirmationMatches(typed, expected, ignoreCase);
-  const busy = sending || stepUp.busy;
+  const busy = sending || stepUp.pending;
 
   const closeRef = useRef<() => void>(() => undefined);
   useEffect(() => {
@@ -98,10 +122,12 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
       await send();
       return;
     }
+    const method: StepUpAttempt = stepUp.stage === 'code' ? 'code' : 'passkey';
+    setAttempt(method);
     const proven =
-      stepUp.stage === 'code'
-        ? await stepUp.withCode(code)
-        : await stepUp.withPasskey();
+      method === 'code'
+        ? await stepUp.prove({ code: code.trim() })
+        : await stepUp.prove({ passkey: true });
     if (proven) await send();
   };
 
@@ -145,7 +171,7 @@ export const ConfirmDeletionDialog: React.FC<ConfirmDeletionDialogProps> = ({
             </button>
           </div>
         )}
-        <ErrorAlert message={stepUp.error} />
+        <ErrorAlert message={stepUpMessage(stepUp, attempt)} />
         <ErrorAlert message={failure} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={close} disabled={busy}>
