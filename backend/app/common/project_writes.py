@@ -38,6 +38,7 @@ from app.common.date_resolution import DateEdge, settle_date_fields, stored_reso
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
+from app.common.db.dynamo.workspaces import WorkspaceFeature
 from app.common.initiative_writes import require_initiative_access, require_initiative_target
 from app.common.issue_rules import COMPLETED_CATEGORIES, require_team_member
 from app.common.issue_writes import apply_patch, store_patch
@@ -69,6 +70,7 @@ from app.common.project_statuses import (
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
+from app.common.workspace_features import refuse_if_disabled
 
 NOT_NULLABLE = (
     "name",
@@ -332,6 +334,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     for member_id in payload.member_ids:
         require_workspace_member(repositories, context, member_id)
     if payload.initiative_id is not None:
+        refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
         require_initiative_target(repositories, context, payload.initiative_id)
     require_project_labels(repositories, context.workspace_id, payload.label_ids, teams)
     explicit = "status" in payload.model_fields_set or payload.status_id is None
@@ -518,6 +521,7 @@ def update_project(
             fields.get("team_ids", existing.team_ids),
         )
     if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
+        refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
         require_initiative_access(context)
         if fields["initiative_id"] is not None:
             require_initiative_target(repositories, context, fields["initiative_id"])

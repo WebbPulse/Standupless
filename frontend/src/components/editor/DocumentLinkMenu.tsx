@@ -26,6 +26,7 @@ import {
   documentLinkTitle,
 } from '../../lib/documentLinks';
 import { errorMessage } from '../../lib/errors';
+import { isFeatureOn } from '../../lib/features';
 import { currentOrigin, referenceHref } from '../../lib/references';
 import { showErrorToast } from '../../lib/toast';
 import type { DocumentSummaryRead } from '../../types/Api';
@@ -282,10 +283,10 @@ const WorkspaceDocumentLinkMenu: React.FC<{
   );
 };
 
-/** The `[[` document picker, drawn only inside a workspace. */
+/** The `[[` document picker, drawn only inside a workspace that has documents turned on. */
 export const DocumentLinkMenu: React.FC<{ editor: Editor }> = ({ editor }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
-  if (workspace === null) return null;
+  if (workspace === null || !isFeatureOn(workspace, 'documents')) return null;
   return (
     <WorkspaceDocumentLinkMenu
       editor={editor}

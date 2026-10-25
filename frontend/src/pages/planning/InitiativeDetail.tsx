@@ -75,6 +75,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues } from '../../lib/capabilities';
+import { isFeatureOn } from '../../lib/features';
 import { cn } from '../../lib/cn';
 import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
@@ -1204,14 +1205,16 @@ export const InitiativeDetail: React.FC = () => {
                   </ul>
                 )}
               </section>
-              <DocumentsSection
-                workspaceId={workspaceId}
-                slug={slug}
-                parentKind="initiative"
-                parentId={initiativeId}
-                canCreate={canEdit}
-                people={people}
-              />
+              {isFeatureOn(workspace, 'documents') && (
+                <DocumentsSection
+                  workspaceId={workspaceId}
+                  slug={slug}
+                  parentKind="initiative"
+                  parentId={initiativeId}
+                  canCreate={canEdit}
+                  people={people}
+                />
+              )}
             </div>
             <RollupPanel workspaceId={workspaceId} initiative={initiative} />
           </div>

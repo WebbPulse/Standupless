@@ -153,6 +153,7 @@ import {
   readPropertyFilters,
   type ProjectPropertyFilters,
 } from '../../lib/projectPropertyFilters';
+import { isFeatureOn } from '../../lib/features';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
@@ -876,8 +877,12 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   const blockingFilter = flagParam(
     params.get('blocking') ?? baseOf('blocking')
   );
-  const isMember = workspace !== null && workspace.role !== 'guest';
-  const customerFilter = isMember
+  const customersShown =
+    workspace !== null &&
+    workspace.role !== 'guest' &&
+    isFeatureOn(workspace, 'customers');
+  const initiativesOn = isFeatureOn(workspace, 'initiatives');
+  const customerFilter = customersShown
     ? (params.get('customer') ?? baseOf('customer'))
     : '';
   const properties = useMemo(
@@ -939,7 +944,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     blocked: blockedFilter,
     blocking: blockingFilter,
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
-    customer: isMember ? customerFilter : (base?.customer ?? ''),
+    customer: customersShown ? customerFilter : (base?.customer ?? ''),
     label: labelFilter,
     properties,
   });
@@ -951,7 +956,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       ));
 
   const customerOrdering =
-    isMember &&
+    customersShown &&
     (CUSTOMER_PROJECT_ORDERINGS.has(ordering) ||
       shownColumns.includes('important'));
   const showArchived = params.get(ARCHIVED_PARAM) === '1';
@@ -978,7 +983,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       rollUp,
       narrowing
     );
-  const { customers } = useCustomers(workspaceId, isMember);
+  const { customers } = useCustomers(workspaceId, customersShown);
   const { labels: projectLabels } = useProjectLabels(workspaceId);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const projectsById = useMemo(
@@ -1390,7 +1395,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     bulkAction('priority', 'Priority', <LuSignal />),
     bulkAction('target', 'Target date', <LuCalendar />),
     bulkAction('labels', 'Labels', <LuTag />),
-    bulkAction('initiative', 'Initiative', <LuGoal />),
+    ...(initiativesOn
+      ? [bulkAction('initiative', 'Initiative', <LuGoal />)]
+      : []),
   ];
 
   const writeParam = (
@@ -1776,7 +1783,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               setParam('label', value === labelFilter ? '' : value);
             }}
           />
-          {isMember && (
+          {customersShown && (
             <FilterButton
               field="Customer"
               options={customerOptions}
@@ -1917,7 +1924,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               defaultActions={
                 scope === undefined ? defaultActionsFor(display) : undefined
               }
-              customerOrdering={isMember}
+              customerOrdering={customersShown}
             />
             {layout === 'timeline' && (
               <TimelineControls {...timelineControls} />

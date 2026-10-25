@@ -44,7 +44,8 @@ export const SettingsAnchor: React.FC<SettingsAnchorProps> = ({
 
 /** Props for SettingsSearch. */
 export interface SettingsSearchProps {
-  workspace: Pick<WorkspaceRead, 'slug' | 'role'>;
+  workspace: Pick<WorkspaceRead, 'slug' | 'role'> &
+    Partial<Pick<WorkspaceRead, 'features'>>;
   /**
    * The teams whose settings are searched. Left unset, the teams the viewer
    * belongs to in the shared team list.

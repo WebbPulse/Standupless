@@ -82,6 +82,14 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
           Security
         </NavLink>
       )}
+      {canManageMembers(workspace.role) && (
+        <NavLink
+          to={`/w/${workspace.slug}/settings/features`}
+          className={tabClass}
+        >
+          Features
+        </NavLink>
+      )}
       <NavLink to={`/w/${workspace.slug}/settings/teams`} className={tabClass}>
         Teams
       </NavLink>

@@ -11,7 +11,7 @@
 
 import { fuzzyMatch } from './fuzzyMatch';
 import { teamSettingsSectionPath } from './paths';
-import { TEAM_SETTINGS_SECTIONS, visibleSettingsPages } from './settingsIndex';
+import { teamSettingsSectionsFor, visibleSettingsPages } from './settingsIndex';
 import type { WorkspaceRead } from '../types/Api';
 
 /** One page the palette can go to. */
@@ -61,9 +61,10 @@ export const settingsDestinations = (
  */
 export const teamSettingsDestinations = (
   slug: string,
-  keyPrefix: string
+  keyPrefix: string,
+  features?: WorkspaceRead['features']
 ): PaletteDestination[] =>
-  TEAM_SETTINGS_SECTIONS.map((section) => ({
+  teamSettingsSectionsFor(features).map((section) => ({
     id: section.id,
     label: section.paletteLabel,
     keywords: keywordsOf(section.synonyms, section.controls ?? []),

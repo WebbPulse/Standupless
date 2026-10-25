@@ -36,7 +36,7 @@ from app.common.api.schemas.workspaces import (
 from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
 from app.common.db.dynamo.memberships import Membership
-from app.common.db.dynamo.workspaces import PERMISSION_FIELDS, Workspace
+from app.common.db.dynamo.workspaces import PERMISSION_FIELDS, Workspace, WorkspaceFeature
 from app.common.email import deliver
 from app.common.email.invite import render_invite
 from app.common.plan_limits import LimitedResource
@@ -82,12 +82,14 @@ def read_workspace(repositories: Repositories, context: AuthzContext) -> Workspa
 
 
 def update_workspace(repositories: Repositories, context: AuthzContext, payload: WorkspaceUpdate) -> WorkspaceRead:
-    """Rename the workspace or change its accent, update cadence, branch format or permissions. The slug is fixed.
+    """Rename the workspace or change its accent, update cadence, branch format, permissions or features. The slug is fixed.
 
     `accent_color` is written only when the body names it, so a rename never
     resets the accent, and an explicit null returns it to the default. Only a
     signed-in person may change whether third-party apps need approval, so a
     delegated credential cannot lift the gate that governs credentials like it.
+    `features` merges into the stored map, so turning one area off leaves the
+    others as they were, and nothing in an area is deleted when it goes off.
     """
     if payload.third_party_app_approvals is not None:
         refuse_api_key_actor(context)
@@ -110,6 +112,9 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
         workspace = repositories.workspaces.set_third_party_app_approvals(
             context.workspace_id, payload.third_party_app_approvals
         )
+    features = payload.features.model_dump(exclude_none=True) if payload.features is not None else {}
+    if workspace is not None and features:
+        workspace = repositories.workspaces.set_features(context.workspace_id, {**workspace.features, **features})
     if workspace is None:
         raise _not_found()
     before, after = changed_fields(previous, _settings_of(workspace))
@@ -139,6 +144,7 @@ def _settings_of(workspace: Workspace | None) -> dict[str, object]:
         "invite_permission": workspace.invite_permission,
         "team_creation_permission": workspace.team_creation_permission,
         "third_party_app_approvals": bool(workspace.third_party_app_approvals),
+        **{f"features.{feature.value}": workspace.feature_enabled(feature) for feature in WorkspaceFeature},
     }
 
 

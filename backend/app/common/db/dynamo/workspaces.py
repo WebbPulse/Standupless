@@ -128,6 +128,16 @@ def normalize_accent_color(value: str) -> Optional[str]:
     return candidate if ACCENT_COLOR_PATTERN.match(candidate) else None
 
 
+class WorkspaceFeature(StrEnum):
+    """An area of the product an admin can turn off for the whole workspace."""
+
+    INITIATIVES = "initiatives"
+    CUSTOMERS = "customers"
+    RELEASES = "releases"
+    DOCUMENTS = "documents"
+    PULSE = "pulse"
+
+
 class Workspace(BaseModel):
     """One tenant: its id, slug, display name, plan and billing state.
 
@@ -142,7 +152,9 @@ class Workspace(BaseModel):
     `invite_permission` and `team_creation_permission` say whether admins alone
     or every member may invite people and create teams; guests never may.
     `third_party_app_approvals` makes a member ask an admin before authorizing an
-    OAuth app that is not first party.
+    OAuth app that is not first party. `features` holds the areas an admin has
+    turned on or off by `WorkspaceFeature` value; an area missing from it is on,
+    so a workspace written before the map existed keeps every area.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -173,6 +185,11 @@ class Workspace(BaseModel):
     invite_permission: str = DEFAULT_INVITE_PERMISSION
     team_creation_permission: str = DEFAULT_TEAM_CREATION_PERMISSION
     third_party_app_approvals: bool = False
+    features: dict[str, bool] = Field(default_factory=dict)
+
+    def feature_enabled(self, feature: str) -> bool:
+        """Whether the area is on, which it is unless an admin turned it off."""
+        return bool(self.features.get(str(feature), True))
 
     def comp_active(self, now: datetime | None = None) -> bool:
         """Whether a comp grant naming a known plan holds right now, its expiry not yet reached."""
@@ -316,6 +333,21 @@ class WorkspaceRepository:
         try:
             item = self._repository.set_attributes(
                 {"id": workspace_id}, {"third_party_app_approvals": enabled}, condition=Attr("id").exists()
+            )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_features(self, workspace_id: str, features: Mapping[str, bool]) -> Workspace | None:
+        """Replace the map of areas turned on or off, or `None` when the workspace does not exist."""
+        unknown = sorted(set(features) - {feature.value for feature in WorkspaceFeature})
+        if unknown:
+            raise ValueError(f"not workspace features: {unknown}")
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id},
+                {"features": {key: bool(value) for key, value in features.items()}},
+                condition=Attr("id").exists(),
             )
         except ConditionFailed:
             return None

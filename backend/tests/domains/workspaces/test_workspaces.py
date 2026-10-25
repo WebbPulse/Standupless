@@ -134,6 +134,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "invite_permission",
         "team_creation_permission",
         "third_party_app_approvals",
+        "features",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
@@ -820,3 +821,44 @@ def test_an_api_key_cannot_change_third_party_app_approvals(client: TestClient, 
 
     assert response.status_code in (401, 403)
     assert repositories.workspaces.get(WORKSPACE).third_party_app_approvals is True
+
+
+def test_every_feature_is_on_for_an_existing_workspace(client: TestClient, repositories: Any) -> None:
+    """A workspace written before the flags existed reads every area as on."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    sign_in(client, OWNER)
+
+    features = client.get(f"/api/workspaces/{WORKSPACE}").json()["features"]
+
+    assert features == {"initiatives": True, "customers": True, "releases": True, "documents": True, "pulse": True}
+    assert repositories.workspaces.get(WORKSPACE).features == {}
+
+
+def test_an_admin_turns_a_feature_off_and_back_on(client: TestClient, repositories: Any) -> None:
+    """A toggle merges into the stored map, is audit logged, and is refused to a member."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    path = f"/api/workspaces/{WORKSPACE}"
+    sign_in(client, ADMIN)
+
+    off = client.patch(path, json={"features": {"customers": False}})
+    assert off.status_code == 200, off.text
+    assert off.json()["features"]["customers"] is False
+    client.patch(path, json={"features": {"pulse": False}})
+    assert repositories.workspaces.get(WORKSPACE).features == {"customers": False, "pulse": False}
+
+    [row] = [
+        event
+        for event in repositories.audit.list_events(WORKSPACE).events
+        if event.action == "workspace.updated" and "features.customers" in (event.after or {})
+    ]
+    assert (row.before, row.after) == ({"features.customers": True}, {"features.customers": False})
+
+    back = client.patch(path, json={"features": {"customers": True}})
+    assert back.json()["features"]["customers"] is True
+    assert back.json()["features"]["pulse"] is False
+
+    assert client.patch(path, json={"features": {"wiki": False}}).status_code == 422
+    sign_in(client, MEMBER)
+    assert client.patch(path, json={"features": {"pulse": True}}).status_code == 403

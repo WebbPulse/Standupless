@@ -50,6 +50,7 @@ import {
   type TimelineZoom,
 } from '../../lib/timeline';
 import type { ProjectsDefaultActions } from '../../hooks/useProjectsDisplayDefault';
+import { useFeatureOn } from '../../hooks/useFeatureOn';
 import Button from '../ui/button';
 import { Popover } from '../ui/popover';
 import { Select } from '../ui/select';
@@ -222,8 +223,13 @@ const DirectionButton: React.FC<{
   </button>
 );
 
-/** The Display button and its layout, grouping, ordering, window and property panel. */
-export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
+/** The Display button and its layout, grouping, ordering, window and property panel, offering `groupings`. */
+const DisplayMenuBody: React.FC<
+  ProjectsDisplayMenuProps & {
+    groupings: (typeof PROJECT_GROUPINGS)[number][];
+  }
+> = ({
+  groupings,
   grouping,
   direction,
   onDirectionChange,
@@ -301,7 +307,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
         id="projects-group"
         label={layout === 'board' ? 'Columns' : 'Grouping'}
         value={grouping}
-        choices={PROJECT_GROUPINGS}
+        choices={groupings}
         labels={PROJECT_GROUPING_LABELS}
         onChange={onGroupingChange}
         adornment={
@@ -319,7 +325,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
           id="projects-rows"
           label={layout === 'board' ? 'Rows' : 'Sub-grouping'}
           value={grouping === 'none' || rows === grouping ? 'none' : rows}
-          choices={PROJECT_GROUPINGS.filter(
+          choices={groupings.filter(
             (choice) => choice === 'none' || choice !== grouping
           )}
           labels={PROJECT_GROUPING_LABELS}
@@ -475,5 +481,20 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
     )}
   </Popover>
 );
+
+/**
+ * The Display menu, leaving the Initiative grouping out while an admin has
+ * initiatives turned off, unless it is the grouping already showing.
+ */
+export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = (
+  props
+) => {
+  const initiativesOn = useFeatureOn('initiatives');
+  const groupings = PROJECT_GROUPINGS.filter(
+    (choice) =>
+      initiativesOn || choice !== 'initiative' || choice === props.grouping
+  );
+  return <DisplayMenuBody {...props} groupings={groupings} />;
+};
 
 export default ProjectsDisplayMenu;

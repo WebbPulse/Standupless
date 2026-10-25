@@ -195,13 +195,17 @@ const design: TeamRead = {
 };
 
 /** The workspace the sidebar is rendered for, with the caller holding `role`. */
-const workspace = (role: WorkspaceRole): WorkspaceRead => ({
+const workspace = (
+  role: WorkspaceRole,
+  features?: WorkspaceRead['features']
+): WorkspaceRead => ({
   id: 'ws-1',
   name: 'Mine',
   slug: 'mine',
   plan: 'free',
   created_at: '2026-09-17T00:00:00Z',
   role,
+  ...(features === undefined ? {} : { features }),
 });
 
 /** The dialogs the workspace layout would provide around the sidebar. */
@@ -234,7 +238,8 @@ const withDialogs = (tree: ReactNode, dialogs: Dialogs): ReactNode => {
 const renderSidebar = (
   role: WorkspaceRole = 'owner',
   path = '/w/mine',
-  dialogs: Dialogs = {}
+  dialogs: Dialogs = {},
+  features?: WorkspaceRead['features']
 ) =>
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -242,19 +247,19 @@ const renderSidebar = (
         <Routes>
           <Route
             path="/w/:slug"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
           <Route
             path="/w/:slug/team/:keyPrefix"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
           <Route
             path="/w/:slug/projects"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
           <Route
             path="/w/:slug/issues/:key"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
         </Routes>,
         dialogs
@@ -356,6 +361,56 @@ describe('the workspace level links', () => {
       'href',
       '/w/mine/roadmap'
     );
+  });
+});
+
+describe('the areas an admin turned off', () => {
+  it('shows Pulse, Initiatives and Customers while the workspace leaves them on', async () => {
+    renderSidebar();
+
+    expect(
+      await screen.findByRole('link', { name: 'Pulse' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Initiatives' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['pulse', 'Pulse'],
+    ['initiatives', 'Initiatives'],
+    ['customers', 'Customers'],
+  ] as const)(
+    'leaves the %s link out while that area is off',
+    async (feature, label) => {
+      renderSidebar('owner', '/w/mine', {}, { [feature]: false });
+
+      expect(
+        await screen.findByRole('link', { name: 'Projects' })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: label })).toBeNull();
+    }
+  );
+
+  it('leaves a team section without Releases while releases is off', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine', {}, { releases: false });
+
+    await user.click(await screen.findByRole('button', { name: /Engine/ }));
+
+    expect(screen.getByRole('link', { name: 'Cycles' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Releases' })).toBeNull();
+  });
+
+  it('leaves a team section without Initiatives while initiatives is off', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine', {}, { initiatives: false });
+
+    await user.click(await screen.findByRole('button', { name: /Engine/ }));
+
+    expect(screen.getByRole('link', { name: 'Cycles' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Initiatives' })).toBeNull();
   });
 });
 

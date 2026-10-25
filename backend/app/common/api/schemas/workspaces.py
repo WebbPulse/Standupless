@@ -14,12 +14,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.common.db.dynamo.invites import Invite
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.users import User
-from app.common.db.dynamo.workspaces import Workspace, is_valid_slug, normalize_accent_color
+from app.common.db.dynamo.workspaces import Workspace, WorkspaceFeature, is_valid_slug, normalize_accent_color
 from app.common.icons import icon_url
 from app.common.project_cadence import DEFAULT_INTERVAL_DAYS, check_interval
 
@@ -70,12 +70,40 @@ class WorkspaceCreate(BaseModel):
         return candidate
 
 
+class WorkspaceFeatures(BaseModel):
+    """Which areas of the product are on for the workspace, every one on unless an admin turned it off."""
+
+    initiatives: bool = Field(default=True, description="Initiatives and their updates")
+    customers: bool = Field(default=True, description="Customers and customer requests")
+    releases: bool = Field(default=True, description="Team releases and the release pipeline")
+    documents: bool = Field(default=True, description="Documents on teams, projects and initiatives")
+    pulse: bool = Field(default=True, description="The Pulse feed of updates and following projects or initiatives")
+
+    @classmethod
+    def from_row(cls, workspace: Workspace) -> "WorkspaceFeatures":
+        """The flags of a stored workspace, an area it never stored counted as on."""
+        return cls(**{feature.value: workspace.feature_enabled(feature) for feature in WorkspaceFeature})
+
+
+class WorkspaceFeaturesUpdate(BaseModel):
+    """The areas to turn on or off; an absent area is left as it is, and an unknown one is refused."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    initiatives: Optional[bool] = None
+    customers: Optional[bool] = None
+    releases: Optional[bool] = None
+    documents: Optional[bool] = None
+    pulse: Optional[bool] = None
+
+
 class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
     The name, the accent color, the default project update cadence, the git
     branch name format, who may invite people or create teams and whether
-    third-party apps need an admin's approval are editable.
+    third-party apps need an admin's approval are editable, and so are the
+    areas of the product that are on.
     The slug is not: it is the tenant's public handle and changing one
     would break every link that carries it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
@@ -99,6 +127,10 @@ class WorkspaceUpdate(BaseModel):
     third_party_app_approvals: Optional[bool] = Field(
         default=None,
         description="Whether members need an admin's approval before authorizing a third-party app",
+    )
+    features: Optional[WorkspaceFeaturesUpdate] = Field(
+        default=None,
+        description="Areas to turn on or off: initiatives, customers, releases, documents and pulse",
     )
 
     @field_validator("accent_color")
@@ -174,6 +206,10 @@ class WorkspaceRead(BaseModel):
         default=False,
         description="Whether members need an admin's approval before authorizing a third-party app",
     )
+    features: WorkspaceFeatures = Field(
+        default_factory=WorkspaceFeatures,
+        description="Which areas are on; writes to an area that is off are refused with FEATURE_DISABLED",
+    )
 
     @classmethod
     def from_row(
@@ -210,6 +246,7 @@ class WorkspaceRead(BaseModel):
             invite_permission=workspace.invite_permission,  # pyright: ignore[reportArgumentType]
             team_creation_permission=workspace.team_creation_permission,  # pyright: ignore[reportArgumentType]
             third_party_app_approvals=bool(workspace.third_party_app_approvals),
+            features=WorkspaceFeatures.from_row(workspace),
         )
 
 

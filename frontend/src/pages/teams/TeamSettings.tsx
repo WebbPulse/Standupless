@@ -62,6 +62,7 @@ import {
   isTeamAdmin,
 } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import { isFeatureOn } from '../../lib/features';
 import { teamSettingsPath } from '../../lib/paths';
 import { estimateOptionsOf } from '../../lib/validation';
 
@@ -158,8 +159,11 @@ const TeamSettings: React.FC = () => {
       : teamSettingsPath(slug ?? '', parent.key_prefix);
   const canDelete = canDeleteTeam(workspace?.role);
   const showDanger = canDelete || editable;
+  const releasesOn = isFeatureOn(workspace, 'releases');
   const sections = SECTIONS.filter(
-    (section) => section.id !== 'danger' || showDanger
+    (section) =>
+      (section.id !== 'danger' || showDanger) &&
+      (section.id !== 'releases' || releasesOn)
   );
 
   const makeRecurring = (templateId: string): void => {
@@ -414,14 +418,15 @@ const TeamSettings: React.FC = () => {
               />
             </div>
           )}
-          {frame(
-            'releases',
-            <ReleasePipelineSection
-              workspaceId={workspaceId}
-              teamId={team.id}
-              canEdit={editable}
-            />
-          )}
+          {releasesOn &&
+            frame(
+              'releases',
+              <ReleasePipelineSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
+              />
+            )}
           {frame(
             'notifications',
             <div className="space-y-6">
