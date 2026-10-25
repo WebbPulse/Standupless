@@ -6,10 +6,11 @@
  * the caller's verified email domain are offered below, and count as a choice.
  * When the home page sends a signed in visitor here, the workspace they last
  * opened in this browser is resumed ahead of the choice, as long as it is
- * still one of theirs.
+ * still one of theirs. Each workspace row offers Leave, behind the same
+ * confirmation the workspace settings use, and the list is read again after.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   useMutationWithRefetch,
@@ -34,6 +35,7 @@ import Avatar from '../../components/ui/avatar';
 import { Badge, Kbd } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
 import Spinner from '../../components/ui/spinner';
+import LeaveWorkspaceDialog from '../../components/workspace/LeaveWorkspaceDialog';
 import { useAuth } from '../../hooks/useAuth';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { cn } from '../../lib/cn';
@@ -64,6 +66,7 @@ const Workspaces: React.FC = () => {
   const { homeView } = preferencesOf(user);
   const openPath = (slug: string): string => homeViewPath(slug, homeView);
   const resuming = !browsing && wantsResume(location.state);
+  const [leaving, setLeaving] = useState<WorkspaceRead | null>(null);
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listWorkspaces(signal),
@@ -175,7 +178,7 @@ const Workspaces: React.FC = () => {
               {workspaces.map((workspace, index) => {
                 const role = roleLabel(workspace.role);
                 return (
-                  <li key={workspace.id}>
+                  <li key={workspace.id} className="flex items-center">
                     <Link
                       ref={registerItem(index)}
                       to={openPath(workspace.slug)}
@@ -183,7 +186,7 @@ const Workspaces: React.FC = () => {
                       onPointerEnter={() => {
                         setActiveIndex(index);
                       }}
-                      className={rowClass(index)}
+                      className={cn(rowClass(index), 'min-w-0 flex-1')}
                     >
                       <Avatar
                         name={workspace.name}
@@ -208,6 +211,17 @@ const Workspaces: React.FC = () => {
                         aria-hidden="true"
                       />
                     </Link>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mx-2 shrink-0"
+                      aria-label={`Leave ${workspace.name}`}
+                      onClick={() => {
+                        setLeaving(workspace);
+                      }}
+                    >
+                      Leave
+                    </Button>
                   </li>
                 );
               })}
@@ -295,6 +309,18 @@ const Workspaces: React.FC = () => {
           </p>
         )}
       </div>
+      {leaving !== null && (
+        <LeaveWorkspaceDialog
+          open
+          workspace={leaving}
+          onClose={() => {
+            setLeaving(null);
+          }}
+          onLeft={() => {
+            setLeaving(null);
+          }}
+        />
+      )}
     </AccountShell>
   );
 };

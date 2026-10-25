@@ -1,8 +1,10 @@
 /**
- * The workspace's danger zone: scheduling its deletion, and cancelling one that
- * is scheduled. Deletion waits out a grace period during which the workspace
- * keeps working and any owner or admin can cancel, so the scheduled state is a
- * banner with the date rather than a gone workspace.
+ * The workspace's danger zone: leaving it, which any member may do, and for an
+ * owner or admin scheduling its deletion and cancelling one that is scheduled.
+ * Deletion waits out a grace period during which the workspace keeps working
+ * and any owner or admin can cancel, so the scheduled state is a banner with
+ * the date rather than a gone workspace. The last owner cannot leave, so their
+ * Leave button is disabled with the reason beside it.
  */
 
 import React, { useState } from 'react';
@@ -10,25 +12,31 @@ import {
   cancelWorkspaceDeletion,
   scheduleWorkspaceDeletion,
 } from '../../api/workspaces';
+import { lastOwnerReason, useLastOwner } from '../../hooks/useLastOwner';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { canDeleteWorkspace } from '../../lib/capabilities';
 import { DELETION_GRACE_DAYS, purgeDateLabel } from '../../lib/deletion';
 import { errorMessage } from '../../lib/errors';
 import type { WorkspaceRead } from '../../types/Api';
 import ConfirmDeletionDialog from '../deletion/ConfirmDeletionDialog';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import LeaveWorkspaceDialog from './LeaveWorkspaceDialog';
 
 /** Props for DangerZoneSection: the workspace it acts on. */
 export interface DangerZoneSectionProps {
   workspace: WorkspaceRead;
 }
 
-/** Schedules or cancels this workspace's deletion. */
+/** Leaves this workspace, and schedules or cancels its deletion. */
 export const DangerZoneSection: React.FC<DangerZoneSectionProps> = ({
   workspace,
 }) => {
   const { refresh } = useWorkspace();
   const [open, setOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const { lastOwner, checking } = useLastOwner(workspace);
+  const deletes = canDeleteWorkspace(workspace.role);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const scheduled =
@@ -52,12 +60,32 @@ export const DangerZoneSection: React.FC<DangerZoneSectionProps> = ({
       <div className="space-y-1">
         <h2 className="text-base font-semibold text-danger">Danger zone</h2>
         <p className="text-sm text-text-muted">
-          Actions here cannot be undone once their grace period ends.
+          {deletes
+            ? 'Actions here cannot be undone once their grace period ends.'
+            : 'Leaving takes your access away until an admin invites you again.'}
         </p>
       </div>
       <ErrorAlert message={cancelError} />
-      <div className="rounded-md border border-danger/30">
-        {scheduled ? (
+      <div className="divide-y divide-danger/30 rounded-md border border-danger/30">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
+          <div className="min-w-0 space-y-0.5 text-sm">
+            <p className="font-medium text-text">Leave this workspace</p>
+            <p className="text-text-muted">
+              {lastOwner
+                ? lastOwnerReason(workspace.name)
+                : 'Removes you from every team in it. Your issues and comments stay.'}
+            </p>
+          </div>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setLeaving(true)}
+            disabled={lastOwner || checking}
+          >
+            Leave workspace
+          </Button>
+        </div>
+        {!deletes ? null : scheduled ? (
           <div
             role="status"
             className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
@@ -95,6 +123,11 @@ export const DangerZoneSection: React.FC<DangerZoneSectionProps> = ({
           </div>
         )}
       </div>
+      <LeaveWorkspaceDialog
+        open={leaving}
+        onClose={() => setLeaving(false)}
+        workspace={workspace}
+      />
       <ConfirmDeletionDialog
         open={open}
         onClose={() => setOpen(false)}
