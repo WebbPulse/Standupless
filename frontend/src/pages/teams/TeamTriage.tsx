@@ -5,10 +5,10 @@
  * without leaving it, and the selection lives in the URL.
  *
  * Triage runs from the keyboard in Linear's order: J and K move, 1 accepts, 2
- * declines with an optional reason, 3 marks as a duplicate of another issue,
- * and H snoozes until a chosen moment. Accept opens a small popover with an
- * optional comment and the status to land in, defaulting to the team's first
- * unstarted one, and Enter confirms it at once. The buttons, the help sheet
+ * declines with an optional reason, 3 or M M marks as a duplicate of another
+ * issue, and H snoozes until a chosen moment. Accept opens a small popover
+ * with an optional comment and the status to land in, defaulting to the team's
+ * first unstarted one, and Enter confirms it at once. The buttons, the help sheet
  * and the command palette list the actions in that same order. A snoozed
  * issue leaves the list and the badge and comes back by itself; the Snoozed
  * tab lists what is still waiting and offers to bring one back now.
@@ -119,9 +119,12 @@ const ACTION_ICONS: Record<TriageActionId, React.ReactNode> = {
   snooze: <LuClock className="h-3.5 w-3.5" aria-hidden="true" />,
 };
 
-/** The tooltip for one action: its name and the key that runs it. */
-const actionTip = (id: TriageActionId): string =>
-  `${TRIAGE_ACTION[id].label} (${TRIAGE_ACTION[id].keys.toUpperCase()})`;
+/** The tooltip for one action: its name and every key that runs it. */
+const actionTip = (id: TriageActionId): string => {
+  const { label, keys, altKeys } = TRIAGE_ACTION[id];
+  const all = altKeys === undefined ? [keys] : [keys, altKeys];
+  return `${label} (${all.map((key) => key.toUpperCase()).join(' or ')})`;
+};
 
 /** The name a row's action button is announced with. */
 const rowActionLabel = (id: TriageActionId, key: string): string =>
@@ -549,6 +552,17 @@ export const TeamTriage: React.FC = () => {
   });
   useShortcut({
     keys: TRIAGE_ACTION.duplicate.keys,
+    label: TRIAGE_ACTION.duplicate.label,
+    scope: 'page',
+    group: 'Triage',
+    enabled: canAct,
+    handler: (event) => {
+      event?.preventDefault();
+      if (selected !== null) openAction('duplicate', selected);
+    },
+  });
+  useShortcut({
+    keys: TRIAGE_ACTION.duplicate.altKeys ?? '',
     label: TRIAGE_ACTION.duplicate.label,
     scope: 'page',
     group: 'Triage',

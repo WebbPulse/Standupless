@@ -1,5 +1,5 @@
 /**
- * Relations and the branch name from a list: M then B, X, R or D opens the
+ * Relations and the branch name from a list: M then B, X, R or M opens the
  * relation dialog on the focused issue starting on that relation, and the row
  * menu offers the same relations and copies the git branch name, for one
  * issue only.
@@ -183,7 +183,7 @@ describe('IssueListView relation keys', () => {
     ['b', 'blocked_by'],
     ['x', 'blocks'],
     ['r', 'relates_to'],
-    ['d', 'duplicate_of'],
+    ['m', 'duplicate_of'],
   ])('opens the relation dialog on M then %s', (key, type) => {
     renderView([makeIssue(1, 'Cache the token')]);
 

@@ -175,7 +175,7 @@ export const RELATION_COMMANDS: readonly RelationCommand[] = [
     icon: RelatedGlyph,
   },
   {
-    keys: 'm d',
+    keys: 'm m',
     label: 'Mark as duplicate of',
     type: 'duplicate_of',
     icon: DuplicateGlyph,

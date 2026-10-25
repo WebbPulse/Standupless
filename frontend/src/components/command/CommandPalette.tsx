@@ -12,7 +12,7 @@
  * registry the keys use, so an action a page adds is reachable by name without
  * the palette knowing about it. Actions on a page that is not an issue, such
  * as a project, come the same way from the `'page'` scope, listed under the
- * group each registered with.
+ * group each registered with, once each even when two keys run them.
  *
  * Every settings page and the current team's settings sections are listed
  * once a term is typed, matched on the words in {@link settingsDestinations}
@@ -511,6 +511,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     for (const shortcut of registered) {
       if (shortcut.scope !== 'page') continue;
       const rows = byGroup.get(shortcut.group) ?? [];
+      if (rows.some((row) => row.label === shortcut.label)) continue;
       rows.push({
         id: `page-action-${shortcut.id}`,
         label: shortcut.label,
