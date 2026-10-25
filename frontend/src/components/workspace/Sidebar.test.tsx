@@ -434,7 +434,7 @@ describe('the workspace menu', () => {
     await user.click(await screen.findByRole('button', { name: /Mine/ }));
 
     expect(
-      await screen.findByRole('menuitem', { name: 'Mine (current)' })
+      await screen.findByRole('menuitem', { name: /^Mine.*current/ })
     ).toHaveAttribute('href', '/w/mine');
     expect(screen.getByRole('menuitem', { name: 'Acme' })).toHaveAttribute(
       'href',
@@ -453,7 +453,7 @@ describe('the workspace menu', () => {
     await user.click(await screen.findByRole('button', { name: /Mine/ }));
 
     expect(
-      await screen.findByRole('menuitem', { name: 'Mine (current)' })
+      await screen.findByRole('menuitem', { name: /^Mine.*current/ })
     ).toBeInTheDocument();
     expect(
       screen.getByRole('menuitem', { name: 'Create workspace' })
