@@ -326,6 +326,13 @@ def _team_writes_back(repositories: Repositories, workspace_id: str, team_id: st
     return config is not None and config.writes_back
 
 
+def queue_slack_status_post(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Schedule the post that tells an issue's paired Slack threads it changed status."""
+    from app.domains.integrations.slack.status_posts import queue_status_post
+
+    return queue_status_post(repositories, record)
+
+
 def queue_issue_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
     """Queue a GitHub sync job for a new issue or one whose synced fields moved.
 
@@ -503,6 +510,7 @@ def handle_record(
         queue_issue_sync(repositories, record)
         queue_pr_labels(repositories, record)
         channel_events.on_issue(repositories, record, channel_cache)
+        queue_slack_status_post(repositories, record)
     elif physical == table_name("comments", prefix):
         if from_bulk_import(record) or _on_document(record):
             return

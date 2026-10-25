@@ -47,6 +47,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
         repositories.github.channels.delete_team(job.workspace_id, job.team_id)
         repositories.github.email_intake.delete_team(job.workspace_id, job.team_id)
         repositories.github.slack_intake.delete_team(job.workspace_id, job.team_id)
+        repositories.github.slack_status.delete_team(job.workspace_id, job.team_id)
     after = job.cursor
     while True:
         issues = repositories.issues.page_with_trash_after(job.workspace_id, job.team_id, after, limit=PAGE)

@@ -5123,6 +5123,22 @@ export interface SlackIntakeWrite {
   channel_ids: string[];
 }
 
+/**
+ * Whether a team posts status changes into the Slack threads its issues came
+ * from. `enabled` is on until a team admin turns it off.
+ */
+export interface SlackStatusPostsRead {
+  configured: boolean;
+  installed: boolean;
+  enabled: boolean;
+  updated_at: string | null;
+}
+
+/** A team admin's choice to post status changes into paired Slack threads. */
+export interface SlackStatusPostsWrite {
+  enabled: boolean;
+}
+
 /** Whether this environment has a Discord App and whether this workspace added it to a server. */
 export interface DiscordConnectionRead {
   configured: boolean;

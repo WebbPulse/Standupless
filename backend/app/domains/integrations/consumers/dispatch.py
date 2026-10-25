@@ -194,6 +194,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.slack.threads import push_reply
 
         push_reply(repositories, job)
+    elif kind == "slack.status_post":
+        from app.domains.integrations.slack.status_posts import push_status
+
+        push_status(repositories, job)
     elif kind == "github.label_set_push":
         from app.domains.integrations import label_set
 
