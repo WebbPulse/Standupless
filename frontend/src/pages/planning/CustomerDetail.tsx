@@ -311,7 +311,10 @@ export const CustomerDetail: React.FC = () => {
                   to={
                     request.target_kind === 'issue'
                       ? issuePath(slug, request.target_key)
-                      : projectPath(slug, request.target_id)
+                      : projectPath(slug, {
+                          project_id: request.target_id,
+                          name: request.target_title,
+                        })
                   }
                   heading={request.target_title}
                   detail={

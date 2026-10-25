@@ -137,6 +137,7 @@ import {
   exportSettingsPath,
   importSettingsPath,
   initiativePath,
+  type InitiativeRef,
   integrationsSettingsPath,
   issuePath,
   projectUpdatesTabPath,
@@ -203,8 +204,10 @@ const isInitiativeRow = (row: NotificationRead): boolean =>
   row.kind === 'initiative_update_due';
 
 /** The link to one initiative's updates tab. */
-const initiativeUpdatesTabPath = (slug: string, initiativeId: string): string =>
-  `${initiativePath(slug, initiativeId)}?tab=updates`;
+const initiativeUpdatesTabPath = (
+  slug: string,
+  initiative: InitiativeRef
+): string => `${initiativePath(slug, initiative)}?tab=updates`;
 
 /**
  * Whether a row tells a team admin a Slack or Discord channel was turned off.
@@ -300,9 +303,15 @@ const rowPath = (slug: string, row: NotificationRead): string =>
     : isReviewRow(row)
       ? reviewsPath(slug)
       : isProjectRow(row)
-        ? projectUpdatesTabPath(slug, row.project_id ?? '')
+        ? projectUpdatesTabPath(slug, {
+            project_id: row.project_id ?? '',
+            name: row.project_name,
+          })
         : isInitiativeRow(row)
-          ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
+          ? initiativeUpdatesTabPath(slug, {
+              initiative_id: row.initiative_id ?? '',
+              name: row.initiative_name,
+            })
           : isChannelRow(row)
             ? row.issue_key
               ? teamSettingsPath(slug, row.issue_key)

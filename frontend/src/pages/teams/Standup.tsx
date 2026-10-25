@@ -122,7 +122,11 @@ const UpdateLine: React.FC<{
 }> = ({ update, slug, keyPrefix }) => (
   <li className="flex min-w-0 items-center gap-2 text-sm">
     <Link
-      to={projectPath(slug, update.project_id, keyPrefix)}
+      to={projectPath(
+        slug,
+        { project_id: update.project_id, name: update.project_name },
+        keyPrefix
+      )}
       className="min-w-0 truncate text-text hover:underline"
     >
       {update.project_name}
@@ -170,7 +174,11 @@ const PersonBlock: React.FC<PersonBlockProps> = ({
             <div key={group.projectId ?? ''} className="space-y-1">
               {group.projectId !== null && (
                 <Link
-                  to={projectPath(slug, group.projectId, keyPrefix)}
+                  to={projectPath(
+                    slug,
+                    { project_id: group.projectId, name: group.name },
+                    keyPrefix
+                  )}
                   className="block text-xs text-text-muted hover:text-text"
                 >
                   {group.name ?? 'Project'}

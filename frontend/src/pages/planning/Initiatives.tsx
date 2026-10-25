@@ -147,7 +147,7 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
       )}
     >
       <Link
-        to={initiativePath(slug, initiative.initiative_id)}
+        to={initiativePath(slug, initiative)}
         aria-label={initiative.name}
         data-hover="parent"
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
@@ -721,7 +721,7 @@ export const Initiatives: React.FC = () => {
           onCreated={(initiative) => {
             setIsCreating(false);
             invalidateQueries(queryKey);
-            void navigate(initiativePath(slug, initiative.initiative_id));
+            void navigate(initiativePath(slug, initiative));
           }}
         />
       )}

@@ -108,6 +108,9 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
     parents: true,
   });
   const team = teams?.find((item) => item.id === teamId);
+  const projectRef = options.projects.find(
+    (row) => row.project_id === issue?.project_id
+  );
   const peekStatusName =
     issue === null
       ? undefined
@@ -303,7 +306,10 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                         to={
                           issue.project_id === null || workspace === null
                             ? null
-                            : projectPath(workspace.slug, issue.project_id)
+                            : projectPath(
+                                workspace.slug,
+                                projectRef ?? issue.project_id
+                              )
                         }
                         label="Open project"
                       >
@@ -326,7 +332,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                               ? null
                               : projectMilestonePath(
                                   workspace.slug,
-                                  issue.project_id,
+                                  projectRef ?? issue.project_id,
                                   issue.project_milestone_id
                                 )
                           }

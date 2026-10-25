@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from app.common import team_writes
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Cycle, ProjectUpdateRow, cycle_key, project_update_key
+from app.common.readable_ids import readable_id
 from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
@@ -651,6 +652,7 @@ def test_existing_reads_accept_a_team_key_and_a_project_name(
     assert [row["cycle_id"] for row in cycles["cycles"]] == [planning["cycle_id"]]
     assert cycle["cycle_id"] == planning["cycle_id"]
     assert project["project_id"] == planning["project_id"]
+    assert project["web_url"].endswith("/w/acme/projects/" + readable_id(planning["project_id"], project["name"]))
     assert [row["milestone_id"] for row in milestones["milestones"]] == [planning["milestone_id"]]
 
 

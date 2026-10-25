@@ -41,6 +41,7 @@ from app.common.initiative_writes import (
     update_initiative_update,
 )
 from app.common.project_cadence import INTERVAL_OPTIONS
+from app.common.readable_ids import initiative_web_url
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
@@ -180,7 +181,11 @@ def _list_initiatives(call: ToolCall) -> Any:
 def _get_initiative(call: ToolCall) -> Any:
     """One initiative with its rollup."""
     initiative_id = initiative_id_ref(call, call.require("initiative_id"))
-    return _initiative_json(get_initiative(call.repositories, call.context, initiative_id))
+    body = _initiative_json(get_initiative(call.repositories, call.context, initiative_id))
+    workspace = call.repositories.workspaces.get(call.context.workspace_id)
+    if workspace is not None:
+        body["web_url"] = initiative_web_url(workspace.slug, body["initiative_id"], body["name"])
+    return body
 
 
 def _get_progress(call: ToolCall) -> Any:

@@ -26,6 +26,7 @@ from urllib.parse import quote
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.issue_keys import display_key
+from app.common.readable_ids import readable_id
 
 TEXT_LIMIT = 16_000
 """The most characters of any one text field a body carries."""
@@ -186,13 +187,13 @@ class Links:
         """The issue page for one display key."""
         return f"{self._base()}/issues/{quote(identifier, safe='')}"
 
-    def project(self, project_id: str) -> str:
-        """The project page."""
-        return f"{self._base()}/projects/{quote(project_id, safe='')}"
+    def project(self, project_id: str, name: str | None = None) -> str:
+        """The project page, in its readable form when the name is known."""
+        return f"{self._base()}/projects/{quote(readable_id(project_id, name), safe='')}"
 
-    def project_update(self, project_id: str, update_id: str) -> str:
+    def project_update(self, project_id: str, update_id: str, name: str | None = None) -> str:
         """One update on its project's updates tab."""
-        return f"{self.project(project_id)}?tab=updates#update-{quote(update_id, safe='')}"
+        return f"{self.project(project_id, name)}?tab=updates#update-{quote(update_id, safe='')}"
 
     def cycle(self, team_id: str, cycle_id: str) -> str:
         """The cycle page under its team."""
@@ -309,7 +310,7 @@ def _project(
     del repositories, workspace_id
     project_id = str(image.get("project_id", ""))
     team_ids = tuple(str(team_id) for team_id in (image.get("team_ids") or []))
-    url = links.project(project_id)
+    url = links.project(project_id, str(image.get("name") or ""))
     data = {
         "id": project_id,
         **_pick(image, PROJECT_FIELDS),
@@ -333,7 +334,7 @@ def _project_update(
     update_id = str(image.get("update_id", ""))
     project = repositories.planning.get_project(workspace_id, project_id) if project_id else None
     team_ids = tuple(project.team_ids) if project is not None else ()
-    url = links.project_update(project_id, update_id)
+    url = links.project_update(project_id, update_id, project.name if project is not None else None)
     data = {
         "id": update_id,
         "projectId": project_id,

@@ -62,7 +62,7 @@ export const convertedPath = (
   slug: string,
   result: IssueConversionRead,
   teamKeyPrefix?: string
-): string => projectPath(slug, result.project.project_id, teamKeyPrefix);
+): string => projectPath(slug, result.project, teamKeyPrefix);
 
 /** What the confirmation says the conversion will do. */
 export const conversionSummary = (issue: ConvertibleIssue): string => {

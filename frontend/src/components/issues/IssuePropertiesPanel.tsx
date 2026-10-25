@@ -211,6 +211,9 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
   const branchNaming = useBranchNaming(people, currentUserId);
   const isMember = workspace !== null && workspace.role !== 'guest';
   const disabled = !canEdit;
+  const projectRef = projects.find(
+    (row) => row.project_id === issue.project_id
+  );
   const scaleOn = team.estimate_scale !== 'off';
   const showEstimate =
     issue.estimate !== null || (scaleOn && shown('estimate'));
@@ -423,7 +426,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           to={
             issue.project_id === null
               ? null
-              : projectPath(slug, issue.project_id)
+              : projectPath(slug, projectRef ?? issue.project_id)
           }
           label="Open project"
         >
@@ -443,7 +446,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
                 ? null
                 : projectMilestonePath(
                     slug,
-                    issue.project_id,
+                    projectRef ?? issue.project_id,
                     issue.project_milestone_id
                   )
             }

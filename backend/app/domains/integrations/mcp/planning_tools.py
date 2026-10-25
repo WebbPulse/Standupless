@@ -78,6 +78,7 @@ from app.common.project_writes import (
     set_project_archived,
     update_project,
 )
+from app.common.readable_ids import project_web_url
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.project_status_tools import (
     STATUS_HELP,
@@ -557,6 +558,9 @@ def _get_project(call: ToolCall) -> Any:
         call.repositories, call.context, ProjectRead.from_row(project, visible, default_interval_days=default_days)
     )
     body = _project_json(read, status_names(call))
+    workspace = call.repositories.workspaces.get(call.context.workspace_id)
+    if workspace is not None:
+        body["web_url"] = project_web_url(workspace.slug, project.project_id, project.name)
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
     body["links"] = [

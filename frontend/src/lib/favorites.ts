@@ -101,7 +101,10 @@ export const favoriteHref = (
     case 'issue':
       return favorite.issue_key ? issuePath(slug, favorite.issue_key) : null;
     case 'project':
-      return projectPath(slug, favorite.target_id);
+      return projectPath(slug, {
+        project_id: favorite.target_id,
+        name: favorite.title,
+      });
     case 'cycle':
       return prefix === '' ? null : cyclePath(slug, prefix, favorite.target_id);
     case 'view':
@@ -111,7 +114,10 @@ export const favoriteHref = (
     case 'document':
       return documentPath(slug, favorite.target_id);
     case 'initiative':
-      return initiativePath(slug, favorite.target_id);
+      return initiativePath(slug, {
+        initiative_id: favorite.target_id,
+        name: favorite.title,
+      });
     default:
       return null;
   }

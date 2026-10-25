@@ -14,6 +14,7 @@ import type {
   StatusCategory,
 } from '../types/Api';
 import { isTeamKey } from './issueDisplay';
+import { idFromReadable, readableId } from './readableIds';
 
 /** The reference being typed: where its trigger starts and what follows it. */
 export interface ReferenceQuery {
@@ -158,7 +159,9 @@ export const referenceHref = (
   slug: string,
   item: ProjectReference | DocumentReference
 ): string =>
-  `${origin}/w/${slug}/${item.kind === 'project' ? 'projects' : 'documents'}/${item.id}`;
+  item.kind === 'project'
+    ? `${origin}/w/${slug}/projects/${readableId(item.id, item.name)}`
+    : `${origin}/w/${slug}/documents/${item.id}`;
 
 /** The name a reference is written and shown under. */
 export const referenceLabel = (item: ReferenceItem): string => {
@@ -205,7 +208,7 @@ export const linkedReference = (
   return {
     kind: collection === 'projects' ? 'project' : 'document',
     slug: decodeURIComponent(slug),
-    id,
+    id: collection === 'projects' ? idFromReadable(id) : id,
   };
 };
 

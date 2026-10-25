@@ -32,6 +32,7 @@ from webbpulse.identity.email import EmailMessage
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.email.brand import notification_settings_url, render
+from app.common.readable_ids import initiative_web_url, project_web_url
 from app.common.standup import StandupDigest, StandupItem, StandupPerson
 
 EXCERPT_LIMIT = 280
@@ -234,12 +235,11 @@ def render_notification(
 _HEALTH_LABELS: Mapping[str, str] = {"on_track": "On track", "at_risk": "At risk", "off_track": "Off track"}
 
 
-def project_url(workspace_slug: str, project_id: str) -> str:
+def project_url(workspace_slug: str, project_id: str, project_name: str = "") -> str:
     """The SPA link to one project's updates, or to the workspace list when the slug is gone."""
-    base = settings.frontend_base_url
     if not workspace_slug:
-        return f"{base}/workspaces"
-    return f"{base}/w/{quote(workspace_slug, safe='')}/projects/{quote(project_id, safe='')}?tab=updates"
+        return f"{settings.frontend_base_url}/workspaces"
+    return f"{project_web_url(workspace_slug, project_id, project_name)}?tab=updates"
 
 
 def render_project_update_notification(
@@ -274,7 +274,7 @@ def render_project_update_notification(
         blocks.append(Quote(trimmed))
     if report:
         blocks.append(BulletList(tuple(ListItem(line) for line in report)))
-    blocks.append(Button("Open project updates", project_url(workspace_slug, project_id), show_url=True))
+    blocks.append(Button("Open project updates", project_url(workspace_slug, project_id, project_name), show_url=True))
     return render(
         to=to,
         subject=f"[Project] {title}",
@@ -311,7 +311,9 @@ def render_project_update_due_notification(
         blocks=[
             Heading(title),
             Paragraph("A project update is due."),
-            Button(f"Write an update for {title}", project_url(workspace_slug, project_id), show_url=True),
+            Button(
+                f"Write an update for {title}", project_url(workspace_slug, project_id, project_name), show_url=True
+            ),
         ],
         footer_note=_DUE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=_settings_link(workspace_slug),
@@ -328,12 +330,11 @@ _INITIATIVE_DUE_REASON = (
 )
 
 
-def initiative_url(workspace_slug: str, initiative_id: str) -> str:
+def initiative_url(workspace_slug: str, initiative_id: str, initiative_name: str = "") -> str:
     """The SPA link to one initiative's updates, or to the workspace list when the slug is gone."""
-    base = settings.frontend_base_url
     if not workspace_slug:
-        return f"{base}/workspaces"
-    return f"{base}/w/{quote(workspace_slug, safe='')}/initiatives/{quote(initiative_id, safe='')}?tab=updates"
+        return f"{settings.frontend_base_url}/workspaces"
+    return f"{initiative_web_url(workspace_slug, initiative_id, initiative_name)}?tab=updates"
 
 
 def _initiative_due_line(due_state: str) -> str:
@@ -366,7 +367,11 @@ def render_initiative_update_due_notification(
         blocks=[
             Heading(title),
             Paragraph(line),
-            Button(f"Write an update for {title}", initiative_url(workspace_slug, initiative_id), show_url=True),
+            Button(
+                f"Write an update for {title}",
+                initiative_url(workspace_slug, initiative_id, initiative_name),
+                show_url=True,
+            ),
         ],
         footer_note=_INITIATIVE_DUE_REASON.format(product=settings.PROJECT_NAME),
         footer_links=_settings_link(workspace_slug),
@@ -401,13 +406,17 @@ def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str
     """The group one entry is listed under: its grouping key, its label and its link."""
     if entry.kind in ("project_update", PROJECT_UPDATE_DUE):
         name = entry.project_name.strip() or "Untitled project"
-        return f"project#{entry.project_id}", f"Project: {name}", project_url(workspace_slug, entry.project_id)
+        return (
+            f"project#{entry.project_id}",
+            f"Project: {name}",
+            project_url(workspace_slug, entry.project_id, entry.project_name),
+        )
     if entry.kind == INITIATIVE_UPDATE_DUE:
         name = entry.initiative_name.strip() or "Untitled initiative"
         return (
             f"initiative#{entry.initiative_id}",
             f"Initiative: {name}",
-            initiative_url(workspace_slug, entry.initiative_id),
+            initiative_url(workspace_slug, entry.initiative_id, entry.initiative_name),
         )
     title = entry.issue_title.strip() or "Untitled issue"
     label = f"{entry.issue_key} {title}" if entry.issue_key else title

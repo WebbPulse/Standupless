@@ -455,7 +455,7 @@ export const Search: React.FC = () => {
                   {visible(projects).map((project) => (
                     <li key={project.project_id} className={ROW}>
                       <Link
-                        to={projectPath(slug, project.project_id)}
+                        to={projectPath(slug, project)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >
@@ -489,7 +489,7 @@ export const Search: React.FC = () => {
                   {visible(initiatives).map((initiative) => (
                     <li key={initiative.initiative_id} className={ROW}>
                       <Link
-                        to={initiativePath(slug, initiative.initiative_id)}
+                        to={initiativePath(slug, initiative)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >
