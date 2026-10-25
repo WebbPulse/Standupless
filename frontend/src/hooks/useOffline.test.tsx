@@ -6,13 +6,15 @@
 
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   reportNetworkFailure,
   reportNetworkSuccess,
 } from '@webbpulse/api-client/react';
 import { SessionOfflineContext } from '../contexts/SessionOfflineContext';
 import { useOffline, useWritable } from './useOffline';
+
+vi.unmock('./useOffline');
 
 /** A wrapper that marks the session as held through a network outage. */
 const sessionOffline: React.FC<{ children: React.ReactNode }> = ({

@@ -23,16 +23,27 @@
  * jsdom lays nothing out, so text nodes and ranges have no client rects. An
  * editor that opens focused scrolls its caret into view a frame later, which
  * asks a text node for its rects, so both answer with an empty box here.
+ *
+ * The offline signal is held online. The shared client marks the app offline
+ * process wide on any request that cannot reach the server, and in jsdom an
+ * unmocked request never can, so one stray read would disable every write
+ * control in the tests after it. The signal's own test unmocks it.
  */
 
 import '@testing-library/jest-dom';
 import { cleanup, configure } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { clearSharedGetCache } from '../api/sharedFetch';
 import { clearUndo } from '../lib/undo';
 
 configure({ asyncUtilTimeout: 5000 });
+
+vi.mock('../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../hooks/useOffline')>()),
+  useOffline: () => false,
+  useWritable: (permitted: boolean) => permitted,
+}));
 
 const emptyRect = (): DOMRect => new DOMRect(0, 0, 0, 0);
 const emptyRects = (): DOMRect[] => [emptyRect()];
