@@ -167,6 +167,12 @@ const fixedGroups = (): HelpGroup[] => {
         fixedRow('editor-attach', 'Attach a file or image', [
           fromKeys('mod+shift+u'),
         ]),
+        fixedRow('editor-move-block-up', 'Move block up', [
+          fromKeys('alt+shift+arrowup'),
+        ]),
+        fixedRow('editor-move-block-down', 'Move block down', [
+          fromKeys('alt+shift+arrowdown'),
+        ]),
       ],
     },
     {
