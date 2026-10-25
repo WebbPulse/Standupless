@@ -40,26 +40,19 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     <header className={cn('border-b border-line', className)}>
       <div className="flex h-topbar items-center gap-3 px-4 lg:px-6">
         {leading}
-        {titleAccessory === undefined ? (
+        <div className="flex min-w-0 flex-1 items-center gap-1">
           <Heading
             ref={titleTip.ref}
-            className="min-w-0 flex-1 truncate text-sm font-medium"
+            className={cn(
+              'min-w-0 truncate text-sm font-medium',
+              titleAccessory === undefined && 'flex-1'
+            )}
             {...titleTip.handlers}
           >
             {title}
           </Heading>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <Heading
-              ref={titleTip.ref}
-              className="min-w-0 truncate text-sm font-medium"
-              {...titleTip.handlers}
-            >
-              {title}
-            </Heading>
-            {titleAccessory}
-          </div>
-        )}
+          {titleAccessory}
+        </div>
         {titleTip.tip}
         {actions !== undefined && (
           <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
