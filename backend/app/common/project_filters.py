@@ -7,7 +7,8 @@ filter by all of them.
 
 A date bound is exclusive and compares the stored day, so a coarse start reads
 as its period's first day and a coarse target as its last, the same days the
-timeline draws. A project with no date meets no bound, as an issue with no due
+timeline draws. A bound may be written relative to today, such as `+2w`, so a
+saved view's bound keeps rolling. A project with no date meets no bound, as an issue with no due
 date meets no due bound. Update age reads `last_update_at`, the newest project
 update: `updated_within_days` keeps projects updated in the last that many days
 and `not_updated_within_days` the ones that were not, a project never updated
@@ -23,6 +24,7 @@ from typing import Any, Iterable, Mapping, Optional
 from fastapi import HTTPException, status
 
 from app.common.db.dynamo.planning import Project
+from app.common.relative_days import RELATIVE_SYNTAX, is_relative_day, resolve_relative, utc_today
 
 NO_VALUE = "none"
 """The filter value standing for a project with no health, or with no members."""
@@ -43,7 +45,7 @@ DATE_BOUND_FIELDS: tuple[str, ...] = (
     "target_date_before",
     "target_date_after",
 )
-"""The filter keys that hold one day, `YYYY-MM-DD`."""
+"""The filter keys that hold one day, `YYYY-MM-DD`, or an offset relative to today such as `-1m`."""
 
 UPDATE_AGE_FIELDS: tuple[str, ...] = ("updated_within_days", "not_updated_within_days")
 """The filter keys that hold a whole number of days."""
@@ -176,17 +178,26 @@ def _values(raw: Any) -> list[str]:
 
 
 def _day(name: str, raw: Any) -> Optional[str]:
-    """One date bound as `YYYY-MM-DD`, refused when it is not a calendar day."""
+    """One date bound as `YYYY-MM-DD`, refused when it is not a calendar day.
+
+    A bound relative to today, such as `+2w` or `-1m`, resolves to its day
+    against the current UTC day, so a saved view's bound keeps rolling.
+    """
     values = _values(raw)
     if not values:
         return None
     value = values[0]
+    if is_relative_day(value):
+        try:
+            return resolve_relative(value, utc_today())
+        except ValueError:
+            raise unprocessable(f"{name} must be {RELATIVE_SYNTAX}") from None
     try:
         date.fromisoformat(value)
     except ValueError:
-        raise unprocessable(f"{name} must be a date, YYYY-MM-DD") from None
+        raise unprocessable(f"{name} must be {RELATIVE_SYNTAX}") from None
     if len(value) != 10:
-        raise unprocessable(f"{name} must be a date, YYYY-MM-DD")
+        raise unprocessable(f"{name} must be {RELATIVE_SYNTAX}")
     return value
 
 

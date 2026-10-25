@@ -24,6 +24,7 @@ from app.common.db.dynamo.views import SavedView
 from app.common.inbox_summary import notification_summary
 from app.common.project_filters import DATE_BOUND_FIELDS, UPDATE_AGE_FIELDS, property_entry_well_formed
 from app.common.project_filters import FILTER_KEYS as PROJECT_PROPERTY_FILTER_FIELDS
+from app.common.relative_days import day_bound_well_formed
 
 SortField = Literal[
     "updated_desc",
@@ -199,6 +200,20 @@ NUMBER_FILTER_FIELDS: frozenset[str] = frozenset(
     }
 )
 """The issue filter keys that hold one whole number, stored as its text like every other value."""
+
+DATE_FILTER_FIELDS: frozenset[str] = frozenset(
+    {
+        "created_after",
+        "created_before",
+        "updated_after",
+        "updated_before",
+        "completed_after",
+        "completed_before",
+        "due_after",
+        "due_before",
+    }
+)
+"""The issue filter keys that hold one date bound: a day, or an offset such as `-14d` stored as written."""
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
@@ -438,6 +453,8 @@ def _entry_well_formed(key: str, entry: Any) -> bool:
         return entry in MATCH_VALUES
     if key in NUMBER_FILTER_FIELDS:
         return isinstance(entry, str) and entry.isascii() and entry.isdigit() and len(entry) <= NUMBER_FILTER_DIGITS
+    if key in DATE_FILTER_FIELDS:
+        return isinstance(entry, str) and day_bound_well_formed(entry)
     if isinstance(entry, str):
         return True
     repeatable = key not in SCALAR_FILTER_FIELDS

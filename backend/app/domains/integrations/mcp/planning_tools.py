@@ -1137,10 +1137,18 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "member_id": one_or_many(
                     "Only projects with any of these members, by user id or 'me'; 'none' is projects with no members"
                 ),
-                "start_date_before": string("Only projects starting before this day, YYYY-MM-DD"),
-                "start_date_after": string("Only projects starting after this day, YYYY-MM-DD"),
-                "target_date_before": string("Only projects targeting a day before this one, YYYY-MM-DD"),
-                "target_date_after": string("Only projects targeting a day after this one, YYYY-MM-DD"),
+                "start_date_before": string(
+                    "Only projects starting before this day, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "start_date_after": string(
+                    "Only projects starting after this day, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "target_date_before": string(
+                    "Only projects targeting a day before this one, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "target_date_after": string(
+                    "Only projects targeting a day after this one, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
                 "updated_within_days": {
                     "type": "integer",
                     "minimum": 1,

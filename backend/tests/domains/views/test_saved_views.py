@@ -172,6 +172,26 @@ def test_an_unknown_filter_key_is_rejected(client: TestClient, workspace: str) -
     assert response.json()["error_code"] == "INVALID_FILTER"
 
 
+def test_relative_date_bounds_are_kept_as_written(client: TestClient, workspace: str) -> None:
+    """A relative bound is stored as sent, and an absolute day beside it is untouched."""
+    sign_in(client, MEMBER)
+    sent = {"created_after": "-2w", "due_before": "+7d", "completed_after": "today", "updated_before": "2026-10-01"}
+
+    view = create_view(client, workspace, name="This fortnight", filter=sent)
+
+    assert view["filter"] == sent
+
+
+def test_a_malformed_relative_date_bound_is_rejected(client: TestClient, workspace: str) -> None:
+    """A relative bound that does not parse is `INVALID_FILTER`, groups included."""
+    sign_in(client, MEMBER)
+
+    for bad in ({"created_after": "-2weeks"}, {"groups": [{"due_before": "soon"}]}):
+        response = client.post(f"/api/workspaces/{workspace}/views", json={"name": "Typo", "filter": bad})
+        assert response.status_code == 422, bad
+        assert response.json()["error_code"] == "INVALID_FILTER"
+
+
 def test_a_known_filter_key_is_kept(client: TestClient, workspace: str) -> None:
     """A stored filter round trips, because running one is the issue list's job."""
     sign_in(client, MEMBER)
