@@ -16,6 +16,10 @@ because the answer DNS gives can change after the save.
 
 Creating, changing, rotating and deleting a webhook are recorded in the workspace
 audit log with the URL, scope and events, and never the secret.
+
+Besides the plan's limit, creation stops at fixed abuse ceilings that match
+Linear's: 30 webhooks on one team and 50 in the workspace, disabled ones included.
+They hold on every plan, so they live here rather than in the plan limits.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.common import audit, plan_usage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -55,6 +59,12 @@ from app.domains.integrations.service import (
 router = APIRouter()
 
 DELIVERY_LOG_LIMIT = 50
+
+MAX_WEBHOOKS_PER_TEAM = 30
+
+MAX_WEBHOOKS_PER_WORKSPACE = 50
+
+WEBHOOK_LIMIT_REACHED = "WEBHOOK_LIMIT_REACHED"
 
 AUTO_DISABLE_FIELDS = ("disabled_reason", "disabled_at")
 
@@ -91,6 +101,25 @@ def _scoped(repositories: Repositories, workspace_id: str, webhook_id: str, team
     if endpoint is None or (team_id is not None and endpoint.team_id != team_id):
         raise not_found()
     return endpoint
+
+
+def _limit_reached(message: str) -> HTTPException:
+    """The 409 a create answers at a fixed webhook ceiling, worded for the settings form."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"error_code": WEBHOOK_LIMIT_REACHED, "message": message},
+    )
+
+
+def _ensure_capacity(repositories: Repositories, workspace_id: str, team_id: str | None) -> None:
+    """Refuse a new webhook once the workspace or its team holds the fixed ceiling, disabled ones counted."""
+    rows = repositories.github.list_endpoints(workspace_id, limit=MAX_WEBHOOKS_PER_WORKSPACE + 1)
+    if len(rows) >= MAX_WEBHOOKS_PER_WORKSPACE:
+        raise _limit_reached(
+            f"A workspace can have at most {MAX_WEBHOOKS_PER_WORKSPACE} webhooks. Delete one to add another."
+        )
+    if team_id is not None and sum(row.team_id == team_id for row in rows) >= MAX_WEBHOOKS_PER_TEAM:
+        raise _limit_reached(f"A team can have at most {MAX_WEBHOOKS_PER_TEAM} webhooks. Delete one to add another.")
 
 
 def _audit_fields(endpoint: WebhookEndpoint) -> dict[str, Any]:
@@ -149,6 +178,7 @@ def _create(
         _require_team(repositories, context.workspace_id, scope)
         require_team_content(context, scope)
     url = _safe_url(payload.url)
+    _ensure_capacity(repositories, context.workspace_id, scope)
     plan_usage.ensure_room(repositories, context.workspace_id, LimitedResource.WEBHOOKS)
 
     webhook_id = new_webhook_id()

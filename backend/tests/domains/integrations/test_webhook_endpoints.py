@@ -483,3 +483,118 @@ def test_creating_a_webhook_past_the_plan_limit_is_refused(
         )
         assert response.status_code == 403
         assert response.json()["error_code"] == PLAN_LIMIT_REACHED
+
+
+def seed(repositories: Any, count: int, *, team_id: str | None = None, active: bool = True) -> list[str]:
+    """Store `count` webhooks straight in the table, skipping the routes and the plan counter."""
+    from app.common.db.dynamo.base import utc_now
+    from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
+
+    ids = []
+    for index in range(count):
+        webhook_id = new_webhook_id()
+        now = utc_now()
+        repositories.github.create_endpoint(
+            WebhookEndpoint(
+                workspace_id=WORKSPACE,
+                github_key=webhook_key(webhook_id),
+                webhook_id=webhook_id,
+                url=f"https://example.test/seed/{index}",
+                label=f"Seed {index}",
+                team_id=team_id,
+                resource_types=["issues"],
+                active=active,
+                secret_salt="salt",
+                secret_hash="hash",
+                secret_hint="hint",
+                created_by="seed",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        ids.append(webhook_id)
+    return ids
+
+
+@pytest.fixture
+def roomy_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lift the plan's webhook limit well past the fixed ceilings, so only they can refuse."""
+    from app.common.plan_limits import PREVIEW_FREE_LIMITS, LimitedResource
+
+    monkeypatch.setitem(PREVIEW_FREE_LIMITS, LimitedResource.WEBHOOKS, 1000)
+
+
+def attempt(client: TestClient, path: str, **extra: Any) -> Any:
+    """Try to register one more webhook and hand back the raw response."""
+    return client.post(
+        path, json={"url": "https://example.test/more", "label": "More", "resource_types": ["issues"], **extra}
+    )
+
+
+def test_a_team_takes_its_thirtieth_webhook_and_refuses_the_thirty_first(
+    client: TestClient, workspace: str, repositories: Any, roomy_plan: None
+) -> None:
+    """The team ceiling is 30, disabled webhooks count, and the refusal names the limit."""
+    from app.domains.integrations.endpoints.webhooks import MAX_WEBHOOKS_PER_TEAM, WEBHOOK_LIMIT_REACHED
+
+    assert MAX_WEBHOOKS_PER_TEAM == 30
+    sign_in(client, ADMIN)
+    seed(repositories, 20, team_id=TEAM)
+    seed(repositories, 9, team_id=TEAM, active=False)
+
+    create(client, path=TEAM_PATH)
+
+    for path, extra in ((TEAM_PATH, {}), (PATH, {"team_id": TEAM})):
+        response = attempt(client, path, **extra)
+        assert response.status_code == 409
+        body = response.json()
+        assert body["error_code"] == WEBHOOK_LIMIT_REACHED
+        assert "30" in body["message"]
+
+
+def test_a_full_team_does_not_block_other_scopes(
+    client: TestClient, workspace: str, repositories: Any, roomy_plan: None
+) -> None:
+    """The team ceiling counts only that team's webhooks."""
+    sign_in(client, ADMIN)
+    seed(repositories, 30, team_id=TEAM)
+
+    create(client)
+    create(client, team_id=OTHER_TEAM)
+
+
+def test_a_workspace_takes_its_fiftieth_webhook_and_refuses_the_fifty_first(
+    client: TestClient, workspace: str, repositories: Any, roomy_plan: None
+) -> None:
+    """The workspace ceiling of 50 counts team and workspace scopes together, on every route."""
+    from app.domains.integrations.endpoints.webhooks import MAX_WEBHOOKS_PER_WORKSPACE, WEBHOOK_LIMIT_REACHED
+
+    assert MAX_WEBHOOKS_PER_WORKSPACE == 50
+    sign_in(client, ADMIN)
+    seed(repositories, 20, team_id=TEAM)
+    seed(repositories, 20, team_id=OTHER_TEAM)
+    seed(repositories, 9, active=False)
+
+    create(client)
+
+    for path, extra in ((PATH, {}), (PATH, {"team_id": OTHER_TEAM}), (TEAM_PATH, {})):
+        response = attempt(client, path, **extra)
+        assert response.status_code == 409
+        body = response.json()
+        assert body["error_code"] == WEBHOOK_LIMIT_REACHED
+        assert "50" in body["message"]
+
+
+def test_update_and_delete_still_work_at_the_ceiling(
+    client: TestClient, workspace: str, repositories: Any, roomy_plan: None
+) -> None:
+    """A full workspace can still change and delete its webhooks, and a delete frees a slot."""
+    sign_in(client, ADMIN)
+    webhook_id = seed(repositories, 50)[0]
+
+    updated = client.patch(f"{PATH}/{webhook_id}", json={"label": "Renamed", "enabled": False})
+    assert updated.status_code == 200, updated.text
+    assert attempt(client, PATH).status_code == 409
+
+    assert client.delete(f"{PATH}/{webhook_id}").status_code == 204
+    create(client)
