@@ -1548,6 +1548,18 @@ class OverrideUpdate(TypedDict):
     name: NotRequired[str | None]
 
 
+class ParentAutoCloseSettingsRead(TypedDict):
+    close_parent: bool
+    close_sub_issues: bool
+    team_id: str
+    updated_at: NotRequired[str | None]
+
+
+class ParentAutoCloseSettingsUpdate(TypedDict):
+    close_parent: NotRequired[bool | None]
+    close_sub_issues: NotRequired[bool | None]
+
+
 class PipelineStageRead(TypedDict):
     github_environments: list[str]
     name: str

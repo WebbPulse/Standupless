@@ -23,6 +23,7 @@ from app.common.api.schemas.teams import (
     CycleSettingsUpdate,
     LabelCreate,
     LabelUpdate,
+    ParentAutoCloseSettingsUpdate,
     SlaSettingsUpdate,
     StatusCreate,
     StatusUpdate,
@@ -54,6 +55,7 @@ from app.common.db.dynamo.team_config import (
     AutoCloseSettings,
     CycleSettings,
     Label,
+    ParentAutoCloseSettings,
     SlaSettings,
     Status,
 )
@@ -221,6 +223,11 @@ def _auto_close_settings_json(settings: AutoCloseSettings) -> dict[str, Any]:
         "period_months": settings.period_months,
         "status_id": settings.status_id,
     }
+
+
+def _parent_auto_close_settings_json(settings: ParentAutoCloseSettings) -> dict[str, Any]:
+    """Whether a team's parents and sub-issues close together, as the tools answer it."""
+    return {"close_parent": settings.close_parent, "close_sub_issues": settings.close_sub_issues}
 
 
 def _display_defaults_json(call: ToolCall, team_id: str) -> dict[str, Any]:
@@ -461,6 +468,9 @@ def _get_team(call: ToolCall) -> Any:
     body["auto_close_settings"] = _auto_close_settings_json(
         team_writes.auto_close_settings(call.repositories, workspace_id, team.team_id)
     )
+    body["parent_auto_close_settings"] = _parent_auto_close_settings_json(
+        team_writes.parent_auto_close_settings(call.repositories, workspace_id, team.team_id)
+    )
     body["archive_settings"] = _archive_settings_json(
         team_writes.archive_settings(call.repositories, workspace_id, team.team_id)
     )
@@ -569,6 +579,16 @@ def _update_auto_close_settings(call: ToolCall) -> Any:
     payload = AutoCloseSettingsUpdate.model_validate(arguments)
     saved = team_writes.update_auto_close_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_auto_close_settings_json(saved)}
+
+
+def _update_parent_auto_close_settings(call: ToolCall) -> Any:
+    """Turn closing a parent with its last sub-issue, or open sub-issues with their parent, on or off."""
+    team = admin_team(call)
+    payload = ParentAutoCloseSettingsUpdate.model_validate(given_arguments(call, ("close_parent", "close_sub_issues")))
+    saved = team_writes.update_parent_auto_close_settings(
+        call.repositories, call.context.workspace_id, team.team_id, payload
+    )
+    return {"team_id": team.team_id, **_parent_auto_close_settings_json(saved)}
 
 
 def _update_display_defaults(call: ToolCall) -> Any:
@@ -1054,6 +1074,26 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id",),
         ),
         handler=_update_auto_close_settings,
+        administers_team=True,
+    ),
+    Tool(
+        name="update_team_parent_auto_close_settings",
+        description=(
+            "Turn on or off closing a team's parent issue in its first completed status once every sub-issue "
+            "is completed or cancelled (close_parent), and closing a parent's open sub-issues in the same kind "
+            "of status once the parent is completed or cancelled (close_sub_issues). Both are off by default; "
+            "a field left out keeps its value. Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "close_parent": boolean("Close a parent once every sub-issue is completed or cancelled"),
+                "close_sub_issues": boolean("Close open sub-issues once their parent is completed or cancelled"),
+            },
+            required=("team_id",),
+        ),
+        handler=_update_parent_auto_close_settings,
         administers_team=True,
     ),
     Tool(
