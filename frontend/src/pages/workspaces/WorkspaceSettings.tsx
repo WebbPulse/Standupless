@@ -14,6 +14,7 @@ import DangerZoneSection from '../../components/workspace/DangerZoneSection';
 import ExportSection from '../../components/workspace/ExportSection';
 import GithubSection from '../../components/workspace/GithubSection';
 import SettingsNav from '../../components/workspace/SettingsNav';
+import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import InvitesSection from '../../components/workspace/InvitesSection';
 import MembersSection from '../../components/workspace/MembersSection';
 import ProjectUpdatesSection from '../../components/workspace/ProjectUpdatesSection';
@@ -38,14 +39,30 @@ const WorkspaceSettings: React.FC = () => {
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (
             <>
-              <WorkspaceLogoSection workspace={workspace} />
-              <AccentColorSection workspace={workspace} />
-              <ProjectUpdatesSection workspace={workspace} />
-              <MembersSection workspace={workspace} />
-              <InvitesSection workspace={workspace} />
-              <GithubSection workspace={workspace} />
-              <WebhooksSection workspace={workspace} />
-              <ExportSection workspace={workspace} />
+              <SettingsAnchor id="logo">
+                <WorkspaceLogoSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="accent">
+                <AccentColorSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="project-updates">
+                <ProjectUpdatesSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="members">
+                <MembersSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="invites">
+                <InvitesSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="github">
+                <GithubSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="webhooks">
+                <WebhooksSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="export">
+                <ExportSection workspace={workspace} />
+              </SettingsAnchor>
               {canDeleteWorkspace(workspace.role) && (
                 <DangerZoneSection workspace={workspace} />
               )}

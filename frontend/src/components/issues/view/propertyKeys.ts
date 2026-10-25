@@ -37,6 +37,19 @@ export const DELETE_ISSUE_KEYS = 'mod+backspace';
 /** The key that renames the issue in focus. */
 export const RENAME_ISSUE_KEYS = 'r';
 
+/** The keys that put the issues in focus into their team's active cycle. */
+export const ADD_TO_ACTIVE_CYCLE_KEYS = 'mod+shift+c';
+
+/** The keys that clear the due date of the issues in focus. */
+export const REMOVE_DUE_DATE_KEYS = 'mod+shift+d';
+
+/**
+ * The keys that clear every label from the issues in focus. Shift+L is the
+ * board's label picker, so this takes the Cmd or Ctrl+Shift form the cycle
+ * and due date actions use.
+ */
+export const REMOVE_LABELS_KEYS = 'mod+shift+l';
+
 /** The keys that move to the comment box of the issue in view. */
 export const COMMENT_ISSUE_KEYS = 'mod+m';
 

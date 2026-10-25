@@ -44,6 +44,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { appendComments, listComments } from '../../api/discussion';
 import { appendActivity, listActivity } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import type { QuoteRequest } from '../../hooks/useQuoteRequest';
 import { useThreadTargets } from '../../hooks/useThreadTargets';
 import {
   groupSentence,
@@ -95,6 +96,8 @@ export interface IssueTimelineProps {
   teamKeyPrefix: string;
   /** Hears the attachment ids the loaded comments show, to keep them off the issue's own row. */
   onCommentAttachments?: (ids: Set<string>) => void;
+  /** A passage of the description to quote into the comment box. */
+  quote?: QuoteRequest | null;
 }
 
 /** How many rows one page asks for. */
@@ -348,6 +351,7 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   slug,
   teamKeyPrefix,
   onCommentAttachments,
+  quote = null,
 }) => {
   const linker = useMemo(
     () => ({ slug, teamKeyPrefix }),
@@ -553,6 +557,7 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
           people={context.people}
           threadTargets={threadTargets}
           jumpShortcut
+          quote={quote}
         />
       )}
     </section>

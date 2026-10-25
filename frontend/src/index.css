@@ -693,3 +693,28 @@ input[type='checkbox']:not([role='switch']):indeterminate {
     overflow: hidden;
   }
 }
+
+@keyframes settings-highlight {
+  0%,
+  40% {
+    background-color: var(--accent-soft);
+    box-shadow: 0 0 0 6px var(--accent-soft);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+[data-settings-highlight] {
+  border-radius: var(--radius-md, 6px);
+  animation: settings-highlight 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-settings-highlight] {
+    animation: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+}

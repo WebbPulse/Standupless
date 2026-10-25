@@ -8,6 +8,7 @@
 import React from 'react';
 import ApprovedDomainsSection from '../../components/workspace/ApprovedDomainsSection';
 import SettingsNav from '../../components/workspace/SettingsNav';
+import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import SsoSection from '../../components/workspace/SsoSection';
 import WorkspaceSecuritySection from '../../components/workspace/WorkspaceSecuritySection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -32,9 +33,15 @@ const SecuritySettings: React.FC = () => {
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (
             <>
-              <WorkspaceSecuritySection workspace={workspace} />
-              <ApprovedDomainsSection workspace={workspace} />
-              <SsoSection workspace={workspace} />
+              <SettingsAnchor id="authentication">
+                <WorkspaceSecuritySection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="approved-domains">
+                <ApprovedDomainsSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="sso">
+                <SsoSection workspace={workspace} />
+              </SettingsAnchor>
             </>
           ) : (
             <p className="text-sm text-text-muted">

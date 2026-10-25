@@ -12,6 +12,9 @@
  * pasting, dropping or picking an image or video puts it in the text behind a
  * progress bar, and any other file becomes a link to it. Each file is an
  * attachment of the issue, embedded by its stable content path.
+ *
+ * Selecting text in the description offers a Quote button, which hands the
+ * passage on as a blockquote for the issue's comment box.
  */
 
 import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
@@ -34,6 +37,7 @@ import {
 import type { IssueRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
+import SelectionQuote from '../discussion/SelectionQuote';
 import { ErrorAlert } from '../ui/alert';
 import Markdown from '../ui/markdown';
 import IssueTitle from './IssueTitle';
@@ -53,6 +57,8 @@ export interface IssueBodyProps {
    * has, files go into the text instead.
    */
   onDropFiles?: (files: File[]) => void;
+  /** Receives a selected passage as a Markdown blockquote; unset offers no quote. */
+  onQuote?: (markdown: string) => void;
 }
 
 /** The body text as prose, shared by the editor and its stand in. */
@@ -99,6 +105,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   onSaved,
   people,
   onDropFiles,
+  onQuote,
 }) => {
   const [dragging, setDragging] = useState(false);
   const [bodyFocused, setBodyFocused] = useState(false);
@@ -220,37 +227,39 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
 
       <div className={cn('space-y-2', dropClass)} {...dropProps}>
         {showBody ? (
-          <Suspense
-            fallback={
-              <StaticBody
-                body={body}
-                canEdit={canEdit}
-                onActivate={() => {
-                  setFocusOnLoad(true);
-                }}
-              />
-            }
-          >
-            <DocumentLinkContext.Provider
-              value={issueDocumentParent(issue.project_id)}
+          <SelectionQuote onQuote={onQuote}>
+            <Suspense
+              fallback={
+                <StaticBody
+                  body={body}
+                  canEdit={canEdit}
+                  onActivate={() => {
+                    setFocusOnLoad(true);
+                  }}
+                />
+              }
             >
-              <RichMarkdownEditor
-                ref={editor}
-                value={body}
-                editable={canEdit}
-                ariaLabel="Description"
-                autoFocus={focusOnLoad}
-                className={BODY_CLASS}
-                onCommit={saveBody}
-                onFocusChange={setBodyFocused}
-                {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
-                {...(canEdit ? { uploadFile } : {})}
-                {...(canEdit && people !== undefined
-                  ? { mentionPeople: people }
-                  : {})}
-              />
-            </DocumentLinkContext.Provider>
-          </Suspense>
+              <DocumentLinkContext.Provider
+                value={issueDocumentParent(issue.project_id)}
+              >
+                <RichMarkdownEditor
+                  ref={editor}
+                  value={body}
+                  editable={canEdit}
+                  ariaLabel="Description"
+                  autoFocus={focusOnLoad}
+                  className={BODY_CLASS}
+                  onCommit={saveBody}
+                  onFocusChange={setBodyFocused}
+                  {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
+                  {...(canEdit ? { uploadFile } : {})}
+                  {...(canEdit && people !== undefined
+                    ? { mentionPeople: people }
+                    : {})}
+                />
+              </DocumentLinkContext.Provider>
+            </Suspense>
+          </SelectionQuote>
         ) : (
           <p className={cn(BODY_CLASS, 'text-text-muted')}>
             No description yet.

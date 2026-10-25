@@ -5,10 +5,12 @@
  * reaction on a comment carries the issue it was written on. Also covers
  * syncing a thread to GitHub from its menu, the badge a synced thread wears,
  * and unsyncing it, and resolving a thread: the collapsed one-line summary,
- * expanding it, and unresolving it.
+ * expanding it, and unresolving it. And quoting: a whole comment from its
+ * menu, or a selected passage of it, into the thread's reply as a blockquote.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +20,7 @@ import type {
   GithubThreadTargetRead,
   ReactionGroup,
 } from '../../types/Api';
+import { readMarkdown } from '../editor/markdownCodec';
 import CommentCard from './CommentCard';
 
 const addReaction = vi.fn<(target: unknown) => Promise<ReactionGroup>>();
@@ -444,5 +447,134 @@ describe('resolving a thread', () => {
 
     expect(screen.queryByRole('button', { name: /Show thread/ })).toBeNull();
     expect(screen.getAllByRole('article')).toHaveLength(2);
+  });
+});
+
+/** The thread's reply box once its lazy editor has arrived. */
+const findReply = async (): Promise<HTMLElement> =>
+  screen.findByRole('textbox', { name: 'Write a reply' }, { timeout: 10_000 });
+
+/** The reply box's text as the Markdown it would post. */
+const replyText = (surface: HTMLElement): string =>
+  readMarkdown((surface as HTMLElement & { editor: Editor }).editor);
+
+/** Selects part of the first text that contains the words given. */
+const selectWords = (words: string): void => {
+  const holder = screen.getByText(
+    (_, node) =>
+      node?.tagName === 'P' && (node.textContent ?? '').includes(words)
+  );
+  const text = holder.firstChild;
+  if (text === null) throw new Error('no text to select');
+  const start = (text.textContent ?? '').indexOf(words);
+  const range = document.createRange();
+  range.setStart(text, start);
+  range.setEnd(text, start + words.length);
+  const selection = document.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  act(() => {
+    document.dispatchEvent(new Event('selectionchange'));
+  });
+};
+
+describe('quoting in a thread', () => {
+  it('quotes a comment into the reply from its menu', async () => {
+    const user = userEvent.setup();
+    renderCard([], { body: 'Ship it on Friday\nafter the review' });
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Quote in reply' }));
+
+    const surface = await findReply();
+    await waitFor(() => {
+      expect(replyText(surface)).toBe(
+        '> Ship it on Friday\n> after the review'
+      );
+    });
+  });
+
+  it('puts the caret on a new line under the quote', async () => {
+    const user = userEvent.setup();
+    renderCard([], { body: 'Ship it' });
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Quote in reply' }));
+
+    const surface = await findReply();
+    const editor = (surface as HTMLElement & { editor: Editor }).editor;
+    await waitFor(() => {
+      expect(editor.state.doc.lastChild?.type.name).toBe('paragraph');
+    });
+    expect(editor.state.doc.lastChild?.textContent).toBe('');
+    expect(editor.state.selection.from).toBe(editor.state.doc.content.size - 1);
+  });
+
+  it('keeps mentions and links of the quoted comment as written', async () => {
+    const user = userEvent.setup();
+    renderCard([], { body: 'Ask @ada about [the doc](https://x.dev/d)' });
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Quote in reply' }));
+
+    const surface = await findReply();
+    await waitFor(() => {
+      expect(replyText(surface)).toBe(
+        '> Ask @ada about [the doc](https://x.dev/d)'
+      );
+    });
+  });
+
+  it('offers no quote to a reader who cannot comment', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <CommentCard
+          comment={comment()}
+          replies={[]}
+          people={[]}
+          workspaceId="ws-1"
+          issueId="iss-1"
+          currentUserId="user-2"
+          canComment={false}
+          isAdmin={false}
+        />
+      </MemoryRouter>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Quote in reply' })
+    ).toBeNull();
+  });
+
+  it('quotes only the selected passage of a comment', async () => {
+    const user = userEvent.setup();
+    renderCard([], { body: 'Looks good to me, ship it' });
+
+    selectWords('ship it');
+    await user.click(
+      await screen.findByRole('button', { name: 'Quote selection' })
+    );
+
+    const surface = await findReply();
+    await waitFor(() => {
+      expect(replyText(surface)).toBe('> ship it');
+    });
+  });
+
+  it('offers no quote for a selection outside the comment', () => {
+    renderCard();
+    const outside = document.createElement('p');
+    outside.textContent = 'Somewhere else';
+    document.body.append(outside);
+
+    selectWords('Somewhere');
+
+    expect(
+      screen.queryByRole('button', { name: 'Quote selection' })
+    ).toBeNull();
+    outside.remove();
   });
 });

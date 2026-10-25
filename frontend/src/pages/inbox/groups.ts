@@ -2,10 +2,40 @@
  * How the inbox folds notifications into one row per subject, and how its
  * filter and display options become the list query. Grouping runs over the
  * pages already loaded, so it needs no server read and a later page simply
- * joins the groups it belongs to.
+ * joins the groups it belongs to. Quick search and unread first ordering run
+ * over the same loaded groups, so typing never waits on the server.
  */
 
 import type { InboxKind, NotificationRead } from '../../types/Api';
+
+/** How each kind of notification reads in the interface. */
+export const KIND_LABELS: Record<InboxKind, string> = {
+  assigned: 'Assigned to you',
+  mentioned: 'Mentioned you',
+  commented: 'New comment',
+  status_changed: 'Status changed',
+  subscribed: 'Subscribed you',
+  project_update: 'Project update',
+  project_update_comment: 'Reply on update',
+  project_update_due: 'Update due',
+  initiative_update_due: 'Initiative update due',
+  due_soon: 'Due soon',
+  overdue: 'Overdue',
+  reminder: 'Reminder',
+  standup_digest: 'Standup digest',
+  sla_at_risk: 'SLA at risk',
+  sla_breached: 'SLA breached',
+  channel_disabled: 'Channel turned off',
+  export_ready: 'Export ready',
+  export_failed: 'Export failed',
+  import_ready: 'Import finished',
+  import_failed: 'Import failed',
+  review_requested: 'Review requested',
+};
+
+/** Names a notification's kind, falling back for one added after this build. */
+export const kindLabel = (kind: InboxKind): string =>
+  KIND_LABELS[kind] ?? 'Update';
 
 /** One inbox row: every loaded notification about one subject, newest first. */
 export interface InboxGroup {
@@ -159,6 +189,8 @@ export interface InboxView {
   showRead: boolean;
   /** Whether rows still snoozed stay in the list. */
   showSnoozed: boolean;
+  /** Whether unread rows sort above read ones, each part still newest first. */
+  unreadFirst: boolean;
 }
 
 /** The inbox as it first opens: every type, read rows in, snoozed rows out. */
@@ -166,6 +198,7 @@ export const DEFAULT_VIEW: InboxView = {
   categories: [],
   showRead: true,
   showSnoozed: false,
+  unreadFirst: false,
 };
 
 /** The list query a view reads with. */
@@ -221,8 +254,81 @@ export const parseView = (raw: string | null): InboxView => {
         typeof stored.showSnoozed === 'boolean'
           ? stored.showSnoozed
           : DEFAULT_VIEW.showSnoozed,
+      unreadFirst:
+        typeof stored.unreadFirst === 'boolean'
+          ? stored.unreadFirst
+          : DEFAULT_VIEW.unreadFirst,
     };
   } catch {
     return DEFAULT_VIEW;
   }
+};
+
+/**
+ * The team key a notification names: the part of an issue key before its
+ * number, or the whole key for a channel or standup notice, which carries the
+ * team key alone. Rows whose key is a job id or a pull request name none.
+ */
+export const teamKeyOf = (row: NotificationRead): string => {
+  if (row.kind === 'channel_disabled' || row.kind === 'standup_digest')
+    return row.issue_key;
+  const match = /^([A-Za-z][A-Za-z0-9]*)-\d+$/.exec(row.issue_key);
+  return match?.[1] ?? '';
+};
+
+/** Everything quick search reads on one notification, lower cased. */
+const searchText = (row: NotificationRead): string =>
+  [
+    row.issue_key,
+    row.issue_title,
+    kindLabel(row.kind),
+    row.actor_name,
+    teamKeyOf(row),
+    row.project_name ?? '',
+    row.initiative_name ?? '',
+    row.new_value ?? '',
+    row.summary ?? '',
+  ]
+    .join('\n')
+    .toLowerCase();
+
+/**
+ * Whether a group answers a quick search. Every word typed must appear in some
+ * notification of the group, so "grace eng" finds Grace's comment on ENG-1.
+ * An empty search matches everything.
+ */
+export const matchesSearch = (group: InboxGroup, search: string): boolean => {
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const text = group.rows.map(searchText).join('\n');
+  return words.every((word) => text.includes(word));
+};
+
+/** The groups a quick search keeps, in their order. */
+export const searchGroups = (
+  groups: InboxGroup[],
+  search: string
+): InboxGroup[] =>
+  search.trim() === ''
+    ? groups
+    : groups.filter((group) => matchesSearch(group, search));
+
+/**
+ * Orders groups for the Show unread first option: unread above read, each
+ * part keeping its newest first order. A group named in `heldUnread` sorts as
+ * unread, so the row just opened, and so just marked read, holds its place
+ * until the selection moves.
+ */
+export const orderGroups = (
+  groups: InboxGroup[],
+  unreadFirst: boolean,
+  heldUnread: string | null = null
+): InboxGroup[] => {
+  if (!unreadFirst) return groups;
+  const isUnread = (group: InboxGroup): boolean =>
+    group.unread || group.key === heldUnread;
+  return [
+    ...groups.filter((group) => isUnread(group)),
+    ...groups.filter((group) => !isUnread(group)),
+  ];
 };
