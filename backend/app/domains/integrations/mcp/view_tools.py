@@ -35,7 +35,7 @@ from app.common.api.schemas.views import (
     ViewUpdate,
     grouping_pattern,
 )
-from app.common.db.dynamo.views import SavedView
+from app.common.db.dynamo.views import TEAM_SUBSCRIPTION_EVENTS, SavedView
 from app.common.inbox import (
     INBOX_BUCKETS,
     INBOX_KINDS,
@@ -58,6 +58,7 @@ from app.common.saved_views import (
     update_saved_view,
     view_read,
 )
+from app.common.team_subscriptions import set_team_subscription, team_subscription
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
@@ -426,9 +427,27 @@ def _cancel_issue_reminder(call: ToolCall) -> Any:
 
 ISSUE_REF = string("The issue: its issue_id, or its key such as ENG-12")
 
+TEAM_REF = string("The team: its team_id, its key such as ENG, or its exact name")
+
 VIEW_REF = string("The view: its view_id, or its exact name when only one readable view has it")
 
 NOTIFICATION_IDS = one_or_many("One notification_id or a list of up to 100, as list_notifications answers them")
+
+
+def _get_team_notification_subscription(call: ToolCall) -> Any:
+    """Which of one team's issue events reach your inbox, as the team subscription route answers it."""
+    _workspace_member(call)
+    team_id = team_id_ref(call, call.require("team_id"))
+    return team_subscription(call.repositories, call.context, team_id).model_dump(mode="json")
+
+
+def _set_team_notification_subscription(call: ToolCall) -> Any:
+    """Turn the named team issue events on or off for you, keeping the ones left out."""
+    _workspace_member(call)
+    team_id = team_id_ref(call, call.require("team_id"))
+    events = {event: _flag(call, event) for event in TEAM_SUBSCRIPTION_EVENTS if call.present(event)}
+    return set_team_subscription(call.repositories, call.context, team_id, events).model_dump(mode="json")
+
 
 VIEW_TOOLS: tuple[Tool, ...] = (
     Tool(
@@ -622,5 +641,38 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         scopes=("notifications:write",),
         schema=object_schema({"issue_id": ISSUE_REF}, required=("issue_id",)),
         handler=_cancel_issue_reminder,
+    ),
+    Tool(
+        name="get_team_notification_subscription",
+        description=(
+            "Which of a team's issue events reach your inbox: issue_created, triage (added to triage), completed "
+            "and cancelled. Each is false until you turn it on."
+        ),
+        scopes=("views:read",),
+        schema=object_schema({"team_id": TEAM_REF}, required=("team_id",)),
+        handler=_get_team_notification_subscription,
+    ),
+    Tool(
+        name="set_team_notification_subscription",
+        description=(
+            "Subscribe yourself to a team's issue events: issue_created sends a team_issue_created notification "
+            "for each new issue, triage a triage_new one when an issue is added to triage, completed and cancelled "
+            "an issue_completed or issue_cancelled one when an issue closes. Events left out keep their value; "
+            "turning all four off removes the subscription. Your own changes never notify you, and you hear of "
+            "each change once even when an assignment, mention or subscription also covers it."
+        ),
+        scopes=("views:write",),
+        schema=object_schema(
+            {
+                "team_id": TEAM_REF,
+                "issue_created": _boolean("Hear of each issue created in the team"),
+                "triage": _boolean("Hear of each issue added to the team's triage"),
+                "completed": _boolean("Hear of each of the team's issues moved to a completed status"),
+                "cancelled": _boolean("Hear of each of the team's issues moved to a cancelled status"),
+            },
+            required=("team_id",),
+        ),
+        handler=_set_team_notification_subscription,
+        idempotent=True,
     ),
 )

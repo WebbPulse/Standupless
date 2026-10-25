@@ -123,6 +123,33 @@ vi.mock('../../api/pulse', () => ({
   getPulseCount: () => getPulseCount(),
 }));
 
+const getTeamSubscription = vi.fn(() =>
+  Promise.resolve({
+    team_id: 'proj-1',
+    issue_created: false,
+    triage: false,
+    completed: false,
+    cancelled: false,
+  })
+);
+const updateTeamSubscription =
+  vi.fn<
+    (
+      workspaceId: string,
+      teamId: string,
+      body: Record<string, boolean>
+    ) => Promise<unknown>
+  >();
+
+vi.mock('../../api/teamSubscriptions', () => ({
+  getTeamSubscription: () => getTeamSubscription(),
+  updateTeamSubscription: (
+    workspaceId: string,
+    teamId: string,
+    body: Record<string, boolean>
+  ) => updateTeamSubscription(workspaceId, teamId, body),
+}));
+
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
     '@webbpulse/auth/react'
@@ -271,6 +298,17 @@ beforeEach(() => {
   listFavorites.mockResolvedValue([]);
   getTriageSummary.mockReset();
   getTriageSummary.mockResolvedValue({ teams: [] });
+  updateTeamSubscription.mockReset();
+  updateTeamSubscription.mockImplementation((...args) =>
+    Promise.resolve({
+      team_id: args[1],
+      issue_created: false,
+      triage: false,
+      completed: false,
+      cancelled: false,
+      ...args[2],
+    })
+  );
   getReviews.mockReset();
   getReviews.mockResolvedValue({
     github_linked: true,
@@ -665,6 +703,37 @@ describe('the team options menu', () => {
     expect(writeText).toHaveBeenCalledWith(
       `${globalThis.location.origin}/w/mine/team/ENG`
     );
+  });
+
+  it('opens the personal team notifications and saves a switch', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    const section = await sectionOf(/Engine/);
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Notifications' })
+    );
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Engine notifications',
+    });
+    const created = await within(dialog).findByRole('checkbox', {
+      name: 'Issue created',
+    });
+    expect(created).not.toBeChecked();
+    for (const name of ['Added to triage', 'Completed', 'Cancelled']) {
+      expect(within(dialog).getByRole('checkbox', { name })).not.toBeChecked();
+    }
+
+    await user.click(created);
+    await waitFor(() => {
+      expect(updateTeamSubscription).toHaveBeenCalledWith('ws-1', 'proj-1', {
+        issue_created: true,
+      });
+    });
   });
 
   it('offers no leave, because the API has no route for it', async () => {

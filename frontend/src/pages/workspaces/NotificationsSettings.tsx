@@ -171,6 +171,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'An issue you are subscribed to or assigned gains or loses a blocking relation, or a blocker is resolved.',
   },
+  team_issue_created: {
+    title: 'New issues in teams you follow',
+    detail:
+      "An issue is created in a team where you turned on Issue created in the team's Notifications menu.",
+  },
   document_comment: {
     title: 'Document comments',
     detail:
@@ -210,7 +215,12 @@ const KIND_SECTIONS: readonly KindSection[] = [
   },
   {
     title: 'Teams and views',
-    kinds: ['triage_new', 'view_issue_added', 'standup_digest'],
+    kinds: [
+      'triage_new',
+      'team_issue_created',
+      'view_issue_added',
+      'standup_digest',
+    ],
   },
   {
     title: 'Projects and initiatives',

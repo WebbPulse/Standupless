@@ -155,6 +155,7 @@ import { TruncatedText } from '../ui/truncated-text';
 import InboxBadge from '../views/InboxBadge';
 import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
+import TeamNotificationsDialog from '../team/TeamNotifications';
 import AddToFavoriteFolder from './AddToFavoriteFolder';
 import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
@@ -351,6 +352,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onCreateSubTeam,
 }) => {
   const panelId = `team-nav-${team.id}`;
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const cyclesOn = useCyclesOn(workspaceId, team.id, isOpen);
   const home = teamPath(slug, team.key_prefix);
   const issuesActive =
@@ -463,6 +465,13 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         <MenuItem to={teamSettingsPath(slug, team.key_prefix)}>
           Team settings
         </MenuItem>
+        <MenuItem
+          onSelect={() => {
+            setNotificationsOpen(true);
+          }}
+        >
+          Notifications
+        </MenuItem>
         <MenuItem to={teamArchivePath(slug, team.key_prefix)}>
           Show archived issues
         </MenuItem>
@@ -505,6 +514,15 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           </MenuItem>
         )}
       </Menu>
+      <TeamNotificationsDialog
+        workspaceId={workspaceId}
+        teamId={team.id}
+        teamName={team.name}
+        open={notificationsOpen}
+        onClose={() => {
+          setNotificationsOpen(false);
+        }}
+      />
 
       <div id={panelId} hidden={!isOpen} className="mt-px space-y-px">
         {triageCount !== null && (

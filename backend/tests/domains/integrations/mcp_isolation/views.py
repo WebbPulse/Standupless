@@ -77,4 +77,6 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "set_issue_reminder": {"issue_id": foreign["issue_id"], "remind_at": until},
         "list_issue_reminders": {"issue_id": foreign["issue_id"]},
         "cancel_issue_reminder": {"issue_id": foreign["issue_id"]},
+        "get_team_notification_subscription": {"team_id": foreign["team_id"]},
+        "set_team_notification_subscription": {"team_id": foreign["team_id"], "issue_created": True},
     }

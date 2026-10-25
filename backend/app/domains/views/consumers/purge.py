@@ -36,12 +36,13 @@ def revoke_share_links(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's views and subscriptions, dashboards, issue drafts, search postings and share links."""
+    """Remove the team's views, view and team subscriptions, dashboards, issue drafts, search postings and share links."""
     workspace_id, team_id = job.workspace_id, job.team_id
     while views := repositories.views.list_for_team(workspace_id, team_id):
         for view in views:
             repositories.views.delete(workspace_id, view.view_key)
             repositories.views.delete_view_subscriptions(workspace_id, view.view_id)
+    repositories.views.delete_team_subscriptions(workspace_id, team_id)
     repositories.views.delete_drafts_for_team(workspace_id, team_id)
     repositories.views.delete_issue_drafts_for_team(workspace_id, team_id)
     repositories.views.delete_team_dashboards(workspace_id, team_id)
@@ -66,7 +67,7 @@ def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline
 
 
 def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the person's views, favorites, view subscriptions, drafts and inbox in each of their workspaces."""
+    """Remove the person's views, favorites, view and team subscriptions, drafts and inbox in each of their workspaces."""
     user = repositories.users.get(job.user_id)
     if user is None:
         return None
@@ -78,6 +79,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
         repositories.views.clear_favorites(workspace_id, job.user_id)
         repositories.views.delete_personal_dashboards(workspace_id, job.user_id)
         repositories.views.delete_subscriptions_for_user(workspace_id, job.user_id)
+        repositories.views.delete_team_subscriptions_for_user(workspace_id, job.user_id)
         repositories.views.delete_drafts_for_user(workspace_id, job.user_id)
         repositories.views.delete_issue_drafts_for_user(workspace_id, job.user_id)
         repositories.inbox.delete_all(workspace_id, job.user_id)

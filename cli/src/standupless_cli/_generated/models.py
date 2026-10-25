@@ -3012,6 +3012,21 @@ class TeamMemberUpdate(TypedDict):
     role: Literal["admin", "member"]
 
 
+class TeamNotificationSubscriptionRead(TypedDict):
+    cancelled: NotRequired[bool]
+    completed: NotRequired[bool]
+    issue_created: NotRequired[bool]
+    team_id: str
+    triage: NotRequired[bool]
+
+
+class TeamNotificationSubscriptionUpdate(TypedDict, closed=True):
+    cancelled: NotRequired[bool | None]
+    completed: NotRequired[bool | None]
+    issue_created: NotRequired[bool | None]
+    triage: NotRequired[bool | None]
+
+
 class TeamOrderUpdate(TypedDict):
     team_ids: list[str]
 
@@ -3263,6 +3278,7 @@ class UserPreferencesUpdate(TypedDict):
                 "priority_urgent",
                 "blocking_changed",
                 "document_comment",
+                "team_issue_created",
             ],
             NotificationChannelsUpdate,
         ]

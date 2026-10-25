@@ -66,6 +66,7 @@ _HEADLINES: Mapping[str, str] = {
     "unblocked_by": "$actor removed an issue blocking this one.",
     "no_longer_blocking": "$actor removed an issue this one was blocking.",
     "blocker_resolved": "$actor resolved an issue blocking this one.",
+    "team_issue_created": "$actor created an issue in a team you follow.",
 }
 
 DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
@@ -91,6 +92,10 @@ _VIEW_REASON = (
     "You are receiving this because you subscribed to a view this issue now matches. "
     "Turn these off in your {product} notification settings."
 )
+_TEAM_REASON = (
+    "You are receiving this because you subscribed to new issues in this team. "
+    "Turn these off in the team's notification menu or your {product} notification settings."
+)
 _COMMENT_REASON = (
     "You are receiving this because you wrote the comment. Turn these off in your {product} notification settings."
 )
@@ -113,6 +118,8 @@ def _issue_reason(kind: str) -> str:
         return _VIEW_REASON
     if kind == "reaction":
         return _COMMENT_REASON
+    if kind == "team_issue_created":
+        return _TEAM_REASON
     return _ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON
 
 

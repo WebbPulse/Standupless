@@ -41,6 +41,7 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   priority_urgent: 'Marked urgent',
   blocking_changed: 'Blocking changed',
   document_comment: 'Document comment',
+  team_issue_created: 'New issue in team',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -189,6 +190,7 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'sla', label: 'SLA', kinds: ['sla_at_risk', 'sla_breached'] },
   { id: 'reviews', label: 'Reviews', kinds: ['review_requested'] },
   { id: 'triage', label: 'Triage', kinds: ['triage_new'] },
+  { id: 'teams', label: 'Team issues', kinds: ['team_issue_created'] },
   { id: 'views', label: 'Views', kinds: ['view_issue_added'] },
   { id: 'documents', label: 'Documents', kinds: ['document_comment'] },
   { id: 'standups', label: 'Standups', kinds: ['standup_digest'] },

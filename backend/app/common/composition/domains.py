@@ -176,6 +176,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
         members,
         search,
         share_links,
+        team_subscriptions,
         views,
     )
 
@@ -187,6 +188,7 @@ def _views_routers() -> "Sequence[RouterSpec]":
         (dashboards.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
         (members.router, "/workspaces", ("views",)),
+        (team_subscriptions.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),

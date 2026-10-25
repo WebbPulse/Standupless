@@ -38,6 +38,7 @@ _ACTED: dict[str, tuple[str, str]] = {
     "document_comment": ("{actor} commented on a document", "Comment on document"),
     "review_requested": ("{actor} requested your review", "Review requested"),
     "priority_urgent": ("{actor} marked as urgent", "Marked as urgent"),
+    "team_issue_created": ("{actor} created an issue", "New issue"),
 }
 
 
