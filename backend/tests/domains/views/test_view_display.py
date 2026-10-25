@@ -358,3 +358,25 @@ def test_the_hidden_sla_marker_is_not_a_property_a_client_may_send(client: TestC
     sign_in(client, MEMBER)
 
     assert _create(client, workspace, visible_properties=["-sla"]).status_code == 422
+
+
+def test_collapsed_groups_round_trip_and_clear(client: TestClient, workspace: str) -> None:
+    """Folded groups and hidden columns save with the view, drop repeats, and clear on an empty list or null."""
+    sign_in(client, MEMBER)
+
+    default = _create(client, workspace).json()
+    assert default["collapsed_groups"] == []
+
+    view = _create(client, workspace, collapsed_groups=["hidden:started:doing", "lane/high", "hidden:started:doing"])
+    assert view.status_code == 201, view.text
+    assert view.json()["collapsed_groups"] == ["hidden:started:doing", "lane/high"]
+    path = f"/api/workspaces/{workspace}/views/{view.json()['view_id']}"
+    assert client.get(path).json()["collapsed_groups"] == ["hidden:started:doing", "lane/high"]
+
+    patched = client.patch(path, json={"collapsed_groups": ["todo"]})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["collapsed_groups"] == ["todo"]
+    assert client.patch(path, json={"collapsed_groups": None}).json()["collapsed_groups"] == []
+    assert client.patch(path, json={"collapsed_groups": ["x"] * 2 + [""]}).status_code == 422
+    assert client.patch(path, json={"collapsed_groups": ["k" * 301]}).status_code == 422
+    assert client.patch(path, json={"collapsed_groups": [f"g{n}" for n in range(501)]}).status_code == 422

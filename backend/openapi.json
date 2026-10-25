@@ -12749,6 +12749,52 @@
         "title": "LinkStatusRead",
         "type": "object"
       },
+      "ListFoldsRead": {
+        "description": "The caller's folds on one list that is not a saved view, empty when nothing is folded.",
+        "properties": {
+          "collapsed_groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collapsed Groups",
+            "type": "array"
+          },
+          "list_key": {
+            "title": "List Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "list_key"
+        ],
+        "title": "ListFoldsRead",
+        "type": "object"
+      },
+      "ListFoldsWrite": {
+        "description": "The caller's folds on one list, replacing what was kept; an empty list clears them.",
+        "properties": {
+          "collapsed_groups": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Collapsed Groups",
+            "type": "array"
+          },
+          "list_key": {
+            "pattern": "^[A-Za-z0-9:._-]{1,200}$",
+            "title": "List Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "list_key"
+        ],
+        "title": "ListFoldsWrite",
+        "type": "object"
+      },
       "ManifestStart": {
         "description": "What the page posts to GitHub: the manifest, and the url carrying the signed state.",
         "properties": {
@@ -26306,6 +26352,16 @@
       "ViewCreate": {
         "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id` and `shared`,\nso neither is something a caller can assert. `shared` without a team files\nthe view under the whole workspace. `entity` set to `projects` saves a projects\npage arrangement: its filter takes the projects page's keys and\n`projects_display` its layout, grouping, ordering and completed window, while\nthe issue display fields are ignored.",
         "properties": {
+          "collapsed_groups": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Collapsed Groups",
+            "type": "array"
+          },
           "color": {
             "anyOf": [
               {
@@ -26639,8 +26695,15 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view. `collapsed_groups` names the\ngroups folded and the board columns and swimlanes hidden, empty when none is.",
         "properties": {
+          "collapsed_groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collapsed Groups",
+            "type": "array"
+          },
           "color": {
             "anyOf": [
               {
@@ -26872,6 +26935,23 @@
       "ViewUpdate": {
         "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view.",
         "properties": {
+          "collapsed_groups": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 300,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collapsed Groups"
+          },
           "color": {
             "anyOf": [
               {
@@ -61122,6 +61202,122 @@
           }
         ],
         "summary": "Get Widget Insights",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/folds": {
+      "get": {
+        "description": "The caller's folds on one list, empty when they never folded anything there.",
+        "operationId": "read_list_folds_api_workspaces__workspace_id__views_folds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "list_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9:._-]{1,200}$",
+              "title": "List Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFoldsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read List Folds",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Replace the caller's folds on one list; an empty list clears them and keeps no row.",
+        "operationId": "write_list_folds_api_workspaces__workspace_id__views_folds_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListFoldsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFoldsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write List Folds",
         "tags": [
           "views"
         ]

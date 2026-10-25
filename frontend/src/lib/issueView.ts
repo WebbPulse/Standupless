@@ -270,6 +270,12 @@ export interface ViewState {
   showArchived: boolean;
   /** What each group header reads beside its name: the issue count or the total estimate. */
   groupHeader: ViewGroupHeader;
+  /**
+   * The groups, swimlanes and board columns folded away, as the list's own
+   * keys. A saved view keeps them; a list that is not a saved view keeps them
+   * per person apart from this state, so there they stay empty.
+   */
+  collapsed: string[];
 }
 
 /**
@@ -842,6 +848,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   completed: 'all',
   showArchived: false,
   groupHeader: 'count',
+  collapsed: [],
 });
 
 const isGroupField = (value: string | null): value is StorableGroupField =>
@@ -914,6 +921,18 @@ const sameList = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length &&
   left.every((value, index) => value === right[index]);
 
+/** Whether two lists hold the same values, in any order. */
+export const sameSet = (
+  left: readonly string[],
+  right: readonly string[]
+): boolean => {
+  const held = new Set(left);
+  const other = new Set(right);
+  return (
+    held.size === other.size && [...held].every((value) => other.has(value))
+  );
+};
+
 const sameFilters = (left: FilterClause[], right: FilterClause[]): boolean =>
   sameList(left.map(writeClause), right.map(writeClause));
 
@@ -964,7 +983,8 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.showSubIssues === right.showSubIssues &&
   left.completed === right.completed &&
   left.showArchived === right.showArchived &&
-  left.groupHeader === right.groupHeader;
+  left.groupHeader === right.groupHeader &&
+  sameSet(left.collapsed, right.collapsed);
 
 /**
  * Reads the state out of the URL. Every parameter overrides `base`, and one
@@ -1031,6 +1051,9 @@ export const parseViewState = (
     completed: (done === null ? undefined : parseDone(done)) ?? base.completed,
     showArchived: archived === null ? base.showArchived : archived === '1',
     groupHeader: isGroupHeader(head) ? head : base.groupHeader,
+    collapsed: params.has('fold')
+      ? [...new Set(params.getAll('fold').filter((key) => key !== ''))]
+      : base.collapsed,
   };
 };
 
@@ -1062,6 +1085,7 @@ export const writeViewState = (
         'done',
         'archived',
         'head',
+        'fold',
       ].includes(key)
     ) {
       params.append(key, value);
@@ -1102,6 +1126,10 @@ export const writeViewState = (
   }
   if (state.groupHeader !== base.groupHeader) {
     params.set('head', state.groupHeader);
+  }
+  if (!sameSet(state.collapsed, base.collapsed)) {
+    if (state.collapsed.length === 0) params.append('fold', '');
+    for (const key of state.collapsed) params.append('fold', key);
   }
   return params;
 };
@@ -1543,6 +1571,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
       view.completed_window ?? (view.show_completed === false ? 'none' : 'all'),
     showArchived: view.show_archived === true,
     groupHeader: view.group_header === 'estimate' ? 'estimate' : 'count',
+    collapsed: [...(view.collapsed_groups ?? [])],
   };
 };
 
@@ -1617,6 +1646,7 @@ export const stateToViewDisplay = (
   | 'completed_window'
   | 'show_archived'
   | 'group_header'
+  | 'collapsed_groups'
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
@@ -1633,6 +1663,7 @@ export const stateToViewDisplay = (
   completed_window: state.completed,
   show_archived: state.showArchived,
   group_header: state.groupHeader,
+  collapsed_groups: [...state.collapsed],
 });
 
 /** How a new view is filed and how it looks, beyond its filters and display. */

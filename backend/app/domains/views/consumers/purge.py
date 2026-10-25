@@ -67,7 +67,7 @@ def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline
 
 
 def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the person's views, favorites, subscriptions, drafts and inbox in each of their workspaces."""
+    """Remove the person's views, favorites, subscriptions, drafts, list folds and inbox in each of their workspaces."""
     user = repositories.users.get(job.user_id)
     if user is None:
         return None
@@ -80,6 +80,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
         repositories.views.delete_personal_dashboards(workspace_id, job.user_id)
         repositories.views.delete_subscriptions_for_user(workspace_id, job.user_id)
         repositories.views.delete_team_subscriptions_for_user(workspace_id, job.user_id)
+        repositories.views.delete_list_folds_for_user(workspace_id, job.user_id)
         repositories.views.delete_drafts_for_user(workspace_id, job.user_id)
         repositories.views.delete_issue_drafts_for_user(workspace_id, job.user_id)
         repositories.inbox.delete_all(workspace_id, job.user_id)

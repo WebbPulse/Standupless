@@ -199,6 +199,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         completed_window=window,
         show_archived=payload.show_archived,
         group_header=payload.group_header,
+        collapsed_groups=list(payload.collapsed_groups),
         icon=payload.icon,
         color=payload.color,
         description=payload.description,
@@ -249,7 +250,8 @@ def update_saved_view(
     false and never null, because a switch that could be neither would leave the
     client guessing what the view shows. The filter is judged by what the view
     lists, and only a project view takes a projects arrangement, its named fields
-    moving and the rest kept.
+    moving and the rest kept. `collapsed_groups` sent as null clears every fold,
+    as an empty list does.
     """
     view = load_visible_view(repositories, context, view_id)
     check_filter(payload.filter, "projects" if view.lists_projects else "issues")
@@ -273,6 +275,8 @@ def update_saved_view(
             raise unprocessable(f"{name} must be true or false")
     if changes.get("visible_properties") is not None:
         changes["visible_properties"] = stored_visible_properties(changes["visible_properties"])
+    if "collapsed_groups" in changes and changes["collapsed_groups"] is None:
+        changes["collapsed_groups"] = []
     if "completed_window" in changes:
         changes["show_completed"] = changes["completed_window"] != "none"
     elif "show_completed" in changes:

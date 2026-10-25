@@ -108,6 +108,8 @@ class SavedView(BaseModel):
     view lists issues or projects, an absent value reading as issues because every
     view saved before project views existed was one; a project view keeps its
     arrangement in `projects_display` and leaves the issue display fields empty.
+    `collapsed_groups` holds the keys of the groups folded, the board columns and
+    swimlanes hidden and the parents folded, shared by everyone who opens the view.
     """
 
     workspace_id: str
@@ -130,6 +132,7 @@ class SavedView(BaseModel):
     completed_window: str | None = None
     show_archived: bool | None = None
     group_header: str | None = None
+    collapsed_groups: list[str] | None = None
     projects_display: dict[str, str] | None = None
     icon: str | None = None
     color: str | None = None
@@ -321,6 +324,37 @@ class IssueDraft(BaseModel):
     parent_title: str | None = None
     sub_issues: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+LIST_FOLDS_PREFIX = "folds#"
+"""The sort key prefix every member's remembered list folds share."""
+
+
+def list_folds_user_prefix(user_id: str) -> str:
+    """The sort key prefix every remembered list fold of one member shares."""
+    return f"{LIST_FOLDS_PREFIX}{user_id}#"
+
+
+def list_folds_key(user_id: str, list_key: str) -> str:
+    """The sort key of one member's folds on one list that is not a saved view."""
+    return f"{list_folds_user_prefix(user_id)}{list_key}"
+
+
+class ListFolds(BaseModel):
+    """One member's folded groups, hidden board columns and hidden swimlanes on one list.
+
+    A saved view carries its folds on its own row, shared by everyone who opens
+    it. A list that is not a saved view, such as a team's issues or a cycle,
+    keeps them per person here, so they follow the person across devices. The
+    row exists only while something is folded.
+    """
+
+    workspace_id: str
+    view_key: str
+    user_id: str
+    list_key: str
+    collapsed: list[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -925,6 +959,37 @@ class ViewRepository(DashboardRows):
                 self._repository.delete({"workspace_id": workspace_id, "view_key": row["view_key"]})
                 removed += 1
         return removed
+
+    def get_list_folds(self, workspace_id: str, user_id: str, list_key: str) -> ListFolds | None:
+        """One member's folds on one list, or `None` when nothing is folded there."""
+        if not workspace_id or not user_id or not list_key:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "view_key": list_folds_key(user_id, list_key)})
+        return ListFolds.model_validate(dict(item)) if item else None
+
+    def set_list_folds(self, workspace_id: str, user_id: str, list_key: str, collapsed: list[str]) -> list[str]:
+        """Store one member's folds on one list, removing the row once nothing is folded."""
+        if not workspace_id or not user_id or not list_key:
+            return []
+        key = {"workspace_id": workspace_id, "view_key": list_folds_key(user_id, list_key)}
+        if not collapsed:
+            self._repository.delete(key)
+            return []
+        row = ListFolds(
+            workspace_id=workspace_id,
+            view_key=key["view_key"],
+            user_id=user_id,
+            list_key=list_key,
+            collapsed=list(collapsed),
+        )
+        self._repository.put(as_item(row))
+        return row.collapsed
+
+    def delete_list_folds_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every list fold one member holds in a workspace, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        return self._delete_prefix(workspace_id, list_folds_user_prefix(user_id))
 
     def _list(self, workspace_id: str, prefix: str, limit: int) -> list[SavedView]:
         """Every view under one sort key prefix, in creation order."""

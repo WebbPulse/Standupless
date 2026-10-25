@@ -92,6 +92,19 @@ def group_header_of(value: Optional[str]) -> GroupHeaderField:
     return "estimate" if value == "estimate" else "count"
 
 
+COLLAPSED_GROUPS_MAX = 500
+"""The most folded groups, hidden columns and hidden swimlanes one view or list keeps."""
+
+COLLAPSED_GROUP_KEY_MAX = 300
+"""The longest key one folded group may carry, room for a label group and label name."""
+
+CollapsedGroupKey = Annotated[str, StringConstraints(min_length=1, max_length=COLLAPSED_GROUP_KEY_MAX)]
+"""One folded group, hidden board column or hidden swimlane, as the client keys it."""
+
+LIST_KEY_PATTERN = r"^[A-Za-z0-9:._-]{1,200}$"
+"""The shape of the key naming a list that is not a saved view, such as `team:<id>:active`."""
+
+
 PROJECT_STATUS_ID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
 """The shape of a workspace project status id a view's status filter may name beside a category."""
 
@@ -510,6 +523,7 @@ class ViewCreate(BaseModel):
     completed_window: Optional[CompletedWindowField] = None
     show_archived: StrictBool = False
     group_header: GroupHeaderField = "count"
+    collapsed_groups: list[CollapsedGroupKey] = Field(default_factory=list, max_length=COLLAPSED_GROUPS_MAX)
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -522,6 +536,12 @@ class ViewCreate(BaseModel):
     def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Drop repeats, keeping the order the caller chose to show them in."""
         return _unique(value)
+
+    @field_validator("collapsed_groups")
+    @classmethod
+    def check_collapsed_groups(cls, value: list[str]) -> list[str]:
+        """Drop repeated keys, since a group is either folded or not."""
+        return _unique(value) or []
 
     @field_validator("filter")
     @classmethod
@@ -555,6 +575,7 @@ class ViewUpdate(BaseModel):
     completed_window: Optional[CompletedWindowField] = None
     show_archived: Optional[StrictBool] = None
     group_header: Optional[GroupHeaderField] = None
+    collapsed_groups: Optional[list[CollapsedGroupKey]] = Field(default=None, max_length=COLLAPSED_GROUPS_MAX)
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -565,6 +586,12 @@ class ViewUpdate(BaseModel):
     @classmethod
     def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Drop repeats, keeping the order the caller chose to show them in."""
+        return _unique(value)
+
+    @field_validator("collapsed_groups")
+    @classmethod
+    def check_collapsed_groups(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop repeated keys, since a group is either folded or not."""
         return _unique(value)
 
     @field_validator("filter")
@@ -592,7 +619,8 @@ class ViewRead(BaseModel):
     view reads differently to two members, and so is `subscribed`, whether the
     caller follows the view to hear about issues entering it. `subscriber_count`
     is how many members follow it. `projects_display` is the arrangement of
-    a project view and null on an issue view.
+    a project view and null on an issue view. `collapsed_groups` names the
+    groups folded and the board columns and swimlanes hidden, empty when none is.
     """
 
     view_id: str
@@ -615,6 +643,7 @@ class ViewRead(BaseModel):
     completed_window: CompletedWindowField = "all"
     show_archived: bool = False
     group_header: GroupHeaderField = "count"
+    collapsed_groups: list[str] = Field(default_factory=list)
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = None
     color: Optional[str] = None
@@ -652,6 +681,7 @@ class ViewRead(BaseModel):
             completed_window=completed_window_of(view.completed_window, view.show_completed),
             show_archived=view.show_archived is True,
             group_header=group_header_of(view.group_header),
+            collapsed_groups=list(view.collapsed_groups or []),
             projects_display=stored_projects_display(view.projects_display) if view.lists_projects else None,
             icon=view.icon,
             color=view.color,
@@ -663,6 +693,26 @@ class ViewRead(BaseModel):
             created_at=view.created_at,
             updated_at=view.updated_at,
         )
+
+
+class ListFoldsRead(BaseModel):
+    """The caller's folds on one list that is not a saved view, empty when nothing is folded."""
+
+    list_key: str
+    collapsed_groups: list[str] = Field(default_factory=list)
+
+
+class ListFoldsWrite(BaseModel):
+    """The caller's folds on one list, replacing what was kept; an empty list clears them."""
+
+    list_key: str = Field(pattern=LIST_KEY_PATTERN)
+    collapsed_groups: list[CollapsedGroupKey] = Field(default_factory=list, max_length=COLLAPSED_GROUPS_MAX)
+
+    @field_validator("collapsed_groups")
+    @classmethod
+    def check_collapsed_groups(cls, value: list[str]) -> list[str]:
+        """Drop repeated keys, since a group is either folded or not."""
+        return _unique(value) or []
 
 
 class ViewListRead(BaseModel):

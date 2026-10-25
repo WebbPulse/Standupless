@@ -148,6 +148,9 @@ const copyOf = (view: SavedViewDisplayRead): SavedViewDisplayCreate => {
     ...(view.group_header === undefined
       ? {}
       : { group_header: view.group_header }),
+    ...(view.collapsed_groups === undefined
+      ? {}
+      : { collapsed_groups: view.collapsed_groups }),
     ...look,
   };
 };

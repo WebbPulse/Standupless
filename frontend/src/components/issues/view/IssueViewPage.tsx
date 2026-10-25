@@ -16,7 +16,7 @@
  * to it with Reset to default.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
@@ -42,6 +42,11 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useCreateIssue } from '../../../hooks/useCreateIssue';
 import { useIssueCollection } from '../../../hooks/useIssueCollection';
 import { useIssueContext } from '../../../hooks/useIssueContext';
+import {
+  legacyFoldsKey,
+  takeLegacyFolds,
+  useListFolds,
+} from '../../../hooks/useListFolds';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
@@ -471,6 +476,43 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     [setParams, base, params]
   );
   const changed = !sameViewState(state, base);
+  const keepsFolds = view !== undefined || composing;
+  const viewerFolds = useListFolds(
+    workspaceId,
+    keepsFolds ? undefined : scopeKey
+  );
+  const viewFoldSet = useMemo(
+    () => new Set(state.collapsed),
+    [state.collapsed]
+  );
+  const toggleViewFold = useCallback(
+    (key: string) => {
+      const next = new Set(state.collapsed);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setState({ ...state, collapsed: [...next] });
+    },
+    [state, setState]
+  );
+  const folds = keepsFolds
+    ? { collapsed: viewFoldSet, onToggle: toggleViewFold }
+    : { collapsed: viewerFolds.collapsed, onToggle: viewerFolds.toggle };
+  const savedViewId = view?.view_id;
+  const savedFolds = base.collapsed.length;
+  useEffect(() => {
+    if (savedViewId === undefined || workspaceId === '') return;
+    const legacy = takeLegacyFolds(legacyFoldsKey(workspaceId, savedViewId));
+    if (legacy.length === 0 || savedFolds > 0) return;
+    setParams(
+      (current) => {
+        if (current.has('fold')) return current;
+        const next = new URLSearchParams(current);
+        for (const key of legacy) next.append('fold', key);
+        return next;
+      },
+      { replace: true }
+    );
+  }, [savedViewId, workspaceId, savedFolds, setParams]);
   const displayChanged = !sameViewState(
     {
       ...state,
@@ -640,7 +682,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       const created = await createView(
         workspaceId,
         stateToViewBody(
-          state,
+          keepsFolds
+            ? state
+            : { ...state, collapsed: [...viewerFolds.collapsed] },
           details.name,
           runsOver,
           details.shared ? teamId : undefined,
@@ -836,9 +880,10 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           customerSorts={isMember}
           estimates={listEstimates}
           onReset={
-            !displayChanged
+            !displayChanged && (keepsFolds || viewerFolds.collapsed.size === 0)
               ? undefined
               : () => {
+                  if (!keepsFolds) viewerFolds.clear();
                   setState({
                     ...base,
                     filters: state.filters,
@@ -977,7 +1022,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             {...(teams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}
             createTeamId={homeTeam?.id}
-            collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
+            folds={folds}
             {...(emptyMessage === undefined ? {} : { emptyMessage })}
             filterFields={filterFields}
             statusCategories={statusCategories}

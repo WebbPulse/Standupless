@@ -55,6 +55,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useIssueCollection } from '../../hooks/useIssueCollection';
 import { useIssueContext } from '../../hooks/useIssueContext';
+import { useListFolds } from '../../hooks/useListFolds';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
@@ -491,6 +492,10 @@ export const CycleDetail: React.FC = () => {
     },
     [setParams, base, params]
   );
+  const folds = useListFolds(
+    workspaceId,
+    id === '' ? undefined : `cycle:${id}`
+  );
   const setFilters = (filters: ViewState['filters']): void => {
     setState({ ...state, filters });
   };
@@ -754,6 +759,7 @@ export const CycleDetail: React.FC = () => {
                 context={lists.context}
                 estimates={listEstimates}
                 onReset={
+                  folds.collapsed.size === 0 &&
                   sameViewState(
                     {
                       ...state,
@@ -766,6 +772,7 @@ export const CycleDetail: React.FC = () => {
                   )
                     ? undefined
                     : () => {
+                        folds.clear();
                         setState({
                           ...base,
                           filters: state.filters,
@@ -799,7 +806,7 @@ export const CycleDetail: React.FC = () => {
             canEdit={canEdit}
             createTeamId={mayCreate ? teamId : undefined}
             createCycleId={mayCreate ? id : undefined}
-            collapseKey={`${workspaceId}.cycle:${id}`}
+            folds={{ collapsed: folds.collapsed, onToggle: folds.toggle }}
             emptyMessage={
               state.filters.length === 0
                 ? 'No issues in this cycle yet.'
