@@ -64,6 +64,7 @@ from app.common.issue_keys import current
 from app.common.labels import github_label_names, one_per_group
 from app.common.sla import apply_sla
 from app.common.team_retirement import is_retired
+from app.common.triage_wake import wake_on_activity
 from app.domains.integrations import github_issues
 
 _log = logging.getLogger(__name__)
@@ -605,7 +606,7 @@ def _comment_author(repositories: Repositories, workspace_id: str, user: Any) ->
 
 
 def _create_comment(repositories: Repositories, issue: Issue, row: CommentSync, comment: Mapping[str, Any]) -> None:
-    """Write the comment a claimed sync row names."""
+    """Write the comment a claimed sync row names, ending a triage snooze as any new comment does."""
     created = build_comment(
         issue.workspace_id,
         issue.issue_id,
@@ -618,6 +619,7 @@ def _create_comment(repositories: Repositories, issue: Issue, row: CommentSync, 
         repositories.comments.create(created.model_copy(update={"comment_id": row.comment_id}))
     except ConditionFailed:
         return
+    wake_on_activity(repositories, issue, created.author_id)
 
 
 def enqueue_issue_sync(workspace_id: str, issue_id: str, *, created: bool) -> None:

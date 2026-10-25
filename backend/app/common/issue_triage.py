@@ -189,6 +189,7 @@ def _leave(
     updated = apply_patch(repositories, context, issue, attributes, accepting=outcome == "accepted")
     updated.in_triage = False
     updated.snoozed_until = None
+    updated.snoozed_by = None
     return store_patch(repositories, context, issue, updated, triage_outcome=outcome)
 
 
@@ -272,7 +273,8 @@ def snooze(repositories: Repositories, context: AuthzContext, issue_id: str, pay
 
     The moment must be at least a minute and at most 90 days out, the bounds the
     notification inbox's snooze keeps. Snoozing is arrangement, so it records no
-    history and leaves `updated_at` alone.
+    history and leaves `updated_at` alone. The caller is kept as `snoozed_by`, so
+    a comment from anyone else brings the issue back early (`triage_wake`).
     """
     issue = _waiting(repositories, context, issue_id)
     until = payload.until
@@ -282,10 +284,11 @@ def snooze(repositories: Repositories, context: AuthzContext, issue_id: str, pay
             raise unprocessable("until must be in the future")
         if until > now + SNOOZE_MAX:
             raise unprocessable("until must be within 90 days")
-    if issue.snoozed_until == until:
+    snoozed_by = context.user_id if until is not None else None
+    if issue.snoozed_until == until and issue.snoozed_by == snoozed_by:
         return issue
     try:
-        return repositories.issues.replace(issue.model_copy(update={"snoozed_until": until}))
+        return repositories.issues.replace(issue.model_copy(update={"snoozed_until": until, "snoozed_by": snoozed_by}))
     except IssueWriteConflict as exc:
         raise issue_changed() from exc
     except ConditionFailed as exc:
