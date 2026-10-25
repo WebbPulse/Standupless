@@ -484,17 +484,23 @@ def render_single(
 
 
 def render_digest(
-    entries: Sequence[DigestEntry], *, to: str, workspace_slug: str, accent: str | None = None
+    entries: Sequence[DigestEntry],
+    *,
+    to: str,
+    workspace_slug: str,
+    accent: str | None = None,
+    replyable: bool = False,
 ) -> EmailMessage:
     """Render one window's notifications as one email, grouped by issue, project or initiative.
 
     One notification renders as its own email. More are grouped under the issue
     or project they are about, in the order they happened, and the subject is the
     one issue's own when they are all about the same one, so a burst on one issue
-    still threads with its earlier mail.
+    still threads with its earlier mail. `replyable` is passed on to a lone
+    notification, since only that email carries a reply address.
     """
     if len(entries) == 1:
-        return render_single(entries[0], to=to, workspace_slug=workspace_slug, accent=accent)
+        return render_single(entries[0], to=to, workspace_slug=workspace_slug, accent=accent, replyable=replyable)
 
     ordered = sorted(entries, key=lambda entry: (entry.created_at, entry.notification_id))
     listed = ordered[:DIGEST_LINE_LIMIT]

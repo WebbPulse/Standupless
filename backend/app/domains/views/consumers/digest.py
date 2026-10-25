@@ -30,7 +30,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.notify_digests import DigestEntry, DueDigest
 from app.common.email import deliver, with_reply_to
 from app.common.email_replies import mint_reply_address
-from app.domains.views.email import render_digest, render_single
+from app.domains.views.email import render_digest
 
 _log = logging.getLogger(__name__)
 
@@ -123,8 +123,8 @@ def _compose(
             user_id=recipient_id,
             comment_id=entry.comment_id,
         )
-        message = render_single(
-            entry,
+        message = render_digest(
+            kept,
             to=str(recipient.email),
             workspace_slug=workspace.slug,
             accent=workspace.accent_color,
