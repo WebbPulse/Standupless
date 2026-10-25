@@ -13,7 +13,8 @@ A document lives in the workspace partition beside its parent, in four row shape
 - `document_mention#<issue>#<document>` is the backlink from one mentioned issue,
   so an issue's documents are one query.
 
-None of these kinds pass the planning stream filters, so no consumer reads them.
+Only the summary passes the planning stream filters, which the integrations
+stream consumer reads to send document webhooks.
 """
 
 from __future__ import annotations
@@ -182,6 +183,12 @@ def _key(workspace_id: str, planning_key: str) -> dict[str, str]:
     return {"workspace_id": workspace_id, "planning_key": planning_key}
 
 
+def _guarded(condition: Any) -> Any:
+    """The body row write condition: the row still exists, and meets `condition` when one is given."""
+    exists = Attr("planning_key").exists()
+    return exists if condition is None else exists & condition
+
+
 class DocumentRepository:
     """Reads and writes document rows, every method workspace first."""
 
@@ -255,13 +262,16 @@ class DocumentRepository:
         self._write_links(document, added=[mention.issue_id for mention in document.mentions], removed=[])
         return document
 
-    def replace(self, previous: Document, document: Document, body: DocumentBody) -> Document:
+    def replace(self, previous: Document, document: Document, body: DocumentBody, *, condition: Any = None) -> Document:
         """Write an edited document over its rows, moving its backlinks to match its mentions.
 
-        Raises `ConditionFailed` when the document went away under the edit.
+        The body row goes first, and `condition` is ANDed onto its write, so a
+        save guarded on the body it read leaves every row alone when the body
+        moved on. Raises `ConditionFailed` when the document went away under the
+        edit or the stored body no longer meets `condition`.
         """
+        self._repository.put(body.model_dump(mode="json"), condition=_guarded(condition))
         self._repository.put(document.model_dump(mode="json"), condition=Attr("planning_key").exists())
-        self._repository.put(body.model_dump(mode="json"), condition=Attr("planning_key").exists())
         before = {mention.issue_id for mention in previous.mentions}
         after = {mention.issue_id for mention in document.mentions}
         self._write_links(document, added=sorted(after - before), removed=sorted(before - after))
@@ -281,13 +291,15 @@ class DocumentRepository:
             return False
         return True
 
-    def move(self, previous: Document, document: Document, body: DocumentBody) -> Document:
+    def move(self, previous: Document, document: Document, body: DocumentBody, *, condition: Any = None) -> Document:
         """Refile a document under a new parent: a new summary row, the body and backlinks repointed, the old row gone.
 
-        Raises `ConditionFailed` when the document went away under the move or
-        already sits under the new parent.
+        `condition` is ANDed onto the body write, which goes first, as in
+        `replace`. Raises `ConditionFailed` when the document went away under
+        the move, already sits under the new parent, or its body no longer
+        meets `condition`.
         """
-        self._repository.put(body.model_dump(mode="json"), condition=Attr("planning_key").exists())
+        self._repository.put(body.model_dump(mode="json"), condition=_guarded(condition))
         self._repository.put(document.model_dump(mode="json"), condition=Attr("planning_key").not_exists())
         self._repository.delete_many([_key(previous.workspace_id, previous.planning_key)])
         before = {mention.issue_id for mention in previous.mentions}

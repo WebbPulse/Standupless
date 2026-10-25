@@ -180,3 +180,17 @@ def test_summaries_carry_the_lifecycle_moments_and_sort_by_completion(
         assert rows[open_issue]["completed_at"] is None
         assert rows[later]["completed_at"] is not None
         assert rows[later]["cancelled_at"] is None
+
+
+def test_search_takes_relative_date_bounds(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A relative bound resolves against today, and a malformed one is a tool error."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    fresh = _create(client, secret)
+
+    recent = json.loads(_search(client, secret, created_after="-1w")["content"][0]["text"])
+    future = json.loads(_search(client, secret, created_after="+1d")["content"][0]["text"])
+    refused = _search(client, secret, created_after="-1week")
+
+    assert fresh in {row["issue_id"] for row in recent["issues"]}
+    assert fresh not in {row["issue_id"] for row in future["issues"]}
+    assert refused["isError"] is True

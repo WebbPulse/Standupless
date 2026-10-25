@@ -282,10 +282,17 @@ def list_feed(
 
 
 def engagement(repositories: Repositories, event: PulseEvent) -> int:
-    """Replies plus reactions on the update an entry posted; initiative updates carry no thread, so they score 0."""
-    if event.event_type != "project_update" or not event.project_id or not event.update_id:
+    """Replies plus reactions on the update an entry posted; an entry that posted no update scores 0."""
+    if not event.update_id:
         return 0
-    thread = repositories.planning.update_threads.read(event.workspace_id, event.project_id, event.update_id)
+    if event.event_type == "project_update" and event.project_id:
+        thread = repositories.planning.update_threads.read(event.workspace_id, event.project_id, event.update_id)
+    elif event.event_type == "initiative_update" and event.initiative_id:
+        thread = repositories.planning.initiative_update_threads.read(
+            event.workspace_id, event.initiative_id, event.update_id
+        )
+    else:
+        return 0
     return len(thread.comments) + len(thread.reactions_on(event.update_id))
 
 

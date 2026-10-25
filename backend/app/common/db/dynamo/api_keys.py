@@ -10,7 +10,7 @@ a principal for.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any, Iterable, Mapping, Optional
 
 KEY_KINDS: tuple[str, ...] = ("user", "workspace")
 
@@ -173,3 +173,24 @@ def normalise_scopes(scopes: Iterable[str]) -> list[str]:
 def unknown_scopes(scopes: Iterable[str]) -> list[str]:
     """Which requested scopes are outside the known set, sorted, for a 422 to name."""
     return sorted({scope.strip() for scope in scopes if scope.strip()} - set(API_KEY_SCOPES))
+
+
+TEAM_IDS_METADATA = "team_ids"
+"""The key metadata field listing the teams a restricted key may reach.
+
+Absent or empty means the key reaches every team its holder can, which is what every
+key minted before the restriction existed reads as, so none of them needs migrating.
+"""
+
+
+def restricted_team_ids(metadata: Mapping[str, Any] | None) -> Optional[tuple[str, ...]]:
+    """The teams a key is restricted to, or `None` for a key that reaches every team.
+
+    The stored list is kept as minted, so a team deleted since simply matches nothing,
+    and a key whose teams are all gone reaches no team rather than falling back to all.
+    """
+    raw = (metadata or {}).get(TEAM_IDS_METADATA)
+    if not isinstance(raw, (list, tuple)):
+        return None
+    teams = tuple(dict.fromkeys(str(team_id).strip() for team_id in raw if str(team_id).strip()))
+    return teams or None

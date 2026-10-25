@@ -22,6 +22,7 @@ from app.common.db.dynamo.relations import LINK_TYPES
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
 from app.common.estimates import is_unestimated
 from app.common.issue_rules import TRIAGE_STATUS_ID, shown_status_id
+from app.common.relative_days import RELATIVE_SYNTAX, resolve_day_bound
 from app.common.sla import SLA_STATUSES
 from app.common.sla import sla_status as issue_sla_status
 
@@ -99,6 +100,36 @@ def _boolean(name: str, raw: object) -> Optional[bool]:
     value = BOOLEAN_VALUES.get(str(raw).strip().lower())
     if value is None:
         raise InvalidFilterValue(f"{name} must be true or false")
+    return value
+
+
+MAX_FILTER_NUMBER = 10**15
+"""The largest bound a numeric customer filter takes, far past any revenue, headcount or request count."""
+
+
+def _number(name: str, raw: object) -> Optional[int]:
+    """One numeric filter bound from an int or its text spelling, `None` when absent.
+
+    A whole number from zero up, refused otherwise, because a saved view stores
+    the bound as text and a misspelt one would read as no bound at all.
+    """
+    if raw is None or raw == "" or raw == []:
+        return None
+    if isinstance(raw, list):
+        if len(raw) != 1:
+            raise InvalidFilterValue(f"{name} must be one whole number")
+        raw = raw[0]
+    if isinstance(raw, bool):
+        raise InvalidFilterValue(f"{name} must be a whole number")
+    if isinstance(raw, int):
+        value = raw
+    else:
+        text = str(raw).strip()
+        if not (text.isascii() and text.isdigit()) or len(text) > len(str(MAX_FILTER_NUMBER)):
+            raise InvalidFilterValue(f"{name} must be a whole number from 0")
+        value = int(text)
+    if value < 0 or value > MAX_FILTER_NUMBER:
+        raise InvalidFilterValue(f"{name} must be a whole number from 0 to {MAX_FILTER_NUMBER}")
     return value
 
 
@@ -311,11 +342,25 @@ class IssueFilter:
     has_relations: FilterValues = field(default_factory=frozenset)
     customer_ids: FilterValues = field(default_factory=frozenset)
     customer_ids_not: FilterValues = field(default_factory=frozenset)
+    customer_status_ids: FilterValues = field(default_factory=frozenset)
+    customer_status_ids_not: FilterValues = field(default_factory=frozenset)
+    customer_tier_ids: FilterValues = field(default_factory=frozenset)
+    customer_tier_ids_not: FilterValues = field(default_factory=frozenset)
+    customer_revenue_min: Optional[int] = None
+    customer_revenue_max: Optional[int] = None
+    customer_size_min: Optional[int] = None
+    customer_size_max: Optional[int] = None
+    customer_request_count_min: Optional[int] = None
+    customer_request_count_max: Optional[int] = None
+    customer_important: Optional[bool] = None
+    release_ids: FilterValues = field(default_factory=frozenset)
+    release_ids_not: FilterValues = field(default_factory=frozenset)
     match: str = "all"
     groups: tuple[IssueFilter, ...] = ()
     relation_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     subscribed_issue_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     customer_index: Optional[CustomerIndex] = field(default=None, compare=False)
+    release_index: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     viewer_id: Optional[str] = field(default=None, compare=False)
 
     @property
@@ -347,8 +392,35 @@ class IssueFilter:
     @property
     def needs_customers(self) -> bool:
         """Whether matching needs the workspace's customer requests, which costs one planning query."""
-        own = bool(self.customer_ids or self.customer_ids_not)
-        return own or any(group.needs_customers for group in self.groups)
+        own = bool(
+            self.customer_ids
+            or self.customer_ids_not
+            or self.customer_request_count_min is not None
+            or self.customer_request_count_max is not None
+            or self.customer_important is not None
+        )
+        return own or self.needs_customer_profiles or any(group.needs_customers for group in self.groups)
+
+    @property
+    def needs_customer_profiles(self) -> bool:
+        """Whether matching needs each customer's status, tier, revenue or size, read in that same query."""
+        own = bool(
+            self.customer_status_ids
+            or self.customer_status_ids_not
+            or self.customer_tier_ids
+            or self.customer_tier_ids_not
+            or self.customer_revenue_min is not None
+            or self.customer_revenue_max is not None
+            or self.customer_size_min is not None
+            or self.customer_size_max is not None
+        )
+        return own or any(group.needs_customer_profiles for group in self.groups)
+
+    @property
+    def needs_releases(self) -> bool:
+        """Whether matching needs the workspace's release links, which costs one planning query."""
+        own = bool(self.release_ids or self.release_ids_not)
+        return own or any(group.needs_releases for group in self.groups)
 
     @property
     def needs_cycles(self) -> bool:
@@ -389,7 +461,13 @@ class IssueFilter:
         """The filter as plain JSON values, groups included, for the fingerprint."""
         canonical: dict[str, Any] = {}
         for item in fields(self):
-            if item.name in ("relation_ids", "subscribed_issue_ids", "customer_index", "viewer_id"):
+            if item.name in (
+                "relation_ids",
+                "subscribed_issue_ids",
+                "customer_index",
+                "release_index",
+                "viewer_id",
+            ):
                 continue
             value = getattr(self, item.name)
             if isinstance(value, frozenset):
@@ -490,12 +568,50 @@ class IssueFilter:
             held = index.customer_ids("issue", issue.issue_id) if index else frozenset()
             important = index.important_count("issue", issue.issue_id) if index else 0
             yield customer_match(self.customer_ids, self.customer_ids_not, held, important)
+        yield from self._customer_field_conditions(issue.issue_id)
+        if self.release_ids or self.release_ids_not:
+            releases = (self.release_index or {}).get(issue.issue_id, frozenset())
+            yield _labels_included(self.release_ids, self.release_ids_not, list(releases))
         if self.content or self.content_not:
             yield _content_matches(self.content, self.content_not, issue)
         if self.query and self.query.strip():
             yield _query_matches(self.query, issue)
         for group in self.groups:
             yield group.conditions_hold(issue, categories)
+
+    def _customer_field_conditions(self, issue_id: str) -> Iterator[bool]:
+        """One result per condition on the asking customers' fields, request count or important flag."""
+        index = self.customer_index or CustomerIndex()
+        if self.customer_status_ids or self.customer_status_ids_not:
+            profiles = index.profiles_of("issue", issue_id)
+            held = frozenset(profile.status_id for profile in profiles if profile.status_id)
+            yield _customer_values_hold(
+                self.customer_status_ids,
+                self.customer_status_ids_not,
+                held,
+                bool(index.customer_ids("issue", issue_id)),
+            )
+        if self.customer_tier_ids or self.customer_tier_ids_not:
+            profiles = index.profiles_of("issue", issue_id)
+            held = frozenset(profile.tier_id for profile in profiles if profile.tier_id)
+            yield _customer_values_hold(
+                self.customer_tier_ids, self.customer_tier_ids_not, held, bool(index.customer_ids("issue", issue_id))
+            )
+        if self.customer_revenue_min is not None or self.customer_revenue_max is not None:
+            yield any(
+                _bounded(profile.revenue, self.customer_revenue_min, self.customer_revenue_max)
+                for profile in index.profiles_of("issue", issue_id)
+            )
+        if self.customer_size_min is not None or self.customer_size_max is not None:
+            yield any(
+                _bounded(profile.size, self.customer_size_min, self.customer_size_max)
+                for profile in index.profiles_of("issue", issue_id)
+            )
+        if self.customer_request_count_min is not None or self.customer_request_count_max is not None:
+            count = index.request_count("issue", issue_id)
+            yield _bounded(count, self.customer_request_count_min, self.customer_request_count_max)
+        if self.customer_important is not None:
+            yield (index.important_count("issue", issue_id) > 0) == self.customer_important
 
     def _subscribers_hold(self, issue_id: str) -> bool:
         """The subscriber condition: one of the wanted people subscribes, none of the unwanted does."""
@@ -504,6 +620,31 @@ class IssueFilter:
         ):
             return False
         return not any(person is not None and self._subscribed(person, issue_id) for person in self.subscriber_ids_not)
+
+
+def _customer_values_hold(wanted: FilterValues, unwanted: FilterValues, held: frozenset[str], asked: bool) -> bool:
+    """A status or tier condition: one asking customer holds a wanted entry and none an unwanted one.
+
+    `None` stands for an issue no customer asked for, the same "no customer" the
+    customer filter means, so `none` among the wanted keeps those issues and among
+    the unwanted drops them.
+    """
+
+    def holds(value: Optional[str]) -> bool:
+        return not asked if value is None else value in held
+
+    if wanted and not any(holds(value) for value in wanted):
+        return False
+    return not (unwanted and any(holds(value) for value in unwanted))
+
+
+def _bounded(value: Optional[int], low: Optional[int], high: Optional[int]) -> bool:
+    """A number against inclusive at least and at most bounds; an unset number meets no bound."""
+    if value is None:
+        return False
+    if low is not None and value < low:
+        return False
+    return high is None or value <= high
 
 
 def _due_within(due_date: Optional[str], after: Optional[str], before: Optional[str]) -> bool:
@@ -549,11 +690,29 @@ def _within(moment: datetime, after: Optional[str], before: Optional[str]) -> bo
     return True
 
 
-def _day(value: Optional[str]) -> Optional[str]:
-    """A date bound reduced to its `YYYY-MM-DD` day, so a full timestamp bound still compares by day."""
+def _resolved(name: str, value: object) -> Optional[str]:
+    """A date bound with a relative offset resolved against the request day, `None` when absent.
+
+    An absolute bound comes back as it was sent. A bound that looks relative but
+    does not parse is refused with `InvalidFilterValue`.
+    """
     if not value:
         return None
-    text = str(value).strip()[:10]
+    try:
+        return resolve_day_bound(str(value))
+    except ValueError:
+        raise InvalidFilterValue(f"{name} must be {RELATIVE_SYNTAX}") from None
+
+
+def _day(name: str, value: object) -> Optional[str]:
+    """A date bound reduced to its `YYYY-MM-DD` day, so a full timestamp bound still compares by day.
+
+    A relative bound such as `-14d` or `today` resolves to its day first.
+    """
+    resolved = _resolved(name, value)
+    if not resolved:
+        return None
+    text = resolved.strip()[:10]
     return text or None
 
 
@@ -659,6 +818,19 @@ def build_issue_filter(
     has_relation: Iterable[str] | str | None = None,
     customer_id: Iterable[str] | str | None = None,
     customer_id_not: Iterable[str] | str | None = None,
+    customer_status_id: Iterable[str] | str | None = None,
+    customer_status_id_not: Iterable[str] | str | None = None,
+    customer_tier_id: Iterable[str] | str | None = None,
+    customer_tier_id_not: Iterable[str] | str | None = None,
+    customer_revenue_min: object = None,
+    customer_revenue_max: object = None,
+    customer_size_min: object = None,
+    customer_size_max: object = None,
+    customer_request_count_min: object = None,
+    customer_request_count_max: object = None,
+    customer_important: object = None,
+    release_id: Iterable[str] | str | None = None,
+    release_id_not: Iterable[str] | str | None = None,
     match: object = None,
     groups: object = None,
 ) -> IssueFilter:
@@ -674,7 +846,21 @@ def build_issue_filter(
     `InvalidFilterValue` otherwise. `customer_id` keeps the issues one of the
     named customers asked for, and `customer_id_not` drops them, `none` standing
     for an issue no customer asked for and `important` for one with an important
-    request. `my_teams` in a team filter stands for the teams `user_id` belongs
+    request. `customer_status_id` and `customer_tier_id` keep the issues an
+    asking customer holds one of the named statuses or tiers, and their `_not`
+    forms drop them, `none` standing for an issue no customer asked for.
+    `customer_revenue_min` and `_max`, and `customer_size_min` and `_max`, keep
+    the issues one asking customer falls within, both bounds inclusive and held
+    by the same customer. `customer_request_count_min` and `_max` bound how many
+    requests name the issue, so a max of 0 keeps the unrequested ones, and
+    `customer_important` keeps the issues with an important request, or with
+    `false` the rest. A bound that is not a whole number from 0 is refused with
+    `InvalidFilterValue`. `release_id` keeps the issues that shipped in one of the named
+    releases and `release_id_not` drops them, `none` standing for an issue in no
+    release. Every date bound takes a day or an offset relative to the request
+    day, `today`, `-14d`, `+1w`, `-1m` or `+1y`, resolved here by calendar; a bound
+    that looks relative but does not parse is refused with `InvalidFilterValue`.
+    `my_teams` in a team filter stands for the teams `user_id` belongs
     to. Relative cycles, `my_teams`, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
@@ -711,14 +897,14 @@ def build_issue_filter(
         estimates=_estimates(estimate),
         estimates_not=_estimates(estimate_not),
         sla_statuses=_sla_statuses(sla_status),
-        due_before=due_before or None,
-        due_after=due_after or None,
-        created_before=_day(created_before),
-        created_after=_day(created_after),
-        updated_before=_day(updated_before),
-        updated_after=_day(updated_after),
-        completed_before=_day(completed_before),
-        completed_after=_day(completed_after),
+        due_before=_resolved("due_before", due_before),
+        due_after=_resolved("due_after", due_after),
+        created_before=_day("created_before", created_before),
+        created_after=_day("created_after", created_after),
+        updated_before=_day("updated_before", updated_before),
+        updated_after=_day("updated_after", updated_after),
+        completed_before=_day("completed_before", completed_before),
+        completed_after=_day("completed_after", completed_after),
         content=_text(content),
         content_not=_text(content_not),
         query=q or None,
@@ -731,6 +917,19 @@ def build_issue_filter(
         has_relations=_relation_types(has_relation),
         customer_ids=_values(customer_id),
         customer_ids_not=_values(customer_id_not),
+        customer_status_ids=_values(customer_status_id),
+        customer_status_ids_not=_values(customer_status_id_not),
+        customer_tier_ids=_values(customer_tier_id),
+        customer_tier_ids_not=_values(customer_tier_id_not),
+        customer_revenue_min=_number("customer_revenue_min", customer_revenue_min),
+        customer_revenue_max=_number("customer_revenue_max", customer_revenue_max),
+        customer_size_min=_number("customer_size_min", customer_size_min),
+        customer_size_max=_number("customer_size_max", customer_size_max),
+        customer_request_count_min=_number("customer_request_count_min", customer_request_count_min),
+        customer_request_count_max=_number("customer_request_count_max", customer_request_count_max),
+        customer_important=_boolean("customer_important", customer_important),
+        release_ids=_values(release_id),
+        release_ids_not=_values(release_id_not),
         match=_match_mode(match),
         groups=tuple(_group_filter(user_id, item) for item in parse_groups(groups)),
         viewer_id=user_id,

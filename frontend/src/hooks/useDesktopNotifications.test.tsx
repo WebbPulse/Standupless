@@ -2,7 +2,8 @@
  * The browser desktop notifications for new inbox rows. The first read on a
  * device only marks where to start, a later rise notifies each new row once,
  * a burst collapses into one summary, a focused tab and the desktop app stay
- * quiet, and clicking a notification opens the issue.
+ * quiet, a pause holds them back unless a direct mention may break through,
+ * and clicking a notification opens the issue.
  */
 
 import React from 'react';
@@ -33,6 +34,12 @@ const listInbox =
       query: unknown
     ) => Promise<{ notifications: NotificationRead[]; next_cursor: null }>
   >();
+
+const auth: { user: Record<string, unknown> | null } = { user: null };
+
+vi.mock('./useAuth', () => ({
+  useAuth: () => ({ user: auth.user }),
+}));
 
 vi.mock('./useSidebarData', () => ({
   useInboxCount: (workspaceId: string) => counts.get(workspaceId) ?? null,
@@ -120,6 +127,7 @@ const settle = async () => {
 let hasFocus: MockInstance<() => boolean>;
 
 beforeEach(() => {
+  auth.user = null;
   shown.length = 0;
   counts.clear();
   listInbox.mockReset();
@@ -137,6 +145,50 @@ afterEach(() => {
 });
 
 describe('useDesktopNotifications', () => {
+  it('shows nothing while paused but still moves the mark', async () => {
+    auth.user = {
+      notifications_paused_until: new Date(Date.now() + 3600_000).toISOString(),
+    };
+    globalThis.localStorage.setItem(
+      notifiedMarkKey('ws-paused'),
+      JSON.stringify({ id: 'n1', at: '2026-10-25T10:00:01Z' })
+    );
+    counts.set('ws-paused', 1);
+    listInbox.mockResolvedValue({
+      notifications: [row('n2', '2026-10-25T10:00:02Z')],
+      next_cursor: null,
+    });
+    mount('ws-paused');
+    await waitFor(() => expect(listInbox).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(shown).toHaveLength(0);
+    expect(readNotifiedMark('ws-paused')?.id).toBe('n2');
+  });
+
+  it('lets a direct mention through a pause when urgent ones may pass', async () => {
+    auth.user = {
+      notifications_paused_until: new Date(Date.now() + 3600_000).toISOString(),
+      urgent_bypasses_pause: true,
+    };
+    globalThis.localStorage.setItem(
+      notifiedMarkKey('ws-mention'),
+      JSON.stringify({ id: 'n1', at: '2026-10-25T10:00:01Z' })
+    );
+    counts.set('ws-mention', 2);
+    listInbox.mockResolvedValue({
+      notifications: [
+        { ...row('n3', '2026-10-25T10:00:03Z', 'ENG-3'), kind: 'mentioned' },
+        row('n2', '2026-10-25T10:00:02Z', 'ENG-2'),
+      ],
+      next_cursor: null,
+    });
+    mount('ws-mention');
+    await waitFor(() => expect(shown).toHaveLength(1));
+    await settle();
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.tag).toBe('n3');
+  });
+
   it('only marks where to start on the first read on a device', async () => {
     counts.set('ws-first', 2);
     listInbox.mockResolvedValue({

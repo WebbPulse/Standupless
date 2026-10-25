@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Annotated, Any, Literal, Mapping, Optional, Union, get_args
+from typing import Annotated, Any, Literal, Mapping, Optional, Sequence, Union, get_args
 
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator
 from webbpulse.http import cursor_page
@@ -22,6 +22,9 @@ from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.planning import PROJECT_STATUSES
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox_summary import notification_summary
+from app.common.project_filters import DATE_BOUND_FIELDS, UPDATE_AGE_FIELDS, property_entry_well_formed
+from app.common.project_filters import FILTER_KEYS as PROJECT_PROPERTY_FILTER_FIELDS
+from app.common.relative_days import day_bound_well_formed
 
 SortField = Literal[
     "updated_desc",
@@ -69,6 +72,10 @@ VisiblePropertyField = Literal[
     "created_at",
     "updated_at",
     "time_in_status",
+    "release",
+    "sla",
+    "customers",
+    "customer_revenue",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
@@ -86,6 +93,19 @@ GROUP_HEADERS: tuple[str, ...] = get_args(GroupHeaderField)
 def group_header_of(value: Optional[str]) -> GroupHeaderField:
     """The group header a stored row reads as, the issue count when it predates the choice."""
     return "estimate" if value == "estimate" else "count"
+
+
+COLLAPSED_GROUPS_MAX = 500
+"""The most folded groups, hidden columns and hidden swimlanes one view or list keeps."""
+
+COLLAPSED_GROUP_KEY_MAX = 300
+"""The longest key one folded group may carry, room for a label group and label name."""
+
+CollapsedGroupKey = Annotated[str, StringConstraints(min_length=1, max_length=COLLAPSED_GROUP_KEY_MAX)]
+"""One folded group, hidden board column or hidden swimlane, as the client keys it."""
+
+LIST_KEY_PATTERN = r"^[A-Za-z0-9:._-]{1,200}$"
+"""The shape of the key naming a list that is not a saved view, such as `team:<id>:active`."""
 
 
 PROJECT_STATUS_ID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
@@ -115,6 +135,7 @@ GroupByProperty = Literal[
     "team",
     "sla",
     "customer",
+    "release",
 ]
 """The properties a view may group or sub-group its rows by."""
 
@@ -161,7 +182,38 @@ NotificationKindField = Literal[
     "priority_urgent",
     "blocking_changed",
     "document_comment",
+    "team_issue_created",
+    "view_project_added",
+    "project_lead_assigned",
+    "project_member_added",
+    "initiative_owner_assigned",
 ]
+
+NUMBER_FILTER_FIELDS: frozenset[str] = frozenset(
+    {
+        "customer_revenue_min",
+        "customer_revenue_max",
+        "customer_size_min",
+        "customer_size_max",
+        "customer_request_count_min",
+        "customer_request_count_max",
+    }
+)
+"""The issue filter keys that hold one whole number, stored as its text like every other value."""
+
+DATE_FILTER_FIELDS: frozenset[str] = frozenset(
+    {
+        "created_after",
+        "created_before",
+        "updated_after",
+        "updated_before",
+        "completed_after",
+        "completed_before",
+        "due_after",
+        "due_before",
+    }
+)
+"""The issue filter keys that hold one date bound: a day, or an offset such as `-14d` stored as written."""
 
 FILTER_FIELDS: frozenset[str] = frozenset(
     {
@@ -211,6 +263,14 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "completed_before",
         "customer_id",
         "customer_id_not",
+        "customer_status_id",
+        "customer_status_id_not",
+        "customer_tier_id",
+        "customer_tier_id_not",
+        *NUMBER_FILTER_FIELDS,
+        "customer_important",
+        "release_id",
+        "release_id_not",
         "match",
         "groups",
     }
@@ -233,6 +293,7 @@ PROJECT_FILTER_FIELDS: frozenset[str] = frozenset(
         "customer_id",
         "customer_id_not",
         "label_id",
+        *PROJECT_PROPERTY_FILTER_FIELDS,
     }
 )
 """Every key a project view's filter may carry, the projects page's own filters.
@@ -244,13 +305,18 @@ keeps projects an open blocker holds up, or with `false` the ones none does, and
 `is_blocking` open projects that hold another up, or with `false` the rest.
 `customer_id` and `customer_id_not` the customers whose requests it keeps or
 drops, `none` standing for projects no customer asked for. `label_id` the
-project labels it keeps, `none` standing for projects with no label.
+project labels it keeps, `none` standing for projects with no label. `health`,
+`priority` and `member_id` the healths, priorities and members it keeps, `none`
+standing for no health or no members, the four date bounds one day each, and
+`updated_within_days` and `not_updated_within_days` an update age in days.
 """
 
 PROJECT_FLAG_FILTER_FIELDS: frozenset[str] = frozenset({"sub_teams", "is_blocked", "is_blocking"})
 """The project filter keys that hold `true` or `false`."""
 
-PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", *PROJECT_FLAG_FILTER_FIELDS})
+PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
+    {"team_id", *PROJECT_FLAG_FILTER_FIELDS, *DATE_BOUND_FIELDS, *UPDATE_AGE_FIELDS}
+)
 """The project filter keys that hold one value rather than a list."""
 
 VIEW_NAME_MAX = 80
@@ -288,12 +354,14 @@ SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
         "content_not",
         "completed_after",
         "completed_before",
+        "customer_important",
+        *NUMBER_FILTER_FIELDS,
         "match",
     }
 )
 """The filter keys the issue list takes once, so a stored list for one would not run."""
 
-BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking", "has_sub_issues"})
+BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking", "has_sub_issues", "customer_important"})
 """The scalar filter keys that hold `true` or `false`, stored as text like every other value."""
 
 MATCH_VALUES: tuple[str, ...] = ("all", "any")
@@ -307,6 +375,10 @@ MAX_FILTER_GROUPS = 10
 
 MAX_GROUP_DEPTH = 2
 """How deep stored groups nest, the issue list's own bound."""
+
+
+NUMBER_FILTER_DIGITS = 16
+"""The most digits a stored numeric bound holds, the issue list's own ceiling of 10**15."""
 
 
 def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
@@ -328,7 +400,17 @@ def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]
 
 
 def _normalized_entry(key: str, entry: Any) -> Any:
-    """One filter value with a boolean key's bool, or its upper cased text, turned into `true` or `false`."""
+    """One filter value with a boolean key's bool, or its upper cased text, turned into `true` or `false`.
+
+    An update age or a numeric customer bound sent as a JSON number is stored as
+    its text, as every other value is.
+    """
+    if (
+        (key in UPDATE_AGE_FIELDS or key in NUMBER_FILTER_FIELDS)
+        and isinstance(entry, int)
+        and not isinstance(entry, bool)
+    ):
+        return str(entry)
     if key not in BOOLEAN_FILTER_FIELDS:
         return entry
     if isinstance(entry, bool):
@@ -369,6 +451,10 @@ def _entry_well_formed(key: str, entry: Any) -> bool:
         return entry in ("true", "false")
     if key == "match":
         return entry in MATCH_VALUES
+    if key in NUMBER_FILTER_FIELDS:
+        return isinstance(entry, str) and entry.isascii() and entry.isdigit() and len(entry) <= NUMBER_FILTER_DIGITS
+    if key in DATE_FILTER_FIELDS:
+        return isinstance(entry, str) and day_bound_well_formed(entry)
     if isinstance(entry, str):
         return True
     repeatable = key not in SCALAR_FILTER_FIELDS
@@ -436,10 +522,37 @@ def _project_entry_well_formed(key: str, entry: Any) -> bool:
         return False
     if key == "status":
         return all(item in PROJECT_STATUSES or PROJECT_STATUS_ID_PATTERN.match(item) for item in values)
+    if key in PROJECT_PROPERTY_FILTER_FIELDS:
+        return property_entry_well_formed(key, entry)
     return True
 
 
 VISIBLE_PROPERTIES: tuple[str, ...] = get_args(VisiblePropertyField)
+
+
+SLA_HIDDEN = "-sla"
+"""The stored marker of a property list that hides the SLA badge, never seen by a client.
+
+Every list saved before `sla` became a property showed the badge, so a stored
+list holding neither `sla` nor this marker reads back with `sla` on.
+"""
+
+
+def stored_visible_properties(value: Optional[Sequence[str]]) -> Optional[list[str]]:
+    """The property list as it is stored, marking a list without `sla` as one that hides the badge."""
+    if value is None:
+        return None
+    shown = [item for item in value if item != SLA_HIDDEN]
+    return shown if "sla" in shown else [*shown, SLA_HIDDEN]
+
+
+def read_visible_properties(stored: Optional[Sequence[str]]) -> Optional[list[str]]:
+    """The property list a client reads from a stored one, with `sla` on for a list saved before it existed."""
+    if stored is None:
+        return None
+    if SLA_HIDDEN in stored:
+        return [item for item in stored if item != SLA_HIDDEN]
+    return list(stored) if "sla" in stored else [*stored, "sla"]
 
 
 def _unique(value: Optional[list[str]]) -> Optional[list[str]]:
@@ -477,6 +590,7 @@ class ViewCreate(BaseModel):
     completed_window: Optional[CompletedWindowField] = None
     show_archived: StrictBool = False
     group_header: GroupHeaderField = "count"
+    collapsed_groups: list[CollapsedGroupKey] = Field(default_factory=list, max_length=COLLAPSED_GROUPS_MAX)
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -489,6 +603,12 @@ class ViewCreate(BaseModel):
     def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Drop repeats, keeping the order the caller chose to show them in."""
         return _unique(value)
+
+    @field_validator("collapsed_groups")
+    @classmethod
+    def check_collapsed_groups(cls, value: list[str]) -> list[str]:
+        """Drop repeated keys, since a group is either folded or not."""
+        return _unique(value) or []
 
     @field_validator("filter")
     @classmethod
@@ -522,6 +642,7 @@ class ViewUpdate(BaseModel):
     completed_window: Optional[CompletedWindowField] = None
     show_archived: Optional[StrictBool] = None
     group_header: Optional[GroupHeaderField] = None
+    collapsed_groups: Optional[list[CollapsedGroupKey]] = Field(default=None, max_length=COLLAPSED_GROUPS_MAX)
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -532,6 +653,12 @@ class ViewUpdate(BaseModel):
     @classmethod
     def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Drop repeats, keeping the order the caller chose to show them in."""
+        return _unique(value)
+
+    @field_validator("collapsed_groups")
+    @classmethod
+    def check_collapsed_groups(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop repeated keys, since a group is either folded or not."""
         return _unique(value)
 
     @field_validator("filter")
@@ -559,7 +686,8 @@ class ViewRead(BaseModel):
     view reads differently to two members, and so is `subscribed`, whether the
     caller follows the view to hear about issues entering it. `subscriber_count`
     is how many members follow it. `projects_display` is the arrangement of
-    a project view and null on an issue view.
+    a project view and null on an issue view. `collapsed_groups` names the
+    groups folded and the board columns and swimlanes hidden, empty when none is.
     """
 
     view_id: str
@@ -582,6 +710,7 @@ class ViewRead(BaseModel):
     completed_window: CompletedWindowField = "all"
     show_archived: bool = False
     group_header: GroupHeaderField = "count"
+    collapsed_groups: list[str] = Field(default_factory=list)
     projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = None
     color: Optional[str] = None
@@ -612,13 +741,14 @@ class ViewRead(BaseModel):
             sub_group_by=view.sub_group_by,
             ordering=view.ordering,
             ordering_reversed=view.ordering_reversed is True,
-            visible_properties=list(view.visible_properties) if view.visible_properties is not None else None,
+            visible_properties=read_visible_properties(view.visible_properties),
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,
             show_completed=view.show_completed is not False,
             completed_window=completed_window_of(view.completed_window, view.show_completed),
             show_archived=view.show_archived is True,
             group_header=group_header_of(view.group_header),
+            collapsed_groups=list(view.collapsed_groups or []),
             projects_display=stored_projects_display(view.projects_display) if view.lists_projects else None,
             icon=view.icon,
             color=view.color,
@@ -630,6 +760,26 @@ class ViewRead(BaseModel):
             created_at=view.created_at,
             updated_at=view.updated_at,
         )
+
+
+class ListFoldsRead(BaseModel):
+    """The caller's folds on one list that is not a saved view, empty when nothing is folded."""
+
+    list_key: str
+    collapsed_groups: list[str] = Field(default_factory=list)
+
+
+class ListFoldsWrite(BaseModel):
+    """The caller's folds on one list, replacing what was kept; an empty list clears them."""
+
+    list_key: str = Field(pattern=LIST_KEY_PATTERN)
+    collapsed_groups: list[CollapsedGroupKey] = Field(default_factory=list, max_length=COLLAPSED_GROUPS_MAX)
+
+    @field_validator("collapsed_groups")
+    @classmethod
+    def check_collapsed_groups(cls, value: list[str]) -> list[str]:
+        """Drop repeated keys, since a group is either folded or not."""
+        return _unique(value) or []
 
 
 class ViewListRead(BaseModel):

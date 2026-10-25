@@ -1,15 +1,18 @@
 /**
- * The video links that embed as a player: YouTube, Loom, Vimeo and Descript.
- * A pasted link is parsed against each provider's known shapes, and the player
- * address is rebuilt from the video id alone, so nothing from the pasted
- * string but a checked id ever reaches an iframe. Anything else stays a link.
+ * The links that embed as a player or preview: YouTube, Loom, Vimeo and
+ * Descript videos, and Figma files and frames (see figmaEmbeds.ts). A pasted
+ * link is parsed against each provider's known shapes, and the player address
+ * is rebuilt from the checked ids alone, so nothing else from the pasted
+ * string ever reaches an iframe. Anything else stays a link.
  *
  * The stored form of an embed is its link alone on a line, the same text the
  * static renderer, the editor, GitHub and email read.
  */
 
+import { FIGMA_EMBED_ORIGIN, parseFigmaLink } from './figmaEmbeds';
+
 /** The providers whose links embed. */
-export type VideoProvider = 'youtube' | 'loom' | 'vimeo' | 'descript';
+export type VideoProvider = 'youtube' | 'loom' | 'vimeo' | 'descript' | 'figma';
 
 /** A parsed video link and the player address built from it. */
 export interface VideoEmbed {
@@ -28,6 +31,7 @@ export const VIDEO_PROVIDER_LABELS: Record<VideoProvider, string> = {
   loom: 'Loom',
   vimeo: 'Vimeo',
   descript: 'Descript',
+  figma: 'Figma',
 };
 
 /** The player origins the frontend Content-Security-Policy frame-src allows. */
@@ -36,6 +40,7 @@ export const VIDEO_EMBED_ORIGINS = [
   'https://www.loom.com',
   'https://player.vimeo.com',
   'https://share.descript.com',
+  FIGMA_EMBED_ORIGIN,
 ] as const;
 
 /** A bare web address that could be a video link, alone on its line. */
@@ -145,9 +150,17 @@ const descript = (url: URL, host: string): Omit<VideoEmbed, 'url'> | null => {
   };
 };
 
+/** A Figma file, design, prototype or board link. */
+const figma = (url: URL): Omit<VideoEmbed, 'url'> | null => {
+  const found = parseFigmaLink(url);
+  return found === null
+    ? null
+    : { provider: 'figma', id: found.id, embedUrl: found.embedUrl };
+};
+
 /**
- * Parses a link into the video it embeds, or null when it is not a link to
- * one of the four providers in a shape they publish.
+ * Parses a link into what it embeds, or null when it is not a link to one of
+ * the providers in a shape they publish.
  */
 export const parseVideoEmbed = (raw: string): VideoEmbed | null => {
   const text = raw.trim();
@@ -167,7 +180,8 @@ export const parseVideoEmbed = (raw: string): VideoEmbed | null => {
     youtube(url, host) ??
     loom(url, host) ??
     vimeo(url, host) ??
-    descript(url, host);
+    descript(url, host) ??
+    figma(url);
   return found === null ? null : { ...found, url: text };
 };
 

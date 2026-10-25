@@ -25,6 +25,7 @@ from app.common import pulse
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.users import User
 from app.common.email import deliver
+from app.common.email_unsubscribe import PULSE_DIGEST_KIND, unsubscribe_links
 from app.domains.views.consumers.due_reminders import zone_named
 from app.domains.views.consumers.sweeps import claim_pass
 from app.domains.views.email import PULSE_DIGEST, PULSE_DIGEST_LINE_LIMIT, pulse_line, render_pulse_digest
@@ -151,6 +152,7 @@ def deliver_digest(
             workspace_name=workspace_name,
             workspace_slug=workspace_slug,
             accent=accent,
+            unsubscribe_links=unsubscribe_links(user_id=user.id, workspace_id=workspace_id, kinds=[PULSE_DIGEST_KIND]),
         ),
         event=f"views.notify.email.{PULSE_DIGEST}",
     )

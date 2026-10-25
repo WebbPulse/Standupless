@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import project_slug_id
 from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
+from app.common.body_versions import BODY_CHANGED, body_version
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team, TeamRepository
 from app.common.issue_keys import current
@@ -29,8 +30,10 @@ from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
 from app.common.plan_limits import PLAN_LIMIT_REACHED
 from app.common.planning_rules import can_see_initiative, visible_project_teams, visible_team_ids
 from app.common.sla import sla_status
+from app.common.sla_clock import calendar_of
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.common.team_retirement import refuse_if_retired
+from app.common.workspace_features import FEATURE_DISABLED
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -421,6 +424,7 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "team_id": issue.team_id,
         "title": issue.title,
         "body": issue.body or "",
+        "body_version": body_version(issue.body),
         "status_id": shown_status_id(issue),
         "status": TRIAGE_STATUS_NAME if issue.in_triage else status_name,
         "priority": issue.priority,
@@ -443,6 +447,8 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
         "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
         "sla_paused_at": issue.sla_paused_at.isoformat() if issue.sla_paused_at else None,
+        "sla_calendar": calendar_of(issue.sla_timezone),
+        "sla_timezone": issue.sla_timezone,
         "sla_status": sla_status(issue),
         "started_at": issue.started_at.isoformat() if issue.started_at else None,
         "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
@@ -485,8 +491,8 @@ def summary_json(teams: TeamRepository, issue: Issue, parent: Optional[Issue] = 
     }
 
 
-PLAN_REFUSAL_CODES: frozenset[str] = frozenset({PLAN_FEATURE_UNAVAILABLE, PLAN_LIMIT_REACHED})
-"""The error codes that mean the workspace plan, not the credential, refused a write."""
+PLAN_REFUSAL_CODES: frozenset[str] = frozenset({PLAN_FEATURE_UNAVAILABLE, PLAN_LIMIT_REACHED, FEATURE_DISABLED})
+"""The error codes that mean the workspace, its plan or its features, not the credential, refused a write."""
 
 
 def http_error_message(exc: HTTPException) -> str:
@@ -494,10 +500,13 @@ def http_error_message(exc: HTTPException) -> str:
 
     A 404 keeps the routes' rule that invisible and absent look the same, except a
     team's, whose message already names the reference and nothing more. A plan
-    refusal says what the plan lacks and carries its code, so a caller with the
+    refusal, or a write to an area the workspace turned off, says what is missing
+    and carries its code, so a caller with the
     role is not sent chasing credentials. Any other 403 says the credential may not
-    write there. Anything else carries the route's own message, which is written
-    for a person and reads as well to a model.
+    write there. A stale body save carries the body that is there now and its
+    version, so the caller can merge and retry in one more call. Anything else
+    carries the route's own message, which is written for a person and reads as
+    well to a model.
     """
     detail = exc.detail
     message = detail.get("message") if isinstance(detail, Mapping) else detail
@@ -507,6 +516,12 @@ def http_error_message(exc: HTTPException) -> str:
         return NOT_VISIBLE
     if code in PLAN_REFUSAL_CODES:
         return f"{text} ({code})"
+    details = detail.get("details") if isinstance(detail, Mapping) else None
+    if code == BODY_CHANGED and isinstance(details, Mapping):
+        return (
+            f"{text} ({code}). Merge with the current body and retry with base_body_version "
+            f"{details.get('body_version', '')}. The current body:\n\n{details.get('body', '')}"
+        )
     if exc.status_code == 403:
         return f"This credential may not write there. {text}"
     return text

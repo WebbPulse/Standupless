@@ -7,7 +7,6 @@
 
 import React from 'react';
 import ApiKeysSection from '../../components/access/ApiKeysSection';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 
@@ -16,12 +15,7 @@ const ApiKeysSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           <ApiKeysSection workspace={workspace} />

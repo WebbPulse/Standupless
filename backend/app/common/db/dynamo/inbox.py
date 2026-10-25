@@ -24,6 +24,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.chat_routes import ChatRouteStore
+from app.common.db.dynamo.email_replies import EmailReplyStore
 from app.common.db.dynamo.issue_reminders import IssueReminderStore
 from app.common.db.dynamo.notify_digests import (
     CHAT_DIGEST_WINDOW,
@@ -58,6 +59,11 @@ NotificationKind = Literal[
     "priority_urgent",
     "blocking_changed",
     "document_comment",
+    "team_issue_created",
+    "view_project_added",
+    "project_lead_assigned",
+    "project_member_added",
+    "initiative_owner_assigned",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -85,6 +91,11 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "priority_urgent",
     "blocking_changed",
     "document_comment",
+    "team_issue_created",
+    "view_project_added",
+    "project_lead_assigned",
+    "project_member_added",
+    "initiative_owner_assigned",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -102,6 +113,21 @@ TRIAGE_NEW = "triage_new"
 VIEW_ISSUE_ADDED = "view_issue_added"
 """The kind that tells a view's subscriber an issue newly matches it, naming the view in `new_value`."""
 
+VIEW_PROJECT_ADDED = "view_project_added"
+"""The kind that tells a project view's subscriber a project entered it, naming the view in `new_value`.
+
+Unlike an issue view, a project that leaves the view and comes back notifies again.
+"""
+
+PROJECT_LEAD_ASSIGNED = "project_lead_assigned"
+"""The kind that tells a person someone else made them a project's lead, naming the project."""
+
+PROJECT_MEMBER_ADDED = "project_member_added"
+"""The kind that tells a person someone else added them to a project's members, naming the project."""
+
+INITIATIVE_OWNER_ASSIGNED = "initiative_owner_assigned"
+"""The kind that tells a person someone else made them an initiative's owner, naming the initiative."""
+
 REACTION = "reaction"
 """The kind that tells a comment's author someone reacted to it, naming the emoji in `new_value`."""
 
@@ -110,6 +136,9 @@ ISSUE_COMPLETED = "issue_completed"
 
 ISSUE_CANCELLED = "issue_cancelled"
 """The kind a move into a cancelled status takes for the assignee and subscribers, naming the status in `new_value`."""
+
+TEAM_ISSUE_CREATED = "team_issue_created"
+"""The kind that tells a member subscribed to a team's new issues that one was created in it."""
 
 PRIORITY_URGENT = "priority_urgent"
 """The kind that tells the assignee and subscribers an issue was raised to urgent priority."""
@@ -242,6 +271,8 @@ class Notification(BaseModel):
     `issue_title` and its GitHub address in `url`. An initiative update reminder
     is about a workspace level subject, so it carries an empty `team_id`, the
     initiative fields, and `due_state` saying whether the update is due or overdue.
+    A reply on an initiative update is a `project_update_comment` row with an
+    empty `team_id`, the initiative fields and the update in `project_update_id`.
     A status change carries the status it moved to in `new_value`, by name as it
     read when the row was written; rows written before that field existed have none.
     A document comment carries an empty `team_id` and names its document in
@@ -301,8 +332,9 @@ class InboxRepository:
 
     `digests` holds the pending notification emails, `chat_digests` the pending
     chat direct messages, `chat_routes` the chat accounts members linked and
-    `reminders` the issue reminders members set for themselves, all sharing this
-    table under partitions no inbox can name.
+    `reminders` the issue reminders members set for themselves and
+    `email_replies` the reply addresses notification emails carry, all sharing
+    this table under partitions no inbox can name.
     """
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -317,6 +349,7 @@ class InboxRepository:
             window=CHAT_DIGEST_WINDOW,
         )
         self.chat_routes = ChatRouteStore(self._repository)
+        self.email_replies = EmailReplyStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
         """Delete one person's whole inbox in one workspace, reminders and chat routes included, for the purges."""

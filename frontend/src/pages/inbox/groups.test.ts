@@ -68,6 +68,30 @@ describe('groupKey', () => {
     );
   });
 
+  it('groups a reply on an initiative update by initiative', () => {
+    expect(
+      groupKey(
+        row({
+          kind: 'project_update_comment',
+          project_id: null,
+          initiative_id: 'i-1',
+        })
+      )
+    ).toBe('initiative:i-1');
+  });
+
+  it('groups role notices under their project or initiative', () => {
+    expect(
+      groupKey(row({ kind: 'project_lead_assigned', project_id: 'p-1' }))
+    ).toBe('project:p-1');
+    expect(
+      groupKey(row({ kind: 'project_member_added', project_id: 'p-1' }))
+    ).toBe('project:p-1');
+    expect(
+      groupKey(row({ kind: 'initiative_owner_assigned', initiative_id: 'i-1' }))
+    ).toBe('initiative:i-1');
+  });
+
   it('keeps a review request on its own row', () => {
     expect(groupKey(row({ kind: 'review_requested' }))).toBe('n:n-1');
   });

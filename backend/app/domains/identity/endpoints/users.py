@@ -8,6 +8,7 @@ own that table.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -30,6 +31,7 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
     ACTIVITY_FILTERS,
+    CODE_THEMES,
     DEFAULT_PRIORITY_KINDS,
     EMAIL_FORMATS,
     FONT_SIZES,
@@ -42,6 +44,7 @@ from app.common.db.dynamo.users import (
     THEMES,
     WEEK_STARTS,
     ActivityFilterField,
+    CodeThemeField,
     EmailFormatField,
     FontSizeField,
     HomeViewField,
@@ -68,6 +71,7 @@ from app.common.icons import (
     verify_upload,
 )
 from app.common.inbox import INBOX_KINDS
+from app.common.notification_pause import PAUSE_MAX, WorkingHours
 from app.domains.identity.account_revocation import revoke_account_access
 from app.domains.identity.email import render_account_deletion
 
@@ -108,6 +112,10 @@ class UserRead(BaseModel):
     sidebar item with where it sits, `show` unless the person moved it.
     `priority_inbox` says whether the inbox splits into Priority and Other, and
     `priority_kinds` names every kind the Priority tab holds.
+    `notifications_paused_until` is the end of a pause still running, null when
+    none is, `working_hours` the schedule notifications reach the person in, and
+    `urgent_bypasses_pause` whether direct mentions and urgent assignments come
+    through either.
     """
 
     id: str
@@ -120,6 +128,9 @@ class UserRead(BaseModel):
     priority_inbox: bool = True
     priority_kinds: list[str] = Field(default_factory=list)
     email_format: EmailFormatField = "digest"
+    notifications_paused_until: Optional[datetime] = None
+    working_hours: Optional[WorkingHours] = None
+    urgent_bypasses_pause: bool = False
     avatar_url: Optional[str] = None
     two_factor: bool = False
     timezone: Optional[str] = None
@@ -131,6 +142,7 @@ class UserRead(BaseModel):
     theme: Optional[ThemeField] = None
     pointer_cursors: bool = False
     underline_links: bool = False
+    code_theme: CodeThemeField = "app"
     convert_emoticons: bool = True
     activity_filter: ActivityFilterField = "all"
     sidebar_items: dict[SidebarItemField, SidebarVisibilityField] = Field(default_factory=dict)
@@ -196,7 +208,8 @@ class UserPreferencesUpdate(BaseModel):
     Preferences page sets, kept on the row so they follow the person to every
     device. `theme` is the interface theme and `pointer_cursors` whether
     interactive elements show the pointer cursor. `underline_links` underlines
-    links in rich text at rest. `convert_emoticons` is
+    links in rich text at rest. `code_theme` is the syntax highlighting theme
+    of code blocks. `convert_emoticons` is
     whether the editor turns typed emoticons into emoji. `activity_filter` is
     whether issue activity shows every change or only comments.
     `sidebar_items` moves the named sidebar items, leaving the others where
@@ -210,7 +223,11 @@ class UserPreferencesUpdate(BaseModel):
     is copied. `auto_grant_new_scopes` lets scopes the product adds later reach the
     connected apps that were given every scope. `priority_inbox` turns the
     split inbox on or off, and `priority_kinds` replaces the whole set of kinds
-    its Priority tab holds. Deliberately not a settings
+    its Priority tab holds. `notifications_paused_until` pauses email and
+    desktop notifications until that moment, and null or a moment already past
+    resumes them; it may be at most thirty days ahead. `working_hours` sets the
+    weekly schedule they arrive in, and null clears it. `urgent_bypasses_pause`
+    lets direct mentions and urgent assignments through both. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
@@ -220,6 +237,9 @@ class UserPreferencesUpdate(BaseModel):
     priority_inbox: Optional[bool] = None
     priority_kinds: Optional[list[str]] = Field(default=None, max_length=len(INBOX_KINDS))
     email_format: Optional[EmailFormatField] = None
+    notifications_paused_until: Optional[datetime] = None
+    working_hours: Optional[WorkingHours] = None
+    urgent_bypasses_pause: Optional[bool] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     pulse_digest: Optional[PulseDigestField] = None
     home_view: Optional[HomeViewField] = None
@@ -229,6 +249,7 @@ class UserPreferencesUpdate(BaseModel):
     theme: Optional[ThemeField] = None
     pointer_cursors: Optional[bool] = None
     underline_links: Optional[bool] = None
+    code_theme: Optional[CodeThemeField] = None
     convert_emoticons: Optional[bool] = None
     activity_filter: Optional[ActivityFilterField] = None
     sidebar_items: Optional[dict[SidebarItemField, SidebarVisibilityField]] = None
@@ -251,6 +272,17 @@ class UserPreferencesUpdate(BaseModel):
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError(f"{value!r} is not a known IANA timezone") from exc
         return value
+
+    @field_validator("notifications_paused_until")
+    @classmethod
+    def _bounded_pause(cls, value: Optional[datetime]) -> Optional[datetime]:
+        """Read a moment without a zone as UTC, and refuse a pause longer than `PAUSE_MAX`."""
+        if value is None:
+            return None
+        moment = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        if moment - datetime.now(timezone.utc) > PAUSE_MAX:
+            raise ValueError("A pause may last at most 30 days")
+        return moment
 
     @field_validator("priority_kinds")
     @classmethod
@@ -312,6 +344,9 @@ def _as_read(user: "Any") -> UserRead:
         priority_inbox=bool(user.priority_inbox),
         priority_kinds=[kind for kind in INBOX_KINDS if user.is_priority(kind)],
         email_format=_known(user.email_format, EMAIL_FORMATS, "digest"),
+        notifications_paused_until=_running_pause(user.notifications_paused_until),
+        working_hours=user.working_hours,
+        urgent_bypasses_pause=bool(user.urgent_bypasses_pause),
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
         pulse_digest=user.pulse_digest if user.pulse_digest in PULSE_DIGESTS else "off",
@@ -322,6 +357,7 @@ def _as_read(user: "Any") -> UserRead:
         theme=user.theme if user.theme in THEMES else None,
         pointer_cursors=bool(user.pointer_cursors),
         underline_links=bool(user.underline_links),
+        code_theme=_known(user.code_theme, CODE_THEMES, "app"),
         convert_emoticons=bool(user.convert_emoticons),
         activity_filter=_known(user.activity_filter, ACTIVITY_FILTERS, "all"),
         sidebar_items=_sidebar_read(user.sidebar_items),
@@ -335,6 +371,14 @@ def _as_read(user: "Any") -> UserRead:
         branch_copy_assigns=bool(user.branch_copy_assigns),
         auto_grant_new_scopes=bool(user.auto_grant_new_scopes),
     )
+
+
+def _running_pause(until: Optional[datetime]) -> Optional[datetime]:
+    """The end of a pause that is still running, or `None` once it has passed."""
+    if until is None:
+        return None
+    moment = until if until.tzinfo is not None else until.replace(tzinfo=timezone.utc)
+    return moment if moment > datetime.now(timezone.utc) else None
 
 
 def _known(value: str, allowed: tuple[str, ...], fallback: str) -> Any:
@@ -473,6 +517,14 @@ def update_current_user_preferences(
         changes["timezone"] = payload.timezone
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
+    if "notifications_paused_until" in payload.model_fields_set:
+        pause = _running_pause(payload.notifications_paused_until)
+        if pause != _running_pause(user.notifications_paused_until):
+            changes["notifications_paused_until"] = pause.isoformat() if pause is not None else None
+    if "working_hours" in payload.model_fields_set:
+        hours = payload.working_hours.model_dump() if payload.working_hours is not None else None
+        if hours != (user.working_hours.model_dump() if user.working_hours is not None else None):
+            changes["working_hours"] = hours
     for field in (
         "email_format",
         "priority_inbox",
@@ -483,6 +535,7 @@ def update_current_user_preferences(
         "theme",
         "pointer_cursors",
         "underline_links",
+        "code_theme",
         "convert_emoticons",
         "activity_filter",
         "sidebar_badge_style",
@@ -490,6 +543,7 @@ def update_current_user_preferences(
         "branch_copy_starts",
         "branch_copy_assigns",
         "auto_grant_new_scopes",
+        "urgent_bypasses_pause",
     ):
         value = getattr(payload, field)
         if value is not None and value != getattr(user, field):

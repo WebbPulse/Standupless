@@ -1,7 +1,8 @@
 /**
  * One Pulse entry as its own card: who did it and when on the first line,
  * what it is about with its health on the second, then the update itself,
- * clamped to a few paragraphs with a toggle to read the rest.
+ * clamped to a few paragraphs with a toggle to read the rest. The first line
+ * ends in the overflow menu the feed hands in.
  */
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
@@ -105,6 +106,8 @@ export interface PulseEntryProps {
   entryRef: (node: HTMLElement | null) => void;
   /** Moves the keyboard highlight here when the pointer arrives. */
   onPointerEnter: () => void;
+  /** The overflow menu drawn at the end of the first line. */
+  menu?: React.ReactNode;
 }
 
 /** One feed entry as a card: actor and time, subject and health, then the update. */
@@ -114,6 +117,7 @@ export const PulseEntry: React.FC<PulseEntryProps> = ({
   active,
   entryRef,
   onPointerEnter,
+  menu,
 }) => {
   const actor = item.actor_name === '' ? null : item.actor_name;
   const href = entryHref(slug, item);
@@ -158,6 +162,7 @@ export const PulseEntry: React.FC<PulseEntryProps> = ({
               className="h-2 w-2 rounded-full bg-accent"
             />
           )}
+          {menu}
         </div>
       </header>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-9.5">

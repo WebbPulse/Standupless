@@ -53,6 +53,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.relation_effects import recount_blocked_by, recount_blockers_of, recount_blocking
+from app.common.team_time import team_today
 from app.common.trash_stream import live_view
 from app.domains.issues import auto_archive, auto_close, parent_auto_close, recurring, sla_repair, trash_purge
 from app.domains.issues.cycle_close import is_cycle_close, sweep
@@ -260,7 +261,9 @@ def auto_add_to_cycle(repositories: Any, record: Mapping[str, Any]) -> bool:
     status = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if status is None or not _auto_adds(settings, status.category):
         return False
-    cycle = active_cycle(repositories.planning.list_for_roadmap(workspace_id, team_id))
+    cycle = active_cycle(
+        repositories.planning.list_for_roadmap(workspace_id, team_id), team_today(repositories, workspace_id, team_id)
+    )
     if cycle is None:
         return False
     if repositories.issues.add_to_cycle(workspace_id, issue_id, cycle.cycle_id) is None:

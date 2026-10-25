@@ -20,6 +20,11 @@ export const RESOURCE_TYPE_LABELS: Record<WebhookResourceType, string> = {
   project_updates: 'Project updates',
   cycles: 'Cycles',
   labels: 'Labels',
+  documents: 'Documents',
+  initiatives: 'Initiatives',
+  initiative_updates: 'Initiative updates',
+  customers: 'Customers',
+  customer_requests: 'Customer requests',
 };
 
 /** A webhook's resource types as one line, in the order they were given. */
@@ -55,6 +60,11 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   ProjectUpdate: 'Project update',
   Cycle: 'Cycle',
   IssueLabel: 'Label',
+  Document: 'Document',
+  Initiative: 'Initiative',
+  InitiativeUpdate: 'Initiative update',
+  Customer: 'Customer',
+  CustomerNeed: 'Customer request',
   Webhook: 'Webhook',
 };
 

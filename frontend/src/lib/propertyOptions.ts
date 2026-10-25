@@ -38,6 +38,17 @@ export const sortStatuses = (statuses: StatusRead[]): StatusRead[] =>
       left.position - right.position
   );
 
+/**
+ * The quieter text a status picker option draws after the status name: its
+ * description, or nothing for a status without one.
+ */
+export const statusDetail = (
+  status: Pick<StatusRead, 'description'>
+): { detail?: string } => {
+  const description = status.description?.trim() ?? '';
+  return description === '' ? {} : { detail: description };
+};
+
 /** Formats a local calendar day as the `YYYY-MM-DD` the contract takes. */
 export const isoDate = (day: Date): string => {
   const month = String(day.getMonth() + 1).padStart(2, '0');

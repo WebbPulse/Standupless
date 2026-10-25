@@ -12,6 +12,7 @@ import {
   type PolledQueryContext,
   type PolledResponse,
 } from '@webbpulse/api-client/react';
+import { rememberIssueRef } from '../lib/issueRefs';
 import type {
   ActivityListRead,
   ActivityRead,
@@ -142,6 +143,7 @@ export interface IssueListFilters {
   estimate?: FilterValues;
   estimate_not?: FilterValues;
   customer_id_not?: FilterValues;
+  release_id_not?: FilterValues;
   due_before?: string;
   due_after?: string;
   /** Issues completed on or after this day. */
@@ -166,6 +168,28 @@ export interface IssueListFilters {
   has_relation?: FilterValues<LinkType>;
   /** Issues these customers asked for; `none` is issues no customer asked for. */
   customer_id?: FilterValues;
+  /** Issues a customer in any of these customer statuses asked for; `none` is issues no customer asked for. */
+  customer_status_id?: FilterValues;
+  customer_status_id_not?: FilterValues;
+  /** Issues a customer in any of these customer tiers asked for; `none` is issues no customer asked for. */
+  customer_tier_id?: FilterValues;
+  customer_tier_id_not?: FilterValues;
+  /** Issues an asking customer with at least this revenue asked for. */
+  customer_revenue_min?: string;
+  /** Issues an asking customer with at most this revenue asked for. */
+  customer_revenue_max?: string;
+  /** Issues an asking customer of at least this size asked for. */
+  customer_size_min?: string;
+  /** Issues an asking customer of at most this size asked for. */
+  customer_size_max?: string;
+  /** Issues carrying at least this many customer requests. */
+  customer_request_count_min?: string;
+  /** Issues carrying at most this many customer requests; `0` is unrequested issues. */
+  customer_request_count_max?: string;
+  /** `true` for issues with an important customer request, `false` for the rest. */
+  customer_important?: 'true' | 'false';
+  /** Issues these releases carry; `none` is issues in no release. */
+  release_id?: FilterValues;
   q?: string;
   /** True to list archived issues too, which the list leaves out by default. */
   include_archived?: boolean;
@@ -408,7 +432,10 @@ export function getIssueByKey(
     issueByKeyPath(workspaceId, key),
     signalOptions,
     context,
-    (body) => body
+    (body) => {
+      rememberIssueRef(workspaceId, body.id, key);
+      return body;
+    }
   );
 }
 

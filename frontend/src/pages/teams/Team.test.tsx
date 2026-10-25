@@ -438,7 +438,9 @@ describe('the list', () => {
     fireEvent.click(
       within(empty).getByRole('button', { name: 'Create issue' })
     );
-    expect(openCreate).toHaveBeenCalledWith({ teamId: 'team-1' });
+    expect(openCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: 'team-1' })
+    );
   });
 });
 

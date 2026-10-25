@@ -14,8 +14,10 @@
  * direction, the list can group again
  * inside each group, rows order by date, name, priority or progress, and
  * closed projects show for all time, a recent window or not at all. Filters
- * narrow by status, lead, team, and whether an open blocker holds a project
- * up or it holds another up, and on a team the page can keep only the
+ * narrow by status, lead, label, customer, team, and whether an open blocker
+ * holds a project up or it holds another up, and the Filter menu adds health,
+ * priority, members, start and target date bounds and last update age as
+ * chips removed one at a time; on a team the page can keep only the
  * projects that team leads. Ctrl or Cmd and B flips between list and board.
  * The arrangement is saved to the account and carried in the URL so an
  * arranged page can be shared. Filtered to a parent team, the page
@@ -30,6 +32,9 @@
  * a scope, such as an initiative's projects, the page renders as a tab
  * inside another page: it keeps only the scope's projects, files new ones
  * into it, keeps its arrangement in the URL alone, and offers no saved view.
+ * An empty list or timeline offers Clear filters when filters hide every
+ * project, and New project with its shortcut when there is none yet and the
+ * viewer may create one.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -84,6 +89,7 @@ import {
 } from '../../components/planning/ProjectBulkCommand';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
+import ViewSubscribeButton from '../../components/issues/view/ViewSubscribeButton';
 import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
 import { isCoarse } from '../../lib/dateResolution';
 import {
@@ -112,12 +118,13 @@ import LoadError from '../../components/ui/load-error';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import type { ComboboxOption } from '../../components/ui/combobox';
-import EmptyState from '../../components/ui/empty-state';
+import EmptyState, { EmptyStateButton } from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FilterButton from '../../components/ui/filter-button';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
+import TeamTabs from '../../components/workspace/TeamTabs';
 import WorkspaceShell, {
   type WorkspaceShellProps,
 } from '../../components/workspace/WorkspaceShell';
@@ -139,6 +146,18 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
+import ProjectPropertyFilterBar from '../../components/planning/ProjectPropertyFilterBar';
+import {
+  EMPTY_PROPERTY_FILTERS,
+  PROPERTY_FILTER_KEYS,
+  PROPERTY_PARAMS,
+  hasPropertyFilters,
+  matchesPropertyFilters,
+  propertyParamText,
+  readPropertyFilters,
+  type ProjectPropertyFilters,
+} from '../../lib/projectPropertyFilters';
+import { isFeatureOn } from '../../lib/features';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
@@ -505,6 +524,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
               inline
               value={project.label_ids ?? []}
               labels={projectLabels}
+              teamIds={project.team_ids}
               disabled={!editable}
               onChange={(labelIds) => {
                 void update({ label_ids: labelIds });
@@ -558,6 +578,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             variant="rail"
             value={project.status}
             statusId={project.status_id}
+            teamIds={project.team_ids}
             percent={percent}
             disabled={!editable}
             onChange={closePrompt.changeStatus}
@@ -860,11 +881,24 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   const blockingFilter = flagParam(
     params.get('blocking') ?? baseOf('blocking')
   );
-  const isMember = workspace !== null && workspace.role !== 'guest';
-  const customerFilter = isMember
+  const customersShown =
+    workspace !== null &&
+    workspace.role !== 'guest' &&
+    isFeatureOn(workspace, 'customers');
+  const initiativesOn = isFeatureOn(workspace, 'initiatives');
+  const customerFilter = customersShown
     ? (params.get('customer') ?? baseOf('customer'))
     : '';
+  const properties = useMemo(
+    () => readPropertyFilters(params, base?.properties),
+    [params, base]
+  );
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const teamTabsShown =
+    scope === undefined &&
+    view === undefined &&
+    filteredTeam !== undefined &&
+    params.get('team') === filteredTeam.key_prefix;
   const { fallback: displayDefault, actionsFor: defaultActionsFor } =
     useProjectsDisplayDefault({
       workspaceId,
@@ -919,8 +953,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     blocked: blockedFilter,
     blocking: blockingFilter,
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
-    customer: isMember ? customerFilter : (base?.customer ?? ''),
+    customer: customersShown ? customerFilter : (base?.customer ?? ''),
     label: labelFilter,
+    properties,
   });
   const changed =
     base !== undefined &&
@@ -930,7 +965,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       ));
 
   const customerOrdering =
-    isMember &&
+    customersShown &&
     (CUSTOMER_PROJECT_ORDERINGS.has(ordering) ||
       shownColumns.includes('important'));
   const showArchived = params.get(ARCHIVED_PARAM) === '1';
@@ -957,7 +992,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       rollUp,
       narrowing
     );
-  const { customers } = useCustomers(workspaceId, isMember);
+  const { customers } = useCustomers(workspaceId, customersShown);
   const { labels: projectLabels } = useProjectLabels(workspaceId);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const projectsById = useMemo(
@@ -1037,6 +1072,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               openBlockers(project, projectsById).length > 0
             ) && flagMatches(blockingFilter, heldProjects(project).length > 0)
         )
+        .filter((project) => matchesPropertyFilters(project, properties, now))
         .filter((project) => withinClosedWindow(project, closed, now))
         .filter((project) =>
           withinLeadTeams(project, display.lead_team, leadTeamIds)
@@ -1052,6 +1088,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       labelFilter,
       blockedFilter,
       blockingFilter,
+      properties,
       closed,
       now,
       display.lead_team,
@@ -1367,7 +1404,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     bulkAction('priority', 'Priority', <LuSignal />),
     bulkAction('target', 'Target date', <LuCalendar />),
     bulkAction('labels', 'Labels', <LuTag />),
-    bulkAction('initiative', 'Initiative', <LuGoal />),
+    ...(initiativesOn
+      ? [bulkAction('initiative', 'Initiative', <LuGoal />)]
+      : []),
   ];
 
   const writeParam = (
@@ -1377,6 +1416,27 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   ): void => {
     if (value === baseOf(field)) next.delete(field);
     else next.set(field, value);
+  };
+
+  const writeProperties = (
+    next: URLSearchParams,
+    filters: ProjectPropertyFilters
+  ): void => {
+    for (const key of PROPERTY_FILTER_KEYS) {
+      const value = propertyParamText(filters, key);
+      const held = propertyParamText(
+        base?.properties ?? EMPTY_PROPERTY_FILTERS,
+        key
+      );
+      if (value === held) next.delete(PROPERTY_PARAMS[key]);
+      else next.set(PROPERTY_PARAMS[key], value);
+    }
+  };
+
+  const setProperties = (filters: ProjectPropertyFilters): void => {
+    const next = new URLSearchParams(params);
+    writeProperties(next, filters);
+    setParams(next, { replace: true });
   };
 
   const setParam = (field: FilterField, value: string): void => {
@@ -1465,7 +1525,51 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
     labelFilter !== '' ||
     blockedFilter !== '' ||
     blockingFilter !== '' ||
-    customerFilter !== '';
+    customerFilter !== '' ||
+    hasPropertyFilters(properties);
+
+  const clearFilters = (): void => {
+    const next = new URLSearchParams(params);
+    writeParam(next, 'team', '');
+    writeParam(next, 'status', '');
+    writeParam(next, 'lead', '');
+    writeParam(next, 'label', '');
+    writeParam(next, 'blocked', '');
+    writeParam(next, 'blocking', '');
+    writeParam(next, 'customer', '');
+    writeProperties(next, EMPTY_PROPERTY_FILTERS);
+    next.delete(ROLL_UP_PARAM);
+    setParams(next, { replace: true });
+  };
+
+  const emptyProjects = (
+    <EmptyState
+      icon={<LuTarget />}
+      message={
+        hasFilters
+          ? 'No results'
+          : (scope?.emptyMessage ??
+            'No projects yet. A project is a dated body of work that one or more teams share.')
+      }
+      action={
+        hasFilters ? (
+          <EmptyStateButton
+            label="Clear filters"
+            variant="secondary"
+            onClick={clearFilters}
+          />
+        ) : canCreate ? (
+          <EmptyStateButton
+            label="New project"
+            keys="shift+p"
+            onClick={() => {
+              setCreating({ preset: { status: 'planned' } });
+            }}
+          />
+        ) : undefined
+      }
+    />
+  );
 
   useShortcut({
     keys: 'shift+p',
@@ -1675,15 +1779,18 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               Save as view
             </Button>
           ) : (
-            <IconButton
-              label="Edit view details"
-              size="sm"
-              onClick={() => {
-                setSaving('details');
-              }}
-            >
-              <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
-            </IconButton>
+            <>
+              <ViewSubscribeButton workspaceId={workspaceId} view={view} />
+              <IconButton
+                label="Edit view details"
+                size="sm"
+                onClick={() => {
+                  setSaving('details');
+                }}
+              >
+                <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+              </IconButton>
+            </>
           )}
           {canCreate && (
             <Button
@@ -1701,6 +1808,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       }
       toolbar={
         <div className="flex flex-wrap items-center gap-1.5">
+          {teamTabsShown && filteredTeam !== undefined && (
+            <TeamTabs
+              slug={slug}
+              keyPrefix={filteredTeam.key_prefix}
+              teamId={filteredTeam.id}
+              current="projects"
+            />
+          )}
           <LuListFilter
             aria-hidden="true"
             className="mr-0.5 h-3.5 w-3.5 text-text-faint"
@@ -1728,7 +1843,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               setParam('label', value === labelFilter ? '' : value);
             }}
           />
-          {isMember && (
+          {customersShown && (
             <FilterButton
               field="Customer"
               options={customerOptions}
@@ -1765,26 +1880,16 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               setParam('blocking', value === blockingFilter ? '' : value);
             }}
           />
+          <ProjectPropertyFilterBar
+            filters={properties}
+            people={people}
+            onChange={setProperties}
+          />
           {filteredTeam !== undefined && subTeams.length > 0 && (
             <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
           )}
           {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                const next = new URLSearchParams(params);
-                writeParam(next, 'team', '');
-                writeParam(next, 'status', '');
-                writeParam(next, 'lead', '');
-                writeParam(next, 'label', '');
-                writeParam(next, 'blocked', '');
-                writeParam(next, 'blocking', '');
-                writeParam(next, 'customer', '');
-                next.delete(ROLL_UP_PARAM);
-                setParams(next, { replace: true });
-              }}
-            >
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
               <LuX aria-hidden="true" />
               Clear
             </Button>
@@ -1863,7 +1968,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               defaultActions={
                 scope === undefined ? defaultActionsFor(display) : undefined
               }
-              customerOrdering={isMember}
+              customerOrdering={customersShown}
             />
             {layout === 'timeline' && (
               <TimelineControls {...timelineControls} />
@@ -1929,15 +2034,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           {showSkeleton ? (
             <SkeletonRows label="Loading projects" />
           ) : rows.length === 0 && error == null && teamsError === null ? (
-            <EmptyState
-              icon={<LuTarget />}
-              message={
-                hasFilters
-                  ? 'No projects match these filters.'
-                  : (scope?.emptyMessage ??
-                    'No projects yet. A project is a dated body of work that one or more teams share.')
-              }
-            />
+            emptyProjects
           ) : (
             sections.map(({ group, subs }) => {
               const open = isOpen(group);
@@ -2170,15 +2267,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           }}
         />
       ) : rows.length === 0 && error == null && teamsError === null ? (
-        <EmptyState
-          icon={<LuTarget />}
-          message={
-            hasFilters
-              ? 'No projects match these filters.'
-              : (scope?.emptyMessage ??
-                'No projects yet. A project is a dated body of work that one or more teams share.')
-          }
-        />
+        emptyProjects
       ) : (
         <ProjectTimeline
           ref={timeline}

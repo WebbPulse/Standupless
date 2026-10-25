@@ -25,7 +25,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 from app.common.bulk_import import IMPORT_BATCH_ATTRIBUTE
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import PLANNING
-from app.common.db.dynamo.update_threads import UpdateThreadStore
+from app.common.db.dynamo.update_threads import INITIATIVE_THREADS, UpdateThreadStore
 
 TARGET_DATE_INDEX = "ws_team-target_date-index"
 
@@ -615,7 +615,9 @@ class Project(BaseModel):
     written before custom statuses, which reads as its category's seeded default.
     `start_date_resolution` and `target_date_resolution` widen a date to its
     month, quarter, half or year, the date held at that period's first or last
-    day; None is an exact day.
+    day; None is an exact day. `updated_by` is the person whose edit last changed
+    the project, None on a row only its creator or a background rollup wrote, so
+    the notify consumer can leave that person out of what the change announces.
     """
 
     workspace_id: str
@@ -649,6 +651,7 @@ class Project(BaseModel):
     sort_order: str | None = None
     archived_at: datetime | None = None
     created_by: str
+    updated_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
@@ -680,9 +683,16 @@ class Initiative(BaseModel):
     held on the child so a parent keeps no list of children to hold in step.
     `target_date_resolution` widens the target to its month, quarter, half or
     year, the date held at that period's last day; None is an exact day.
+    `start_date` opens the initiative's span on the timeline, and
+    `start_date_resolution` widens it the same way, held at the period's first day.
     `team_id` names a lead team, so the team's page lists it and a private
     team's initiative is seen only by that team's members; None keeps it
     workspace level, seen by every member but a guest.
+    `sort_order` is the workspace-wide manual position, a base 62 fractional
+    key shared by every viewer; None on a row never placed, which the manual
+    ordering puts last. `updated_by` is the person whose edit last changed the
+    initiative, None on a row only its creator or a background write touched, so
+    the notify consumer can tell a new owner who handed it to them.
     """
 
     workspace_id: str
@@ -696,18 +706,48 @@ class Initiative(BaseModel):
     parent_initiative_id: str | None = None
     status: str = "planned"
     health: str | None = None
+    start_date: str | None = None
+    start_date_resolution: str | None = None
     target_date: str | None = None
     target_date_resolution: str | None = None
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
+    sort_order: str | None = None
     created_by: str
+    updated_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
 
 
+class InitiativeUpdateSnapshot(BaseModel):
+    """Where an initiative stood when an update was posted, for the report of what changed since the last one.
+
+    `health` is the health the update called. `projects_by_status` counts the
+    rolled up projects by status category and `projects_by_health` by health,
+    a project with no health counted under neither. The owner's name is copied
+    so the report reads the same after a rename.
+    """
+
+    owner_id: str | None = None
+    owner_name: str | None = None
+    status: str | None = None
+    target_date: str | None = None
+    target_date_resolution: str | None = None
+    health: str | None = None
+    project_count: int = 0
+    projects_by_status: dict[str, int] = Field(default_factory=dict)
+    projects_by_health: dict[str, int] = Field(default_factory=dict)
+
+
 class InitiativeUpdateRow(BaseModel):
-    """One written status update on an initiative, with the health it reported."""
+    """One written status update on an initiative, with the health it reported.
+
+    `snapshot` is where the initiative stood when the update was posted and
+    `previous_snapshot` the one the update before it recorded, so the report of
+    what changed reads off one row. Both are None on an update posted before
+    snapshots existed, and `hide_details` is the author's choice to hide it.
+    """
 
     workspace_id: str
     planning_key: str
@@ -721,6 +761,9 @@ class InitiativeUpdateRow(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
+    snapshot: InitiativeUpdateSnapshot | None = None
+    previous_snapshot: InitiativeUpdateSnapshot | None = None
+    hide_details: bool = False
 
 
 class MilestoneSnapshot(BaseModel):
@@ -828,12 +871,17 @@ class ProjectRelation(BaseModel):
 
 
 class ProjectLabel(BaseModel):
-    """One label of the workspace that tags projects, apart from the labels issues carry."""
+    """One label that tags projects, apart from the labels issues carry.
+
+    A null `team_id` is a workspace label every project is offered; a team id
+    makes it that team's own, offered only to the projects on that team.
+    """
 
     workspace_id: str
     planning_key: str = ""
     label_id: str = Field(default_factory=new_planning_id)
     kind: str = PROJECT_LABEL
+    team_id: str | None = None
     name: str
     color: str
     description: str | None = None
@@ -852,14 +900,17 @@ class ProjectStatusRow(BaseModel):
 
     `category` is one of `PROJECT_STATUSES` and never changes, so every rule that
     reads a project's category holds however the status is renamed. `position`
-    orders the statuses within their category. A null `color` draws the
-    category's own tone.
+    orders the statuses within their category and scope. A null `color` draws
+    the category's own tone. A null `team_id` is a workspace status every
+    project is offered; a team id makes it that team's own, offered only to the
+    projects on that team.
     """
 
     workspace_id: str
     planning_key: str = ""
     status_id: str = Field(default_factory=new_planning_id)
     kind: str = PROJECT_STATUS
+    team_id: str | None = None
     name: str
     category: str
     color: str | None = None
@@ -1023,6 +1074,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "sort_order",
     "archived_at",
     "import_batch_id",
+    "updated_by",
 )
 """The project attributes a null value removes from the row rather than storing."""
 
@@ -1032,11 +1084,15 @@ INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "team_id",
     "parent_initiative_id",
     "health",
+    "start_date",
+    "start_date_resolution",
     "target_date",
     "target_date_resolution",
     "last_update_at",
     "update_interval_days",
+    "sort_order",
     "import_batch_id",
+    "updated_by",
 )
 """The initiative attributes a null value removes from the row rather than storing."""
 
@@ -1135,10 +1191,13 @@ def is_initiative(item: Mapping[str, Any]) -> bool:
 
 
 def as_initiative_update_item(update: InitiativeUpdateRow) -> dict[str, Any]:
-    """One initiative update as the stored item, an unedited one carrying no `edited_at`."""
+    """One initiative update as the stored item, with no empty optional field and no `hide_details` left off."""
     item = update.model_dump(mode="json")
-    if item.get("edited_at") is None:
-        item.pop("edited_at", None)
+    for name in ("edited_at", "snapshot", "previous_snapshot"):
+        if item.get(name) is None:
+            item.pop(name, None)
+    if not item.get("hide_details"):
+        item.pop("hide_details", None)
     return item
 
 
@@ -1371,6 +1430,7 @@ class PlanningRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(PLANNING, repository)
         self.update_threads = UpdateThreadStore(self._repository)
+        self.initiative_update_threads = UpdateThreadStore(self._repository, INITIATIVE_THREADS)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""
@@ -1688,8 +1748,9 @@ class PlanningRepository:
     def put_project_label(self, label: ProjectLabel, *, create: bool) -> ProjectLabel:
         """Store a new project label or write an edited one, raising `ConditionFailed` on a taken or missing key."""
         item = label.model_dump(mode="json")
-        if item.get("description") is None:
-            item.pop("description", None)
+        for name in ("description", "team_id"):
+            if item.get(name) is None:
+                item.pop(name, None)
         condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
         self._repository.put(item, condition=condition)
         return label
@@ -1704,7 +1765,7 @@ class PlanningRepository:
         return ProjectStatusRow.model_validate(dict(item))
 
     def list_project_statuses(self, workspace_id: str, *, max_items: int = 1000) -> list[ProjectStatusRow]:
-        """Every stored project status of the workspace, by category then position; empty before the first edit."""
+        """Every stored project status of the workspace, by category, workspace before team, then position."""
         if not workspace_id:
             return []
         items = self._repository.iter_query(
@@ -1713,12 +1774,21 @@ class PlanningRepository:
         )
         rows = [ProjectStatusRow.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_STATUS]
         order = {category: index for index, category in enumerate(PROJECT_STATUSES)}
-        return sorted(rows, key=lambda row: (order.get(row.category, len(order)), row.position, row.status_id))
+        return sorted(
+            rows,
+            key=lambda row: (
+                order.get(row.category, len(order)),
+                row.team_id is not None,
+                row.team_id or "",
+                row.position,
+                row.status_id,
+            ),
+        )
 
     def put_project_status(self, row: ProjectStatusRow, *, create: bool) -> ProjectStatusRow:
         """Store a new project status or write an edited one, raising `ConditionFailed` on a taken or missing key."""
         item = row.model_dump(mode="json")
-        for name in ("color", "description"):
+        for name in ("color", "description", "team_id"):
             if item.get(name) is None:
                 item.pop(name, None)
         condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
@@ -1938,10 +2008,10 @@ class PlanningRepository:
         return True
 
     def delete_initiative_updates(self, workspace_id: str, initiative_id: str, *, limit: int = 100) -> int:
-        """Remove every update row of one initiative, returning how many went."""
+        """Remove every update row of one initiative and every reply and reaction on them, returning how many went."""
         if not workspace_id or not initiative_id:
             return 0
-        removed = 0
+        removed = self.initiative_update_threads.delete_project_threads(workspace_id, initiative_id)
         while True:
             page = self._query_prefix(workspace_id, initiative_update_prefix(initiative_id), limit, None)
             if not page.items:
@@ -2143,23 +2213,30 @@ class PlanningRepository:
         stored = self._replace_fields(_marked(as_cycle_item(cycle), keep_import_batch), (IMPORT_BATCH_ATTRIBUTE,))
         return as_cycle(stored)
 
-    def replace_project(self, project: Project, *, keep_import_batch: bool = False) -> Project:
+    def replace_project(self, project: Project, *, keep_import_batch: bool = False, condition: Any = None) -> Project:
         """Write one project's fields over an existing row, its stored counters kept.
 
         A cleared optional field is removed rather than written as a null, so an
-        undated project really does leave the sparse index. Raises
-        `ConditionFailed` when the row is gone. The bulk import marker is cleared
-        unless `keep_import_batch` says this is the importer's own re-run.
+        undated project really does leave the sparse index. `condition` is ANDed
+        onto the write, so a description save guarded on the text it read leaves
+        the row alone once the text moved on. Raises `ConditionFailed` when the
+        row is gone or no longer meets `condition`. The bulk import marker is
+        cleared unless `keep_import_batch` says this is the importer's own re-run.
         """
-        stored = self._replace_fields(_marked(as_project_item(project), keep_import_batch), PROJECT_OPTIONAL_FIELDS)
+        stored = self._replace_fields(
+            _marked(as_project_item(project), keep_import_batch), PROJECT_OPTIONAL_FIELDS, condition=condition
+        )
         return as_project(stored)
 
-    def _replace_fields(self, item: Mapping[str, Any], optional: tuple[str, ...]) -> Mapping[str, Any]:
+    def _replace_fields(
+        self, item: Mapping[str, Any], optional: tuple[str, ...], *, condition: Any = None
+    ) -> Mapping[str, Any]:
         """Set every non-counter attribute of one row and remove the cleared optional ones.
 
         An update expression rather than a whole-item put, because a put would
         write back the counters the caller read and lose any move the consumer
-        made in between. Returns the stored row after the write.
+        made in between. `condition`, when given, is ANDed onto the row's
+        existence check. Returns the stored row after the write.
         """
         names: dict[str, str] = {}
         values: dict[str, Any] = {}
@@ -2179,12 +2256,13 @@ class PlanningRepository:
         expression = "SET " + ", ".join(sets)
         if removes:
             expression += " REMOVE " + ", ".join(removes)
+        exists = Attr("planning_key").exists()
         stored = self._repository.update(
             {"workspace_id": item["workspace_id"], "planning_key": item["planning_key"]},
             update_expression=expression,
             expression_names=names,
             expression_values=values,
-            condition=Attr("planning_key").exists(),
+            condition=exists if condition is None else exists & condition,
             return_values="ALL_NEW",
         )
         return stored if stored is not None else item

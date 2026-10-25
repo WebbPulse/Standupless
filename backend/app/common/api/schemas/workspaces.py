@@ -14,12 +14,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from app.common.api.schemas.member_status import UserStatusRead, current_status
 from app.common.db.dynamo.invites import Invite
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.users import User
-from app.common.db.dynamo.workspaces import Workspace, is_valid_slug, normalize_accent_color
+from app.common.db.dynamo.workspaces import (
+    Workspace,
+    WorkspaceFeature,
+    is_reserved_slug,
+    is_valid_slug,
+    normalize_accent_color,
+)
 from app.common.icons import icon_url
 from app.common.project_cadence import DEFAULT_INTERVAL_DAYS, check_interval
 
@@ -33,6 +40,23 @@ PermissionLevelField = Literal["admins", "members"]
 
 MemberStatusField = Literal["active", "suspended", "invited"]
 
+MemberBulkActionField = Literal["change_role", "suspend", "reactivate", "remove", "add_to_team"]
+
+MemberBulkOutcomeField = Literal["changed", "unchanged", "skipped"]
+
+BULK_MAX_MEMBERS = 200
+"""The most members one bulk action names, so a request stays inside one Lambda invocation's time."""
+
+
+def check_slug_value(value: str) -> str:
+    """Normalize a requested slug, refusing one off the contract's alphabet or reserved by the product."""
+    candidate = value.strip().lower()
+    if not is_valid_slug(candidate):
+        raise ValueError("slug must be 3 to 40 characters of a to z, 0 to 9 and hyphens")
+    if is_reserved_slug(candidate):
+        raise ValueError("slug is reserved")
+    return candidate
+
 
 class WorkspaceCreate(BaseModel):
     """The body `POST /api/workspaces` takes."""
@@ -45,13 +69,10 @@ class WorkspaceCreate(BaseModel):
     def check_slug(cls, value: str) -> str:
         """Hold the slug to the contract's alphabet before it reaches the table.
 
-        Validating here means a bad slug is a 422 naming the field rather than a
-        conditional write failure that would read as a conflict.
+        Validating here means a bad or reserved slug is a 422 naming the field
+        rather than a conditional write failure that would read as a conflict.
         """
-        candidate = value.strip().lower()
-        if not is_valid_slug(candidate):
-            raise ValueError("slug must be 3 to 40 characters of a to z, 0 to 9 and hyphens")
-        return candidate
+        return check_slug_value(value)
 
     @field_validator("name")
     @classmethod
@@ -63,18 +84,52 @@ class WorkspaceCreate(BaseModel):
         return candidate
 
 
+class WorkspaceFeatures(BaseModel):
+    """Which areas of the product are on for the workspace, every one on unless an admin turned it off."""
+
+    initiatives: bool = Field(default=True, description="Initiatives and their updates")
+    customers: bool = Field(default=True, description="Customers and customer requests")
+    releases: bool = Field(default=True, description="Team releases and the release pipeline")
+    documents: bool = Field(default=True, description="Documents on teams, projects and initiatives")
+    pulse: bool = Field(default=True, description="The Pulse feed of updates and following projects or initiatives")
+
+    @classmethod
+    def from_row(cls, workspace: Workspace) -> "WorkspaceFeatures":
+        """The flags of a stored workspace, an area it never stored counted as on."""
+        return cls(**{feature.value: workspace.feature_enabled(feature) for feature in WorkspaceFeature})
+
+
+class WorkspaceFeaturesUpdate(BaseModel):
+    """The areas to turn on or off; an absent area is left as it is, and an unknown one is refused."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    initiatives: Optional[bool] = None
+    customers: Optional[bool] = None
+    releases: Optional[bool] = None
+    documents: Optional[bool] = None
+    pulse: Optional[bool] = None
+
+
 class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
     The name, the accent color, the default project update cadence, the git
     branch name format, who may invite people or create teams and whether
-    third-party apps need an admin's approval are editable.
-    The slug is not: it is the tenant's public handle and changing one
-    would break every link that carries it. An absent field is left alone, and an
+    third-party apps need an admin's approval are editable, and so are the
+    areas of the product that are on and the slug in the workspace URL. A
+    changed slug keeps the old one as an alias, so links carrying it still land
+    here and no other workspace can take it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    slug: Optional[str] = Field(
+        default=None,
+        min_length=3,
+        max_length=40,
+        description="The workspace URL slug; the old slug keeps redirecting here",
+    )
     accent_color: Optional[str] = Field(default=None, description="The accent as #rrggbb, or null for the default")
     project_update_interval_days: Optional[int] = None
     branch_format: Optional[BranchFormatField] = Field(
@@ -92,6 +147,10 @@ class WorkspaceUpdate(BaseModel):
     third_party_app_approvals: Optional[bool] = Field(
         default=None,
         description="Whether members need an admin's approval before authorizing a third-party app",
+    )
+    features: Optional[WorkspaceFeaturesUpdate] = Field(
+        default=None,
+        description="Areas to turn on or off: initiatives, customers, releases, documents and pulse",
     )
 
     @field_validator("accent_color")
@@ -111,6 +170,14 @@ class WorkspaceUpdate(BaseModel):
         """Hold the default project update cadence to the allowed options."""
         return check_interval(value)
 
+    @field_validator("slug")
+    @classmethod
+    def check_slug(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a new slug to the same alphabet and reserved list as creation."""
+        if value is None:
+            return None
+        return check_slug_value(value)
+
     @field_validator("name")
     @classmethod
     def check_name(cls, value: Optional[str]) -> Optional[str]:
@@ -123,6 +190,19 @@ class WorkspaceUpdate(BaseModel):
         return candidate
 
 
+class SlugAvailabilityRead(BaseModel):
+    """Whether a workspace could move to a slug, and why not when it cannot."""
+
+    slug: str
+    available: bool
+    reason: Optional[Literal["invalid", "reserved", "taken", "current"]] = Field(
+        default=None,
+        description=(
+            "Why the slug is unavailable: invalid, reserved, taken, or current when it is already this workspace's"
+        ),
+    )
+
+
 class WorkspaceRead(BaseModel):
     """One workspace as the API returns it.
 
@@ -133,6 +213,10 @@ class WorkspaceRead(BaseModel):
     id: str
     name: str
     slug: str
+    retired_slugs: list[str] = Field(
+        default_factory=list,
+        description="Earlier slugs that still redirect to this workspace, oldest first",
+    )
     plan: str
     created_at: datetime
     icon_url: Optional[str] = None
@@ -167,6 +251,10 @@ class WorkspaceRead(BaseModel):
         default=False,
         description="Whether members need an admin's approval before authorizing a third-party app",
     )
+    features: WorkspaceFeatures = Field(
+        default_factory=WorkspaceFeatures,
+        description="Which areas are on; writes to an area that is off are refused with FEATURE_DISABLED",
+    )
 
     @classmethod
     def from_row(
@@ -187,6 +275,7 @@ class WorkspaceRead(BaseModel):
             id=workspace.id,
             name=workspace.name,
             slug=workspace.slug,
+            retired_slugs=list(workspace.retired_slugs),
             plan=workspace.effective_plan(),
             created_at=workspace.created_at,
             icon_url=icon_url(workspace.icon_key),
@@ -203,6 +292,7 @@ class WorkspaceRead(BaseModel):
             invite_permission=workspace.invite_permission,  # pyright: ignore[reportArgumentType]
             team_creation_permission=workspace.team_creation_permission,  # pyright: ignore[reportArgumentType]
             third_party_app_approvals=bool(workspace.third_party_app_approvals),
+            features=WorkspaceFeatures.from_row(workspace),
         )
 
 
@@ -230,6 +320,11 @@ class MemberRead(BaseModel):
     `status` is `suspended` for a member who keeps their history but holds no
     access, and `invited` for a pending invite, which then carries `invite_id`,
     answers the invite id as `user_id` and the invite's sent time as `joined_at`.
+    `user_status` is the member's own away status while it is in force, and null
+    when they have none, it has ended, or the caller is a guest outside their teams.
+    `last_active_at` is when the member last made an authenticated request here, to
+    within a quarter hour, answered only to a workspace admin and null otherwise or
+    when they were never seen.
     """
 
     user_id: str
@@ -244,14 +339,27 @@ class MemberRead(BaseModel):
     suspended_at: Optional[datetime] = None
     suspended_by: Optional[str] = None
     invite_id: Optional[str] = None
+    user_status: Optional[UserStatusRead] = None
+    last_active_at: Optional[datetime] = None
 
     @classmethod
-    def from_rows(cls, membership: Membership, user: Optional[User]) -> "MemberRead":
+    def from_rows(
+        cls,
+        membership: Membership,
+        user: Optional[User],
+        *,
+        visible: Optional[set[str]] = None,
+        include_activity: bool = False,
+    ) -> "MemberRead":
         """Build the response from a membership and the user row it points at.
 
         A missing user row still answers a member, because the membership is the
         authorization fact and dropping it would hide someone who holds access.
+        `visible`, when given, names the people whose status the caller may see.
+        `include_activity` is for an admin caller, the only one shown when a seat
+        was last used.
         """
+        shown = visible is None or membership.user_id in visible
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
@@ -264,6 +372,8 @@ class MemberRead(BaseModel):
             status="suspended" if membership.is_suspended else "active",
             suspended_at=membership.suspended_at,
             suspended_by=membership.suspended_by,
+            user_status=current_status(membership.user_status) if shown else None,
+            last_active_at=membership.last_active_at if include_activity else None,
         )
 
     @classmethod
@@ -290,6 +400,61 @@ class MemberUpdate(BaseModel):
     """The body a member role change takes."""
 
     role: WorkspaceRoleField
+
+
+class MemberBulkUpdate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/members/bulk` takes.
+
+    One action applied to every named member: `role` is the role `change_role`
+    sets, and `team_id` the team `add_to_team` adds them to as members.
+    """
+
+    action: MemberBulkActionField
+    user_ids: list[str] = Field(min_length=1, max_length=BULK_MAX_MEMBERS)
+    role: Optional[WorkspaceRoleField] = None
+    team_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator("user_ids")
+    @classmethod
+    def check_user_ids(cls, value: list[str]) -> list[str]:
+        """Drop repeats and blanks, keeping first-seen order, so no member is acted on or audited twice."""
+        kept = [user_id for user_id in dict.fromkeys(item.strip() for item in value) if user_id]
+        if not kept:
+            raise ValueError("user_ids must name at least one member")
+        return kept
+
+    @model_validator(mode="after")
+    def check_arguments(self) -> "MemberBulkUpdate":
+        """Require the role a role change sets and the team an add names, and refuse them elsewhere."""
+        if (self.action == "change_role") != (self.role is not None):
+            raise ValueError("role is required for change_role and only allowed there")
+        if (self.action == "add_to_team") != (self.team_id is not None):
+            raise ValueError("team_id is required for add_to_team and only allowed there")
+        return self
+
+
+class MemberBulkResult(BaseModel):
+    """What a bulk action did to one member.
+
+    `changed` and `unchanged` carry the member as they now stand, absent once
+    removed. `skipped` carries the refusal the single route would have answered,
+    as `error_code` and `message`, so the caller can say why.
+    """
+
+    user_id: str
+    outcome: MemberBulkOutcomeField
+    error_code: Optional[str] = None
+    message: Optional[str] = None
+    member: Optional[MemberRead] = None
+
+
+class MemberBulkRead(BaseModel):
+    """What a bulk member action answers with: one result per named member, in request order, and the tallies."""
+
+    results: list[MemberBulkResult]
+    changed: int = 0
+    unchanged: int = 0
+    skipped: int = 0
 
 
 class InviteCreate(BaseModel):
@@ -360,6 +525,39 @@ class InviteAccept(BaseModel):
     """The body `POST /api/invites/accept` takes."""
 
     token: str = Field(min_length=1)
+
+
+class InviteLinkRead(BaseModel):
+    """Whether the workspace's reusable invite link is on, and who minted the current one.
+
+    The token is stored only as a hash, so this shape never carries it. It is
+    shown once, in `InviteLinkCreated`, when the link is enabled or reset.
+    """
+
+    enabled: bool
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class InviteLinkCreated(InviteLinkRead):
+    """The 201 body of an enabled or reset invite link, carrying its token exactly once."""
+
+    token: str
+
+
+class InviteLinkToken(BaseModel):
+    """The body the invite link preview and join routes take."""
+
+    token: str = Field(min_length=1, max_length=256)
+
+
+class InviteLinkPreview(BaseModel):
+    """What a signed-in visitor sees before joining through an invite link."""
+
+    workspace_id: str
+    name: str
+    slug: str
+    already_member: bool
 
 
 def display_name_for(user: Optional[User]) -> str:

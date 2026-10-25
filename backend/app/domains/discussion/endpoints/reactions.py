@@ -20,61 +20,18 @@ from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.custom_emoji import require_custom_emoji
-from app.common.db.dynamo.reactions import build_reaction
-from app.common.discussion_reads import group_reactions, reaction_key
-from app.common.document_comments import NO_TEAM, load_document_comment, require_document_commenter
+from app.common.discussion_reads import group_reactions
+from app.common.reaction_writes import add_reaction as add_reaction_row
+from app.common.reaction_writes import remove_reaction as remove_reaction_row
+from app.common.reaction_writes import resolve_target
 from app.domains.discussion.schemas.discussion import (
     ReactionGroupRead,
     ReactionListRead,
     ReactionWrite,
     TargetKindQuery,
 )
-from app.domains.discussion.service import (
-    forbidden,
-    load_visible_issue,
-    not_found,
-    require_team_member,
-)
 
 router = APIRouter()
-
-
-def _resolve_target(
-    repositories: Repositories,
-    context: AuthzContext,
-    target_id: str,
-    target_kind: str,
-    issue_id: str | None,
-    document_id: str | None = None,
-) -> str | None:
-    """The team of the issue one reaction target belongs to, `None` for a document's comment, or a 404.
-
-    An `issue` target is its own issue. A `comment` target needs the issue that
-    partitions it, which the caller supplies as `issue_id`; the comment is then read
-    to hold that it really is in that issue, so a caller cannot pair someone else's
-    comment id with an issue they can see and react across a team boundary. A
-    comment on a document names the document as `document_id`, and is held to it
-    the same way.
-    """
-    if target_kind == "comment" and document_id:
-        load_document_comment(repositories, context, document_id, target_id)
-        return None
-    if target_kind == "issue":
-        return load_visible_issue(repositories, context, target_id).team_id
-
-    if not issue_id:
-        raise not_found()
-    issue = load_visible_issue(repositories, context, issue_id)
-    comment = repositories.comments.get(context.workspace_id, issue_id, target_id)
-    if comment is None or comment.document_id:
-        raise not_found()
-    return issue.team_id
-
-
-def _issue_of(target_id: str, target_kind: str, issue_id: str | None) -> str:
-    """The issue a resolved issue or issue comment target belongs to, carried on the row for the notify consumer."""
-    return target_id if target_kind == "issue" else issue_id or ""
 
 
 @router.get("/{workspace_id}/reactions", response_model=ReactionListRead)
@@ -91,7 +48,7 @@ def list_reactions(
     Not paged: a group is a count over the whole partition, so a page boundary
     would hand back a count of part of it.
     """
-    _resolve_target(repositories, context, target_id, target_kind, issue_id, document_id)
+    resolve_target(repositories, context, target_id, target_kind, issue_id, document_id)
     rows = repositories.reactions.list_for_target(context.workspace_id, target_id)
     return ReactionListRead(reactions=group_reactions(rows, context.user_id))
 
@@ -109,32 +66,15 @@ def add_reaction(
     that is the one the caller just changed and the rest are already on screen.
     A custom `:name:` must be an emoji the workspace has.
     """
-    team_id = _resolve_target(
-        repositories, context, payload.target_id, payload.target_kind, payload.issue_id, payload.document_id
+    return add_reaction_row(
+        repositories,
+        context,
+        payload.target_id,
+        payload.target_kind,
+        payload.emoji,
+        issue_id=payload.issue_id,
+        document_id=payload.document_id,
     )
-    if team_id is None and payload.document_id:
-        require_document_commenter(repositories, context, payload.document_id)
-    else:
-        require_team_member(repositories, context, team_id or "")
-    require_custom_emoji(repositories, context.workspace_id, payload.emoji)
-
-    repositories.reactions.put(
-        build_reaction(
-            context.workspace_id,
-            payload.target_id,
-            payload.target_kind,
-            team_id or NO_TEAM,
-            payload.emoji,
-            context.user_id,
-            issue_id="" if team_id is None else _issue_of(payload.target_id, payload.target_kind, payload.issue_id),
-        )
-    )
-
-    rows = repositories.reactions.list_for_target(context.workspace_id, payload.target_id)
-    groups = [group for group in group_reactions(rows, context.user_id) if group.emoji == payload.emoji]
-    if not groups:
-        raise not_found()
-    return groups[0]
 
 
 @router.delete("/{workspace_id}/reactions", status_code=status.HTTP_204_NO_CONTENT)
@@ -156,9 +96,7 @@ def remove_reaction(
     The emoji is normalised the way the write normalised it, so a client sending
     the variation selector form removes the row it created rather than missing it.
     """
-    team_id = _resolve_target(repositories, context, target_id, target_kind, issue_id, document_id)
-    if team_id is not None and not context.can_see_team(team_id):
-        raise forbidden()
-
-    repositories.reactions.delete(context.workspace_id, target_id, reaction_key(emoji), context.user_id)
+    remove_reaction_row(
+        repositories, context, target_id, target_kind, emoji, issue_id=issue_id, document_id=document_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

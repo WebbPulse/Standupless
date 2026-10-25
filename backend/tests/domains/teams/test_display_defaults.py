@@ -15,9 +15,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common.api.schemas.projects_display import ProjectsDisplay
+from app.common.api.schemas.teams import DisplayOptionsBody
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.db.dynamo.team_config import WORKSPACE_DISPLAY_DEFAULTS_KEY, display_defaults_key
+from app.common.db.dynamo.team_config import WORKSPACE_DISPLAY_DEFAULTS_KEY, DisplayOptions, display_defaults_key
 from tests.domains.helpers import (
     ADMIN,
     GUEST,
@@ -294,3 +295,28 @@ def test_the_group_header_takes_only_count_or_estimate(client: TestClient, team:
     """A team default group header is one a saved view could hold."""
     sign_in(client, ADMIN)
     assert client.patch(URL, json={"list_display": {"group_header": "points"}}).status_code == 422
+
+
+def test_the_sla_and_customer_properties_are_team_defaults(client: TestClient, team: str) -> None:
+    """A team default may show or hide the SLA badge and show the customer properties."""
+    sign_in(client, ADMIN)
+    shown = client.patch(
+        URL, json={"list_display": {"visible_properties": ["id", "sla", "customers", "customer_revenue"]}}
+    )
+
+    assert shown.status_code == 200, shown.text
+    assert shown.json()["list_display"]["visible_properties"] == ["id", "sla", "customers", "customer_revenue"]
+
+    hidden = client.patch(URL, json={"list_display": {"visible_properties": ["id"]}})
+
+    assert hidden.json()["list_display"]["visible_properties"] == ["id"]
+    assert client.get(URL).json()["list_display"]["visible_properties"] == ["id"]
+
+
+def test_a_team_default_saved_before_the_sla_property_reads_with_it_on() -> None:
+    """A stored default list with neither sla nor the hidden marker predates the property, so sla reads as on."""
+    body = DisplayOptionsBody.from_row(DisplayOptions(visible_properties=["id", "labels"]))
+
+    assert body is not None
+    assert body.visible_properties == ["id", "labels", "sla"]
+    assert DisplayOptionsBody(visible_properties=["id"]).as_row().visible_properties == ["id", "-sla"]

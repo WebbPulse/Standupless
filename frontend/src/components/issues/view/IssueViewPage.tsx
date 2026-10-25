@@ -16,7 +16,7 @@
  * to it with Reset to default.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
@@ -42,12 +42,24 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useCreateIssue } from '../../../hooks/useCreateIssue';
 import { useIssueCollection } from '../../../hooks/useIssueCollection';
 import { useIssueContext } from '../../../hooks/useIssueContext';
+import {
+  legacyFoldsKey,
+  takeLegacyFolds,
+  useListFolds,
+} from '../../../hooks/useListFolds';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
+import { isFeatureOn } from '../../../lib/features';
 import { useCustomerRequestMap } from '../../../hooks/useCustomerRequestMap';
+import { useCustomerFields } from '../../../hooks/useCustomerFields';
 import { useCustomers } from '../../../hooks/useCustomers';
+import {
+  releaseContext,
+  useReleaseIndex,
+} from '../../../hooks/useReleaseIndex';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
+import { FOCUS_SAVE_REFUSED } from '../../../lib/focusGrouping';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
 import { widgetSourceFor } from '../../../lib/dashboards';
 import {
@@ -57,9 +69,11 @@ import {
   parseViewState,
   sameViewState,
   sharedChange,
+  showsCustomerProperties,
   stateToViewBody,
   stateToViewDisplay,
   stateToViewFilter,
+  usesFocusGrouping,
   viewStateQuery,
   viewVisibility,
   writeViewState,
@@ -67,7 +81,8 @@ import {
   type ViewState,
 } from '../../../lib/issueView';
 import { viewPath, viewsPath } from '../../../lib/paths';
-import { teamFilterTeams } from '../../../lib/teamRetirement';
+import { canWriteIssues } from '../../../lib/capabilities';
+import { isRetired, teamFilterTeams } from '../../../lib/teamRetirement';
 import ShareButton from '../../access/ShareButton';
 import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
@@ -404,6 +419,8 @@ export interface IssueViewPageProps {
   statusCategories?: readonly StatusCategory[] | undefined;
   /** A notice above the list, such as the banner of a retired team. */
   notice?: ReactNode;
+  /** True on My issues > Assigned, the one list that offers the Focus grouping. */
+  focusGrouping?: boolean;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -441,6 +458,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   teamDefault,
   statusCategories,
   notice,
+  focusGrouping = false,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -461,6 +479,62 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     [setParams, base, params]
   );
   const changed = !sameViewState(state, base);
+  const keepsFolds = view !== undefined || composing;
+  const viewerFolds = useListFolds(
+    workspaceId,
+    keepsFolds ? undefined : scopeKey
+  );
+  const viewFoldSet = useMemo(
+    () => new Set(state.collapsed),
+    [state.collapsed]
+  );
+  const toggleViewFold = useCallback(
+    (key: string) => {
+      const next = new Set(state.collapsed);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setState({ ...state, collapsed: [...next] });
+    },
+    [state, setState]
+  );
+  const setViewFolds = useCallback(
+    (keys: readonly string[], folded: boolean) => {
+      const next = new Set(state.collapsed);
+      for (const key of keys) {
+        if (folded) next.add(key);
+        else next.delete(key);
+      }
+      setState({ ...state, collapsed: [...next] });
+    },
+    [state, setState]
+  );
+  const folds = keepsFolds
+    ? {
+        collapsed: viewFoldSet,
+        onToggle: toggleViewFold,
+        onSet: setViewFolds,
+      }
+    : {
+        collapsed: viewerFolds.collapsed,
+        onToggle: viewerFolds.toggle,
+        onSet: viewerFolds.set,
+      };
+  const savedViewId = view?.view_id;
+  const savedFolds = base.collapsed.length;
+  useEffect(() => {
+    if (savedViewId === undefined || workspaceId === '') return;
+    const legacy = takeLegacyFolds(legacyFoldsKey(workspaceId, savedViewId));
+    if (legacy.length === 0 || savedFolds > 0) return;
+    setParams(
+      (current) => {
+        if (current.has('fold')) return current;
+        const next = new URLSearchParams(current);
+        for (const key of legacy) next.append('fold', key);
+        return next;
+      },
+      { replace: true }
+    );
+  }, [savedViewId, workspaceId, savedFolds, setParams]);
   const displayChanged = !sameViewState(
     {
       ...state,
@@ -518,12 +592,23 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
-  const isMember = workspace !== null && workspace.role !== 'guest';
-  const { customers } = useCustomers(workspaceId, isMember);
+  const customersShown =
+    workspace !== null &&
+    workspace.role !== 'guest' &&
+    isFeatureOn(workspace, 'customers');
+  const releasesOn = isFeatureOn(workspace, 'releases');
+  const { customers } = useCustomers(workspaceId, customersShown);
+  const customerFields = useCustomerFields(workspaceId, customersShown);
   const customerRequests = useCustomerRequestMap(
     workspaceId,
-    isMember &&
-      (state.groupBy === 'customer' || state.subGroupBy === 'customer')
+    customersShown &&
+      (state.groupBy === 'customer' ||
+        state.subGroupBy === 'customer' ||
+        showsCustomerProperties(state.visible))
+  );
+  const releaseIndex = useReleaseIndex(
+    workspaceId,
+    releasesOn && teamIds.length > 0
   );
   const namedTeams = useMemo(() => namedTeamIds(state), [state]);
   const filterContext = useMemo(
@@ -535,7 +620,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         key: team.key_prefix,
         isMember: team.is_member === true,
       })),
-      ...(isMember
+      ...(customersShown
         ? {
             customers: customers.map((customer) => ({
               id: customer.customer_id,
@@ -543,10 +628,23 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
               revenue: customer.revenue,
               requestCount: customer.request_count,
             })),
+            customerStatuses: customerFields.statuses,
+            customerTiers: customerFields.tiers,
           }
         : {}),
+      ...(releasesOn ? releaseContext(releaseIndex) : {}),
     }),
-    [lists.context, teams, namedTeams, isMember, customers]
+    [
+      lists.context,
+      teams,
+      namedTeams,
+      customersShown,
+      customers,
+      customerFields.statuses,
+      customerFields.tiers,
+      releasesOn,
+      releaseIndex,
+    ]
   );
   const viewLists = useMemo(
     () => ({ ...lists, context: filterContext }),
@@ -591,6 +689,17 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     (teamId: string) => teams.find((team) => team.id === teamId)?.name,
     [teams]
   );
+  const workspaceRole = workspace?.role;
+  const canEditIssue = useCallback(
+    (issue: { team_id: string }) => {
+      const team = teams.find((item) => item.id === issue.team_id);
+      return (
+        team === undefined ||
+        (!isRetired(team) && canWriteIssues(workspaceRole, team.role))
+      );
+    },
+    [teams, workspaceRole]
+  );
 
   const menuTeamId = homeTeam?.id ?? '';
   const { data: teamViews } = usePolledQuery(
@@ -604,7 +713,19 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     }
   );
 
+  const openSaveNew = (): void => {
+    if (usesFocusGrouping(state)) {
+      showErrorToast(FOCUS_SAVE_REFUSED);
+      return;
+    }
+    setSaving('new');
+  };
+
   const saveNew = async (details: ViewDetails): Promise<void> => {
+    if (usesFocusGrouping(state)) {
+      showErrorToast(FOCUS_SAVE_REFUSED);
+      return;
+    }
     const teamId = details.teamId;
     const runsOver =
       teamId === undefined || typeof scope.team_id === 'string'
@@ -614,7 +735,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       const created = await createView(
         workspaceId,
         stateToViewBody(
-          state,
+          keepsFolds
+            ? state
+            : { ...state, collapsed: [...viewerFolds.collapsed] },
           details.name,
           runsOver,
           details.shared ? teamId : undefined,
@@ -683,9 +806,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     scope: 'page',
     group: 'View',
     enabled: !archive && saving === null,
-    handler: () => {
-      setSaving('new');
-    },
+    handler: openSaveNew,
   });
   useShortcut({
     keys: 'mod+s',
@@ -705,9 +826,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         size="sm"
         variant="ghost"
         className="gap-1.5"
-        onClick={() => {
-          setSaving('new');
-        }}
+        onClick={openSaveNew}
       >
         <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
         Save as view
@@ -733,13 +852,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           Discard
         </Button>
         {view !== undefined && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setSaving('new');
-            }}
-          >
+          <Button size="sm" variant="ghost" onClick={openSaveNew}>
             Save as new
           </Button>
         )}
@@ -748,7 +861,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           variant="primary"
           disabled={updating}
           onClick={() => {
-            if (view === undefined) setSaving('new');
+            if (view === undefined) openSaveNew();
             else void saveOver();
           }}
         >
@@ -814,15 +927,16 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           state={state}
           onChange={setState}
           archive={archive}
-          groupFields={groupFieldsFor(filterContext)}
+          groupFields={groupFieldsFor(filterContext, { focus: focusGrouping })}
           context={filterContext}
           teamDefault={teamDefaultActions}
-          customerSorts={isMember}
+          customerSorts={customersShown}
           estimates={listEstimates}
           onReset={
-            !displayChanged
+            !displayChanged && (keepsFolds || viewerFolds.collapsed.size === 0)
               ? undefined
               : () => {
+                  if (!keepsFolds) viewerFolds.clear();
                   setState({
                     ...base,
                     filters: state.filters,
@@ -960,12 +1074,13 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             estimateOptionsFor={estimateOptionsFor}
             {...(teams.length > 1 ? { teamNameFor } : {})}
             canEdit={canEdit}
+            {...(teams.length > 1 ? { canEditIssue } : {})}
             createTeamId={homeTeam?.id}
-            collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
+            folds={folds}
             {...(emptyMessage === undefined ? {} : { emptyMessage })}
             filterFields={filterFields}
             statusCategories={statusCategories}
-            {...(isMember ? { customerRequests } : {})}
+            {...(customersShown ? { customerRequests } : {})}
           />
         </div>
         {insightsOpen && (

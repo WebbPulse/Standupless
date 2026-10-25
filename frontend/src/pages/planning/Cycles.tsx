@@ -35,6 +35,10 @@
  * A parent team's cycles roll up its visible sub-teams' matching cycles, so
  * their counts and progress include the sub-teams' issues, with the same
  * toggle as the issue list to show the team alone.
+ *
+ * A team with no cycles offers Create cycle, with its shortcut, to anyone who
+ * may write, and a team whose automatic cycles are turned off says so and
+ * links an admin to the team's cycle settings instead.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -67,11 +71,13 @@ import {
   startCycleToday,
   updateCycle,
 } from '../../api/planning';
+import { getCycleSettings } from '../../api/teams';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge, { type BadgeTone } from '../../components/ui/badge';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
-import EmptyState from '../../components/ui/empty-state';
+import EmptyState, { EmptyStateButton } from '../../components/ui/empty-state';
+import TextLink from '../../components/ui/link';
 import Field from '../../components/ui/field';
 import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import Spinner from '../../components/ui/spinner';
@@ -103,7 +109,7 @@ import {
   daysRemainingLabel,
   shortCountsLabel,
 } from '../../lib/planningDisplay';
-import { cyclePath } from '../../lib/paths';
+import { cyclePath, teamSettingsSectionPath } from '../../lib/paths';
 import {
   cycleCapacity,
   cycleEntries,
@@ -111,7 +117,7 @@ import {
   type CycleCapacity,
   type CycleEdit,
 } from '../../lib/planningModel';
-import { cyclesKey } from '../../lib/queryKeys';
+import { cycleSettingsKey, cyclesKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { validateCycleDates } from '../../lib/validation';
 import type {
@@ -632,6 +638,18 @@ export const Cycles: React.FC = () => {
     auth,
   });
 
+  const readCycleSettings = useCallback(
+    ({ signal }: { signal?: AbortSignal }) =>
+      getCycleSettings(workspaceId, teamId, signal),
+    [workspaceId, teamId]
+  );
+  const { data: cycleSettings } = usePolledQuery(readCycleSettings, {
+    intervalMs: POLL_MS,
+    enabled: teamId !== '' && !isLoading && (data?.cycles.length ?? 0) === 0,
+    queryKey: cycleSettingsKey(workspaceId, teamId),
+    auth,
+  });
+
   const {
     mutate: add,
     isMutating: isAdding,
@@ -958,10 +976,42 @@ export const Cycles: React.FC = () => {
         {isLoading ? (
           <Spinner label="Loading cycles" />
         ) : cycles.length === 0 ? (
-          <EmptyState
-            icon={<LuLayers />}
-            message="No cycles yet. A cycle is a dated run of work for this team."
-          />
+          cycleSettings?.enabled === false ? (
+            <EmptyState
+              icon={<LuLayers />}
+              message="Cycles are turned off for this team."
+              action={
+                isAdmin && team !== null ? (
+                  <TextLink
+                    to={teamSettingsSectionPath(
+                      slug ?? '',
+                      team.key_prefix,
+                      'cycles'
+                    )}
+                    className="text-sm"
+                  >
+                    Turn on cycles in team settings
+                  </TextLink>
+                ) : undefined
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<LuLayers />}
+              message="No cycles yet. A cycle is a dated run of work for this team."
+              action={
+                canEdit && team !== null ? (
+                  <EmptyStateButton
+                    label="Create cycle"
+                    keys="shift+n"
+                    onClick={() => {
+                      setIsCreating(true);
+                    }}
+                  />
+                ) : undefined
+              }
+            />
+          )
         ) : (
           <>
             {active.map((cycle, index) => (

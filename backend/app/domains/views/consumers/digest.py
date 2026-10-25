@@ -15,6 +15,11 @@ and a window with nothing left sends nothing, as in Linear.
 
 A person who chose immediate email skips the window: `send_immediately` mails
 each notification on its own as it is written.
+
+A person who paused notifications or is outside their working hours has their
+emails held instead, whichever format they chose. Every flush re-reads each held
+person, and once they may be reached again their held entries go out as one
+digest, so resuming early is honoured on the next run.
 """
 
 from __future__ import annotations
@@ -24,11 +29,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
+from webbpulse.email_layout import EmailLink
 from webbpulse.identity.email import EmailMessage
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.notify_digests import DigestEntry, DueDigest
-from app.common.email import deliver
+from app.common.email import deliver, with_reply_to
+from app.common.email_replies import mint_reply_address
+from app.common.email_unsubscribe import unsubscribe_links
+from app.common.notification_pause import held_until
 from app.domains.views.email import render_digest
 
 _log = logging.getLogger(__name__)
@@ -113,7 +122,74 @@ def _compose(
         kept.append(entry)
     if not kept:
         return None
-    return render_digest(kept, to=str(recipient.email), workspace_slug=workspace.slug, accent=workspace.accent_color)
+    footer = footer_unsubscribe_links(workspace_id, recipient_id, kept)
+    if len(kept) == 1 and replyable(kept[0]):
+        entry = kept[0]
+        reply_to = mint_reply_address(
+            repositories.inbox.email_replies,
+            workspace_id=workspace_id,
+            issue_id=entry.issue_id,
+            user_id=recipient_id,
+            comment_id=entry.comment_id,
+        )
+        message = render_digest(
+            kept,
+            to=str(recipient.email),
+            workspace_slug=workspace.slug,
+            accent=workspace.accent_color,
+            replyable=bool(reply_to),
+            unsubscribe_links=footer,
+        )
+        return with_reply_to(message, reply_to)
+    return render_digest(
+        kept,
+        to=str(recipient.email),
+        workspace_slug=workspace.slug,
+        accent=workspace.accent_color,
+        unsubscribe_links=footer,
+    )
+
+
+def footer_unsubscribe_links(workspace_id: str, recipient_id: str, kept: list[DigestEntry]) -> tuple[EmailLink, ...]:
+    """The unsubscribe links one window's email carries in its footer.
+
+    The issue or project link appears only when every entry is about that one
+    issue or project, and the kind link only when every entry is one kind, so a
+    link in a mixed digest never stops mail the reader did not see an example of.
+    """
+    issues = {entry.issue_id for entry in kept}
+    projects = {entry.project_id for entry in kept}
+    issue_id = next(iter(issues)) if len(issues) == 1 else ""
+    project_id = next(iter(projects)) if len(projects) == 1 else ""
+    return unsubscribe_links(
+        user_id=recipient_id,
+        workspace_id=workspace_id,
+        kinds=[entry.kind for entry in kept],
+        issue_id=issue_id,
+        issue_key=kept[0].issue_key if issue_id else "",
+        project_id=project_id,
+    )
+
+
+UNREPLYABLE_KINDS = frozenset(
+    {
+        "project_update",
+        "project_update_comment",
+        "project_update_due",
+        "initiative_update_due",
+        "project_lead_assigned",
+        "project_member_added",
+        "initiative_owner_assigned",
+        "document_comment",
+        "standup_digest",
+    }
+)
+"""Kinds whose email is not about one issue, so a reply to it has nowhere to post."""
+
+
+def replyable(entry: DigestEntry) -> bool:
+    """Whether one held notification is about a single issue a reply can comment on."""
+    return bool(entry.issue_id) and entry.kind not in UNREPLYABLE_KINDS
 
 
 def _send(message: EmailMessage | None) -> bool:
@@ -150,14 +226,29 @@ def flush_window(repositories: Repositories, due: DueDigest) -> bool:
     return sent
 
 
+def released(repositories: Repositories, now: datetime) -> list[DueDigest]:
+    """The held windows whose people may be reached again at `now`, at most `FLUSH_BATCH` of them.
+
+    The people are read in one batch. Someone whose row is gone is released too,
+    so the compose step drops their entries rather than leaving them held.
+    """
+    held = repositories.inbox.digests.held()
+    if not held:
+        return []
+    people = repositories.users.get_many(sorted({due.recipient_id for due in held}))
+    ready = [due for due in held if (person := people.get(due.recipient_id)) is None or held_until(person, now) is None]
+    return ready[:FLUSH_BATCH]
+
+
 def flush_due(repositories: Repositories, now: datetime | None = None) -> FlushSummary:
-    """Mail every window that closed at least `FLUSH_GRACE` before `now`, oldest first.
+    """Mail every window that closed at least `FLUSH_GRACE` before `now`, oldest first, then every released hold.
 
     One window failing is logged and skipped, so it never holds up the rest.
     """
     moment = now or datetime.now(timezone.utc)
     summary = FlushSummary()
-    for due in repositories.inbox.digests.due(moment - FLUSH_GRACE, limit=FLUSH_BATCH):
+    windows = repositories.inbox.digests.due(moment - FLUSH_GRACE, limit=FLUSH_BATCH)
+    for due in [*windows, *released(repositories, moment)]:
         summary.windows += 1
         try:
             if flush_window(repositories, due):

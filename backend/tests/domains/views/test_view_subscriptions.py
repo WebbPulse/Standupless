@@ -106,14 +106,15 @@ def test_a_view_the_caller_cannot_read_refuses_a_follow_as_missing(client: TestC
     assert response.status_code == 404, response.text
 
 
-def test_a_projects_view_refuses_a_follow(client: TestClient, workspace: str) -> None:
-    """Projects never enter a view the way issues do, so there is nothing to follow."""
+def test_a_projects_view_takes_a_follow(client: TestClient, workspace: str) -> None:
+    """A project view is followed like an issue view, to hear of each project entering it."""
     sign_in(client, MEMBER)
     view = create_view(client, workspace, name="Projects", entity="projects")
 
     response = client.put(subscription(client, workspace, view["view_id"]))
 
-    assert response.status_code == 422, response.text
+    assert response.status_code == 200, response.text
+    assert response.json()["subscribed"] is True
 
 
 def test_deleting_a_view_drops_its_subscriptions(client: TestClient, workspace: str, repositories: Any) -> None:

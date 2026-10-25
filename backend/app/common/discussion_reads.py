@@ -153,12 +153,16 @@ ASANA_AUTHOR_PREFIX = "asana:"
 JIRA_AUTHOR_PREFIX = "jira:"
 """The author id prefix of a comment imported from Jira whose author matched no member."""
 
+SLACK_AUTHOR_PREFIX = "slack:"
+"""The author id prefix of a comment synced from a Slack thread whose author matched no member."""
+
 PLACEHOLDER_AUTHORS: tuple[tuple[str, str], ...] = (
     (GITHUB_AUTHOR_PREFIX, "GitHub"),
     (LINEAR_AUTHOR_PREFIX, "Linear"),
     (SHORTCUT_AUTHOR_PREFIX, "Shortcut"),
     (ASANA_AUTHOR_PREFIX, "Asana"),
     (JIRA_AUTHOR_PREFIX, "Jira"),
+    (SLACK_AUTHOR_PREFIX, "Slack"),
 )
 """Each placeholder author prefix and the source named after the placeholder's name."""
 

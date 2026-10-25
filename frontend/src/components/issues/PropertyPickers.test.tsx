@@ -85,6 +85,33 @@ describe('StatusPicker', () => {
     ).toHaveTextContent('Doing');
   });
 
+  it('shows a status description beside its name', async () => {
+    const user = userEvent.setup();
+    render(
+      <StatusPicker
+        statuses={[
+          ...statuses.slice(0, 3),
+          { ...statuses[3]!, description: 'Shipped to production' },
+        ]}
+        value="st-2"
+        onChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Status: Todo' }));
+    const done = screen.getByRole('option', { name: /Done/ });
+    expect(done).toHaveTextContent('Shipped to production');
+    expect(
+      within(done).getByTitle('Done: Shipped to production')
+    ).toBeVisible();
+    expect(screen.getByRole('option', { name: /Doing/ })).not.toHaveTextContent(
+      'Shipped'
+    );
+    await user.keyboard('production');
+    const matches = screen.getAllByRole('option');
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toHaveTextContent('Done');
+  });
+
   it('offers Triage first when the team has triage on', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -192,6 +219,66 @@ describe('AssigneePicker', () => {
     expect(rows[1]).toContain('Bo');
     await user.keyboard('{Home}{Enter}');
     expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  const away = {
+    user_id: 'u-3',
+    email: 'c@example.com',
+    display_name: 'Cy',
+    user_status: {
+      emoji: '🌴',
+      text: 'On vacation',
+      away: true,
+      until: null,
+      set_at: '2026-10-20T00:00:00Z',
+    },
+  };
+
+  it('shows the status each person set and lets an away person be picked', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <AssigneePicker
+        people={[
+          { user_id: 'u-1', email: 'a@example.com', display_name: 'Ann' },
+          away,
+        ]}
+        value={null}
+        onChange={onChange}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /Assignee/ }));
+    const option = screen.getByRole('option', { name: /Cy/ });
+    expect(option).toHaveTextContent('🌴 On vacation');
+    expect(within(option).getByTestId('avatar-away')).toBeInTheDocument();
+    await user.click(option);
+    expect(onChange).toHaveBeenCalledWith('u-3');
+  });
+
+  it('notes an away assignee beside the pick', () => {
+    const { rerender } = render(
+      <AssigneePicker people={[away]} value="u-3" onChange={vi.fn()} />
+    );
+    expect(screen.getByTestId('assignee-away')).toHaveTextContent('Away');
+    rerender(
+      <AssigneePicker
+        people={[away]}
+        value="u-3"
+        variant="chip"
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('assignee-away')).toHaveTextContent('Away');
+    rerender(
+      <AssigneePicker
+        people={[
+          { ...away, user_status: { ...away.user_status, away: false } },
+        ]}
+        value="u-3"
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('assignee-away')).not.toBeInTheDocument();
   });
 });
 

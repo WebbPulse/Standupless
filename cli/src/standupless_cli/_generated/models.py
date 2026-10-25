@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, NotRequired
+from typing import Any, Literal, NotRequired, TypeAlias
 from typing_extensions import TypedDict
 
 
@@ -38,7 +38,7 @@ ActivityRead = TypedDict(
             "thread_unresolved",
         ],
         "release_id": NotRequired[str | None],
-        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None],
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None],
         "to": NotRequired[Any],
     },
 )
@@ -98,6 +98,7 @@ class ApiKeyCreate(TypedDict):
     kind: NotRequired[Literal["user", "workspace"]]
     name: str
     scopes: list[str]
+    team_ids: NotRequired[list[str] | None]
 
 
 class ApiKeyCreated(TypedDict):
@@ -112,6 +113,7 @@ class ApiKeyCreated(TypedDict):
     revoked_at: NotRequired[str | None]
     scopes: list[str]
     secret: str
+    team_ids: NotRequired[list[str]]
 
 
 class ApiKeyRead(TypedDict):
@@ -125,6 +127,7 @@ class ApiKeyRead(TypedDict):
     prefix: str
     revoked_at: NotRequired[str | None]
     scopes: list[str]
+    team_ids: NotRequired[list[str]]
 
 
 class AppAccessRequestCreate(TypedDict):
@@ -348,6 +351,9 @@ class ChannelCreate(TypedDict, closed=True):
             "project_update_posted",
             "project_update_due",
             "standup_digest",
+            "initiative_update_posted",
+            "cycle_started",
+            "cycle_completed",
         ]
     ]
     label: NotRequired[str]
@@ -374,6 +380,9 @@ class ChannelRead(TypedDict):
             "project_update_posted",
             "project_update_due",
             "standup_digest",
+            "initiative_update_posted",
+            "cycle_started",
+            "cycle_completed",
         ]
     ]
     label: str
@@ -408,6 +417,9 @@ class ChannelUpdate(TypedDict, closed=True):
                 "project_update_posted",
                 "project_update_due",
                 "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed",
             ]
         ]
         | None
@@ -500,8 +512,32 @@ class CustomerCreate(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
-    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
+    status: NotRequired[str | None]
+    status_id: NotRequired[str | None]
     tier: NotRequired[str | None]
+    tier_id: NotRequired[str | None]
+
+
+class CustomerFieldCreate(TypedDict):
+    color: NotRequired[str | None]
+    name: str
+    position: NotRequired[int | None]
+
+
+class CustomerFieldRead(TypedDict):
+    color: NotRequired[str | None]
+    created_at: str
+    customer_count: NotRequired[int]
+    id: str
+    name: str
+    position: int
+    updated_at: str
+
+
+class CustomerFieldUpdate(TypedDict):
+    color: NotRequired[str | None]
+    name: NotRequired[str | None]
+    position: NotRequired[int | None]
 
 
 class CustomerMerge(TypedDict):
@@ -514,8 +550,10 @@ class CustomerPatch(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
-    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
+    status: NotRequired[str | None]
+    status_id: NotRequired[str | None]
     tier: NotRequired[str | None]
+    tier_id: NotRequired[str | None]
 
 
 class CustomerRead(TypedDict):
@@ -531,8 +569,11 @@ class CustomerRead(TypedDict):
     request_count: NotRequired[int]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
-    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
+    status: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    status_name: NotRequired[str | None]
     tier: NotRequired[str | None]
+    tier_id: NotRequired[str | None]
     updated_at: str
     workspace_id: str
 
@@ -561,13 +602,21 @@ class CustomerRequestRead(TypedDict):
     customer_name: NotRequired[str]
     important: NotRequired[bool]
     request_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     target_id: str
     target_key: NotRequired[str]
     target_kind: Literal["issue", "project"]
     target_title: NotRequired[str]
     updated_at: NotRequired[str | None]
     workspace_id: str
+
+
+class CustomerStatusListRead(TypedDict):
+    statuses: list[CustomerFieldRead]
+
+
+class CustomerTierListRead(TypedDict):
+    tiers: list[CustomerFieldRead]
 
 
 class CycleCalendarFeedCreate(TypedDict):
@@ -760,6 +809,7 @@ class DisplayOptionsBody(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | Literal["none"]
@@ -804,6 +854,7 @@ class DisplayOptionsBody(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | Literal["none"]
@@ -830,6 +881,10 @@ class DisplayOptionsBody(TypedDict):
                 "created_at",
                 "updated_at",
                 "time_in_status",
+                "release",
+                "sla",
+                "customers",
+                "customer_revenue",
             ]
         ]
         | None
@@ -859,6 +914,7 @@ class DocumentMentionRead(TypedDict):
 
 
 class DocumentPatch(TypedDict):
+    base_body_version: NotRequired[str | None]
     base_updated_at: NotRequired[str | None]
     body: NotRequired[str | None]
     icon: NotRequired[str | None]
@@ -870,6 +926,7 @@ class DocumentPatch(TypedDict):
 class DocumentRead(TypedDict):
     author_id: str
     body: str
+    body_version: NotRequired[str]
     can_delete: NotRequired[bool]
     can_edit: NotRequired[bool]
     created_at: str
@@ -879,7 +936,7 @@ class DocumentRead(TypedDict):
     parent_id: str
     parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     title: str
     updated_at: str
     updated_by: str
@@ -896,7 +953,7 @@ class DocumentSummaryRead(TypedDict):
     parent_id: str
     parent_kind: Literal["project", "initiative", "team"]
     parent_name: NotRequired[str]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     title: str
     updated_at: str
     updated_by: str
@@ -1027,6 +1084,49 @@ class GithubThreadWrite(TypedDict, closed=True):
     repository_id: str
 
 
+class GitlabConnectionCreated(TypedDict):
+    connected_at: str
+    connected_by: str
+    connection_id: str
+    instance_url: str
+    scope_id: str
+    scope_kind: Literal["group", "project"]
+    scope_name: str
+    scope_path: str
+    secret_rotated_at: NotRequired[str | None]
+    token_hint: str
+    web_url: str
+    webhook_secret: str
+    webhook_url: str
+
+
+class GitlabConnectionRead(TypedDict):
+    connected_at: str
+    connected_by: str
+    connection_id: str
+    instance_url: str
+    scope_id: str
+    scope_kind: Literal["group", "project"]
+    scope_name: str
+    scope_path: str
+    secret_rotated_at: NotRequired[str | None]
+    token_hint: str
+    web_url: str
+    webhook_url: str
+
+
+class GitlabConnectionWrite(TypedDict):
+    access_token: str
+    instance_url: NotRequired[str]
+    scope_kind: Literal["group", "project"]
+    scope_path: str
+
+
+class GitlabConnectionsRead(TypedDict):
+    configured: bool
+    connections: list[GitlabConnectionRead]
+
+
 class HealthBreakdownRead(TypedDict):
     at_risk: NotRequired[int]
     none: NotRequired[int]
@@ -1112,6 +1212,8 @@ class InitiativeCreate(TypedDict):
     name: str
     owner_id: NotRequired[str | None]
     parent_initiative_id: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: NotRequired[Literal["planned", "active", "completed"]]
     target_date: NotRequired[str | None]
     target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
@@ -1145,6 +1247,9 @@ class InitiativeUpdate(TypedDict):
     name: NotRequired[str | None]
     owner_id: NotRequired[str | None]
     parent_initiative_id: NotRequired[str | None]
+    sort_order: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: NotRequired[Literal["planned", "active", "completed"] | None]
     target_date: NotRequired[str | None]
     target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
@@ -1162,27 +1267,28 @@ class InitiativeUpdateCreate(TypedDict):
 class InitiativeUpdatePatch(TypedDict):
     body: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    hide_details: NotRequired[bool | None]
 
 
-class InitiativeUpdateRead(TypedDict):
-    author_id: str
-    body: str
-    can_edit: NotRequired[bool]
-    created_at: str
-    edited_at: NotRequired[str | None]
-    health: Literal["on_track", "at_risk", "off_track"]
-    initiative_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
-    update_id: str
-    updated_at: str
-    workspace_id: str
+class InitiativeUpdateSnapshotRead(TypedDict):
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    owner_id: NotRequired[str | None]
+    owner_name: NotRequired[str | None]
+    project_count: NotRequired[int]
+    projects_by_health: NotRequired[dict[str, int]]
+    projects_by_status: NotRequired[dict[str, int]]
+    status: NotRequired[Literal["planned", "active", "completed"] | None]
+    target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
 
 
 class InitiativesDisplay(TypedDict):
     columns: NotRequired[str]
     completed: NotRequired[Literal["show", "hide"]]
-    grouping: NotRequired[Literal["status", "team"]]
-    order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
+    grouping: NotRequired[Literal["status", "team", "owner", "health", "target_date"]]
+    layout: NotRequired[Literal["list", "timeline"]]
+    order: NotRequired[Literal["manual", "target", "name", "progress", "created", "updated"]]
+    zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
 
 class InsightDurations(TypedDict):
@@ -1226,6 +1332,30 @@ class InviteCreated(TypedDict):
     invite_id: str
     invited_by: str
     role: str
+    token: str
+
+
+class InviteLinkCreated(TypedDict):
+    created_at: NotRequired[str | None]
+    created_by: NotRequired[str | None]
+    enabled: bool
+    token: str
+
+
+class InviteLinkPreview(TypedDict):
+    already_member: bool
+    name: str
+    slug: str
+    workspace_id: str
+
+
+class InviteLinkRead(TypedDict):
+    created_at: NotRequired[str | None]
+    created_by: NotRequired[str | None]
+    enabled: bool
+
+
+class InviteLinkToken(TypedDict):
     token: str
 
 
@@ -1298,7 +1428,7 @@ class IssueDescriptionVersionRead(TypedDict):
     edited_at: str
     edited_by: str
     issue_id: str
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     version_id: str
 
 
@@ -1412,6 +1542,7 @@ class IssueTemplateItem(TypedDict):
 
 class IssueUpdate(TypedDict):
     assignee_id: NotRequired[str | None]
+    base_body_version: NotRequired[str | None]
     body: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     due_date: NotRequired[str | None]
@@ -1572,6 +1703,19 @@ class LinkStatusRead(TypedDict):
     name: str
 
 
+class ListFoldsRead(TypedDict):
+    collapsed_groups: NotRequired[list[str]]
+    list_key: str
+
+
+CollapsedGroup: TypeAlias = str
+
+
+class ListFoldsWrite(TypedDict):
+    collapsed_groups: NotRequired[list[CollapsedGroup]]
+    list_key: str
+
+
 class ManifestStart(TypedDict):
     expires_at: str
     manifest: dict[str, Any]
@@ -1583,35 +1727,17 @@ class MediaTokensRead(TypedDict):
     tokens: dict[str, str]
 
 
+class MemberBulkUpdate(TypedDict):
+    action: Literal["change_role", "suspend", "reactivate", "remove", "add_to_team"]
+    role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
+    team_id: NotRequired[str | None]
+    user_ids: list[str]
+
+
 class MemberCommentRead(TypedDict):
     body: str
     comment_id: str
     parent_comment_id: NotRequired[str | None]
-
-
-class MemberProfileRead(TypedDict):
-    avatar_url: NotRequired[str | None]
-    display_name: str
-    full_name: NotRequired[str]
-    joined_at: str
-    role: Literal["owner", "admin", "member", "guest"]
-    team_ids: NotRequired[list[str]]
-    user_id: str
-
-
-class MemberRead(TypedDict):
-    avatar_url: NotRequired[str | None]
-    display_name: str
-    email: str
-    full_name: NotRequired[str]
-    invite_id: NotRequired[str | None]
-    joined_at: str
-    previous_handles: NotRequired[list[str]]
-    role: Literal["owner", "admin", "member", "guest"]
-    status: NotRequired[Literal["active", "suspended", "invited"]]
-    suspended_at: NotRequired[str | None]
-    suspended_by: NotRequired[str | None]
-    user_id: str
 
 
 class MemberUpdate(TypedDict):
@@ -1704,7 +1830,7 @@ class NotificationRead(TypedDict):
     project_name: NotRequired[str | None]
     project_update_id: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     standup_date: NotRequired[str | None]
     summary: NotRequired[str]
     team_id: str
@@ -1776,7 +1902,7 @@ ProjectActivityRead = TypedDict(
         "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
         "project_id": str,
-        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None],
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None],
         "to": NotRequired[Any],
     },
 )
@@ -1843,6 +1969,7 @@ class ProjectLabelCreate(TypedDict):
     color: str
     description: NotRequired[str | None]
     name: str
+    team_id: NotRequired[str | None]
 
 
 class ProjectLabelRead(TypedDict):
@@ -1852,6 +1979,7 @@ class ProjectLabelRead(TypedDict):
     id: str
     name: str
     project_count: NotRequired[int]
+    team_id: NotRequired[str | None]
     updated_at: str
 
 
@@ -1926,6 +2054,7 @@ class ProjectStatusCreate(TypedDict):
     description: NotRequired[str | None]
     name: str
     position: NotRequired[int | None]
+    team_id: NotRequired[str | None]
 
 
 class ProjectStatusRead(TypedDict):
@@ -1938,6 +2067,7 @@ class ProjectStatusRead(TypedDict):
     name: str
     position: int
     project_count: NotRequired[int]
+    team_id: NotRequired[str | None]
     updated_at: str
 
 
@@ -1983,6 +2113,7 @@ class ProjectTemplateFields(TypedDict):
 
 
 class ProjectUpdate(TypedDict):
+    base_body_version: NotRequired[str | None]
     color: NotRequired[str | None]
     description: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
@@ -2152,7 +2283,7 @@ class PulseItemRead(TypedDict):
     project_icon: NotRequired[str | None]
     project_id: NotRequired[str | None]
     project_name: NotRequired[str | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     subject_type: Literal["project", "initiative"]
     unread: NotRequired[bool]
     update_id: NotRequired[str | None]
@@ -2612,6 +2743,7 @@ class SkippedTemplateIssueRead(TypedDict):
 
 
 class SlaSettingsRead(TypedDict):
+    calendar: NotRequired[Literal["calendar", "business_days"]]
     enabled: bool
     high_hours: NotRequired[int | None]
     low_hours: NotRequired[int | None]
@@ -2624,6 +2756,7 @@ class SlaSettingsRead(TypedDict):
 
 
 class SlaSettingsUpdate(TypedDict):
+    calendar: NotRequired[Literal["calendar", "business_days"] | None]
     enabled: NotRequired[bool | None]
     high_hours: NotRequired[int | None]
     low_hours: NotRequired[int | None]
@@ -2653,6 +2786,24 @@ class SlackInstallUrlRead(TypedDict):
     url: str
 
 
+class SlackIntakeRead(TypedDict):
+    channel_ids: NotRequired[list[str]]
+    configured: bool
+    emoji: NotRequired[str | None]
+    enabled: NotRequired[bool]
+    installed: bool
+    reinstall: NotRequired[bool]
+    updated_at: NotRequired[str | None]
+
+
+ChannelId: TypeAlias = str
+
+
+class SlackIntakeWrite(TypedDict):
+    channel_ids: list[ChannelId]
+    emoji: str
+
+
 class SlackLinkRead(TypedDict):
     available: bool
     configured: bool
@@ -2661,6 +2812,21 @@ class SlackLinkRead(TypedDict):
     problem: NotRequired[str | None]
     slack_team_name: NotRequired[str | None]
     slack_user_id: NotRequired[str | None]
+
+
+class SlackThread(TypedDict):
+    channel_id: str
+    permalink: NotRequired[str]
+    slack_team_id: str
+    synced_at: NotRequired[str]
+    synced_by: str
+    thread_ts: str
+
+
+class SlugAvailabilityRead(TypedDict):
+    available: bool
+    reason: NotRequired[Literal["invalid", "reserved", "taken", "current"] | None]
+    slug: str
 
 
 class SourceTeamMappingRead(TypedDict):
@@ -2816,6 +2982,7 @@ class StatusCreate(TypedDict):
         ]
         | None
     ]
+    description: NotRequired[str | None]
     icon: NotRequired[
         Literal[
             "dashed",
@@ -2847,6 +3014,12 @@ class StatusMappingRead(TypedDict):
     status_name: str
 
 
+class StatusOverrideUpdate(TypedDict):
+    description: NotRequired[str | None]
+    hidden: NotRequired[bool | None]
+    name: NotRequired[str | None]
+
+
 class StatusRead(TypedDict):
     category: Literal["backlog", "unstarted", "started", "completed", "cancelled"]
     color: NotRequired[
@@ -2868,6 +3041,7 @@ class StatusRead(TypedDict):
         ]
         | None
     ]
+    description: NotRequired[str | None]
     hidden: NotRequired[bool]
     icon: NotRequired[
         Literal[
@@ -2891,6 +3065,7 @@ class StatusRead(TypedDict):
         | None
     ]
     id: str
+    inherited_description: NotRequired[str | None]
     inherited_name: NotRequired[str | None]
     name: str
     position: int
@@ -2918,6 +3093,7 @@ class StatusUpdate(TypedDict):
         ]
         | None
     ]
+    description: NotRequired[str | None]
     icon: NotRequired[
         Literal[
             "dashed",
@@ -2979,6 +3155,7 @@ class TeamCreate(TypedDict):
     name: str
     parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
+    timezone: NotRequired[str | None]
 
 
 class TeamDisplayDefaultsRead(TypedDict):
@@ -2997,18 +3174,23 @@ class TeamDisplayDefaultsUpdate(TypedDict):
     projects_display: NotRequired[ProjectsDisplay | None]
 
 
-class TeamMemberRead(TypedDict):
-    added_at: str
-    avatar_url: NotRequired[str | None]
-    display_name: str
-    email: str
-    full_name: NotRequired[str]
-    role: Literal["admin", "member"]
-    user_id: str
-
-
 class TeamMemberUpdate(TypedDict):
     role: Literal["admin", "member"]
+
+
+class TeamNotificationSubscriptionRead(TypedDict):
+    cancelled: NotRequired[bool]
+    completed: NotRequired[bool]
+    issue_created: NotRequired[bool]
+    team_id: str
+    triage: NotRequired[bool]
+
+
+class TeamNotificationSubscriptionUpdate(TypedDict, closed=True):
+    cancelled: NotRequired[bool | None]
+    completed: NotRequired[bool | None]
+    issue_created: NotRequired[bool | None]
+    triage: NotRequired[bool | None]
 
 
 class TeamOrderUpdate(TypedDict):
@@ -3035,6 +3217,7 @@ class TeamRead(TypedDict):
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
     sync_pr_labels: NotRequired[bool]
+    timezone: NotRequired[str]
     updated_at: str
     workspace_id: str
 
@@ -3073,6 +3256,7 @@ class TeamUpdate(TypedDict):
     parent_team_id: NotRequired[str | None]
     private: NotRequired[bool | None]
     sync_pr_labels: NotRequired[bool | None]
+    timezone: NotRequired[str | None]
 
 
 class TemplateSettingsRead(TypedDict):
@@ -3084,6 +3268,8 @@ class TemplateSettingsRead(TypedDict):
     effective_default_project_template_id: NotRequired[str | None]
     effective_default_template_id: NotRequired[str | None]
     effective_default_update_template_id: NotRequired[str | None]
+    effective_non_member_default_template_id: NotRequired[str | None]
+    non_member_default_template_id: NotRequired[str | None]
     team_id: str
 
 
@@ -3092,6 +3278,7 @@ class TemplateSettingsUpdate(TypedDict):
     default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
     default_update_template_id: NotRequired[str | None]
+    non_member_default_template_id: NotRequired[str | None]
 
 
 class ThreadResolution(TypedDict):
@@ -3220,138 +3407,24 @@ class UrlAttachmentCreate(TypedDict):
     url: str
 
 
-class UserPreferencesUpdate(TypedDict):
-    activity_filter: NotRequired[Literal["all", "comments"] | None]
-    auto_assign_to_self: NotRequired[bool | None]
-    auto_grant_new_scopes: NotRequired[bool | None]
-    branch_copy_assigns: NotRequired[bool | None]
-    branch_copy_starts: NotRequired[bool | None]
-    convert_emoticons: NotRequired[bool | None]
-    email_format: NotRequired[Literal["digest", "immediate"] | None]
-    email_notifications: NotRequired[bool | None]
-    font_size: NotRequired[Literal["small", "default", "large"] | None]
-    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
-    initiatives_display: NotRequired[InitiativesDisplay | None]
-    name_display: NotRequired[Literal["username", "full_name"] | None]
-    notification_preferences: NotRequired[
-        dict[
-            Literal[
-                "assigned",
-                "mentioned",
-                "commented",
-                "status_changed",
-                "subscribed",
-                "project_update",
-                "project_update_comment",
-                "project_update_due",
-                "initiative_update_due",
-                "due_soon",
-                "overdue",
-                "standup_digest",
-                "sla_at_risk",
-                "sla_breached",
-                "review_requested",
-                "reminder",
-                "triage_new",
-                "view_issue_added",
-                "reaction",
-                "issue_completed",
-                "issue_cancelled",
-                "priority_urgent",
-                "blocking_changed",
-                "document_comment",
-            ],
-            NotificationChannelsUpdate,
-        ]
-        | None
-    ]
-    pointer_cursors: NotRequired[bool | None]
-    priority_inbox: NotRequired[bool | None]
-    priority_kinds: NotRequired[list[str] | None]
-    projects_display: NotRequired[ProjectsDisplay | None]
-    pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
-    sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
-    sidebar_items: NotRequired[
-        dict[
-            Literal[
-                "home",
-                "inbox",
-                "my_issues",
-                "reviews",
-                "pulse",
-                "projects",
-                "initiatives",
-                "customers",
-                "views",
-                "roadmap",
-                "teams",
-            ],
-            Literal["show", "more", "hide"],
-        ]
-        | None
-    ]
-    theme: NotRequired[Literal["system", "light", "dark"] | None]
-    timezone: NotRequired[str | None]
-    underline_links: NotRequired[bool | None]
-    week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
-
-
 class UserProfileUpdate(TypedDict):
     display_name: NotRequired[str | None]
     full_name: NotRequired[str | None]
 
 
-class UserRead(TypedDict):
-    activity_filter: NotRequired[Literal["all", "comments"]]
-    auto_assign_to_self: NotRequired[bool]
-    auto_grant_new_scopes: NotRequired[bool]
-    avatar_url: NotRequired[str | None]
-    branch_copy_assigns: NotRequired[bool]
-    branch_copy_starts: NotRequired[bool]
-    convert_emoticons: NotRequired[bool]
-    display_name: str
-    email: str
-    email_format: NotRequired[Literal["digest", "immediate"]]
-    email_notifications: bool
-    email_verified: bool
-    font_size: NotRequired[Literal["small", "default", "large"]]
-    full_name: NotRequired[str]
-    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
-    id: str
-    initiatives_display: NotRequired[InitiativesDisplay]
-    initiatives_display_saved: NotRequired[bool]
-    name_display: NotRequired[Literal["username", "full_name"]]
-    notification_preferences: dict[str, NotificationChannels]
-    pointer_cursors: NotRequired[bool]
-    priority_inbox: NotRequired[bool]
-    priority_kinds: NotRequired[list[str]]
-    projects_display: NotRequired[ProjectsDisplay]
-    projects_display_saved: NotRequired[bool]
-    pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
-    sidebar_badge_style: NotRequired[Literal["count", "dot"]]
-    sidebar_items: NotRequired[
-        dict[
-            Literal[
-                "home",
-                "inbox",
-                "my_issues",
-                "reviews",
-                "pulse",
-                "projects",
-                "initiatives",
-                "customers",
-                "views",
-                "roadmap",
-                "teams",
-            ],
-            Literal["show", "more", "hide"],
-        ]
-    ]
-    theme: NotRequired[Literal["system", "light", "dark"] | None]
-    timezone: NotRequired[str | None]
-    two_factor: NotRequired[bool]
-    underline_links: NotRequired[bool]
-    week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
+class UserStatusRead(TypedDict):
+    away: bool
+    emoji: str
+    set_at: str
+    text: str
+    until: NotRequired[str | None]
+
+
+class UserStatusUpdate(TypedDict):
+    away: NotRequired[bool]
+    emoji: NotRequired[str]
+    text: NotRequired[str]
+    until: NotRequired[str | None]
 
 
 class ValidationErrorDetail(TypedDict):
@@ -3383,6 +3456,7 @@ class VelocityRead(TypedDict):
 
 
 class ViewCreate(TypedDict):
+    collapsed_groups: NotRequired[list[CollapsedGroup]]
     color: NotRequired[
         Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
     ]
@@ -3403,6 +3477,7 @@ class ViewCreate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3470,6 +3545,7 @@ class ViewCreate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3496,6 +3572,10 @@ class ViewCreate(TypedDict):
                 "created_at",
                 "updated_at",
                 "time_in_status",
+                "release",
+                "sla",
+                "customers",
+                "customer_revenue",
             ]
         ]
         | None
@@ -3503,6 +3583,7 @@ class ViewCreate(TypedDict):
 
 
 class ViewRead(TypedDict):
+    collapsed_groups: NotRequired[list[str]]
     color: NotRequired[str | None]
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"]]
     created_at: str
@@ -3536,6 +3617,7 @@ class ViewRead(TypedDict):
 
 
 class ViewUpdate(TypedDict):
+    collapsed_groups: NotRequired[list[CollapsedGroup] | None]
     color: NotRequired[
         Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
     ]
@@ -3555,6 +3637,7 @@ class ViewUpdate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3622,6 +3705,7 @@ class ViewUpdate(TypedDict):
             "team",
             "sla",
             "customer",
+            "release",
         ]
         | str
         | None
@@ -3647,6 +3731,10 @@ class ViewUpdate(TypedDict):
                 "created_at",
                 "updated_at",
                 "time_in_status",
+                "release",
+                "sla",
+                "customers",
+                "customer_revenue",
             ]
         ]
         | None
@@ -3672,7 +3760,21 @@ class WebhookDeliveryRead(TypedDict):
 class WebhookEndpointCreate(TypedDict, closed=True):
     enabled: NotRequired[bool]
     label: str
-    resource_types: list[Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]]
+    resource_types: list[
+        Literal[
+            "issues",
+            "comments",
+            "projects",
+            "project_updates",
+            "cycles",
+            "labels",
+            "documents",
+            "initiatives",
+            "initiative_updates",
+            "customers",
+            "customer_requests",
+        ]
+    ]
     team_id: NotRequired[str | None]
     url: str
 
@@ -3700,7 +3802,22 @@ class WebhookEndpointUpdate(TypedDict, closed=True):
     enabled: NotRequired[bool | None]
     label: NotRequired[str | None]
     resource_types: NotRequired[
-        list[Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]] | None
+        list[
+            Literal[
+                "issues",
+                "comments",
+                "projects",
+                "project_updates",
+                "cycles",
+                "labels",
+                "documents",
+                "initiatives",
+                "initiative_updates",
+                "customers",
+                "customer_requests",
+            ]
+        ]
+        | None
     ]
     team_id: NotRequired[str | None]
     url: NotRequired[str | None]
@@ -3824,6 +3941,12 @@ class WidgetUpdate(TypedDict):
     view_id: NotRequired[str | None]
 
 
+class WorkingHours(TypedDict):
+    days: list[str]
+    end: NotRequired[str]
+    start: NotRequired[str]
+
+
 class WorkspaceChannelCreate(TypedDict, closed=True):
     discord_channel_id: NotRequired[str | None]
     discord_channel_name: NotRequired[str]
@@ -3838,6 +3961,9 @@ class WorkspaceChannelCreate(TypedDict, closed=True):
             "project_update_posted",
             "project_update_due",
             "standup_digest",
+            "initiative_update_posted",
+            "cycle_started",
+            "cycle_completed",
         ]
     ]
     label: NotRequired[str]
@@ -3860,6 +3986,9 @@ class WorkspaceChannelUpdate(TypedDict, closed=True):
                 "project_update_posted",
                 "project_update_due",
                 "standup_digest",
+                "initiative_update_posted",
+                "cycle_started",
+                "cycle_completed",
             ]
         ]
         | None
@@ -3919,6 +4048,22 @@ class WorkspaceExportRead(TypedDict):
     workspace_id: str
 
 
+class WorkspaceFeatures(TypedDict):
+    customers: NotRequired[bool]
+    documents: NotRequired[bool]
+    initiatives: NotRequired[bool]
+    pulse: NotRequired[bool]
+    releases: NotRequired[bool]
+
+
+class WorkspaceFeaturesUpdate(TypedDict, closed=True):
+    customers: NotRequired[bool | None]
+    documents: NotRequired[bool | None]
+    initiatives: NotRequired[bool | None]
+    pulse: NotRequired[bool | None]
+    releases: NotRequired[bool | None]
+
+
 class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
     auth_policy_allowed_methods: NotRequired[list[str] | None]
@@ -3928,6 +4073,7 @@ class WorkspaceRead(TypedDict):
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]
+    features: NotRequired[WorkspaceFeatures]
     icon_url: NotRequired[str | None]
     id: str
     invite_permission: NotRequired[Literal["admins", "members"]]
@@ -3935,6 +4081,7 @@ class WorkspaceRead(TypedDict):
     plan: str
     project_update_interval_days: NotRequired[int]
     purge_after: NotRequired[str | None]
+    retired_slugs: NotRequired[list[str]]
     role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
     slug: str
     team_creation_permission: NotRequired[Literal["admins", "members"]]
@@ -3951,9 +4098,11 @@ class WorkspaceSummaryRead(TypedDict):
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
     branch_format: NotRequired[Literal["key_title", "user_key_title", "key"] | None]
+    features: NotRequired[WorkspaceFeaturesUpdate | None]
     invite_permission: NotRequired[Literal["admins", "members"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
+    slug: NotRequired[str | None]
     team_creation_permission: NotRequired[Literal["admins", "members"] | None]
     third_party_app_approvals: NotRequired[bool | None]
 
@@ -3964,6 +4113,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     blocked_by_open_count: NotRequired[int]
     blocking_count: NotRequired[int]
     body: NotRequired[str | None]
+    body_version: NotRequired[str]
     cancelled_at: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     created_at: str
@@ -3989,9 +4139,11 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     relation_count: NotRequired[int]
     sla_breaches_at: NotRequired[str | None]
+    sla_calendar: NotRequired[Literal["calendar", "business_days"]]
     sla_paused_at: NotRequired[str | None]
     sla_started_at: NotRequired[str | None]
     sla_status: NotRequired[Literal["none", "on_track", "at_risk", "breached"]]
+    sla_timezone: NotRequired[str | None]
     snoozed_until: NotRequired[str | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
@@ -4146,7 +4298,8 @@ class CommentRead(TypedDict):
     reactions: NotRequired[list[ReactionGroupRead]]
     reply_count: NotRequired[int]
     resolution: NotRequired[ThreadResolution | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    slack_thread: NotRequired[SlackThread | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     team_id: str
     workspace_id: str
 
@@ -4356,6 +4509,9 @@ class InitiativeRead(TypedDict):
     project_health: NotRequired[HealthBreakdownRead]
     project_ids: NotRequired[list[str]]
     rollup_project_ids: NotRequired[list[str]]
+    sort_order: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: Literal["planned", "active", "completed"]
     status_counts: NotRequired[dict[str, int]]
     sub_initiative_ids: NotRequired[list[str]]
@@ -4369,9 +4525,24 @@ class InitiativeRead(TypedDict):
     workspace_id: str
 
 
-class InitiativeUpdateListRead(TypedDict):
-    next_cursor: NotRequired[str | None]
-    updates: list[InitiativeUpdateRead]
+class InitiativeUpdateRead(TypedDict):
+    author_id: str
+    body: str
+    can_edit: NotRequired[bool]
+    comment_count: NotRequired[int]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
+    initiative_id: str
+    previous_snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
+    reactions: NotRequired[list[ReactionGroupRead]]
+    report: NotRequired[list[str]]
+    snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
+    update_id: str
+    updated_at: str
+    workspace_id: str
 
 
 class InsightBucket(TypedDict):
@@ -4520,6 +4691,7 @@ class IssueLinkRead(TypedDict):
     pr_state: Literal["open", "draft", "merged", "closed"]
     pr_title: str
     pr_url: str
+    provider: NotRequired[Literal["github", "gitlab"]]
     repository_full_name: str
     review_state: NotRequired[Literal["none", "pending", "approved", "changes_requested"]]
     stack: NotRequired[StackRead | None]
@@ -4633,8 +4805,33 @@ class MemberActivityRead(TypedDict):
     type: Literal["issue_change", "comment"]
 
 
-class MemberListRead(TypedDict):
-    members: list[MemberRead]
+class MemberProfileRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    full_name: NotRequired[str]
+    joined_at: str
+    role: Literal["owner", "admin", "member", "guest"]
+    team_ids: NotRequired[list[str]]
+    timezone: NotRequired[str | None]
+    user_id: str
+    user_status: NotRequired[UserStatusRead | None]
+
+
+class MemberRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    email: str
+    full_name: NotRequired[str]
+    invite_id: NotRequired[str | None]
+    joined_at: str
+    last_active_at: NotRequired[str | None]
+    previous_handles: NotRequired[list[str]]
+    role: Literal["owner", "admin", "member", "guest"]
+    status: NotRequired[Literal["active", "suspended", "invited"]]
+    suspended_at: NotRequired[str | None]
+    suspended_by: NotRequired[str | None]
+    user_id: str
+    user_status: NotRequired[UserStatusRead | None]
 
 
 class MilestoneListRead(TypedDict):
@@ -4672,6 +4869,7 @@ class ProjectRead(TypedDict):
     archived_at: NotRequired[str | None]
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
+    body_version: NotRequired[str]
     color: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     counts: CountsRead
@@ -4734,10 +4932,11 @@ class ProjectUpdateCommentRead(TypedDict):
     comment_id: str
     created_at: str
     edited_at: NotRequired[str | None]
+    initiative_id: NotRequired[str | None]
     mentions: NotRequired[list[str]]
-    project_id: str
+    project_id: NotRequired[str | None]
     reactions: NotRequired[list[ReactionGroupRead]]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     update_id: str
     workspace_id: str
 
@@ -4755,7 +4954,7 @@ class ProjectUpdateRead(TypedDict):
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
     snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
-    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     update_id: str
     updated_at: str
     workspace_id: str
@@ -4796,6 +4995,21 @@ class ReleaseDetailRead(TypedDict):
     url: NotRequired[str | None]
     version: NotRequired[str | None]
     workspace_id: str
+
+
+class ReleaseIndexEntryRead(TypedDict):
+    created_at: str
+    current_stage: NotRequired[ReleaseStageRead | None]
+    included_in: NotRequired[str | None]
+    issue_ids: NotRequired[list[str]]
+    name: str
+    release_id: str
+    stage_position: NotRequired[int]
+    team_id: str
+
+
+class ReleaseIndexRead(TypedDict):
+    releases: list[ReleaseIndexEntryRead]
 
 
 class ReleaseRead(TypedDict):
@@ -4933,8 +5147,15 @@ class TeamListRead(TypedDict):
     teams: list[TeamRead]
 
 
-class TeamMemberListRead(TypedDict):
-    members: list[TeamMemberRead]
+class TeamMemberRead(TypedDict):
+    added_at: str
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    email: str
+    full_name: NotRequired[str]
+    role: Literal["admin", "member"]
+    user_id: str
+    user_status: NotRequired[UserStatusRead | None]
 
 
 class TemplateCreate(TypedDict):
@@ -5020,6 +5241,148 @@ class TriageSummaryRead(TypedDict):
     teams: NotRequired[list[TriageTeamCount]]
 
 
+class UserPreferencesUpdate(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"] | None]
+    auto_assign_to_self: NotRequired[bool | None]
+    auto_grant_new_scopes: NotRequired[bool | None]
+    branch_copy_assigns: NotRequired[bool | None]
+    branch_copy_starts: NotRequired[bool | None]
+    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"] | None]
+    convert_emoticons: NotRequired[bool | None]
+    email_format: NotRequired[Literal["digest", "immediate"] | None]
+    email_notifications: NotRequired[bool | None]
+    font_size: NotRequired[Literal["small", "default", "large"] | None]
+    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
+    initiatives_display: NotRequired[InitiativesDisplay | None]
+    name_display: NotRequired[Literal["username", "full_name"] | None]
+    notification_preferences: NotRequired[
+        dict[
+            Literal[
+                "assigned",
+                "mentioned",
+                "commented",
+                "status_changed",
+                "subscribed",
+                "project_update",
+                "project_update_comment",
+                "project_update_due",
+                "initiative_update_due",
+                "due_soon",
+                "overdue",
+                "standup_digest",
+                "sla_at_risk",
+                "sla_breached",
+                "review_requested",
+                "reminder",
+                "triage_new",
+                "view_issue_added",
+                "reaction",
+                "issue_completed",
+                "issue_cancelled",
+                "priority_urgent",
+                "blocking_changed",
+                "document_comment",
+                "team_issue_created",
+                "view_project_added",
+                "project_lead_assigned",
+                "project_member_added",
+                "initiative_owner_assigned",
+            ],
+            NotificationChannelsUpdate,
+        ]
+        | None
+    ]
+    notifications_paused_until: NotRequired[str | None]
+    pointer_cursors: NotRequired[bool | None]
+    priority_inbox: NotRequired[bool | None]
+    priority_kinds: NotRequired[list[str] | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"] | None]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+        | None
+    ]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
+    timezone: NotRequired[str | None]
+    underline_links: NotRequired[bool | None]
+    urgent_bypasses_pause: NotRequired[bool | None]
+    week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
+    working_hours: NotRequired[WorkingHours | None]
+
+
+class UserRead(TypedDict):
+    activity_filter: NotRequired[Literal["all", "comments"]]
+    auto_assign_to_self: NotRequired[bool]
+    auto_grant_new_scopes: NotRequired[bool]
+    avatar_url: NotRequired[str | None]
+    branch_copy_assigns: NotRequired[bool]
+    branch_copy_starts: NotRequired[bool]
+    code_theme: NotRequired[Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"]]
+    convert_emoticons: NotRequired[bool]
+    display_name: str
+    email: str
+    email_format: NotRequired[Literal["digest", "immediate"]]
+    email_notifications: bool
+    email_verified: bool
+    font_size: NotRequired[Literal["small", "default", "large"]]
+    full_name: NotRequired[str]
+    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
+    id: str
+    initiatives_display: NotRequired[InitiativesDisplay]
+    initiatives_display_saved: NotRequired[bool]
+    name_display: NotRequired[Literal["username", "full_name"]]
+    notification_preferences: dict[str, NotificationChannels]
+    notifications_paused_until: NotRequired[str | None]
+    pointer_cursors: NotRequired[bool]
+    priority_inbox: NotRequired[bool]
+    priority_kinds: NotRequired[list[str]]
+    projects_display: NotRequired[ProjectsDisplay]
+    projects_display_saved: NotRequired[bool]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
+    sidebar_badge_style: NotRequired[Literal["count", "dot"]]
+    sidebar_items: NotRequired[
+        dict[
+            Literal[
+                "home",
+                "inbox",
+                "my_issues",
+                "reviews",
+                "pulse",
+                "projects",
+                "initiatives",
+                "customers",
+                "views",
+                "roadmap",
+                "teams",
+            ],
+            Literal["show", "more", "hide"],
+        ]
+    ]
+    theme: NotRequired[Literal["system", "light", "dark"] | None]
+    timezone: NotRequired[str | None]
+    two_factor: NotRequired[bool]
+    underline_links: NotRequired[bool]
+    urgent_bypasses_pause: NotRequired[bool]
+    week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
+    working_hours: NotRequired[WorkingHours | None]
+
+
 class ViewListRead(TypedDict):
     views: NotRequired[list[ViewRead]]
 
@@ -5095,6 +5458,11 @@ class InitiativeListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class InitiativeUpdateListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    updates: list[InitiativeUpdateRead]
+
+
 class IssueConversionRead(TypedDict):
     issue: AppCommonApiSchemasIssuesIssueRead
     moved_issue_ids: NotRequired[list[str]]
@@ -5121,6 +5489,18 @@ class LinkListRead(TypedDict):
 class MemberActivityListRead(TypedDict):
     activity: list[MemberActivityRead]
     next_cursor: NotRequired[str | None]
+
+
+class MemberBulkResult(TypedDict):
+    error_code: NotRequired[str | None]
+    member: NotRequired[MemberRead | None]
+    message: NotRequired[str | None]
+    outcome: Literal["changed", "unchanged", "skipped"]
+    user_id: str
+
+
+class MemberListRead(TypedDict):
+    members: list[MemberRead]
 
 
 class MilestoneConversionRead(TypedDict):
@@ -5165,6 +5545,18 @@ class StandupDigest(TypedDict):
     window_start: str
 
 
+class TeamMemberListRead(TypedDict):
+    members: list[TeamMemberRead]
+
+
 class TemplateListRead(TypedDict):
     default_template_id: NotRequired[str | None]
+    non_member_default_template_id: NotRequired[str | None]
     templates: list[TemplateRead]
+
+
+class MemberBulkRead(TypedDict):
+    changed: NotRequired[int]
+    results: list[MemberBulkResult]
+    skipped: NotRequired[int]
+    unchanged: NotRequired[int]

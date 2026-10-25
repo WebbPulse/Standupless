@@ -13,7 +13,6 @@ from typing import Callable, Optional
 from app.common.db.dynamo.inbox import Notification
 
 _FIXED: dict[str, str] = {
-    "project_update_due": "Update due",
     "due_soon": "Due soon",
     "overdue": "Overdue",
     "standup_digest": "Standup ready",
@@ -38,6 +37,10 @@ _ACTED: dict[str, tuple[str, str]] = {
     "document_comment": ("{actor} commented on a document", "Comment on document"),
     "review_requested": ("{actor} requested your review", "Review requested"),
     "priority_urgent": ("{actor} marked as urgent", "Marked as urgent"),
+    "team_issue_created": ("{actor} created an issue", "New issue"),
+    "project_lead_assigned": ("{actor} made you lead", "You lead this project"),
+    "project_member_added": ("{actor} added you", "Added to project"),
+    "initiative_owner_assigned": ("{actor} made you owner", "You own this initiative"),
 }
 
 
@@ -53,9 +56,19 @@ def _initiative_update_due(notification: Notification) -> str:
     return "Initiative update overdue" if notification.due_state == "overdue" else "Initiative update due"
 
 
+def _project_update_due(notification: Notification) -> str:
+    """Say whether the project update is due or already overdue."""
+    return "Update overdue" if notification.due_state == "overdue" else "Update due"
+
+
 def _view_issue_added(view_name: Optional[str]) -> str:
     """Name the followed view an issue entered, or only that it entered one when the row has no name."""
     return f"New issue in {view_name}" if view_name else "New issue in a view you follow"
+
+
+def _view_project_added(view_name: Optional[str]) -> str:
+    """Name the followed view a project entered, or only that it entered one when the row has no name."""
+    return f"New project in {view_name}" if view_name else "New project in a view you follow"
 
 
 def _reaction(actor: str, emoji: Optional[str]) -> str:
@@ -109,7 +122,9 @@ _SPECIAL: dict[str, Callable[[Notification, str], str]] = {
     "blocking_changed": lambda row, actor: _blocking_changed(row.new_value),
     "status_changed": lambda row, actor: _status_changed(actor, row.new_value),
     "initiative_update_due": lambda row, actor: _initiative_update_due(row),
+    "project_update_due": lambda row, actor: _project_update_due(row),
     "view_issue_added": lambda row, actor: _view_issue_added(row.new_value),
+    "view_project_added": lambda row, actor: _view_project_added(row.new_value),
 }
 
 

@@ -5,13 +5,13 @@
  *
  * The rows the palette already offers among its places, Edit profile,
  * Preferences, Security & access, Manage teams and the MCP and CLI setup, are not repeated. A row
- * that is admin only on the settings nav is admin only here too, so the
+ * that is admin only in the settings index is admin only here too, so the
  * palette never opens a page that would only say the caller may not see it.
  */
 
 import { fuzzyMatch } from './fuzzyMatch';
 import { teamSettingsSectionPath } from './paths';
-import { TEAM_SETTINGS_SECTIONS, visibleSettingsPages } from './settingsIndex';
+import { teamSettingsSectionsFor, visibleSettingsPages } from './settingsIndex';
 import type { WorkspaceRead } from '../types/Api';
 
 /** One page the palette can go to. */
@@ -61,9 +61,10 @@ export const settingsDestinations = (
  */
 export const teamSettingsDestinations = (
   slug: string,
-  keyPrefix: string
+  keyPrefix: string,
+  features?: WorkspaceRead['features']
 ): PaletteDestination[] =>
-  TEAM_SETTINGS_SECTIONS.map((section) => ({
+  teamSettingsSectionsFor(features).map((section) => ({
     id: section.id,
     label: section.paletteLabel,
     keywords: keywordsOf(section.synonyms, section.controls ?? []),

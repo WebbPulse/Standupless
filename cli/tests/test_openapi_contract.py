@@ -100,6 +100,8 @@ CALLS: list[tuple[str, Callable[[StanduplessClient], Any]]] = [
     ("update_workspace_label", lambda c: c.update_workspace_label("w", "l", {"name": "x"})),
     ("delete_workspace_label", lambda c: c.delete_workspace_label("w", "l")),
     ("list_members", lambda c: c.list_members("w")),
+    ("set_my_status", lambda c: c.set_my_status("w", {"text": "Focusing"})),
+    ("clear_my_status", lambda c: c.clear_my_status("w")),
     ("list_issues", lambda c: c.list_issues("w", {})),
     ("export_issues", lambda c: list(c.export_issues("w", {}))),
     ("list_views", lambda c: c.list_views("w")),

@@ -2,12 +2,22 @@
  * The member list of one workspace: active, suspended and invited people, a
  * role and status filter, a name and email search, sortable columns and a CSV
  * export of the rows shown. Each row's overflow menu changes the role,
- * suspends or reactivates, and removes. The filter, search and sort live in
- * the URL query so a reload keeps them. Controls are hidden by the caller's
- * role for clarity only; the API authorizes every call.
+ * suspends or reactivates, and removes. A workspace admin can also tick rows,
+ * with a Shift click for a run, the header box for every row the filter
+ * shows, or x and Shift with j, k or an arrow, and act on all of them at once
+ * from the bulk bar, and Enter opens the member in focus. Only an admin sees
+ * the Last active column, which the API answers to admins alone. The filter, search
+ * and sort live in the URL query so a reload keeps them. Controls are hidden
+ * by the caller's role for clarity only; the API authorizes every call.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   LuArrowDown,
   LuArrowUp,
@@ -16,7 +26,7 @@ import {
   LuEllipsis,
   LuSearch,
 } from 'react-icons/lu';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
@@ -32,6 +42,8 @@ import {
   updateMember,
 } from '../../api/workspaces';
 import { useAuth } from '../../hooks/useAuth';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { useProjectSelection } from '../../hooks/useProjectSelection';
 import {
   assignableRoles,
   canGrantOwner,
@@ -41,6 +53,7 @@ import {
 import { cn } from '../../lib/cn';
 import { toCsv } from '../../lib/csv';
 import { downloadText, fileSlug, todayStamp } from '../../lib/download';
+import { memberPath } from '../../lib/paths';
 import { errorMessage } from '../../lib/errors';
 import {
   MEMBER_ROLES,
@@ -71,7 +84,9 @@ import type {
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
+import { awayNote, isAway, statusSummary } from '../../lib/userStatus';
 import Badge from '../ui/badge';
+import RelativeTime from '../ui/relative-time';
 import Button, { IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
 import FilterButton from '../ui/filter-button';
@@ -79,6 +94,7 @@ import Input from '../ui/input';
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import Spinner from '../ui/spinner';
 import MemberLink from '../members/MemberLink';
+import MemberBulkBar from './MemberBulkBar';
 
 /** Props for MembersSection: the workspace whose members are shown. */
 export interface MembersSectionProps {
@@ -91,6 +107,36 @@ const POLL_MS = 30000;
 /** The column layout the header and every row share. */
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_5rem_1.75rem] items-center gap-3 px-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_1.75rem]';
+
+/** The admin layout: a leading checkbox column and a Last active column. */
+const SELECT_COLUMNS =
+  'grid grid-cols-[1rem_minmax(0,1fr)_5rem_1.75rem] items-center gap-3 px-3 sm:grid-cols-[1rem_minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_1.75rem]';
+
+/** The header checkbox: ticked when every selectable row is, mixed when some are. */
+const SelectAllBox: React.FC<{
+  count: number;
+  total: number;
+  onChange: () => void;
+}> = ({ count, total, onChange }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current !== null)
+      ref.current.indeterminate = count > 0 && count < total;
+  }, [count, total]);
+  return (
+    <span role="columnheader" className="flex items-center justify-center">
+      <input
+        ref={ref}
+        type="checkbox"
+        aria-label="Select all members shown"
+        disabled={total === 0}
+        checked={total > 0 && count === total}
+        onChange={onChange}
+        className="h-3.5 w-3.5 cursor-pointer accent-accent"
+      />
+    </span>
+  );
+};
 
 const ADMIN_STATUSES: readonly MemberStatus[] = MEMBER_STATUSES;
 const MEMBER_ONLY_STATUSES: readonly MemberStatus[] = ['active', 'suspended'];
@@ -144,6 +190,7 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
 }) => {
   const auth = useQueryAuth();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const stored = useMemo(() => readDirectoryState(params), [params]);
   const [query, setQuery] = useState(stored.query);
@@ -158,6 +205,10 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
   ];
   const [suspending, setSuspending] = useState<MemberRead | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [bulkDialog, setBulkDialog] = useState(false);
+  const onBulkDialog = useCallback((open: boolean) => {
+    setBulkDialog(open);
+  }, []);
 
   const { data, error, isLoading } = usePolledQuery(
     (context) => listMemberDirectory(workspace.id, statuses, context),
@@ -203,6 +254,47 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
   );
   const filtered =
     state.query !== '' || state.roles.length > 0 || state.statuses.length > 0;
+
+  const selectable = useCallback(
+    (member: MemberRead): boolean =>
+      manages &&
+      memberStatus(member) !== 'invited' &&
+      member.user_id !== user?.id,
+    [manages, user?.id]
+  );
+  const order = useMemo(
+    () => rows.filter(selectable).map((member) => member.user_id),
+    [rows, selectable]
+  );
+  const idle = manages && suspending === null && !bulkDialog;
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: rows.length,
+    onActivate: (index) => {
+      const member = rows[index];
+      if (member !== undefined && memberStatus(member) !== 'invited')
+        void navigate(memberPath(workspace.slug, member.user_id));
+    },
+    resetKey: rows.map((member) => member.user_id).join(','),
+    enabled: idle,
+  });
+  const focused = rows[activeIndex];
+  const {
+    selected,
+    toggle: toggleSelected,
+    selectAll,
+    clear: clearSelection,
+  } = useProjectSelection({
+    order,
+    focusedId:
+      focused !== undefined && selectable(focused) ? focused.user_id : null,
+    onFocus: (userId) => {
+      setActiveIndex(rows.findIndex((member) => member.user_id === userId));
+    },
+    enabled: idle,
+    label: 'Select member',
+  });
+  const selectedMembers = rows.filter((member) => selected.has(member.user_id));
+  const columns = manages ? SELECT_COLUMNS : COLUMNS;
 
   const update = (next: MemberDirectoryState): void => {
     setParams((current) => writeDirectoryState(current, next), {
@@ -361,8 +453,19 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
         >
           <div
             role="row"
-            className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
+            className={`${columns} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
           >
+            {manages && (
+              <SelectAllBox
+                count={selected.size}
+                total={order.length}
+                onChange={() => {
+                  if (order.length > 0 && selected.size === order.length)
+                    clearSelection();
+                  else selectAll();
+                }}
+              />
+            )}
             <SortHeader
               label="Name"
               column="name"
@@ -389,12 +492,23 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
               className="hidden sm:block"
               onSort={(column) => update(toggleSort(state, column))}
             />
+            {manages && (
+              <SortHeader
+                label="Last active"
+                column="active"
+                state={state}
+                className="hidden sm:block"
+                onSort={(column) => update(toggleSort(state, column))}
+              />
+            )}
             <span role="columnheader" className="sr-only">
               Actions
             </span>
           </div>
-          {rows.map((member) => {
+          {rows.map((member, index) => {
             const status = memberStatus(member);
+            const canSelect = selectable(member);
+            const isSelected = selected.has(member.user_id);
             const name = memberName(member);
             const isSelf = user?.id === member.user_id;
             const ownerLocked =
@@ -406,8 +520,46 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
               <div
                 role="row"
                 key={member.user_id}
-                className={`${COLUMNS} min-h-row border-b border-line py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface`}
+                ref={registerItem(index)}
+                aria-selected={canSelect ? isSelected : undefined}
+                aria-current={
+                  manages && index === activeIndex ? 'true' : undefined
+                }
+                onPointerEnter={
+                  manages
+                    ? () => {
+                        setActiveIndex(index);
+                      }
+                    : undefined
+                }
+                className={cn(
+                  columns,
+                  'min-h-row border-b border-line py-1 transition-colors duration-100 last:border-b-0 hover:bg-surface',
+                  manages && index === activeIndex && 'bg-surface',
+                  isSelected && 'bg-accent-soft hover:bg-accent-soft'
+                )}
               >
+                {manages && (
+                  <span
+                    role="cell"
+                    className="flex items-center justify-center"
+                  >
+                    {canSelect && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${name}`}
+                        checked={isSelected}
+                        onChange={(event) => {
+                          toggleSelected(
+                            member.user_id,
+                            (event.nativeEvent as MouseEvent).shiftKey
+                          );
+                        }}
+                        className="h-3.5 w-3.5 cursor-pointer accent-accent"
+                      />
+                    )}
+                  </span>
+                )}
                 <div role="cell" className="flex min-w-0 items-center gap-2">
                   <MemberLink
                     userId={status === 'invited' ? null : member.user_id}
@@ -416,9 +568,22 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
                       status === 'active' ? '' : 'opacity-60'
                     )}
                   >
-                    <Avatar name={name} src={member.avatar_url} />
+                    <Avatar
+                      name={name}
+                      src={member.avatar_url}
+                      away={isAway(member.user_status)}
+                    />
                     <span className="truncate text-sm font-medium">{name}</span>
                   </MemberLink>
+                  {statusSummary(member.user_status) !== '' && (
+                    <span
+                      className="min-w-0 truncate text-xs text-text-muted"
+                      title={awayNote(member.user_status) ?? undefined}
+                      data-testid="member-status"
+                    >
+                      {statusSummary(member.user_status)}
+                    </span>
+                  )}
                   {status !== 'active' && (
                     <Badge
                       tone={status === 'suspended' ? 'warning' : 'neutral'}
@@ -442,6 +607,22 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
                 >
                   {joinedFormat.format(new Date(member.joined_at))}
                 </span>
+                {manages && (
+                  <span
+                    role="cell"
+                    className="hidden text-xs text-text-muted sm:block"
+                  >
+                    {status === 'invited' ? null : member.last_active_at ===
+                        undefined || member.last_active_at === null ? (
+                      'Never'
+                    ) : (
+                      <RelativeTime
+                        value={member.last_active_at}
+                        className="text-text-muted"
+                      />
+                    )}
+                  </span>
+                )}
                 <div role="cell" className="flex justify-end">
                   {manages && (
                     <Menu
@@ -524,6 +705,16 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
             );
           })}
         </div>
+      )}
+
+      {manages && (
+        <MemberBulkBar
+          workspace={workspace}
+          members={selectedMembers}
+          refetchKeys={refetchKeys}
+          onClear={clearSelection}
+          onDialogChange={onBulkDialog}
+        />
       )}
 
       <Dialog

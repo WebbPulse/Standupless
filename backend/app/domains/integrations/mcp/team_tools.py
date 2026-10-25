@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Mapping, Optional, get_args
 
-from app.common import audit, issue_triage, label_merge, team_members, team_workflow, team_writes
+from app.common import audit, issue_triage, label_merge, member_status, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.api.schemas.member_status import UserStatusRead
 from app.common.api.schemas.projects_display import stored_projects_display
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -51,6 +52,7 @@ from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
     MAX_SLA_PAUSED_STATUSES,
     MAX_UPCOMING_CYCLES,
+    SLA_CALENDARS,
     SLA_PRIORITIES,
     SLA_START_MODES,
     TEAM_SCOPE,
@@ -101,8 +103,9 @@ ESTIMATE_ARGUMENTS: tuple[str, ...] = (
     "estimate_extended",
     "estimate_allow_zero",
     "estimate_count_unestimated",
+    "timezone",
 )
-"""The team estimate settings create and update both take."""
+"""The team estimate and timezone settings create and update both take."""
 
 STATUS_CATEGORIES: tuple[str, ...] = ("backlog", "unstarted", "started", "completed", "cancelled")
 
@@ -167,6 +170,7 @@ def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
         "estimate_allow_zero": team.estimate_allow_zero,
         "estimate_count_unestimated": team.estimate_count_unestimated,
         "sync_pr_labels": team.sync_pr_labels,
+        "timezone": team.timezone,
         "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
         "retired_at": team.retired_at.isoformat() if team.retired_at else None,
@@ -185,6 +189,8 @@ def status_json(row: Status) -> dict[str, Any]:
         "scope": row.scope,
         "hidden": row.hidden,
         "inherited_name": row.inherited_name,
+        "description": row.description,
+        "inherited_description": row.inherited_description,
     }
 
 
@@ -269,6 +275,7 @@ def _sla_settings_json(settings: SlaSettings) -> dict[str, Any]:
         **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS},
         "paused_status_ids": list(settings.paused_status_ids),
         "start_mode": settings.start_mode,
+        "calendar": settings.calendar,
     }
 
 
@@ -295,15 +302,29 @@ def _paused_status_arguments(call: ToolCall, team_id: str) -> dict[str, Any]:
     return {"paused_status_ids": resolved}
 
 
-def _member_json(membership: Membership, user: Optional[User]) -> dict[str, Any]:
-    """One member as the tools answer it: who they are and the role they hold."""
+def _member_json(
+    membership: Membership, user: Optional[User], user_status: Optional[UserStatusRead] = None
+) -> dict[str, Any]:
+    """One member as the tools answer it: who they are, the role they hold and any status in force."""
     return {
         "user_id": membership.user_id,
         "display_name": display_name(user),
         "email": user.email if user is not None else "",
         "avatar_url": icon_url(user.icon_key) if user is not None else None,
         "role": membership.role,
+        "user_status": user_status.model_dump(mode="json") if user_status is not None else None,
     }
+
+
+def _team_statuses(call: ToolCall, memberships: list[Membership]) -> dict[str, UserStatusRead]:
+    """The current statuses of one visible team's members, all of whom share it with the caller."""
+    rows = call.repositories.memberships.get_many(call.context.workspace_id, [row.user_id for row in memberships])
+    answer: dict[str, UserStatusRead] = {}
+    for user_id, row in rows.items():
+        current = member_status.status_for(row, None)
+        if current is not None:
+            answer[user_id] = current
+    return answer
 
 
 def _team_member_json(call: ToolCall, membership: Membership) -> dict[str, Any]:
@@ -529,7 +550,7 @@ def _create_team(call: ToolCall) -> Any:
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team.
+    """Change a team's name, key prefix, description, estimate settings, timezone, label sync, privacy or parent team.
 
     A change of parent or of privacy is recorded in the audit log, as the REST patch records it.
     """
@@ -719,7 +740,7 @@ def _update_sla_settings(call: ToolCall) -> Any:
     team = admin_team(call)
     payload = SlaSettingsUpdate.model_validate(
         {
-            **given_arguments(call, ("enabled", "start_mode", *SLA_HOUR_FIELDS)),
+            **given_arguments(call, ("enabled", "start_mode", "calendar", *SLA_HOUR_FIELDS)),
             **_paused_status_arguments(call, team.team_id),
         }
     )
@@ -732,7 +753,8 @@ def _list_team_members(call: ToolCall) -> Any:
     team = _reader_team(call)
     memberships = call.repositories.memberships.list_team_members(call.context.workspace_id, team.team_id)
     users = call.repositories.users.get_many([row.user_id for row in memberships])
-    members = [_member_json(row, users.get(row.user_id)) for row in memberships]
+    statuses = _team_statuses(call, memberships)
+    members = [_member_json(row, users.get(row.user_id), statuses.get(row.user_id)) for row in memberships]
     return {"members": sorted(members, key=lambda row: (row["display_name"].lower(), row["user_id"]))}
 
 
@@ -790,7 +812,9 @@ def _list_statuses(call: ToolCall) -> Any:
 def _create_status(call: ToolCall) -> Any:
     """Add a status to a team, at the end of the order unless a position is given."""
     team = admin_team(call)
-    payload = StatusCreate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    payload = StatusCreate.model_validate(
+        given_arguments(call, ("name", "category", "position", "color", "icon", "description"))
+    )
     return status_json(team_workflow.create_status(call.repositories, call.context.workspace_id, team.team_id, payload))
 
 
@@ -798,7 +822,9 @@ def _update_status(call: ToolCall) -> Any:
     """Rename, recategorise, recolor or move a status; a null color or icon resets it."""
     team = admin_team(call)
     found = status_ref(call, team.team_id, call.require("status"))
-    payload = StatusUpdate.model_validate(given_arguments(call, ("name", "category", "position", "color", "icon")))
+    payload = StatusUpdate.model_validate(
+        given_arguments(call, ("name", "category", "position", "color", "icon", "description"))
+    )
     updated = team_workflow.update_status(
         call.repositories, call.context.workspace_id, team.team_id, found.status_id, payload
     )
@@ -949,16 +975,25 @@ def _list_users(call: ToolCall) -> Any:
     The workspace list is what the members route answers to any workspace member,
     guests included, so an agent can resolve an assignee by name or email. With
     `team_id` it narrows to that team's memberships, and the role is the team role.
+    Each carries `user_status` while one is in force, hidden from a guest for
+    anyone outside their teams.
     """
     team = call.optional("team_id")
     if team:
         team_id = team_id_ref(call, team)
         require_team_reader(call.repositories, call.context, team_id)
         memberships = call.repositories.memberships.list_team_members(call.context.workspace_id, team_id)
+        statuses = _team_statuses(call, memberships)
     else:
         memberships = call.repositories.memberships.list_members(call.context.workspace_id)
+        visible = member_status.visible_user_ids(call.repositories, call.context)
+        statuses = {
+            row.user_id: current
+            for row in memberships
+            if (current := member_status.status_for(row, visible)) is not None
+        }
     users = call.repositories.users.get_many([row.user_id for row in memberships])
-    members = [_member_json(row, users.get(row.user_id)) for row in memberships]
+    members = [_member_json(row, users.get(row.user_id), statuses.get(row.user_id)) for row in memberships]
     return {"users": sorted(members, key=lambda row: (row["display_name"].lower(), row["user_id"]))}
 
 
@@ -1022,6 +1057,10 @@ def _team_fields(required_name: bool) -> Mapping[str, Any]:
         "estimate_count_unestimated": boolean(
             "Whether cycle and project progress count an unestimated issue as 1 point instead of skipping it"
         ),
+        "timezone": string(
+            "IANA timezone such as America/Los_Angeles, UTC by default. Cycles start, end and roll over at "
+            "midnight in it, and the standup digest defaults to it. A sub-team inherits its parent's"
+        ),
         "private": boolean(
             "Whether only team members can see the team and its issues; needs the Business plan to turn on"
         ),
@@ -1082,8 +1121,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team",
         description=(
-            "Change a team's name, key prefix, description, estimate settings, privacy or whether its issue labels "
-            "are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
+            "Change a team's name, key prefix, description, estimate settings, timezone, privacy or whether its issue "
+            "labels are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, "
+            "or name."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1262,7 +1302,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             "Turn a team's SLAs on or off, set how many hours an open issue of each priority may go "
             "before it breaches (null removes a priority's rule), and pick the open statuses that pause the "
             "timer, such as On Staging. start_mode picks whether timers start when an issue leaves triage "
-            "or count from when it was created, triage included. Needs team admin."
+            "or count from when it was created, triage included. calendar picks whether the hours run around "
+            "the clock or skip Saturdays and Sundays in the team's timezone. Needs team admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1293,6 +1334,14 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                     "description": (
                         "on_triage_exit starts a timer when the issue leaves triage; on_creation counts from when "
                         "it was created, triage included. Running timers keep their start until the issue next moves"
+                    ),
+                },
+                "calendar": {
+                    "type": "string",
+                    "enum": list(SLA_CALENDARS),
+                    "description": (
+                        "calendar counts every hour; business_days skips Saturdays and Sundays in the team's "
+                        "timezone. Open timers move to the new clock at once, keeping their start"
                     ),
                 },
             },
@@ -1409,6 +1458,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "position": integer("Zero-based position in the board order", 0, 10000),
                 "color": enum(STATUS_COLORS, "A palette color; omit for the category default"),
                 "icon": enum(STATUS_ICONS, ICON_ARGUMENT),
+                "description": string("What the status means, shown under its name in status pickers"),
             },
             required=("team_id", "name", "category"),
         ),
@@ -1417,7 +1467,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_status",
         description=(
-            "Rename a team's status, change its category, color or icon, or move it in the board order. "
+            "Rename a team's status, change its category, color, icon or description, or move it in the board order. "
             "Needs team admin."
         ),
         scopes=("statuses:write",),
@@ -1430,6 +1480,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "position": integer("A new zero-based position", 0, 10000),
                 "color": nullable_enum(STATUS_COLORS, "A palette color, or null for the category default"),
                 "icon": nullable_enum(STATUS_ICONS, f"{ICON_ARGUMENT}, or null for the category default"),
+                "description": nullable("What the status means, or null to remove it"),
             },
             required=("team_id", "status"),
         ),

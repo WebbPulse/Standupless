@@ -4,7 +4,8 @@
  * Slack or Discord.
  *
  * Email arrives in the format the person picks: a short digest by default, or
- * one email per notification. Desktop notifications are switched per device,
+ * one email per notification. A pause, or working hours, hold email and
+ * desktop notifications while the inbox still fills. Desktop notifications are switched per device,
  * since the browser holds their permission.
  *
  * The priority inbox switch splits the inbox into Priority and Other tabs, and
@@ -38,8 +39,8 @@ import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import DesktopNotificationsSettings from '../../components/workspace/DesktopNotificationsSettings';
 import DiscordDirectMessages from '../../components/workspace/DiscordDirectMessages';
+import NotificationScheduleSettings from '../../components/workspace/NotificationScheduleSettings';
 import ReturnToast from '../../components/workspace/ReturnToast';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import SlackDirectMessages from '../../components/workspace/SlackDirectMessages';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { discordLinkOutcome } from '../../components/workspace/discordLinkOutcomes';
@@ -109,6 +110,19 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Initiative update reminders',
     detail: 'An update is due or overdue on an initiative you own.',
   },
+  project_lead_assigned: {
+    title: 'Made a project lead',
+    detail: 'Someone else makes you the lead of a project.',
+  },
+  project_member_added: {
+    title: 'Added to a project',
+    detail:
+      "Someone else adds you to a project's members. Being removed stays quiet.",
+  },
+  initiative_owner_assigned: {
+    title: 'Made an initiative owner',
+    detail: 'Someone else makes you the owner of an initiative.',
+  },
   due_soon: {
     title: 'Due date approaching',
     detail: 'An issue assigned to you is due tomorrow or today.',
@@ -148,6 +162,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'An issue newly matches a saved view you subscribed to. Issues already in the view stay quiet.',
   },
+  view_project_added: {
+    title: 'Projects added to views you follow',
+    detail:
+      'A project newly matches a saved project view you subscribed to, again each time it comes back. Projects already in the view stay quiet.',
+  },
   reaction: {
     title: 'Reactions',
     detail:
@@ -170,6 +189,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Blocking changes',
     detail:
       'An issue you are subscribed to or assigned gains or loses a blocking relation, or a blocker is resolved.',
+  },
+  team_issue_created: {
+    title: 'New issues in teams you follow',
+    detail:
+      "An issue is created in a team where you turned on Issue created in the team's Notifications menu.",
   },
   document_comment: {
     title: 'Document comments',
@@ -210,7 +234,13 @@ const KIND_SECTIONS: readonly KindSection[] = [
   },
   {
     title: 'Teams and views',
-    kinds: ['triage_new', 'view_issue_added', 'standup_digest'],
+    kinds: [
+      'triage_new',
+      'team_issue_created',
+      'view_issue_added',
+      'view_project_added',
+      'standup_digest',
+    ],
   },
   {
     title: 'Projects and initiatives',
@@ -219,6 +249,9 @@ const KIND_SECTIONS: readonly KindSection[] = [
       'project_update_comment',
       'project_update_due',
       'initiative_update_due',
+      'project_lead_assigned',
+      'project_member_added',
+      'initiative_owner_assigned',
     ],
   },
 ];
@@ -403,12 +436,7 @@ const NotificationsSettings: React.FC = () => {
   }, [workspaceId]);
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <ReturnToast
         param="discord_dm"
         describe={discordLinkOutcome}
@@ -576,6 +604,13 @@ const NotificationsSettings: React.FC = () => {
                 </label>
               ))}
             </fieldset>
+
+            <NotificationScheduleSettings
+              user={user}
+              zone={zone}
+              saving={saving}
+              save={save}
+            />
 
             <DesktopNotificationsSettings />
 

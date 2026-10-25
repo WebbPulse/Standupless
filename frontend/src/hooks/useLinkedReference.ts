@@ -14,6 +14,7 @@ import {
   type LinkedPullRequest,
   type LinkedReference,
 } from '../lib/references';
+import { answersToSlug } from '../lib/workspaceSlug';
 
 /** The project or document a link names in the open workspace, or null. */
 export const useLinkedReference = (
@@ -23,7 +24,9 @@ export const useLinkedReference = (
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   if (workspace === null) return null;
   const target = linkedReference(href, origin);
-  return target !== null && target.slug === workspace.slug ? target : null;
+  return target !== null && answersToSlug(workspace, target.slug)
+    ? target
+    : null;
 };
 
 /**

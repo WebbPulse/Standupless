@@ -6,9 +6,17 @@
  * position between them, and a reorder inside a column switches the view to
  * manual ordering, since any other ordering would put the card straight back.
  *
+ * A drag on a selected card carries the whole selection, with a count badge
+ * on the drag image, and lands it in one write with one undo entry: the same
+ * column and lane for every card, placed together in their shown order at a
+ * manual slot. A drag on a card outside the selection moves that card alone.
+ * Cards the viewer cannot edit stay put, and the notice counts them.
+ *
  * A column can be hidden from its header menu. Hidden columns sit in a rail
  * on the right, or below the board on phones, with their counts, and one
- * click brings a column back. On touch screens the columns snap into place.
+ * click brings a column back. Each one in the rail also takes a drop, which
+ * sets its value without showing it again. On touch screens the columns snap
+ * into place.
  *
  * A quiet New issue row closes each cell the viewer may create in. It shows on
  * hover or focus, and always in an empty cell, and opens the create dialog with
@@ -24,17 +32,8 @@ import { LuChevronRight, LuEllipsis, LuEyeOff, LuPlus } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
-  customerMove,
-  GROUP_LABELS,
   groupIssues,
   hiddenColumnKey,
-  isLabelGroupField,
-  isMovableGroupField,
-  moveChange,
-  orderKeyAt,
-  type CustomerMove,
-  type GroupField,
-  type IssueChange,
   type IssueGroup,
   type ViewState,
   withinStatusCategories,
@@ -42,7 +41,6 @@ import {
 import type { StatusCategory } from '../../../types/Api';
 import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
-import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
 import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
@@ -53,10 +51,20 @@ import {
   PriorityCell,
   StatusCell,
 } from './IssueProperties';
-import { useIssueViewEnv } from './IssueViewContext';
+import { useIssueViewEnv, useRowFocus } from './IssueViewContext';
 import { ArchivedMarker, GroupFigure, GroupGlyph } from './ListRows';
 import { CardParentRef } from './SubIssueCues';
-import { isNoOpDrop } from '../../../lib/boardDrop';
+import {
+  draggedIds,
+  isNoOpDrop,
+  setCountDragImage,
+} from '../../../lib/boardDrop';
+import {
+  canDragIssue,
+  landIssueDrop,
+  type DropCell,
+  type DropLanding,
+} from './issueDrop';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** Where a dragged card would land. */
@@ -66,13 +74,26 @@ interface DropTarget {
   index: number;
 }
 
-/** The card being dragged, where it came from and how tall it stands. */
+/**
+ * Where a drop lands: a slot in a cell, or a hidden column in the rail, which
+ * has no lane and no slot, so each card keeps its own lane and position.
+ */
+type Landing = DropLanding;
+
+/**
+ * The cards being dragged, in display order, the lead card the drag started
+ * on, the cell it came from and how tall it stands.
+ */
 interface DragSource {
-  id: string;
+  ids: string[];
+  lead: string;
   lane: string;
   column: string;
   height: number;
 }
+
+/** A card's cell: its lane and column keys. */
+type CellRef = DropCell;
 
 /** The shortest placeholder drawn, for a card that reports no height. */
 const MIN_PLACEHOLDER = 40;
@@ -82,28 +103,6 @@ const COLUMN_WIDTH = 'w-[min(20rem,calc(100vw-3rem))]';
 
 /** The lane key used when the board has no swimlanes. */
 const ONE_LANE = 'all';
-
-/** Joins two changes, adding their label edits together. */
-const joinChanges = (left: IssueChange, right: IssueChange): IssueChange => {
-  const merged: IssueChange = { ...left, ...right };
-  const adds = [...(left.add_label_ids ?? []), ...(right.add_label_ids ?? [])];
-  const removes = [
-    ...(left.remove_label_ids ?? []),
-    ...(right.remove_label_ids ?? []),
-  ];
-  if (adds.length > 0) merged.add_label_ids = adds;
-  if (removes.length > 0) merged.remove_label_ids = removes;
-  return merged;
-};
-
-/**
- * Why a drop was refused: a column the grouping cannot set by dragging, or a
- * value the issue's own team does not have.
- */
-const refusedMove = (key: string, field: GroupField): string =>
-  isLabelGroupField(field) || isMovableGroupField(field)
-    ? `${key} cannot move there, its team has no matching value.`
-    : `${key} stays put, ${GROUP_LABELS[field].toLowerCase()} is not set by dragging.`;
 
 /** Props for BoardCard. */
 interface BoardCardProps {
@@ -127,9 +126,8 @@ const BoardCard: React.FC<BoardCardProps> = ({
   const env = useIssueViewEnv();
   const shows = (property: (typeof env.state.visible)[number]): boolean =>
     env.state.visible.includes(property);
-  const isFocused = env.focusedId === issue.id;
+  const { focused: isFocused, peeked: isPeeked } = useRowFocus(issue);
   const isSelected = env.selected.has(issue.id);
-  const isPeeked = env.peekedKey === issue.key;
   const prefetch = useIssuePrefetch(issue.key, isFocused);
   const parent = env.parentOf?.(issue) ?? parentRefOf(issue);
   const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
@@ -242,6 +240,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   const { state, context } = env;
   const [drag, setDrag] = useState<DragSource | null>(null);
   const [target, setTarget] = useState<DropTarget | null>(null);
+  const [railTarget, setRailTarget] = useState<string | null>(null);
 
   const columnField = state.groupBy === 'none' ? 'status' : state.groupBy;
   const laneField = state.subGroupBy;
@@ -293,74 +292,60 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
     [issues]
   );
 
-  const drop = (to: DropTarget): void => {
-    const source = drag;
+  const order = useMemo(() => issues.map((issue) => issue.id), [issues]);
+
+  const cellOf = useMemo(() => {
+    const cells = new Map<string, CellRef>();
+    for (const { lane, cells: laneCells } of lanes) {
+      for (const cell of laneCells) {
+        for (const issue of cell.issues) {
+          if (!cells.has(issue.id)) {
+            cells.set(issue.id, { lane: lane.key, column: cell.key });
+          }
+        }
+      }
+    }
+    return cells;
+  }, [lanes]);
+
+  const cellIssues = (lane: string, column: string): OrderedIssueRead[] =>
+    lanes
+      .find((item) => item.lane.key === lane)
+      ?.cells.find((item) => item.key === column)?.issues ?? [];
+
+  const editable = (issue: OrderedIssueRead): boolean =>
+    canDragIssue(env, issue);
+
+  const endDrag = (): void => {
     setDrag(null);
     setTarget(null);
-    if (source === null || !env.canEdit) return;
-    const issue = byId.get(source.id);
-    if (issue === undefined) return;
+    setRailTarget(null);
+  };
 
-    let change: IssueChange = {};
-    if (to.column !== source.column) {
-      const moved = moveChange(
-        issue,
-        columnField,
-        source.column,
-        to.column,
-        context
-      );
-      if (moved === null) {
-        showToast(refusedMove(issue.key, columnField), 'info');
-        return;
-      }
-      change = joinChanges(change, moved);
-    }
-    if (laneField !== 'none' && to.lane !== source.lane) {
-      const moved = moveChange(issue, laneField, source.lane, to.lane, context);
-      if (moved === null) {
-        showToast(refusedMove(issue.key, laneField), 'info');
-        return;
-      }
-      change = joinChanges(change, moved);
-    }
-
-    const customerMoves: CustomerMove[] = [];
-    if (columnField === 'customer' && to.column !== source.column) {
-      customerMoves.push(
-        customerMove(issue, source.column, to.column, context)
-      );
-    }
-    if (laneField === 'customer' && to.lane !== source.lane) {
-      customerMoves.push(customerMove(issue, source.lane, to.lane, context));
-    }
-    if (customerMoves.length > 0 && env.moveCustomer === undefined) {
-      showToast(
-        `${issue.key} stays put, customer requests are not set from here.`,
-        'info'
-      );
-      return;
-    }
-
-    const sameCell = to.column === source.column && to.lane === source.lane;
-    if (state.ordering === 'manual' || sameCell) {
-      const lane = lanes.find((item) => item.lane.key === to.lane);
-      const cell = lane?.cells.find((item) => item.key === to.column);
-      const placed = cell?.issues ?? [];
-      const from = placed.findIndex((item) => item.id === issue.id);
-      const index = from >= 0 && from < to.index ? to.index - 1 : to.index;
-      if (sameCell && index === from) return;
-      change.sort_order = orderKeyAt(placed, index, issue.id);
-      if (state.ordering !== 'manual' || state.reverse) {
-        onStateChange({ ...state, ordering: 'manual', reverse: false });
-      }
-    }
-    if (Object.keys(change).length > 0) env.update([issue.id], change);
-    for (const move of customerMoves) {
-      if (move.add !== undefined || move.remove !== undefined) {
-        env.moveCustomer?.(issue, move);
-      }
-    }
+  const drop = (to: Landing): void => {
+    const source = drag;
+    endDrag();
+    if (source === null) return;
+    landIssueDrop({
+      env,
+      onStateChange,
+      movers: source.ids.flatMap((id) => {
+        const issue = byId.get(id);
+        return issue === undefined ? [] : [issue];
+      }),
+      lead: source.lead,
+      source: { lane: source.lane, column: source.column },
+      cellOf: (id) => cellOf.get(id),
+      to,
+      columnField,
+      laneField,
+      cellIssues,
+      columnLabel: (key) =>
+        [...columns, ...hidden].find((column) => column.key === key)?.label ??
+        key,
+      laneLabel: (key) =>
+        lanes.find((item) => item.lane.key === key)?.lane.label ?? key,
+    });
   };
 
   const overCell =
@@ -423,14 +408,15 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
     const showsPlaceholder =
       isTarget &&
       drag !== null &&
-      !isNoOpDrop(
-        {
-          lane: drag.lane,
-          column: drag.column,
-          from: cell.issues.findIndex((issue) => issue.id === drag.id),
-        },
-        target
-      );
+      (drag.ids.length > 1 ||
+        !isNoOpDrop(
+          {
+            lane: drag.lane,
+            column: drag.column,
+            from: cell.issues.findIndex((issue) => issue.id === drag.lead),
+          },
+          target
+        ));
     const cellLabel =
       laneField === 'none' ? column.label : `${column.label}, ${lane.label}`;
     const onCreate = createIn?.(
@@ -465,24 +451,32 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
             {showsPlaceholder && target.index === index && placeholder}
             <BoardCard
               issue={issue}
-              draggable={env.canEdit}
-              dimmed={drag?.id === issue.id}
+              draggable={editable(issue)}
+              dimmed={drag?.ids.includes(issue.id) ?? false}
               onDragStart={(event) => {
+                const card = event.currentTarget as HTMLElement;
+                const ids = draggedIds(issue.id, env.selected, order);
                 event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', issue.key);
+                event.dataTransfer.setData(
+                  'text/plain',
+                  ids.map((id) => byId.get(id)?.key ?? id).join('\n')
+                );
+                setCountDragImage(
+                  event.dataTransfer,
+                  card,
+                  ids.length,
+                  `${String(ids.length)} issues`,
+                  { x: event.clientX, y: event.clientY }
+                );
                 setDrag({
-                  id: issue.id,
+                  ids,
+                  lead: issue.id,
                   lane: lane.key,
                   column: column.key,
-                  height: (
-                    event.currentTarget as HTMLElement
-                  ).getBoundingClientRect().height,
+                  height: card.getBoundingClientRect().height,
                 });
               }}
-              onDragEnd={() => {
-                setDrag(null);
-                setTarget(null);
-              }}
+              onDragEnd={endDrag}
               onDragOver={overCard(lane.key, column.key, index)}
             />
           </React.Fragment>
@@ -637,10 +631,32 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               key={column.key}
               type="button"
               title={`Show ${column.label}`}
+              data-drop-target={railTarget === column.key ? '' : undefined}
               onClick={() => {
                 onToggle(hiddenColumnKey(column.key));
               }}
-              className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-text-muted pointer-coarse:h-11 hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+              onDragOver={(event) => {
+                if (drag === null) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                if (target !== null) setTarget(null);
+                if (railTarget !== column.key) setRailTarget(column.key);
+              }}
+              onDragLeave={() => {
+                if (railTarget === column.key) setRailTarget(null);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                drop({ lane: null, column: column.key, index: null });
+              }}
+              className={cn(
+                'flex h-8 items-center gap-2 rounded-md border px-2 text-left text-sm pointer-coarse:h-11 transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
+                railTarget === column.key
+                  ? 'border-accent bg-accent-soft text-text'
+                  : drag !== null
+                    ? 'border-dashed border-line text-text-muted'
+                    : 'border-transparent text-text-muted hover:bg-raised hover:text-text'
+              )}
             >
               <GroupGlyph group={column} />
               <TruncatedText className="min-w-0 flex-1">

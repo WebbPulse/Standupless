@@ -165,11 +165,16 @@ class ZoneResolver:
         self._teams: dict[tuple[str, str], tzinfo] = {}
 
     def team(self, workspace_id: str, team_id: str) -> tzinfo:
-        """The team's standup timezone, or UTC when it has none."""
+        """The team's standup timezone, else the team's own timezone, else UTC."""
         key = (workspace_id, team_id)
         if key not in self._teams:
             settings = self._repositories.team_config.get_standup_settings(workspace_id, team_id)
-            self._teams[key] = zone_named(settings.timezone if settings is not None else None) or timezone.utc
+            if settings is not None:
+                name = settings.timezone
+            else:
+                team = self._repositories.teams.get(workspace_id, team_id)
+                name = getattr(team, "timezone", None) if team is not None else None
+            self._teams[key] = zone_named(name) or timezone.utc
         return self._teams[key]
 
     def person(self, user_id: str) -> tzinfo | None:
@@ -230,7 +235,7 @@ def sla_notice_for(issue: Issue, now: datetime) -> tuple[str, datetime] | None:
         if now - breaches_at > OVERDUE_WINDOW:
             return None
         return SLA_BREACHED, breaches_at
-    turned = at_risk_from(issue.sla_started_at or breaches_at, breaches_at)
+    turned = at_risk_from(issue.sla_started_at or breaches_at, breaches_at, issue.sla_timezone)
     if now >= turned:
         return SLA_AT_RISK, turned
     return None

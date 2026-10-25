@@ -293,6 +293,21 @@ def test_settings_default_off_and_an_admin_changes_them(client: TestClient, work
     assert client.patch(f"{PATH}/settings", json={"send_time": "25:00"}).status_code == 422
 
 
+def test_standup_settings_default_to_the_team_timezone(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Unset standup settings read the team's timezone, while a stored timezone stays as chosen."""
+    sign_in(client, ADMIN)
+    repositories.teams.update(WORKSPACE, TEAM, timezone="Pacific/Auckland")
+
+    default = client.get(f"{PATH}/settings").json()
+    saved = client.patch(f"{PATH}/settings", json={"cadence": "daily"}).json()
+    client.patch(f"{PATH}/settings", json={"timezone": "Europe/Berlin"})
+    repositories.teams.update(WORKSPACE, TEAM, timezone="Asia/Tokyo")
+
+    assert default["timezone"] == "Pacific/Auckland"
+    assert saved["timezone"] == "Pacific/Auckland"
+    assert client.get(f"{PATH}/settings").json()["timezone"] == "Europe/Berlin"
+
+
 def test_the_mcp_tool_returns_the_route_digest(client: TestClient, workspace: str, repositories: Any) -> None:
     """`get_standup` answers the same digest the route does, and the note tool writes the caller's note."""
     secret = mint_for(repositories, GUEST, ("teams:read", "comments:write"))

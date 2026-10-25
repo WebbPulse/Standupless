@@ -210,6 +210,7 @@ def test_a_team_carries_the_fields_the_frontend_reads(client: TestClient, worksp
         "estimate_extended",
         "estimate_allow_zero",
         "estimate_count_unestimated",
+        "timezone",
         "icon_url",
         "created_at",
         "updated_at",

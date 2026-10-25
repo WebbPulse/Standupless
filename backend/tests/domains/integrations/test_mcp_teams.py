@@ -313,7 +313,14 @@ def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: A
             client,
             admin,
             "update_team_sla_settings",
-            {"team_id": "ABC", "enabled": True, "medium_hours": 120, "high_hours": None, "start_mode": "on_creation"},
+            {
+                "team_id": "ABC",
+                "enabled": True,
+                "medium_hours": 120,
+                "high_hours": None,
+                "start_mode": "on_creation",
+                "calendar": "business_days",
+            },
         )
     )
     invalid = refusal(tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "urgent_hours": 0}))
@@ -326,6 +333,7 @@ def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: A
     assert FORBIDDEN in refused
     assert team["sla_settings"]["medium_hours"] == 120
     assert saved["start_mode"] == team["sla_settings"]["start_mode"] == "on_creation"
+    assert saved["calendar"] == team["sla_settings"]["calendar"] == "business_days"
 
 
 def test_sla_paused_statuses_take_ids_or_names(client: TestClient, repositories: Any, workspace: str) -> None:

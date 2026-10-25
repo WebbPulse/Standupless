@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.teams import COLOR_PATTERN
+from app.common.body_versions import body_version
 from app.common.change_source import ChangeSource
 from app.common.date_resolution import DateEdge, DateResolution, read_resolution, snap
 from app.common.db.dynamo.planning import (
@@ -25,6 +26,7 @@ from app.common.db.dynamo.planning import (
     Cycle,
     Initiative,
     InitiativeUpdateRow,
+    InitiativeUpdateSnapshot,
     ProgressMeasure,
     Project,
     ProjectActivityRow,
@@ -738,12 +740,23 @@ class ProjectUpdate(BaseModel):
     patch leaves completed or canceled; without it they stay where they are.
     `sort_order` is the project's manual position, a base 62 fractional key
     shared by every viewer, so a drag rewrites only the project moved.
+    `base_body_version` is the description's `body_version` the editor loaded.
+    Sent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the
+    current description and its version when someone else changed it since.
+    Left out, or sent with a patch that leaves the description alone, it holds
+    nothing back.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
     team_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=TEAMS_MAX)
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
+    base_body_version: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="The body_version the description edit started from; a stale one is a 409.",
+    )
     lead_id: Optional[str] = Field(default=None, min_length=1)
     start_date: Optional[str] = None
     target_date: Optional[str] = None
@@ -1018,6 +1031,9 @@ class ProjectRead(BaseModel):
     team_ids: list[str]
     name: str
     description: Optional[str] = None
+    body_version: str = Field(
+        default="", description="The description's version, sent back as base_body_version when editing it."
+    )
     lead_id: Optional[str] = None
     start_date: Optional[str] = None
     target_date: Optional[str] = None
@@ -1127,6 +1143,7 @@ class ProjectRead(BaseModel):
             team_ids=teams,
             name=project.name,
             description=project.description,
+            body_version=body_version(project.description),
             lead_id=project.lead_id,
             start_date=project.start_date,
             target_date=project.target_date,
@@ -1651,6 +1668,8 @@ class InitiativeCreate(BaseModel):
     team_id: Optional[str] = Field(default=None, min_length=1, description=INITIATIVE_TEAM_HELP)
     status: InitiativeStatusField = "planned"
     health: Optional[ProjectHealthField] = None
+    start_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(default=None, description=START_RESOLUTION_HELP)
     target_date: Optional[str] = None
     target_date_resolution: Optional[DateResolution] = Field(default=None, description=TARGET_RESOLUTION_HELP)
     update_interval_days: Optional[int] = None
@@ -1676,23 +1695,31 @@ class InitiativeCreate(BaseModel):
         """Hold the description to the shared byte cap."""
         return _check_description(value)
 
-    @field_validator("target_date")
+    @field_validator("start_date", "target_date")
     @classmethod
-    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
-        """Hold the target date to the contract's format."""
+    def check_dates(cls, value: Optional[str]) -> Optional[str]:
+        """Hold both dates to the contract's format."""
         return _check_date(value)
 
     @model_validator(mode="after")
-    def widen_target_date(self) -> "InitiativeCreate":
-        """Move a coarse target date to the last day of its period."""
+    def widen_dates(self) -> "InitiativeCreate":
+        """Move each coarse date to the edge of its period and hold the start no later than the target."""
+        start = _settle_resolution(self.start_date, self.start_date_resolution, "start", "start_date")
+        if start != self.start_date:
+            self.start_date = start
         target = _settle_resolution(self.target_date, self.target_date_resolution, "end", "target_date")
         if target != self.target_date:
             self.target_date = target
+        _check_order(self.start_date, self.target_date, "target_date")
         return self
 
 
 class InitiativeUpdate(BaseModel):
-    """The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent."""
+    """The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent.
+
+    `sort_order` is the initiative's manual position, a base 62 fractional key
+    shared by every viewer, so a drag rewrites only the initiative moved.
+    """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
@@ -1702,6 +1729,10 @@ class InitiativeUpdate(BaseModel):
     )
     status: Optional[InitiativeStatusField] = None
     health: Optional[ProjectHealthField] = None
+    start_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None, description=f"{START_RESOLUTION_HELP}; set alone it widens the stored date"
+    )
     target_date: Optional[str] = None
     target_date_resolution: Optional[DateResolution] = Field(
         default=None, description=f"{TARGET_RESOLUTION_HELP}; set alone it widens the stored date"
@@ -1710,12 +1741,21 @@ class InitiativeUpdate(BaseModel):
     parent_initiative_id: Optional[str] = Field(
         default=None, min_length=1, description="The initiative to nest this one under; null makes it top level"
     )
+    sort_order: Optional[str] = Field(
+        default=None, description="The manual position, a base 62 fractional key shared by every viewer"
+    )
 
     @field_validator("update_interval_days")
     @classmethod
     def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
         """Hold the update cadence to the allowed options; null returns it to the workspace default."""
         return check_interval(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a manual position to the base 62 alphabet and its length cap."""
+        return _check_sort_order(value)
 
     @field_validator("name")
     @classmethod
@@ -1729,10 +1769,10 @@ class InitiativeUpdate(BaseModel):
         """Hold the description to the shared byte cap."""
         return _check_description(value)
 
-    @field_validator("target_date")
+    @field_validator("start_date", "target_date")
     @classmethod
-    def check_target_date(cls, value: Optional[str]) -> Optional[str]:
-        """Hold the target date to the contract's format."""
+    def check_dates(cls, value: Optional[str]) -> Optional[str]:
+        """Hold both dates to the contract's format."""
         return _check_date(value)
 
 
@@ -1761,6 +1801,11 @@ class InitiativeRead(BaseModel):
     team_id: Optional[str] = Field(default=None, description="The lead team, null for a workspace level initiative")
     status: InitiativeStatusField
     health: Optional[ProjectHealthField] = None
+    start_date: Optional[str] = None
+    start_date_resolution: Optional[DateResolution] = Field(
+        default=None,
+        description="How wide the start date is, null without one; a coarse start is its period's first day",
+    )
     target_date: Optional[str] = None
     target_date_resolution: Optional[DateResolution] = Field(
         default=None,
@@ -1793,6 +1838,9 @@ class InitiativeRead(BaseModel):
     update_interval_inherited: bool = True
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
+    sort_order: Optional[str] = Field(
+        default=None, description="The manual position, null when the initiative was never placed"
+    )
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -1836,6 +1884,8 @@ class InitiativeRead(BaseModel):
             team_id=initiative.team_id,
             status=initiative.status,  # pyright: ignore[reportArgumentType]
             health=initiative.health,  # pyright: ignore[reportArgumentType]
+            start_date=initiative.start_date,
+            start_date_resolution=read_resolution(initiative.start_date, initiative.start_date_resolution),
             target_date=initiative.target_date,
             target_date_resolution=read_resolution(initiative.target_date, initiative.target_date_resolution),
             parent_initiative_id=initiative.parent_initiative_id,
@@ -1857,6 +1907,7 @@ class InitiativeRead(BaseModel):
             update_interval_inherited=initiative.update_interval_days is None,
             next_update_due_at=next_update_due_at(initiative, default_interval_days),
             update_due_state=update_due_state(initiative, default_interval_days, now),
+            sort_order=initiative.sort_order,
             created_by=initiative.created_by,
             created_at=initiative.created_at,
             updated_at=initiative.updated_at,
@@ -1912,10 +1963,11 @@ class InitiativeUpdateCreate(BaseModel):
 
 
 class InitiativeUpdatePatch(BaseModel):
-    """The body an initiative update patch takes; either field may be left out, neither cleared."""
+    """The body an initiative update patch takes; any field may be left out, none cleared."""
 
     body: Optional[str] = None
     health: Optional[ProjectHealthField] = None
+    hide_details: Optional[bool] = Field(default=None, description="Hide or show the update's progress report")
 
     @field_validator("body")
     @classmethod
@@ -1924,8 +1976,43 @@ class InitiativeUpdatePatch(BaseModel):
         return _check_update_body(value)
 
 
+class InitiativeUpdateSnapshotRead(BaseModel):
+    """Where an initiative stood when an update was posted, as the API returns it.
+
+    `projects_by_status` counts the rolled up projects every member can see by
+    status category, and `projects_by_health` by health.
+    """
+
+    owner_id: Optional[str] = None
+    owner_name: Optional[str] = None
+    status: Optional[InitiativeStatusField] = None
+    target_date: Optional[str] = None
+    target_date_resolution: Optional[DateResolution] = None
+    health: Optional[ProjectHealthField] = None
+    project_count: int = 0
+    projects_by_status: dict[str, int] = Field(default_factory=dict)
+    projects_by_health: dict[str, int] = Field(default_factory=dict)
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Optional[InitiativeUpdateSnapshot]) -> Optional["InitiativeUpdateSnapshotRead"]:
+        """The response shape of a stored snapshot, or None without one."""
+        if snapshot is None:
+            return None
+        fields = snapshot.model_dump()
+        fields["target_date_resolution"] = read_resolution(snapshot.target_date, snapshot.target_date_resolution)
+        return cls.model_validate(fields)
+
+
 class InitiativeUpdateRead(BaseModel):
-    """One initiative update as the API returns it, with this caller's edit right."""
+    """One initiative update as the API returns it, with this caller's edit right.
+
+    `snapshot` and `previous_snapshot` are what the progress report diffs: the
+    initiative when this update was posted, and when the one before it was.
+    `report` is that diff as plain lines, empty on a first update, on one
+    posted before reports existed, and when `hide_details` says its author hid it.
+    `reactions` and `comment_count` summarise the update's thread, as on a
+    project update.
+    """
 
     update_id: str
     initiative_id: str
@@ -1938,10 +2025,18 @@ class InitiativeUpdateRead(BaseModel):
     updated_at: datetime
     edited_at: Optional[datetime] = None
     can_edit: bool = False
+    snapshot: Optional[InitiativeUpdateSnapshotRead] = None
+    previous_snapshot: Optional[InitiativeUpdateSnapshotRead] = None
+    hide_details: bool = False
+    report: list[str] = Field(default_factory=list)
+    reactions: list[ReactionGroupRead] = Field(default_factory=list)
+    comment_count: int = 0
 
     @classmethod
-    def from_row(cls, update: InitiativeUpdateRow, *, can_edit: bool) -> "InitiativeUpdateRead":
-        """Build the response shape from a stored update row."""
+    def from_row(
+        cls, update: InitiativeUpdateRow, *, can_edit: bool, report: Optional[list[str]] = None
+    ) -> "InitiativeUpdateRead":
+        """Build the response shape from a stored update row and the report its snapshots give."""
         return cls(
             update_id=update.update_id,
             initiative_id=update.initiative_id,
@@ -1954,6 +2049,10 @@ class InitiativeUpdateRead(BaseModel):
             updated_at=update.updated_at,
             edited_at=update.edited_at,
             can_edit=can_edit,
+            snapshot=InitiativeUpdateSnapshotRead.from_snapshot(update.snapshot),
+            previous_snapshot=InitiativeUpdateSnapshotRead.from_snapshot(update.previous_snapshot),
+            hide_details=update.hide_details,
+            report=report or [],
         )
 
 

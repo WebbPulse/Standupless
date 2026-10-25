@@ -57,12 +57,13 @@ from app.common.db.dynamo.team_config import (
     default_sla_settings,
     default_team_display_defaults,
 )
-from app.common.db.dynamo.teams import Team, new_team_id
+from app.common.db.dynamo.teams import DEFAULT_TEAM_TIMEZONE, Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
 from app.common.plan_limits import LimitedResource
 from app.common.planning_rules import unprocessable
-from app.common.sla import FINISHED_CATEGORIES, retime_column
+from app.common.sla import FINISHED_CATEGORIES, recalendar_team, retime_column, team_clock_zone
 from app.common.sub_teams import check_parent, sub_team_ids
+from app.common.team_time import team_today
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -76,9 +77,15 @@ ESTIMATE_FIELDS: tuple[str, ...] = (
 )
 """The team fields a sub-team takes from its parent, as it takes the parent's cycle settings."""
 
+TIMEZONE_FIELDS: tuple[str, ...] = ("timezone",)
+"""The team field naming the zone its cycles run in, which a sub-team takes from its parent with its cycles."""
+
+INHERITED_FIELDS: tuple[str, ...] = (*ESTIMATE_FIELDS, *TIMEZONE_FIELDS)
+"""Every team row field a sub-team takes from its parent."""
+
 INHERITED_SETTINGS = {
     "error_code": "CONFLICT",
-    "message": "This sub-team takes its {what} from its parent team. Change them in the parent team's settings.",
+    "message": "This sub-team takes its {what} from its parent team. Make the change in the parent team's settings.",
 }
 
 HAS_SUB_TEAMS = {
@@ -140,8 +147,8 @@ def create_team(
     The team takes its plan slot in that transaction too, so racing creates at the
     last slot land one team and refuse the rest. A sub-team's parent pointer rides
     in it as well; `can_see` holds the parent to the teams the caller may read.
-    A sub-team then takes its parent's estimate and cycle settings. A team made
-    from `copy_settings_from_team_id`, which `can_read` holds to the teams whose
+    A sub-team then takes its parent's estimate settings, timezone and cycle
+    settings. A team made from `copy_settings_from_team_id`, which `can_read` holds to the teams whose
     content the caller may read, starts with that team's setup as `team_copy`
     describes, and seeds defaults only for the categories the copy leaves out.
     """
@@ -160,11 +167,14 @@ def create_team(
         estimate_extended=payload.estimate_extended,
         estimate_allow_zero=payload.estimate_allow_zero,
         estimate_count_unestimated=payload.estimate_count_unestimated,
+        timezone=payload.timezone or DEFAULT_TEAM_TIMEZONE,
         parent_team_id=payload.parent_team_id,
     )
     copy = team_copy.plan(repositories, source, team.team_id, user_id) if source is not None else None
     if copy is not None:
         team = team.model_copy(update=copy.estimates)
+        if payload.timezone is not None:
+            team = team.model_copy(update={"timezone": payload.timezone})
     membership = Membership(
         workspace_id=workspace_id,
         member_key=team_member_key(team.team_id, user_id),
@@ -205,7 +215,7 @@ def create_team(
         _discard(repositories, copy)
         raise
     if copy is not None:
-        _stock_copied_cycles(repositories, workspace_id, team.team_id)
+        _stock_cycles(repositories, workspace_id, team.team_id)
     if payload.parent_team_id is not None:
         inherit_settings(repositories, workspace_id, team.team_id, payload.parent_team_id)
         return load_team(repositories, workspace_id, team.team_id)
@@ -234,11 +244,11 @@ def _discard(repositories: Repositories, copy: team_copy.TeamCopy | None) -> Non
         team_copy.discard(repositories, copy)
 
 
-def _stock_copied_cycles(repositories: Repositories, workspace_id: str, team_id: str) -> None:
-    """Create the upcoming cycles a team copied with cycles turned on should already have."""
+def _stock_cycles(repositories: Repositories, workspace_id: str, team_id: str) -> None:
+    """Create the cycles a team with cycles turned on is missing on its own today, after a copy or a new timezone."""
     saved = repositories.team_config.get_cycle_settings(workspace_id, team_id)
     if saved is not None and saved.enabled:
-        cycle_schedule.ensure_cycles(repositories.planning, saved)
+        cycle_schedule.ensure_cycles(repositories.planning, saved, team_today(repositories, workspace_id, team_id))
 
 
 def update_team(
@@ -262,21 +272,26 @@ def update_team(
     from the new scale. A new parent is checked before the prefix moves and
     applied through `set_parent` after it. A sub-team's estimate settings are its
     parent's, so a patch changing them is a 409, and a parent's change reaches
-    its sub-teams.
+    its sub-teams. The timezone follows the same rule, and a new timezone stocks
+    any cycles the team's new today is missing at once.
     """
     attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
     attributes.pop("parent_team_id", None)
     reparent = "parent_team_id" in payload.model_fields_set
-    estimates = {name: attributes[name] for name in ESTIMATE_FIELDS if name in attributes}
-    if estimates:
+    inherited: dict[str, Any] = {}
+    for fields, what in ((ESTIMATE_FIELDS, "estimate settings"), (TIMEZONE_FIELDS, "timezone")):
+        given = {name: attributes[name] for name in fields if name in attributes}
+        if not given:
+            continue
         team = load_team(repositories, workspace_id, team_id)
         parent_id = payload.parent_team_id if reparent else team.parent_team_id
-        if parent_id is not None and any(getattr(team, name) != value for name, value in estimates.items()):
-            raise _inherited("estimate settings")
+        if parent_id is not None and any(getattr(team, name) != value for name, value in given.items()):
+            raise _inherited(what)
         if parent_id is not None:
-            for name in estimates:
+            for name in given:
                 attributes.pop(name)
-            estimates = {}
+        else:
+            inherited.update(given)
     if reparent and payload.parent_team_id is not None:
         team = load_team(repositories, workspace_id, team_id)
         if payload.parent_team_id != team.parent_team_id:
@@ -315,10 +330,21 @@ def update_team(
     updated = repositories.teams.update(workspace_id, team_id, **attributes)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    if estimates:
+    if inherited:
         for sub_team_id in sub_team_ids(repositories, workspace_id, team_id):
             _inherit_estimates(repositories, workspace_id, sub_team_id, updated)
+    if "timezone" in inherited:
+        for member_id in (team_id, *sub_team_ids(repositories, workspace_id, team_id)):
+            _stock_cycles(repositories, workspace_id, member_id)
+            _recalendar_slas(repositories, workspace_id, member_id)
     return updated
+
+
+def _recalendar_slas(repositories: Repositories, workspace_id: str, team_id: str) -> None:
+    """Move a business-days team's open SLA timers onto its new timezone's weekends."""
+    settings = sla_settings(repositories, workspace_id, team_id)
+    if settings.calendar == "business_days":
+        recalendar_team(repositories, workspace_id, team_id, team_clock_zone(repositories, settings))
 
 
 def _inherited(what: str) -> HTTPException:
@@ -330,8 +356,8 @@ def _inherited(what: str) -> HTTPException:
 
 
 def _inherit_estimates(repositories: Repositories, workspace_id: str, team_id: str, parent: Team) -> None:
-    """Give one sub-team its parent's estimate settings."""
-    repositories.teams.update(workspace_id, team_id, **{name: getattr(parent, name) for name in ESTIMATE_FIELDS})
+    """Give one sub-team its parent's estimate settings and timezone."""
+    repositories.teams.update(workspace_id, team_id, **{name: getattr(parent, name) for name in INHERITED_FIELDS})
 
 
 def _inherit_cycles(repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str) -> None:
@@ -341,11 +367,14 @@ def _inherit_cycles(repositories: Repositories, workspace_id: str, team_id: str,
         source.model_copy(update={"team_id": team_id, "config_key": cycle_settings_key(team_id)})
     )
     if saved.enabled:
-        cycle_schedule.ensure_cycles(repositories.planning, saved)
+        cycle_schedule.ensure_cycles(repositories.planning, saved, team_today(repositories, workspace_id, team_id))
 
 
 def inherit_settings(repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str) -> None:
-    """Give a team that just joined a parent the parent's estimate and cycle settings."""
+    """Give a team that just joined a parent the parent's estimate settings, timezone and cycle settings.
+
+    The timezone lands first, so the sub-team's cycles are stocked against its new today.
+    """
     _inherit_estimates(repositories, workspace_id, team_id, load_team(repositories, workspace_id, parent_team_id))
     _inherit_cycles(repositories, workspace_id, team_id, parent_team_id)
 
@@ -465,7 +494,7 @@ def update_cycle_settings(
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     saved = repositories.team_config.put_cycle_settings(current.model_copy(update=changes))
     if saved.enabled:
-        cycle_schedule.ensure_cycles(repositories.planning, saved)
+        cycle_schedule.ensure_cycles(repositories.planning, saved, team_today(repositories, workspace_id, team_id))
     for sub_team_id in sub_team_ids(repositories, workspace_id, team_id):
         _inherit_cycles(repositories, workspace_id, sub_team_id, team_id)
     return saved
@@ -596,14 +625,14 @@ def update_sla_settings(
     statuses must be open statuses of the team, and issues already sitting in a
     status added to or taken out of the set are paused or resumed on the spot.
     A new start mode leaves running timers alone and applies from each issue's
-    next watched-field change.
+    next watched-field change. A new calendar moves every open timer onto the
+    new clock on the spot, each keeping its start and its window.
     """
     current = sla_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True)
-    if changes.get("enabled") is None:
-        changes.pop("enabled", None)
-    if changes.get("start_mode") is None:
-        changes.pop("start_mode", None)
+    for name in ("enabled", "start_mode", "calendar"):
+        if changes.get(name) is None:
+            changes.pop(name, None)
     if "paused_status_ids" in changes:
         changes["paused_status_ids"] = _paused_statuses(
             repositories, workspace_id, team_id, changes["paused_status_ids"] or []
@@ -613,6 +642,8 @@ def update_sla_settings(
     ):
         enforce_feature(repositories, workspace_id, Feature.ISSUE_SLAS)
     saved = repositories.team_config.put_sla_settings(current.model_copy(update=changes))
+    if saved.calendar != current.calendar:
+        recalendar_team(repositories, workspace_id, team_id, team_clock_zone(repositories, saved))
     before, after = set(current.paused_status_ids), set(saved.paused_status_ids)
     now = utc_now()
     for status_id in sorted(before ^ after):

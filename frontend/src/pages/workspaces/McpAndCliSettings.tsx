@@ -10,7 +10,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { LuArrowRight, LuKeyRound } from 'react-icons/lu';
 import { Link, useLocation } from 'react-router-dom';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import DesktopAppSection from '../../components/desktop/DesktopAppSection';
 import { CodeBlock } from '../../components/ui/code-block';
@@ -281,12 +280,7 @@ const McpAndCliSettings: React.FC = () => {
   useHashScroll(workspace !== null);
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-12">
           <section id="mcp" aria-labelledby="mcp-title" className={SECTION}>

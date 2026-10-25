@@ -5,7 +5,7 @@
  * threaded through each layer between it and the view.
  */
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueWrite } from '../../../hooks/useOptimisticIssues';
 import type { ParentRef } from '../../../lib/issueTree';
@@ -39,6 +39,11 @@ export interface IssueViewEnv {
   /** The team name shown on rows of a view that spans teams. */
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
+  /**
+   * Whether the viewer may edit one issue, read from its team's role. Unset
+   * leaves every issue to `canEdit`.
+   */
+  canEditIssue?: ((issue: OrderedIssueRead) => boolean) | undefined;
   update: IssueWrite;
   /**
    * Files and withdraws customer requests for a drop between customer
@@ -46,13 +51,20 @@ export interface IssueViewEnv {
    */
   moveCustomer?: (issue: OrderedIssueRead, move: CustomerMove) => void;
   createLabel: (teamId: string, name: string) => Promise<LabelRead | null>;
-  /** The row the keyboard sits on, or null. */
-  focusedId: string | null;
+  /**
+   * The row the keyboard sits on, or null. Left out by a view that publishes
+   * it through {@link RowFocusContext} instead, so a pointer sweeping down a
+   * long list does not hand every row a new env.
+   */
+  focusedId?: string | null;
   selected: ReadonlySet<string>;
   /** False for a list that selects nothing, which draws no checkboxes. */
   selectable?: boolean;
-  /** The issue key showing in the peek pane, or null. */
-  peekedKey: string | null;
+  /**
+   * The issue key showing in the peek pane, or null. Left out by a view that
+   * publishes it through {@link RowFocusContext}.
+   */
+  peekedKey?: string | null;
   /** Moves the keyboard focus to a row. */
   focus: (id: string) => void;
   /** Toggles a row's selection, extending from the last one with `range`. */
@@ -63,6 +75,14 @@ export interface IssueViewEnv {
   peek: (issue: OrderedIssueRead) => void;
   /** Opens the row menu for an issue at the pointer, where the view has one. */
   openMenu?: (issue: OrderedIssueRead, x: number, y: number) => void;
+  /** Opens the status picker for one issue, as a swipe right on a touch row does. */
+  openStatus?: ((issue: OrderedIssueRead) => void) | undefined;
+  /**
+   * Opens the quick menu of assign to me, priority and a reminder for one
+   * issue at a point, as a swipe left on a touch row does.
+   */
+  openQuickMenu?:
+    ((issue: OrderedIssueRead, x: number, y: number) => void) | undefined;
   /** Remembers the view's order as an issue opens, where the view tracks it. */
   onOpen?: () => void;
   /**
@@ -93,4 +113,74 @@ export const useIssueViewEnv = (): IssueViewEnv => {
     throw new Error('useIssueViewEnv needs an IssueListView above it');
   }
   return env;
+};
+
+/**
+ * The keyboard focus and the peeked issue of one view, held outside the env so
+ * each row subscribes to whether it is the one marked. Moving the focus then
+ * re-renders the row it left and the row it reached, not every row in the view.
+ */
+export interface RowFocusStore {
+  subscribe: (listener: () => void) => () => void;
+  focusedId: () => string | null;
+  peekedKey: () => string | null;
+  /** Sets both marks and tells the subscribers when either changed. */
+  publish: (focusedId: string | null, peekedKey: string | null) => void;
+}
+
+/** A focus store starting from the given marks. */
+export const createRowFocusStore = (
+  focusedId: string | null,
+  peekedKey: string | null
+): RowFocusStore => {
+  let focused = focusedId;
+  let peeked = peekedKey;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    focusedId: () => focused,
+    peekedKey: () => peeked,
+    publish: (nextFocused, nextPeeked) => {
+      if (nextFocused === focused && nextPeeked === peeked) return;
+      focused = nextFocused;
+      peeked = nextPeeked;
+      for (const listener of listeners) listener();
+    },
+  };
+};
+
+/** The view's focus store. Null where the env carries the marks itself. */
+export const RowFocusContext = createContext<RowFocusStore | null>(null);
+
+/** A subscription for a view with no focus store, which never changes. */
+const noSubscribe = (): (() => void) => () => undefined;
+
+/** Whether one row is the focused row and whether it is the peeked issue. */
+export interface RowFocus {
+  focused: boolean;
+  peeked: boolean;
+}
+
+/**
+ * Reads whether one issue's row holds the keyboard focus or the peek, from
+ * the view's focus store when it has one and from the env otherwise. Each
+ * answer is a boolean, so a row re-renders only when its own mark flips.
+ */
+export const useRowFocus = (issue: { id: string; key: string }): RowFocus => {
+  const store = useContext(RowFocusContext);
+  const env = useIssueViewEnv();
+  const subscribe = store?.subscribe ?? noSubscribe;
+  const isFocused = (): boolean =>
+    (store === null ? (env.focusedId ?? null) : store.focusedId()) === issue.id;
+  const isPeeked = (): boolean =>
+    (store === null ? (env.peekedKey ?? null) : store.peekedKey()) ===
+    issue.key;
+  const focused = useSyncExternalStore(subscribe, isFocused, isFocused);
+  const peeked = useSyncExternalStore(subscribe, isPeeked, isPeeked);
+  return { focused, peeked };
 };

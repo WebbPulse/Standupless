@@ -74,6 +74,7 @@ from standupless_cli._generated.models import (
     StandupSettingsUpdate,
     StatusCreate,
     StatusListRead,
+    StatusOverrideUpdate,
     StatusRead,
     StatusUpdate,
     SubscribersRead,
@@ -92,6 +93,7 @@ from standupless_cli._generated.models import (
     TriageSettingsUpdate,
     TriageSnooze,
     UserRead,
+    UserStatusUpdate,
     ViewListRead,
     ViewRead,
     WorkspaceExportCreate,
@@ -347,7 +349,9 @@ class StanduplessClient:
         params = {"replacement_status_id": replacement_status_id} if replacement_status_id else None
         self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}", params=params)
 
-    def override_status(self, workspace_id: str, team_id: str, status_id: str, body: OverrideUpdate) -> StatusRead:
+    def override_status(
+        self, workspace_id: str, team_id: str, status_id: str, body: StatusOverrideUpdate
+    ) -> StatusRead:
         """Hide, show or rename an inherited workspace status in one team."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"
         return cast(StatusRead, self._request("PATCH", path, json=body))
@@ -495,6 +499,16 @@ class StanduplessClient:
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""
         return cast(MemberListRead, self._request("GET", f"/api/workspaces/{workspace_id}/members"))["members"]
+
+    def set_my_status(self, workspace_id: str, body: UserStatusUpdate) -> MemberRead:
+        """Set the caller's own status in the workspace, replacing any earlier one."""
+        path = f"/api/workspaces/{workspace_id}/members/me/status"
+        return cast(MemberRead, self._request("PUT", path, json=body))
+
+    def clear_my_status(self, workspace_id: str) -> MemberRead:
+        """Clear the caller's own status in the workspace."""
+        path = f"/api/workspaces/{workspace_id}/members/me/status"
+        return cast(MemberRead, self._request("DELETE", path))
 
     def list_issues(self, workspace_id: str, params: Mapping[str, Any], limit: int | None = 50) -> list[Issue]:
         """Issues matching the filter params, following cursors up to `limit`."""

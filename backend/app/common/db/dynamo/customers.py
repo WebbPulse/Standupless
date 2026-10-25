@@ -9,10 +9,14 @@ A customer lives in the workspace partition in three row shapes:
   query, and the workspace's are one query under `customer_request#`.
 - `customer_target#<target_kind>#<target>#<request>` is a copy of the request
   under the issue or project it names, so a target's requests are one query.
+- `customer_status#<status>` and `customer_tier#<tier>` are the statuses and
+  tiers a workspace admin sets up for its customers, each one query under its
+  prefix, and `customer_fields#seeded` marks that the seeded defaults were stored.
 
-The `customer#` prefix never matches the other two, whose next character after
-`customer` is an underscore. None of these kinds pass the planning stream
-filters, so no consumer reads them.
+The `customer#` prefix never matches the others, whose next character after
+`customer` is an underscore. The customer and the target copy pass the planning
+stream filters, which the integrations stream consumer reads to send customer and
+customer request webhooks; the status and tier rows do not.
 """
 
 from __future__ import annotations
@@ -37,14 +41,25 @@ CUSTOMER_KEY_PREFIX = "customer#"
 
 CUSTOMER_REQUEST_KEY_PREFIX = "customer_request#"
 
+CUSTOMER_REQUESTS_KEY_END = "customer_request$"
+"""The first sort key past every request row, `$` sorting just after `#`, closing the customers and requests range."""
+
 TargetKind = Literal["issue", "project"]
 
 TARGET_KINDS: tuple[str, ...] = ("issue", "project")
 
-CustomerStatus = Literal["lead", "trial", "active", "paused", "churned"]
+CUSTOMER_STATUS = "customer_status"
+
+CUSTOMER_TIER = "customer_tier"
+
+CUSTOMER_FIELDS_SEEDED = "customer_fields_seeded"
+
+CUSTOMER_FIELDS_SEEDED_KEY = "customer_fields#seeded"
+
+CustomerFieldKind = Literal["customer_status", "customer_tier"]
 
 CUSTOMER_STATUSES: tuple[str, ...] = ("lead", "trial", "active", "paused", "churned")
-"""The fixed lifecycle a customer moves through, in the order a list groups them."""
+"""The lifecycle every workspace starts with, whose ids are these legacy values, in the order a list groups them."""
 
 LIST_MAX = 2000
 """The most customers, or requests, one workspace listing reads."""
@@ -75,6 +90,16 @@ def customer_target_key(target_kind: str, target_id: str, request_id: str) -> st
     return f"{customer_target_prefix(target_kind, target_id)}{request_id}"
 
 
+def customer_field_prefix(kind: str) -> str:
+    """The sort key prefix every customer status, or every customer tier, shares."""
+    return f"{kind}#"
+
+
+def customer_field_key(kind: str, field_id: str) -> str:
+    """The sort key of one customer status or tier row."""
+    return f"{customer_field_prefix(kind)}{field_id}"
+
+
 def new_customer_id() -> str:
     """A fresh, time ordered customer or request id."""
     return new_ulid()
@@ -89,7 +114,9 @@ class Customer(BaseModel):
     kind: str = CUSTOMER
     name: str
     domains: list[str] = Field(default_factory=list)
-    status: CustomerStatus | None = None
+    status_id: str | None = None
+    tier_id: str | None = None
+    status: str | None = None
     tier: str | None = None
     owner_id: str | None = None
     revenue: int | None = None
@@ -102,6 +129,31 @@ class Customer(BaseModel):
         """Derive the sort key from the id when none was given."""
         if not self.planning_key:
             self.planning_key = customer_key(self.customer_id)
+
+
+class CustomerFieldRow(BaseModel):
+    """One customer status or tier a workspace set up, told apart by `kind`.
+
+    A customer written before statuses and tiers were configurable keeps its
+    legacy `status` and `tier` strings, which `app.common.customer_fields` maps
+    onto these rows at read time.
+    """
+
+    workspace_id: str
+    planning_key: str = ""
+    kind: CustomerFieldKind
+    field_id: str = Field(default_factory=new_ulid)
+    name: str
+    color: str | None = None
+    position: int = 0
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def model_post_init(self, _context: Any) -> None:
+        """Derive the sort key from the kind and id when none was given."""
+        if not self.planning_key:
+            self.planning_key = customer_field_key(self.kind, self.field_id)
 
 
 class CustomerRequest(BaseModel):
@@ -206,6 +258,46 @@ class CustomerRepository:
         self._repository.delete_many(keys)
         return len(requests)
 
+    def list_fields(self, workspace_id: str, kind: str) -> list[CustomerFieldRow]:
+        """Every stored customer status, or every stored tier, of the workspace by position."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(customer_field_prefix(kind)),
+            max_items=LIST_MAX,
+        )
+        rows = [CustomerFieldRow.model_validate(dict(item)) for item in items if item.get("kind") == kind]
+        rows.sort(key=lambda row: (row.position, row.name.casefold(), row.field_id))
+        return rows
+
+    def put_field(self, row: CustomerFieldRow, *, create: bool) -> CustomerFieldRow:
+        """Store a customer status or tier, raising `ConditionFailed` on a taken id or, for an edit, a gone row."""
+        condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
+        self._repository.put(row.model_dump(mode="json"), condition=condition)
+        return row
+
+    def delete_field(self, workspace_id: str, kind: str, field_id: str) -> None:
+        """Remove one customer status or tier row."""
+        self._repository.delete(_key(workspace_id, customer_field_key(kind, field_id)))
+
+    def fields_seeded(self, workspace_id: str) -> bool:
+        """Whether the workspace stored its seeded statuses and tiers, so an emptied list stays empty."""
+        if not workspace_id:
+            return False
+        item = self._repository.get(_key(workspace_id, CUSTOMER_FIELDS_SEEDED_KEY))
+        return item is not None and item.get("kind") == CUSTOMER_FIELDS_SEEDED
+
+    def mark_fields_seeded(self, workspace_id: str) -> None:
+        """Record that the seeded statuses and tiers are stored."""
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "planning_key": CUSTOMER_FIELDS_SEEDED_KEY,
+                "kind": CUSTOMER_FIELDS_SEEDED,
+                "created_at": utc_now().isoformat(),
+            }
+        )
+
     def add_request(self, request: CustomerRequest) -> CustomerRequest:
         """Store a new request under its customer and its target."""
         row = request.as_customer_row()
@@ -292,6 +384,32 @@ class CustomerRepository:
             max_items=max_items,
         )
         return [CustomerRequest.model_validate(dict(item)) for item in items if item.get("kind") == CUSTOMER_REQUEST]
+
+    def list_customers_and_requests(
+        self, workspace_id: str, *, max_items: int = 2 * LIST_MAX
+    ) -> tuple[list[Customer], list[CustomerRequest]]:
+        """Every customer and every request of the workspace from one query.
+
+        The customer rows sort under `customer#` and the requests under
+        `customer_request#`, adjacent in the partition with only the
+        `customer_fields#` marker between them, so one key range reads both and a
+        list filtering by customer fields pays one query rather than two.
+        """
+        if not workspace_id:
+            return [], []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id)
+            & Key("planning_key").between(CUSTOMER_KEY_PREFIX, CUSTOMER_REQUESTS_KEY_END),
+            max_items=max_items,
+        )
+        customers: list[Customer] = []
+        requests: list[CustomerRequest] = []
+        for item in items:
+            if item.get("kind") == CUSTOMER:
+                customers.append(Customer.model_validate(dict(item)))
+            elif item.get("kind") == CUSTOMER_REQUEST:
+                requests.append(CustomerRequest.model_validate(dict(item)))
+        return customers, requests
 
     def move_requests(self, workspace_id: str, source_id: str, target_id: str) -> int:
         """Move every request of one customer onto another, returning how many moved."""

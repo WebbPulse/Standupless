@@ -35,7 +35,7 @@ from app.common.api.schemas.views import (
     ViewUpdate,
     grouping_pattern,
 )
-from app.common.db.dynamo.views import SavedView
+from app.common.db.dynamo.views import TEAM_SUBSCRIPTION_EVENTS, SavedView
 from app.common.inbox import (
     INBOX_BUCKETS,
     INBOX_KINDS,
@@ -58,6 +58,7 @@ from app.common.saved_views import (
     update_saved_view,
     view_read,
 )
+from app.common.team_subscriptions import set_team_subscription, team_subscription
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
@@ -147,18 +148,23 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "filter": {
             "type": "object",
             "description": (
-                "The issue filter, keyed as list_issues takes it (team_id, team_id_in, status_id, "
-                "status_category, assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, "
-                "parent_id, cycle_id, project_id, project_milestone_id, estimate, sla_status, has_relation, "
-                "due_before, due_after, created_after, created_before, updated_after, updated_before, "
-                "completed_after, completed_before, customer_id, content, q and their _not forms, plus is_blocked, "
-                "is_blocking and has_sub_issues as true or false). Values are ids or lists of ids; assignee_id, "
-                "creator_id and subscriber_id may be 'me'. match is all (default) or any, and groups is a list "
-                "of condition objects with these same keys and their own match, each counting as one condition, "
-                "and a group may hold groups of its own, two levels at most. A project view's filter instead "
-                "takes team_id, status (project statuses such as planned or in_progress), lead_id (user ids, "
-                "'none' for no lead), customer_id and customer_id_not (customer ids, 'none' for no customer "
-                "request), and sub_teams, is_blocked and is_blocking, each as true or false."
+                "The issue filter, keyed as list_issues takes it (team_id, team_id_in, status_id, status_category, "
+                "assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, parent_id, cycle_id, "
+                "project_id, project_milestone_id, estimate, sla_status, has_relation, due_before, due_after, "
+                "created_after, created_before, updated_after, updated_before, completed_after, completed_before, "
+                "customer_id, customer_status_id, customer_tier_id, release_id, content, q and their _not forms, "
+                "customer_revenue_min, customer_revenue_max, customer_size_min, customer_size_max, "
+                "customer_request_count_min and customer_request_count_max as whole numbers, plus is_blocked, "
+                "is_blocking, has_sub_issues and customer_important as true or false). Values are ids or lists "
+                "of ids; assignee_id, creator_id and subscriber_id may be 'me'. A date bound is a day, YYYY-MM-DD, or "
+                "relative to today as today, -14d, +7d, -2w, -1m or +1y, stored as written so the view keeps "
+                "rolling. match is all (default) or any, and groups is a list of condition "
+                "objects with these same keys and their own match, each counting as one condition, and a group may "
+                "hold groups of its own, two levels at most. A project view's filter instead takes team_id, status "
+                "(project statuses such as planned or in_progress), lead_id (user ids, 'none' for no lead), "
+                "customer_id and customer_id_not (customer ids, 'none' for no customer request), and sub_teams, "
+                "is_blocked and is_blocking, each as true or false, plus start_date_before, start_date_after, "
+                "target_date_before and target_date_after as a day or an offset relative to today."
             ),
         },
         "sort": enum(SORTS, "Sort order"),
@@ -286,7 +292,7 @@ def _delete_view(call: ToolCall) -> Any:
 
 
 def _subscribe_to_view(call: ToolCall) -> Any:
-    """Follow an issue view, to hear about each issue that newly matches it, as the subscription route does."""
+    """Follow a view, to hear about each issue or project that newly matches it, as the subscription route does."""
     _workspace_member(call)
     view = set_view_subscription(call.repositories, call.context, view_ref(call, call.require("view_id")).view_id, True)
     return view_read(call.repositories, call.context, view, favorite=False).model_dump(mode="json")
@@ -426,9 +432,27 @@ def _cancel_issue_reminder(call: ToolCall) -> Any:
 
 ISSUE_REF = string("The issue: its issue_id, or its key such as ENG-12")
 
+TEAM_REF = string("The team: its team_id, its key such as ENG, or its exact name")
+
 VIEW_REF = string("The view: its view_id, or its exact name when only one readable view has it")
 
 NOTIFICATION_IDS = one_or_many("One notification_id or a list of up to 100, as list_notifications answers them")
+
+
+def _get_team_notification_subscription(call: ToolCall) -> Any:
+    """Which of one team's issue events reach your inbox, as the team subscription route answers it."""
+    _workspace_member(call)
+    team_id = team_id_ref(call, call.require("team_id"))
+    return team_subscription(call.repositories, call.context, team_id).model_dump(mode="json")
+
+
+def _set_team_notification_subscription(call: ToolCall) -> Any:
+    """Turn the named team issue events on or off for you, keeping the ones left out."""
+    _workspace_member(call)
+    team_id = team_id_ref(call, call.require("team_id"))
+    events = {event: _flag(call, event) for event in TEAM_SUBSCRIPTION_EVENTS if call.present(event)}
+    return set_team_subscription(call.repositories, call.context, team_id, events).model_dump(mode="json")
+
 
 VIEW_TOOLS: tuple[Tool, ...] = (
     Tool(
@@ -483,9 +507,10 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="subscribe_to_view",
         description=(
-            "Subscribe to a saved issue view you can read: from now on you get a view_issue_added notification "
-            "each time an issue newly matches its filter. Issues already in the view do not notify, nor do your "
-            "own changes or issues you cannot see. Project views cannot be subscribed to. Repeating is a no-op."
+            "Subscribe to a saved view you can read. On an issue view you get a view_issue_added notification "
+            "each time an issue newly matches its filter; on a project view a view_project_added notification "
+            "each time a project enters it, again if it left and came back. Rows already in the view do not "
+            "notify, nor do your own changes or rows you cannot see. Repeating is a no-op."
         ),
         scopes=("views:write",),
         schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
@@ -494,7 +519,10 @@ VIEW_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="unsubscribe_from_view",
-        description="Stop getting notified about issues entering a saved view. A no-op when you were not subscribed.",
+        description=(
+            "Stop getting notified about issues or projects entering a saved view. "
+            "A no-op when you were not subscribed."
+        ),
         scopes=("views:write",),
         schema=object_schema({"view_id": VIEW_REF}, required=("view_id",)),
         handler=_unsubscribe_from_view,
@@ -622,5 +650,38 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         scopes=("notifications:write",),
         schema=object_schema({"issue_id": ISSUE_REF}, required=("issue_id",)),
         handler=_cancel_issue_reminder,
+    ),
+    Tool(
+        name="get_team_notification_subscription",
+        description=(
+            "Which of a team's issue events reach your inbox: issue_created, triage (added to triage), completed "
+            "and cancelled. Each is false until you turn it on."
+        ),
+        scopes=("views:read",),
+        schema=object_schema({"team_id": TEAM_REF}, required=("team_id",)),
+        handler=_get_team_notification_subscription,
+    ),
+    Tool(
+        name="set_team_notification_subscription",
+        description=(
+            "Subscribe yourself to a team's issue events: issue_created sends a team_issue_created notification "
+            "for each new issue, triage a triage_new one when an issue is added to triage, completed and cancelled "
+            "an issue_completed or issue_cancelled one when an issue closes. Events left out keep their value; "
+            "turning all four off removes the subscription. Your own changes never notify you, and you hear of "
+            "each change once even when an assignment, mention or subscription also covers it."
+        ),
+        scopes=("views:write",),
+        schema=object_schema(
+            {
+                "team_id": TEAM_REF,
+                "issue_created": _boolean("Hear of each issue created in the team"),
+                "triage": _boolean("Hear of each issue added to the team's triage"),
+                "completed": _boolean("Hear of each of the team's issues moved to a completed status"),
+                "cancelled": _boolean("Hear of each of the team's issues moved to a cancelled status"),
+            },
+            required=("team_id",),
+        ),
+        handler=_set_team_notification_subscription,
+        idempotent=True,
     ),
 )

@@ -114,8 +114,13 @@ def render(
     footer_note: str = "",
     footer_links: Sequence[EmailLink] = (),
     accent: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> EmailMessage:
-    """Render one Standupless message in HTML and plain text through the shared shell."""
+    """Render one Standupless message in HTML and plain text through the shared shell.
+
+    `headers` are extra message headers, such as the List-Unsubscribe pair a
+    notification carries; transactional mail passes none.
+    """
     return render_branded(
         email_brand(accent),
         to=to,
@@ -125,4 +130,5 @@ def render(
         footer_note=Paragraph(footer_note) if footer_note else None,
         footer_links=footer_links,
         tags=tags,
+        headers=headers,
     )

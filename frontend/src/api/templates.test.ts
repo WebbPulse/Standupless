@@ -91,7 +91,16 @@ describe('team templates', () => {
     expect(await listTeamTemplates(WS, TEAM)).toEqual({
       templates: [],
       default_template_id: null,
+      non_member_default_template_id: null,
     });
+  });
+
+  it('falls the non-member default back to the members one on an older answer', async () => {
+    get.mockResolvedValue({
+      data: { templates: [template], default_template_id: 'tp-1' },
+    });
+    const answer = await listTeamTemplates(WS, TEAM);
+    expect(answer.non_member_default_template_id).toBe('tp-1');
   });
 
   it('creates, patches and deletes under the team', async () => {

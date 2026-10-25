@@ -42,7 +42,9 @@ export const defaultStatusFor = (
   category: ProjectStatus
 ): ProjectStatusRead =>
   statuses.find((row) => row.category === category && row.is_default) ??
-  statuses.find((row) => row.category === category) ??
+  statuses.find(
+    (row) => row.category === category && (row.team_id ?? null) === null
+  ) ??
   DEFAULT_PROJECT_STATUSES.find((row) => row.category === category) ??
   (DEFAULT_PROJECT_STATUSES[0] as ProjectStatusRead);
 
@@ -69,7 +71,11 @@ export const findProjectStatus = (
   statuses.find((row) => row.id === id) ??
   (isProjectStatusCategory(id) ? defaultStatusFor(statuses, id) : undefined);
 
-/** The statuses by category in the given order, each category by position. */
+/**
+ * The statuses by category in the given order. Within a category the
+ * workspace's come first by position, then each team's own by position, as a
+ * team numbers its statuses apart from the workspace's.
+ */
 export const orderProjectStatuses = (
   statuses: readonly ProjectStatusRead[],
   order: readonly ProjectStatus[] = PROJECT_STATUSES
@@ -77,7 +83,12 @@ export const orderProjectStatuses = (
   order.flatMap((category) =>
     statuses
       .filter((row) => row.category === category)
-      .sort((left, right) => left.position - right.position)
+      .sort((left, right) => {
+        const leftTeam = left.team_id ?? '';
+        const rightTeam = right.team_id ?? '';
+        if (leftTeam !== rightTeam) return leftTeam < rightTeam ? -1 : 1;
+        return left.position - right.position;
+      })
   );
 
 /** The statuses in the order the projects list groups and offers them. */

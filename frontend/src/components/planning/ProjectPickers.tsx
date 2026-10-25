@@ -69,6 +69,7 @@ import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProjectIcon from './ProjectIcon';
 import ProjectStatusGlyph from './ProjectStatusGlyph';
 import { teamTree } from '../../lib/teamOrder';
+import { offeredToTeams } from '../../lib/projectScopes';
 
 /** Which trigger look a project picker draws. */
 export type ProjectPickerVariant = 'rail' | 'chip' | 'icon';
@@ -156,6 +157,11 @@ export interface ProjectStatusPickerProps extends ProjectPickerBaseProps {
   percent?: number;
   /** Offer only the six categories, for a template that stores a category. */
   categoriesOnly?: boolean;
+  /**
+   * The project's teams, whose own statuses join the workspace's; every
+   * team's is offered when left out, and none when the list is empty.
+   */
+  teamIds?: readonly string[] | undefined;
 }
 
 /** Picks a project's status from the workspace's, with number keys for the first nine. */
@@ -165,18 +171,23 @@ export const ProjectStatusPicker: React.FC<ProjectStatusPickerProps> = ({
   onChange,
   percent,
   categoriesOnly = false,
+  teamIds,
   disabled = false,
   variant = 'rail',
   align = 'start',
   className = '',
 }) => {
   const workspaceStatuses = useProjectStatuses();
-  const statuses = categoriesOnly
+  const known = categoriesOnly
     ? DEFAULT_PROJECT_STATUSES
     : orderProjectStatuses(workspaceStatuses.statuses);
+  const statuses =
+    categoriesOnly || teamIds === undefined
+      ? known
+      : offeredToTeams(known, teamIds);
   const current = categoriesOnly
-    ? defaultStatusFor(statuses, value)
-    : projectStatusOf({ status: value, status_id: statusId }, statuses);
+    ? defaultStatusFor(known, value)
+    : projectStatusOf({ status: value, status_id: statusId }, known);
   const options: ComboboxOption[] = statuses.map((status, index) => ({
     value: status.id,
     label: status.name,
@@ -985,6 +996,11 @@ export interface ProjectLabelsPickerProps extends ProjectPickerBaseProps {
   labels: ProjectLabelRead[];
   onChange: (value: string[]) => void;
   /**
+   * The project's teams, whose own labels join the workspace's; every team's
+   * is offered when left out. A chosen label outside them still shows.
+   */
+  teamIds?: readonly string[] | undefined;
+  /**
    * Draws the chosen labels as chips in place of the field trigger, as a list
    * row or board card shows them; nothing is drawn when none is chosen and
    * the picker is disabled.
@@ -997,6 +1013,7 @@ export const ProjectLabelsPicker: React.FC<ProjectLabelsPickerProps> = ({
   value,
   labels,
   onChange,
+  teamIds,
   inline = false,
   disabled = false,
   variant = 'rail',
@@ -1007,7 +1024,12 @@ export const ProjectLabelsPicker: React.FC<ProjectLabelsPickerProps> = ({
   const chosen = value
     .map((id) => byId.get(id))
     .filter((label): label is ProjectLabelRead => label !== undefined);
-  const options: ComboboxOption[] = labels.map((label) => ({
+  const offered =
+    teamIds === undefined ? labels : offeredToTeams(labels, teamIds);
+  const options: ComboboxOption[] = [
+    ...offered,
+    ...chosen.filter((label) => !offered.includes(label)),
+  ].map((label) => ({
     value: label.id,
     label: label.name,
     icon: (
@@ -1098,8 +1120,8 @@ export const ProjectLabelsPicker: React.FC<ProjectLabelsPickerProps> = ({
         options={options}
         selected={value}
         emptyMessage={
-          labels.length === 0
-            ? 'No project labels yet. Add them in workspace settings.'
+          offered.length === 0
+            ? 'No project labels yet. Add them in workspace or team settings.'
             : 'No label matches'
         }
         onSelect={(picked) => {

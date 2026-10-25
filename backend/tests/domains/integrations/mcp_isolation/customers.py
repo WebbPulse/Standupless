@@ -7,7 +7,9 @@ from typing import Any
 from app.common.db.dynamo.customers import Customer, CustomerRequest
 from tests.domains.helpers import OWNER
 
-ANSWERS_AT_HOME: frozenset[str] = frozenset({"list_customers", "create_customer"})
+ANSWERS_AT_HOME: frozenset[str] = frozenset(
+    {"list_customers", "list_customer_statuses", "list_customer_tiers", "create_customer"}
+)
 
 
 def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
@@ -37,6 +39,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     project = foreign["project_id"]
     return {
         "list_customers": {},
+        "list_customer_statuses": {},
+        "list_customer_tiers": {},
         "create_customer": {"name": "Lands at home"},
         "update_customer": {"customer_id": customer, "name": "Should not land"},
         "merge_customers": {"customer_id": customer, "into_customer_id": customer},

@@ -48,6 +48,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "list_project_labels": {},
         "list_project_statuses": {},
         "create_project_label": {"name": "Home only", "color": "#5e6ad2"},
+        "create_project_status": {"name": "Should not land", "category": "planned", "team_id": team},
         "update_project_label": {"label": foreign["project_label_id"], "name": "Should not land"},
         "delete_project_label": {"label": foreign["project_label_id"]},
         "create_cycle": {

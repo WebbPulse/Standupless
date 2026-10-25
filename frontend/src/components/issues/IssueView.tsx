@@ -62,6 +62,7 @@ import {
   LuPanelRight,
   LuPrinter,
   LuSquarePen,
+  LuTerminal,
   LuTrash2,
   LuUnlink,
   LuUsers,
@@ -69,12 +70,10 @@ import {
 } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  appendIssues,
   archiveIssue,
   deleteIssue,
   getIssue,
   getIssueByKey,
-  listChildren,
   listLinks,
   restoreIssue,
   unarchiveIssue,
@@ -86,7 +85,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
-import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { useIssueChildren } from '../../hooks/useIssueChildren';
+import { usePeekIssue } from '../../hooks/usePeekIssue';
 import {
   DETAILS_PANEL_KEYS,
   detailsPanelLabel,
@@ -116,6 +116,10 @@ import {
   copyText,
   issueUrl,
 } from '../../lib/copyIssue';
+import {
+  OPEN_IN_CODING_TOOL_KEYS,
+  OPEN_IN_CODING_TOOL_LABEL,
+} from '../../lib/codingTools';
 import { errorMessage } from '../../lib/errors';
 import { useRecordRecentIssue } from '../../lib/recentIssues';
 import {
@@ -157,6 +161,7 @@ import IssueMediaProvider from '../media/IssueMediaProvider';
 import { ErrorAlert } from '../ui/alert';
 import { Button, IconButton } from '../ui/button';
 import Tooltip from '../ui/tooltip';
+import { PresenceAvatars } from '../ui/PresenceAvatars';
 import { LINK_CLASS } from '../ui/link';
 import Menu, { MenuItem, MenuSeparator, MenuShortcut } from '../ui/menu';
 import Spinner from '../ui/spinner';
@@ -169,6 +174,7 @@ import DescriptionHistoryDialog, {
 } from './DescriptionHistoryDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
+import OpenInCodingTool from './OpenInCodingTool';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
 import { RelationMarkers } from './BlockedMarker';
 import { RELATION_COMMANDS } from './RelationGlyphs';
@@ -193,9 +199,6 @@ import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
-
-/** How many sub-issues one page asks for. */
-const CHILDREN_PAGE = 50;
 
 /** The team link in the bar, in the shared link colour. */
 const TEAM_LINK_CLASS = `${LINK_CLASS} truncate font-normal`;
@@ -273,6 +276,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const slug = params.slug ?? workspace?.slug ?? '';
 
   const workspaceId = workspace?.id ?? '';
+  const [editingBody, setEditingBody] = useState(false);
   const enabled = workspaceId !== '' && issueRef !== '';
 
   const { data, error, isLoading } = usePolledQuery(
@@ -341,42 +345,8 @@ export const IssueView: React.FC<IssueViewProps> = ({
   );
   const links = useMemo(() => linkRows ?? [], [linkRows]);
 
-  const readChildren = useCallback(
-    async (
-      cursor: string | undefined,
-      signal?: AbortSignal
-    ): Promise<CursorPage<IssueRead>> => {
-      const page = await listChildren(
-        workspaceId,
-        issueId,
-        { limit: CHILDREN_PAGE, ...(cursor === undefined ? {} : { cursor }) },
-        signal
-      );
-      return { rows: page.issues, nextCursor: page.next_cursor };
-    },
-    [workspaceId, issueId]
-  );
-  const mergeChildren = useCallback(
-    (held: IssueRead[], incoming: IssueRead[]): IssueRead[] =>
-      appendIssues(held, { issues: incoming, next_cursor: null }),
-    []
-  );
-  const children = useCursorPages(readChildren, mergeChildren, {
-    queryKey: childrenKey(issueId),
-    enabled: workspaceId !== '' && issueId !== '',
-    intervalMs: POLL_MS,
-  });
-  const {
-    hasMore: childrenHasMore,
-    isPaging: childrenPaging,
-    isLoading: childrenLoading,
-    loadMore: loadMoreChildren,
-  } = children;
-  useEffect(() => {
-    if (childrenHasMore && !childrenPaging && !childrenLoading) {
-      loadMoreChildren();
-    }
-  }, [childrenHasMore, childrenPaging, childrenLoading, loadMoreChildren]);
+  const children = useIssueChildren(workspaceId, issueId);
+  const { peekIssue } = usePeekIssue();
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const descriptionQuotes = useQuoteRequest(issue?.id ?? '');
@@ -400,6 +370,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [duplicating, setDuplicating] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [history, setHistory] = useState(false);
+  const [coding, setCoding] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -643,6 +614,13 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const actions =
     issue === null ? undefined : (
       <div className="flex items-center gap-1">
+        <PresenceAvatars
+          workspaceId={workspaceId}
+          kind="issue"
+          id={issue.id}
+          editing={editingBody}
+          className="mr-1"
+        />
         {!embedded && (
           <span className="hidden sm:contents">
             <IssueTrailNav slug={slug} issueKey={issueRef} />
@@ -846,6 +824,15 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
             {COPY_ISSUE_MARKDOWN_LABEL}
           </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setCoding(true);
+            }}
+          >
+            <LuTerminal aria-hidden="true" className="h-3.5 w-3.5" />
+            {`${OPEN_IN_CODING_TOOL_LABEL}…`}
+            <MenuShortcut keys={OPEN_IN_CODING_TOOL_KEYS} />
+          </MenuItem>
           {canAct && (
             <>
               <MenuSeparator />
@@ -1003,6 +990,15 @@ export const IssueView: React.FC<IssueViewProps> = ({
           }}
         />
       ))}
+      {issue !== null && (
+        <OpenInCodingTool
+          slug={slug}
+          issue={issue}
+          branchNaming={branchNaming}
+          picking={coding}
+          onPickingChange={setCoding}
+        />
+      )}
       {issue !== null && team !== undefined && (
         <IssuePageCommands
           slug={slug}
@@ -1145,6 +1141,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     people={options.people}
                     onDropFiles={attachFiles}
                     canComment={canEdit}
+                    onEditingChange={setEditingBody}
                     {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
                   />
 
@@ -1168,6 +1165,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       people={options.people}
                       canEdit={canAct}
                       currentUserId={currentUserId}
+                      onPeekRow={peekIssue}
                     />
                   )}
                 </div>

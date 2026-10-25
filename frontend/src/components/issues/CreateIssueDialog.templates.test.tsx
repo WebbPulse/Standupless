@@ -48,6 +48,9 @@ const expectDescription = async (text: string): Promise<void> => {
 const editorOf = (surface: HTMLElement): Editor =>
   (surface as HTMLElement & { editor: Editor }).editor;
 
+/** Whether the caller is on the Engine team; unset reads as a member. */
+let engineMember: boolean | undefined;
+
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
 const listTeamTemplates =
   vi.fn<(teamId: string) => Promise<TemplateListRead>>();
@@ -61,7 +64,10 @@ vi.mock('../../api/issues', () => ({
 vi.mock('../../api/teams', () => ({
   listTeams: () =>
     Promise.resolve([
-      makeTeam('t-1', 'Engine', 'ENG'),
+      {
+        ...makeTeam('t-1', 'Engine', 'ENG'),
+        ...(engineMember === undefined ? {} : { is_member: engineMember }),
+      },
       makeTeam('t-2', 'Design', 'DES'),
     ]),
   listStatuses: () => Promise.resolve(statuses),
@@ -224,6 +230,7 @@ const renderDialog = (preset?: CreateIssuePreset) =>
 const titleBox = () => screen.getByRole('textbox', { name: 'Title' });
 
 beforeEach(() => {
+  engineMember = undefined;
   for (const spy of [createIssue, listTeamTemplates, onCreated, onClose]) {
     spy.mockReset();
   }
@@ -267,6 +274,40 @@ describe('the default template', () => {
         label_ids: ['lb-1'],
       });
     });
+  });
+
+  it('opens with the non-member default for someone outside the team', async () => {
+    engineMember = false;
+    listTeamTemplates.mockResolvedValue({
+      templates: [bug, spike],
+      default_template_id: 'tp-1',
+      non_member_default_template_id: 'tp-2',
+    });
+    renderDialog();
+
+    await waitFor(() => {
+      expect(titleBox()).toHaveValue('Spike: ');
+    });
+    expect(
+      screen.getByRole('button', { name: 'Template: Spike' })
+    ).toBeInTheDocument();
+  });
+
+  it('opens with the members default for a team member', async () => {
+    engineMember = true;
+    listTeamTemplates.mockResolvedValue({
+      templates: [bug, spike],
+      default_template_id: 'tp-1',
+      non_member_default_template_id: 'tp-2',
+    });
+    renderDialog();
+
+    await waitFor(() => {
+      expect(titleBox()).toHaveValue('Bug: ');
+    });
+    expect(
+      screen.getByRole('button', { name: 'Template: Bug report' })
+    ).toBeInTheDocument();
   });
 
   it('leaves a preset property alone', async () => {

@@ -17,12 +17,15 @@ from pydantic import BaseModel, Field, StrictBool, StrictStr, field_validator, m
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.planning import ProjectRead
+from app.common.body_versions import body_version
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity, DescriptionVersion
 from app.common.db.dynamo.issues import Issue, PullRequestSummary
 from app.common.db.dynamo.relations import Relation
+from app.common.db.dynamo.team_config import SlaCalendar
 from app.common.sla import sla_status
+from app.common.sla_clock import calendar_of
 
 PriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
@@ -237,10 +240,20 @@ class IssueUpdate(BaseModel):
 
     `team_id` is absent by design: an issue's key, counter and every index
     composite are derived from it, so changing it is the move route's job.
+    `base_body_version` is the `body_version` the editor loaded. Sent with a new
+    `body`, the patch is a `BODY_CHANGED` 409 carrying the current description
+    and its version when someone else changed the description since, rather
+    than overwriting their edit. Left out, the patch writes as it always has.
     """
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=TITLE_MAX)
     body: Optional[str] = None
+    base_body_version: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="The body_version the description edit started from; a stale one is a 409.",
+    )
     status_id: Optional[str] = None
     priority: Optional[PriorityField] = None
     assignee_id: Optional[str] = None
@@ -367,6 +380,9 @@ class IssueRead(BaseModel):
     number: int
     title: str
     body: Optional[str] = None
+    body_version: str = Field(
+        default="", description="The description's version, sent back as base_body_version when editing it."
+    )
     status_id: str
     priority: PriorityField
     assignee_id: Optional[str] = None
@@ -399,6 +415,12 @@ class IssueRead(BaseModel):
     sla_started_at: Optional[datetime] = None
     sla_breaches_at: Optional[datetime] = None
     sla_paused_at: Optional[datetime] = None
+    sla_calendar: SlaCalendar = Field(
+        default="calendar", description="The clock the SLA timer runs on: every hour, or business days only."
+    )
+    sla_timezone: Optional[str] = Field(
+        default=None, description="The timezone whose Saturdays and Sundays a business-days timer skips."
+    )
     sla_status: SlaStatusField = "none"
     started_at: Optional[datetime] = Field(
         default=None, description="When the issue first landed in a started status, null until then."
@@ -430,6 +452,7 @@ class IssueRead(BaseModel):
             number=issue.number,
             title=issue.title,
             body=issue.body,
+            body_version=body_version(issue.body),
             status_id=issue.status_id,
             priority=issue.priority,  # pyright: ignore[reportArgumentType]
             assignee_id=issue.assignee_id,
@@ -460,6 +483,8 @@ class IssueRead(BaseModel):
             sla_started_at=issue.sla_started_at,
             sla_breaches_at=issue.sla_breaches_at,
             sla_paused_at=issue.sla_paused_at,
+            sla_calendar=calendar_of(issue.sla_timezone),
+            sla_timezone=issue.sla_timezone,
             sla_status=sla_status(issue),
             started_at=issue.started_at,
             completed_at=issue.completed_at,

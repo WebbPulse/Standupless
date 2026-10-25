@@ -28,7 +28,7 @@ from app.domains.integrations.chat.returns import return_url
 from app.domains.integrations.install_state import StateError, mint_state, redeem_state, state_hint
 from app.domains.integrations.schemas.slack import SlackConnectionRead, SlackInstallUrlRead, SlackLinkRead
 from app.domains.integrations.service import not_configured, not_found
-from app.domains.integrations.slack import api, commands, direct, install, signature, unfurls
+from app.domains.integrations.slack import api, commands, direct, install, reactions, signature, threads, unfurls
 
 router = APIRouter()
 
@@ -304,7 +304,7 @@ def _installation(repositories: Repositories, slack_team_id: str) -> SlackInstal
 
 
 def _handle_event(repositories: Repositories, envelope: Mapping[str, Any]) -> None:
-    """Act on one `event_callback`: an unfurl, or the App leaving a Slack workspace."""
+    """Act on one `event_callback`: an unfurl, a reply in a synced thread, an intake reaction, or the App leaving."""
     event = envelope.get("event") or {}
     if not isinstance(event, Mapping):
         return
@@ -322,6 +322,16 @@ def _handle_event(repositories: Repositories, envelope: Mapping[str, Any]) -> No
         installation = _installation(repositories, slack_team_id)
         if installation is not None:
             unfurls.unfurl(repositories, installation, event)
+        return
+    if kind == "message":
+        installation = _installation(repositories, slack_team_id)
+        if installation is not None:
+            threads.receive(repositories, installation, event)
+        return
+    if kind == "reaction_added":
+        installation = _installation(repositories, slack_team_id)
+        if installation is not None:
+            reactions.receive(repositories, installation, event)
 
 
 @public_router.post("/slack/events", responses=SIGNED_RESPONSES)
@@ -340,6 +350,11 @@ async def receive_slack_event(request: Request, repositories: Bundle) -> Respons
     if envelope.get("type") == "url_verification":
         return JSONResponse({"challenge": str(envelope.get("challenge", ""))})
     if envelope.get("type") != "event_callback":
+        return JSONResponse({"ok": True})
+    event = envelope.get("event") or {}
+    if isinstance(event, Mapping) and event.get("type") == "message" and not threads.wanted(event):
+        return JSONResponse({"ok": True})
+    if isinstance(event, Mapping) and event.get("type") == "reaction_added" and not reactions.wanted(event):
         return JSONResponse({"ok": True})
     event_id = str(envelope.get("event_id", ""))
     if event_id and not repositories.idempotency.claim(

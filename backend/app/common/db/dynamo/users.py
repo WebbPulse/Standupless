@@ -20,6 +20,7 @@ from webbpulse.dynamodb import ConditionFailed, Repository
 
 from app.common.core.config import settings
 from app.common.db.dynamo.tables import USERS
+from app.common.notification_pause import WorkingHours
 
 EMAIL_INDEX = "email_lower-index"
 
@@ -83,6 +84,11 @@ ThemeField = Literal["system", "light", "dark"]
 
 THEMES: tuple[str, ...] = ("system", "light", "dark")
 """The interface themes a person may pick."""
+
+CodeThemeField = Literal["app", "light", "dark", "light_high_contrast", "dark_high_contrast"]
+
+CODE_THEMES: tuple[str, ...] = ("app", "light", "dark", "light_high_contrast", "dark_high_contrast")
+"""The syntax highlighting themes code blocks may use, `app` following the interface theme."""
 
 ActivityFilterField = Literal["all", "comments"]
 
@@ -165,7 +171,9 @@ class User(BaseModel):
     `theme` is the interface theme, None until the person first saves one, so a
     browser's earlier local choice can be uploaded once. `pointer_cursors` shows
     the pointer cursor on interactive elements, off by default. `underline_links`
-    underlines links in rich text at rest, off by default. `convert_emoticons`
+    underlines links in rich text at rest, off by default. `code_theme` is the
+    syntax highlighting theme of code blocks, `app` to follow the interface
+    theme by default. `convert_emoticons`
     turns typed emoticons such as `:)` into emoji in the editor, on by default.
     `activity_filter` is whether every issue's activity shows all of it or only
     its comments, all by default.
@@ -190,6 +198,12 @@ class User(BaseModel):
 
     `email_format` is how notification emails arrive, one of `EMAIL_FORMATS`:
     `digest` by default, or `immediate` for one email per notification.
+
+    `notifications_paused_until` is the end of a pause the person set, and
+    `working_hours` the weekly schedule they take notifications in, read in
+    `timezone`. While either holds, email and desktop notifications wait and the
+    inbox still fills. `urgent_bypasses_pause` lets direct mentions and urgent
+    assignments through regardless, off by default.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -204,6 +218,9 @@ class User(BaseModel):
     priority_inbox: bool = True
     priority_kinds: dict[str, bool] = Field(default_factory=dict)
     email_format: str = "digest"
+    notifications_paused_until: Optional[datetime] = None
+    working_hours: Optional[WorkingHours] = None
+    urgent_bypasses_pause: bool = False
     timezone: Optional[str] = None
     pulse_digest: str = "off"
     home_view: str = "home"
@@ -213,6 +230,7 @@ class User(BaseModel):
     theme: Optional[str] = None
     pointer_cursors: bool = False
     underline_links: bool = False
+    code_theme: str = "app"
     convert_emoticons: bool = True
     activity_filter: str = "all"
     sidebar_items: dict[str, str] = Field(default_factory=dict)

@@ -43,9 +43,14 @@ def list_team_templates(
 ) -> TemplateListRead:
     """Every template of one kind the team offers, its own, its parent's and the workspace's, and its default."""
     team_id = str(context.team_id)
-    rows, default = issue_templates.list_team_templates(repositories, context, team_id, ROW_KINDS[kind])
+    row_kind = ROW_KINDS[kind]
+    rows, default = issue_templates.list_team_templates(repositories, context, team_id, row_kind)
     return TemplateListRead(
-        templates=[TemplateRead.from_row(row, team_id) for row in rows], default_template_id=default
+        templates=[TemplateRead.from_row(row, team_id) for row in rows],
+        default_template_id=default,
+        non_member_default_template_id=issue_templates.non_member_default(
+            repositories, context, team_id, rows, default, row_kind
+        ),
     )
 
 

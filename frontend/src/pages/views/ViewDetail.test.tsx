@@ -3,8 +3,8 @@
  * filters, the save bar that appears once something changed on top of it,
  * saving over the view with its fixed scope kept, saving as a new one,
  * discarding, starring and editing the view's details. A view of projects
- * opens as the projects page narrowed and arranged as stored, and saves a
- * changed arrangement back over itself.
+ * opens as the projects page narrowed and arranged as stored, saves a
+ * changed arrangement back over itself, and can be subscribed to.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -55,6 +55,8 @@ const updateView =
   vi.fn<(id: string, body: Record<string, unknown>) => Promise<unknown>>();
 const setViewFavorite =
   vi.fn<(id: string, favorite: boolean) => Promise<unknown>>();
+const setViewSubscription =
+  vi.fn<(id: string, subscribed: boolean) => Promise<unknown>>();
 const listProjects = vi.fn<() => Promise<ProjectListRead>>();
 const starred: { kind: string; target_id: string; title: string }[] = [];
 const addFavorite =
@@ -126,6 +128,8 @@ vi.mock('../../api/views', async () => {
       updateView(id, body),
     setViewFavorite: (_w: string, id: string, favorite: boolean) =>
       setViewFavorite(id, favorite),
+    setViewSubscription: (_w: string, id: string, subscribed: boolean) =>
+      setViewSubscription(id, subscribed),
   };
 });
 
@@ -588,5 +592,26 @@ describe('a saved view of projects', () => {
     expect(
       screen.queryByRole('region', { name: 'Unsaved view changes' })
     ).toBeNull();
+  });
+
+  it('subscribes to hear when projects enter the view', async () => {
+    const user = userEvent.setup();
+    setViewSubscription.mockResolvedValue({
+      subscribed: true,
+      subscriber_count: 1,
+    });
+    renderPage('/w/mine/views/view-2');
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    const bell = screen.getByRole('button', { name: 'Subscribe' });
+    expect(bell).toHaveAttribute(
+      'title',
+      'Hear when projects are added to this view'
+    );
+    await user.click(bell);
+
+    await waitFor(() => {
+      expect(setViewSubscription).toHaveBeenCalledWith('view-2', true);
+    });
   });
 });

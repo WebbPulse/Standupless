@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 import pytest
@@ -54,6 +55,9 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "priority_inbox": True,
         "priority_kinds": [kind for kind in INBOX_KINDS if kind in DEFAULT_PRIORITY_KINDS],
         "email_format": "digest",
+        "notifications_paused_until": None,
+        "working_hours": None,
+        "urgent_bypasses_pause": False,
         "avatar_url": None,
         "two_factor": False,
         "timezone": None,
@@ -65,6 +69,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "theme": None,
         "pointer_cursors": False,
         "underline_links": False,
+        "code_theme": "app",
         "convert_emoticons": True,
         "activity_filter": "all",
         "sidebar_items": {item: "show" for item in SIDEBAR_ITEMS},
@@ -84,10 +89,12 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         },
         "projects_display_saved": False,
         "initiatives_display": {
+            "layout": "list",
+            "zoom": "month",
             "grouping": "status",
             "order": "target",
             "completed": "show",
-            "columns": "health,team,owner,projects,target,progress",
+            "columns": "health,team,owner,projects,start,target,progress",
         },
         "initiatives_display_saved": False,
         "auto_assign_to_self": False,
@@ -151,6 +158,77 @@ def test_the_email_format_defaults_to_a_digest_and_takes_immediate(client: TestC
 
     assert client.patch("/api/users/me/preferences", json={"email_format": "hourly"}).status_code == 422
     assert client.patch("/api/users/me/preferences", json={"email_format": "digest"}).json()["email_format"] == "digest"
+
+
+def test_a_pause_is_set_read_back_and_resumed(client: TestClient, repositories: Any) -> None:
+    """A pause up to thirty days ahead is kept, an explicit null resumes it, and a longer one is refused."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+
+    response = client.patch("/api/users/me/preferences", json={"notifications_paused_until": until.isoformat()})
+    assert response.status_code == 200
+    assert datetime.fromisoformat(response.json()["notifications_paused_until"]) == until
+    assert repositories.users.get(OWNER).notifications_paused_until == until
+
+    too_long = datetime.now(timezone.utc) + timedelta(days=31)
+    refused = client.patch("/api/users/me/preferences", json={"notifications_paused_until": too_long.isoformat()})
+    assert refused.status_code == 422
+
+    untouched = client.patch("/api/users/me/preferences", json={"email_format": "immediate"})
+    assert untouched.json()["notifications_paused_until"] is not None
+
+    resumed = client.patch("/api/users/me/preferences", json={"notifications_paused_until": None})
+    assert resumed.json()["notifications_paused_until"] is None
+    assert repositories.users.get(OWNER).notifications_paused_until is None
+
+
+def test_a_pause_that_has_ended_reads_as_none(client: TestClient, repositories: Any) -> None:
+    """A stored pause in the past is no pause, so the sidebar never shows a stale indicator."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(
+        OWNER, notifications_paused_until=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    )
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["notifications_paused_until"] is None
+
+
+def test_working_hours_are_set_validated_and_cleared(client: TestClient, repositories: Any) -> None:
+    """A schedule keeps its days in week order, refuses a day that ends before it starts, and null clears it."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch(
+        "/api/users/me/preferences",
+        json={"working_hours": {"days": ["fri", "mon"], "start": "08:30", "end": "16:00"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["working_hours"] == {"days": ["mon", "fri"], "start": "08:30", "end": "16:00"}
+    assert repositories.users.get(OWNER).working_hours.days == ["mon", "fri"]
+
+    for hours in (
+        {"days": ["mon"], "start": "17:00", "end": "09:00"},
+        {"days": [], "start": "09:00", "end": "17:00"},
+        {"days": ["someday"], "start": "09:00", "end": "17:00"},
+        {"days": ["mon"], "start": "9am", "end": "17:00"},
+    ):
+        assert client.patch("/api/users/me/preferences", json={"working_hours": hours}).status_code == 422
+
+    cleared = client.patch("/api/users/me/preferences", json={"working_hours": None})
+    assert cleared.json()["working_hours"] is None
+    assert repositories.users.get(OWNER).working_hours is None
+
+
+def test_urgent_notifications_may_bypass_a_pause(client: TestClient, repositories: Any) -> None:
+    """The bypass is off until the person turns it on."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["urgent_bypasses_pause"] is False
+    response = client.patch("/api/users/me/preferences", json={"urgent_bypasses_pause": True})
+    assert response.json()["urgent_bypasses_pause"] is True
+    assert repositories.users.get(OWNER).urgent_bypasses_pause is True
 
 
 def test_interface_preferences_default_and_change_one_at_a_time(client: TestClient, repositories: Any) -> None:
@@ -334,6 +412,26 @@ def test_underline_links_starts_off_and_toggles(client: TestClient, repositories
     assert client.patch("/api/users/me/preferences", json={"underline_links": "sometimes"}).status_code == 422
 
 
+def test_code_theme_follows_the_app_until_chosen(client: TestClient, repositories: Any) -> None:
+    """The code block theme reads `app` for a new account, keeps a chosen theme, and falls back from a retired one."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["code_theme"] == "app"
+
+    body = client.patch("/api/users/me/preferences", json={"code_theme": "dark_high_contrast"}).json()
+    assert body["code_theme"] == "dark_high_contrast"
+    assert repositories.users.get(OWNER).code_theme == "dark_high_contrast"
+
+    body = client.patch("/api/users/me/preferences", json={"font_size": "large"}).json()
+    assert body["code_theme"] == "dark_high_contrast"
+
+    assert client.patch("/api/users/me/preferences", json={"code_theme": "sepia"}).status_code == 422
+
+    repositories.users.update(OWNER, code_theme="sepia")
+    assert client.get("/api/users/me").json()["code_theme"] == "app"
+
+
 def test_emoticon_conversion_starts_on_and_toggles(client: TestClient, repositories: Any) -> None:
     """Emoticon conversion reads on for a new account and follows the account once turned off."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
@@ -460,6 +558,8 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["initiatives_display"] == {
+        "layout": "list",
+        "zoom": "month",
         "grouping": "status",
         "order": "name",
         "completed": "hide",
@@ -469,7 +569,14 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
     assert repositories.users.get(OWNER).initiatives_display["order"] == "name"
     assert client.get("/api/users/me").json()["projects_display_saved"] is False
 
-    for field, value in (("order", "manual"), ("completed", "yes"), ("columns", "owner,budget")):
+    for field, value in (
+        ("order", "priority"),
+        ("grouping", "lead"),
+        ("completed", "yes"),
+        ("layout", "board"),
+        ("zoom", "decade"),
+        ("columns", "owner,budget"),
+    ):
         refused = client.patch("/api/users/me/preferences", json={"initiatives_display": {field: value}})
         assert refused.status_code == 422
 
@@ -480,15 +587,56 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
     assert repositories.users.get(OWNER).initiatives_display == {}
 
 
+def test_the_initiatives_display_saves_manual_order_and_the_new_groupings(
+    client: TestClient, repositories: Any
+) -> None:
+    """Manual order and the owner, health and target date groupings round trip through the account."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    for grouping in ("owner", "health", "target_date"):
+        saved = client.patch(
+            "/api/users/me/preferences", json={"initiatives_display": {"grouping": grouping, "order": "manual"}}
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["initiatives_display"]["grouping"] == grouping
+        assert saved.json()["initiatives_display"]["order"] == "manual"
+        assert client.get("/api/users/me").json()["initiatives_display"]["grouping"] == grouping
+
+
 def test_a_retired_initiatives_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
     """A stored choice the list no longer offers reads back as the default rather than failing the read."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
     sign_in(client, OWNER)
-    repositories.users.update(OWNER, initiatives_display={"order": "manual", "columns": "budget,health"})
+    repositories.users.update(OWNER, initiatives_display={"order": "priority", "columns": "budget,health"})
 
     display = client.get("/api/users/me").json()["initiatives_display"]
 
-    assert display == {"grouping": "status", "order": "target", "completed": "show", "columns": "health"}
+    assert display == {
+        "layout": "list",
+        "zoom": "month",
+        "grouping": "status",
+        "order": "target",
+        "completed": "show",
+        "columns": "health",
+    }
+
+
+def test_the_initiatives_display_saves_the_timeline_layout_and_its_zoom(client: TestClient, repositories: Any) -> None:
+    """The timeline layout, its zoom and the start column round trip through the account."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    saved = client.patch(
+        "/api/users/me/preferences",
+        json={"initiatives_display": {"layout": "timeline", "zoom": "quarter", "columns": "target,start"}},
+    )
+
+    assert saved.status_code == 200, saved.text
+    display = client.get("/api/users/me").json()["initiatives_display"]
+    assert display["layout"] == "timeline"
+    assert display["zoom"] == "quarter"
+    assert display["columns"] == "start,target"
 
 
 def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:

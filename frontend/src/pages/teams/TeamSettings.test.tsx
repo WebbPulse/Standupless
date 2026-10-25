@@ -133,8 +133,34 @@ vi.mock('../../api/planning', () => ({
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
+vi.mock('../../api/projectLabels', () => ({
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
+}));
+
+vi.mock('../../api/projectStatuses', () => ({
+  listProjectStatuses: () => Promise.resolve([]),
+  createProjectStatus: vi.fn(),
+  updateProjectStatus: vi.fn(),
+  deleteProjectStatus: vi.fn(),
+}));
+
 vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
+}));
+
+vi.mock('../../api/teamSubscriptions', () => ({
+  getTeamSubscription: () =>
+    Promise.resolve({
+      team_id: 'proj-1',
+      issue_created: false,
+      triage: false,
+      completed: false,
+      cancelled: false,
+    }),
+  updateTeamSubscription: vi.fn(),
 }));
 
 vi.mock('../../api/releases', () => ({

@@ -37,6 +37,8 @@ from app.common.media_tokens import (
 )
 from app.common.plan_limits import check_storage, plan_of, storage_limit_of
 from app.common.upload_rules import ATTACHMENT_CONTENT_TYPES, normalized_content_type, upload_ceiling
+from app.common.url_attachments import attach_url as attach_url_row
+from app.common.url_attachments import delete_attachment as delete_attachment_row
 from app.domains.discussion.schemas.discussion import (
     CONTENT_EXPIRES_IN,
     CONTENT_REDIRECT_MAX_AGE,
@@ -54,14 +56,10 @@ from app.domains.discussion.schemas.discussion import (
     UploadTicketRead,
     UrlAttachmentCreate,
     content_disposition,
-    favicon_for,
-    title_for,
 )
 from app.domains.discussion.service import (
     attachments_bucket,
     conflict,
-    forbidden,
-    is_team_admin,
     load_visible_issue,
     not_found,
     object_exists,
@@ -118,23 +116,7 @@ def attach_url(
     to the host and the favicon is a composed URL. Not fetching is the decision: a
     crawl on a write path is a request the caller controls the destination of.
     """
-    issue = load_visible_issue(repositories, context, payload.issue_id)
-    require_team_member(repositories, context, issue.team_id)
-
-    attachment = build_attachment(
-        context.workspace_id,
-        payload.issue_id,
-        issue.team_id,
-        "url",
-        title_for(payload.url, payload.title),
-        context.user_id,
-        url=payload.url,
-        favicon_url=favicon_for(payload.url),
-    )
-    try:
-        created = repositories.attachments.create(attachment)
-    except ConditionFailed as exc:
-        raise conflict("That attachment already exists") from exc
+    created = attach_url_row(repositories, context, payload.issue_id, payload.url, payload.title)
     return AttachmentRead.from_row(created)
 
 
@@ -416,14 +398,5 @@ def delete_attachment(
     object is collected by the bucket rather than by a delete this request has to
     get right. The file's bytes are released from the workspace's storage at once.
     """
-    issue = load_visible_issue(repositories, context, issue_id)
-    attachment = repositories.attachments.get(context.workspace_id, issue_id, attachment_id)
-    if attachment is None:
-        raise not_found()
-    if attachment.uploaded_by != context.user_id and not is_team_admin(repositories, context, issue.team_id):
-        raise forbidden()
-
-    removed = repositories.attachments.delete(context.workspace_id, issue_id, attachment_id)
-    if removed is not None:
-        repositories.attachments.add_storage(context.workspace_id, -stored_bytes([removed]))
+    delete_attachment_row(repositories, context, issue_id, attachment_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

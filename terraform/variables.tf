@@ -104,6 +104,18 @@ variable "api_throttle_rate_limit" {
   default     = 500
 }
 
+variable "realtime_throttle_burst_limit" {
+  description = "WebSocket API stage throttling burst limit across connects, heartbeats and disconnects"
+  type        = number
+  default     = 1000
+}
+
+variable "realtime_throttle_rate_limit" {
+  description = "WebSocket API stage steady-state messages per second from clients"
+  type        = number
+  default     = 500
+}
+
 variable "email_from" {
   description = "Sender address for transactional email. null = no-reply@ the domain SES is verified for (the served domain with a custom domain, the apex otherwise)."
   type        = string

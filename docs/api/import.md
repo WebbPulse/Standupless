@@ -260,8 +260,8 @@ nothing.
 Per mapped team, in order: its workflow states when `create_statuses` is on,
 cycles, projects with their milestones and updates, issues with their comments,
 a second pass over the issues for sub-issue links and relations, and its issue
-templates when `import_templates` is on. Initiatives and then project dependencies come last, once
-for the workspace. Every
+templates when `import_templates` is on. Initiatives, project dependencies and
+then customers come last, once for the workspace. Every
 connection is paged 50 at a time. Linear's rate limit, a 429 or a `RATELIMITED`
 error, is waited out until the reset time it gives, at most 60 seconds per wait
 and 5 attempts per request. The job's `phase`, `phase_index` and `phase_count`
@@ -298,6 +298,12 @@ say where it is, and `counts` holds the tallies the summary shows.
   projects: the project whose start waits on the other's end is the blocked
   one. A dependency on a project that was not imported is skipped, and one that
   would make projects wait on each other is left out with a warning.
+- A Linear customer keeps its name, domains, revenue, size and owner, matched
+  by email. Its status and tier map to the workspace customer status and tier
+  with the same name, ignoring case; a missing one is added to the end of its
+  list with Linear's colour. A domain another customer already claims stays
+  with that customer. A workspace whose Linear plan has no customers, or a
+  customers query Linear rejects, ends the phase with a warning.
 
 Every row gets an id derived from the workspace and the Linear id, and each
 issue keeps its Linear identifier and URL in `external_ref`, so running the

@@ -119,15 +119,11 @@ const renderPage = () =>
   );
 
 describe('the workspace workflow page', () => {
-  it('groups the statuses by category and links from the settings tabs', async () => {
+  it('groups the statuses by category', async () => {
     renderPage();
     const started = await screen.findByRole('region', { name: 'Started' });
     expect(within(started).getByDisplayValue('In Progress')).toBeVisible();
     expect(within(started).getByDisplayValue('In Review')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Workflow' })).toHaveAttribute(
-      'href',
-      '/w/mine/settings/workflow'
-    );
   });
 
   it('adds a status to a category', async () => {

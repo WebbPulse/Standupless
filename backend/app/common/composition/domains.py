@@ -37,18 +37,20 @@ def _identity_routers() -> "Sequence[RouterSpec]":
 
 
 def _identity_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
-    """The shared package's identity router, which carries the issuer's own path.
+    """The shared package's identity router and the email unsubscribe route, which carry their own paths.
 
     It mounts with no prefix; a prefix would double every path to
     `/api/auth/api/auth/...`. Empty when `IDENTITY_ISSUER` is unset, so a
     deployment without an issuer builds none of the glue's AWS clients.
     """
+    from app.domains.identity.endpoints import email_unsubscribe
+
     if not settings.IDENTITY_ISSUER:
-        return []
+        return [email_unsubscribe.router]
 
     from app.domains.identity.package_glue import build_router as build_identity_router
 
-    return [build_identity_router(settings)]
+    return [build_identity_router(settings), email_unsubscribe.router]
 
 
 def _workspaces_routers() -> "Sequence[RouterSpec]":
@@ -69,6 +71,8 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         custom_emoji,
         exports,
         icons,
+        invite_links,
+        member_status,
         scim,
         security,
         sso,
@@ -81,11 +85,14 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         (sso.router, "/workspaces", ("workspaces",)),
         (scim.router, "/workspaces", ("workspaces",)),
         (approved_domains.router, "/workspaces", ("workspaces",)),
+        (invite_links.router, "/workspaces", ("workspaces",)),
+        (member_status.router, "/workspaces", ("workspaces",)),
         (workspaces.router, "/workspaces", ("workspaces",)),
         (icons.router, "/workspaces", ("workspaces",)),
         (custom_emoji.router, "/workspaces", ("workspaces",)),
         (icons.public_router, "/icons", ("icons",)),
         (workspaces.invites_router, "/invites", ("workspaces",)),
+        (invite_links.link_router, "/invites", ("workspaces",)),
         (api_keys.router, "/workspaces", ("workspaces",)),
         (exports.router, "/workspaces", ("workspaces",)),
         (security.router, "/workspaces", ("workspaces",)),
@@ -138,11 +145,11 @@ def _issues_routers() -> "Sequence[RouterSpec]":
     return [
         (export.router, "/workspaces", ("issues",)),
         (triage.router, "/workspaces", ("issues",)),
+        (releases.router, "/workspaces", ("issues",)),
         (issues.router, "/workspaces", ("issues",)),
         (links.router, "/workspaces", ("issues",)),
         (activity.router, "/workspaces", ("issues",)),
         (subscribers.router, "/workspaces", ("issues",)),
-        (releases.router, "/workspaces", ("issues",)),
     ]
 
 
@@ -173,9 +180,11 @@ def _views_routers() -> "Sequence[RouterSpec]":
         home,
         inbox,
         insights,
+        list_folds,
         members,
         search,
         share_links,
+        team_subscriptions,
         views,
     )
 
@@ -187,6 +196,8 @@ def _views_routers() -> "Sequence[RouterSpec]":
         (dashboards.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
         (members.router, "/workspaces", ("views",)),
+        (team_subscriptions.router, "/workspaces", ("views",)),
+        (list_folds.router, "/workspaces", ("views",)),
         (views.router, "/workspaces", ("views",)),
         (search.router, "/workspaces", ("views",)),
         (inbox.router, "/workspaces", ("views",)),
@@ -209,7 +220,15 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit", "agent_profiles", "idempotency")
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = (
+    "users",
+    "api_keys",
+    "audit",
+    "agent_profiles",
+    "idempotency",
+    "subscriptions",
+    "planning",
+)
 """The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
 
 `idempotency` holds the SAML assertion ids single sign-on has accepted, each until
@@ -221,6 +240,10 @@ page and the CLI restore, and deleting an account empties it.
 
 `api_keys` is also read so the current user route can verify a personal key and
 answer the key's person.
+
+`subscriptions` and `planning` are for the email unsubscribe links: one stops
+following an issue, the other records an explicit project unfollow, each put back
+by the link's Undo.
 """
 
 _IDENTITY_READ_REPOSITORIES: Tuple[str, ...] = ("memberships", "workspaces")
@@ -352,6 +375,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         channels,
         discord,
         email_intake,
+        gitlab,
         imports,
         install,
         jira_imports,
@@ -360,6 +384,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         release_backfill,
         reviews,
         slack,
+        slack_intake,
         standup,
         sync,
         threads,
@@ -371,7 +396,9 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (install.router, "/workspaces", ("integrations",)),
         (slack.router, "/workspaces", ("integrations",)),
         (discord.router, "/workspaces", ("integrations",)),
+        (gitlab.router, "/workspaces", ("integrations",)),
         (channels.router, "/workspaces", ("integrations",)),
+        (slack_intake.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),
@@ -390,7 +417,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
-    """The routes GitHub, Slack and Discord themselves call, plus the three consumers.
+    """The routes GitHub, GitLab, Slack and Discord themselves call, plus the three consumers.
 
     The callback and the webhook receiver are unprefixed here because they sit
     outside the workspace prefix: neither names a workspace, one being pre-install
@@ -400,11 +427,12 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     from app.domains.integrations.consumers.dispatch import build_router as build_dispatch_router
     from app.domains.integrations.consumers.events import build_router as build_events_router
     from app.domains.integrations.consumers.stream import build_router as build_stream_router
-    from app.domains.integrations.endpoints import discord, github, slack
+    from app.domains.integrations.endpoints import discord, github, gitlab, slack
     from app.domains.integrations.mcp import endpoint as mcp
 
     return [
         github.router,
+        gitlab.public_router,
         slack.public_router,
         discord.public_router,
         mcp.router,
@@ -439,6 +467,8 @@ _INTEGRATIONS_REPOSITORIES = (
     "team_config",
     "issues",
     "comments",
+    "reactions",
+    "attachments",
     "counters",
     "activity",
     "planning",
@@ -460,9 +490,10 @@ _INTEGRATIONS_REPOSITORIES = (
 
 Everything past `github` is for the MCP tools, which create and edit issues,
 projects, cycles, teams, members, invites, saved views and the caller's inbox
-through the same shared write paths the product routes use, and record and read
-the workspace audit log as those paths do, and the caller's own agent profiles
-with the trail each save, restore and delete leaves.
+through the same shared write paths the product routes use. They edit, delete and
+react to comments and manage an issue's URL links as the discussion routes do,
+record and read the workspace audit log as those paths do, and keep the caller's
+own agent profiles with the trail each save, restore and delete leaves.
 """
 
 _INTEGRATIONS_READ_REPOSITORIES = (
@@ -471,7 +502,15 @@ _INTEGRATIONS_READ_REPOSITORIES = (
     "api_keys",
     "oauth_links",
     "search_index",
+    "realtime_connections",
+    "realtime_presence",
 )
+"""What the integrations image reads and never writes.
+
+`realtime_connections` and `realtime_presence` are here so the image carries the
+repositories its WebSocket and stream consumers write under their own grants. No
+route of the domain's own function reaches them.
+"""
 
 
 def _planning_routers() -> "Sequence[RouterSpec]":
@@ -571,6 +610,7 @@ DOMAINS: Dict[str, Domain] = {
         title="Standupless identity",
         load_routers=_identity_routers,
         load_unprefixed_routers=_identity_unprefixed_routers,
+        requires_secrets=("SECRET_KEY",),
         repositories=_IDENTITY_REPOSITORIES,
         read_repositories=_IDENTITY_READ_REPOSITORIES,
     ),

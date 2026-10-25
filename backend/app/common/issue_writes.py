@@ -21,6 +21,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import digest_scope, merge_sorted, resume_key
 from app.common.api.schemas.issues import IssueBulkUpdate, IssueCreate
+from app.common.body_versions import body_changed, body_condition, is_stale
 from app.common.customer_index import CustomerIndex, require_customer_list_reader
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
@@ -691,11 +692,31 @@ def update_issue(repositories: Repositories, context: AuthzContext, issue: Issue
 
     The single-issue patch both the route and the MCP tools run: the write check,
     then `apply_patch` and `store_patch`. An empty patch answers the issue untouched.
+    `base_body_version`, when the patch carries one, is the description version
+    the editor started from: a patch that changes the description is refused
+    with the `BODY_CHANGED` 409 once the stored description has moved on, and
+    its write is conditioned on the description still being the one read. A
+    patch without it, or one that leaves the description alone, writes as before.
     """
     require_team_member(repositories, context, issue.team_id)
-    if not attributes:
+    fields = dict(attributes)
+    base = fields.pop("base_body_version", None)
+    if not fields:
         return issue
-    return store_patch(repositories, context, issue, apply_patch(repositories, context, issue, attributes))
+    updated = apply_patch(repositories, context, issue, fields)
+    if base is None or (updated.body or "") == (issue.body or ""):
+        return store_patch(repositories, context, issue, updated)
+    if is_stale(base, issue.body):
+        raise body_changed(issue.body)
+    try:
+        return store_patch(repositories, context, issue, updated, condition=body_condition(issue.body))
+    except HTTPException as exc:
+        if exc.status_code not in (status.HTTP_404_NOT_FOUND, status.HTTP_409_CONFLICT):
+            raise
+        stored = repositories.issues.get(issue.workspace_id, issue.issue_id)
+        if stored is None or not is_stale(base, stored.body):
+            raise
+        raise body_changed(stored.body) from exc
 
 
 def restore_description(repositories: Repositories, context: AuthzContext, issue: Issue, version_id: str) -> Issue:

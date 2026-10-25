@@ -146,6 +146,20 @@ describe('PreferencesSection interface', () => {
     await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
   });
 
+  it('picks a code block theme, matching the app by default', async () => {
+    const saved = { ...base, code_theme: 'dark' as const };
+    updatePreferences.mockResolvedValue(saved);
+    const user = userEvent.setup();
+    render(<PreferencesSection />);
+
+    const picker = screen.getByLabelText('Code block theme');
+    expect(picker).toHaveValue('app');
+    await user.selectOptions(picker, 'Dark');
+
+    expect(updatePreferences).toHaveBeenCalledWith({ code_theme: 'dark' });
+    await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
+  });
+
   it('turns link underlines on, off by default', async () => {
     const saved = { ...base, underline_links: true };
     updatePreferences.mockResolvedValue(saved);

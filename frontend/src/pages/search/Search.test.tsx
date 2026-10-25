@@ -7,7 +7,7 @@
  * Escape clears the term before it leaves search.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +21,10 @@ import type {
 } from '../../types/Api';
 import Search from './Search';
 import { hasIndexableTerm } from '../../lib/searchTerms';
+import {
+  readRecentSearches,
+  recordRecentSearch,
+} from '../../lib/recentSearches';
 
 const search =
   vi.fn<(q: string, query: unknown) => Promise<SearchResultRead[]>>();
@@ -181,6 +185,7 @@ beforeEach(() => {
   others.mockImplementation(noOthers);
   listMembers.mockReset();
   listMembers.mockResolvedValue([member]);
+  globalThis.localStorage.clear();
 });
 
 describe('indexable terms', () => {
@@ -507,5 +512,212 @@ describe('search page', () => {
     await user.keyboard('{Escape}');
 
     expect(await screen.findByText('Workspace home')).toBeInTheDocument();
+  });
+});
+
+describe('recent searches', () => {
+  const stored = () =>
+    readRecentSearches('ws-1').map((row) => [
+      row.q,
+      row.team,
+      row.type,
+      row.status,
+    ]);
+
+  /** Moves focus off the term and back, so the list opens the way a person opens it. */
+  const focusTerm = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(document.body);
+    await user.click(screen.getByLabelText('Search'));
+  };
+
+  it('offers nothing before a search has been run', () => {
+    renderPage();
+
+    expect(
+      screen.queryByRole('listbox', { name: 'Recent searches' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('remembers a search with its filters when Enter is pressed', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/search?team=proj-1&status=started');
+
+    await user.type(screen.getByLabelText('Search'), 'cache{Enter}');
+
+    expect(stored()).toEqual([['cache', 'proj-1', '', 'started']]);
+  });
+
+  it('remembers a search when one of its hits is opened', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText('Search'), 'cache');
+    await user.click(await screen.findByRole('link', { name: /ENG-1/ }));
+
+    expect(stored()).toEqual([['cache', '', '', '']]);
+  });
+
+  it('does not remember an issue key', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText('Search'), 'ENG-12{Enter}');
+
+    expect(stored()).toEqual([]);
+  });
+
+  it('lists recent searches on an empty focused term, newest first', async () => {
+    recordRecentSearch('ws-1', { q: 'cache', team: '', type: '', status: '' });
+    recordRecentSearch('ws-1', {
+      q: 'token',
+      team: 'proj-1',
+      type: 'issues',
+      status: '',
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await focusTerm(user);
+
+    const list = await screen.findByRole('listbox', {
+      name: 'Recent searches',
+    });
+    const options = within(list).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      expect.stringContaining('token'),
+      expect.stringContaining('cache'),
+    ]);
+    await waitFor(() => {
+      expect(options[0]).toHaveTextContent('Engine · Issues');
+    });
+    expect(screen.getByText('Recent')).toBeInTheDocument();
+  });
+
+  it('hides the list once a term is typed', async () => {
+    recordRecentSearch('ws-1', { q: 'cache', team: '', type: '', status: '' });
+    const user = userEvent.setup();
+    renderPage();
+    await focusTerm(user);
+
+    await screen.findByRole('listbox', { name: 'Recent searches' });
+    await user.type(screen.getByLabelText('Search'), 'to');
+
+    expect(
+      screen.queryByRole('listbox', { name: 'Recent searches' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('reruns a recent search on arrow and Enter, restoring its filters', async () => {
+    recordRecentSearch('ws-1', { q: 'cache', team: '', type: '', status: '' });
+    recordRecentSearch('ws-1', {
+      q: 'token',
+      team: 'proj-1',
+      type: 'issues',
+      status: 'started',
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    const input = screen.getByLabelText('Search');
+    await focusTerm(user);
+    await screen.findByRole('listbox', { name: 'Recent searches' });
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}');
+    const options = within(
+      screen.getByRole('listbox', { name: 'Recent searches' })
+    ).getAllByRole('option');
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[0]?.id);
+    await user.keyboard('{Enter}');
+
+    expect(input).toHaveValue('token');
+    const address = new URLSearchParams(
+      screen.getByLabelText('Address').textContent ?? ''
+    );
+    expect(address.get('q')).toBe('token');
+    expect(address.get('team')).toBe('proj-1');
+    expect(address.get('type')).toBe('issues');
+    expect(address.get('status')).toBe('started');
+    await waitFor(() => {
+      expect(search).toHaveBeenCalledWith(
+        'token',
+        expect.objectContaining({
+          team_id: 'proj-1',
+          status_category: 'started',
+        })
+      );
+    });
+  });
+
+  it('reruns a recent search when its row is clicked', async () => {
+    recordRecentSearch('ws-1', { q: 'cache', team: '', type: '', status: '' });
+    const user = userEvent.setup();
+    renderPage();
+    await focusTerm(user);
+
+    await user.click(await screen.findByRole('option', { name: /cache/ }));
+
+    expect(screen.getByLabelText('Search')).toHaveValue('cache');
+    expect(await screen.findByText('Cache the token')).toBeInTheDocument();
+  });
+
+  it('removes one recent search and keeps focus in the term', async () => {
+    recordRecentSearch('ws-1', { q: 'cache', team: '', type: '', status: '' });
+    recordRecentSearch('ws-1', { q: 'token', team: '', type: '', status: '' });
+    const user = userEvent.setup();
+    renderPage();
+    await focusTerm(user);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Remove cache from recent searches',
+      })
+    );
+
+    expect(
+      within(
+        screen.getByRole('listbox', { name: 'Recent searches' })
+      ).getAllByRole('option')
+    ).toHaveLength(1);
+    expect(screen.getByLabelText('Search')).toHaveFocus();
+    expect(stored()).toEqual([['token', '', '', '']]);
+  });
+
+  it('clears every recent search', async () => {
+    recordRecentSearch('ws-1', { q: 'cache', team: '', type: '', status: '' });
+    const user = userEvent.setup();
+    renderPage();
+    await focusTerm(user);
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Clear recent' })
+    );
+
+    expect(
+      screen.queryByRole('listbox', { name: 'Recent searches' })
+    ).not.toBeInTheDocument();
+    expect(stored()).toEqual([]);
+  });
+
+  it('still searches when storage is unavailable', async () => {
+    const reads = vi
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('denied');
+      });
+    const writes = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('denied');
+      });
+    const user = userEvent.setup();
+    try {
+      renderPage();
+
+      await user.type(screen.getByLabelText('Search'), 'cache{Enter}');
+
+      expect(await screen.findByText('Cache the token')).toBeInTheDocument();
+    } finally {
+      reads.mockRestore();
+      writes.mockRestore();
+    }
   });
 });

@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from webbpulse.dynamodb import new_ulid
 
 from app.common.db.dynamo.planning import PlanningRepository, Project
-from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_member, make_user, sign_in
+from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_member, add_team_member, make_user, sign_in
 from tests.domains.planning.conftest import OTHER_TEAM, WORKSPACE, seed_project
 
 PEER = "01JB000000000000000000PEER"
@@ -329,3 +329,168 @@ def test_an_initiative_target_may_be_a_month_quarter_half_or_year(client: TestCl
     assert (yearly["target_date"], yearly["target_date_resolution"]) == ("2027-12-31", "year")
     assert refused.status_code == 422
     assert (cleared["target_date"], cleared["target_date_resolution"]) == (None, None)
+
+
+def test_an_initiative_start_date_opens_its_period_and_never_follows_the_target(
+    client: TestClient, workspace: str
+) -> None:
+    """A coarse start opens its period, a start after the target is refused either way round, and null clears it."""
+    sign_in(client, MEMBER)
+    created = _create(
+        client,
+        workspace,
+        name="Span",
+        start_date="2027-02-10",
+        start_date_resolution="quarter",
+        target_date="2027-09-15",
+    )
+    path = f"{_base(workspace)}/{created['initiative_id']}"
+
+    backwards = client.post(
+        _base(workspace), json={"name": "Backwards", "start_date": "2027-05-01", "target_date": "2027-04-01"}
+    )
+    late_start = client.patch(path, json={"start_date": "2027-10-01"})
+    early_target = client.patch(path, json={"target_date": "2026-12-31"})
+    moved = client.patch(path, json={"start_date": "2027-03-03", "start_date_resolution": "day"}).json()
+    halved = client.patch(path, json={"start_date_resolution": "half"}).json()
+    unanchored = client.post(_base(workspace), json={"name": "None", "start_date_resolution": "month"})
+    cleared = client.patch(path, json={"start_date": None}).json()
+
+    assert (created["start_date"], created["start_date_resolution"]) == ("2027-01-01", "quarter")
+    assert backwards.status_code == 422
+    assert late_start.status_code == 422
+    assert early_target.status_code == 422
+    assert (moved["start_date"], moved["start_date_resolution"]) == ("2027-03-03", "day")
+    assert (halved["start_date"], halved["start_date_resolution"]) == ("2027-01-01", "half")
+    assert unanchored.status_code == 422
+    assert (cleared["start_date"], cleared["start_date_resolution"]) == (None, None)
+    assert client.get(path).json()["target_date"] == "2027-09-15"
+
+
+def test_a_new_initiative_is_placed_first_and_a_patch_moves_it_in_the_manual_order(
+    client: TestClient, workspace: str, peer: str
+) -> None:
+    """Each new initiative takes a key ahead of the others, and a reorder is a patch every member reads back."""
+    sign_in(client, MEMBER)
+    older = _create(client, workspace, name="Older")
+    newer = _create(client, workspace, name="Newer")
+
+    assert older["sort_order"] is not None
+    assert newer["sort_order"] is not None
+    assert newer["sort_order"] < older["sort_order"]
+
+    path = f"{_base(workspace)}/{newer['initiative_id']}"
+    moved = client.patch(path, json={"sort_order": older["sort_order"] + "V"})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["sort_order"] == older["sort_order"] + "V"
+    assert client.patch(path, json={"sort_order": "not a key"}).status_code == 422
+
+    sign_in(client, PEER)
+    seen = _get(client, workspace, newer["initiative_id"])
+    assert seen["sort_order"] == older["sort_order"] + "V"
+    assert seen["name"] == "Newer"
+
+
+def test_an_update_snapshots_the_initiative_and_reports_what_changed_since_the_last(
+    client: TestClient, workspace: str
+) -> None:
+    """The first update stores a snapshot with no report; the next diffs against it, as the feed reads it."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace, owner_id=MEMBER, target_date="2026-12-01")["initiative_id"]
+    billing = seed_project(client, workspace, name="Billing", health="at_risk", status="planned")["project_id"]
+    _add(client, workspace, initiative_id, billing)
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+
+    first = client.post(feed, json={"body": "Started", "health": "on_track"}).json()
+    assert first["snapshot"]["owner_id"] == MEMBER
+    assert first["snapshot"]["owner_name"] == "Mo Member"
+    assert first["snapshot"]["status"] == "planned"
+    assert first["snapshot"]["target_date"] == "2026-12-01"
+    assert first["snapshot"]["health"] == "on_track"
+    assert first["snapshot"]["project_count"] == 1
+    assert first["snapshot"]["projects_by_status"] == {"planned": 1}
+    assert first["snapshot"]["projects_by_health"] == {"at_risk": 1}
+    assert first["previous_snapshot"] is None
+    assert first["report"] == []
+
+    docs = seed_project(client, workspace, team_id=OTHER_TEAM, name="Docs", status="planned")["project_id"]
+    _add(client, workspace, initiative_id, docs)
+    client.patch(f"/api/workspaces/{workspace}/projects/{billing}", json={"status": "in_progress"})
+    client.patch(f"{_base(workspace)}/{initiative_id}", json={"status": "active", "owner_id": None})
+
+    second = client.post(feed, json={"body": "Moving", "health": "at_risk"}).json()
+    assert second["previous_snapshot"] == first["snapshot"]
+    assert second["report"] == [
+        "Status changed from Planned to Active",
+        "Health changed from On track to At risk",
+        "Owner removed",
+        "Projects 1 to 2",
+        "Projects in progress 0 to 1",
+    ]
+
+    listed = client.get(feed).json()["updates"]
+    assert listed[0]["report"] == second["report"]
+    assert listed[1]["report"] == []
+
+
+def test_a_hidden_report_is_saved_and_toggles_without_marking_the_update_edited(
+    client: TestClient, workspace: str
+) -> None:
+    """Hiding the report empties it for every reader and is a display choice, not an edit."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+    client.post(feed, json={"body": "Started", "health": "on_track"})
+    update = client.post(feed, json={"body": "Slipping", "health": "at_risk", "hide_details": True}).json()
+    assert update["hide_details"] is True
+    assert update["report"] == []
+
+    response = client.patch(f"{feed}/{update['update_id']}", json={"hide_details": False})
+    assert response.status_code == 200, response.text
+    assert response.json()["hide_details"] is False
+    assert response.json()["edited_at"] is None
+    assert response.json()["report"] == ["Health changed from On track to At risk"]
+
+
+def test_an_update_from_before_snapshots_reads_without_a_report(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A stored update with no snapshot reads back with none, and the next one has nothing to diff against."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+    old = client.post(feed, json={"body": "Before", "health": "on_track"}).json()
+    row = repositories.planning.get_initiative_update(WORKSPACE, initiative_id, old["update_id"])
+    repositories.planning.replace_initiative_update(row.model_copy(update={"snapshot": None}))
+
+    listed = client.get(feed).json()["updates"]
+    assert listed[0]["snapshot"] is None
+    assert listed[0]["report"] == []
+
+    after = client.post(feed, json={"body": "After", "health": "at_risk"}).json()
+    assert after["snapshot"] is not None
+    assert after["previous_snapshot"] is None
+    assert after["report"] == []
+
+
+def test_the_snapshot_counts_only_projects_every_member_can_see(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A project on a private team stays out of the stored counts, so a reader outside it learns nothing."""
+    add_team_member(repositories, WORKSPACE, OTHER_TEAM, MEMBER, "member")
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    _add(client, workspace, initiative_id, seed_project(client, workspace, name="Open")["project_id"])
+    _add(
+        client,
+        workspace,
+        initiative_id,
+        seed_project(client, workspace, team_id=OTHER_TEAM, name="Secret", health="off_track")["project_id"],
+    )
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+
+    sign_in(client, MEMBER)
+    update = client.post(f"{_base(workspace)}/{initiative_id}/updates", json={"body": "Hi", "health": "on_track"})
+    assert update.status_code == 201, update.text
+    assert update.json()["snapshot"]["project_count"] == 1
+    assert update.json()["snapshot"]["projects_by_health"] == {}

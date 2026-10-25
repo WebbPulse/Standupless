@@ -72,7 +72,11 @@ export type ViewVisibleProperty =
   | 'links'
   | 'created_at'
   | 'updated_at'
-  | 'time_in_status';
+  | 'time_in_status'
+  | 'release'
+  | 'sla'
+  | 'customers'
+  | 'customer_revenue';
 
 /** One stored group of conditions, combined under its own `match`, holding groups of its own at most one level down. */
 export interface SavedViewFilterGroup {
@@ -99,6 +103,18 @@ export interface ViewFilterNegations {
   team_id_not?: string | string[];
   creator_id_not?: string | string[];
   customer_id_not?: string | string[];
+  customer_status_id?: string | string[];
+  customer_status_id_not?: string | string[];
+  customer_tier_id?: string | string[];
+  customer_tier_id_not?: string | string[];
+  customer_revenue_min?: string;
+  customer_revenue_max?: string;
+  customer_size_min?: string;
+  customer_size_max?: string;
+  customer_request_count_min?: string;
+  customer_request_count_max?: string;
+  customer_important?: 'true' | 'false';
+  release_id_not?: string | string[];
   status_id_not?: string | string[];
   status_category_not?: string | string[];
   assignee_id_not?: string | string[];
@@ -114,7 +130,9 @@ export interface ViewFilterNegations {
  * The keys a view of projects stores: the team narrowed to, the project
  * statuses, the lead (a user id or `none`), whether projects must or must not
  * be blocked or blocking, and whether a parent team rolls up its sub-teams'
- * projects, which an absent key reads as doing.
+ * projects, which an absent key reads as doing. The health, priority, member,
+ * date bound and update age keys are the projects list route's own parameters,
+ * an update age stored as its text.
  */
 export interface ProjectViewFilter {
   team_id?: string;
@@ -126,6 +144,15 @@ export interface ProjectViewFilter {
   customer_id?: string | string[];
   customer_id_not?: string | string[];
   label_id?: string | string[];
+  health?: string | string[];
+  priority?: string | string[];
+  member_id?: string | string[];
+  start_date_before?: string;
+  start_date_after?: string;
+  target_date_before?: string;
+  target_date_after?: string;
+  updated_within_days?: string;
+  not_updated_within_days?: string;
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */
@@ -163,6 +190,11 @@ export interface SavedViewDisplay {
   show_archived?: boolean;
   /** What group headers read; an older server leaves it out, which reads as the count. */
   group_header?: ViewGroupHeader;
+  /**
+   * The groups, swimlanes and board columns folded away in the view, as the
+   * list's own keys; an older server leaves it out, which reads as none.
+   */
+  collapsed_groups?: string[];
 }
 
 /**
@@ -232,6 +264,7 @@ export interface SavedViewDisplayCreate extends Omit<
   completed_window?: CompletedWindow;
   show_archived?: boolean;
   group_header?: ViewGroupHeader;
+  collapsed_groups?: string[];
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -260,6 +293,7 @@ export interface SavedViewDisplayUpdate extends Omit<
   completed_window?: CompletedWindow;
   show_archived?: boolean;
   group_header?: ViewGroupHeader;
+  collapsed_groups?: string[];
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
@@ -527,6 +561,45 @@ export const updateView = async (
   const response = await apiClient.patch<SavedViewDisplayRead>(
     viewPath(workspaceId, viewId),
     body
+  );
+  return response.data;
+};
+
+/** One person's folds on a list that is not a saved view. */
+export interface ListFoldsRead {
+  list_key: string;
+  collapsed_groups: string[];
+}
+
+/** The route a person's folds on an unsaved list are read and written through. */
+export const listFoldsPath = (workspaceId: string): string =>
+  `${viewsPath(workspaceId)}/folds`;
+
+/**
+ * Reads the caller's folded groups, swimlanes and hidden board columns on one
+ * list that is not a saved view, empty when they never folded anything there.
+ */
+export const getListFolds = async (
+  workspaceId: string,
+  listKey: string,
+  signal?: AbortSignal
+): Promise<ListFoldsRead> => {
+  const response = await apiClient.get<ListFoldsRead>(
+    listFoldsPath(workspaceId),
+    { query: { list_key: listKey }, ...signalOptions(signal) }
+  );
+  return response.data;
+};
+
+/** Replaces the caller's folds on one unsaved list; an empty set clears them. */
+export const putListFolds = async (
+  workspaceId: string,
+  listKey: string,
+  collapsed: readonly string[]
+): Promise<ListFoldsRead> => {
+  const response = await apiClient.put<ListFoldsRead>(
+    listFoldsPath(workspaceId),
+    { list_key: listKey, collapsed_groups: [...collapsed] }
   );
   return response.data;
 };

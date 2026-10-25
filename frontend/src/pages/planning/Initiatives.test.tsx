@@ -5,19 +5,32 @@
  * a guest is told initiatives are for members and offered no way to start one,
  * that sub-initiatives sit indented under their parent and fold away, and
  * that the toolbar filters, orders and arranges the list from the URL and
- * saves the arrangement to the account, and that rows filter and group by
- * their lead team.
+ * saves the arrangement to the account, that rows filter and group by
+ * their lead team, owner, health and target month, that j, k and Enter walk
+ * and open the rows and x selects one, and that dragging a row in the manual
+ * order stores its new place, that a row's status and owner change inline
+ * and roll back when the save fails, that the row menu opens on a right click
+ * and deletes after a confirm, and that S opens the focused row's status.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   InitiativeCreate,
   InitiativeListRead,
   InitiativeRead,
+  InitiativeUpdate,
   MemberRead,
   TeamRead,
   UserPreferencesUpdate,
@@ -25,11 +38,16 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import Initiatives from './Initiatives';
 
 const listInitiatives = vi.fn<() => Promise<InitiativeListRead>>();
 const createInitiative =
   vi.fn<(body: InitiativeCreate) => Promise<InitiativeRead>>();
+const updateInitiative =
+  vi.fn<(id: string, body: InitiativeUpdate) => Promise<InitiativeRead>>();
+const deleteInitiative = vi.fn<(id: string) => Promise<void>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
@@ -63,6 +81,20 @@ vi.mock('../../api/initiatives', () => ({
   listInitiatives: () => listInitiatives(),
   createInitiative: (_w: string, body: InitiativeCreate) =>
     createInitiative(body),
+  updateInitiative: (_w: string, id: string, body: InitiativeUpdate) =>
+    updateInitiative(id, body),
+  deleteInitiative: (_w: string, id: string) => deleteInitiative(id),
+}));
+
+vi.mock('../../api/favorites', () => ({
+  listFavorites: () => Promise.resolve([]),
+  listFavoriteFolders: () => Promise.resolve([]),
+  addFavorite: vi.fn(() => Promise.resolve()),
+  removeFavorite: vi.fn(() => Promise.resolve()),
+  reorderFavorites: vi.fn(() => Promise.resolve()),
+  createFavoriteFolder: vi.fn(),
+  deleteFavoriteFolder: vi.fn(),
+  renameFavoriteFolder: vi.fn(),
 }));
 
 vi.mock('../../api/workspaces', async () => {
@@ -212,7 +244,9 @@ describe('Initiatives', () => {
     expect(within(active).getByText('2 projects')).toBeInTheDocument();
     expect(within(active).getByText('75%')).toBeInTheDocument();
     expect(
-      await within(active).findByText('Owner Ada Lovelace')
+      await within(active).findByRole('button', {
+        name: 'Owner: Ada Lovelace',
+      })
     ).toBeInTheDocument();
     const planned = screen.getByRole('region', { name: 'Planned' });
     expect(within(planned).getByText('Expand')).toBeInTheDocument();
@@ -396,10 +430,12 @@ describe('Initiatives', () => {
     await waitFor(() => {
       expect(updatePreferences).toHaveBeenCalledWith({
         initiatives_display: {
+          layout: 'list',
+          zoom: 'month',
           grouping: 'status',
           order: 'target',
           completed: 'hide',
-          columns: 'health,team,owner,projects,target,progress',
+          columns: 'health,team,owner,projects,start,target,progress',
         },
       });
     });
@@ -456,5 +492,258 @@ describe('Initiatives', () => {
     expect(
       screen.queryByRole('region', { name: 'Platform' })
     ).not.toBeInTheDocument();
+  });
+
+  it('groups by owner, health and target month with the empty group last', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Grow', {
+          owner_id: 'user-1',
+          health: 'at_risk',
+          target_date: '2026-11-20',
+        }),
+        initiative('ini-2', 'Hire'),
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage('?grouping=owner');
+    const owned = await screen.findByRole('region', { name: 'Ada Lovelace' });
+    expect(within(owned).getByText('Grow')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'No owner' })).getByText('Hire')
+    ).toBeInTheDocument();
+    unmount();
+
+    const health = renderPage('?grouping=health');
+    expect(
+      within(await screen.findByRole('region', { name: 'At risk' })).getByText(
+        'Grow'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'No health' })).toHaveTextContent(
+      'Hire'
+    );
+    health.unmount();
+
+    renderPage('?grouping=target_date');
+    const november = await screen.findByRole('region', { name: 'Nov 2026' });
+    expect(within(november).getByText('Grow')).toBeInTheDocument();
+    const undated = screen.getByRole('region', { name: 'No target date' });
+    expect(undated).toHaveTextContent('Hire');
+    expect(
+      november.compareDocumentPosition(undated) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('walks the rows with j and k, selects with x and opens with Enter', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [initiative('ini-1', 'Alpha'), initiative('ini-2', 'Beta')],
+      next_cursor: null,
+    });
+    render(
+      <MemoryRouter initialEntries={['/w/mine/initiatives?order=name']}>
+        <ShortcutProvider>
+          <BoundKeys />
+          <Routes>
+            <Route path="/w/:slug/initiatives" element={<Initiatives />} />
+            <Route
+              path="/w/:slug/initiatives/:id"
+              element={<p>initiative page</p>}
+            />
+          </Routes>
+        </ShortcutProvider>
+      </MemoryRouter>
+    );
+    const press = (key: string): void => {
+      act(() => {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true })
+        );
+      });
+    };
+    const row = (name: string): HTMLElement | null =>
+      screen.getByRole('link', { name }).closest('li');
+    await screen.findByText('Beta');
+    await keysBound('j', 'k');
+    press('j');
+    press('j');
+    expect(row('Beta')).toHaveAttribute('aria-current', 'true');
+    press('k');
+    expect(row('Alpha')).toHaveAttribute('aria-current', 'true');
+    await keysBound('x');
+    press('x');
+    expect(row('Alpha')).toHaveAttribute('aria-selected', 'true');
+    await keysBound('enter');
+    press('Enter');
+    expect(await screen.findByText('initiative page')).toBeInTheDocument();
+  });
+
+  it('drags a row in the manual order and stores its place', async () => {
+    const first = initiative('ini-1', 'Alpha', { sort_order: 'F' });
+    const second = initiative('ini-2', 'Beta', { sort_order: 'V' });
+    listInitiatives.mockResolvedValue({
+      initiatives: [first, second],
+      next_cursor: null,
+    });
+    updateInitiative.mockImplementation((id, body) =>
+      Promise.resolve({
+        ...(id === 'ini-1' ? first : second),
+        ...body,
+        updated_at: '2026-10-02T00:00:00Z',
+      } as InitiativeRead)
+    );
+    renderPage('?order=manual');
+    const alpha = (await screen.findByRole('link', { name: 'Alpha' })).closest(
+      'li'
+    );
+    const list = alpha?.closest('ul');
+    if (alpha === null || list === null || list === undefined)
+      throw new Error('no row');
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: vi.fn(),
+    };
+    fireEvent.dragStart(alpha, { dataTransfer });
+    fireEvent.dragOver(list, { dataTransfer });
+    fireEvent.drop(list, { dataTransfer });
+
+    await waitFor(() => {
+      expect(updateInitiative).toHaveBeenCalledTimes(1);
+    });
+    const [id, body] = updateInitiative.mock.calls[0] ?? [];
+    expect(id).toBe('ini-1');
+    expect((body?.sort_order ?? '0') > 'V').toBe(true);
+  });
+
+  it('changes a row status inline and moves it to its new group', async () => {
+    const grow = initiative('ini-1', 'Grow');
+    listInitiatives.mockResolvedValue({
+      initiatives: [grow],
+      next_cursor: null,
+    });
+    updateInitiative.mockImplementation((_id, body) =>
+      Promise.resolve({ ...grow, ...body } as InitiativeRead)
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    const planned = await screen.findByRole('region', { name: 'Planned' });
+    await user.click(
+      within(planned).getByRole('button', { name: 'Status: Planned' })
+    );
+    await user.click(await screen.findByRole('option', { name: /Active/ }));
+
+    await waitFor(() => {
+      expect(updateInitiative).toHaveBeenCalledWith('ini-1', {
+        status: 'active',
+      });
+    });
+    const active = await screen.findByRole('region', { name: 'Active' });
+    expect(within(active).getByRole('link', { name: 'Grow' })).toBeVisible();
+  });
+
+  it('rolls an inline owner change back when the save fails', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [initiative('ini-1', 'Grow')],
+      next_cursor: null,
+    });
+    updateInitiative.mockRejectedValue(new Error('nope'));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Owner: No owner' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /Ada Lovelace/ })
+    );
+
+    await waitFor(() => {
+      expect(updateInitiative).toHaveBeenCalledWith('ini-1', {
+        owner_id: 'user-1',
+      });
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Owner: No owner' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Owner: Ada Lovelace' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens the row menu on a right click and deletes after a confirm', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [initiative('ini-1', 'Grow')],
+      next_cursor: null,
+    });
+    deleteInitiative.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    const row = (await screen.findByRole('link', { name: 'Grow' })).closest(
+      'li'
+    );
+    if (row === null) throw new Error('no row');
+    fireEvent.contextMenu(row, { clientX: 40, clientY: 40 });
+
+    const menu = await screen.findByRole('menu', { name: 'Grow actions' });
+    const items = within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent ?? '');
+    for (const label of [
+      'Open initiative',
+      'Copy link',
+      'Change status',
+      'Change owner',
+      'Change health',
+      'Set target date',
+      'Add to favorites',
+      'Delete',
+    ]) {
+      expect(items.some((text) => text.startsWith(label))).toBe(true);
+    }
+
+    await user.click(within(menu).getByRole('menuitem', { name: /^Delete/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Grow' });
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Delete initiative' })
+    );
+    await waitFor(() => {
+      expect(deleteInitiative).toHaveBeenCalledWith('ini-1');
+    });
+  });
+
+  it('opens the focused row status picker with s', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [initiative('ini-1', 'Alpha')],
+      next_cursor: null,
+    });
+    render(
+      <MemoryRouter initialEntries={['/w/mine/initiatives']}>
+        <ShortcutProvider>
+          <BoundKeys />
+          <Routes>
+            <Route path="/w/:slug/initiatives" element={<Initiatives />} />
+          </Routes>
+        </ShortcutProvider>
+      </MemoryRouter>
+    );
+    const press = (key: string): void => {
+      act(() => {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true })
+        );
+      });
+    };
+    await screen.findByText('Alpha');
+    await keysBound('j');
+    press('j');
+    await keysBound('s');
+    press('s');
+    expect(
+      await screen.findByRole('option', { name: /Active/ })
+    ).toBeInTheDocument();
   });
 });

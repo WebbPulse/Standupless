@@ -8,6 +8,9 @@
 import apiClient from './client';
 import type {
   CustomerCreate,
+  CustomerFieldCreate,
+  CustomerFieldRead,
+  CustomerFieldUpdate,
   CustomerListRead,
   CustomerPatch,
   CustomerRead,
@@ -15,7 +18,9 @@ import type {
   CustomerRequestListRead,
   CustomerRequestPatch,
   CustomerRequestRead,
+  CustomerStatusListRead,
   CustomerTargetKind,
+  CustomerTierListRead,
 } from '../types/Api';
 
 const signalOptions = (
@@ -233,4 +238,110 @@ export const deleteCustomerRequest = async (
   await apiClient.delete<void>(
     customerRequestPath(workspaceId, customerId, requestId)
   );
+};
+
+/** The two lists a workspace admin sets up for its customers. */
+export type CustomerFieldKind = 'statuses' | 'tiers';
+
+/** The route the workspace's customer statuses are read and added to on. */
+export const customerStatusesPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/customers/statuses`;
+
+/** The route the workspace's customer tiers are read and added to on. */
+export const customerTiersPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/customers/tiers`;
+
+/** The route one customer status is edited and deleted on. */
+export const customerStatusPath = (
+  workspaceId: string,
+  statusId: string
+): string => `${customerStatusesPath(workspaceId)}/${statusId}`;
+
+/** The route one customer tier is edited and deleted on. */
+export const customerTierPath = (workspaceId: string, tierId: string): string =>
+  `${customerTiersPath(workspaceId)}/${tierId}`;
+
+/** Lists the workspace's customer statuses or tiers, by position. */
+export const listCustomerFields = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  signal?: AbortSignal
+): Promise<CustomerFieldRead[]> => {
+  if (kind === 'statuses') {
+    const response = await apiClient.get<CustomerStatusListRead>(
+      customerStatusesPath(workspaceId),
+      signalOptions(signal)
+    );
+    const rows = response.data?.statuses;
+    return Array.isArray(rows) ? rows : [];
+  }
+  const response = await apiClient.get<CustomerTierListRead>(
+    customerTiersPath(workspaceId),
+    signalOptions(signal)
+  );
+  const rows = response.data?.tiers;
+  return Array.isArray(rows) ? rows : [];
+};
+
+/** Adds a customer status or tier; an admin only. */
+export const createCustomerField = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  body: CustomerFieldCreate
+): Promise<CustomerFieldRead> => {
+  const response =
+    kind === 'statuses'
+      ? await apiClient.post<CustomerFieldRead>(
+          customerStatusesPath(workspaceId),
+          body
+        )
+      : await apiClient.post<CustomerFieldRead>(
+          customerTiersPath(workspaceId),
+          body
+        );
+  return response.data;
+};
+
+/** Renames, recolours or moves a customer status or tier; an admin only. */
+export const updateCustomerField = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  fieldId: string,
+  body: CustomerFieldUpdate
+): Promise<CustomerFieldRead> => {
+  const response =
+    kind === 'statuses'
+      ? await apiClient.patch<CustomerFieldRead>(
+          customerStatusPath(workspaceId, fieldId),
+          body
+        )
+      : await apiClient.patch<CustomerFieldRead>(
+          customerTierPath(workspaceId, fieldId),
+          body
+        );
+  return response.data;
+};
+
+/**
+ * Deletes a customer status or tier, moving the customers that hold it to
+ * `replacementId`. One customers hold is refused without a replacement.
+ */
+export const deleteCustomerField = async (
+  workspaceId: string,
+  kind: CustomerFieldKind,
+  fieldId: string,
+  replacementId?: string
+): Promise<void> => {
+  const options =
+    replacementId === undefined
+      ? undefined
+      : { query: { replacement_id: replacementId } };
+  if (kind === 'statuses') {
+    await apiClient.delete<void>(
+      customerStatusPath(workspaceId, fieldId),
+      options
+    );
+    return;
+  }
+  await apiClient.delete<void>(customerTierPath(workspaceId, fieldId), options);
 };

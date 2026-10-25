@@ -13,6 +13,7 @@ import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
+import { isAway, statusSummary } from '../../../lib/userStatus';
 import { CYCLE_STATUS_LABELS } from '../../../lib/planningDisplay';
 import {
   DEFAULT_PROJECT_STATUSES,
@@ -31,6 +32,7 @@ import {
   datePresets,
   shortDateLabel,
   sortStatuses,
+  statusDetail,
   typedDateOption,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
@@ -50,6 +52,7 @@ import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import { CustomDate } from '../PropertyPickers';
 import type { IssueViewEnv } from './IssueViewContext';
 import type { CommandProperty } from './propertyKeys';
+import { STATUS_POSITION_COUNT } from '../../../lib/statusPosition';
 
 /** A dashed ring standing for "none" in a list of values. */
 const NoneMark: React.FC = () => (
@@ -160,12 +163,17 @@ export const propertyChoices = ({
         const key = statusGroupKey(status);
         if (seen.has(key)) return [];
         seen.add(key);
+        const position = seen.size;
         return [
           {
             value: key,
             label: status.name,
             icon: <StatusIcon status={status} statuses={statuses} />,
             group: STATUS_CATEGORY_LABELS[status.category],
+            ...statusDetail(status),
+            ...(teamIds.length === 1 && position <= STATUS_POSITION_COUNT
+              ? { shortcut: String(position) }
+              : {}),
           },
         ];
       });
@@ -241,9 +249,13 @@ export const propertyChoices = ({
               name={personLabel(person)}
               src={personAvatar(person)}
               size="xs"
+              away={isAway(person.user_status)}
             />
           ),
           keywords: [person.email],
+          ...(statusSummary(person.user_status) === ''
+            ? {}
+            : { detail: statusSummary(person.user_status) }),
         })),
       ];
       selected = shared(issues.map((issue) => [issue.assignee_id ?? CLEAR]));

@@ -32,11 +32,12 @@ describe('inherited and overridden rows', () => {
     );
   });
 
-  it('counts a hide or a rename as an override', () => {
+  it('counts a hide, a rename or a description as an override', () => {
     const base = status('a', 'started', 0, { scope: 'workspace' });
     expect(isOverridden(base)).toBe(false);
     expect(isOverridden({ ...base, hidden: true })).toBe(true);
     expect(isOverridden({ ...base, inherited_name: 'Doing' })).toBe(true);
+    expect(isOverridden({ ...base, inherited_description: '' })).toBe(true);
     expect(workspaceName({ ...base, inherited_name: 'Doing' })).toBe('Doing');
     expect(workspaceName(base)).toBe('a');
   });

@@ -13,7 +13,13 @@
 
 import { useSyncExternalStore } from 'react';
 import { workspacePath } from './paths';
-import type { FontSize, HomeView, NameDisplay, WeekStart } from '../types/Api';
+import type {
+  CodeTheme,
+  FontSize,
+  HomeView,
+  NameDisplay,
+  WeekStart,
+} from '../types/Api';
 
 /** The preferences the interface reads outside any component. */
 export interface InterfacePreferences {
@@ -25,6 +31,8 @@ export interface InterfacePreferences {
   pointerCursors: boolean;
   /** Whether links in rich text and inline text links are underlined at rest. */
   underlineLinks: boolean;
+  /** The syntax highlighting theme of code blocks, `app` following the interface theme. */
+  codeTheme: CodeTheme;
   /** Whether the editor turns typed emoticons such as `:)` into emoji. */
   convertEmoticons: boolean;
   /** Whether an issue the person creates starts assigned to them. */
@@ -43,6 +51,7 @@ export const DEFAULT_PREFERENCES: InterfacePreferences = {
   fontSize: 'default',
   pointerCursors: false,
   underlineLinks: false,
+  codeTheme: 'app',
   convertEmoticons: true,
   autoAssignToSelf: false,
   branchCopyStarts: true,
@@ -113,6 +122,19 @@ export const paintUnderlineLinks = (on: boolean): void => {
   }
 };
 
+/**
+ * Sets the document attribute the code block stylesheet picks its syntax
+ * palette by, leaving it off when code follows the interface theme.
+ */
+export const paintCodeTheme = (theme: CodeTheme): void => {
+  const root = globalThis.document.documentElement;
+  if (theme === 'app') {
+    root.removeAttribute('data-code-theme');
+  } else {
+    root.setAttribute('data-code-theme', theme);
+  }
+};
+
 /** The preference fields a profile may carry, any of them missing. */
 export interface StoredPreferences {
   home_view?: HomeView | undefined;
@@ -121,6 +143,7 @@ export interface StoredPreferences {
   font_size?: FontSize | undefined;
   pointer_cursors?: boolean | undefined;
   underline_links?: boolean | undefined;
+  code_theme?: CodeTheme | undefined;
   convert_emoticons?: boolean | undefined;
   auto_assign_to_self?: boolean | undefined;
   branch_copy_starts?: boolean | undefined;
@@ -137,6 +160,7 @@ export const preferencesOf = (
   fontSize: user?.font_size ?? DEFAULT_PREFERENCES.fontSize,
   pointerCursors: user?.pointer_cursors ?? DEFAULT_PREFERENCES.pointerCursors,
   underlineLinks: user?.underline_links ?? DEFAULT_PREFERENCES.underlineLinks,
+  codeTheme: user?.code_theme ?? DEFAULT_PREFERENCES.codeTheme,
   convertEmoticons:
     user?.convert_emoticons ?? DEFAULT_PREFERENCES.convertEmoticons,
   autoAssignToSelf:
@@ -149,7 +173,7 @@ export const preferencesOf = (
 
 /**
  * Takes the preferences in force and tells the subscribers, repainting the
- * text size, the cursors and the link underlines when they moved. Unchanged values are a no-op, so a re-read of the
+ * text size, the cursors, the link underlines and the code theme when they moved. Unchanged values are a no-op, so a re-read of the
  * same profile never re-renders anything.
  */
 export const setPreferences = (next: InterfacePreferences): void => {
@@ -158,10 +182,12 @@ export const setPreferences = (next: InterfacePreferences): void => {
   const resized = next.fontSize !== current.fontSize;
   const recursored = next.pointerCursors !== current.pointerCursors;
   const relinked = next.underlineLinks !== current.underlineLinks;
+  const recoloured = next.codeTheme !== current.codeTheme;
   current = next;
   if (resized) paintFontSize(next.fontSize);
   if (recursored) paintPointerCursors(next.pointerCursors);
   if (relinked) paintUnderlineLinks(next.underlineLinks);
+  if (recoloured) paintCodeTheme(next.codeTheme);
   for (const listener of [...listeners]) listener();
 };
 

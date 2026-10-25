@@ -11,7 +11,7 @@
  * dashboards, which put insights from several teams and views on one page.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -58,12 +58,16 @@ import { Select } from '../../components/ui/select';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import DashboardList from './DashboardList';
 import ViewIcon from '../../components/views/ViewIcon';
+import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useAuth } from '../../hooks/useAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
@@ -80,7 +84,7 @@ import {
   viewsKey,
 } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
-import type { ViewListScope } from '../../types/Api';
+import type { TeamRead, ViewListScope, WorkspaceRole } from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** How often a row's issue count is re-read. */
@@ -145,6 +149,9 @@ const copyOf = (view: SavedViewDisplayRead): SavedViewDisplayCreate => {
     ...(view.group_header === undefined
       ? {}
       : { group_header: view.group_header }),
+    ...(view.collapsed_groups === undefined
+      ? {}
+      : { collapsed_groups: view.collapsed_groups }),
     ...look,
   };
 };
@@ -194,6 +201,27 @@ const ViewCount: React.FC<{
     >
       {count === undefined ? '' : count}
     </span>
+  );
+};
+
+/**
+ * Whether the caller may delete a view, the rule the server holds: the owner
+ * always, a workspace admin for a workspace or team view, and a team admin for
+ * a view filed under their team.
+ */
+const canDeleteView = (
+  view: SavedViewDisplayRead,
+  userId: string | undefined,
+  workspaceRole: WorkspaceRole | undefined,
+  teams: TeamRead[]
+): boolean => {
+  if (view.owner_id === userId) return true;
+  const workspaceAdmin = isTeamAdmin(workspaceRole, undefined);
+  if (view.scope === 'workspace' && workspaceAdmin) return true;
+  if (view.team_id === null) return false;
+  return (
+    workspaceAdmin ||
+    teams.find((team) => team.id === view.team_id)?.role === 'admin'
   );
 };
 
@@ -267,6 +295,22 @@ export const Views: React.FC = () => {
       ),
     [members]
   );
+
+  const rows = useMemo(() => listed ?? [], [listed]);
+  const onActivate = useCallback(
+    (index: number) => {
+      const view = rows[index];
+      if (view !== undefined) void navigate(viewPath(slug, view.view_id));
+    },
+    [rows, navigate, slug]
+  );
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: rows.length,
+    onActivate,
+    resetKey: `${tab}:${scope}:${teamId}:${rows.map((view) => view.view_id).join(',')}`,
+    enabled: !dashboards && pending === null,
+  });
+  const focusedView = rows[activeIndex];
 
   const location = (view: SavedViewDisplayRead): string => {
     if (view.scope === 'workspace') return 'Workspace';
@@ -345,6 +389,31 @@ export const Views: React.FC = () => {
     }
   };
 
+  useShortcut({
+    keys: 'f',
+    label: 'Favorite view',
+    group: 'List',
+    enabled: focusedView !== undefined && pending === null,
+    handler: (event) => {
+      event?.preventDefault();
+      if (focusedView !== undefined) void toggleFavorite(focusedView);
+    },
+  });
+  useShortcut({
+    keys: 'mod+backspace',
+    label: 'Delete view',
+    group: 'List',
+    enabled:
+      focusedView !== undefined &&
+      pending === null &&
+      canDeleteView(focusedView, user?.id, workspace?.role, teams),
+    handler: (event) => {
+      event?.preventDefault();
+      if (focusedView !== undefined)
+        setPending({ kind: 'delete', view: focusedView });
+    },
+  });
+
   if (scoped && notFound) {
     return (
       <WorkspaceShell title="Views">
@@ -388,6 +457,14 @@ export const Views: React.FC = () => {
       }
       toolbar={
         <div className="flex flex-wrap items-center gap-2">
+          {team !== null && (
+            <TeamTabs
+              slug={slug}
+              keyPrefix={team.key_prefix}
+              teamId={team.id}
+              current="views"
+            />
+          )}
           <div
             role="tablist"
             aria-label="What the views list"
@@ -481,12 +558,22 @@ export const Views: React.FC = () => {
               />
             ) : (
               <ul aria-label="Saved views">
-                {listed.map((view) => {
+                {listed.map((view, index) => {
                   const owner = memberNames.get(view.owner_id);
+                  const isActive = index === activeIndex;
                   return (
                     <li
                       key={view.view_id}
-                      className="group flex h-row items-center gap-3 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6"
+                      ref={registerItem(index)}
+                      aria-current={isActive ? 'true' : undefined}
+                      onPointerEnter={() => {
+                        setActiveIndex(index);
+                      }}
+                      className={cn(
+                        'group relative flex h-row items-center gap-3 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface lg:px-6',
+                        isActive &&
+                          'bg-surface before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
+                      )}
                     >
                       <Link
                         to={viewPath(slug, view.view_id)}
@@ -582,40 +669,47 @@ export const Views: React.FC = () => {
                             ? 'Remove from favorites'
                             : 'Add to favorites'}
                         </MenuItem>
-                        {!listsProjects(view) && (
-                          <MenuItem
-                            onSelect={() => void toggleSubscription(view)}
-                          >
-                            {view.subscribed === true ? (
-                              <LuBellOff
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5"
-                              />
-                            ) : (
-                              <LuBell
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5"
-                              />
-                            )}
-                            {view.subscribed === true
-                              ? 'Unsubscribe'
-                              : 'Subscribe'}
-                            <SubscriberCount count={view.subscriber_count} />
-                          </MenuItem>
-                        )}
-                        <MenuSeparator />
                         <MenuItem
-                          danger
-                          onSelect={() => {
-                            setPending({ kind: 'delete', view });
-                          }}
+                          onSelect={() => void toggleSubscription(view)}
                         >
-                          <LuTrash2
-                            aria-hidden="true"
-                            className="h-3.5 w-3.5"
-                          />
-                          Delete
+                          {view.subscribed === true ? (
+                            <LuBellOff
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5"
+                            />
+                          ) : (
+                            <LuBell
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5"
+                            />
+                          )}
+                          {view.subscribed === true
+                            ? 'Unsubscribe'
+                            : 'Subscribe'}
+                          <SubscriberCount count={view.subscriber_count} />
                         </MenuItem>
+                        {canDeleteView(
+                          view,
+                          user?.id,
+                          workspace?.role,
+                          teams
+                        ) && (
+                          <>
+                            <MenuSeparator />
+                            <MenuItem
+                              danger
+                              onSelect={() => {
+                                setPending({ kind: 'delete', view });
+                              }}
+                            >
+                              <LuTrash2
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5"
+                              />
+                              Delete
+                            </MenuItem>
+                          </>
+                        )}
                       </Menu>
                     </li>
                   );

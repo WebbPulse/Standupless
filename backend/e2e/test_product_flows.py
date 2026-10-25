@@ -23,10 +23,14 @@ xdist group so `-n auto --dist loadgroup` keeps the sequence on one worker.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
 import os
+import socket
+import ssl
+import struct
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -1117,7 +1121,7 @@ class TestPlanningDomain:
     def test_an_initiative_rolls_up_its_projects(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
-        """An initiative holds a project, rolls it up, carries an update and deletes, leaving the project."""
+        """An initiative holds a project, rolls it up, carries a threaded update and deletes, leaving the project."""
         base = f"/api/workspaces/{workspace['id']}"
         path = f"{base}/initiatives"
         project = _created(
@@ -1165,6 +1169,28 @@ class TestPlanningDomain:
 
             edited = api.patch(update_path, json={"health": "on_track"})
             assert edited.status_code == 200, edited.text[:400]
+
+            replies_path = f"{update_path}/comments"
+            reply = api.post(replies_path, json={"body": run_scope.name("init-reply")})
+            assert reply.status_code == 201, reply.text[:400]
+            assert reply.json()["initiative_id"] == initiative["id"]
+            reply_path = f"{replies_path}/{reply.json()['comment_id']}"
+            assert api.patch(reply_path, json={"body": run_scope.name("init-reply-edited")}).status_code == 200
+            thread = api.get(replies_path)
+            assert thread.status_code == 200, thread.text[:400]
+            assert [row["comment_id"] for row in thread.json()["comments"]] == [reply.json()["comment_id"]]
+
+            reactions_path = f"{update_path}/reactions"
+            reacted = api.put(reactions_path, json={"emoji": "👍"})
+            assert reacted.status_code == 200, reacted.text[:400]
+            assert reacted.json()["reacted"] is True
+            summarised = api.get(updates_path, params={"limit": 5}).json()["updates"][0]
+            assert summarised["comment_count"] == 1
+            assert [group["emoji"] for group in summarised["reactions"]] == ["👍"]
+            unreacted = api.delete(reactions_path, params={"emoji": "👍"})
+            assert unreacted.status_code in (200, 204), unreacted.text[:400]
+            dropped = api.delete(reply_path)
+            assert dropped.status_code in (200, 204), dropped.text[:400]
 
             removed_update = api.delete(update_path)
             assert removed_update.status_code in (200, 204), removed_update.text[:400]
@@ -2622,6 +2648,16 @@ class TestSlackApp:
         channels = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/slack-channels")
         assert channels.status_code == 404, channels.text[:400]
 
+        intake = f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/slack-intake"
+        intake_read = api.get(intake)
+        assert intake_read.status_code == 200, intake_read.text[:400]
+        assert intake_read.json()["installed"] is False, intake_read.json()
+        assert intake_read.json()["enabled"] is False, intake_read.json()
+        intake_on = api.put(intake, json={"emoji": "ticket", "channel_ids": ["C0E2E"]})
+        assert intake_on.status_code == 409, intake_on.text[:400]
+        intake_off = api.delete(intake)
+        assert intake_off.status_code == 404, intake_off.text[:400]
+
         removed = api.delete(base)
         assert removed.status_code == 404, removed.text[:400]
 
@@ -2843,3 +2879,224 @@ class TestDiscordApp:
 
             stale = interact({"type": 1}, timestamp=int(time.time()) - 600)
             assert stale.status_code == 401, stale.text[:400]
+
+
+class TestGitlabConnections:
+    """A workspace's GitLab connections and the receiver GitLab calls.
+
+    No run holds a GitLab access token, so no connection is made: the list reads
+    empty, a connect aimed at a private address is refused before anything leaves
+    the function, the routes on one connection answer 404 for an id that never
+    existed, and the receiver refuses a delivery whose token does not match.
+    """
+
+    @WRITES
+    def test_the_workspace_routes_answer_without_a_connection(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """Nothing is listed, an unsafe instance is refused, and an unknown connection is not found."""
+        base = f"/api/workspaces/{workspace['id']}/gitlab/connections"
+        listed = api.get(base)
+        assert listed.status_code == 200, listed.text[:400]
+        assert listed.json()["connections"] == [], listed.json()
+
+        refused = api.post(
+            base,
+            json={
+                "instance_url": "https://127.0.0.1",
+                "scope_kind": "group",
+                "scope_path": "e2e-group",
+                "access_token": "glpat-not-a-real-token",
+            },
+        )
+        expected = 422 if listed.json()["configured"] else 409
+        assert refused.status_code == expected, refused.text[:400]
+        assert "glpat-not-a-real-token" not in refused.text
+
+        unknown = f"{base}/01HZZZZZZZZZZZZZZZZZZZZZZZ"
+        assert api.post(f"{unknown}/rotate-secret").status_code in (404, 409)
+        assert api.delete(unknown).status_code == 404
+
+    def test_the_receiver_refuses_a_delivery_without_the_secret(self, anon: Any) -> None:
+        """A delivery to a connection that does not exist is refused exactly as a wrong token is."""
+        response = anon.post(
+            "/api/gitlab/webhooks/01HZZZZZZZZZZZZZZZZZZZZZZZ/01HZZZZZZZZZZZZZZZZZZZZZZZ",
+            json={"object_kind": "merge_request"},
+            headers={"X-Gitlab-Token": "not-the-secret", "X-Gitlab-Event": "Merge Request Hook"},
+        )
+        assert response.status_code == 401, response.text[:400]
+
+
+REALTIME_URL_ENV = "E2E_REALTIME_URL"
+"""The variable naming the stage's WebSocket API, `wss://<api>.execute-api.<region>.amazonaws.com/<stage>`."""
+
+
+class _WebSocket:
+    """The smallest WebSocket client these cases need, over the standard library alone.
+
+    The e2e group installs no WebSocket package, and the cases need only the opening
+    handshake, masked text frames out and text, ping and close frames in. The URL
+    carries the access token, so nothing here ever puts the URL in a message.
+    """
+
+    def __init__(self, url: str, timeout: float = 15.0) -> None:
+        """Open the TCP and TLS connection and send the upgrade, recording the status it answers."""
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = parts.port or (443 if parts.scheme == "wss" else 80)
+        raw = socket.create_connection((host, port), timeout=timeout)
+        self._sock: socket.socket = (
+            ssl.create_default_context().wrap_socket(raw, server_hostname=host) if parts.scheme == "wss" else raw
+        )
+        target = parts.path or "/"
+        if parts.query:
+            target = f"{target}?{parts.query}"
+        key = base64.b64encode(os.urandom(16)).decode()
+        request = (
+            f"GET {target} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        )
+        self._sock.sendall(request.encode())
+        self._buffer = b""
+        while b"\r\n\r\n" not in self._buffer:
+            chunk = self._sock.recv(4096)
+            if not chunk:
+                break
+            self._buffer += chunk
+        head, _, self._buffer = self._buffer.partition(b"\r\n\r\n")
+        status_line = head.split(b"\r\n", 1)[0].decode("latin-1")
+        fields = status_line.split(" ")
+        self.status = int(fields[1]) if len(fields) > 1 and fields[1].isdigit() else 0
+
+    def _read(self, size: int) -> bytes:
+        """Exactly `size` bytes from the socket, after whatever the handshake read ahead."""
+        while len(self._buffer) < size:
+            chunk = self._sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("the socket closed")
+            self._buffer += chunk
+        data, self._buffer = self._buffer[:size], self._buffer[size:]
+        return data
+
+    def _send_frame(self, opcode: int, payload: bytes) -> None:
+        """One final, masked frame, as a client must send."""
+        header = bytes([0x80 | opcode])
+        length = len(payload)
+        if length < 126:
+            header += bytes([0x80 | length])
+        elif length < 65536:
+            header += bytes([0x80 | 126]) + struct.pack("!H", length)
+        else:
+            header += bytes([0x80 | 127]) + struct.pack("!Q", length)
+        mask = os.urandom(4)
+        masked = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+        self._sock.sendall(header + mask + masked)
+
+    def send_json(self, message: "dict[str, Any]") -> None:
+        """Send one JSON text frame."""
+        self._send_frame(0x1, json.dumps(message).encode())
+
+    def receive_json(self, deadline: float) -> "dict[str, Any] | None":
+        """The next JSON text message before `deadline`, answering pings, or None on a close or timeout."""
+        while time.monotonic() < deadline:
+            self._sock.settimeout(max(0.1, deadline - time.monotonic()))
+            try:
+                first, second = self._read(2)
+            except TimeoutError:
+                return None
+            opcode = first & 0x0F
+            length = second & 0x7F
+            if length == 126:
+                length = struct.unpack("!H", self._read(2))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", self._read(8))[0]
+            mask = self._read(4) if second & 0x80 else b""
+            payload = self._read(length)
+            if mask:
+                payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+            if opcode == 0x8:
+                return None
+            if opcode == 0x9:
+                self._send_frame(0xA, payload)
+                continue
+            if opcode == 0x1:
+                decoded = json.loads(payload.decode())
+                if isinstance(decoded, dict):
+                    return decoded
+        return None
+
+    def close(self) -> None:
+        """Send a close frame and drop the connection."""
+        try:
+            self._send_frame(0x8, b"")
+        except OSError:
+            pass
+        self._sock.close()
+
+
+def _realtime_url() -> str:
+    """The stage's WebSocket API, skipping the case on a stage that names none."""
+    url = os.environ.get(REALTIME_URL_ENV, "").strip().rstrip("/")
+    if not url:
+        pytest.skip(f"{REALTIME_URL_ENV} is unset, so this stage has no WebSocket API to reach")
+    return url
+
+
+def _bearer(api: Any) -> str:
+    """The signed in client's current access token, refreshed when it is near expiry."""
+    source = getattr(api, "token_source", None)
+    if source is not None:
+        return str(source.bearer_token())
+    return str(getattr(api, "token", "") or "")
+
+
+class TestRealtimeNotices:
+    """The WebSocket API reaches its route, accepts a member and pushes a change notice."""
+
+    def test_a_connect_with_a_bad_token_is_refused_by_the_route(self) -> None:
+        """A bad token answers 401, which only the route itself sends.
+
+        A 502 here means the integration never reached the handler, which is what a
+        function still on its placeholder image or an adapter that drops the event
+        looks like from outside.
+        """
+        url = _realtime_url()
+        query = urlencode({"token": "not-a-token", "workspace_id": ABSENT_ID})
+        socket_ = _WebSocket(f"{url}?{query}")
+        try:
+            assert socket_.status == 401, f"a bad token answered {socket_.status} on the WebSocket connect"
+        finally:
+            socket_.close()
+
+    @WRITES
+    def test_a_member_connects_and_hears_an_issue_change(
+        self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+    ) -> None:
+        """A member's socket opens, answers a heartbeat and receives the notice for an issue it can read."""
+        url = _realtime_url()
+        query = urlencode({"token": _bearer(api), "workspace_id": workspace["id"]})
+        socket_ = _WebSocket(f"{url}?{query}")
+        try:
+            assert socket_.status == 101, f"the member's WebSocket connect answered {socket_.status}"
+
+            socket_.send_json({"action": "heartbeat"})
+            pong = socket_.receive_json(time.monotonic() + 15)
+            assert pong == {"action": "pong", "connected": True}, f"the heartbeat answered {pong}"
+
+            path = f"/api/workspaces/{workspace['id']}/issues/{issue['id']}"
+            patched = api.patch(path, json={"title": f"{issue['title']} (realtime)"})
+            assert patched.status_code == 200, patched.text[:400]
+
+            deadline = time.monotonic() + 45
+            notice = None
+            while time.monotonic() < deadline:
+                message = socket_.receive_json(deadline)
+                if message is None:
+                    break
+                if message.get("type") == "change" and message.get("id") == issue["id"]:
+                    notice = message
+                    break
+            assert notice is not None, "no change notice for the patched issue arrived within 45 seconds"
+            assert notice["kind"] == "issue"
+            assert notice["workspace_id"] == workspace["id"]
+            assert notice["action"] in ("updated", "created")
+        finally:
+            socket_.close()

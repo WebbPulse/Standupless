@@ -3,18 +3,22 @@
  * and the text as Markdown. The author and a workspace admin edit it in place
  * or delete it from a menu, which is what the server's `can_edit` says.
  *
- * A project update also carries its thread, as Linear's do: a reaction bar
- * with counts, the reader's own reactions pressed, and a reply toggle naming
- * how many replies there are, which opens the replies and a reply box under
- * the update. An initiative update has no thread, so it shows neither.
+ * Every update also carries its thread, as Linear's do: a reaction bar with
+ * counts, the reader's own reactions pressed, and a reply toggle naming how
+ * many replies there are, which opens the replies and a reply box under the
+ * update. A project update's thread and an initiative update's run on the
+ * same component, each under its own parent's routes.
  *
  * Under a project update's text sits its progress report: what moved since the
  * update before it, or a baseline for the first one, drawn from the snapshots
- * the server stored when it was posted. Its author can hide the report for
- * everyone, and updates from before snapshots show none.
+ * the server stored when it was posted. An initiative update shows the lines
+ * the server diffed for it, and none on a first update. Its author can hide
+ * the report for everyone, and updates from before snapshots show none.
  *
  * The card carries the element id `update-<id>`, so a link from an email, a
- * webhook or the inbox that ends in that hash scrolls straight to it.
+ * webhook or the inbox that ends in that hash scrolls straight to it. Its menu
+ * copies that link, or the update itself as Markdown: the author, the date and
+ * the health on one line, then the text.
  */
 
 import React, { useState } from 'react';
@@ -22,6 +26,7 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   LuCopy,
   LuEllipsis,
+  LuFileText,
   LuMessageSquare,
   LuPencil,
   LuTrash2,
@@ -29,16 +34,19 @@ import {
 import {
   addProjectUpdateReaction,
   removeProjectUpdateReaction,
+  type UpdateParent,
 } from '../../api/projectUpdateThreads';
+import { copyText } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { updateReport } from '../../lib/projectUpdateDiff';
-import { projectUpdatesKey } from '../../lib/queryKeys';
+import { statusUpdatesKey } from '../../lib/queryKeys';
 import { replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { toggleReactionGroup } from '../../lib/updateThreads';
 import type {
+  InitiativeUpdateRead,
   ProjectHealth,
   ProjectUpdateEdit,
   ProjectUpdateRead,
@@ -59,6 +67,24 @@ import ProjectUpdateThread from './ProjectUpdateThread';
 
 /** The element id an update renders under, so a hash can scroll to it. */
 const anchorOf = (updateId: string): string => `update-${updateId}`;
+
+/**
+ * An update as Markdown: the author in bold, the day it was posted and the
+ * health it called on one line, then its text as stored. The same update
+ * always gives the same text.
+ */
+export const updateMarkdown = (
+  update: Pick<StatusUpdateRead, 'body' | 'health' | 'created_at'>,
+  author: string
+): string => {
+  const header = [
+    `**${author}**`,
+    update.created_at.slice(0, 10),
+    PROJECT_HEALTH_LABELS[update.health],
+  ].join(' · ');
+  const body = update.body.replace(/\s+$/, '');
+  return `${body === '' ? header : `${header}\n\n${body}`}\n`;
+};
 
 /** Props for HealthPill: the health an update called. */
 interface HealthPillProps {
@@ -92,11 +118,41 @@ export interface ProjectUpdateCardProps {
 /** The author id prefix of an update imported from Linear whose author is not a member. */
 const LINEAR_AUTHOR_PREFIX = 'linear:';
 
-/** Whether an update is a project's, which is what carries a thread. */
+/** Whether an update is a project's rather than an initiative's. */
 const isProjectUpdate = (
   update: StatusUpdateRead
 ): update is ProjectUpdateRead =>
   typeof (update as Partial<ProjectUpdateRead>).project_id === 'string';
+
+/** The project or initiative an update is about, which its thread's routes sit under. */
+const parentOf = (update: StatusUpdateRead): UpdateParent =>
+  isProjectUpdate(update)
+    ? { kind: 'project', id: update.project_id }
+    : {
+        kind: 'initiative',
+        id: (update as Partial<InitiativeUpdateRead>).initiative_id ?? '',
+      };
+
+/** The report lines of an update and whether it has a report to hide at all. */
+const reportOf = (
+  update: StatusUpdateRead,
+  people: Assignable[]
+): { lines: string[]; hasReport: boolean } => {
+  if (!isProjectUpdate(update)) {
+    const initiativeUpdate = update as Partial<InitiativeUpdateRead>;
+    return {
+      lines: initiativeUpdate.report ?? [],
+      hasReport: (initiativeUpdate.snapshot ?? null) !== null,
+    };
+  }
+  return {
+    lines: updateReport(update, (userId) => {
+      const person = people.find((each) => each.user_id === userId);
+      return person === undefined ? undefined : personLabel(person);
+    }),
+    hasReport: (update.snapshot ?? null) !== null,
+  };
+};
 
 /** Props for ProgressReport: the lines of one update's report. */
 interface ProgressReportProps {
@@ -117,13 +173,15 @@ const ProgressReport: React.FC<ProgressReportProps> = ({ lines }) => (
 
 /** Props for UpdateThreadFooter. */
 interface UpdateThreadFooterProps {
-  update: ProjectUpdateRead;
+  update: StatusUpdateRead;
+  parent: UpdateParent;
   people: Assignable[];
 }
 
-/** A project update's reaction bar and reply toggle, and its thread when open. */
+/** An update's reaction bar and reply toggle, and its thread when open. */
 const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
   update,
+  parent,
   people,
 }) => {
   const [open, setOpen] = useState(false);
@@ -132,7 +190,7 @@ const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
     groups: ReactionGroup[];
   } | null>(null);
   const [reactionError, setReactionError] = useState<unknown>(null);
-  const { workspace_id: workspaceId, project_id: projectId } = update;
+  const { workspace_id: workspaceId } = update;
   const reactions =
     toggled !== null && toggled.base === update.reactions
       ? toggled.groups
@@ -148,23 +206,22 @@ const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
       if (reacted) {
         await removeProjectUpdateReaction(
           workspaceId,
-          projectId,
+          parent,
           update.update_id,
           { emoji }
         );
       } else {
-        await addProjectUpdateReaction(
-          workspaceId,
-          projectId,
-          update.update_id,
-          { emoji }
-        );
+        await addProjectUpdateReaction(workspaceId, parent, update.update_id, {
+          emoji,
+        });
       }
     } catch (failure: unknown) {
       setToggled(null);
       setReactionError(failure);
     } finally {
-      invalidateQueries([projectUpdatesKey(workspaceId, projectId)]);
+      invalidateQueries([
+        statusUpdatesKey(workspaceId, parent.kind, parent.id),
+      ]);
     }
   };
 
@@ -195,7 +252,7 @@ const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
       {open && (
         <ProjectUpdateThread
           workspaceId={workspaceId}
-          projectId={projectId}
+          parent={parent}
           updateId={update.update_id}
           people={people}
           autoFocus={count === 0}
@@ -219,15 +276,8 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     ? `${update.author_id.slice(LINEAR_AUTHOR_PREFIX.length)} (Linear)`
     : personLabel(people.find((person) => person.user_id === update.author_id));
 
-  const projectUpdate = isProjectUpdate(update) ? update : null;
-  const hasReport = (projectUpdate?.snapshot ?? null) !== null;
-  const report =
-    projectUpdate === null
-      ? []
-      : updateReport(projectUpdate, (userId) => {
-          const person = people.find((each) => each.user_id === userId);
-          return person === undefined ? undefined : personLabel(person);
-        });
+  const { lines: report, hasReport } = reportOf(update, people);
+  const parent = parentOf(update);
 
   const save = (
     body: string,
@@ -264,14 +314,11 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     const url = new URL(globalThis.location.href);
     url.searchParams.set('tab', 'updates');
     url.hash = anchorOf(update.update_id);
-    void navigator.clipboard
-      .writeText(url.toString())
-      .then(() => {
-        showToast('Link to the update copied');
-      })
-      .catch(() => {
-        showErrorToast('Could not copy the link.');
-      });
+    copyText(url.toString(), 'Link to the update copied');
+  };
+
+  const copyMarkdown = (): void => {
+    copyText(updateMarkdown(update, author), 'Update copied as Markdown');
   };
 
   return (
@@ -302,6 +349,10 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             <MenuItem onSelect={copyLink}>
               <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
               Copy link
+            </MenuItem>
+            <MenuItem onSelect={copyMarkdown}>
+              <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+              Copy as Markdown
             </MenuItem>
             {update.can_edit && (
               <>
@@ -340,7 +391,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
             ariaLabel="Edit update"
             autoFocus
             withDetailsToggle={hasReport}
-            initialHideDetails={projectUpdate?.hide_details === true}
+            initialHideDetails={update.hide_details === true}
             onSubmit={save}
             onCancel={() => {
               setEditing(false);
@@ -354,8 +405,8 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
         )}
       </div>
 
-      {isProjectUpdate(update) && (
-        <UpdateThreadFooter update={update} people={people} />
+      {parent.id !== '' && (
+        <UpdateThreadFooter update={update} parent={parent} people={people} />
       )}
 
       {confirming && (

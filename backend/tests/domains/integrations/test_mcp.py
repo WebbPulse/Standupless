@@ -222,6 +222,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_project_label",
         "delete_project_label",
         "list_project_statuses",
+        "create_project_status",
         "list_statuses",
         "list_team_members",
         "list_teams",
@@ -266,9 +267,12 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "search_issues",
         "set_github_transitions",
         "set_standup_note",
+        "set_my_status",
         "set_issue_reminder",
         "list_issue_reminders",
         "cancel_issue_reminder",
+        "get_team_notification_subscription",
+        "set_team_notification_subscription",
         "snooze_notification",
         "start_cycle_today",
         "end_cycle_today",
@@ -343,6 +347,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_document",
         "delete_document",
         "list_customers",
+        "list_customer_statuses",
+        "list_customer_tiers",
         "create_customer",
         "update_customer",
         "merge_customers",
@@ -374,8 +380,16 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_dashboard",
         "suspend_member",
         "reactivate_member",
+        "update_comment",
+        "delete_comment",
+        "add_comment_reaction",
+        "remove_comment_reaction",
+        "list_issue_links",
+        "create_issue_link",
+        "update_issue_link",
+        "delete_issue_link",
     }
-    assert len(TOOLS) == 261
+    assert len(TOOLS) == 275
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

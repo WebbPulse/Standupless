@@ -3,8 +3,10 @@
  * reorder and delete, and the ones it inherits from its parent team and the
  * workspace, listed read only. A team admin also picks the template the
  * team's create dialog opens with; a sub-team that picks none opens with its
- * parent's. The team's project and document templates follow, kept the same
- * way.
+ * parent's. A second default covers people outside the team, so requests
+ * filed by other teams open in a request shape; left unset, they open with the
+ * members' default. The team's project and document templates follow, kept the
+ * same way.
  */
 
 import React, { useId } from 'react';
@@ -67,6 +69,7 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
 }) => {
   const auth = useQueryAuth();
   const selectId = useId();
+  const nonMemberSelectId = useId();
   const keys = [templatesKey(teamId), templateSettingsKey(teamId)];
   const options = useTeamOptions(workspaceId, teamId, { planning: true });
 
@@ -105,6 +108,18 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
     keys
   );
 
+  const {
+    mutate: setNonMemberDefault,
+    isMutating: savingNonMemberDefault,
+    error: nonMemberDefaultError,
+  } = useMutationWithRefetch(
+    (templateId: string | null) =>
+      updateTemplateSettings(workspaceId, teamId, {
+        non_member_default_template_id: templateId,
+      }),
+    keys
+  );
+
   const templates = data?.templates ?? [];
   const effective = data?.default_template_id ?? null;
   const stored = settings?.default_template_id ?? null;
@@ -112,6 +127,11 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
     stored === null && effective !== null
       ? templates.find((template) => template.id === effective)
       : undefined;
+  const storedNonMember = settings?.non_member_default_template_id ?? null;
+  const membersDefault =
+    effective === null
+      ? undefined
+      : templates.find((template) => template.id === effective);
 
   return (
     <div className="space-y-8">
@@ -163,6 +183,37 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
                 message={errorMessage(
                   defaultError,
                   'Could not change the default template.'
+                )}
+              />
+            )}
+            <SelectField
+              id={nonMemberSelectId}
+              label="Default template for non-members"
+              className="max-w-xs"
+              disabled={!canSetDefault || savingNonMemberDefault}
+              value={storedNonMember ?? ''}
+              onChange={(event) => {
+                const picked = event.target.value;
+                const next = picked === '' ? null : picked;
+                setNonMemberDefault(next).catch(() => undefined);
+              }}
+            >
+              <option value="">
+                {membersDefault === undefined
+                  ? 'Same as members (no default)'
+                  : `Same as members (${membersDefault.name})`}
+              </option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </SelectField>
+            {nonMemberDefaultError !== null && (
+              <ErrorAlert
+                message={errorMessage(
+                  nonMemberDefaultError,
+                  'Could not change the default template for non-members.'
                 )}
               />
             )}

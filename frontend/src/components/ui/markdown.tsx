@@ -12,11 +12,14 @@
  * as `> [!NOTE]` is a callout in its kind's tone, as the editor draws it.
  * A YouTube, Loom, Vimeo or Descript link alone in its paragraph plays inline.
  * A date chip such as `<2026-10-01>` shows its day in the viewer's locale.
+ * LaTeX math, `$...$` inline or a `$$` block, is typeset by KaTeX once it
+ * loads, with `trust` off, and shows its source when it does not parse.
  */
 
 import React, { useMemo } from 'react';
 import { LuChevronRight } from 'react-icons/lu';
 import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinition';
+import { useMentionMember } from '../../contexts/MentionMembersContextDefinition';
 import {
   useLinkedPullRequest,
   useLinkedReference,
@@ -34,8 +37,10 @@ import { VideoEmbedFrame } from '../media/VideoEmbedFrame';
 import { EmojiText } from './custom-emoji';
 import DateChip from './DateChip';
 import HighlightedCode from './highlighted-code';
+import MathFormula from './math';
 import MermaidBlock from './mermaid-block';
 import IssueChip from './IssueChip';
+import MemberHoverTrigger from './MemberHoverCard';
 import MarkdownCallout from './markdown-callout';
 import ReferenceChip from './ReferenceChip';
 
@@ -60,16 +65,22 @@ export interface MarkdownProps {
   density?: MarkdownDensity;
 }
 
-/** A mention, shown as the handle the person uses today. */
+/** A mention, shown as the handle the person uses today, opening the person's card on hover. */
 const Mention: React.FC<{ handle: string }> = ({ handle }) => {
   const label = useMentionLabel(handle);
+  const member = useMentionMember(handle);
   return (
-    <span
-      data-md={`@${handle}`}
-      className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent"
-    >
-      @{label}
-    </span>
+    <MemberHoverTrigger person={member}>
+      {(trigger) => (
+        <span
+          {...trigger}
+          data-md={`@${handle}`}
+          className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent"
+        >
+          @{label}
+        </span>
+      )}
+    </MemberHoverTrigger>
   );
 };
 
@@ -159,6 +170,8 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
         return <IssueChip key={key} issueKeyText={node.key} />;
       case 'date':
         return <DateChip key={key} value={node.value} />;
+      case 'math':
+        return <MathFormula key={key} latex={node.latex} display={false} />;
     }
   });
 
@@ -214,6 +227,8 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
       return <hr key={key} className="border-line" />;
     case 'embed':
       return <VideoEmbedFrame key={key} embed={block.embed} />;
+    case 'math':
+      return <MathFormula key={key} latex={block.latex} display />;
     case 'details':
       return (
         <details key={key} className="group">

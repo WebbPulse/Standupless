@@ -13,10 +13,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.common.customer_fields import legacy_tier_id
+from app.common.db.dynamo.customers import Customer, CustomerRepository
 from tests.domains.helpers import GUEST, MEMBER, sign_in
-from tests.domains.planning.conftest import TEAM, seed_issue, seed_project
+from tests.domains.planning.conftest import TEAM, WORKSPACE, seed_issue, seed_project
 
 
 def _base(workspace: str) -> str:
@@ -179,3 +182,99 @@ def test_the_lists_filter_and_sort_by_important_requests(
     ordered = _projects(client, workspace, sort="customer_important_desc")
     assert [row["project_id"] for row in ordered] == [urgent, asked]
     assert [row["customer_important_count"] for row in ordered] == [1, 0]
+
+
+def _profiled(repositories: Any, name: str, **fields: Any) -> str:
+    """Store one customer with the given status, tier, revenue and size, answering its id."""
+    return repositories.customers.create(
+        Customer(workspace_id=WORKSPACE, name=name, created_by=MEMBER, **fields)
+    ).customer_id
+
+
+def _seed_profiles(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> "dict[str, str]":
+    """An issue asked for by a large active customer, one by a small trial customer twice, one by none.
+
+    The small customer carries the legacy `status` and `tier` strings, so the
+    filters are held to read those as the seeded entries they map to.
+    """
+    big = _profiled(repositories, "Big", status_id="active", tier_id="tier-enterprise", revenue=900_000, size=5000)
+    small = _profiled(repositories, "Small", status="trial", tier="Startup", revenue=1_000, size=4)
+    large = seed_issue(issues_client, workspace, title="Large")["id"]
+    modest = seed_issue(issues_client, workspace, title="Modest")["id"]
+    quiet = seed_issue(issues_client, workspace, title="Quiet")["id"]
+    _ask(client, workspace, "issue", large, big, important=True)
+    _ask(client, workspace, "issue", modest, small)
+    _ask(client, workspace, "issue", modest, small)
+    return {"large": large, "modest": modest, "quiet": quiet}
+
+
+def test_the_issue_list_filters_by_customer_fields(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Status, tier, revenue, size, request count and the important flag narrow the issue list on the server."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    rows = _seed_profiles(client, issues_client, repositories, workspace)
+
+    assert _issues(issues_client, workspace, customer_status_id="active") == [rows["large"]]
+    assert _issues(issues_client, workspace, customer_status_id="trial") == [rows["modest"]]
+    assert set(_issues(issues_client, workspace, customer_status_id_not="none")) == {rows["large"], rows["modest"]}
+    assert _issues(issues_client, workspace, customer_tier_id=legacy_tier_id("Startup")) == [rows["modest"]]
+    assert set(_issues(issues_client, workspace, customer_tier_id_not="tier-enterprise")) == {
+        rows["modest"],
+        rows["quiet"],
+    }
+    assert _issues(issues_client, workspace, customer_revenue_min=500_000) == [rows["large"]]
+    assert _issues(issues_client, workspace, customer_size_max=10) == [rows["modest"]]
+    assert _issues(issues_client, workspace, customer_request_count_min=2) == [rows["modest"]]
+    assert _issues(issues_client, workspace, customer_request_count_max=0) == [rows["quiet"]]
+    assert _issues(issues_client, workspace, customer_important="true") == [rows["large"]]
+    grouped = '[{"match": "any", "customer_size_min": "1000", "customer_request_count_max": 0}]'
+    assert set(_issues(issues_client, workspace, groups=grouped)) == {rows["large"], rows["quiet"]}
+
+    issues = f"{_base(workspace)}/issues"
+    assert issues_client.get(issues, params={"team_id": TEAM, "customer_revenue_min": -1}).status_code == 422
+    sign_in(issues_client, GUEST)
+    assert issues_client.get(issues, params={"team_id": TEAM, "customer_status_id": "active"}).status_code == 403
+    assert issues_client.get(issues, params={"team_id": TEAM, "customer_important": "true"}).status_code == 403
+
+
+def test_customer_field_filters_cost_one_planning_query(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Any mix of customer conditions reads customers and requests together, once, and never apart."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    rows = _seed_profiles(client, issues_client, repositories, workspace)
+    calls: list[str] = []
+    together = CustomerRepository.list_customers_and_requests
+
+    def counted(self: CustomerRepository, *args: Any, **kwargs: Any) -> Any:
+        """Count one combined read and answer it as the repository would."""
+        calls.append("together")
+        return together(self, *args, **kwargs)
+
+    def refused(self: CustomerRepository, *args: Any, **kwargs: Any) -> Any:
+        """Fail a separate read, which a profile filter must never make."""
+        raise AssertionError("a customer field filter read customers or requests on their own")
+
+    monkeypatch.setattr(CustomerRepository, "list_customers_and_requests", counted)
+    monkeypatch.setattr(CustomerRepository, "list_customers", refused)
+    monkeypatch.setattr(CustomerRepository, "list_requests", refused)
+
+    found = _issues(
+        issues_client,
+        workspace,
+        customer_status_id="active",
+        customer_tier_id_not="none",
+        customer_revenue_min=1,
+        customer_size_min=1,
+        customer_request_count_min=1,
+        customer_important="true",
+        groups='[{"customer_tier_id": "tier-enterprise", "customer_size_max": "9999"}]',
+    )
+
+    assert found == [rows["large"]]
+    assert calls == ["together"]

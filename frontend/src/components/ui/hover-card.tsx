@@ -286,3 +286,40 @@ export const HoverCardPanel: React.FC<HoverCardPanelProps> = ({
     document.body
   );
 };
+
+/** Props for HoverCard: the trigger to draw and the card it opens. */
+export interface HoverCardProps {
+  /** Draws the trigger, spreading the handlers onto the element the card hangs off. */
+  children: (trigger: Partial<HoverCardTriggerProps>) => React.ReactElement;
+  /** The card body, rendered only while the card is open. */
+  content: (anchor: HTMLElement) => React.ReactNode;
+  /** Draws the trigger plain with no card, for a record that is not known. */
+  disabled?: boolean;
+  className?: string;
+}
+
+/**
+ * One trigger and its card in a single element: the shape a person, project
+ * or cycle card takes when each trigger owns its card. The body renders only
+ * while the card is open, so a list of triggers reads nothing until one opens.
+ */
+export const HoverCard: React.FC<HoverCardProps> = ({
+  children,
+  content,
+  disabled = false,
+  className,
+}) => {
+  const controller = useHoverCard();
+  if (disabled) return children({});
+  return (
+    <>
+      {children(hoverCardTriggerProps(controller))}
+      <HoverCardPanel
+        controller={controller}
+        {...(className === undefined ? {} : { className })}
+      >
+        {content}
+      </HoverCardPanel>
+    </>
+  );
+};

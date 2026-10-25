@@ -8,8 +8,9 @@
  * changes its hash, and the frontend CI build fails until this list matches:
  * frontend/cspHashes.ts hashes every inline script in the built documents.
  *
- * frame-src allows only the player origins of the four video providers the
- * editor embeds, matching VIDEO_EMBED_ORIGINS in frontend/src/lib/videoEmbeds.ts.
+ * frame-src allows only the player origins of the four video providers and
+ * the Figma embed origin the editor embeds, matching VIDEO_EMBED_ORIGINS in
+ * frontend/src/lib/videoEmbeds.ts.
  *
  * form-action allows GitHub because the GitHub App manifest flow posts the
  * signed manifest to github.com.
@@ -21,7 +22,8 @@
  * use the global s3.amazonaws.com host while regional ones may appear in time.
  */
 locals {
-  api_origin = local.custom_domain ? "https://api.${local.domain_name}" : "https://*.execute-api.${var.aws_region}.amazonaws.com"
+  api_origin      = local.custom_domain ? "https://api.${local.domain_name}" : "https://*.execute-api.${var.aws_region}.amazonaws.com"
+  realtime_origin = "wss://*.execute-api.${var.aws_region}.amazonaws.com"
 
   attachments_bucket_origins = [
     "https://${module.attachments_bucket.bucket_id}.s3.amazonaws.com",
@@ -33,6 +35,7 @@ locals {
     "https://www.loom.com",
     "https://player.vimeo.com",
     "https://share.descript.com",
+    "https://www.figma.com",
   ]
 
   frontend_inline_script_hashes = [
@@ -72,7 +75,7 @@ module "frontend" {
     content_security_policy = {
       mode        = "report_only"
       script_src  = local.frontend_inline_script_hashes
-      connect_src = concat([local.api_origin], local.attachments_bucket_origins)
+      connect_src = concat([local.api_origin, local.realtime_origin], local.attachments_bucket_origins)
       img_src     = concat(["blob:", "https://avatars.githubusercontent.com"], local.attachments_bucket_origins)
       media_src   = concat(["blob:"], local.attachments_bucket_origins)
       frame_src   = local.video_embed_origins

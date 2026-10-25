@@ -37,6 +37,8 @@ import {
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { mergeIssueDelta } from '../lib/issueDelta';
+import { useRealtimePollMs } from '../lib/polling';
+import { useLiveQueryKey } from '../lib/realtime';
 import { recordArchive, recordDelete } from '../lib/issueUndo';
 import { showErrorToast } from '../lib/toast';
 import {
@@ -222,6 +224,8 @@ export const useIssueCollection = (
   );
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const heldRef = useRef<HeldRead | null>(null);
+  const intervalMs = useRealtimePollMs(POLL_MS);
+  useLiveQueryKey(queryKey, enabled && workspaceId !== '');
 
   const { data, isLoading, error } = usePolledQuery(
     async ({ signal }) => {
@@ -237,7 +241,7 @@ export const useIssueCollection = (
       return read;
     },
     {
-      intervalMs: POLL_MS,
+      intervalMs,
       enabled: enabled && workspaceId !== '',
       queryKey,
       auth,

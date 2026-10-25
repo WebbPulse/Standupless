@@ -7,6 +7,8 @@
  * commented on, one row per issue led by its latest action, from the same
  * member activity read the member page uses. The tab lives in the URL, so a
  * link lands on it, and the number keys switch tabs while the page is open.
+ * Assigned opens grouped by Focus, as Linear's does, and is the only list
+ * that offers that grouping.
  */
 
 import React, { useMemo } from 'react';
@@ -29,7 +31,12 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { defaultViewState, type FilterField } from '../../lib/issueView';
+import { FOCUS_FIELD } from '../../lib/focusGrouping';
+import {
+  defaultViewState,
+  type FilterField,
+  type ViewState,
+} from '../../lib/issueView';
 import type { MemberActivityRead } from '../../types/Api';
 
 /** Which of the caller's relationships to an issue the page lists. */
@@ -47,6 +54,8 @@ interface TabSpec {
   scope: IssueListFilters;
   hidden: FilterField[];
   empty: string;
+  /** True for the tab that offers the Focus grouping and opens on it. */
+  focus?: boolean;
 }
 
 /** The tabs in the order they show. The assignee filter is hidden where the tab fixes it. */
@@ -56,6 +65,7 @@ const TABS: Record<IssueTab, TabSpec> = {
     scope: { assignee_id: ME },
     hidden: ['assignee'],
     empty: 'Nothing is assigned to you right now.',
+    focus: true,
   },
   created: {
     label: 'Created',
@@ -89,6 +99,12 @@ const TAB_ORDER: MyIssuesTab[] = [
   'subscribed',
   'activity',
 ];
+
+/** The settings a tab opens with: the list default, grouped by Focus where the tab offers it. */
+export const tabBase = (tab: IssueTab): ViewState => {
+  const base = defaultViewState('list');
+  return TABS[tab].focus === true ? { ...base, groupBy: FOCUS_FIELD } : base;
+};
 
 /** The address of a tab, relative to the page. */
 const tabSearch = (tab: MyIssuesTab): string =>
@@ -180,7 +196,10 @@ export const MyIssues: React.FC = () => {
   const { teams, isLoading, error } = useTeam(undefined);
   const [params] = useSearchParams();
   const tab = readTab(params.get(TAB_PARAM));
-  const base = useMemo(() => defaultViewState('list'), []);
+  const base = useMemo(
+    () => tabBase(tab === 'activity' ? 'assigned' : tab),
+    [tab]
+  );
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const feed = useMyActivity(workspaceId, tab === 'activity');
@@ -247,6 +266,7 @@ export const MyIssues: React.FC = () => {
       homeTeam={teams.length === 1 ? teams[0] : undefined}
       emptyMessage={spec.empty}
       hideFilterFields={spec.hidden}
+      focusGrouping={spec.focus === true}
     />
   );
 };

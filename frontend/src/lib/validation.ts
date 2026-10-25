@@ -16,6 +16,50 @@ export const KEY_PREFIX_PATTERN = /^[A-Z][A-Z0-9]{1,5}$/;
 export const LABEL_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
 /**
+ * Slugs no workspace may take because they read as product pages, mirroring
+ * `RESERVED_SLUGS` on the server.
+ */
+export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
+  'admin',
+  'api',
+  'app',
+  'apps',
+  'assets',
+  'auth',
+  'billing',
+  'docs',
+  'email',
+  'help',
+  'invite',
+  'invites',
+  'join',
+  'login',
+  'logout',
+  'mail',
+  'new',
+  'null',
+  'oauth',
+  'register',
+  'root',
+  'scim',
+  'settings',
+  'sign-in',
+  'sign-up',
+  'signin',
+  'signup',
+  'sso',
+  'standupless',
+  'static',
+  'status',
+  'support',
+  'system',
+  'undefined',
+  'workspace',
+  'workspaces',
+  'www',
+]);
+
+/**
  * Checks a workspace slug, answering the sentence to show or null when it
  * passes. Blank answers null so an untouched field does not read as an error.
  */
@@ -23,6 +67,9 @@ export const validateSlug = (value: string): string | null => {
   if (value === '') return null;
   if (!SLUG_PATTERN.test(value)) {
     return 'Use 3 to 40 characters: lowercase letters, numbers and hyphens.';
+  }
+  if (RESERVED_SLUGS.has(value)) {
+    return 'That URL is reserved. Pick another.';
   }
   return null;
 };

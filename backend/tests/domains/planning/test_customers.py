@@ -7,7 +7,7 @@ time, that a request is filed through an issue or project the caller may write
 on and listed on both the target and the customer, that request counts follow
 what the caller can see, that a merge moves requests and domains without
 overwriting the survivor, that deleting a customer takes its requests, that a
-customer carries a status from a fixed set, and that a request is edited,
+customer carries a status and a tier from the workspace's lists, and that a request is edited,
 marked important and moved only by a writer on both the old and new target.
 """
 
@@ -35,6 +35,14 @@ def _customer(client: TestClient, workspace: str, **payload: Any) -> "dict[str, 
     return response.json()
 
 
+def _tiers(client: TestClient, workspace: str, *names: str) -> None:
+    """Set up customer tiers as an admin, since only an admin edits the list."""
+    sign_in(client, ADMIN)
+    for name in names:
+        response = client.post(f"{_base(workspace)}/customers/tiers", json={"name": name})
+        assert response.status_code == 201, response.text
+
+
 def _request(
     client: TestClient, workspace: str, kind: str, target_id: str, customer_id: str, body: str = ""
 ) -> "dict[str, Any]":
@@ -49,6 +57,7 @@ def _request(
 
 def test_a_customer_round_trips(client: TestClient, workspace: str) -> None:
     """Create, read, list and edit, with domains normalised and the caller's rights."""
+    _tiers(client, workspace, "Enterprise")
     sign_in(client, MEMBER)
 
     created = _customer(
@@ -269,6 +278,7 @@ def test_a_merge_moves_requests_and_keeps_the_survivor(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:
     """The survivor gains requests and domains and fills only its empty fields."""
+    _tiers(client, workspace, "Startup", "Enterprise")
     sign_in(client, MEMBER)
     sign_in(issues_client, MEMBER)
     source = _customer(client, workspace, name="Acme Inc", domains=["acme.io"], tier="Startup", size=40)
@@ -330,7 +340,7 @@ def _edit(client: TestClient, workspace: str, request: "dict[str, Any]", **paylo
 
 
 def test_a_customer_carries_a_status(client: TestClient, workspace: str) -> None:
-    """Status is set on create, edited and cleared, and refused outside the fixed set."""
+    """Status is set on create, edited and cleared, and refused outside the workspace's list."""
     sign_in(client, MEMBER)
     created = _customer(client, workspace, status="trial")
     url = f"{_base(workspace)}/customers/{created['customer_id']}"

@@ -1,16 +1,20 @@
 /**
  * The initiatives list helpers: reading the arrangement from the URL over the
- * saved one, filtering and ordering.
+ * saved one, filtering, ordering and grouping by owner, health and target date.
  */
 
 import { describe, expect, it } from 'vitest';
 import type { InitiativeRead } from '../types/Api';
 import {
   DEFAULT_INITIATIVES_DISPLAY,
+  healthGroups,
   matchesInitiativeFilters,
   orderInitiatives,
+  ownerGroups,
   resolveInitiativesDisplay,
+  targetDateGroups,
 } from './initiativeList';
+import type { Assignable } from './issuePeople';
 
 /** An initiative carrying only what the helpers read. */
 const initiative = (
@@ -39,11 +43,22 @@ describe('resolveInitiativesDisplay', () => {
         completed: 'hide',
       })
     ).toEqual({
+      layout: 'list',
+      zoom: 'month',
       grouping: 'status',
       order: 'name',
       completed: 'hide',
       columns: 'owner,progress',
     });
+  });
+
+  it('reads the timeline layout and zoom, and drops an unknown zoom', () => {
+    const params = new URLSearchParams('layout=timeline&zoom=decade');
+    const display = resolveInitiativesDisplay((field) => params.get(field), {
+      zoom: 'quarter',
+    });
+    expect(display.layout).toBe('timeline');
+    expect(display.zoom).toBe('quarter');
   });
 
   it('reads the team grouping from the URL', () => {
@@ -54,10 +69,20 @@ describe('resolveInitiativesDisplay', () => {
     ).toBe('team');
   });
 
+  it('reads the manual order and the owner, health and target date groupings', () => {
+    const params = new URLSearchParams('order=manual&grouping=target_date');
+    const display = resolveInitiativesDisplay(
+      (field) => params.get(field),
+      undefined
+    );
+    expect(display.order).toBe('manual');
+    expect(display.grouping).toBe('target_date');
+  });
+
   it('ignores a value it does not know', () => {
     expect(
       resolveInitiativesDisplay(
-        (field) => (field === 'order' ? 'manual' : null),
+        (field) => (field === 'order' ? 'priority' : null),
         undefined
       )
     ).toEqual(DEFAULT_INITIATIVES_DISPLAY);
@@ -120,5 +145,96 @@ describe('orderInitiatives', () => {
     expect(
       orderInitiatives(rows, 'updated').map((row) => row.initiative_id)
     ).toEqual(['b', 'a']);
+  });
+});
+
+describe('manual order', () => {
+  it('runs placed initiatives by key, then unplaced ones newest first', () => {
+    const rows = [
+      initiative('late', { created_at: '2026-10-01T00:00:00Z' }),
+      initiative('second', { sort_order: 'V' }),
+      initiative('first', { sort_order: 'F' }),
+      initiative('newest', { created_at: '2026-10-09T00:00:00Z' }),
+    ];
+    expect(
+      orderInitiatives(rows, 'manual').map((row) => row.initiative_id)
+    ).toEqual(['first', 'second', 'newest', 'late']);
+  });
+});
+
+describe('ownerGroups', () => {
+  const people = [
+    {
+      user_id: 'U2',
+      display_name: 'Zoe',
+      email: 'zoe@example.com',
+    },
+    {
+      user_id: 'U1',
+      display_name: 'Ada',
+      email: 'ada@example.com',
+    },
+  ] as Assignable[];
+
+  it('groups by owner by name and puts No owner last', () => {
+    const groups = ownerGroups(
+      [
+        initiative('a', { owner_id: 'U2' }),
+        initiative('b'),
+        initiative('c', { owner_id: 'U1' }),
+        initiative('d', { owner_id: 'U2' }),
+      ],
+      people
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      'Ada',
+      'Zoe',
+      'No owner',
+    ]);
+    expect(groups[1]?.rows.map((row) => row.initiative_id)).toEqual(['a', 'd']);
+  });
+
+  it('names an owner who has left an unknown owner', () => {
+    expect(
+      ownerGroups([initiative('a', { owner_id: 'GONE' })], people).map(
+        (group) => group.label
+      )
+    ).toEqual(['Unknown owner']);
+  });
+});
+
+describe('healthGroups', () => {
+  it('runs on track to off track and puts No health last', () => {
+    const groups = healthGroups([
+      initiative('a'),
+      initiative('b', { health: 'off_track' }),
+      initiative('c', { health: 'on_track' }),
+    ]);
+    expect(groups.map((group) => group.label)).toEqual([
+      'On track',
+      'Off track',
+      'No health',
+    ]);
+  });
+});
+
+describe('targetDateGroups', () => {
+  it('groups by month, a coarse date after its months, and No target date last', () => {
+    const groups = targetDateGroups([
+      initiative('none'),
+      initiative('quarter', {
+        target_date: '2026-12-31',
+        target_date_resolution: 'quarter',
+      }),
+      initiative('dec', { target_date: '2026-12-10' }),
+      initiative('nov', { target_date: '2026-11-03' }),
+    ]);
+    expect(groups.map((group) => group.rows[0]?.initiative_id)).toEqual([
+      'nov',
+      'dec',
+      'quarter',
+      'none',
+    ]);
+    expect(groups.at(-1)?.label).toBe('No target date');
   });
 });

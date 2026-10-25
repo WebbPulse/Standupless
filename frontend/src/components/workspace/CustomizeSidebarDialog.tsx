@@ -16,6 +16,7 @@ import {
 import type {
   SidebarBadgeStyle,
   SidebarVisibility,
+  WorkspaceFeatures,
   WorkspaceRole,
 } from '../../types/Api';
 import Dialog from '../ui/dialog';
@@ -27,6 +28,8 @@ export interface CustomizeSidebarDialogProps {
   onClose: () => void;
   /** The caller's workspace role, which decides the items listed. */
   role: WorkspaceRole | undefined;
+  /** The workspace's areas, so an area that is off is not offered. */
+  features?: Partial<WorkspaceFeatures> | undefined;
 }
 
 /** Lists each sidebar item with a place picker, then the badge style. */
@@ -34,8 +37,11 @@ export const CustomizeSidebarDialog: React.FC<CustomizeSidebarDialogProps> = ({
   open,
   onClose,
   role,
+  features,
 }) => {
   const { items, badgeStyle, place, setBadgeStyle } = useSidebarPreference();
+  const available = (item: (typeof SIDEBAR_ITEMS)[number]['item']): boolean =>
+    itemAvailable(item, role, features);
 
   return (
     <Dialog
@@ -47,7 +53,7 @@ export const CustomizeSidebarDialog: React.FC<CustomizeSidebarDialogProps> = ({
     >
       <div className="space-y-4">
         <ul className="space-y-1" aria-label="Sidebar items">
-          {SIDEBAR_ITEMS.filter(({ item }) => itemAvailable(item, role)).map(
+          {SIDEBAR_ITEMS.filter(({ item }) => available(item)).map(
             ({ item, label }) => (
               <li
                 key={item}

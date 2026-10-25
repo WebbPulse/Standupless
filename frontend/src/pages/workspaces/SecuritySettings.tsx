@@ -9,7 +9,6 @@
 import React from 'react';
 import ApprovedDomainsSection from '../../components/workspace/ApprovedDomainsSection';
 import PermissionsSection from '../../components/workspace/PermissionsSection';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import SsoSection from '../../components/workspace/SsoSection';
 import ThirdPartyAppsSection from '../../components/workspace/ThirdPartyAppsSection';
@@ -26,12 +25,7 @@ const SecuritySettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (

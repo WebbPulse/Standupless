@@ -33,6 +33,7 @@ import type {
   StatusRead,
   ViewGroupBy,
 } from '../types/Api';
+import { isDayBound, resolveDayBound, utcToday } from './filterDays';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
 import {
   allowsMultiple,
@@ -40,6 +41,15 @@ import {
   pickableLabels,
   replacedSiblings,
 } from './labelGroups';
+import {
+  currentCycleIds,
+  FOCUS_FIELD,
+  FOCUS_SECTION_LABELS,
+  FOCUS_SECTIONS,
+  focusSectionOf,
+  orderWithinFocus,
+  type FocusSection,
+} from './focusGrouping';
 import { completionPercent, progressPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
@@ -53,8 +63,19 @@ import {
   triageStatusFor,
 } from './triageStatus';
 
-/** A property an issue list can be grouped by, or `none`. */
-export type GroupField = ViewGroupBy | 'none';
+/**
+ * A property an issue list can be grouped by, `none`, or the client-only
+ * Focus grouping My issues > Assigned offers, which no saved view stores.
+ */
+export type GroupField = ViewGroupBy | 'none' | typeof FOCUS_FIELD;
+
+/** A grouping a saved view or a team default can store: anything but Focus. */
+export type StorableGroupField = Exclude<GroupField, typeof FOCUS_FIELD>;
+
+/** Whether a state groups or sub-groups by Focus, which a saved view refuses. */
+export const usesFocusGrouping = (
+  state: Pick<ViewState, 'groupBy' | 'subGroupBy'>
+): boolean => state.groupBy === FOCUS_FIELD || state.subGroupBy === FOCUS_FIELD;
 
 /** A grouping by one label group, `label_group:<id>` naming the group label. */
 export type LabelGroupField = `label_group:${string}`;
@@ -99,14 +120,23 @@ export type FilterField =
   | 'blocked'
   | 'blocking'
   | 'relation'
-  | 'customer';
+  | 'customer'
+  | 'customer_status'
+  | 'customer_tier'
+  | 'customer_revenue'
+  | 'customer_size'
+  | 'customer_requests'
+  | 'customer_important'
+  | 'release';
 
 /**
  * Whether a filter keeps or excludes the issues matching its values, or, for
- * a date field, whether it keeps the days before or after its one value. A
+ * a date field, whether it keeps the days before or after its one value, or,
+ * for a number field, whether its one value is a lower or an upper bound. A
  * label filter can also keep only the issues carrying `all` of its values.
  */
-export type FilterOp = 'is' | 'is_not' | 'all' | 'before' | 'after';
+export type FilterOp =
+  'is' | 'is_not' | 'all' | 'before' | 'after' | 'at_least' | 'at_most';
 
 /** How a set of conditions combines: every one must hold, or any one. */
 export type FilterMatch = 'all' | 'any';
@@ -129,6 +159,7 @@ export const BOOLEAN_FIELDS: ReadonlySet<FilterField> = new Set([
   'sub_issues',
   'blocked',
   'blocking',
+  'customer_important',
 ]);
 
 /** The fields that take free text matched against an issue's title and description. */
@@ -153,7 +184,50 @@ const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'blocking',
   'relation',
   'customer',
+  'customer_status',
+  'customer_tier',
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+  'customer_important',
+  'release',
 ]);
+
+/**
+ * The filters that read the customers asking for an issue, offered only
+ * where the reader may see customers.
+ */
+export const CUSTOMER_FILTER_FIELDS: ReadonlySet<FilterField> = new Set([
+  'customer',
+  'customer_status',
+  'customer_tier',
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+  'customer_important',
+]);
+
+/**
+ * The fields filtered by a whole number bound, at least or at most, rather
+ * than a set of values: an asking customer's revenue or size, or how many
+ * customer requests an issue carries.
+ */
+export const NUMBER_FIELDS: ReadonlySet<FilterField> = new Set([
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+]);
+
+/** Whether a field takes a whole number bound rather than a set of values. */
+export const isNumberField = (field: FilterField): boolean =>
+  NUMBER_FIELDS.has(field);
+
+/** The largest bound a number filter takes, the server's own limit. */
+export const MAX_FILTER_NUMBER = 10 ** 15;
+
+/** Whether a number filter's text is a bound the server takes: digits only, 0 to the limit. */
+export const isFilterNumber = (text: string): boolean =>
+  /^\d{1,16}$/.test(text) && Number(text) <= MAX_FILTER_NUMBER;
 
 /** The fields filtered by a day bound rather than a set of values. */
 export const DATE_FIELDS: ReadonlySet<FilterField> = new Set([
@@ -248,6 +322,12 @@ export interface ViewState {
   showArchived: boolean;
   /** What each group header reads beside its name: the issue count or the total estimate. */
   groupHeader: ViewGroupHeader;
+  /**
+   * The groups, swimlanes and board columns folded away, as the list's own
+   * keys. A saved view keeps them; a list that is not a saved view keeps them
+   * per person apart from this state, so there they stay empty.
+   */
+  collapsed: string[];
 }
 
 /**
@@ -309,10 +389,39 @@ export interface IssueContext {
    */
   customers?: IssueCustomer[];
   /**
+   * The workspace's customer statuses, which the customer status filter
+   * offers and its chips name. Set alongside `customers`.
+   */
+  customerStatuses?: IssueCustomerField[];
+  /** The workspace's customer tiers, for the customer tier filter. */
+  customerTiers?: IssueCustomerField[];
+  /**
    * The customers that requested each issue, by issue id, so a grouping by
    * customer places an issue under every customer that asked for it.
    */
   customerRequests?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * The releases the reader can see. A list offers the release filter and
+   * grouping only once they are read.
+   */
+  releases?: IssueRelease[];
+  /**
+   * The releases carrying each issue, by issue id, so a grouping by release
+   * places an issue under every release that shipped it.
+   */
+  issueReleases?: ReadonlyMap<string, readonly string[]>;
+}
+
+/** A release as a list groups, filters and labels by it. */
+export interface IssueRelease {
+  id: string;
+  name: string;
+  teamId: string;
+  /** Where its furthest stage sits in the team's pipeline, -1 for none. */
+  stagePosition: number;
+  createdAt: string;
+  /** The name of the furthest stage it reached, if any. */
+  stageName?: string;
 }
 
 /** A customer as a list groups and filters by it. */
@@ -321,6 +430,13 @@ export interface IssueCustomer {
   name: string;
   revenue?: number | null;
   requestCount?: number;
+}
+
+/** A customer status or tier as the customer filters offer and name it. */
+export interface IssueCustomerField {
+  id: string;
+  name: string;
+  color?: string | null;
 }
 
 /** How a parent issue heads its group: its key and title. */
@@ -360,6 +476,7 @@ export const GROUP_FIELDS: GroupField[] = [
   'team',
   'sla',
   'customer',
+  'release',
   'none',
 ];
 
@@ -386,18 +503,19 @@ export const isMovableGroupField = (field: GroupField): boolean =>
 /**
  * The fields a list with this context can be grouped or filtered by. A
  * milestone only means something inside one project, so it is left out
- * wherever the context carries no milestones, and a customer only where the
- * reader may see customers.
+ * wherever the context carries no milestones, a customer only where the
+ * reader may see customers, and a release only once releases are read.
  */
 export const fieldsFor = <T extends string>(
   fields: readonly T[],
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'customers'>
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'customers' | 'releases'>
 ): T[] =>
   fields.filter(
     (field) =>
       (field !== 'milestone' || context.milestones !== undefined) &&
       (field !== 'team' || (context.teams ?? []).length > 1) &&
-      (field !== 'customer' || context.customers !== undefined)
+      (field !== 'customer' || context.customers !== undefined) &&
+      (field !== 'release' || context.releases !== undefined)
   );
 
 /**
@@ -406,7 +524,10 @@ export const fieldsFor = <T extends string>(
  * from each project the list knows.
  */
 export const filterFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'projects' | 'customers'>
+  context: Pick<
+    IssueContext,
+    'milestones' | 'teams' | 'projects' | 'customers' | 'releases'
+  >
 ): FilterField[] =>
   FILTER_FIELDS.filter(
     (field) =>
@@ -414,7 +535,8 @@ export const filterFieldsFor = (
         context.milestones !== undefined ||
         context.projects.length > 0) &&
       (field !== 'team' || (context.teams ?? []).length > 1) &&
-      (field !== 'customer' || context.customers !== undefined)
+      (!CUSTOMER_FILTER_FIELDS.has(field) || context.customers !== undefined) &&
+      (field !== 'release' || context.releases !== undefined)
   );
 
 /** How a grouping reads in the interface. */
@@ -430,6 +552,8 @@ export const GROUP_LABELS: Record<GroupProperty, string> = {
   team: 'Team',
   sla: 'SLA status',
   customer: 'Customer',
+  release: 'Release',
+  focus: 'Focus',
   none: 'No grouping',
 };
 
@@ -530,12 +654,17 @@ export const labelGroupFields = (
  * group follows the plain label grouping, as in Linear.
  */
 export const groupFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels' | 'customers'>
+  context: Pick<
+    IssueContext,
+    'milestones' | 'teams' | 'labels' | 'customers' | 'releases'
+  >,
+  options: { focus?: boolean } = {}
 ): GroupField[] => {
   const groups = labelGroupFields(context);
-  return fieldsFor(GROUP_FIELDS, context).flatMap((field) =>
+  const fields = fieldsFor(GROUP_FIELDS, context).flatMap((field) =>
     field === 'label' ? [field, ...groups] : [field]
   );
+  return options.focus === true ? [FOCUS_FIELD, ...fields] : fields;
 };
 
 /** How a grouping reads in the interface, a label group by its own name. */
@@ -610,6 +739,13 @@ export const FILTER_FIELDS: FilterField[] = [
   'blocking',
   'relation',
   'customer',
+  'customer_status',
+  'customer_tier',
+  'customer_revenue',
+  'customer_size',
+  'customer_requests',
+  'customer_important',
+  'release',
 ];
 
 /** How a filter field reads in the interface. */
@@ -637,6 +773,13 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   blocking: 'Blocking',
   relation: 'Relations',
   customer: 'Customer',
+  customer_status: 'Customer status',
+  customer_tier: 'Customer tier',
+  customer_revenue: 'Customer revenue',
+  customer_size: 'Customer size',
+  customer_requests: 'Customer requests',
+  customer_important: 'Important request',
+  release: 'Release',
 };
 
 /**
@@ -649,11 +792,13 @@ export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'blocked',
   'blocking',
   'relation',
+  'customer_important',
 ]);
 
 /**
  * The list query key each filter field maps to. A date field's key is the
- * stem its `_before` and `_after` bounds share.
+ * stem its `_before` and `_after` bounds share, and a number field's the stem
+ * its `_min` and `_max` bounds share.
  */
 const FILTER_KEYS: Record<FilterField, string> = {
   status: 'status_id',
@@ -679,6 +824,13 @@ const FILTER_KEYS: Record<FilterField, string> = {
   blocking: 'is_blocking',
   relation: 'has_relation',
   customer: 'customer_id',
+  customer_status: 'customer_status_id',
+  customer_tier: 'customer_tier_id',
+  customer_revenue: 'customer_revenue',
+  customer_size: 'customer_size',
+  customer_requests: 'customer_request_count',
+  customer_important: 'customer_important',
+  release: 'release_id',
 };
 
 /** The fields whose filter can keep only issues carrying every value. */
@@ -688,6 +840,9 @@ export const ALL_OF_FIELDS: ReadonlySet<FilterField> = new Set(['label']);
 const clauseKey = (field: FilterField, op: FilterOp): string => {
   if (isDateField(field)) {
     return `${FILTER_KEYS[field]}_${op === 'before' ? 'before' : 'after'}`;
+  }
+  if (isNumberField(field)) {
+    return `${FILTER_KEYS[field]}_${op === 'at_most' ? 'max' : 'min'}`;
   }
   if (op === 'all') {
     return ALL_OF_FIELDS.has(field)
@@ -713,9 +868,13 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'estimate',
   'start_date',
   'due_date',
+  'sla',
+  'customers',
+  'customer_revenue',
   'created_at',
   'updated_at',
   'time_in_status',
+  'release',
   'assignee',
 ];
 
@@ -739,6 +898,10 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   created_at: 'Created',
   updated_at: 'Updated',
   time_in_status: 'Time in status',
+  release: 'Release',
+  sla: 'SLA',
+  customers: 'Customers',
+  customer_revenue: 'Customer revenue',
 };
 
 /** The properties a row shows until someone changes them. */
@@ -752,6 +915,7 @@ export const DEFAULT_VISIBLE: ViewVisibleProperty[] = [
   'project',
   'estimate',
   'due_date',
+  'sla',
   'created_at',
   'assignee',
 ];
@@ -773,11 +937,24 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   completed: 'all',
   showArchived: false,
   groupHeader: 'count',
+  collapsed: [],
 });
 
-const isGroupField = (value: string | null): value is GroupField =>
+const isGroupField = (value: string | null): value is StorableGroupField =>
   value !== null &&
   ((GROUP_FIELDS as string[]).includes(value) || isLabelGroupField(value));
+
+/**
+ * Whether the URL may ask for this grouping over `base`. Focus is only read
+ * back where the page itself opens on it, so a link carrying it elsewhere
+ * keeps the page's own grouping.
+ */
+const isGroupFieldOver = (
+  value: string | null,
+  base: ViewState
+): value is GroupField =>
+  isGroupField(value) ||
+  (value === FOCUS_FIELD && base.groupBy === FOCUS_FIELD);
 
 const isOrdering = (value: string | null): value is IssueListSort =>
   value !== null && (ORDERINGS as string[]).includes(value);
@@ -804,8 +981,17 @@ const parseClause = (raw: string): FilterClause | null => {
   if (values.length === 0) return null;
   if (isDateField(field)) {
     const day = values[0] ?? '';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    if (!isDayBound(day)) return null;
     return { field, op: op === 'before' ? 'before' : 'after', values: [day] };
+  }
+  if (isNumberField(field)) {
+    const bound = values[0] ?? '';
+    if (!isFilterNumber(bound)) return null;
+    return {
+      field,
+      op: op === 'max' ? 'at_most' : 'at_least',
+      values: [String(Number(bound))],
+    };
   }
   if (op === 'all' && ALL_OF_FIELDS.has(field)) {
     return { field, op: 'all', values };
@@ -823,6 +1009,8 @@ const CLAUSE_OPS: Record<FilterOp, string> = {
   all: 'all',
   before: 'before',
   after: 'after',
+  at_least: 'min',
+  at_most: 'max',
 };
 
 /** Writes one clause as its `f` parameter. */
@@ -832,6 +1020,18 @@ const writeClause = (clause: FilterClause): string =>
 const sameList = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length &&
   left.every((value, index) => value === right[index]);
+
+/** Whether two lists hold the same values, in any order. */
+export const sameSet = (
+  left: readonly string[],
+  right: readonly string[]
+): boolean => {
+  const held = new Set(left);
+  const other = new Set(right);
+  return (
+    held.size === other.size && [...held].every((value) => other.has(value))
+  );
+};
 
 const sameFilters = (left: FilterClause[], right: FilterClause[]): boolean =>
   sameList(left.map(writeClause), right.map(writeClause));
@@ -883,7 +1083,8 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.showSubIssues === right.showSubIssues &&
   left.completed === right.completed &&
   left.showArchived === right.showArchived &&
-  left.groupHeader === right.groupHeader;
+  left.groupHeader === right.groupHeader &&
+  sameSet(left.collapsed, right.collapsed);
 
 /**
  * Reads the state out of the URL. Every parameter overrides `base`, and one
@@ -923,7 +1124,7 @@ export const parseViewState = (
   const done = params.get('done');
   const archived = params.get('archived');
   const head = params.get('head');
-  const groupBy = isGroupField(group) ? group : base.groupBy;
+  const groupBy = isGroupFieldOver(group, base) ? group : base.groupBy;
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
     filters,
@@ -950,6 +1151,9 @@ export const parseViewState = (
     completed: (done === null ? undefined : parseDone(done)) ?? base.completed,
     showArchived: archived === null ? base.showArchived : archived === '1',
     groupHeader: isGroupHeader(head) ? head : base.groupHeader,
+    collapsed: params.has('fold')
+      ? [...new Set(params.getAll('fold').filter((key) => key !== ''))]
+      : base.collapsed,
   };
 };
 
@@ -981,6 +1185,7 @@ export const writeViewState = (
         'done',
         'archived',
         'head',
+        'fold',
       ].includes(key)
     ) {
       params.append(key, value);
@@ -1021,6 +1226,10 @@ export const writeViewState = (
   }
   if (state.groupHeader !== base.groupHeader) {
     params.set('head', state.groupHeader);
+  }
+  if (!sameSet(state.collapsed, base.collapsed)) {
+    if (state.collapsed.length === 0) params.append('fold', '');
+    for (const key of state.collapsed) params.append('fold', key);
   }
   return params;
 };
@@ -1138,6 +1347,13 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
     case 'blocking':
     case 'relation':
     case 'customer':
+    case 'customer_status':
+    case 'customer_tier':
+    case 'customer_revenue':
+    case 'customer_size':
+    case 'customer_requests':
+    case 'customer_important':
+    case 'release':
       return [];
   }
 };
@@ -1204,7 +1420,7 @@ const clauseHolds = (
   }
   const held = issueFilterValues(issue, clause.field);
   if (clause.op === 'before' || clause.op === 'after') {
-    const bound = clause.values[0] ?? '';
+    const bound = resolveDayBound(clause.values[0] ?? '', utcToday());
     const day = held[0];
     if (day === undefined) return false;
     return clause.op === 'before' ? day < bound : day > bound;
@@ -1255,7 +1471,11 @@ const clauseQuery = (
   const query: Record<string, string | string[]> = {};
   for (const clause of filters) {
     const key = clauseKey(clause.field, clause.op);
-    if (isDateField(clause.field) || isTextField(clause.field)) {
+    if (
+      isDateField(clause.field) ||
+      isTextField(clause.field) ||
+      isNumberField(clause.field)
+    ) {
       const value = clause.values[0];
       if (value !== undefined) query[key] = value;
       continue;
@@ -1346,6 +1566,7 @@ const filterClauses = (filter: Record<string, unknown>): FilterClause[] => {
   const read = (key: string): string[] => {
     const value = filter[key];
     if (typeof value === 'string') return asList(value);
+    if (typeof value === 'number') return [String(value)];
     if (Array.isArray(value)) {
       return value.filter((item): item is string => typeof item === 'string');
     }
@@ -1358,6 +1579,15 @@ const filterClauses = (filter: Record<string, unknown>): FilterClause[] => {
         const day = read(clauseKey(field, op))[0];
         if (day !== undefined && day !== '') {
           filters.push({ field, op, values: [day.slice(0, 10)] });
+        }
+      }
+      continue;
+    }
+    if (isNumberField(field)) {
+      for (const op of ['at_least', 'at_most'] as const) {
+        const bound = read(clauseKey(field, op))[0]?.trim();
+        if (bound !== undefined && isFilterNumber(bound)) {
+          filters.push({ field, op, values: [String(Number(bound))] });
         }
       }
       continue;
@@ -1461,6 +1691,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
       view.completed_window ?? (view.show_completed === false ? 'none' : 'all'),
     showArchived: view.show_archived === true,
     groupHeader: view.group_header === 'estimate' ? 'estimate' : 'count',
+    collapsed: [...(view.collapsed_groups ?? [])],
   };
 };
 
@@ -1510,6 +1741,14 @@ export const stateToViewFilter = (
   return filter;
 };
 
+/**
+ * The grouping a saved view or team default stores for a field, null for
+ * none. Focus has no stored form, so it stores as none; every save path
+ * refuses a Focus state through `usesFocusGrouping` before it gets here.
+ */
+export const storedGrouping = (field: GroupField): ViewGroupBy | null =>
+  field === 'none' || field === FOCUS_FIELD ? null : field;
+
 /** The display settings a state saves as. */
 export const stateToViewDisplay = (
   state: ViewState
@@ -1527,15 +1766,16 @@ export const stateToViewDisplay = (
   | 'completed_window'
   | 'show_archived'
   | 'group_header'
+  | 'collapsed_groups'
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
   ordering_reversed: state.reverse,
-  group_by: state.groupBy === 'none' ? null : state.groupBy,
+  group_by: storedGrouping(state.groupBy),
   sub_group_by:
-    state.subGroupBy === 'none' || state.subGroupBy === state.groupBy
+    state.subGroupBy === state.groupBy
       ? null
-      : state.subGroupBy,
+      : storedGrouping(state.subGroupBy),
   visible_properties: state.visible,
   layout: state.layout,
   show_sub_issues: state.showSubIssues,
@@ -1543,6 +1783,7 @@ export const stateToViewDisplay = (
   completed_window: state.completed,
   show_archived: state.showArchived,
   group_header: state.groupHeader,
+  collapsed_groups: [...state.collapsed],
 });
 
 /** How a new view is filed and how it looks, beyond its filters and display. */
@@ -1671,6 +1912,60 @@ export const shownIssues = <T extends OrderedIssueRead>(
 /** The folded-set key that hides a board column. */
 export const hiddenColumnKey = (column: string): string => `column/${column}`;
 
+/**
+ * The folded-set key that hides a list sub-group inside its parent group. It
+ * shares the board column prefix, so the hidden state lives in the same set
+ * and saves with the view the same way.
+ */
+export const hiddenSubGroupKey = (group: string, sub: string): string =>
+  hiddenColumnKey(`${group}/${sub}`);
+
+/** A group hidden from a list, with the parent it sits in when it is a sub-group. */
+export interface HiddenGroup {
+  /** The folded-set key that hides the group. */
+  key: string;
+  group: IssueGroup;
+  parent?: IssueGroup | undefined;
+}
+
+/**
+ * Splits a list's sections into the ones it shows, with their hidden
+ * sub-groups dropped, and the groups hidden from it. A grouping of none has
+ * no header to hide, so its one section always shows.
+ */
+export const splitHiddenSections = <
+  S extends { group: IssueGroup; subs: IssueGroup[] | null },
+>(
+  sections: readonly S[],
+  collapsed: ReadonlySet<string>
+): { shown: S[]; hidden: HiddenGroup[] } => {
+  const shown: S[] = [];
+  const hidden: HiddenGroup[] = [];
+  for (const section of sections) {
+    const { group, subs } = section;
+    const key = hiddenColumnKey(group.key);
+    if (group.field !== 'none' && collapsed.has(key)) {
+      hidden.push({ key, group });
+      continue;
+    }
+    if (subs === null) {
+      shown.push(section);
+      continue;
+    }
+    const kept: IssueGroup[] = [];
+    for (const sub of subs) {
+      const subKey = hiddenSubGroupKey(group.key, sub.key);
+      if (collapsed.has(subKey))
+        hidden.push({ key: subKey, group: sub, parent: group });
+      else kept.push(sub);
+    }
+    shown.push(
+      kept.length === subs.length ? section : { ...section, subs: kept }
+    );
+  }
+  return { shown, hidden };
+};
+
 /** The ids an issue is resolved by: its own team and the rows it points at. */
 export type IssueRefs = Pick<
   OrderedIssueRead,
@@ -1757,6 +2052,32 @@ export const milestoneOf = (
   );
 };
 
+const currentCycleCache = new WeakMap<
+  readonly CycleRead[],
+  ReadonlySet<string>
+>();
+
+/** The current cycles of the teams a list spans, worked out once per cycle list. */
+const currentCyclesOf = (context: IssueContext): ReadonlySet<string> => {
+  let ids = currentCycleCache.get(context.cycles);
+  if (ids === undefined) {
+    ids = currentCycleIds(context.cycles);
+    currentCycleCache.set(context.cycles, ids);
+  }
+  return ids;
+};
+
+/** The Focus section an issue lands in, from its status as the lists resolve it. */
+export const focusKeyOf = (
+  issue: OrderedIssueRead,
+  context: IssueContext
+): string =>
+  focusSectionOf(
+    issue,
+    statusOf(issue, context)?.category,
+    currentCyclesOf(context)
+  );
+
 /** The group keys one issue falls under. A label group may hold it several times. */
 export const groupKeysOf = (
   issue: OrderedIssueRead,
@@ -1788,8 +2109,14 @@ export const groupKeysOf = (
       return [issue.team_id];
     case 'sla':
       return [liveSlaStatus(issue)];
+    case FOCUS_FIELD:
+      return [focusKeyOf(issue, context)];
     case 'customer': {
       const keys = [...new Set(context.customerRequests?.get(issue.id) ?? [])];
+      return keys.length === 0 ? [NONE] : keys;
+    }
+    case 'release': {
+      const keys = [...new Set(context.issueReleases?.get(issue.id) ?? [])];
       return keys.length === 0 ? [NONE] : keys;
     }
     default: {
@@ -1817,6 +2144,17 @@ export const SLA_GROUP_ORDER: readonly SlaStatus[] = [
   'none',
 ];
 
+/** The glyph each Focus section heads with: a priority, a status category or triage. */
+const FOCUS_GLYPHS: Partial<
+  Record<FocusSection, Pick<IssueGroup, 'priority' | 'category' | 'statusLook'>>
+> = {
+  urgent: { priority: 'urgent' },
+  active: { category: 'started' },
+  triage: { category: 'backlog', statusLook: TRIAGE_LOOK },
+  backlog: { category: 'backlog' },
+  completed: { category: 'completed' },
+};
+
 const CLOSED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
   'completed',
   'canceled',
@@ -1836,6 +2174,79 @@ const cycleLabel = (cycle: CycleRead, context: IssueContext): string => {
 /** How a parent issue heads its group: its key and title. */
 const parentLabel = (parent: ParentRef): string =>
   `${parent.key} ${parent.title}`;
+
+/** The releases carrying an issue, the newest first, from the release index. */
+export const releasesOf = (
+  issue: Pick<IssueRead, 'id'>,
+  context: Pick<IssueContext, 'releases' | 'issueReleases'>
+): IssueRelease[] => {
+  const ids = context.issueReleases?.get(issue.id) ?? [];
+  if (ids.length === 0) return [];
+  return (context.releases ?? [])
+    .filter((release) => ids.includes(release.id))
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.id.localeCompare(left.id)
+    );
+};
+
+/** The display properties that read the customers who asked for each issue. */
+export const CUSTOMER_PROPERTIES: readonly ViewVisibleProperty[] = [
+  'customers',
+  'customer_revenue',
+];
+
+/** Whether a row shows a property that needs each issue's customer requests. */
+export const showsCustomerProperties = (
+  visible: readonly ViewVisibleProperty[]
+): boolean =>
+  CUSTOMER_PROPERTIES.some((property) => visible.includes(property));
+
+/**
+ * The customers that asked for an issue, highest revenue first and then by
+ * name. Empty where the reader may not see customers or no request names it.
+ */
+export const customersOf = (
+  issue: Pick<IssueRead, 'id'>,
+  context: Pick<IssueContext, 'customers' | 'customerRequests'>
+): IssueCustomer[] => {
+  const all = context.customers;
+  if (all === undefined) return [];
+  const ids = context.customerRequests?.get(issue.id) ?? [];
+  if (ids.length === 0) return [];
+  return all
+    .filter((customer) => ids.includes(customer.id))
+    .sort(
+      (left, right) =>
+        (right.revenue ?? 0) - (left.revenue ?? 0) ||
+        left.name.localeCompare(right.name)
+    );
+};
+
+/** The summed revenue of the customers that asked for an issue, 0 for none. */
+export const customerRevenueOf = (
+  issue: Pick<IssueRead, 'id'>,
+  context: Pick<IssueContext, 'customers' | 'customerRequests'>
+): number =>
+  customersOf(issue, context).reduce(
+    (sum, customer) => sum + (customer.revenue ?? 0),
+    0
+  );
+
+/**
+ * Releases in the order their groups read: by how far down the pipeline each
+ * got, those that reached no stage first, then the newest first.
+ */
+export const releasesInOrder = (
+  releases: readonly IssueRelease[]
+): IssueRelease[] =>
+  [...releases].sort(
+    (left, right) =>
+      left.stagePosition - right.stagePosition ||
+      right.createdAt.localeCompare(left.createdAt) ||
+      right.id.localeCompare(left.id)
+  );
 
 /**
  * The header a row's group takes when the field's shells do not hold it, such
@@ -1870,6 +2281,11 @@ const fallbackLabel = (
       );
     case 'customer':
       return 'Unknown customer';
+    case 'release':
+      return (
+        context.releases?.find((release) => release.id === key)?.name ??
+        'Unknown release'
+      );
     default:
       return key;
   }
@@ -2043,6 +2459,13 @@ const groupShells = (
         field,
         label: SLA_STATUS_LABELS[status],
       }));
+    case FOCUS_FIELD:
+      return FOCUS_SECTIONS.map((section) => ({
+        key: section,
+        field,
+        label: FOCUS_SECTION_LABELS[section],
+        ...FOCUS_GLYPHS[section],
+      }));
     case 'customer':
       return [
         ...[...(context.customers ?? [])]
@@ -2061,6 +2484,15 @@ const groupShells = (
           })),
         { key: NONE, field, label: 'No customer' },
       ];
+    case 'release':
+      return [
+        ...releasesInOrder(context.releases ?? []).map((release) => ({
+          key: release.id,
+          field,
+          label: release.name,
+        })),
+        { key: NONE, field, label: 'No release' },
+      ];
     default:
       return isLabelGroupField(field)
         ? labelGroupShells(field, context)
@@ -2073,7 +2505,9 @@ const groupShells = (
  * group. A group with no rows is kept only when `showEmpty` is set, and a
  * row whose value is missing from the lists, such as someone who has left
  * the team, gets a group of its own rather than disappearing. Issues waiting
- * in triage lead a status grouping under a Triage group of their own.
+ * in triage lead a status grouping under a Triage group of their own. Focus
+ * sections never show empty, and order their rows started first, then by
+ * priority, the incoming order breaking ties.
  */
 export const groupIssues = (
   issues: OrderedIssueRead[],
@@ -2122,6 +2556,17 @@ export const groupIssues = (
   if (field === 'parent') {
     const index = groups.findIndex((group) => group.key === NONE);
     if (index !== -1) groups.push(...groups.splice(index, 1));
+  }
+  if (field === FOCUS_FIELD) {
+    return groups
+      .filter((group) => group.issues.length > 0)
+      .map((group) => ({
+        ...group,
+        issues: orderWithinFocus(
+          group.issues,
+          (issue) => statusOf(issue, context)?.category
+        ),
+      }));
   }
   return showEmpty || field === 'none'
     ? groups
@@ -2577,6 +3022,7 @@ export const moveChange = (
     case 'parent':
     case 'team':
     case 'sla':
+    case 'release':
       return null;
     case 'customer':
       return {};

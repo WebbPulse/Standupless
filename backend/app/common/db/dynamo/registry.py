@@ -75,6 +75,13 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
         _spec("idempotency", "idempotency", "IdempotencyRepository", "idempotency"),
         _spec("audit", "audit", "AuditRepository", "audit"),
         _spec("agent_profiles", "agent_profiles", "AgentProfileRepository", "agent_profiles"),
+        _spec(
+            "realtime_connections",
+            "realtime_connections",
+            "RealtimeConnectionRepository",
+            "realtime_connections",
+        ),
+        _spec("realtime_presence", "realtime_presence", "RealtimePresenceRepository", "realtime_presence"),
     ]
 )
 

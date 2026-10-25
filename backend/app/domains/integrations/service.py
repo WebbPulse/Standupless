@@ -285,6 +285,7 @@ def link_read(link: IssueLink, position: StackPosition | None = None) -> IssueLi
         review_state=_review_state(link.review_state),
         ci_state=_ci_state(link.ci_state),
         stack=stack,
+        provider=link.provider,
         linked_at=link.linked_at,
         updated_at=link.updated_at,
     )

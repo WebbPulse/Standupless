@@ -7,6 +7,7 @@
 import { useCallback } from 'react';
 import type { QueryKey } from '@webbpulse/api-client/react';
 import { appendIssues, listIssues, type IssueListFilters } from '../api/issues';
+import { useRealtimePollMs } from '../lib/polling';
 import type { IssueListQuery, IssueRead } from '../types/Api';
 import {
   useCursorPages,
@@ -31,6 +32,7 @@ export const usePlanningIssues = (
   enabled: boolean
 ): CursorPagesResult<IssueRead> => {
   const serialised = JSON.stringify(query);
+  const intervalMs = useRealtimePollMs(POLL_MS);
 
   const read = useCallback(
     async (
@@ -60,7 +62,7 @@ export const usePlanningIssues = (
   return useCursorPages(read, merge, {
     queryKey,
     enabled: enabled && workspaceId !== '',
-    intervalMs: POLL_MS,
+    intervalMs,
   });
 };
 

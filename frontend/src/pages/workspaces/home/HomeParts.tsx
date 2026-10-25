@@ -449,12 +449,17 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   review_requested: 'requested your review',
   triage_new: 'New in triage',
   view_issue_added: 'New issue in view',
+  view_project_added: 'New project in view',
+  project_lead_assigned: 'made you project lead',
+  project_member_added: 'added you to a project',
+  initiative_owner_assigned: 'made you initiative owner',
   reaction: 'reacted to your comment',
   issue_completed: 'completed',
   issue_cancelled: 'canceled',
   priority_urgent: 'marked as urgent',
   blocking_changed: 'changed blocking',
   document_comment: 'commented on a document',
+  team_issue_created: 'created an issue',
 };
 
 /** One unread notification. */

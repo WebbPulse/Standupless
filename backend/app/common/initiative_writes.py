@@ -41,7 +41,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectRead,
 )
-from app.common.date_resolution import settle_date_fields, stored_resolution
+from app.common.date_resolution import DateEdge, settle_date_fields, stored_resolution
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import (
     INITIATIVE_STATUSES,
@@ -54,6 +54,8 @@ from app.common.db.dynamo.planning import (
     new_planning_id,
 )
 from app.common.initiative_tree import InitiativeTree
+from app.common.initiative_update_report import take_snapshot, update_report
+from app.common.order_keys import order_key_first
 from app.common.planning_rules import (
     can_see_initiative,
     forbidden,
@@ -67,6 +69,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.update_thread_rules import summarise_threads
 
 NOT_NULLABLE = ("name", "status")
 """Patch fields that may be omitted but never cleared, because every initiative has one."""
@@ -117,6 +120,15 @@ def visible_projects_by_initiative(repositories: Repositories, context: AuthzCon
     grouped: dict[str, list[Project]] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
         if project.initiative_id and visible_project_teams(project, visible):
+            grouped.setdefault(project.initiative_id, []).append(project)
+    return grouped
+
+
+def shared_projects_by_initiative(repositories: Repositories, context: AuthzContext) -> dict[str, list[Project]]:
+    """The projects every workspace member can see, on at least one team that is not private, by initiative."""
+    grouped: dict[str, list[Project]] = {}
+    for project in repositories.planning.list_projects(context.workspace_id):
+        if project.initiative_id and any(not context.is_private_team(team) for team in project.team_ids):
             grouped.setdefault(project.initiative_id, []).append(project)
     return grouped
 
@@ -251,7 +263,10 @@ def record_team_change(
 
 
 def create_initiative(repositories: Repositories, context: AuthzContext, payload: InitiativeCreate) -> InitiativeRead:
-    """Create an initiative with no projects yet, under a parent when one is named; any member but a guest may."""
+    """Create an initiative with no projects yet, under a parent when one is named; any member but a guest may.
+
+    It is placed first in the shared manual order, the way a new project is.
+    """
     require_initiative_access(context)
     if payload.owner_id is not None:
         require_workspace_member(repositories, context, payload.owner_id)
@@ -259,6 +274,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         require_team_member(repositories, context, payload.team_id)
     if payload.parent_initiative_id is not None:
         require_parent(repositories, context, None, payload.parent_initiative_id)
+    first = order_key_first(row.sort_order for row in repositories.planning.list_initiatives(context.workspace_id))
     initiative_id = new_planning_id()
     initiative = Initiative(
         workspace_id=context.workspace_id,
@@ -271,9 +287,12 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         parent_initiative_id=payload.parent_initiative_id,
         status=payload.status,
         health=payload.health,
+        start_date=payload.start_date,
+        start_date_resolution=stored_resolution(payload.start_date_resolution),
         target_date=payload.target_date,
         target_date_resolution=stored_resolution(payload.target_date_resolution),
         update_interval_days=payload.update_interval_days,
+        sort_order=first,
         created_by=context.user_id,
     )
     try:
@@ -309,10 +328,17 @@ def update_initiative(
     parent_id = fields.get("parent_initiative_id")
     if parent_id is not None and parent_id != existing.parent_initiative_id:
         require_parent(repositories, context, existing.initiative_id, parent_id)
-    refusal = settle_date_fields(fields, "target_date", "target_date_resolution", "end", existing.target_date)
-    if refusal is not None:
-        raise unprocessable(refusal)
-    updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
+    dates: tuple[tuple[str, DateEdge, Optional[str]], ...] = (
+        ("start_date", "start", existing.start_date),
+        ("target_date", "end", existing.target_date),
+    )
+    for date_name, edge, current in dates:
+        refusal = settle_date_fields(fields, date_name, f"{date_name}_resolution", edge, current)
+        if refusal is not None:
+            raise unprocessable(refusal)
+    updated = existing.model_copy(update={**fields, "updated_at": utc_now(), "updated_by": context.user_id})
+    if updated.start_date and updated.target_date and updated.target_date < updated.start_date:
+        raise unprocessable("target_date must not be before start_date")
     try:
         stored = repositories.planning.replace_initiative(updated)
     except ConditionFailed as exc:
@@ -438,7 +464,24 @@ def can_edit_update(context: AuthzContext, initiative: Initiative, update: Initi
 
 def _update_read(context: AuthzContext, initiative: Initiative, update: InitiativeUpdateRow) -> InitiativeUpdateRead:
     """One update in its response shape, with this caller's edit right."""
-    return InitiativeUpdateRead.from_row(update, can_edit=can_edit_update(context, initiative, update))
+    return InitiativeUpdateRead.from_row(
+        update,
+        can_edit=can_edit_update(context, initiative, update),
+        report=update_report(update.snapshot, update.previous_snapshot, update.hide_details),
+    )
+
+
+def _summarised(
+    repositories: Repositories, context: AuthzContext, initiative: Initiative, rows: list[InitiativeUpdateRead]
+) -> list[InitiativeUpdateRead]:
+    """Updates with each one's reaction groups and reply count filled in from its thread."""
+    return summarise_threads(
+        context,
+        repositories.planning.initiative_update_threads,
+        initiative.initiative_id,
+        rows,
+        lambda row: row.update_id,
+    )
 
 
 def list_initiative_updates(
@@ -459,7 +502,7 @@ def list_initiative_updates(
         start_key=_start_key(cursor, context.workspace_id, initiative.initiative_id),
     )
     return (
-        [_update_read(context, initiative, row) for row in rows],
+        _summarised(repositories, context, initiative, [_update_read(context, initiative, row) for row in rows]),
         encode_start_key(last_key, scope=update_cursor_scope(context.workspace_id, initiative.initiative_id)),
     )
 
@@ -467,9 +510,19 @@ def list_initiative_updates(
 def create_initiative_update(
     repositories: Repositories, context: AuthzContext, initiative_id: str, payload: InitiativeUpdateCreate
 ) -> InitiativeUpdateRead:
-    """Post an update on an initiative, from a workspace document template when one is named, and mirror its health."""
+    """Post an update on an initiative, from a workspace document template when one is named, and mirror its health.
+
+    The update records where the initiative stands now beside the snapshot the
+    update before it recorded, which is what its progress report diffs.
+    """
     initiative = load_initiative(repositories, context, initiative_id)
     body = document_templates.fill_update_body(repositories, context, [], payload.body, payload.template_id)
+    previous = repositories.planning.latest_initiative_update(context.workspace_id, initiative.initiative_id)
+    projects = rollup_projects(
+        initiative_tree(repositories, context.workspace_id),
+        shared_projects_by_initiative(repositories, context),
+        initiative.initiative_id,
+    )
     update_id = new_planning_id()
     update = InitiativeUpdateRow(
         workspace_id=context.workspace_id,
@@ -480,6 +533,9 @@ def create_initiative_update(
         health=payload.health,
         author_id=context.user_id,
         source=context.source,
+        snapshot=take_snapshot(repositories, initiative, projects, payload.health),
+        previous_snapshot=previous.snapshot if previous is not None else None,
+        hide_details=payload.hide_details,
     )
     try:
         created = repositories.planning.create_initiative_update(update)
@@ -529,16 +585,18 @@ def update_initiative_update(
     update_id: str,
     payload: InitiativeUpdatePatch,
 ) -> InitiativeUpdateRead:
-    """Edit an update's body or health; a health change on the newest one moves the initiative."""
+    """Edit an update's body, health or report visibility; a health change on the newest one moves the initiative."""
     initiative, existing = _load_editable_update(repositories, context, initiative_id, update_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
-    for name in ("body", "health"):
+    for name in ("body", "health", "hide_details"):
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
     if not fields:
-        return _update_read(context, initiative, existing)
+        return _summarised(repositories, context, initiative, [_update_read(context, initiative, existing)])[0]
     now = utc_now()
-    edited = existing.model_copy(update={**fields, "updated_at": now, "edited_at": now})
+    rewritten = bool(fields.keys() - {"hide_details"})
+    stamps = {"updated_at": now, "edited_at": now} if rewritten else {"updated_at": now}
+    edited = existing.model_copy(update={**fields, **stamps})
     try:
         stored = repositories.planning.replace_initiative_update(edited)
     except ConditionFailed as exc:
@@ -547,20 +605,24 @@ def update_initiative_update(
         repositories.planning.record_initiative_health(
             context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
         )
-    pulse.revise_update(
-        repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
-    )
-    return _update_read(context, initiative, stored)
+    if rewritten:
+        pulse.revise_update(
+            repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
+        )
+    return _summarised(repositories, context, initiative, [_update_read(context, initiative, stored)])[0]
 
 
 def delete_initiative_update(
     repositories: Repositories, context: AuthzContext, initiative_id: str, update_id: str
 ) -> None:
-    """Delete an update; removing the newest one falls the initiative back to the one before it."""
+    """Delete an update and its thread; removing the newest one falls the initiative back to the one before it."""
     _, existing = _load_editable_update(repositories, context, initiative_id, update_id)
     was_latest = _is_latest(repositories, existing)
     if not repositories.planning.delete(context.workspace_id, existing.planning_key):
         raise not_found()
+    repositories.planning.initiative_update_threads.delete_thread(
+        context.workspace_id, existing.initiative_id, existing.update_id
+    )
     pulse.remove_update(repositories, context.workspace_id, existing.update_id)
     if not was_latest:
         return

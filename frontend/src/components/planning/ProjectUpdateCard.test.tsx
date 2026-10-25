@@ -3,7 +3,10 @@
  * update's groups with the reader's own pressed and toggles through the update
  * thread routes, that the reply toggle names the count and opens the replies
  * only when asked, that a reply posts through the shared editor and reacts on
- * itself by comment id, and that an initiative update carries no thread.
+ * itself by comment id, that an initiative update carries the same thread
+ * under its own routes, and that each kind of update draws its progress report.
+ * The menu copies either kind of update as Markdown, with the author, date
+ * and health over its text, and confirms it with a toast.
  *
  * The emoji dataset is loaded once before the tests, so its cold import is not
  * paid inside a wait.
@@ -14,13 +17,23 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadEmojiCatalog } from '../../lib/emojiCatalog';
+import type { Assignable } from '../../lib/issuePeople';
 import type {
   InitiativeUpdateRead,
   ProjectUpdateCommentRead,
   ProjectUpdateRead,
   ReactionGroup,
 } from '../../types/Api';
-import ProjectUpdateCard from './ProjectUpdateCard';
+import ProjectUpdateCard, { updateMarkdown } from './ProjectUpdateCard';
+
+const showToast = vi.fn();
+
+vi.mock('../../lib/toast', () => ({
+  showToast: (message: string) => {
+    showToast(message);
+  },
+  showErrorToast: vi.fn(),
+}));
 
 const listProjectUpdateComments =
   vi.fn<(...args: unknown[]) => Promise<ProjectUpdateCommentRead[]>>();
@@ -115,6 +128,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  showToast.mockReset();
   listProjectUpdateComments.mockReset();
   createProjectUpdateComment.mockReset();
   addProjectUpdateReaction.mockReset();
@@ -149,7 +163,7 @@ describe('project update thread', () => {
     await waitFor(() => {
       expect(removeProjectUpdateReaction).toHaveBeenCalledWith(
         'ws-1',
-        'prj-1',
+        { kind: 'project', id: 'prj-1' },
         'upd-1',
         { emoji: '👍' }
       );
@@ -175,7 +189,7 @@ describe('project update thread', () => {
     expect(within(replies).getByText('Agreed')).toBeVisible();
     expect(listProjectUpdateComments.mock.calls[0]?.slice(0, 3)).toEqual([
       'ws-1',
-      'prj-1',
+      { kind: 'project', id: 'prj-1' },
       'upd-1',
     ]);
     expect(
@@ -209,7 +223,7 @@ describe('project update thread', () => {
     await waitFor(() => {
       expect(createProjectUpdateComment).toHaveBeenCalledWith(
         'ws-1',
-        'prj-1',
+        { kind: 'project', id: 'prj-1' },
         'upd-1',
         'On it'
       );
@@ -236,14 +250,23 @@ describe('project update thread', () => {
     await waitFor(() => {
       expect(addProjectUpdateReaction).toHaveBeenCalledWith(
         'ws-1',
-        'prj-1',
+        { kind: 'project', id: 'prj-1' },
         'upd-1',
         { emoji: '🎉', comment_id: 'c-1' }
       );
     });
   });
 
-  it('leaves an initiative update without a thread', () => {
+  it('posts a reply on an initiative update through its own routes', async () => {
+    const user = userEvent.setup();
+    listProjectUpdateComments.mockResolvedValue([]);
+    createProjectUpdateComment.mockResolvedValue(
+      reply('c-4', 'Looks good', {
+        update_id: 'upd-2',
+        project_id: null,
+        initiative_id: 'ini-1',
+      })
+    );
     const initiativeUpdate: InitiativeUpdateRead = {
       update_id: 'upd-2',
       initiative_id: 'ini-1',
@@ -255,11 +278,38 @@ describe('project update thread', () => {
       updated_at: '2026-10-20T00:00:00Z',
       edited_at: null,
       can_edit: false,
+      reactions: [],
+      comment_count: 0,
     };
     renderCard(initiativeUpdate);
 
-    expect(screen.queryByRole('button', { name: /replies|Reply/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Thumbs up/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Reply' }));
+    const surface = await screen.findByRole(
+      'textbox',
+      { name: 'Reply to update' },
+      { timeout: 10_000 }
+    );
+    act(() => {
+      (surface as HTMLElement & { editor: Editor }).editor.commands.setContent(
+        'Looks good'
+      );
+    });
+    const replies = screen.getByRole('region', { name: 'Replies' });
+    await user.click(within(replies).getByRole('button', { name: /^Reply/ }));
+
+    await waitFor(() => {
+      expect(createProjectUpdateComment).toHaveBeenCalledWith(
+        'ws-1',
+        { kind: 'initiative', id: 'ini-1' },
+        'upd-2',
+        'Looks good'
+      );
+    });
+    expect(listProjectUpdateComments.mock.calls[0]?.slice(0, 3)).toEqual([
+      'ws-1',
+      { kind: 'initiative', id: 'ini-1' },
+      'upd-2',
+    ]);
   });
 });
 
@@ -307,5 +357,160 @@ describe('ProjectUpdateCard progress report', () => {
   it('shows no report on an update from before snapshots', () => {
     renderCard(update());
     expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+});
+
+describe('ProjectUpdateCard initiative report', () => {
+  const initiativeSnapshot = {
+    owner_id: null,
+    owner_name: null,
+    status: 'active' as const,
+    target_date: null,
+    target_date_resolution: null,
+    health: 'on_track' as const,
+    project_count: 2,
+    projects_by_status: { in_progress: 2 },
+    projects_by_health: { on_track: 2 },
+  };
+
+  /** An initiative update carrying the report lines the server diffed. */
+  const initiativeUpdate = (
+    over: Partial<InitiativeUpdateRead> = {}
+  ): InitiativeUpdateRead => ({
+    update_id: 'upd-3',
+    initiative_id: 'ini-1',
+    workspace_id: 'ws-1',
+    body: 'Initiative moving',
+    health: 'at_risk',
+    author_id: 'user-1',
+    created_at: '2026-10-20T00:00:00Z',
+    updated_at: '2026-10-20T00:00:00Z',
+    edited_at: null,
+    can_edit: false,
+    ...over,
+  });
+
+  it('shows what changed since the last initiative update', () => {
+    renderCard(
+      initiativeUpdate({
+        snapshot: { ...initiativeSnapshot, health: 'at_risk' },
+        previous_snapshot: initiativeSnapshot,
+        report: ['Health changed from On track to At risk', 'Projects 2 to 3'],
+      })
+    );
+
+    const report = screen.getByRole('list', { name: 'Progress report' });
+    expect(
+      within(report).getByText('Health changed from On track to At risk')
+    ).toBeTruthy();
+    expect(within(report).getByText('Projects 2 to 3')).toBeTruthy();
+  });
+
+  it('shows no report on a first update', () => {
+    renderCard(
+      initiativeUpdate({
+        snapshot: initiativeSnapshot,
+        previous_snapshot: null,
+        report: [],
+      })
+    );
+    expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+
+  it('shows no report on an update from before snapshots', () => {
+    renderCard(initiativeUpdate());
+    expect(screen.queryByRole('list', { name: 'Progress report' })).toBeNull();
+  });
+});
+
+describe('ProjectUpdateCard Copy as Markdown', () => {
+  const people: Assignable[] = [
+    {
+      user_id: 'user-1',
+      email: 'ada@example.com',
+      display_name: 'Ada Lovelace',
+    },
+  ];
+
+  /** Puts a clipboard on the navigator and returns what it was written. */
+  const stubClipboard = () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  };
+
+  it('copies a project update with its author, date and health', async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    render(
+      <ProjectUpdateCard
+        update={update({ body: 'Shipping on schedule\n\n- API done\n' })}
+        people={people}
+        onEdit={() => Promise.resolve()}
+        onDelete={() => Promise.resolve()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Update actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Copy as Markdown' })
+    );
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Update copied as Markdown');
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      '**Ada Lovelace** · 2026-10-20 · On track\n\nShipping on schedule\n\n- API done\n'
+    );
+  });
+
+  it('copies an initiative update the same way', async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    const initiativeUpdate: InitiativeUpdateRead = {
+      update_id: 'upd-4',
+      initiative_id: 'ini-1',
+      workspace_id: 'ws-1',
+      body: 'Two projects slipped',
+      health: 'off_track',
+      author_id: 'user-1',
+      created_at: '2026-10-21T09:30:00Z',
+      updated_at: '2026-10-21T09:30:00Z',
+      edited_at: null,
+      can_edit: false,
+    };
+    render(
+      <ProjectUpdateCard
+        update={initiativeUpdate}
+        people={people}
+        subject="initiative"
+        onEdit={() => Promise.resolve()}
+        onDelete={() => Promise.resolve()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Update actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Copy as Markdown' })
+    );
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        '**Ada Lovelace** · 2026-10-21 · Off track\n\nTwo projects slipped\n'
+      );
+    });
+    expect(showToast).toHaveBeenCalledWith('Update copied as Markdown');
+  });
+
+  it('gives only the header for an update with no text', () => {
+    expect(
+      updateMarkdown(
+        { body: '  ', health: 'at_risk', created_at: '2026-10-22T00:00:00Z' },
+        'Ada Lovelace'
+      )
+    ).toBe('**Ada Lovelace** · 2026-10-22 · At risk\n');
   });
 });

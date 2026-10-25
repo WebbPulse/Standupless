@@ -1,10 +1,11 @@
 /**
  * Vite build configuration. Every dependency lands in one `vendor` chunk except
- * four that load on demand: the emoji dataset, which the reaction picker
+ * five that load on demand: the emoji dataset, which the reaction picker
  * imports on first open, the rich text editor, which loads when a description
- * is shown, the syntax highlighter, which loads with the first code block, and
- * the Mermaid diagram renderer, which loads with the first diagram. Each stays
- * a chunk of its own rather than weighing down every page.
+ * is shown, the syntax highlighter, which loads with the first code block, the
+ * Mermaid diagram renderer, which loads with the first diagram, and KaTeX,
+ * which loads with the first equation. Each stays a chunk of its own rather
+ * than weighing down every page.
  * After the bundle is written, the public pages are prerendered to static HTML.
  * The dev server proxies `/api` to the backend `VITE_BACKEND` names.
  */
@@ -190,6 +191,14 @@ const HIGHLIGHT_MODULES =
  */
 const HIGHLIGHT_CORE = /node_modules[\\/]highlight\.js[\\/]lib[\\/]core\.js$/;
 
+/**
+ * KaTeX, the equation renderer. It loads on demand with its stylesheet and
+ * fonts the first time an equation is shown, so it stays out of the vendor
+ * chunk and lands in the lazy chunk that imports it. Mermaid shares the same
+ * copy.
+ */
+const MATH_MODULES = /node_modules[\\/]katex[\\/]/;
+
 /** The installed packages, beside this config. */
 const NODE_MODULES = fileURLToPath(new URL('./node_modules/', import.meta.url));
 
@@ -300,6 +309,7 @@ export default defineConfig(({ mode }) => {
                   !id.includes('emojibase-data') &&
                   !EDITOR_MODULES.test(id) &&
                   !HIGHLIGHT_MODULES.test(id) &&
+                  !MATH_MODULES.test(id) &&
                   !isMermaidModule(id),
                 priority: 2,
               },

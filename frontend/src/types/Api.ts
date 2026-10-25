@@ -4,6 +4,18 @@
  * key, never a bare array.
  */
 
+/** A day a working hours schedule may name. */
+export type WorkingDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+/** The weekly hours a person takes notifications in, read in their own timezone. */
+export interface WorkingHours {
+  days: WorkingDay[];
+  /** The time each day starts, as HH:MM. */
+  start: string;
+  /** The time each day ends, as HH:MM, after `start`. */
+  end: string;
+}
+
 /** The signed in user, as the identity service reports it. */
 export interface UserRead {
   id: string;
@@ -25,6 +37,12 @@ export interface UserRead {
   priority_kinds?: InboxKind[];
   /** Whether notification emails are batched into a digest or sent one at a time. */
   email_format?: EmailFormat;
+  /** The end of a running notifications pause, or null when none is running. */
+  notifications_paused_until?: string | null;
+  /** The weekly hours email and desktop notifications reach the person in, or null for any time. */
+  working_hours?: WorkingHours | null;
+  /** Whether direct mentions and urgent assignments reach the person through a pause or outside working hours. */
+  urgent_bypasses_pause?: boolean;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
   /** The IANA zone due dates are judged in, or null when none is stored yet. */
@@ -45,6 +63,8 @@ export interface UserRead {
   pointer_cursors?: boolean;
   /** Whether links in rich text and inline text links are underlined at rest. */
   underline_links?: boolean;
+  /** The syntax highlighting theme of code blocks. */
+  code_theme?: CodeTheme;
   /** Whether the editor turns typed emoticons such as `:)` into emoji. */
   convert_emoticons?: boolean;
   /** Whether issue activity shows every change or only comments. */
@@ -73,9 +93,14 @@ export interface UserRead {
 
 /** The initiatives page arrangement an account saves, every field filled. */
 export interface InitiativesDisplayPreference {
-  /** What the list groups rows by: the initiative status or the lead team. */
-  grouping: 'status' | 'team';
-  order: 'target' | 'name' | 'progress' | 'created' | 'updated';
+  /** Whether the page draws the list or bars on a timeline from start to target date. */
+  layout: 'list' | 'timeline';
+  /** The timeline's scale, the same scales the projects timeline offers. */
+  zoom: 'week' | 'month' | 'quarter' | 'year';
+  /** What the list groups rows by: status, lead team, owner, health or the target date's period. */
+  grouping: 'status' | 'team' | 'owner' | 'health' | 'target_date';
+  /** How rows run inside each group; `manual` follows the shared manual position. */
+  order: 'manual' | 'target' | 'name' | 'progress' | 'created' | 'updated';
   completed: 'show' | 'hide';
   /** The shown properties, comma separated in the list's own order. */
   columns: string;
@@ -147,6 +172,10 @@ export type FontSize = 'small' | 'default' | 'large';
 
 /** The interface themes a person may pick. */
 export type Theme = 'system' | 'light' | 'dark';
+
+/** The syntax highlighting theme of code blocks, `app` following the interface theme. */
+export type CodeTheme =
+  'app' | 'light' | 'dark' | 'light_high_contrast' | 'dark_high_contrast';
 
 /** Whether an issue's activity shows every change or only its comments. */
 export type ActivityFilter = 'all' | 'comments';
@@ -224,6 +253,11 @@ export interface UserPreferencesUpdate {
   /** Replaces the whole set of kinds the Priority tab holds. */
   priority_kinds?: InboxKind[];
   email_format?: EmailFormat;
+  /** Pauses email and desktop notifications until this moment, and null resumes them. */
+  notifications_paused_until?: string | null;
+  /** Replaces the working hours schedule, and null clears it. */
+  working_hours?: WorkingHours | null;
+  urgent_bypasses_pause?: boolean;
   timezone?: string;
   pulse_digest?: PulseDigest;
   home_view?: HomeView;
@@ -233,6 +267,7 @@ export interface UserPreferencesUpdate {
   theme?: Theme;
   pointer_cursors?: boolean;
   underline_links?: boolean;
+  code_theme?: CodeTheme;
   convert_emoticons?: boolean;
   activity_filter?: ActivityFilter;
   /** Moves the named sidebar items, leaving the others where they are. */
@@ -276,6 +311,8 @@ export interface WorkspaceRead {
   id: string;
   name: string;
   slug: string;
+  /** Earlier slugs that still redirect to this workspace, oldest first. */
+  retired_slugs?: string[];
   plan: string;
   created_at: string;
   /** The caller's role. Present only on a response to a member. */
@@ -304,6 +341,8 @@ export interface WorkspaceRead {
   team_creation_permission?: PermissionLevel;
   /** Whether members need an admin's approval before connecting a third-party app. */
   third_party_app_approvals?: boolean;
+  /** Which optional areas the workspace has on. A missing area is on. */
+  features?: Partial<WorkspaceFeatures>;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -550,8 +589,21 @@ export interface WorkspaceCreate {
 }
 
 /** The editable fields on a workspace. */
+/** Why a slug is unavailable to the workspace. */
+export type SlugUnavailableReason =
+  'invalid' | 'reserved' | 'taken' | 'current';
+
+/** Whether a workspace could move to a slug, and why not when it cannot. */
+export interface SlugAvailabilityRead {
+  slug: string;
+  available: boolean;
+  reason?: SlugUnavailableReason | null;
+}
+
 export interface WorkspaceUpdate {
   name?: string;
+  /** A new URL slug; links with the old slug keep redirecting here. */
+  slug?: string;
   /** The accent as #rrggbb, or null to return to the Standupless default. */
   accent_color?: string | null;
   project_update_interval_days?: ProjectUpdateInterval;
@@ -559,12 +611,39 @@ export interface WorkspaceUpdate {
   invite_permission?: PermissionLevel;
   team_creation_permission?: PermissionLevel;
   third_party_app_approvals?: boolean;
+  /** The areas to turn on or off. Areas left out keep their current setting. */
+  features?: Partial<WorkspaceFeatures>;
 }
+
+/** An optional workspace area an admin can turn off. */
+export type WorkspaceFeature =
+  'initiatives' | 'customers' | 'releases' | 'documents' | 'pulse';
+
+/** Whether each optional workspace area is on. */
+export type WorkspaceFeatures = Record<WorkspaceFeature, boolean>;
 
 /** Where a member stands: active, suspended by an admin, or invited and not yet joined. */
 export type MemberStatus = 'active' | 'suspended' | 'invited';
 
 /** One member of a workspace. */
+/** A member's status in one workspace: an emoji, a line of text, an away flag and when it clears itself. */
+export interface UserStatusRead {
+  emoji: string;
+  text: string;
+  away: boolean;
+  /** When the status clears itself, or null when it stays until changed. */
+  until?: string | null;
+  set_at: string;
+}
+
+/** The body that sets the caller's own status. It needs an emoji or text. */
+export interface UserStatusUpdate {
+  emoji?: string;
+  text?: string;
+  away?: boolean;
+  until?: string | null;
+}
+
 export interface MemberRead {
   user_id: string;
   email: string;
@@ -585,6 +664,10 @@ export interface MemberRead {
   suspended_by?: string | null;
   /** The invite behind an invited row, or null for a member. */
   invite_id?: string | null;
+  /** The member's status while it is in force, or null when none is set or the caller may not see it. */
+  user_status?: UserStatusRead | null;
+  /** When the member was last active here, to within a quarter hour; null when never seen or for a caller who is not an admin. */
+  last_active_at?: string | null;
 }
 
 /** A change to the caller's own name or handle. Fields left out keep their value. */
@@ -601,6 +684,35 @@ export interface MemberListRead {
 /** A role change on one workspace member. */
 export interface MemberUpdate {
   role: WorkspaceRole;
+}
+
+/** The action a bulk member change applies to every member named. */
+export type MemberBulkAction =
+  'change_role' | 'suspend' | 'reactivate' | 'remove' | 'add_to_team';
+
+/** One action on several workspace members: a role for a role change, a team to add them to. */
+export interface MemberBulkUpdate {
+  action: MemberBulkAction;
+  user_ids: string[];
+  role?: WorkspaceRole;
+  team_id?: string;
+}
+
+/** What a bulk member change did to one member, with the reason when it was skipped. */
+export interface MemberBulkResult {
+  user_id: string;
+  outcome: 'changed' | 'unchanged' | 'skipped';
+  error_code?: string | null;
+  message?: string | null;
+  member?: MemberRead | null;
+}
+
+/** The answer to a bulk member change: a result per member and the tallies. */
+export interface MemberBulkRead {
+  results: MemberBulkResult[];
+  changed: number;
+  unchanged: number;
+  skipped: number;
 }
 
 /** One outstanding invite to a workspace. */
@@ -660,6 +772,8 @@ export interface TeamRead {
   icon_url?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
+  /** The IANA timezone cycles start, end and roll over at midnight in. */
+  timezone?: string;
   /** Whether only team members can see the team and its issues. */
   private?: boolean;
   /** The parent team this one sits under, or null for a top-level team. */
@@ -689,6 +803,8 @@ export interface TeamCreate {
   estimate_extended?: boolean;
   estimate_allow_zero?: boolean;
   estimate_count_unestimated?: boolean;
+  /** The IANA timezone the team's cycles run in, UTC when left out. */
+  timezone?: string | null;
   /** Make the team private from the start. Needs the Business plan. */
   private?: boolean;
   /** A top-level team to sit under, inheriting its statuses and labels. */
@@ -710,6 +826,8 @@ export interface TeamUpdate {
   estimate_allow_zero?: boolean;
   estimate_count_unestimated?: boolean;
   description?: string | null;
+  /** The IANA timezone the team's cycles run in. A sub-team takes its parent's. */
+  timezone?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
   /** Turning this on needs the Business plan; turning it off never does. */
@@ -729,6 +847,8 @@ export interface TeamMemberRead {
   avatar_url?: string | null;
   /** The person's written name, or an empty string when none is set. */
   full_name?: string;
+  /** The member's status while it is in force, or null when none is set. */
+  user_status?: UserStatusRead | null;
 }
 
 /** The body the team members route answers with. */
@@ -760,6 +880,10 @@ export interface StatusRead {
   hidden?: boolean;
   /** The workspace name of an inherited status the team renamed, or null. */
   inherited_name?: string | null;
+  /** What the status means, shown under its name in status pickers, or null. */
+  description?: string | null;
+  /** The inherited description of a status the team describes locally, or null. */
+  inherited_description?: string | null;
 }
 
 /** The body the statuses route answers with, ordered by position. */
@@ -774,6 +898,7 @@ export interface StatusCreate {
   position?: number;
   color?: string | null;
   icon?: string | null;
+  description?: string | null;
 }
 
 /** The editable fields on a status. */
@@ -785,6 +910,8 @@ export interface StatusUpdate {
   color?: string | null;
   /** An icon variant, or null to go back to the category default. */
   icon?: string | null;
+  /** What the status means, or null to remove it. */
+  description?: string | null;
 }
 
 /** One label on a team or the workspace. */
@@ -861,11 +988,36 @@ export interface LabelUpdate {
 export interface OverrideUpdate {
   hidden?: boolean;
   name?: string | null;
+  /** A status's team-only description, or null to go back to the inherited one. Statuses only. */
+  description?: string | null;
 }
 
 /** The body `POST /api/invites/accept` takes. */
 export interface InviteAccept {
   token: string;
+}
+
+/**
+ * Whether a workspace's reusable invite link is on. The token is stored only as
+ * a hash, so it is never read back after the enable or reset that minted it.
+ */
+export interface InviteLinkRead {
+  enabled: boolean;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+/** The enable or reset response, which carries the link's token exactly once. */
+export interface InviteLinkCreated extends InviteLinkRead {
+  token: string;
+}
+
+/** What a signed-in visitor sees of the workspace an invite link joins. */
+export interface InviteLinkPreview {
+  workspace_id: string;
+  name: string;
+  slug: string;
+  already_member: boolean;
 }
 
 /** How urgent an issue is. The contract fixes these five and defaults to none. */
@@ -1031,6 +1183,13 @@ export interface IssueRead {
    * paused statuses, or null while the timer runs.
    */
   sla_paused_at?: string | null;
+  /** The clock the SLA timer runs on. Optional so an older row reads as calendar. */
+  sla_calendar?: SlaCalendar;
+  /**
+   * The timezone whose Saturdays and Sundays a business-days timer skips, or
+   * null for calendar time.
+   */
+  sla_timezone?: string | null;
   /**
    * Where the issue stands against its SLA, derived by the server at read
    * time. Optional so a row read before SLAs existed reads as none.
@@ -1303,10 +1462,13 @@ export interface TemplateRead {
   updated_at: string;
 }
 
-/** The templates a team offers, and the one its create dialog opens with. */
+/** The templates a team offers, and the ones its create dialog opens with. */
 export interface TemplateListRead {
   templates: TemplateRead[];
+  /** The template the dialog opens with for the team's members. */
   default_template_id: string | null;
+  /** The template it opens with for someone outside the team, falling back to the members' one; absent on an older answer. */
+  non_member_default_template_id?: string | null;
 }
 
 /** A team's saved default template and the one it falls back to from its parent. */
@@ -1314,6 +1476,8 @@ export interface TemplateSettingsRead {
   team_id: string;
   default_template_id: string | null;
   effective_default_template_id: string | null;
+  non_member_default_template_id?: string | null;
+  effective_non_member_default_template_id?: string | null;
   default_project_template_id?: string | null;
   effective_default_project_template_id?: string | null;
   default_document_template_id?: string | null;
@@ -1325,6 +1489,7 @@ export interface TemplateSettingsRead {
 /** The body that sets or clears a team's defaults; only the fields sent change. */
 export interface TemplateSettingsUpdate {
   default_template_id?: string | null;
+  non_member_default_template_id?: string | null;
   default_project_template_id?: string | null;
   default_document_template_id?: string | null;
   default_update_template_id?: string | null;
@@ -1509,7 +1674,7 @@ export interface LinkCreate {
  * "via email" and the like.
  */
 export type ChangeSource =
-  'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system' | 'email';
+  'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system' | 'email' | 'slack';
 
 /** One entry in an issue's history. */
 export interface ActivityRead {
@@ -1608,6 +1773,8 @@ export interface CommentRead {
   source?: ChangeSource | null;
   /** Where a root comment's thread is mirrored on GitHub, when it is. */
   github_thread?: GithubThread | null;
+  /** The Slack thread a root comment's thread is synced with, when it is. */
+  slack_thread?: SlackThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
   /** The description passage a root comment is pinned to, when it is. */
@@ -1642,6 +1809,19 @@ export interface GithubThread {
   synced_by: string;
   synced_at: string;
   comment_url: string;
+}
+
+/**
+ * The Slack thread an issue was created from, synced both ways with one root
+ * comment's thread. `permalink` opens the thread in Slack.
+ */
+export interface SlackThread {
+  slack_team_id: string;
+  channel_id: string;
+  thread_ts: string;
+  permalink: string;
+  synced_by: string;
+  synced_at: string;
 }
 
 /** A linked pull request or GitHub issue a thread may be synced to. */
@@ -1882,6 +2062,7 @@ export type ViewGroupBy =
   | 'team'
   | 'sla'
   | 'customer'
+  | 'release'
   | `label_group:${string}`;
 
 /** Which saved views a list read asks for. */
@@ -1917,6 +2098,7 @@ export interface ViewFilter {
   is_blocking?: 'true' | 'false';
   has_relation?: string | string[];
   customer_id?: string | string[];
+  release_id?: string | string[];
   q?: string;
 }
 
@@ -2086,12 +2268,37 @@ export type NotificationKind =
   | 'review_requested'
   | 'triage_new'
   | 'view_issue_added'
+  | 'view_project_added'
+  | 'project_lead_assigned'
+  | 'project_member_added'
+  | 'initiative_owner_assigned'
   | 'reaction'
   | 'issue_completed'
   | 'issue_cancelled'
   | 'priority_urgent'
   | 'blocking_changed'
-  | 'document_comment';
+  | 'document_comment'
+  | 'team_issue_created';
+
+/** Which of one team's issue events reach the caller's inbox, every one off by default. */
+export interface TeamNotificationSubscriptionRead {
+  team_id: string;
+  issue_created: boolean;
+  triage: boolean;
+  completed: boolean;
+  cancelled: boolean;
+}
+
+/** One team issue event a person can subscribe to. */
+export type TeamSubscriptionEvent = Exclude<
+  keyof TeamNotificationSubscriptionRead,
+  'team_id'
+>;
+
+/** The team events to turn on or off; any left out keep their current value. */
+export type TeamNotificationSubscriptionUpdate = Partial<
+  Record<TeamSubscriptionEvent, boolean>
+>;
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -2564,6 +2771,9 @@ export interface ArchiveSettingsUpdate {
 /** When a team's SLA timers start: once an issue leaves triage, or from when it was created. */
 export type SlaStartMode = 'on_triage_exit' | 'on_creation';
 
+/** The clock a team's SLA hours run on: every hour, or Monday to Friday in the team's timezone. */
+export type SlaCalendar = 'calendar' | 'business_days';
+
 export interface SlaSettingsRead {
   team_id: string;
   enabled: boolean;
@@ -2575,6 +2785,8 @@ export interface SlaSettingsRead {
   paused_status_ids?: string[];
   /** When timers start. Optional so an older answer reads as on_triage_exit. */
   start_mode?: SlaStartMode;
+  /** The clock the hours run on. Optional so an older answer reads as calendar. */
+  calendar?: SlaCalendar;
   updated_at: string | null;
 }
 
@@ -2591,6 +2803,7 @@ export interface SlaSettingsUpdate {
   low_hours?: number | null;
   paused_status_ids?: string[] | null;
   start_mode?: SlaStartMode;
+  calendar?: SlaCalendar;
 }
 
 /** What triage duty does as an issue enters the inbox: tell everyone on duty, or assign one of them. */
@@ -2757,6 +2970,8 @@ export interface ProjectRead {
   team_ids: string[];
   name: string;
   description: string | null;
+  /** The description's version, sent back as `base_body_version` when editing it. */
+  body_version?: string;
   lead_id: string | null;
   start_date: string | null;
   start_date_resolution?: DateResolution | null;
@@ -2831,6 +3046,8 @@ export interface ProjectLabelRead {
   description: string | null;
   /** How many projects the caller can see carry the label. */
   project_count: number;
+  /** The team that keeps the label for its own projects, or none for the workspace's. */
+  team_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2851,6 +3068,8 @@ export interface ProjectStatusRead {
   is_default: boolean;
   /** How many projects the caller can see sit in the status. */
   project_count: number;
+  /** The team that keeps the status for its own projects, or none for the workspace's. */
+  team_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2867,6 +3086,8 @@ export interface ProjectStatusCreate {
   color?: string | null;
   description?: string | null;
   position?: number;
+  /** The team the status is for, a team admin's own; left out for the workspace. */
+  team_id?: string | null;
 }
 
 /** The editable fields on a project status; a null color clears it. */
@@ -2887,6 +3108,8 @@ export interface ProjectLabelCreate {
   name: string;
   color: string;
   description?: string | null;
+  /** The team the label is for, a team admin's own; left out for the workspace. */
+  team_id?: string | null;
 }
 
 /** The editable fields on a project label; an empty description clears it. */
@@ -3004,6 +3227,8 @@ export interface ProjectUpdate {
   team_ids?: string[];
   name?: string;
   description?: string | null;
+  /** The `body_version` the description edit started from; a stale one is a `BODY_CHANGED` 409. */
+  base_body_version?: string;
   lead_id?: string | null;
   start_date?: string | null;
   start_date_resolution?: DateResolution | null;
@@ -3137,23 +3362,25 @@ export interface StatusUpdateRead {
   can_edit: boolean;
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** Whether the author hid the progress report for everyone. */
+  hide_details?: boolean;
+  /** The update's own reaction groups, the reader's pressed. */
+  reactions?: ReactionGroup[];
+  /** How many replies the update's thread holds. */
+  comment_count?: number;
 }
 
 /**
  * One written update on a project. `reactions` and `comment_count` summarise
  * its thread, so the feed shows the reaction bar and reply toggle without a
- * read per card.
+ * read per card, as they do on an initiative update.
  */
 export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
-  reactions?: ReactionGroup[];
-  comment_count?: number;
   /** Where the project stood when the update was posted; absent on updates from before snapshots. */
   snapshot?: ProjectUpdateSnapshot | null;
   /** The snapshot the update before this one recorded, or null for a first update. */
   previous_snapshot?: ProjectUpdateSnapshot | null;
-  /** Whether the author hid the progress report for everyone. */
-  hide_details?: boolean;
 }
 
 /** One milestone's progress when a project update was posted. */
@@ -3184,13 +3411,15 @@ export interface ProjectUpdateSnapshot {
 }
 
 /**
- * One reply on a project update. `can_edit` says whether the caller may edit
- * or delete it: its author, a workspace admin or an admin of a project team.
+ * One reply on a project or initiative update, naming whichever it hangs off.
+ * `can_edit` says whether the caller may edit or delete it: its author, a
+ * workspace admin, or an admin of a project team or the initiative's owner.
  */
 export interface ProjectUpdateCommentRead {
   comment_id: string;
   update_id: string;
-  project_id: string;
+  project_id?: string | null;
+  initiative_id?: string | null;
   workspace_id: string;
   body: string;
   author_id: string;
@@ -3265,7 +3494,7 @@ export interface ProjectActivityListRead {
 export interface ProjectUpdateCreate {
   body: string;
   health: ProjectHealth;
-  /** Hides the progress report for everyone; project updates only. */
+  /** Hides the progress report for everyone. */
   hide_details?: boolean;
 }
 
@@ -3273,7 +3502,7 @@ export interface ProjectUpdateCreate {
 export interface ProjectUpdateEdit {
   body?: string;
   health?: ProjectHealth;
-  /** Hides or shows the progress report; project updates only. */
+  /** Hides or shows the progress report. */
   hide_details?: boolean;
 }
 
@@ -3315,6 +3544,9 @@ export interface InitiativeRead {
   team_id?: string | null;
   status: InitiativeStatus;
   health: ProjectHealth | null;
+  /** When the initiative opens; a coarse start is its period's first day. */
+  start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date: string | null;
   target_date_resolution?: DateResolution | null;
   /** The initiative this one sits under, or null at the top level. */
@@ -3343,6 +3575,8 @@ export interface InitiativeRead {
   update_interval_inherited: boolean;
   next_update_due_at: string | null;
   update_due_state: ProjectUpdateDueState | null;
+  /** The shared manual position, a base 62 fractional key, or null when never placed. */
+  sort_order?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -3391,6 +3625,8 @@ export interface InitiativeCreate {
   team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
+  start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
   target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
@@ -3405,15 +3641,41 @@ export interface InitiativeUpdate {
   team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
+  start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
   target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
   parent_initiative_id?: string | null;
+  /** The shared manual position, a base 62 fractional key. */
+  sort_order?: string;
 }
 
 /** One written update on an initiative. */
 export interface InitiativeUpdateRead extends StatusUpdateRead {
   initiative_id: string;
+  /** Where the initiative stood when the update was posted; absent on updates from before snapshots. */
+  snapshot?: InitiativeUpdateSnapshot | null;
+  /** The snapshot the update before this one recorded, or null for a first update. */
+  previous_snapshot?: InitiativeUpdateSnapshot | null;
+  /** What changed since the update before, as plain lines; empty on a first, older or hidden update. */
+  report?: string[];
+}
+
+/**
+ * Where an initiative stood when an update was posted. The project counts
+ * cover the rolled up projects every workspace member can see.
+ */
+export interface InitiativeUpdateSnapshot {
+  owner_id: string | null;
+  owner_name: string | null;
+  status: InitiativeStatus | null;
+  target_date: string | null;
+  target_date_resolution: DateResolution | null;
+  health: ProjectHealth | null;
+  project_count: number;
+  projects_by_status: Partial<Record<ProjectStatus, number>>;
+  projects_by_health: Partial<Record<ProjectHealth, number>>;
 }
 
 /** One page of an initiative's updates, newest first. */
@@ -3710,6 +3972,8 @@ export interface GithubIssueLinkRead {
   review_state?: PullRequestReviewState;
   ci_state?: PullRequestCiState;
   stack?: PullRequestStackRead | null;
+  /** Where the link came from, a GitHub pull request or a GitLab merge request; absent from an older server. */
+  provider?: 'github' | 'gitlab';
   linked_at: string;
   updated_at: string;
 }
@@ -3813,6 +4077,11 @@ export const WEBHOOK_RESOURCE_TYPES = [
   'project_updates',
   'cycles',
   'labels',
+  'documents',
+  'initiatives',
+  'initiative_updates',
+  'customers',
+  'customer_requests',
 ] as const;
 
 /** One resource type a webhook may subscribe to. */
@@ -4000,6 +4269,8 @@ export interface ApiKeyRead {
   expires_at: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
+  /** The teams the key is restricted to, empty when it reaches every team. */
+  team_ids?: string[];
 }
 
 /**
@@ -4011,12 +4282,16 @@ export interface ApiKeyCreatedRead extends ApiKeyRead {
   secret: string;
 }
 
-/** What minting a key takes. `kind` defaults to `user` when it is left out. */
+/**
+ * What minting a key takes. `kind` defaults to `user` when it is left out, and
+ * `team_ids` left out or empty means every team.
+ */
 export interface ApiKeyCreate {
   name: string;
   scopes: string[];
   kind?: ApiKeyKind;
   expires_in_days?: number;
+  team_ids?: string[];
 }
 
 /**
@@ -4557,6 +4832,9 @@ export const CHANNEL_EVENTS = [
   'project_update_posted',
   'project_update_due',
   'standup_digest',
+  'initiative_update_posted',
+  'cycle_started',
+  'cycle_completed',
 ] as const;
 
 /** One event a team channel may post. */
@@ -4759,6 +5037,27 @@ export interface SlackChannelRead {
   is_private: boolean;
 }
 
+/**
+ * A team's Slack emoji reaction intake. `enabled` is false until a team admin
+ * picks an emoji and channels, and `reinstall` says the Slack App was added
+ * before it could read reactions, so it has to be connected again.
+ */
+export interface SlackIntakeRead {
+  configured: boolean;
+  installed: boolean;
+  enabled: boolean;
+  reinstall: boolean;
+  emoji: string | null;
+  channel_ids: string[];
+  updated_at: string | null;
+}
+
+/** The emoji a team files Slack messages with and the channels it listens in. */
+export interface SlackIntakeWrite {
+  emoji: string;
+  channel_ids: string[];
+}
+
 /** Whether this environment has a Discord App and whether this workspace added it to a server. */
 export interface DiscordConnectionRead {
   configured: boolean;
@@ -4767,6 +5066,45 @@ export interface DiscordConnectionRead {
   guild_name?: string | null;
   installed_by?: string | null;
   installed_at?: string | null;
+}
+
+/** Which GitLab group or project a workspace receives merge request events from. */
+export type GitlabScopeKind = 'group' | 'project';
+
+/** What a workspace admin enters to connect one GitLab group or project. */
+export interface GitlabConnectionWrite {
+  /** The GitLab instance, gitlab.com when empty. */
+  instance_url?: string;
+  scope_kind: GitlabScopeKind;
+  scope_path: string;
+  access_token: string;
+}
+
+/** One connected GitLab group or project, without its token or webhook secret. */
+export interface GitlabConnectionRead {
+  connection_id: string;
+  instance_url: string;
+  scope_kind: GitlabScopeKind;
+  scope_id: string;
+  scope_path: string;
+  scope_name: string;
+  web_url: string;
+  token_hint: string;
+  webhook_url: string;
+  connected_by: string;
+  connected_at: string;
+  secret_rotated_at?: string | null;
+}
+
+/** A connection as its create or rotate call answers it, with the webhook secret shown once. */
+export interface GitlabConnectionCreated extends GitlabConnectionRead {
+  webhook_secret: string;
+}
+
+/** Whether this environment can hold GitLab tokens, and the workspace's connections. */
+export interface GitlabConnectionsRead {
+  configured: boolean;
+  connections: GitlabConnectionRead[];
 }
 
 /** One Discord text or announcement channel the installed bot can post to. */
@@ -4904,6 +5242,27 @@ export interface IssueReleaseRead {
 /** The releases one issue shipped in, newest first. */
 export interface IssueReleaseListRead {
   releases: IssueReleaseRead[];
+}
+
+/**
+ * One release with the issues it carries, as an issue list groups and labels
+ * its rows by it. `stage_position` is where `current_stage` sits in the
+ * team's pipeline, `-1` when the release reached no stage.
+ */
+export interface ReleaseIndexEntryRead {
+  release_id: string;
+  team_id: string;
+  name: string;
+  current_stage?: ReleaseStageRead | null;
+  stage_position: number;
+  included_in?: string | null;
+  created_at: string;
+  issue_ids: string[];
+}
+
+/** Every release of the teams the caller can see, newest first, each with its issues. */
+export interface ReleaseIndexRead {
+  releases: ReleaseIndexEntryRead[];
 }
 
 /** How often a team's standup digest is cut, or `off` for never. */
@@ -5812,8 +6171,46 @@ export interface IssueDraftListRead {
 /** The two kinds of record a customer request can name. */
 export type CustomerTargetKind = 'issue' | 'project';
 
-/** Where a customer stands with the workspace, from a fixed set. */
-export type CustomerStatus = 'lead' | 'trial' | 'active' | 'paused' | 'churned';
+/**
+ * The id of one of the workspace's customer statuses. The seeded ones are
+ * `lead`, `trial`, `active`, `paused` and `churned`.
+ */
+export type CustomerStatus = string;
+
+/**
+ * One customer status or tier: a named, coloured, ordered entry a workspace
+ * admin sets up in settings, with how many customers hold it.
+ */
+export interface CustomerFieldRead {
+  id: string;
+  name: string;
+  /** A `#rrggbb` colour, or null for a neutral dot. */
+  color: string | null;
+  position: number;
+  customer_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body a customer status or tier create takes; it lands last unless a position is given. */
+export interface CustomerFieldCreate {
+  name: string;
+  color?: string | null;
+  position?: number | null;
+}
+
+/** The body a customer status or tier patch takes; a field left out is kept. */
+export type CustomerFieldUpdate = Partial<CustomerFieldCreate>;
+
+/** The workspace's customer statuses by position. */
+export interface CustomerStatusListRead {
+  statuses: CustomerFieldRead[];
+}
+
+/** The workspace's customer tiers by position. */
+export interface CustomerTierListRead {
+  tiers: CustomerFieldRead[];
+}
 
 /**
  * One customer of the workspace, with how many requests this caller can see
@@ -5825,8 +6222,13 @@ export interface CustomerRead {
   workspace_id: string;
   name: string;
   domains: string[];
+  /** The status id, kept beside `status_id` for older readers. */
   status: CustomerStatus | null;
+  status_id: string | null;
+  status_name: string | null;
+  /** The tier's name. */
   tier: string | null;
+  tier_id: string | null;
   owner_id: string | null;
   revenue: number | null;
   size: number | null;
@@ -5843,7 +6245,11 @@ export interface CustomerRead {
 export interface CustomerCreate {
   name: string;
   domains?: string[];
-  status?: CustomerStatus | null;
+  status_id?: string | null;
+  /** A status id or name, for callers that know only the name. */
+  status?: string | null;
+  tier_id?: string | null;
+  /** A tier id or name, for callers that know only the name. */
   tier?: string | null;
   owner_id?: string | null;
   revenue?: number | null;
@@ -5918,6 +6324,10 @@ export interface MemberProfileRead {
   joined_at: string;
   /** The teams the member belongs to that the viewer can see. */
   team_ids?: string[];
+  /** The member's status while it is in force, or null when none is set or the viewer may not see it. */
+  user_status?: UserStatusRead | null;
+  /** The IANA zone the member set, shown as their local time; null when unset or hidden from the viewer. */
+  timezone?: string | null;
 }
 
 /** A comment as a member's activity feed carries it, its body cut to an excerpt. */

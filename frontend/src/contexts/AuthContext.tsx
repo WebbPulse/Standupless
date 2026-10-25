@@ -13,8 +13,8 @@ import {
 import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
-import { clearIssueContextCache } from '../lib/issueContextCache';
 import { preferencesOf, setPreferences } from '../lib/preferences';
+import { clearQueryPersistence } from '../lib/queryPersistence';
 import { isAppShell, SHELL_SIGN_IN_PATH } from '../lib/shell';
 import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
 import {
@@ -135,6 +135,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
   const fontSize = user?.font_size;
   const pointerCursors = user?.pointer_cursors;
   const underlineLinks = user?.underline_links;
+  const codeTheme = user?.code_theme;
   const convertEmoticons = user?.convert_emoticons;
   const autoAssign = user?.auto_assign_to_self;
   const branchStarts = user?.branch_copy_starts;
@@ -151,6 +152,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
         font_size: fontSize,
         pointer_cursors: pointerCursors,
         underline_links: underlineLinks,
+        code_theme: codeTheme,
         convert_emoticons: convertEmoticons,
         auto_assign_to_self: autoAssign,
         branch_copy_starts: branchStarts,
@@ -165,6 +167,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
     fontSize,
     pointerCursors,
     underlineLinks,
+    codeTheme,
     convertEmoticons,
     autoAssign,
     branchStarts,
@@ -176,7 +179,8 @@ const usePreferenceSync = (user: UserRead | null): void => {
  * Empties the shared polled query cache once a signed in session ends, however
  * it ended: a sign out here, one in another tab, or an expired session. Several
  * cached keys, such as a team's statuses or the current user, carry no user,
- * so the next person signing in on this browser must not paint from them.
+ * so the next person signing in on this browser must not paint from them. The
+ * device copy of the workspace's reads is deleted with it.
  */
 const useSignedOutCacheClear = (
   isAuthenticated: boolean,
@@ -191,6 +195,7 @@ const useSignedOutCacheClear = (
     }
     if (!isLoading && signedIn.current) {
       signedIn.current = false;
+      void clearQueryPersistence();
       clearPolledQueryCache();
     }
   }, [isAuthenticated, isLoading]);
@@ -242,7 +247,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
       } catch {
         void 0;
       }
-      clearIssueContextCache();
+      void clearQueryPersistence();
       clearPolledQueryCache();
       clearSignedIn();
       void navigate(to, { replace: true });

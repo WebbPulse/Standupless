@@ -183,13 +183,19 @@ class IssueTemplate(BaseModel):
 
 
 class TemplateSettings(BaseModel):
-    """A team's template settings: the templates its issue, project, document and update composers open with."""
+    """A team's template settings: the templates its issue, project, document and update composers open with.
+
+    `non_member_default_template_id` is the issue template the create dialog
+    opens with for someone outside the team, so requests filed by other teams
+    arrive in a request shape; unset, they get `default_template_id` too.
+    """
 
     workspace_id: str
     config_key: str
     team_id: str
     kind: str = TEMPLATE_SETTINGS
     default_template_id: Optional[str] = None
+    non_member_default_template_id: Optional[str] = None
     default_project_template_id: Optional[str] = None
     default_document_template_id: Optional[str] = None
     default_update_template_id: Optional[str] = None

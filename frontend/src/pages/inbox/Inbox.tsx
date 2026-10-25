@@ -33,6 +33,12 @@
  * so a removed row is only hidden here until its Undo window lapses, and the
  * delete is sent then, or sooner when the page is left.
  *
+ * On a touch screen a row swipes like Linear's mobile inbox: left to delete
+ * and right to mark it read or unread. A short swipe holds the row open on
+ * the action's button and a long one runs it, with the same Undo notice, a
+ * long press opens the row menu, and pulling the list down from its top
+ * refetches it.
+ *
  * Opening a row while read rows are hidden marks it read without pulling it
  * out from under the reader: the open row holds its place until the selection
  * moves.
@@ -75,6 +81,8 @@ import {
   LuTrash2,
   LuTriangleAlert,
   LuUpload,
+  LuUserPlus,
+  LuUserRoundCheck,
   LuX,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -123,6 +131,10 @@ import { usePriorityInbox } from '../../hooks/usePriorityInbox';
 import { SubscriptionKeyContext } from '../../hooks/useIssueSubscription';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useCoarsePointer } from '../../hooks/useCoarsePointer';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { REVEAL_PX, useSwipeActions } from '../../hooks/useSwipeActions';
+import PullIndicator from '../../components/ui/PullIndicator';
 import { viaLabel } from '../../lib/changeSource';
 import { cn } from '../../lib/cn';
 import { copyText, issueUrl } from '../../lib/copyIssue';
@@ -140,6 +152,7 @@ import {
   type InitiativeRef,
   integrationsSettingsPath,
   issuePath,
+  projectPath,
   projectUpdatesTabPath,
   reviewsPath,
   teamSettingsPath,
@@ -189,19 +202,42 @@ const PAGE_SIZE = 50;
 /** The URL parameter holding the selected notification. */
 const SELECTED_PARAM = 'n';
 
-/** Whether a row is about a project update rather than an issue. */
-const isProjectRow = (row: NotificationRead): boolean =>
-  row.kind === 'project_update' ||
-  row.kind === 'project_update_comment' ||
-  row.kind === 'project_update_due';
+/**
+ * Whether a row is a reply on an initiative update. It shares the project
+ * update reply kind, so one preference covers both, and names the initiative
+ * where a project reply names the project.
+ */
+const isInitiativeReplyRow = (row: NotificationRead): boolean =>
+  row.kind === 'project_update_comment' &&
+  !row.project_id &&
+  Boolean(row.initiative_id);
+
+/** Whether a row tells someone they were made a project's lead or added to its members. */
+const isProjectRoleRow = (row: NotificationRead): boolean =>
+  row.kind === 'project_lead_assigned' || row.kind === 'project_member_added';
 
 /**
- * Whether a row reminds an initiative's owner that its update is due or
- * overdue. It is workspace level, so `team_id` is empty and the issue fields
- * are blank; `initiative_name` and `due_state` carry what it says.
+ * Whether a row is about a project rather than an issue: one of its updates,
+ * its entering a view, or a role on it handed to the reader.
+ */
+const isProjectRow = (row: NotificationRead): boolean =>
+  ((row.kind === 'project_update' ||
+    row.kind === 'project_update_comment' ||
+    row.kind === 'project_update_due' ||
+    row.kind === 'view_project_added') &&
+    !isInitiativeReplyRow(row)) ||
+  isProjectRoleRow(row);
+
+/**
+ * Whether a row is about an initiative: a reminder to its owner that its
+ * update is due or overdue, a reply on one of its updates, or its ownership
+ * handed to the reader. It is workspace level, so `team_id` is empty and the
+ * issue fields are blank; `initiative_name` and `due_state` carry what it says.
  */
 const isInitiativeRow = (row: NotificationRead): boolean =>
-  row.kind === 'initiative_update_due';
+  row.kind === 'initiative_update_due' ||
+  row.kind === 'initiative_owner_assigned' ||
+  isInitiativeReplyRow(row);
 
 /** The link to one initiative's updates tab. */
 const initiativeUpdatesTabPath = (
@@ -302,33 +338,43 @@ const rowPath = (slug: string, row: NotificationRead): string =>
     ? documentPath(slug, row.document_id ?? '')
     : isReviewRow(row)
       ? reviewsPath(slug)
-      : isProjectRow(row)
-        ? projectUpdatesTabPath(slug, {
+      : row.kind === 'view_project_added' || isProjectRoleRow(row)
+        ? projectPath(slug, {
             project_id: row.project_id ?? '',
             name: row.project_name,
           })
-        : isInitiativeRow(row)
-          ? initiativeUpdatesTabPath(slug, {
-              initiative_id: row.initiative_id ?? '',
-              name: row.initiative_name,
+        : isProjectRow(row)
+          ? projectUpdatesTabPath(slug, {
+              project_id: row.project_id ?? '',
+              name: row.project_name,
             })
-          : isChannelRow(row)
-            ? row.issue_key
-              ? teamSettingsPath(slug, row.issue_key)
-              : integrationsSettingsPath(slug)
-            : isExportRow(row)
-              ? exportSettingsPath(slug)
-              : isImportRow(row)
-                ? importSettingsPath(slug)
-                : isAppApprovalRow(row)
-                  ? connectedAppsPath(slug)
-                  : isStandupRow(row)
-                    ? `${teamStandupPath(slug, row.issue_key)}${
-                        row.standup_date
-                          ? `?date=${encodeURIComponent(row.standup_date)}`
-                          : ''
-                      }`
-                    : issuePath(slug, row.issue_key);
+          : row.kind === 'initiative_owner_assigned'
+            ? initiativePath(slug, {
+                initiative_id: row.initiative_id ?? '',
+                name: row.initiative_name,
+              })
+            : isInitiativeRow(row)
+              ? initiativeUpdatesTabPath(slug, {
+                  initiative_id: row.initiative_id ?? '',
+                  name: row.initiative_name,
+                })
+              : isChannelRow(row)
+                ? row.issue_key
+                  ? teamSettingsPath(slug, row.issue_key)
+                  : integrationsSettingsPath(slug)
+                : isExportRow(row)
+                  ? exportSettingsPath(slug)
+                  : isImportRow(row)
+                    ? importSettingsPath(slug)
+                    : isAppApprovalRow(row)
+                      ? connectedAppsPath(slug)
+                      : isStandupRow(row)
+                        ? `${teamStandupPath(slug, row.issue_key)}${
+                            row.standup_date
+                              ? `?date=${encodeURIComponent(row.standup_date)}`
+                              : ''
+                          }`
+                        : issuePath(slug, row.issue_key);
 
 /** Props for DocumentCommentPane: the selected row and how to leave it. */
 interface DocumentCommentPaneProps {
@@ -646,7 +692,7 @@ interface ProjectUpdatePaneProps {
   onClose: () => void;
 }
 
-/** The pane beside a project update row, which links to the project. */
+/** The pane beside a project row, which links to the project's updates, or its overview for a view or role notice. */
 const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
   row,
   slug,
@@ -661,9 +707,25 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <LuTarget aria-hidden="true" className="h-8 w-8 text-text-faint" />
-      {row.kind === 'project_update_due' ? (
+      {row.kind === 'view_project_added' ? (
         <p className="text-sm text-text">
-          An update is due on <span className="font-medium">{project}</span>
+          <span className="font-medium">{project}</span> was added to{' '}
+          <span className="font-medium">{row.new_value ?? 'a view'}</span>
+        </p>
+      ) : row.kind === 'project_lead_assigned' ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> made you the lead of{' '}
+          <span className="font-medium">{project}</span>
+        </p>
+      ) : row.kind === 'project_member_added' ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> added you to{' '}
+          <span className="font-medium">{project}</span>
+        </p>
+      ) : row.kind === 'project_update_due' ? (
+        <p className="text-sm text-text">
+          An update is {row.due_state === 'overdue' ? 'overdue' : 'due'} on{' '}
+          <span className="font-medium">{project}</span>
         </p>
       ) : (
         <p className="text-sm text-text">
@@ -687,7 +749,9 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          Open project updates
+          {row.kind === 'view_project_added' || isProjectRoleRow(row)
+            ? 'Open project'
+            : 'Open project updates'}
         </Button>
       </div>
     </aside>
@@ -701,7 +765,7 @@ interface InitiativeUpdatePaneProps {
   onClose: () => void;
 }
 
-/** The pane beside an initiative update reminder, which links to the initiative's updates. */
+/** The pane beside an initiative update reminder or reply, which links to the initiative's updates, or its overview for an ownership notice. */
 const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
   row,
   slug,
@@ -710,16 +774,30 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
   const navigate = useNavigate();
   const initiative = row.initiative_name ?? 'an initiative';
   const state = row.due_state === 'overdue' ? 'overdue' : 'due';
+  const owner = row.kind === 'initiative_owner_assigned';
+  const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
   return (
     <aside
       aria-label="Initiative update"
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <LuGoal aria-hidden="true" className="h-8 w-8 text-text-faint" />
-      <p className="text-sm text-text">
-        An update is {state} on{' '}
-        <span className="font-medium">{initiative}</span>
-      </p>
+      {owner ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> made you the owner of{' '}
+          <span className="font-medium">{initiative}</span>
+        </p>
+      ) : isInitiativeReplyRow(row) ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> replied to an update on{' '}
+          <span className="font-medium">{initiative}</span>
+        </p>
+      ) : (
+        <p className="text-sm text-text">
+          An update is {state} on{' '}
+          <span className="font-medium">{initiative}</span>
+        </p>
+      )}
       <p className="text-xs text-text-faint">
         {timestampLabel(row.created_at)}
       </p>
@@ -734,7 +812,7 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          Open initiative updates
+          {owner ? 'Open initiative' : 'Open initiative updates'}
         </Button>
       </div>
     </aside>
@@ -745,8 +823,10 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
 const rowSummary = (row: NotificationRead): string => {
   if (row.summary) return row.summary;
   const label =
-    isInitiativeRow(row) && row.due_state === 'overdue'
-      ? 'Initiative update overdue'
+    row.due_state === 'overdue'
+      ? isInitiativeRow(row)
+        ? 'Initiative update overdue'
+        : 'Update overdue'
       : kindLabel(row.kind);
   return row.actor_name === '' ? label : `${label} by ${row.actor_name}`;
 };
@@ -770,6 +850,24 @@ const KIND_ICONS: Partial<Record<InboxKind, React.ReactNode>> = {
   ),
   priority_urgent: <PriorityGlyph priority="urgent" className="h-3 w-3" />,
   blocking_changed: <BlockedIcon className="h-3 w-3" />,
+  project_lead_assigned: (
+    <LuUserRoundCheck
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
+  project_member_added: (
+    <LuUserPlus
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
+  initiative_owner_assigned: (
+    <LuUserRoundCheck
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
 };
 
 /** The icon for a blocking row: the blocking flag when this issue blocks another, the blocked flag otherwise. */
@@ -791,6 +889,8 @@ interface InboxRowProps {
   onToggleRead: () => void;
   onSnooze: () => void;
   onRemove: () => void;
+  /** Marks the row read or unread from a swipe, with an Undo notice. */
+  onSwipeRead: () => void;
   /** Opens the row's context menu at the pointer. */
   onContextMenu: (x: number, y: number) => void;
   /** The entries the row's "more" button lists. */
@@ -839,10 +939,18 @@ const InboxRow: React.FC<InboxRowProps> = ({
   onToggleRead,
   onSnooze,
   onRemove,
+  onSwipeRead,
   onContextMenu,
   menu,
 }) => {
   const ref = useRef<HTMLLIElement>(null);
+  const coarse = useCoarsePointer();
+  const swipe = useSwipeActions({
+    enabled: coarse,
+    left: { onCommit: onRemove, reveals: true },
+    right: { onCommit: onSwipeRead, reveals: true },
+    onLongPress: onContextMenu,
+  });
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView?.({ block: 'nearest' });
   }, [selected]);
@@ -859,176 +967,228 @@ const InboxRow: React.FC<InboxRowProps> = ({
         event.preventDefault();
         onContextMenu(event.clientX, event.clientY);
       }}
-      className={cn(
-        'group relative flex items-start gap-2.5 border-b border-line px-3 py-2.5 transition-colors duration-100',
-        selected
-          ? 'bg-raised'
-          : 'hover:bg-surface has-[button:active]:bg-raised'
-      )}
+      className="relative overflow-hidden border-b border-line"
     >
-      <span
-        aria-hidden="true"
+      {swipe.offset !== 0 && (
+        <div aria-hidden="true" className="absolute inset-0 flex">
+          {swipe.offset > 0 && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => {
+                swipe.commit('right');
+              }}
+              style={{ width: Math.max(REVEAL_PX, swipe.offset) }}
+              className="flex items-center justify-center bg-accent text-xs font-medium text-on-accent hover:bg-accent-strong"
+            >
+              {group.unread ? (
+                <LuCheck aria-hidden="true" className="h-4 w-4" />
+              ) : (
+                <LuMailOpen aria-hidden="true" className="h-4 w-4" />
+              )}
+              <span className="sr-only">
+                {group.unread ? 'Mark as read' : 'Mark as unread'}
+              </span>
+            </button>
+          )}
+          {swipe.offset < 0 && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => {
+                swipe.commit('left');
+              }}
+              style={{ width: Math.max(REVEAL_PX, -swipe.offset) }}
+              className="ml-auto flex items-center justify-center bg-danger text-xs font-medium text-white hover:bg-danger/90"
+            >
+              <LuTrash2 aria-hidden="true" className="h-4 w-4" />
+              <span className="sr-only">Delete notification</span>
+            </button>
+          )}
+        </div>
+      )}
+      <div
+        {...swipe.handlers}
+        style={swipe.style}
         className={cn(
-          'mt-2 h-1.5 w-1.5 shrink-0 rounded-full',
-          group.unread ? 'bg-accent' : 'bg-transparent'
+          'group relative flex items-start gap-2.5 px-3 py-2.5 transition-colors duration-100',
+          coarse && 'touch-pan-y select-none [-webkit-touch-callout:none]',
+          coarse &&
+            !swipe.dragging &&
+            'motion-safe:transition-[transform,background-color] motion-safe:duration-150 motion-safe:ease-out',
+          selected
+            ? 'bg-raised'
+            : swipe.offset !== 0
+              ? 'bg-bg'
+              : 'hover:bg-surface has-[button:active]:bg-raised'
         )}
-      />
-      <Avatar name={actor} size="xs" className="mt-0.5 shrink-0" />
-      <button
-        type="button"
-        onClick={onSelect}
-        data-hover="parent"
-        className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs text-left before:absolute before:inset-0 focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <span className="flex w-full items-center gap-2">
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-sm',
-              group.unread ? 'font-medium text-text' : 'text-text-muted'
+        <span
+          aria-hidden="true"
+          className={cn(
+            'mt-2 h-1.5 w-1.5 shrink-0 rounded-full',
+            group.unread ? 'bg-accent' : 'bg-transparent'
+          )}
+        />
+        <Avatar name={actor} size="xs" className="mt-0.5 shrink-0" />
+        <button
+          type="button"
+          onClick={onSelect}
+          data-hover="parent"
+          className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs text-left before:absolute before:inset-0 focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <span className="flex w-full items-center gap-2">
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-sm',
+                group.unread ? 'font-medium text-text' : 'text-text-muted'
+              )}
+            >
+              {isProjectRow(row) ||
+              isInitiativeRow(row) ||
+              isStandupRow(row) ||
+              isDocumentRow(row)
+                ? subjectName(row)
+                : row.issue_title}
+            </span>
+            {count > 1 && (
+              <span
+                aria-label={`${count} notifications`}
+                className="shrink-0 rounded-sm bg-surface px-1 text-2xs tabular-nums text-text-muted"
+              >
+                {count}
+              </span>
+            )}
+            <Tooltip text={fullTimestamp(row.created_at)} side="top">
+              <time
+                dateTime={row.created_at}
+                aria-label={fullTimestamp(row.created_at)}
+                className="shrink-0 text-xs tabular-nums text-text-faint"
+              >
+                {compactAge(row.created_at)}
+              </time>
+            </Tooltip>
+          </span>
+          <span className="flex w-full items-center gap-1.5 text-xs text-text-muted">
+            {isDocumentRow(row) ? (
+              <LuFileText
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isProjectRow(row) ? (
+              <LuTarget
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isInitiativeRow(row) ? (
+              <LuGoal
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isExportRow(row) ? (
+              <LuDownload
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isImportRow(row) ? (
+              <LuUpload
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isAppApprovalRow(row) ? (
+              <LuPlug
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isStandupRow(row) ? (
+              <LuCalendar
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 text-text-faint"
+              />
+            ) : isIssueRow(row) ? (
+              <IssueHoverTrigger issueKey={row.issue_key}>
+                {({ onPointerEnter, onPointerLeave, onPointerDown }) => (
+                  <span
+                    onPointerEnter={onPointerEnter}
+                    onPointerLeave={onPointerLeave}
+                    onPointerDown={onPointerDown}
+                    className="relative shrink-0 font-mono text-2xs text-text-faint"
+                  >
+                    {row.issue_key}
+                  </span>
+                )}
+              </IssueHoverTrigger>
+            ) : (
+              <span className="shrink-0 font-mono text-2xs text-text-faint">
+                {row.issue_key}
+              </span>
+            )}
+            {!snoozedUntil && kindIcon(row)}
+            <span className="min-w-0 truncate">
+              {snoozedUntil
+                ? snoozeLabel(snoozedUntil)
+                : [rowSummary(row), viaLabel(row.source)]
+                    .filter((part) => part !== null)
+                    .join(' ')}
+            </span>
+          </span>
+        </button>
+        <span
+          className={cn(
+            'relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:absolute sm:pointer-fine:right-2 sm:pointer-fine:bottom-1.5 sm:pointer-fine:rounded-sm sm:pointer-fine:bg-raised sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
+            selected
+              ? 'sm:pointer-fine:opacity-100'
+              : 'sm:pointer-fine:opacity-0'
+          )}
+        >
+          {group.unread ? (
+            <RowAction
+              label={`Mark ${subjectName(row)} read`}
+              tip={actionTip('Mark as read', TOGGLE_READ_KEYS)}
+              onClick={onToggleRead}
+            >
+              <LuCheck aria-hidden="true" className="h-3.5 w-3.5" />
+            </RowAction>
+          ) : (
+            <RowAction
+              label={`Mark ${subjectName(row)} unread`}
+              tip={actionTip('Mark as unread', TOGGLE_READ_KEYS)}
+              onClick={onToggleRead}
+            >
+              <LuMailOpen aria-hidden="true" className="h-3.5 w-3.5" />
+            </RowAction>
+          )}
+          <RowAction
+            label={`Snooze ${subjectName(row)}`}
+            tip={actionTip('Snooze', SNOOZE_KEYS)}
+            onClick={onSnooze}
+          >
+            <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+          </RowAction>
+          <RowAction
+            label={`Remove ${subjectName(row)}`}
+            tip={actionTip('Delete notification', REMOVE_KEYS)}
+            onClick={onRemove}
+          >
+            <LuX aria-hidden="true" className="h-3.5 w-3.5" />
+          </RowAction>
+          <Menu
+            label={`${subjectName(row)} actions`}
+            align="end"
+            trigger={(trigger) => (
+              <IconButton
+                label={`More actions for ${subjectName(row)}`}
+                size="sm"
+                {...trigger}
+              >
+                <LuEllipsis className="h-3.5 w-3.5" aria-hidden="true" />
+              </IconButton>
             )}
           >
-            {isProjectRow(row) ||
-            isInitiativeRow(row) ||
-            isStandupRow(row) ||
-            isDocumentRow(row)
-              ? subjectName(row)
-              : row.issue_title}
-          </span>
-          {count > 1 && (
-            <span
-              aria-label={`${count} notifications`}
-              className="shrink-0 rounded-sm bg-surface px-1 text-2xs tabular-nums text-text-muted"
-            >
-              {count}
-            </span>
-          )}
-          <Tooltip text={fullTimestamp(row.created_at)} side="top">
-            <time
-              dateTime={row.created_at}
-              aria-label={fullTimestamp(row.created_at)}
-              className="shrink-0 text-xs tabular-nums text-text-faint"
-            >
-              {compactAge(row.created_at)}
-            </time>
-          </Tooltip>
+            {menu}
+          </Menu>
         </span>
-        <span className="flex w-full items-center gap-1.5 text-xs text-text-muted">
-          {isDocumentRow(row) ? (
-            <LuFileText
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isProjectRow(row) ? (
-            <LuTarget
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isInitiativeRow(row) ? (
-            <LuGoal
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isExportRow(row) ? (
-            <LuDownload
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isImportRow(row) ? (
-            <LuUpload
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isAppApprovalRow(row) ? (
-            <LuPlug
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isStandupRow(row) ? (
-            <LuCalendar
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 text-text-faint"
-            />
-          ) : isIssueRow(row) ? (
-            <IssueHoverTrigger issueKey={row.issue_key}>
-              {({ onPointerEnter, onPointerLeave, onPointerDown }) => (
-                <span
-                  onPointerEnter={onPointerEnter}
-                  onPointerLeave={onPointerLeave}
-                  onPointerDown={onPointerDown}
-                  className="relative shrink-0 font-mono text-2xs text-text-faint"
-                >
-                  {row.issue_key}
-                </span>
-              )}
-            </IssueHoverTrigger>
-          ) : (
-            <span className="shrink-0 font-mono text-2xs text-text-faint">
-              {row.issue_key}
-            </span>
-          )}
-          {!snoozedUntil && kindIcon(row)}
-          <span className="min-w-0 truncate">
-            {snoozedUntil
-              ? snoozeLabel(snoozedUntil)
-              : [rowSummary(row), viaLabel(row.source)]
-                  .filter((part) => part !== null)
-                  .join(' ')}
-          </span>
-        </span>
-      </button>
-      <span
-        className={cn(
-          'relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:absolute sm:pointer-fine:right-2 sm:pointer-fine:bottom-1.5 sm:pointer-fine:rounded-sm sm:pointer-fine:bg-raised sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
-          selected ? 'sm:pointer-fine:opacity-100' : 'sm:pointer-fine:opacity-0'
-        )}
-      >
-        {group.unread ? (
-          <RowAction
-            label={`Mark ${subjectName(row)} read`}
-            tip={actionTip('Mark as read', TOGGLE_READ_KEYS)}
-            onClick={onToggleRead}
-          >
-            <LuCheck aria-hidden="true" className="h-3.5 w-3.5" />
-          </RowAction>
-        ) : (
-          <RowAction
-            label={`Mark ${subjectName(row)} unread`}
-            tip={actionTip('Mark as unread', TOGGLE_READ_KEYS)}
-            onClick={onToggleRead}
-          >
-            <LuMailOpen aria-hidden="true" className="h-3.5 w-3.5" />
-          </RowAction>
-        )}
-        <RowAction
-          label={`Snooze ${subjectName(row)}`}
-          tip={actionTip('Snooze', SNOOZE_KEYS)}
-          onClick={onSnooze}
-        >
-          <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
-        </RowAction>
-        <RowAction
-          label={`Remove ${subjectName(row)}`}
-          tip={actionTip('Delete notification', REMOVE_KEYS)}
-          onClick={onRemove}
-        >
-          <LuX aria-hidden="true" className="h-3.5 w-3.5" />
-        </RowAction>
-        <Menu
-          label={`${subjectName(row)} actions`}
-          align="end"
-          trigger={(trigger) => (
-            <IconButton
-              label={`More actions for ${subjectName(row)}`}
-              size="sm"
-              {...trigger}
-            >
-              <LuEllipsis className="h-3.5 w-3.5" aria-hidden="true" />
-            </IconButton>
-          )}
-        >
-          {menu}
-        </Menu>
-      </span>
+      </div>
     </li>
   );
 };
@@ -1313,6 +1473,10 @@ export const Inbox: React.FC = () => {
     inboxCountKey(workspaceId),
     inboxCountsKey(workspaceId),
   ];
+  const coarse = useCoarsePointer();
+  const pullList = usePullToRefresh(coarse, () => {
+    invalidateQueries(refetchKeys);
+  });
 
   const { mutate: readMany, error: readError } = useMutationWithRefetch(
     (notificationIds: string[]) => {
@@ -1522,6 +1686,19 @@ export const Inbox: React.FC = () => {
   const toggleRead = (group: InboxGroup): void => {
     if (group.unread) void readMany(unreadIds(group)).catch(() => undefined);
     else void unreadMany([group.latest.notification_id]).catch(() => undefined);
+  };
+
+  const swipeRead = (group: InboxGroup): void => {
+    const ids = group.unread
+      ? unreadIds(group)
+      : [group.latest.notification_id];
+    const marking = group.unread;
+    toggleRead(group);
+    pushUndo(
+      workspaceId,
+      `Marked ${subjectName(group.latest)} ${marking ? 'read' : 'unread'}`,
+      () => (marking ? unreadMany(ids) : readMany(ids)).then(() => undefined)
+    );
   };
 
   const snoozeGroup = (group: InboxGroup, until: Date): void => {
@@ -1983,12 +2160,17 @@ export const Inbox: React.FC = () => {
     >
       <div className="flex min-h-0 flex-1">
         <section
+          ref={pullList.ref}
           aria-label="Notifications"
           className={cn(
-            'min-h-0 w-full shrink-0 flex-col overflow-y-auto border-line lg:w-[300px] lg:border-r',
+            'min-h-0 w-full shrink-0 flex-col overflow-y-auto overscroll-y-contain border-line lg:w-[300px] lg:border-r',
             selected === null ? 'flex' : 'hidden lg:flex'
           )}
         >
+          <PullIndicator
+            pull={pullList.pull}
+            refreshing={pullList.refreshing}
+          />
           {errors.length > 0 && (
             <div className="space-y-2 p-3">
               {errors.map((message) => (
@@ -2026,6 +2208,9 @@ export const Inbox: React.FC = () => {
                   }}
                   onRemove={() => {
                     removeGroup(group);
+                  }}
+                  onSwipeRead={() => {
+                    swipeRead(group);
                   }}
                   onContextMenu={(x, y) => {
                     setRowMenu({ group, x, y });

@@ -14,7 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Request, Response, status
 from webbpulse.http import conditional_response
 
-from app.common import team_members
+from app.common import member_status, team_members
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
@@ -32,13 +32,26 @@ def list_team_members(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Everyone explicitly added to this team, joined with their user rows.
+    """Everyone explicitly added to this team, joined with their user rows and current statuses.
 
-    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    Every row shares this team with the caller, so a guest who can read it may see
+    each member's status. The answer carries a weak `ETag`, so an unchanged poll
+    gets a 304.
     """
     memberships = repositories.memberships.list_team_members(context.workspace_id, str(context.team_id))
-    users = repositories.users.get_many([m.user_id for m in memberships])
-    listing = TeamMemberListRead(members=[TeamMemberRead.from_rows(m, users.get(m.user_id)) for m in memberships])
+    user_ids = [m.user_id for m in memberships]
+    users = repositories.users.get_many(user_ids)
+    workspace_rows = repositories.memberships.get_many(context.workspace_id, user_ids)
+    listing = TeamMemberListRead(
+        members=[
+            TeamMemberRead.from_rows(
+                m,
+                users.get(m.user_id),
+                user_status=member_status.status_for(workspace_rows.get(m.user_id), None),
+            )
+            for m in memberships
+        ]
+    )
     return conditional_response(request, listing)
 
 

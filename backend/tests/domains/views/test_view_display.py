@@ -11,6 +11,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common.api.schemas.views import SLA_HIDDEN, ViewRead, read_visible_properties, stored_visible_properties
+from app.common.db.dynamo.views import SavedView
 from tests.domains.helpers import MEMBER, sign_in
 
 
@@ -124,6 +126,14 @@ def test_an_unknown_property_or_layout_is_a_422(client: TestClient, workspace: s
     assert _create(client, workspace, layout="timeline").status_code == 422
 
 
+def test_the_my_issues_focus_grouping_is_not_storable(client: TestClient, workspace: str) -> None:
+    """Focus is a client-only grouping of My issues, so a view refuses it as a grouping or sub-grouping."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace, group_by="focus").status_code == 422
+    assert _create(client, workspace, group_by="status", sub_group_by="focus").status_code == 422
+
+
 def test_a_filter_may_hold_lists_and_negations(client: TestClient, workspace: str) -> None:
     """The list's repeatable keys store lists, and the negation keys are accepted."""
     sign_in(client, MEMBER)
@@ -214,8 +224,23 @@ def test_the_milestone_and_links_properties_round_trip(client: TestClient, works
     assert created.json()["visible_properties"] == ["id", "milestone", "links"]
 
 
+def test_the_release_property_and_filter_round_trip(client: TestClient, workspace: str) -> None:
+    """A view may show each row's releases and keep or drop issues by release."""
+    sign_in(client, MEMBER)
+
+    created = _create(
+        client,
+        workspace,
+        visible_properties=["id", "release"],
+        filter={"release_id": ["none"], "release_id_not": ["01JB000000000000000000REL1"]},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["visible_properties"] == ["id", "release"]
+    assert created.json()["filter"]["release_id"] == ["none"]
+
+
 def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: str) -> None:
-    """Project, cycle, parent, team, SLA and customer groupings and the status, start and estimate sorts are kept."""
+    """Project, cycle, parent, team, SLA, customer and release groupings and the newer sorts are kept."""
     sign_in(client, MEMBER)
 
     for group, sub_group in (
@@ -224,6 +249,8 @@ def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: s
         ("team", "milestone"),
         ("cycle", "project"),
         ("customer", "status"),
+        ("release", "assignee"),
+        ("status", "release"),
     ):
         created = _create(client, workspace, group_by=group, sub_group_by=sub_group)
         assert created.status_code == 201, created.text
@@ -279,3 +306,117 @@ def test_the_group_header_defaults_to_the_count_and_round_trips(client: TestClie
     assert client.patch(path, json={"group_header": None}).status_code == 422
     assert client.patch(path, json={"group_header": "points"}).status_code == 422
     assert _create(client, workspace, group_header="points").status_code == 422
+
+
+def test_the_sla_and_customer_properties_round_trip(client: TestClient, workspace: str) -> None:
+    """A view may show the SLA badge, the requesting customers and their summed revenue."""
+    sign_in(client, MEMBER)
+
+    created = _create(client, workspace, visible_properties=["id", "sla", "customers", "customer_revenue"])
+
+    assert created.status_code == 201, created.text
+    assert created.json()["visible_properties"] == ["id", "sla", "customers", "customer_revenue"]
+    read = client.get(f"/api/workspaces/{workspace}/views/{created.json()['view_id']}").json()
+    assert read["visible_properties"] == ["id", "sla", "customers", "customer_revenue"]
+
+
+def test_a_view_that_hides_the_sla_badge_keeps_it_hidden(client: TestClient, workspace: str) -> None:
+    """A list without sla saved now reads back without it, through create and patch alike."""
+    sign_in(client, MEMBER)
+    view = _create(client, workspace, visible_properties=["id", "sla"]).json()
+
+    patched = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"visible_properties": ["id"]})
+
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["visible_properties"] == ["id"]
+    assert client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}").json()["visible_properties"] == ["id"]
+
+
+def test_a_list_saved_before_the_sla_property_reads_with_it_on() -> None:
+    """Every view saved before sla was a property showed the badge, so its stored list reads with sla added."""
+    legacy = SavedView(
+        workspace_id="w",
+        view_key="k",
+        view_id="v",
+        name="Old",
+        owner_id="u",
+        visible_properties=["id", "labels"],
+    )
+
+    assert ViewRead.from_row(legacy).visible_properties == ["id", "labels", "sla"]
+    assert stored_visible_properties(["id"]) == ["id", SLA_HIDDEN]
+    assert stored_visible_properties(["id", "sla"]) == ["id", "sla"]
+    assert stored_visible_properties([SLA_HIDDEN, "sla"]) == ["sla"]
+    assert stored_visible_properties(None) is None
+    assert read_visible_properties(["id", SLA_HIDDEN]) == ["id"]
+    assert read_visible_properties(["sla", "id"]) == ["sla", "id"]
+    assert read_visible_properties(None) is None
+
+
+def test_the_hidden_sla_marker_is_not_a_property_a_client_may_send(client: TestClient, workspace: str) -> None:
+    """The stored marker stays internal, so a create naming it is refused."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace, visible_properties=["-sla"]).status_code == 422
+
+
+def test_collapsed_groups_round_trip_and_clear(client: TestClient, workspace: str) -> None:
+    """Folded groups and hidden columns save with the view, drop repeats, and clear on an empty list or null."""
+    sign_in(client, MEMBER)
+
+    default = _create(client, workspace).json()
+    assert default["collapsed_groups"] == []
+
+    view = _create(client, workspace, collapsed_groups=["hidden:started:doing", "lane/high", "hidden:started:doing"])
+    assert view.status_code == 201, view.text
+    assert view.json()["collapsed_groups"] == ["hidden:started:doing", "lane/high"]
+    path = f"/api/workspaces/{workspace}/views/{view.json()['view_id']}"
+    assert client.get(path).json()["collapsed_groups"] == ["hidden:started:doing", "lane/high"]
+
+    patched = client.patch(path, json={"collapsed_groups": ["todo"]})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["collapsed_groups"] == ["todo"]
+    assert client.patch(path, json={"collapsed_groups": None}).json()["collapsed_groups"] == []
+    assert client.patch(path, json={"collapsed_groups": ["x"] * 2 + [""]}).status_code == 422
+    assert client.patch(path, json={"collapsed_groups": ["k" * 301]}).status_code == 422
+    assert client.patch(path, json={"collapsed_groups": [f"g{n}" for n in range(501)]}).status_code == 422
+
+
+def test_the_customer_field_filters_round_trip(client: TestClient, workspace: str) -> None:
+    """A view keeps the customer status, tier, bounds and important flag, a JSON number or bool stored as text."""
+    sign_in(client, MEMBER)
+
+    created = _create(
+        client,
+        workspace,
+        filter={
+            "customer_status_id": ["active", "none"],
+            "customer_tier_id_not": ["tier-1"],
+            "customer_revenue_min": 50_000,
+            "customer_size_max": "200",
+            "customer_request_count_max": 0,
+            "customer_important": True,
+            "groups": [{"match": "any", "customer_tier_id": ["tier-2"], "customer_request_count_min": 2}],
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["filter"] == {
+        "customer_status_id": ["active", "none"],
+        "customer_tier_id_not": ["tier-1"],
+        "customer_revenue_min": "50000",
+        "customer_size_max": "200",
+        "customer_request_count_max": "0",
+        "customer_important": "true",
+        "groups": [{"match": "any", "customer_tier_id": ["tier-2"], "customer_request_count_min": "2"}],
+    }
+    for bad in (
+        {"customer_revenue_min": "-1"},
+        {"customer_size_max": "1.5"},
+        {"customer_request_count_min": ["1"]},
+        {"customer_important": "maybe"},
+        {"groups": [{"customer_size_min": "lots"}]},
+    ):
+        response = _create(client, workspace, filter=bad)
+        assert response.status_code == 422, bad
+        assert response.json()["error_code"] == "INVALID_FILTER"

@@ -67,9 +67,18 @@ INITIATIVE_HELP = "The initiative: id or name"
 
 PROJECT_HELP = "The project: id or name"
 
-TEXT_FIELDS: tuple[str, ...] = ("name", "description", "status", "health", "target_date", "target_date_resolution")
+TEXT_FIELDS: tuple[str, ...] = (
+    "name",
+    "description",
+    "status",
+    "health",
+    "start_date",
+    "start_date_resolution",
+    "target_date",
+    "target_date_resolution",
+)
 
-CLEARABLE_FIELDS: tuple[str, ...] = ("description", "health", "target_date")
+CLEARABLE_FIELDS: tuple[str, ...] = ("description", "health", "start_date", "target_date")
 """The initiative fields a tool call clears by passing null."""
 
 
@@ -83,6 +92,9 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
         "team_id": initiative.team_id,
         "status": initiative.status,
         "health": initiative.health,
+        "start_date": initiative.start_date,
+        "start_date_resolution": initiative.start_date_resolution,
+        "start_date_label": date_label(initiative.start_date, initiative.start_date_resolution),
         "target_date": initiative.target_date,
         "target_date_resolution": initiative.target_date_resolution,
         "target_date_label": date_label(initiative.target_date, initiative.target_date_resolution),
@@ -108,7 +120,7 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
 
 
 def _update_json(update: InitiativeUpdateRead) -> dict[str, Any]:
-    """One initiative update as the tools answer it, with whether the caller may change it."""
+    """One initiative update as the tools answer it, with the caller's edit right, its report and thread summary."""
     return {
         "update_id": update.update_id,
         "initiative_id": update.initiative_id,
@@ -119,6 +131,10 @@ def _update_json(update: InitiativeUpdateRead) -> dict[str, Any]:
         "created_at": update.created_at.isoformat(),
         "edited_at": update.edited_at.isoformat() if update.edited_at else None,
         "can_edit": update.can_edit,
+        "hide_details": update.hide_details,
+        "report": update.report,
+        "reactions": [group.model_dump(mode="json") for group in update.reactions],
+        "comment_count": update.comment_count,
     }
 
 
@@ -249,7 +265,11 @@ def _list_updates(call: ToolCall) -> Any:
 def _create_update(call: ToolCall) -> Any:
     """Post an update on an initiative, setting its health."""
     initiative_id = initiative_id_ref(call, call.require("initiative_id"))
-    fields = {"body": call.optional("body"), "template_id": call.optional("template_id")}
+    fields = {
+        "body": call.optional("body"),
+        "template_id": call.optional("template_id"),
+        "hide_details": call.optional("hide_details"),
+    }
     payload = InitiativeUpdateCreate.model_validate(
         {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
     )
@@ -260,7 +280,7 @@ def _update_update(call: ToolCall) -> Any:
     """Edit an update's body or health as its author, the initiative's owner or an admin."""
     initiative_id = initiative_id_ref(call, call.require("initiative_id"))
     payload: dict[str, Any] = {}
-    for name in ("body", "health"):
+    for name in ("body", "health", "hide_details"):
         if call.optional(name) is not None:
             payload[name] = call.arguments[name]
     updated = update_initiative_update(
@@ -291,6 +311,14 @@ INITIATIVE_PROPERTIES: dict[str, Any] = {
     ),
     "status": enum(INITIATIVE_STATUSES, "The initiative status"),
     "health": nullable_enum(HEALTHS, "The initiative health, or null for none"),
+    "start_date": nullable(
+        "Start date, YYYY-MM-DD, never after target_date; any day in the period when start_date_resolution is coarse"
+    ),
+    "start_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide start_date is: day (the default), or the month, quarter, half or year it opens; "
+        "the date moves to that period's first day",
+    ),
     "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
     "target_date_resolution": enum(
         DATE_RESOLUTIONS,
@@ -405,7 +433,10 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_initiative_updates",
-        description="One page of an initiative's written status updates, newest first, each with its health.",
+        description=(
+            "One page of an initiative's written status updates, newest first, each with its health "
+            "and a report of what changed on the initiative since the update before it."
+        ),
         scopes=("projects:read",),
         schema=object_schema(
             {"initiative_id": string(INITIATIVE_HELP), **page_properties()}, required=("initiative_id",)
@@ -416,7 +447,8 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
         name="create_initiative_update",
         description=(
             "Post a status update on an initiative, in Markdown, with its health. Posting sets its health. "
-            "Give template_id instead of body to post a workspace document template's body."
+            "Give template_id instead of body to post a workspace document template's body. "
+            "The update records a report of what changed since the last one."
         ),
         scopes=("projects:write",),
         schema=object_schema(
@@ -427,6 +459,7 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
                 "template_id": string(
                     "A workspace document template whose body the update takes when body is left out: id or name"
                 ),
+                "hide_details": {"type": "boolean", "description": "true hides the report the update carries"},
             },
             required=("initiative_id", "health"),
         ),
@@ -445,6 +478,7 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
                 "update_id": string("The update"),
                 "body": string("The update, in Markdown"),
                 "health": enum(HEALTHS, "How the initiative stands"),
+                "hide_details": {"type": "boolean", "description": "true hides the update's report, false shows it"},
             },
             required=("initiative_id", "update_id"),
         ),

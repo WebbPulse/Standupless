@@ -17,6 +17,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.slack import SlackInstallation
+from app.common.db.dynamo.workspaces import Workspace
 from app.domains.integrations.channels.messages import clip, slack_escape
 from app.domains.integrations.chat.issues import issue_by_key, split_key, summarize
 from app.domains.integrations.slack import install
@@ -42,14 +43,18 @@ def issue_blocks(repositories: Repositories, issue: Issue) -> list[dict[str, Any
     return blocks
 
 
-def _key_in(url: str, slug: str) -> str:
-    """The issue key an issue link of this environment and workspace carries, or an empty string."""
+def _key_in(url: str, workspace: Workspace) -> str:
+    """The issue key an issue link of this environment and workspace carries, or an empty string.
+
+    A link carrying a slug the workspace retired still counts, so links shared
+    before a slug change keep unfurling.
+    """
     parts = urlsplit(url)
     expected = urlsplit(settings.frontend_base_url)
     if parts.scheme not in ("https", "http") or parts.netloc.lower() != expected.netloc.lower():
         return ""
     match = ISSUE_PATH.match(parts.path)
-    if match is None or unquote(match.group(1)) != slug:
+    if match is None or not workspace.answers_to(unquote(match.group(1))):
         return ""
     return unquote(match.group(2))
 
@@ -63,7 +68,7 @@ def unfurls_for(repositories: Repositories, workspace_id: str, links: list[Mappi
     found: dict[str, Any] = {}
     for link in links[:MAX_UNFURLS]:
         url = str(link.get("url", "")) if isinstance(link, Mapping) else ""
-        key = _key_in(url, workspace.slug) if url else ""
+        key = _key_in(url, workspace) if url else ""
         issue = issue_by_key(repositories, workspace_id, key) if key else None
         if issue is None or issue.team_id in private:
             continue

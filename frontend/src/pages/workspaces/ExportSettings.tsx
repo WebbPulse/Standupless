@@ -5,7 +5,6 @@
  */
 
 import React from 'react';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceExportSection from '../../components/workspace/WorkspaceExportSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -16,12 +15,7 @@ const ExportSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (

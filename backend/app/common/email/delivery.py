@@ -10,7 +10,8 @@ problem into a retry storm on a stream shard.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from webbpulse.identity.email import EmailMessage, EmailSender, EmailSendFailed, SesV2EmailSender
 
@@ -18,6 +19,68 @@ from app.common.core.config import settings
 from app.common.email.gate import RecipientBlocked, check_recipient
 
 _log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ReplyableEmail(EmailMessage):
+    """A rendered message that names where a reply should go.
+
+    `reply_to` is empty for every message nobody should answer, which keeps it
+    sent exactly as a plain `EmailMessage` is.
+    """
+
+    reply_to: str = ""
+
+
+def with_reply_to(message: EmailMessage, reply_to: str) -> EmailMessage:
+    """The same message with a reply address, or the message itself when there is none."""
+    if not reply_to:
+        return message
+    return ReplyableEmail(
+        to=message.to,
+        subject=message.subject,
+        text=message.text,
+        html=message.html,
+        tags=dict(message.tags),
+        headers=dict(message.headers),
+        reply_to=reply_to,
+    )
+
+
+class _ReplyToClient:
+    """An SES v2 client view that adds one Reply-To address to every send."""
+
+    def __init__(self, client: Any, reply_to: str) -> None:
+        """Wrap a client for one message."""
+        self._client = client
+        self._reply_to = reply_to
+
+    def send_email(self, **kwargs: Any) -> Any:
+        """Forward the send with the reply address set."""
+        return self._client.send_email(**kwargs, ReplyToAddresses=[self._reply_to])
+
+
+class ReplyToSesSender(SesV2EmailSender):
+    """`SesV2EmailSender` that honours a `ReplyableEmail`'s reply address."""
+
+    def __init__(self, client: Any, *, from_address: str, configuration_set: str | None = None) -> None:
+        """Keep what a per-message sender needs alongside the package sender's own state."""
+        super().__init__(client, from_address=from_address, configuration_set=configuration_set)
+        self._raw_client = client
+        self._from_address = from_address
+        self._configuration = configuration_set
+
+    def send(self, message: EmailMessage) -> str:
+        """Send one message, with a Reply-To header when the message names one."""
+        reply_to = getattr(message, "reply_to", "")
+        if not reply_to:
+            return super().send(message)
+        return SesV2EmailSender(
+            _ReplyToClient(self._raw_client, reply_to),
+            from_address=self._from_address,
+            configuration_set=self._configuration,
+        ).send(message)
+
 
 _sender: Optional[EmailSender] = None
 
@@ -42,7 +105,7 @@ def email_sender() -> EmailSender | None:
 
     import boto3
 
-    _sender = SesV2EmailSender(
+    _sender = ReplyToSesSender(
         boto3.client("sesv2", region_name=settings.AWS_REGION or None),
         from_address=settings.EMAIL_FROM,
         configuration_set=settings.SES_CONFIGURATION_SET or None,

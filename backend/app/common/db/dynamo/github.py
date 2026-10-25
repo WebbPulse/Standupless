@@ -29,7 +29,10 @@ from app.common.db.dynamo.base import as_item, build_repository, delete_partitio
 from app.common.db.dynamo.channels import ChannelStore
 from app.common.db.dynamo.discord import DiscordStore
 from app.common.db.dynamo.email_intake import EmailIntakeStore
+from app.common.db.dynamo.gitlab import GitlabStore
 from app.common.db.dynamo.slack import SlackStore
+from app.common.db.dynamo.slack_intake import SlackIntakeStore
+from app.common.db.dynamo.slack_threads import SlackThreadStore
 from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
@@ -54,7 +57,17 @@ TOMBSTONE_RETENTION_SECONDS = 30 * 24 * 3600
 """How long a deleted GitHub issue or comment is remembered, longer than SQS keeps
 any message, so a late or redriven delivery about it finds the tombstone."""
 
-RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "project_updates", "cycles", "labels")
+ORIGINAL_RESOURCE_TYPES: tuple[str, ...] = ("issues", "comments", "projects", "project_updates", "cycles", "labels")
+"""The resource types a stored endpoint row without its own list reads as, so a new type is never a silent backfill."""
+
+RESOURCE_TYPES: tuple[str, ...] = (
+    *ORIGINAL_RESOURCE_TYPES,
+    "documents",
+    "initiatives",
+    "initiative_updates",
+    "customers",
+    "customer_requests",
+)
 """What an outbound endpoint may subscribe to, one entry per kind of row it describes."""
 
 LEGACY_EVENT_RESOURCES: dict[str, str] = {
@@ -383,6 +396,11 @@ class IssueLink(BaseModel):
     has what a stack and its status icons need without a second read. A row
     written before they existed reads as an unstacked pull request with no review
     and no checks.
+
+    `provider` is `gitlab` for a GitLab merge request, which shares this row so an
+    issue lists its pull requests and merge requests together. Such a row carries
+    no comment, check run, labels or review state, because nothing is written back
+    to GitLab. A row written before it existed is a GitHub pull request.
     """
 
     workspace_id: str
@@ -404,6 +422,7 @@ class IssueLink(BaseModel):
     comment_id: str | None = None
     check_run_id: str | None = None
     pr_updated_ms: int = 0
+    provider: Literal["github", "gitlab"] = "github"
     repository_id: str = ""
     applied_labels: list[str] = Field(default_factory=list)
     detached: bool = False
@@ -519,7 +538,7 @@ class WebhookEndpoint(BaseModel):
     url: str
     label: str = ""
     team_id: str | None = None
-    resource_types: list[str] = Field(default_factory=lambda: list(RESOURCE_TYPES))
+    resource_types: list[str] = Field(default_factory=lambda: list(ORIGINAL_RESOURCE_TYPES))
     active: bool = True
     secret_hash: str = ""
     secret_salt: str = ""
@@ -819,8 +838,11 @@ class GithubRepository:
         self._repository = build_repository(GITHUB, repository)
         self.channels = ChannelStore(self._repository)
         self.slack = SlackStore(self._repository)
+        self.slack_threads = SlackThreadStore(self._repository)
+        self.slack_intake = SlackIntakeStore(self._repository)
         self.discord = DiscordStore(self._repository)
         self.email_intake = EmailIntakeStore(self._repository)
+        self.gitlab = GitlabStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""

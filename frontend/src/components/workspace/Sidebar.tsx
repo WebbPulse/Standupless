@@ -46,6 +46,7 @@ import React, {
 } from 'react';
 import {
   LuActivity,
+  LuBellOff,
   LuBuilding2,
   LuCheck,
   LuChevronRight,
@@ -76,6 +77,13 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { setTeamOrder } from '../../api/teams';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAuth } from '../../hooks/useAuth';
+import { useNotificationPause } from '../../hooks/useNotificationPause';
+import { reminderLabel } from '../../lib/reminders';
+import PauseNotificationsDialog from './PauseNotificationsDialog';
+import UserStatusDialog from './UserStatusDialog';
+import { useMyStatus } from '../../hooks/useMyStatus';
+import { statusSummary } from '../../lib/userStatus';
+import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
@@ -125,6 +133,7 @@ import {
   nestTeams,
   siblingIndex,
 } from '../../lib/teamOrder';
+import { isFeatureOn } from '../../lib/features';
 import { homeViewPath } from '../../lib/preferences';
 import { settingsLanding } from '../../lib/workspaceNav';
 import {
@@ -148,6 +157,7 @@ import Menu, {
   MenuItem,
   MenuLabel,
   MenuSeparator,
+  MenuShortcut,
 } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
@@ -155,6 +165,7 @@ import { TruncatedText } from '../ui/truncated-text';
 import InboxBadge from '../views/InboxBadge';
 import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
+import TeamNotificationsDialog from '../team/TeamNotifications';
 import AddToFavoriteFolder from './AddToFavoriteFolder';
 import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
@@ -300,6 +311,10 @@ interface TeamSectionProps {
   isProjectsActive: boolean;
   /** True while the initiatives list is filtered to the ones this team leads. */
   isInitiativesActive: boolean;
+  /** Whether the workspace has releases on, so the team links them. */
+  releasesOn: boolean;
+  /** Whether the workspace has initiatives on, so the team links them. */
+  initiativesOn: boolean;
   /** How many issues wait in the team's triage inbox, or null when triage is off. */
   triageCount: number | null;
   /** Where a move up lands among the team's siblings, or null when it is first. */
@@ -337,6 +352,8 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   pathname,
   isProjectsActive,
   isInitiativesActive,
+  releasesOn,
+  initiativesOn,
   triageCount,
   upTo,
   downTo,
@@ -351,6 +368,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onCreateSubTeam,
 }) => {
   const panelId = `team-nav-${team.id}`;
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const cyclesOn = useCyclesOn(workspaceId, team.id, isOpen);
   const home = teamPath(slug, team.key_prefix);
   const issuesActive =
@@ -463,6 +481,13 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         <MenuItem to={teamSettingsPath(slug, team.key_prefix)}>
           Team settings
         </MenuItem>
+        <MenuItem
+          onSelect={() => {
+            setNotificationsOpen(true);
+          }}
+        >
+          Notifications
+        </MenuItem>
         <MenuItem to={teamArchivePath(slug, team.key_prefix)}>
           Show archived issues
         </MenuItem>
@@ -505,6 +530,15 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           </MenuItem>
         )}
       </Menu>
+      <TeamNotificationsDialog
+        workspaceId={workspaceId}
+        teamId={team.id}
+        teamName={team.name}
+        open={notificationsOpen}
+        onClose={() => {
+          setNotificationsOpen(false);
+        }}
+      />
 
       <div id={panelId} hidden={!isOpen} className="mt-px space-y-px">
         {triageCount !== null && (
@@ -554,14 +588,16 @@ const TeamSection: React.FC<TeamSectionProps> = ({
             Current cycle
           </NavLink>
         )}
-        <NavLink
-          to={teamReleasesPath(slug, team.key_prefix)}
-          className={subItemClass}
-          onClick={onNavigate}
-        >
-          <LuRocket className={SUB_ICON} aria-hidden="true" />
-          Releases
-        </NavLink>
+        {releasesOn && (
+          <NavLink
+            to={teamReleasesPath(slug, team.key_prefix)}
+            className={subItemClass}
+            onClick={onNavigate}
+          >
+            <LuRocket className={SUB_ICON} aria-hidden="true" />
+            Releases
+          </NavLink>
+        )}
         <Link
           to={teamProjectsPath(slug, team.key_prefix)}
           className={subItemClass({ isActive: isProjectsActive })}
@@ -571,15 +607,17 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           <LuTarget className={SUB_ICON} aria-hidden="true" />
           Projects
         </Link>
-        <Link
-          to={teamInitiativesPath(slug, team.key_prefix)}
-          className={subItemClass({ isActive: isInitiativesActive })}
-          aria-current={isInitiativesActive ? 'page' : undefined}
-          onClick={onNavigate}
-        >
-          <LuGoal className={SUB_ICON} aria-hidden="true" />
-          Initiatives
-        </Link>
+        {initiativesOn && (
+          <Link
+            to={teamInitiativesPath(slug, team.key_prefix)}
+            className={subItemClass({ isActive: isInitiativesActive })}
+            aria-current={isInitiativesActive ? 'page' : undefined}
+            onClick={onNavigate}
+          >
+            <LuGoal className={SUB_ICON} aria-hidden="true" />
+            Initiatives
+          </Link>
+        )}
         <NavLink
           to={teamViewsPath(slug, team.key_prefix)}
           end
@@ -607,6 +645,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCollapse,
 }) => {
   const { user, logout } = useAuth();
+  const notificationPause = useNotificationPause();
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const openPause = useCallback(() => {
+    setPauseOpen(true);
+  }, []);
+  const myStatus = useMyStatus(workspace.id);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const openStatus = useCallback(() => {
+    setStatusOpen(true);
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const createIssue = useCreateIssue();
@@ -659,7 +707,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setItemMenu(null);
   }, []);
   const placeOf = (item: SidebarItem): SidebarVisibility =>
-    itemAvailable(item, workspace.role) ? preference.items[item] : 'hide';
+    itemAvailable(item, workspace.role, workspace.features)
+      ? preference.items[item]
+      : 'hide';
   const badgeStyle = preference.badgeStyle;
 
   const rowSpecs: Record<SidebarItem, RowSpec> = {
@@ -938,6 +988,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
           )}
           <MenuItem onSelect={customize.open}>Customize sidebar</MenuItem>
+          <MenuItem onSelect={openStatus}>
+            {myStatus.status === null ? 'Set status' : 'Edit status'}
+          </MenuItem>
           <MenuItem to={profileSettingsPath(workspace.slug)}>
             Edit profile
           </MenuItem>
@@ -947,6 +1000,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <MenuItem to={accountSecuritySettingsPath(workspace.slug)}>
             Security &amp; access
           </MenuItem>
+          <MenuSeparator />
+          {notificationPause.pausedUntil === null ? (
+            <MenuItem onSelect={openPause}>Pause notifications</MenuItem>
+          ) : (
+            <>
+              <MenuItem
+                onSelect={() => void notificationPause.resume()}
+                textValue="Resume notifications"
+              >
+                Resume notifications
+              </MenuItem>
+              <MenuItem onSelect={openPause}>Change pause</MenuItem>
+            </>
+          )}
           <MenuSeparator />
           <MenuItem to={PRIVACY_PATH}>Privacy Policy</MenuItem>
           <MenuItem to={TERMS_PATH}>Terms of Service</MenuItem>
@@ -975,7 +1042,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <MenuItem to={NEW_WORKSPACE_PATH}>Create workspace</MenuItem>
           <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuSeparator />
-          <MenuItem onSelect={() => void logout()}>Log out</MenuItem>
+          <MenuItem onSelect={() => void logout()} textValue="Log out">
+            Log out
+            <MenuShortcut keys={LOG_OUT_KEYS} />
+          </MenuItem>
         </Menu>
         <IconButton
           label="Search issues"
@@ -1143,6 +1213,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     pathname={location.pathname}
                     isProjectsActive={projectsTeam === team.key_prefix}
                     isInitiativesActive={initiativesTeam === team.key_prefix}
+                    releasesOn={isFeatureOn(workspace, 'releases')}
+                    initiativesOn={isFeatureOn(workspace, 'initiatives')}
                     triageCount={triageCounts.get(team.id) ?? null}
                     upTo={siblingIndex(rows, index, -1)}
                     downTo={siblingIndex(rows, index, 1)}
@@ -1244,14 +1316,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="flex h-topbar items-center gap-1 border-t border-line px-2">
         {user !== null && (
-          <span className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs text-text-muted">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 text-left text-xs text-text-muted hover:text-text"
+            onClick={openStatus}
+            aria-label={
+              myStatus.status === null
+                ? 'Set status'
+                : `Status: ${statusSummary(myStatus.status)}`
+            }
+            data-testid="my-status"
+          >
             <Avatar
               name={user.display_name ?? user.email}
               src={user.avatar_url}
               size="sm"
+              away={myStatus.status?.away === true}
             />
             <TruncatedText>{user.display_name ?? user.email}</TruncatedText>
-          </span>
+            {myStatus.status !== null && myStatus.status.emoji !== '' && (
+              <span aria-hidden="true">{myStatus.status.emoji}</span>
+            )}
+          </button>
+        )}
+        {notificationPause.pausedUntil !== null && (
+          <IconButton
+            label={`Notifications paused until ${reminderLabel(notificationPause.pausedUntil)}`}
+            size="sm"
+            onClick={openPause}
+            data-testid="notifications-paused"
+          >
+            <LuBellOff className="h-3.5 w-3.5 text-warning" />
+          </IconButton>
         )}
         <ThemeToggle />
         <IconButton
@@ -1263,6 +1359,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <LuLogOut className="h-3.5 w-3.5" />
         </IconButton>
       </div>
+      <UserStatusDialog
+        open={statusOpen}
+        control={myStatus}
+        onClose={() => {
+          setStatusOpen(false);
+        }}
+      />
+      <PauseNotificationsDialog
+        open={pauseOpen}
+        control={notificationPause}
+        workingHours={user?.working_hours ?? null}
+        onClose={() => {
+          setPauseOpen(false);
+        }}
+      />
     </div>
   );
 };

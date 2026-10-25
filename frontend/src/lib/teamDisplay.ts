@@ -7,7 +7,12 @@
 
 import type { TeamDisplayOptions } from '../api/teams';
 import type { ViewLayout } from '../api/views';
-import { defaultViewState, type GroupField, type ViewState } from './issueView';
+import {
+  defaultViewState,
+  storedGrouping,
+  type GroupField,
+  type ViewState,
+} from './issueView';
 
 /**
  * The state a team page in `layout` opens with: the built-in default with
@@ -40,11 +45,11 @@ export const teamDefaultState = (
 /** The display options a state saves as a team default, every one set. */
 export const stateToTeamDisplay = (state: ViewState): TeamDisplayOptions => ({
   layout: state.layout,
-  group_by: state.groupBy,
+  group_by: storedGrouping(state.groupBy) ?? 'none',
   sub_group_by:
     state.groupBy === 'none' || state.subGroupBy === state.groupBy
       ? 'none'
-      : state.subGroupBy,
+      : (storedGrouping(state.subGroupBy) ?? 'none'),
   ordering: state.ordering,
   ordering_reversed: state.reverse,
   visible_properties: state.visible,

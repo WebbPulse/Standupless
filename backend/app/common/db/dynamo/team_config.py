@@ -157,6 +157,11 @@ SLA_START_MODES: tuple[str, ...] = ("on_triage_exit", "on_creation")
 
 SlaStartMode = Literal["on_triage_exit", "on_creation"]
 
+SLA_CALENDARS: tuple[str, ...] = ("calendar", "business_days")
+"""Which clock a team's SLA timers run on: every hour, or Monday to Friday in the team's timezone."""
+
+SlaCalendar = Literal["calendar", "business_days"]
+
 DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": None, "low": None}
 """The rules a team that never saved its SLA settings reads as, ready to switch on."""
 
@@ -253,7 +258,7 @@ def parent_key(team_id: str) -> str:
     return f"team#{team_id}#parent"
 
 
-EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name")
+EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name", "inherited_description")
 """Fields resolved at read time, never stored on a status or label row."""
 
 OverrideTarget = Literal["status", "label"]
@@ -316,7 +321,10 @@ class Status(BaseModel):
     and absent means the category default, so those rows render as they always did.
     A workspace row stores no `team_id`; read through a team it carries that team's
     id, its `scope` is `workspace`, and the team's override sets `hidden` and, for
-    a local rename, `name` with the workspace name kept in `inherited_name`.
+    a local rename, `name` with the workspace name kept in `inherited_name`. A
+    local description sets `description` the same way, the inherited one kept in
+    `inherited_description`, empty when the inherited status has none.
+    `description` is absent on a status that has none.
     """
 
     workspace_id: str
@@ -328,10 +336,12 @@ class Status(BaseModel):
     position: int = 0
     color: str | None = None
     icon: str | None = None
+    description: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     scope: str = TEAM_SCOPE
     hidden: bool = False
     inherited_name: str | None = None
+    inherited_description: str | None = None
     import_batch_id: str | None = None
 
 
@@ -388,6 +398,7 @@ class Override(BaseModel):
 
     `shown` is a sub-team showing a workspace row its parent team hides. It is
     absent on rows written before it existed, which read as not shown.
+    `description` is a status's team-only description, absent when it has none.
     """
 
     workspace_id: str
@@ -398,6 +409,7 @@ class Override(BaseModel):
     hidden: bool = False
     shown: bool = False
     name: str | None = None
+    description: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -475,7 +487,9 @@ class SlaSettings(BaseModel):
     open statuses whose time does not count toward a breach, the way Linear lets
     a team leave statuses out of its SLAs. `start_mode` picks whether a timer
     starts when an issue leaves triage or counts from when it was created,
-    triage included.
+    triage included. `calendar` picks whether the hours run around the clock or
+    only on Monday to Friday in the team's timezone, the way Linear lets an SLA
+    count business days.
     """
 
     workspace_id: str
@@ -489,7 +503,12 @@ class SlaSettings(BaseModel):
     low_hours: int | None = DEFAULT_SLA_HOURS["low"]
     paused_status_ids: list[str] = Field(default_factory=list)
     start_mode: SlaStartMode = "on_triage_exit"
+    calendar: SlaCalendar = "calendar"
     updated_at: datetime | None = None
+
+    def clock_zone(self, team_timezone: str) -> str | None:
+        """The timezone this team's timers skip weekends in, `None` when they count calendar time."""
+        return team_timezone if self.calendar == "business_days" else None
 
     def pauses_in(self, status_id: str) -> bool:
         """Whether an issue's SLA timer stands still while it sits in `status_id`."""
@@ -746,10 +765,11 @@ def _hide_children_of_hidden_groups(rows: list[Label]) -> list[Label]:
 
 
 def _override_item(override: Override) -> dict[str, Any]:
-    """An override as a stored item, leaving out an unset name."""
+    """An override as a stored item, leaving out an unset name or description."""
     item = as_item(override)
-    if item.get("name") is None:
-        item.pop("name", None)
+    for name in ("name", "description"):
+        if item.get(name) is None:
+            item.pop(name, None)
     if not item.get("shown"):
         item.pop("shown", None)
     return item
@@ -763,6 +783,9 @@ def _inherit(row: Any, team_id: str, override: Override | None, scope: str = WOR
         if override.name:
             update["inherited_name"] = row.name
             update["name"] = override.name
+        if override.description and isinstance(row, Status):
+            update["inherited_description"] = row.description or ""
+            update["description"] = override.description
     return row.model_copy(update=update)
 
 
@@ -770,12 +793,18 @@ def _layered(parent: Override | None, own: Override | None) -> Override | None:
     """A parent's override of a workspace row with a sub-team's own on top.
 
     What the parent hides stays hidden in the sub-team unless the sub-team
-    shows it, and the sub-team's rename wins over the parent's.
+    shows it, and the sub-team's rename and description win over the parent's.
     """
     if parent is None or own is None:
         return own or parent
     hidden = own.hidden or (parent.hidden and not own.shown)
-    return own.model_copy(update={"hidden": hidden, "name": own.name or parent.name})
+    return own.model_copy(
+        update={
+            "hidden": hidden,
+            "name": own.name or parent.name,
+            "description": own.description or parent.description,
+        }
+    )
 
 
 def status_order(row: Status) -> tuple[bool, int, str]:
@@ -788,7 +817,7 @@ def label_order(row: Label) -> tuple[bool, str, str]:
     return (row.hidden, row.name.lower(), row.label_id)
 
 
-STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon")
+STATUS_APPEARANCE_FIELDS: tuple[str, ...] = ("color", "icon", "description")
 """The status fields a patch may clear, which are removed from the row rather than nulled."""
 
 
@@ -849,9 +878,17 @@ class StandupSettings(BaseModel):
     updated_at: datetime | None = None
 
 
-def default_standup_settings(workspace_id: str, team_id: str) -> StandupSettings:
-    """The standup settings a team that never configured them reads as."""
-    return StandupSettings(workspace_id=workspace_id, config_key=standup_settings_key(team_id), team_id=team_id)
+def default_standup_settings(
+    workspace_id: str, team_id: str, timezone: str = DEFAULT_STANDUP_TIMEZONE
+) -> StandupSettings:
+    """The standup settings a team that never configured them reads as.
+
+    `timezone` is the team's own timezone, so an unconfigured digest lands on
+    the team's local clock rather than UTC.
+    """
+    return StandupSettings(
+        workspace_id=workspace_id, config_key=standup_settings_key(team_id), team_id=team_id, timezone=timezone
+    )
 
 
 class StandupNote(BaseModel):

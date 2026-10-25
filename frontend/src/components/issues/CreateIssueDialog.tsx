@@ -74,6 +74,7 @@ import {
 import { uploadAttachment } from '../../api/discussion';
 import { createIssue, createLink, updateIssue } from '../../api/issues';
 import { listTeamTemplates } from '../../api/templates';
+import { openingTemplateId } from '../../lib/templateDefaults';
 import { getTriageSettings } from '../../api/triage';
 import {
   DocumentLinkContext,
@@ -841,7 +842,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     if (pending === null || pending.teamId !== activeTeamId) return;
     if (templateList === null || templateList.teamId !== activeTeamId) return;
     pendingTemplate.current = null;
-    const id = pending.id ?? templateList.default_template_id;
+    const id =
+      pending.id ?? openingTemplateId(templateList, activeTeam?.is_member);
     const template = templateList.templates.find((item) => item.id === id);
     if (template === undefined) return;
     const fill = templatePrefill(template, {
@@ -865,7 +867,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       }
       setBody(text.body);
     }
-  }, [activeTeamId, templateList, teamStatuses, teamLabels, teamPeople]);
+  }, [
+    activeTeamId,
+    activeTeam?.is_member,
+    templateList,
+    teamStatuses,
+    teamLabels,
+    teamPeople,
+  ]);
 
   const stored: IssueDraft = {
     teamId: activeTeamId,
@@ -1514,6 +1523,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 ariaLabel="Description"
                 placeholder={BODY_PLACEHOLDER}
                 autoFocus={focusBodyOnLoad}
+                blockHandles={expanded}
                 className={cn(
                   'text-sm leading-6 text-text',
                   expanded ? 'min-h-64' : 'min-h-16'

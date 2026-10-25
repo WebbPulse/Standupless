@@ -105,6 +105,11 @@ describe('the team webhooks section', () => {
           'project_updates',
           'cycles',
           'labels',
+          'documents',
+          'initiatives',
+          'initiative_updates',
+          'customers',
+          'customer_requests',
         ],
         enabled: true,
       });

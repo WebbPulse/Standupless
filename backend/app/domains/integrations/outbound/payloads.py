@@ -25,6 +25,8 @@ from urllib.parse import quote
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
+from app.common.customer_fields import legacy_tier_id
+from app.common.db.dynamo.planning import Initiative
 from app.common.issue_keys import display_key
 from app.common.readable_ids import readable_id
 
@@ -84,6 +86,57 @@ CYCLE_FIELDS: dict[str, str] = {
 PROJECT_UPDATE_FIELDS: dict[str, str] = {"body": "body", "health": "health"}
 
 LABEL_FIELDS: dict[str, str] = {"name": "name", "color": "color", "parent_id": "parentId"}
+
+DOCUMENT_FIELDS: dict[str, str] = {
+    "title": "title",
+    "icon": "icon",
+    "parent_kind": "parentKind",
+    "parent_id": "parentId",
+    "updated_by": "updatedById",
+    "updated_at": "updatedAt",
+}
+"""The document summary fields whose change is news.
+
+The body lives on another row, so an edit of the text alone shows here as a new
+`updatedAt`, and a search terms rewrite, which moves none of these, sends nothing.
+"""
+
+INITIATIVE_FIELDS: dict[str, str] = {
+    "name": "name",
+    "description": "description",
+    "status": "status",
+    "health": "health",
+    "owner_id": "ownerId",
+    "team_id": "teamId",
+    "parent_initiative_id": "parentInitiativeId",
+    "start_date": "startDate",
+    "start_date_resolution": "startDateResolution",
+    "target_date": "targetDate",
+    "target_date_resolution": "targetDateResolution",
+}
+
+INITIATIVE_UPDATE_FIELDS: dict[str, str] = {"body": "body", "health": "health"}
+
+CUSTOMER_FIELDS: dict[str, str] = {
+    "name": "name",
+    "domains": "domains",
+    "status_id": "statusId",
+    "status": "status",
+    "tier_id": "tierId",
+    "tier": "tier",
+    "owner_id": "ownerId",
+    "revenue": "revenue",
+    "size": "size",
+}
+
+CUSTOMER_REQUEST_FIELDS: dict[str, str] = {
+    "customer_id": "customerId",
+    "target_kind": "targetKind",
+    "target_id": "targetId",
+    "team_ids": "teamIds",
+    "body": "body",
+    "important": "important",
+}
 
 ACTIONS = {"INSERT": "create", "MODIFY": "update", "REMOVE": "remove"}
 
@@ -195,6 +248,22 @@ class Links:
         """One update on its project's updates tab."""
         return f"{self.project(project_id, name)}?tab=updates#update-{quote(update_id, safe='')}"
 
+    def initiative(self, initiative_id: str, name: str | None = None) -> str:
+        """The initiative page, in its readable form when the name is known."""
+        return f"{self._base()}/initiatives/{quote(readable_id(initiative_id, name), safe='')}"
+
+    def initiative_update(self, initiative_id: str, update_id: str, name: str | None = None) -> str:
+        """One update on its initiative's updates tab."""
+        return f"{self.initiative(initiative_id, name)}?tab=updates#update-{quote(update_id, safe='')}"
+
+    def document(self, document_id: str) -> str:
+        """The document page, which finds its parent from the id alone."""
+        return f"{self._base()}/documents/{quote(document_id, safe='')}"
+
+    def customer(self, customer_id: str) -> str:
+        """The customer page, which lists its requests."""
+        return f"{self._base()}/customers/{quote(customer_id, safe='')}"
+
     def cycle(self, team_id: str, cycle_id: str) -> str:
         """The cycle page under its team."""
         prefix = quote(self.team_prefix(team_id), safe="")
@@ -218,8 +287,17 @@ class Links:
         return f"{self._base()}/settings/notifications"
 
 
-type Builder = Callable[[Repositories, Links, str, Mapping[str, Any]], tuple[dict[str, Any], str, tuple[str, ...]]]
-"""Build `data`, `url` and the team ids for one image of one type."""
+type Built = tuple[dict[str, Any], str, tuple[str, ...] | None]
+"""One image's `data`, `url` and team ids, the teams `None` when the event must not be sent."""
+
+type Builder = Callable[[Repositories, Links, str, Mapping[str, Any]], Built]
+"""Build `data`, `url` and the team ids for one image of one type.
+
+A builder answers `None` for the teams when it cannot tell which teams a row
+belongs to, such as a document whose project is already gone. Sending that row
+as workspace wide could carry a private team's text to a webhook outside it, so
+the event is withheld instead.
+"""
 
 
 def _moment(value: Any) -> datetime | None:
@@ -234,15 +312,22 @@ def _moment(value: Any) -> datetime | None:
 
 
 def _issue_sla(image: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any]:
-    """The issue's SLA timer as a receiver reads it: start, due time, pause and breached flag.
+    """The issue's SLA timer as a receiver reads it: start, due time, pause, breached flag and clock.
 
-    All four are null when no SLA rule applies to the issue, and an archived
+    All of them are null when no SLA rule applies to the issue, and an archived
     issue's timer no longer runs, so it reads as not breached. A paused timer is
     judged at the moment it paused.
     """
     breaches_at = _moment(image.get("sla_breaches_at"))
     if breaches_at is None:
-        return {"slaStartedAt": None, "slaBreachesAt": None, "slaPausedAt": None, "slaBreached": None}
+        return {
+            "slaStartedAt": None,
+            "slaBreachesAt": None,
+            "slaPausedAt": None,
+            "slaBreached": None,
+            "slaCalendar": None,
+            "slaTimezone": None,
+        }
     archived = bool(image.get("archived_at"))
     moment = now or datetime.now(timezone.utc)
     paused_at = _moment(image.get("sla_paused_at"))
@@ -253,6 +338,8 @@ def _issue_sla(image: Mapping[str, Any], now: datetime | None = None) -> dict[st
         "slaBreachesAt": image.get("sla_breaches_at"),
         "slaPausedAt": image.get("sla_paused_at") or None,
         "slaBreached": not archived and moment >= breaches_at,
+        "slaCalendar": "business_days" if image.get("sla_timezone") else "calendar",
+        "slaTimezone": image.get("sla_timezone") or None,
     }
 
 
@@ -385,23 +472,184 @@ def _label(
     return data, url, (team_id,)
 
 
+def _initiative_teams(initiative: Initiative) -> tuple[str, ...]:
+    """An initiative's lead team as an event's teams, none for a workspace level one."""
+    return (initiative.team_id,) if initiative.team_id else ()
+
+
+def _document_parent(
+    repositories: Repositories, workspace_id: str, parent_kind: str, parent_id: str
+) -> tuple[dict[str, Any], tuple[str, ...] | None]:
+    """The parent ids a document's `data` names, and the teams its parent gives it.
+
+    A team parent is its own team. A project gives its teams and an initiative its
+    lead team, read off the parent row, and a parent that can no longer be read
+    gives `None`, which withholds the event.
+    """
+    ids: dict[str, Any] = {"projectId": None, "initiativeId": None, "teamId": None}
+    if parent_kind == "team":
+        ids["teamId"] = parent_id
+        return ids, (parent_id,)
+    if parent_kind == "project":
+        ids["projectId"] = parent_id
+        project = repositories.planning.get_project(workspace_id, parent_id) if parent_id else None
+        return ids, tuple(project.team_ids) if project is not None else None
+    if parent_kind == "initiative":
+        ids["initiativeId"] = parent_id
+        initiative = repositories.planning.get_initiative(workspace_id, parent_id) if parent_id else None
+        return ids, _initiative_teams(initiative) if initiative is not None else None
+    return ids, None
+
+
+def _document(repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]) -> Built:
+    """A document's `data`, URL and its parent's teams, with the Markdown read off its body row.
+
+    A removed document's body is gone with it, so its `content` is null.
+    """
+    document_id = str(image.get("document_id", ""))
+    parent_kind = str(image.get("parent_kind", ""))
+    parent_id = str(image.get("parent_id", ""))
+    parents, team_ids = _document_parent(repositories, workspace_id, parent_kind, parent_id)
+    body = repositories.documents.get_body(workspace_id, document_id) if document_id else None
+    url = links.document(document_id)
+    data = {
+        "id": document_id,
+        **_pick(image, DOCUMENT_FIELDS),
+        **parents,
+        "content": bounded(body.body) if body is not None else None,
+        "creatorId": image.get("author_id"),
+        "createdAt": image.get("created_at"),
+        "url": url,
+    }
+    return data, url, team_ids
+
+
+def _initiative(repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]) -> Built:
+    """An initiative's `data`, URL and lead team, none for a workspace level initiative."""
+    del repositories, workspace_id
+    initiative_id = str(image.get("initiative_id", ""))
+    team_id = str(image.get("team_id") or "")
+    url = links.initiative(initiative_id, str(image.get("name") or ""))
+    data = {
+        "id": initiative_id,
+        **_pick(image, INITIATIVE_FIELDS),
+        "creatorId": image.get("created_by"),
+        "createdAt": image.get("created_at"),
+        "updatedAt": image.get("updated_at"),
+        "url": url,
+    }
+    return data, url, (team_id,) if team_id else ()
+
+
+def _initiative_update(repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]) -> Built:
+    """An initiative update's `data`, URL and its initiative's lead team, read off the initiative row.
+
+    An update whose initiative is already gone is withheld, since its row alone
+    cannot say whether the initiative belonged to a private team.
+    """
+    initiative_id = str(image.get("initiative_id", ""))
+    update_id = str(image.get("update_id", ""))
+    initiative = repositories.planning.get_initiative(workspace_id, initiative_id) if initiative_id else None
+    name = initiative.name if initiative is not None else None
+    url = links.initiative_update(initiative_id, update_id, name)
+    data = {
+        "id": update_id,
+        "initiativeId": initiative_id,
+        "initiativeName": name,
+        "userId": image.get("author_id"),
+        **_pick(image, INITIATIVE_UPDATE_FIELDS),
+        "createdAt": image.get("created_at"),
+        "updatedAt": image.get("updated_at"),
+        "editedAt": image.get("edited_at"),
+        "url": url,
+    }
+    return data, url, _initiative_teams(initiative) if initiative is not None else None
+
+
+def _customer(repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]) -> Built:
+    """A customer's `data` and URL; a customer belongs to no team, so only workspace wide webhooks hear it.
+
+    A customer written before statuses and tiers were configurable holds only
+    the legacy strings, so its ids are derived from them the way the API does.
+    """
+    del repositories, workspace_id
+    customer_id = str(image.get("customer_id", ""))
+    url = links.customer(customer_id)
+    picked = _pick(image, CUSTOMER_FIELDS)
+    if picked["statusId"] is None and picked["status"]:
+        picked["statusId"] = picked["status"]
+    if picked["tierId"] is None and picked["tier"]:
+        picked["tierId"] = legacy_tier_id(str(picked["tier"]))
+    data = {
+        "id": customer_id,
+        **picked,
+        "creatorId": image.get("created_by"),
+        "createdAt": image.get("created_at"),
+        "updatedAt": image.get("updated_at"),
+        "url": url,
+    }
+    return data, url, ()
+
+
+def _customer_request(repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]) -> Built:
+    """A customer request's `data`, URL and the teams of the issue or project it names."""
+    del repositories, workspace_id
+    customer_id = str(image.get("customer_id", ""))
+    team_ids = tuple(str(team_id) for team_id in (image.get("team_ids") or []))
+    url = links.customer(customer_id)
+    data = {
+        "id": str(image.get("request_id", "")),
+        **_pick(image, CUSTOMER_REQUEST_FIELDS),
+        "creatorId": image.get("author_id"),
+        "createdAt": image.get("created_at"),
+        "updatedAt": image.get("updated_at"),
+        "url": url,
+    }
+    return data, url, team_ids
+
+
 @dataclass(frozen=True, slots=True)
 class Kind:
-    """How one resource type is recognised and described."""
+    """How one resource type is recognised and described.
+
+    `team_field` names the row attribute that holds its teams when a change can
+    move the row between teams, so an update also reaches the teams it left.
+    `teams_from_parent` says the teams come from a parent row instead, so an
+    update also reaches the teams of the parent the old image names.
+    """
 
     resource_type: str
     event_type: str
     fields: Mapping[str, str]
     build: Builder
     time_field: str = "updated_at"
+    team_field: str | None = None
+    teams_from_parent: bool = False
 
 
 ISSUE = Kind("issues", "Issue", ISSUE_FIELDS, _issue)
 COMMENT = Kind("comments", "Comment", COMMENT_FIELDS, _comment, "created_at")
-PROJECT = Kind("projects", "Project", PROJECT_FIELDS, _project)
+PROJECT = Kind("projects", "Project", PROJECT_FIELDS, _project, team_field="team_ids")
 CYCLE = Kind("cycles", "Cycle", CYCLE_FIELDS, _cycle)
 PROJECT_UPDATE = Kind("project_updates", "ProjectUpdate", PROJECT_UPDATE_FIELDS, _project_update, "created_at")
 LABEL = Kind("labels", "IssueLabel", LABEL_FIELDS, _label, "created_at")
+DOCUMENT = Kind("documents", "Document", DOCUMENT_FIELDS, _document, teams_from_parent=True)
+INITIATIVE = Kind("initiatives", "Initiative", INITIATIVE_FIELDS, _initiative, team_field="team_id")
+INITIATIVE_UPDATE = Kind(
+    "initiative_updates", "InitiativeUpdate", INITIATIVE_UPDATE_FIELDS, _initiative_update, "created_at"
+)
+CUSTOMER = Kind("customers", "Customer", CUSTOMER_FIELDS, _customer)
+CUSTOMER_REQUEST = Kind(
+    "customer_requests", "CustomerNeed", CUSTOMER_REQUEST_FIELDS, _customer_request, "created_at", "team_ids"
+)
+
+
+def _row_teams(image: Mapping[str, Any], team_field: str) -> tuple[str, ...]:
+    """The teams one image names in its team attribute, a list or a single id."""
+    value = image.get(team_field)
+    if isinstance(value, str):
+        return (value,) if value else ()
+    return tuple(str(team_id) for team_id in (value or []))
 
 
 def describe(
@@ -427,9 +675,15 @@ def describe(
     workspace_id = str(image.get("workspace_id", ""))
     links = Links(repositories, workspace_id)
     data, url, team_ids = kind.build(repositories, links, workspace_id, image)
-    if action == "update" and kind is PROJECT:
-        previous = tuple(str(team_id) for team_id in (old_image.get("team_ids") or []))
-        team_ids = tuple(dict.fromkeys((*team_ids, *previous)))
+    if team_ids is None:
+        return None
+    if action == "update" and kind.team_field is not None:
+        team_ids = tuple(dict.fromkeys((*team_ids, *_row_teams(old_image, kind.team_field))))
+    if action == "update" and kind.teams_from_parent:
+        _, previous = _document_parent(
+            repositories, workspace_id, str(old_image.get("parent_kind", "")), str(old_image.get("parent_id", ""))
+        )
+        team_ids = tuple(dict.fromkeys((*team_ids, *(previous or ()))))
     moment = new_image.get(kind.time_field) if action != "remove" else None
     return OutboundEvent(
         workspace_id=workspace_id,

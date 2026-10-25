@@ -39,6 +39,8 @@ from app.common.db.dynamo.workspaces import DEFAULT_PLAN, Plan
 
 AUTH_LIMIT_CLASS = "auth"
 
+INVITE_LINK_LIMIT_CLASS = "invite_link"
+
 MCP_PATH = "/api/mcp"
 
 WORKSPACE_PATH = re.compile(r"^/api/workspaces/([^/]+)")
@@ -140,14 +142,15 @@ def plan_limits() -> dict[str, PlanLimits]:
 def build_tiers() -> TieredLimits:
     """The tiered limits the middleware counts signed-in and credentialed callers by.
 
-    The `auth` class stays per IP for everyone, so a signed-in caller cannot spend
-    their generous allowance guessing at credential endpoints.
+    The `auth` and `invite_link` classes stay on their own caps for everyone, so a
+    signed-in caller cannot spend their generous allowance guessing at credential
+    endpoints or invite link tokens.
     """
     return TieredLimits(
         resolver=resolve_subject,
         plans=plan_limits(),
         default_plan=DEFAULT_PLAN,
-        ip_classes=(AUTH_LIMIT_CLASS,),
+        ip_classes=(AUTH_LIMIT_CLASS, INVITE_LINK_LIMIT_CLASS),
     )
 
 

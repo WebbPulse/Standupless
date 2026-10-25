@@ -103,7 +103,11 @@ class DocumentPatch(BaseModel):
     project, initiative or team the caller may write under. `base_updated_at`
     is the `updated_at` the editor last read. When it is sent and the document
     has changed since, the patch is a 409 rather than writing over someone
-    else's edit.
+    else's edit. `base_body_version` is the narrower guard an editor saving the
+    body sends: the `body_version` it loaded. Only a patch that changes the body
+    is held to it, so a rename or a move made meanwhile never makes it stale,
+    and a stale one is a `BODY_CHANGED` 409 carrying the current body and its
+    version.
     """
 
     title: Optional[str] = None
@@ -112,6 +116,12 @@ class DocumentPatch(BaseModel):
     parent_kind: Optional[DocumentParentKind] = None
     parent_id: Optional[str] = None
     base_updated_at: Optional[datetime] = None
+    base_body_version: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="The body_version the body edit started from; a stale one is a 409.",
+    )
 
     @field_validator("icon")
     @classmethod
@@ -167,6 +177,7 @@ class DocumentRead(DocumentSummaryRead):
     """One document with its Markdown and the issues it mentions that this caller can see."""
 
     body: str
+    body_version: str = Field(default="", description="The body's version, sent back as base_body_version.")
     mentions: list[DocumentMentionRead] = Field(default_factory=list)
 
 

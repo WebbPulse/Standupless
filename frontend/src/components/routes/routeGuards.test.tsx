@@ -93,6 +93,41 @@ describe('ProtectedRoute', () => {
     );
   });
 
+  it('leaves the document no taller than the shell so it has nothing to scroll', () => {
+    expect(globalStyles).toMatch(
+      /html:has\(\[data-app-shell\]\) body\s*\{\s*min-height:\s*0;/
+    );
+    expect(globalStyles).toMatch(/min-height:\s*100dvh;/);
+  });
+
+  it('scrolls the document back when script moves it under the shell', () => {
+    useAuthMock.mockReturnValue(session({ isAuthenticated: true }));
+    const scrollTo = vi.fn();
+    const savedScrollTo = Object.getOwnPropertyDescriptor(window, 'scrollTo');
+    const savedScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY');
+    Object.defineProperty(window, 'scrollTo', {
+      configurable: true,
+      writable: true,
+      value: scrollTo,
+    });
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 64 });
+    try {
+      renderProtected();
+      expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    } finally {
+      for (const [name, descriptor] of [
+        ['scrollTo', savedScrollTo],
+        ['scrollY', savedScrollY],
+      ] as const) {
+        if (descriptor === undefined) {
+          Reflect.deleteProperty(window, name);
+        } else {
+          Object.defineProperty(window, name, descriptor);
+        }
+      }
+    }
+  });
+
   it('shows a spinner while the session has never settled', () => {
     useAuthMock.mockReturnValue(session({ isLoading: true }));
     renderProtected();

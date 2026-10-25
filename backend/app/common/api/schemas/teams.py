@@ -13,6 +13,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
+from app.common.api.schemas.member_status import UserStatusRead
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.api.schemas.views import (
     VISIBLE_PROPERTIES,
@@ -22,6 +23,8 @@ from app.common.api.schemas.views import (
     LayoutField,
     SortField,
     VisiblePropertyField,
+    read_visible_properties,
+    stored_visible_properties,
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -36,6 +39,7 @@ from app.common.db.dynamo.team_config import (
     DisplayOptions,
     Label,
     ParentAutoCloseSettings,
+    SlaCalendar,
     SlaSettings,
     SlaStartMode,
     Status,
@@ -48,6 +52,7 @@ from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
 from app.common.status_appearance import StatusColor, StatusIcon, check_icon
+from app.common.team_time import check_timezone as _check_timezone
 
 EstimateScaleField = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]
 
@@ -59,6 +64,17 @@ COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 LABEL_DESCRIPTION_MAX = 100
 """The longest label description, which is what GitHub accepts on a repository label."""
+
+STATUS_DESCRIPTION_MAX = 255
+"""The longest workflow status description, the secondary line a status picker shows."""
+
+
+def blank_as_none(value: Optional[str]) -> Optional[str]:
+    """A description with its outer whitespace trimmed, an empty one read as none."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
 
 
 def _check_key_prefix(value: str) -> str:
@@ -78,6 +94,8 @@ class TeamCreate(BaseModel):
     statuses and labels it inherits. `copy_settings_from_team_id` starts the team
     with a copy of another team's workflow, labels, templates and settings
     instead; a sub-team already inherits, so the two are exclusive.
+    `timezone` is the IANA zone the team's cycles start and end at midnight
+    in, UTC by default; a sub-team takes its parent's instead.
     """
 
     name: str = Field(min_length=1, max_length=80)
@@ -87,6 +105,7 @@ class TeamCreate(BaseModel):
     estimate_extended: bool = False
     estimate_allow_zero: bool = False
     estimate_count_unestimated: bool = False
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     private: bool = False
     parent_team_id: Optional[str] = Field(default=None, min_length=1)
     copy_settings_from_team_id: Optional[str] = Field(default=None, min_length=1)
@@ -100,6 +119,12 @@ class TeamCreate(BaseModel):
         conflict the create route has to handle is a prefix already in use.
         """
         return _check_key_prefix(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the timezone to an IANA name zoneinfo knows, a 422 naming the field otherwise."""
+        return None if value is None else _check_timezone(value)
 
     @field_validator("name")
     @classmethod
@@ -129,7 +154,9 @@ class TeamUpdate(BaseModel):
     adds 0, and `estimate_count_unestimated` counts an unestimated issue as one
     point in cycle and project progress instead of skipping it.
     `parent_team_id` puts the team under a top-level parent team, and an explicit
-    null makes it a top-level team again.
+    null makes it a top-level team again. `timezone` is the IANA zone the team's
+    cycles start, end and roll over at midnight in; a sub-team takes its
+    parent's, so changing a sub-team's own is a 409.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
@@ -140,6 +167,7 @@ class TeamUpdate(BaseModel):
     estimate_count_unestimated: Optional[bool] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     sync_pr_labels: Optional[bool] = None
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     private: Optional[bool] = None
     parent_team_id: Optional[str] = Field(default=None, min_length=1)
 
@@ -150,6 +178,12 @@ class TeamUpdate(BaseModel):
         if value is None:
             return None
         return _check_key_prefix(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a new timezone to an IANA name zoneinfo knows."""
+        return None if value is None else _check_timezone(value)
 
     @field_validator("name")
     @classmethod
@@ -168,7 +202,8 @@ class TeamRead(BaseModel):
 
     `parent_team_id` names the team this one sits under, `null` for a top-level team.
     `retired_at` is set while the team is retired and read-only, with `retired_by`
-    naming who retired it.
+    naming who retired it. `timezone` is the IANA zone the team's cycles
+    start, end and roll over at midnight in.
     """
 
     id: str
@@ -181,6 +216,7 @@ class TeamRead(BaseModel):
     estimate_allow_zero: bool = False
     estimate_count_unestimated: bool = False
     sync_pr_labels: bool = True
+    timezone: str = "UTC"
     private: bool = False
     icon_url: Optional[str] = None
     created_at: datetime
@@ -221,6 +257,7 @@ class TeamRead(BaseModel):
             estimate_allow_zero=team.estimate_allow_zero,
             estimate_count_unestimated=team.estimate_count_unestimated,
             sync_pr_labels=team.sync_pr_labels,
+            timezone=team.timezone,
             private=private,
             icon_url=icon_url(team.icon_key),
             created_at=team.created_at,
@@ -266,6 +303,8 @@ class TeamMemberRead(BaseModel):
 
     `full_name` rides along with the handle so a reader who prefers full names
     sees them in the team's pickers too, the way the workspace member list does.
+    `user_status` is the member's away status while it is in force, read from
+    their workspace row, so a picker can say who is away.
     """
 
     user_id: str
@@ -275,10 +314,13 @@ class TeamMemberRead(BaseModel):
     avatar_url: Optional[str] = None
     role: TeamRoleField
     added_at: datetime
+    user_status: Optional[UserStatusRead] = None
 
     @classmethod
-    def from_rows(cls, membership: Membership, user: Optional[User]) -> "TeamMemberRead":
-        """Build the response from a team membership and its user row."""
+    def from_rows(
+        cls, membership: Membership, user: Optional[User], *, user_status: Optional[UserStatusRead] = None
+    ) -> "TeamMemberRead":
+        """Build the response from a team membership, its user row and the member's current status."""
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
@@ -287,6 +329,7 @@ class TeamMemberRead(BaseModel):
             avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             added_at=membership.joined_at,
+            user_status=user_status,
         )
 
 
@@ -300,7 +343,8 @@ class StatusCreate(BaseModel):
     """The body a status create takes.
 
     `color` and `icon` are optional, and a status without them renders from its
-    category. The icon must be one of its category's variants.
+    category. The icon must be one of its category's variants. `description` is
+    the line a status picker shows under the name, and a blank one is none.
     """
 
     name: str = Field(min_length=1, max_length=60)
@@ -308,6 +352,13 @@ class StatusCreate(BaseModel):
     position: Optional[int] = Field(default=None, ge=0)
     color: Optional[StatusColor] = None
     icon: Optional[StatusIcon] = None
+    description: Optional[str] = Field(default=None, max_length=STATUS_DESCRIPTION_MAX)
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the description, reading a blank one as none."""
+        return blank_as_none(value)
 
     @model_validator(mode="after")
     def check_icon_category(self) -> "StatusCreate":
@@ -321,7 +372,8 @@ class StatusUpdate(BaseModel):
 
     An explicit null `color` or `icon` clears it back to the category default. The
     icon is checked against the category in `team_workflow.update_status`, where
-    the stored category is known when the patch does not name one.
+    the stored category is known when the patch does not name one. An explicit
+    null or blank `description` removes it.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
@@ -329,6 +381,13 @@ class StatusUpdate(BaseModel):
     position: Optional[int] = Field(default=None, ge=0)
     color: Optional[StatusColor] = None
     icon: Optional[StatusIcon] = None
+    description: Optional[str] = Field(default=None, max_length=STATUS_DESCRIPTION_MAX)
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the description, reading a blank one as a clear."""
+        return blank_as_none(value)
 
 
 ConfigScope = Literal["team", "parent", "workspace"]
@@ -339,7 +398,10 @@ class StatusRead(BaseModel):
 
     `scope` says whether the team owns it or inherits it from its parent team or
     the workspace. An inherited status the team hid carries `hidden`, and one it
-    renamed locally carries the inherited name in `inherited_name`.
+    renamed locally carries the inherited name in `inherited_name`. `description`
+    is the effective one, and an inherited status the team describes locally
+    carries the inherited description in `inherited_description`, an empty
+    string when the inherited status has none.
     """
 
     id: str
@@ -351,6 +413,8 @@ class StatusRead(BaseModel):
     scope: ConfigScope = "team"
     hidden: bool = False
     inherited_name: Optional[str] = None
+    description: Optional[str] = None
+    inherited_description: Optional[str] = None
 
     @classmethod
     def from_row(cls, status: Status) -> "StatusRead":
@@ -365,6 +429,8 @@ class StatusRead(BaseModel):
             scope=status.scope,  # pyright: ignore[reportArgumentType]
             hidden=status.hidden,
             inherited_name=status.inherited_name,
+            description=status.description,
+            inherited_description=status.inherited_description,
         )
 
 
@@ -503,6 +569,23 @@ class OverrideUpdate(BaseModel):
 
     hidden: Optional[bool] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+
+
+class StatusOverrideUpdate(OverrideUpdate):
+    """The body a team's override of an inherited status takes.
+
+    On top of the hide and rename every override carries, `description` describes
+    the status in the team only, and an explicit null or blank one goes back to
+    the inherited description.
+    """
+
+    description: Optional[str] = Field(default=None, max_length=STATUS_DESCRIPTION_MAX)
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: Optional[str]) -> Optional[str]:
+        """Trim the description, reading a blank one as a clear."""
+        return blank_as_none(value)
 
 
 class CycleSettingsUpdate(BaseModel):
@@ -658,7 +741,10 @@ class SlaSettingsUpdate(BaseModel):
     `start_mode` picks when a timer starts: `on_triage_exit` once an issue
     leaves triage, `on_creation` from when it was filed, triage included. A
     change applies from each issue's next priority, status or triage move and
-    leaves timers already running alone.
+    leaves timers already running alone. `calendar` picks the clock the hours
+    run on: `calendar` counts every hour, `business_days` skips Saturdays and
+    Sundays in the team's timezone. A new calendar moves open timers onto it at
+    once, each keeping its start.
     """
 
     enabled: Optional[StrictBool] = None
@@ -668,6 +754,7 @@ class SlaSettingsUpdate(BaseModel):
     low_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
     paused_status_ids: Optional[list[str]] = Field(default=None, max_length=MAX_SLA_PAUSED_STATUSES)
     start_mode: Optional[SlaStartMode] = None
+    calendar: Optional[SlaCalendar] = None
 
 
 class SlaSettingsRead(BaseModel):
@@ -681,6 +768,7 @@ class SlaSettingsRead(BaseModel):
     low_hours: Optional[int] = None
     paused_status_ids: list[str] = Field(default_factory=list)
     start_mode: SlaStartMode = "on_triage_exit"
+    calendar: SlaCalendar = "calendar"
     updated_at: Optional[datetime] = None
 
     @classmethod
@@ -695,6 +783,7 @@ class SlaSettingsRead(BaseModel):
             low_hours=settings.low_hours,
             paused_status_ids=list(settings.paused_status_ids),
             start_mode=settings.start_mode,
+            calendar=settings.calendar,
             updated_at=settings.updated_at,
         )
 
@@ -922,14 +1011,18 @@ class DisplayOptionsBody(BaseModel):
 
     def as_row(self) -> DisplayOptions:
         """The stored shape of these options."""
-        return DisplayOptions.model_validate(self.model_dump())
+        stored = self.model_dump()
+        stored["visible_properties"] = stored_visible_properties(stored["visible_properties"])
+        return DisplayOptions.model_validate(stored)
 
     @classmethod
     def from_row(cls, options: Optional[DisplayOptions]) -> Optional["DisplayOptionsBody"]:
         """The response shape of stored options, or `None` when the page keeps its built-in default."""
         if options is None:
             return None
-        return cls.model_validate(options.model_dump())
+        shown = options.model_dump()
+        shown["visible_properties"] = read_visible_properties(shown["visible_properties"])
+        return cls.model_validate(shown)
 
 
 class TeamDisplayDefaultsUpdate(BaseModel):

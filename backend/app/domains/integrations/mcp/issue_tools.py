@@ -5,9 +5,11 @@ run, so an agent's issue carries the same key allocation, validation, activity r
 and subscriptions as a person's, and a field the route refuses the tool refuses
 too. There is no MCP-shaped write path, which is what keeps the two from drifting.
 
-There is no tool that deletes an issue or a comment: an agent that can create and
-update but never destroy history is a different risk from one that can do both.
-It can still list a team's deleted issues and restore one from the trash.
+There is no tool that deletes an issue: an agent that can create and update but
+never destroy an issue's history is a different risk from one that can do both.
+It can still list a team's deleted issues and restore one from the trash. Editing
+and deleting a comment live in `comment_tools`, under the author and team admin
+rule the UI holds.
 Removing a relation is offered, marked destructive, because the link is all it loses.
 """
 
@@ -149,6 +151,12 @@ NULLABLE_FIELDS: tuple[str, ...] = (
 PLAIN_FIELDS: tuple[str, ...] = ("title", "status_id", "priority", "label_ids")
 """The patchable fields a null leaves alone, because the row cannot hold one."""
 
+_DAY_BOUND = (
+    "exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, "
+    "which keeps rolling in a saved view"
+)
+"""How a date bound filter is written, shared by every date field's description."""
+
 
 def _status_name(call: ToolCall, issue: Issue) -> str:
     """The display name of one issue's status, or empty when it has been deleted."""
@@ -193,10 +201,16 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "cycle_id_not",
     "customer_id",
     "customer_id_not",
+    "release_id",
+    "release_id_not",
+    "customer_status_id",
+    "customer_status_id_not",
+    "customer_tier_id",
+    "customer_tier_id_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
-BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking", "has_sub_issues")
+BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking", "has_sub_issues", "customer_important")
 """The filter arguments taken as booleans and passed through as sent, for the filter to check."""
 
 SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
@@ -211,11 +225,22 @@ SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
     "content",
     "content_not",
     "match",
+    "customer_revenue_min",
+    "customer_revenue_max",
+    "customer_size_min",
+    "customer_size_max",
+    "customer_request_count_min",
+    "customer_request_count_max",
 )
 """The filter arguments taken once as text, passed through for the filter to check."""
 
 PARENT_ARGUMENTS: tuple[str, ...] = ("parent_id", "parent_id_not")
 """The filter arguments naming issues, where an issue key is resolved to its id."""
+
+
+def _count(description: str) -> dict[str, Any]:
+    """A whole number filter of zero or more, which a saved view may also hold as digit text."""
+    return {"type": ["integer", "string"], "description": description}
 
 
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
@@ -275,14 +300,38 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
             "Requested by none of these customers; 'none' keeps requested issues only, "
             "'important' drops issues with an important request"
         ),
-        "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
-        "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
-        "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),
-        "created_before": string("Created before this day, YYYY-MM-DD, exclusive"),
-        "updated_after": string("Updated after this day, YYYY-MM-DD, exclusive"),
-        "updated_before": string("Updated before this day, YYYY-MM-DD, exclusive"),
-        "completed_after": string("Completed after this day, YYYY-MM-DD, exclusive; only completed issues match"),
-        "completed_before": string("Completed before this day, YYYY-MM-DD, exclusive; only completed issues match"),
+        "customer_status_id": one_or_many(
+            "Requested by a customer in any of these customer statuses; 'none' is issues no customer asked for"
+        ),
+        "customer_status_id_not": one_or_many(
+            "Requested by no customer in these customer statuses; 'none' keeps requested issues only"
+        ),
+        "customer_tier_id": one_or_many(
+            "Requested by a customer in any of these customer tiers; 'none' is issues no customer asked for"
+        ),
+        "customer_tier_id_not": one_or_many(
+            "Requested by no customer in these customer tiers; 'none' keeps requested issues only"
+        ),
+        "customer_revenue_min": _count("Requested by a customer whose revenue is at least this"),
+        "customer_revenue_max": _count("Requested by a customer whose revenue is at most this"),
+        "customer_size_min": _count("Requested by a customer whose size is at least this"),
+        "customer_size_max": _count("Requested by a customer whose size is at most this"),
+        "customer_request_count_min": _count("Carrying at least this many customer requests"),
+        "customer_request_count_max": _count("Carrying at most this many customer requests; 0 is unrequested issues"),
+        "customer_important": {
+            "type": "boolean",
+            "description": "True for issues with an important customer request, false for the rest",
+        },
+        "release_id": one_or_many("Shipped in any of these releases; 'none' is issues in no release"),
+        "release_id_not": one_or_many("Shipped in none of these releases; 'none' keeps released issues only"),
+        "due_before": string(f"Due before this day, {_DAY_BOUND}"),
+        "due_after": string(f"Due after this day, {_DAY_BOUND}"),
+        "created_after": string(f"Created after this day, {_DAY_BOUND}"),
+        "created_before": string(f"Created before this day, {_DAY_BOUND}"),
+        "updated_after": string(f"Updated after this day, {_DAY_BOUND}"),
+        "updated_before": string(f"Updated before this day, {_DAY_BOUND}"),
+        "completed_after": string(f"Completed after this day, {_DAY_BOUND}; only completed issues match"),
+        "completed_before": string(f"Completed before this day, {_DAY_BOUND}; only completed issues match"),
         "content": string("Title or description contains this text, case insensitive"),
         "content_not": string("Neither title nor description contains this text"),
         "match": enum(("all", "any"), "How the conditions combine: all of them (default) or any one"),
@@ -628,7 +677,8 @@ def _update_issue(call: ToolCall) -> Any:
 
     Only the arguments present are written. A null clears the fields that can be
     unset, such as the parent, cycle, project or assignee, and is ignored on the
-    ones that cannot.
+    ones that cannot. `base_body_version` guards a new body against overwriting
+    a description someone else changed since it was read.
     """
     issue = issue_ref(call, call.require("issue_id"))
     patch: dict[str, Any] = {}
@@ -646,6 +696,8 @@ def _update_issue(call: ToolCall) -> Any:
         patch["status_id"] = _status_ref(call, issue.team_id, str(patch["status_id"]))
     if patch.get("label_ids"):
         patch["label_ids"] = _label_refs(call, issue.team_id, patch["label_ids"])
+    if call.optional("base_body_version") is not None:
+        patch["base_body_version"] = call.arguments["base_body_version"]
     attributes = IssueUpdate.model_validate(patch).model_dump(exclude_unset=True)
     return _answer(call, update_issue(call.repositories, call.context, issue, attributes))
 
@@ -712,6 +764,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "created_at": comment.created_at.isoformat(),
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
         "github_thread": comment.github_thread.model_dump(mode="json") if comment.github_thread else None,
+        "slack_thread": comment.slack_thread.model_dump(mode="json") if comment.slack_thread else None,
         "resolution": comment.resolution.model_dump(mode="json") if comment.resolution else None,
         "anchor": comment.anchor.model_dump(mode="json") if comment.anchor else None,
     }
@@ -1369,6 +1422,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "title": string("A new title"),
                 "body": nullable("A new body, in Markdown"),
+                "base_body_version": string(
+                    "The body_version the new body was written against; when the description changed since, "
+                    "the update is refused with the current body and version instead of overwriting it"
+                ),
                 "status_id": string(
                     "A new status of the same team, by id or name; 'triage' sends it to triage, "
                     "and a real status accepts an issue waiting there"

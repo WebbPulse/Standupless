@@ -4,7 +4,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["users", "api-keys", "audit", "agent_profiles", "rate-limits", "idempotency"]
+      tables      = ["users", "api-keys", "audit", "agent_profiles", "rate-limits", "idempotency", "subscriptions", "planning"]
       read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
@@ -36,7 +36,7 @@ locals {
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity", "relations"]
     }
     views-notify-consumer = {
-      secrets     = false
+      secrets     = true
       ses         = true
       memory      = 512
       tables      = ["views", "inbox", "search_index", "rate-limits"]
@@ -74,8 +74,8 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "agent_profiles", "rate-limits"]
-      read_tables = ["users", "api-keys", "oauth-links", "search_index"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "reactions", "attachments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "agent_profiles", "rate-limits"]
+      read_tables = ["users", "api-keys", "oauth-links", "search_index", "realtime_connections", "realtime_presence"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -95,8 +95,15 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["github", "rate-limits"]
+      tables      = ["github", "realtime_connections", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "activity", "comments", "planning"]
+    }
+    integrations-realtime-consumer = {
+      secrets     = false
+      ses         = false
+      memory      = 512
+      tables      = ["realtime_connections", "realtime_presence", "rate-limits"]
+      read_tables = ["memberships", "issues", "planning"]
     }
     admin = {
       secrets     = true
@@ -114,6 +121,7 @@ locals {
     integrations-events-consumer   = "integrations"
     integrations-dispatch-consumer = "integrations"
     integrations-stream-consumer   = "integrations"
+    integrations-realtime-consumer = "integrations"
     discussion-purge-consumer      = "discussion"
     integrations-purge-consumer    = "integrations"
     views-purge-consumer           = "views"
@@ -133,6 +141,7 @@ locals {
     integrations-events-consumer   = ["python", "-m", "app.domains.integrations.consumers.events_entrypoint"]
     integrations-dispatch-consumer = ["python", "-m", "app.domains.integrations.consumers.dispatch_entrypoint"]
     integrations-stream-consumer   = ["python", "-m", "app.domains.integrations.consumers.stream_entrypoint"]
+    integrations-realtime-consumer = ["python", "-m", "app.domains.integrations.consumers.realtime_entrypoint"]
     discussion-purge-consumer      = ["python", "-m", "app.domains.discussion.consumers.purge_entrypoint"]
     integrations-purge-consumer    = ["python", "-m", "app.domains.integrations.consumers.purge_entrypoint"]
     views-purge-consumer           = ["python", "-m", "app.domains.views.consumers.purge_entrypoint"]
@@ -186,8 +195,8 @@ locals {
 
   email_intake_functions = var.email_intake_enabled ? {
     integrations-email-consumer = {
-      secrets     = false
-      ses         = false
+      secrets     = true
+      ses         = true
       memory      = 1024
       tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "planning", "attachments", "idempotency", "inbox", "comments", "relations", "rate-limits"]
       read_tables = ["workspaces", "memberships", "users", "teams", "github"]
@@ -317,7 +326,16 @@ locals {
         "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
       } : {},
 
+      contains(["integrations-stream-consumer", "integrations-realtime-consumer"], name) ? {
+        REALTIME_ENDPOINT_URL = local.realtime_enabled ? local.realtime_management_url : ""
+      } : {},
+
       name == "views-notify-consumer" ? {
+        WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
+        EMAIL_INTAKE_DOMAIN        = local.email_intake_enabled ? local.email_intake_domain : ""
+      } : {},
+
+      contains(["issues", "planning"], name) ? {
         WEBHOOK_DISPATCH_QUEUE_URL = local.github_queues_enabled ? module.webhook_dispatch_queue[0].queue_url : ""
       } : {},
 
@@ -401,6 +419,17 @@ locals {
 
   integrations_stream_enabled = local.domain_functions_enabled && var.integrations_stream_enabled
 
+  integrations_planning_kinds = [
+    "cycle",
+    "project",
+    "project_update",
+    "document",
+    "initiative",
+    "initiative_update",
+    "customer",
+    "customer_target",
+  ]
+
   lambda_domain_sqs_sources = {
     for name in keys(local.lambda_domains) : name => (
       name == "integrations-events-consumer" && local.github_queues_enabled ? {
@@ -481,10 +510,13 @@ locals {
         })
         planning = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["planning"]
-          filter_patterns = [jsonencode({
-            eventName = ["INSERT"]
-            dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment"] } } }
-          })]
+          filter_patterns = [
+            jsonencode({
+              eventName = ["INSERT"]
+              dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment", "initiative_update_comment"] } } }
+            }),
+            jsonencode({ eventName = ["INSERT", "MODIFY"], dynamodb = { NewImage = { kind = { S = ["project", "initiative"] } } } }),
+          ]
         })
         relations = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["relations"]
@@ -529,8 +561,8 @@ locals {
         planning = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["planning"]
           filter_patterns = [
-            jsonencode({ dynamodb = { NewImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
-            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = ["cycle", "project", "project_update"] } } } }),
+            jsonencode({ dynamodb = { NewImage = { kind = { S = local.integrations_planning_kinds } } } }),
+            jsonencode({ eventName = ["REMOVE"], dynamodb = { OldImage = { kind = { S = local.integrations_planning_kinds } } } }),
           ]
         })
         team-config = merge(local.lambda_domain_stream_defaults, {
@@ -773,6 +805,14 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:PutObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
+        },
+      ] : [],
+      contains(["integrations-stream-consumer", "integrations-realtime-consumer"], each.key) && local.realtime_enabled ? [
+        {
+          Sid      = "PostToRealtimeConnections"
+          Effect   = "Allow"
+          Action   = ["execute-api:ManageConnections"]
+          Resource = ["${aws_apigatewayv2_api.realtime[0].execution_arn}/${local.realtime_stage}/POST/@connections/*"]
         },
       ] : [],
       each.key == "workspaces-export-consumer" ? [

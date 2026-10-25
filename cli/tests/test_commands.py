@@ -529,6 +529,17 @@ def test_team_update_makes_a_team_private(runner: CliRunner, api: respx.MockRout
     assert "ENG is now private" in result.output
 
 
+def test_team_update_sets_the_timezone(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--timezone` patches only the team timezone and the reply names it."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={"id": "team-1", "key_prefix": "ENG", "name": "Engineering", "timezone": "America/Los_Angeles"}
+    )
+    result = invoke(runner, "team", "update", "-t", "ENG", "--timezone", "America/Los_Angeles")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"timezone": "America/Los_Angeles"}
+    assert "midnight America/Los_Angeles" in result.output
+
+
 def test_team_update_sets_the_estimate_settings(runner: CliRunner, api: respx.MockRouter) -> None:
     """The scale and its three toggles patch together and the reply names them."""
     patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
@@ -1204,6 +1215,31 @@ def test_workspace_update_resets_the_accent(runner: CliRunner, api: respx.MockRo
     assert json.loads(result.stdout)["accent_color"] is None
 
 
+def test_workspace_update_changes_the_slug(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The new slug goes to the workspace PATCH, and the answer names it."""
+    moved = {**WORKSPACE, "slug": "acme-labs", "retired_slugs": ["acme"]}
+    route = api.patch(f"/api/workspaces/{WS}").respond(json=moved)
+    result = invoke(runner, "workspace", "update", "--slug", "acme-labs")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"slug": "acme-labs"}
+    assert "acme-labs" in result.output
+
+
+def test_a_retired_slug_still_names_the_workspace(
+    runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config or env naming the slug a workspace gave up still resolves to it."""
+    monkeypatch.setenv("STANDUPLESS_WORKSPACE", "acme")
+    api.get("/api/workspaces").respond(
+        json={"workspaces": [{**WORKSPACE, "slug": "acme-labs", "retired_slugs": ["acme"]}]}
+    )
+    route = api.get(f"/api/workspaces/{WS}").respond(json={**WORKSPACE, "slug": "acme-labs"})
+    result = invoke(runner, "workspace", "view")
+    assert result.exit_code == 0, result.output
+    assert route.called
+    assert "acme-labs" in result.stdout
+
+
 @pytest.mark.parametrize(
     "args", [(), ("--accent-color", "#123456", "--reset-accent")], ids=["nothing", "both accent flags"]
 )
@@ -1815,3 +1851,38 @@ def test_a_planning_date_shows_at_its_resolution(value: str | None, resolution: 
     from standupless_cli.main import _date_label
 
     assert _date_label(value, resolution) == label
+
+
+def test_workspace_status_sets_your_own_status(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flags become the status body and the answer is echoed back."""
+    status = {"emoji": "🌴", "text": "On vacation", "away": True, "until": "2026-11-01T00:00:00Z", "set_at": "x"}
+    put = api.put(f"/api/workspaces/{WS}/members/me/status").respond(
+        json={"user_id": "u-me", "role": "member", "user_status": status}
+    )
+    flags = ["--emoji", "🌴", "--away", "--until", "2026-11-01T00:00:00Z"]
+    result = invoke(runner, "workspace", "status", "On vacation", *flags)
+    assert result.exit_code == 0, result.output
+    assert json.loads(put.calls[0].request.content) == {
+        "emoji": "🌴",
+        "text": "On vacation",
+        "away": True,
+        "until": "2026-11-01T00:00:00Z",
+    }
+    assert "On vacation" in result.output
+
+
+def test_workspace_status_clear_removes_it(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--clear calls the delete route."""
+    deleted = api.delete(f"/api/workspaces/{WS}/members/me/status").respond(
+        json={"user_id": "u-me", "role": "member", "user_status": None}
+    )
+    result = invoke(runner, "workspace", "status", "--clear")
+    assert result.exit_code == 0, result.output
+    assert deleted.called
+    assert "Cleared" in result.output
+
+
+def test_workspace_status_needs_text_or_clear(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Nothing to set and no --clear is refused before any call."""
+    result = invoke(runner, "workspace", "status")
+    assert result.exit_code != 0

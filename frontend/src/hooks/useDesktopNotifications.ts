@@ -8,13 +8,17 @@
  * The last notified row is kept per workspace on the device, so a reload or a
  * second tab does not notify again, and the first read on a device only marks
  * where to start. A focused tab only moves the mark, since the person can see
- * the badge. The desktop app notifies natively, so inside it nothing happens,
+ * the badge. While the person has paused notifications or is outside their
+ * working hours the mark still moves but nothing shows, unless they let urgent
+ * ones through and the row is a direct mention, so nothing is replayed later.
+ * The desktop app notifies natively, so inside it nothing happens,
  * and until the switch is on and the browser allows it nothing is read.
  */
 
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listInbox } from '../api/views';
+import { useAuth } from './useAuth';
 import { useInboxCount } from './useSidebarData';
 import {
   desktopNotificationsActive,
@@ -23,6 +27,7 @@ import {
   type NotifiedMark,
 } from '../lib/desktopNotifications';
 import { isDesktopShell } from '../lib/desktop';
+import { desktopNotificationAllowed } from '../lib/notificationPause';
 import { inboxPath, issuePath } from '../lib/paths';
 import type { NotificationRead, WorkspaceRead } from '../types/Api';
 
@@ -88,10 +93,16 @@ export const useDesktopNotifications = (
   const count = useInboxCount(watching ? workspaceId : '');
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
+  const { user } = useAuth();
+  const userRef = useRef(user);
 
   useEffect(() => {
     navigateRef.current = navigate;
   }, [navigate]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     if (workspaceId === '' || count === null) return;
@@ -123,16 +134,20 @@ export const useDesktopNotifications = (
           markOf(mark === null ? notifications : fresh)
         );
         if (fresh.length === 0 || tabFocused()) return;
-        if (fresh.length > DESKTOP_NOTIFY_BURST) {
+        const shown = fresh.filter((row) =>
+          desktopNotificationAllowed(userRef.current, row.kind)
+        );
+        if (shown.length === 0) return;
+        if (shown.length > DESKTOP_NOTIFY_BURST) {
           show(
             'Standupless',
-            `${fresh.length} new notifications in your inbox`,
+            `${shown.length} new notifications in your inbox`,
             `inbox-${workspaceId}`,
             inboxPath(slug)
           );
           return;
         }
-        for (const row of [...fresh].reverse()) {
+        for (const row of [...shown].reverse()) {
           const { title, body } = describeRow(row);
           show(title, body, row.notification_id, pathOf(slug, row));
         }

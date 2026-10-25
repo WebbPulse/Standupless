@@ -26,6 +26,7 @@ from app.common.api.schemas.views import (
     completed_window_of,
     invalid_project_filter_keys,
     malformed_filter_keys,
+    stored_visible_properties,
     unknown_filter_keys,
 )
 from app.common.db.dynamo.base import utc_now
@@ -191,13 +192,14 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         sub_group_by=payload.sub_group_by,
         ordering=payload.ordering,
         ordering_reversed=payload.ordering_reversed,
-        visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
+        visible_properties=stored_visible_properties(payload.visible_properties),
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,
         show_completed=window != "none",
         completed_window=window,
         show_archived=payload.show_archived,
         group_header=payload.group_header,
+        collapsed_groups=list(payload.collapsed_groups),
         icon=payload.icon,
         color=payload.color,
         description=payload.description,
@@ -248,7 +250,8 @@ def update_saved_view(
     false and never null, because a switch that could be neither would leave the
     client guessing what the view shows. The filter is judged by what the view
     lists, and only a project view takes a projects arrangement, its named fields
-    moving and the rest kept.
+    moving and the rest kept. `collapsed_groups` sent as null clears every fold,
+    as an empty list does.
     """
     view = load_visible_view(repositories, context, view_id)
     check_filter(payload.filter, "projects" if view.lists_projects else "issues")
@@ -270,6 +273,10 @@ def update_saved_view(
             if name == "group_header":
                 raise unprocessable("group_header must be count or estimate")
             raise unprocessable(f"{name} must be true or false")
+    if changes.get("visible_properties") is not None:
+        changes["visible_properties"] = stored_visible_properties(changes["visible_properties"])
+    if "collapsed_groups" in changes and changes["collapsed_groups"] is None:
+        changes["collapsed_groups"] = []
     if "completed_window" in changes:
         changes["show_completed"] = changes["completed_window"] != "none"
     elif "show_completed" in changes:
@@ -388,18 +395,16 @@ def view_reads(repositories: Repositories, context: AuthzContext, views: Sequenc
 def set_view_subscription(
     repositories: Repositories, context: AuthzContext, view_id: str, subscribed: bool
 ) -> SavedView:
-    """Follow or stop following an issue view the caller may read, answering the view.
+    """Follow or stop following a view the caller may read, answering the view.
 
-    A follower hears about each issue that newly matches the view from then on;
-    issues that already matched stay quiet, because the subscription only watches
-    transitions. Following twice, or unfollowing a view not followed, is a no-op.
-    A project view lists projects, which never enter a view the way an issue
-    does, so it refuses a subscription with a 422.
+    A follower hears about each issue, or for a project view each project, that
+    newly matches the view from then on; rows that already matched stay quiet,
+    because the subscription only watches transitions. Following twice, or
+    unfollowing a view not followed, is a no-op.
     """
     view = load_visible_view(repositories, context, view_id)
     if not subscribed:
         repositories.views.unsubscribe(context.workspace_id, view.view_id, context.user_id)
         return view
-    require_issue_view(view)
     repositories.views.subscribe(context.workspace_id, view, context.user_id)
     return view

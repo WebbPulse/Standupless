@@ -14,7 +14,6 @@ id or by a name that is unambiguous among the rows the caller can see.
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any, Optional, get_args
 
 from app.common.api.schemas.issues import BULK_MAX_ISSUES, IssueBulkUpdate
@@ -62,6 +61,7 @@ from app.common.planning_rules import (
 )
 from app.common.project_activity import activity_page
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
+from app.common.project_filters import parse_property_filter
 from app.common.project_link_writes import create_link, delete_link, project_links, update_link
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_update_report import report_lines
@@ -79,6 +79,7 @@ from app.common.project_writes import (
     update_project,
 )
 from app.common.readable_ids import project_web_url
+from app.common.team_time import team_today
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.project_status_tools import (
     STATUS_HELP,
@@ -174,7 +175,7 @@ def _cycle_id(call: ToolCall, team_id: str, value: Any) -> str:
     cycles = call.repositories.planning.list_for_roadmap(workspace_id, team_id)
     folded = reference.casefold()
     if folded in RELATIVE_CYCLES:
-        found = relative_cycle(cycles, folded, date.today())
+        found = relative_cycle(cycles, folded, team_today(call.repositories, workspace_id, team_id))
         if found is None:
             team = call.repositories.teams.get(workspace_id, team_id)
             raise ToolError(f"Team {team.key_prefix if team is not None else team_id} has no {folded} cycle")
@@ -387,7 +388,8 @@ def _get_cycle(call: ToolCall) -> Any:
     cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
     cycle = load_readable_cycle(call.repositories, call.context, team_id, cycle_id)
     counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
-    return _cycle_json(CycleRead.from_row(cycle, count_unestimated=counted))
+    today = team_today(call.repositories, call.context.workspace_id, team_id).isoformat()
+    return _cycle_json(CycleRead.from_row(cycle, today, count_unestimated=counted))
 
 
 def _create_cycle(call: ToolCall) -> Any:
@@ -536,9 +538,28 @@ def _list_projects(call: ToolCall) -> Any:
         sort=str(sort) if sort else None,
         label_id=project_label_ids(call, labels, allow_none=True) if labels is not None else None,
         include_archived=call.optional("include_archived", False) is True,
+        properties=parse_property_filter(
+            health=filter_values(call.optional("health")),
+            priority=filter_values(call.optional("priority")),
+            member_id=_member_values(call),
+            start_date_before=call.optional("start_date_before"),
+            start_date_after=call.optional("start_date_after"),
+            target_date_before=call.optional("target_date_before"),
+            target_date_after=call.optional("target_date_after"),
+            updated_within_days=call.optional("updated_within_days"),
+            not_updated_within_days=call.optional("not_updated_within_days"),
+        ),
     )
     names = status_names(call)
     return {"projects": [_project_json(row, names) for row in rows], "next_cursor": next_cursor}
+
+
+def _member_values(call: ToolCall) -> Optional[list[str]]:
+    """The member filter with `me` read as the caller, `none` kept for projects with no members."""
+    values = filter_values(call.optional("member_id"))
+    if values is None:
+        return None
+    return [value if value == "none" else (resolve_user(call, value) or value) for value in values]
 
 
 def _optional_flag(call: ToolCall, name: str) -> Optional[bool]:
@@ -1109,6 +1130,37 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "label_id": one_or_many(
                     "Only projects carrying any of these project labels, by id or name; 'none' is projects with none"
                 ),
+                "health": one_or_many(
+                    "Only projects in any of these healths: on_track, at_risk, off_track, or 'none' for no health"
+                ),
+                "priority": one_or_many("Only projects at any of these priorities: none, urgent, high, medium, low"),
+                "member_id": one_or_many(
+                    "Only projects with any of these members, by user id or 'me'; 'none' is projects with no members"
+                ),
+                "start_date_before": string(
+                    "Only projects starting before this day, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "start_date_after": string(
+                    "Only projects starting after this day, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "target_date_before": string(
+                    "Only projects targeting a day before this one, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "target_date_after": string(
+                    "Only projects targeting a day after this one, YYYY-MM-DD or relative to today such as +2w or -1m"
+                ),
+                "updated_within_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Only projects with a project update posted in the last this many days",
+                },
+                "not_updated_within_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Only projects with no project update in the last this many days, never updated ones included"
+                    ),
+                },
                 "sort": enum(
                     PROJECT_SORTS,
                     "The order, defaulting to target_asc; customer_requests_desc puts the most customer requests "

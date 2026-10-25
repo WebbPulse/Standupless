@@ -186,6 +186,18 @@
     "path": "/api/workspaces/{workspace_id}/reactions"
   },
   {
+    "auth": "public",
+    "domain": "identity",
+    "method": "GET",
+    "path": "/api/email/unsubscribe"
+  },
+  {
+    "auth": "public",
+    "domain": "identity",
+    "method": "POST",
+    "path": "/api/email/unsubscribe"
+  },
+  {
     "auth": "authenticated",
     "domain": "identity",
     "method": "GET",
@@ -322,6 +334,12 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/github/webhooks"
+  },
+  {
+    "auth": "public",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/gitlab/webhooks/{workspace_id}/{connection_id}"
   },
   {
     "auth": "public",
@@ -484,6 +502,30 @@
     "domain": "integrations",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/github/repositories/{repository_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections/{connection_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/gitlab/connections/{connection_id}/rotate-secret"
   },
   {
     "auth": "workspace:admin",
@@ -849,6 +891,24 @@
     "auth": "team:admin",
     "domain": "integrations",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-intake"
+  },
+  {
+    "auth": "team:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-intake"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-intake"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}"
   },
   {
@@ -1012,6 +1072,12 @@
     "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/export"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/releases"
   },
   {
     "auth": "workspace:read",
@@ -1198,6 +1264,54 @@
     "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/customers/requests"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers/{tier_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers/{tier_id}"
   },
   {
     "auth": "workspace:read",
@@ -1455,6 +1569,42 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates/{update_id}/reactions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/customer-requests"
   },
   {
@@ -1476,19 +1626,19 @@
     "path": "/api/workspaces/{workspace_id}/project-labels"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/project-labels"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/project-labels/{label_id}"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/project-labels/{label_id}"
@@ -1500,19 +1650,19 @@
     "path": "/api/workspaces/{workspace_id}/project-statuses"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/project-statuses"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/project-statuses/{status_id}"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "workspace:read",
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/project-statuses/{status_id}"
@@ -2577,6 +2727,18 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/folds"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/folds"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/home"
   },
   {
@@ -2596,6 +2758,18 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/members/{user_id}/activity"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/teams/{team_id}/subscription"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/teams/{team_id}/subscription"
   },
   {
     "auth": "workspace:read",
@@ -2674,6 +2848,18 @@
     "domain": "workspaces",
     "method": "POST",
     "path": "/api/invites/accept"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/invites/link/join"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/invites/link/preview"
   },
   {
     "auth": "public",
@@ -2982,6 +3168,24 @@
     "path": "/api/workspaces/{workspace_id}/icon/uploads"
   },
   {
+    "auth": "invite:create",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/invite-link"
+  },
+  {
+    "auth": "invite:create",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/invite-link"
+  },
+  {
+    "auth": "invite:create",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/invite-link"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "workspaces",
     "method": "GET",
@@ -3012,6 +3216,24 @@
     "path": "/api/workspaces/{workspace_id}/members"
   },
   {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/members/bulk"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/members/me/status"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/members/me/status"
+  },
+  {
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "DELETE",
@@ -3034,6 +3256,12 @@
     "domain": "workspaces",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/members/{user_id}/suspend"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slug-availability"
   },
   {
     "auth": "workspace:admin",

@@ -10,10 +10,11 @@
  * projects of sub-initiatives.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
+  LuCalendar,
   LuCalendarCheck,
   LuChevronRight,
   LuEllipsis,
@@ -39,6 +40,9 @@ import EditableText from '../../components/planning/EditableText';
 import ProgressRing from '../../components/planning/ProgressRing';
 import ProjectHealthGlyph from '../../components/planning/ProjectHealthGlyph';
 import ProjectIcon from '../../components/planning/ProjectIcon';
+import ProjectPropertyKeys, {
+  INITIATIVE_PROPERTY_KEYS,
+} from '../../components/planning/ProjectPropertyKeys';
 import {
   CadencePicker,
   HealthPicker,
@@ -63,6 +67,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import useDocumentTemplates from '../../hooks/useDocumentTemplates';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useInitiativeUpdates } from '../../hooks/useInitiativeUpdates';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { useTeam } from '../../hooks/useTeam';
@@ -70,7 +75,9 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues } from '../../lib/capabilities';
+import { isFeatureOn } from '../../lib/features';
 import { cn } from '../../lib/cn';
+import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { descendantIds, parentCandidates } from '../../lib/initiativeTree';
 import { useOptimisticRecord } from '../../lib/optimistic';
@@ -118,6 +125,15 @@ const TABS: { value: InitiativeTab; label: string }[] = [
 /** Reads the tab from the URL, defaulting to the overview. */
 const tabFrom = (value: string | null): InitiativeTab =>
   value === 'updates' || value === 'projects' ? value : 'overview';
+
+/** The keys that focus the initiative's name for renaming, as R renames an issue. */
+const RENAME_INITIATIVE_KEYS = 'r';
+
+/** The keys that copy the initiative's address, as they copy an issue's. */
+const COPY_INITIATIVE_URL_KEYS = COPY_ISSUE_URL_KEYS;
+
+/** The keys that open the update composer, as they do on a project page. */
+const POST_INITIATIVE_UPDATE_KEYS = 'shift+u';
 
 /** The URL parameter that leaves sub-initiative projects out of the Projects tab when `0`. */
 const SUB_INITIATIVES_PARAM = 'sub_initiatives';
@@ -443,6 +459,55 @@ export const InitiativeDetail: React.FC = () => {
     [setParams]
   );
 
+  const header = useRef<HTMLDivElement>(null);
+  const propertiesRow = useRef<HTMLDivElement>(null);
+  const loaded = isMember && initiative !== null;
+  const onOverview = tab === 'overview';
+
+  useShortcut({
+    keys: RENAME_INITIATIVE_KEYS,
+    label: 'Rename initiative',
+    scope: 'page',
+    group: 'Initiative',
+    enabled: loaded && onOverview,
+    handler: (event) => {
+      const field = header.current?.querySelector<HTMLInputElement>(
+        'input[aria-label="Initiative name"]'
+      );
+      if (field === null || field === undefined) return;
+      event?.preventDefault();
+      field.focus();
+      field.select();
+    },
+  });
+  useShortcut({
+    keys: COPY_INITIATIVE_URL_KEYS,
+    label: 'Copy initiative URL',
+    scope: 'page',
+    group: 'Initiative',
+    enabled: initiative !== null,
+    handler: (event) => {
+      if (initiative === null) return;
+      event?.preventDefault();
+      copyText(
+        `${globalThis.location.origin}${initiativePath(slug, initiative)}`,
+        'Link to the initiative copied'
+      );
+    },
+  });
+  useShortcut({
+    keys: POST_INITIATIVE_UPDATE_KEYS,
+    label: 'Post initiative update',
+    scope: 'page',
+    group: 'Initiative',
+    enabled: loaded,
+    handler: (event) => {
+      event?.preventDefault();
+      setTab('updates');
+      setComposing(true);
+    },
+  });
+
   useCreateDocumentCommand({
     workspaceId,
     slug,
@@ -660,6 +725,7 @@ export const InitiativeDetail: React.FC = () => {
 
   const properties = (
     <div
+      ref={propertiesRow}
       role="group"
       aria-label="Properties"
       className="flex flex-wrap items-center gap-1.5"
@@ -714,12 +780,35 @@ export const InitiativeDetail: React.FC = () => {
       />
       <PlanningDatePicker
         variant="chip"
+        field="Start date"
+        edge="start"
+        value={initiative.start_date ?? null}
+        resolution={initiative.start_date_resolution}
+        disabled={!canEdit}
+        icon={<LuCalendar className="h-3.5 w-3.5" />}
+        {...(initiative.target_date === null
+          ? {}
+          : { max: initiative.target_date })}
+        onChange={(value, resolution) => {
+          void update({
+            start_date: value,
+            ...(isCoarse(resolution)
+              ? { start_date_resolution: resolution }
+              : {}),
+          });
+        }}
+      />
+      <PlanningDatePicker
+        variant="chip"
         field="Target date"
         edge="end"
         value={initiative.target_date}
         resolution={initiative.target_date_resolution}
         disabled={!canEdit}
         icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
+        {...(initiative.start_date == null
+          ? {}
+          : { min: initiative.start_date })}
         onChange={(value, resolution) => {
           void update({
             target_date: value,
@@ -847,7 +936,7 @@ export const InitiativeDetail: React.FC = () => {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
-              <div className="space-y-3">
+              <div ref={header} className="space-y-3">
                 <EditableText
                   label="Initiative name"
                   placeholder="Initiative name"
@@ -859,6 +948,12 @@ export const InitiativeDetail: React.FC = () => {
                   }}
                 />
                 {properties}
+                <ProjectPropertyKeys
+                  container={propertiesRow}
+                  enabled={canEdit}
+                  shortcuts={INITIATIVE_PROPERTY_KEYS}
+                  group="Initiative"
+                />
                 <EditableText
                   multiline
                   label="Description"
@@ -1110,14 +1205,16 @@ export const InitiativeDetail: React.FC = () => {
                   </ul>
                 )}
               </section>
-              <DocumentsSection
-                workspaceId={workspaceId}
-                slug={slug}
-                parentKind="initiative"
-                parentId={initiativeId}
-                canCreate={canEdit}
-                people={people}
-              />
+              {isFeatureOn(workspace, 'documents') && (
+                <DocumentsSection
+                  workspaceId={workspaceId}
+                  slug={slug}
+                  parentKind="initiative"
+                  parentId={initiativeId}
+                  canCreate={canEdit}
+                  people={people}
+                />
+              )}
             </div>
             <RollupPanel workspaceId={workspaceId} initiative={initiative} />
           </div>

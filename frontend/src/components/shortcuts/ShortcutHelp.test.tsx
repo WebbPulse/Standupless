@@ -2,8 +2,8 @@
  * The shortcut panel: that bindings sharing a heading and a label share one
  * row, that arrow keys read as arrows, that the rename and comment keys are
  * listed under Issue, that the search filters by label,
- * heading and key, that the page's own headings come first, and that `?` and
- * Escape open and close it.
+ * heading and key, that the page's own headings come first, that the status
+ * position keys share one row, and that `?` and Escape open and close it.
  */
 
 import { act, render, screen, within } from '@testing-library/react';
@@ -170,6 +170,17 @@ describe('ShortcutHelp', () => {
     expect(within(row).getByText('U')).toBeInTheDocument();
   });
 
+  it('lists the block move chords under Editor', () => {
+    renderHelp();
+    const editor = within(screen.getByRole('region', { name: 'Editor' }));
+    const up = editor.getByText('Move block up').closest('li');
+    const down = editor.getByText('Move block down').closest('li');
+    if (up === null || down === null) throw new Error('no row');
+
+    expect(within(up).getByText('\u2191')).toBeInTheDocument();
+    expect(within(down).getByText('\u2193')).toBeInTheDocument();
+  });
+
   it('focuses the search on open', () => {
     renderHelp();
 
@@ -274,5 +285,32 @@ describe('ShortcutHelp', () => {
     await user.keyboard('?');
 
     expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+  });
+
+  it('lists the Cmd or Ctrl+Alt digit status keys as one row', () => {
+    const registry = createShortcutRegistry();
+    [1, 2, 3].forEach((position) => {
+      registry.register({
+        id: `status-${String(position)}`,
+        keys: `mod+alt+${String(position)}`,
+        label: `Set status ${String(position)}`,
+        scope: 'issue',
+        group: 'Issue',
+        run: vi.fn(),
+        order: position,
+      });
+    });
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <ShortcutHelp open onClose={vi.fn()} />
+      </ShortcutRegistryContext.Provider>
+    );
+
+    const issue = screen.getByRole('region', { name: 'Issue' });
+    expect(within(issue).getAllByText('Set status 1 to 9')).toHaveLength(1);
+    expect(within(issue).queryByText('Set status 2')).toBeNull();
+    const row = within(issue).getByText('Set status 1 to 9').closest('li');
+    if (row === null) throw new Error('no row');
+    expect(within(row).getByText('1-9').tagName).toBe('KBD');
   });
 });

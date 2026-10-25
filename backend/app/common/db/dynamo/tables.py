@@ -502,6 +502,49 @@ rows so no item nears the 400 KB limit. No index reaches across users, so no rea
 can list another person's profiles.
 """
 
+REALTIME_CONNECTIONS = TableSpec(
+    suffix="realtime_connections",
+    partition_key=KeyAttribute("workspace_id"),
+    sort_key=KeyAttribute("connection_key"),
+    indexes=(
+        IndexSpec(
+            name="connection_id-index",
+            hash_key=KeyAttribute("connection_id"),
+            projection="KEYS_ONLY",
+        ),
+    ),
+    ttl_attribute="expires_at",
+)
+"""The open WebSocket connections, one partition per workspace.
+
+The sort key is `<user_id>#<connection_id>`, so the fan-out reads a workspace's
+connections in one query and a member's count is a `begins_with` on the same
+partition. `connection_id-index` resolves the row a `$disconnect` names, which
+carries a connection id and nothing else. Rows age out by `expires_at` a little
+after API Gateway's two hour connection limit, so a missed disconnect cleans itself.
+"""
+
+REALTIME_PRESENCE = TableSpec(
+    suffix="realtime_presence",
+    partition_key=KeyAttribute("ws_entity"),
+    sort_key=KeyAttribute("connection_id"),
+    indexes=(
+        IndexSpec(
+            name="connection_id-index",
+            hash_key=KeyAttribute("connection_id"),
+        ),
+    ),
+    ttl_attribute="expires_at",
+)
+"""Who has an issue or a document open, one partition per entity.
+
+The partition key is `<workspace_id>#<kind>#<entity_id>` and the sort key the
+connection id, so the members viewing one entity are one query. `connection_id-index`
+lists what one connection has open, for `$disconnect`, and projects every attribute
+so the leave fans out without a read per row. Rows age out by `expires_at` about a
+minute after the last heartbeat.
+"""
+
 RATE_LIMITS = TableSpec(
     suffix="rate-limits",
     partition_key=KeyAttribute("pk"),
@@ -533,6 +576,8 @@ TABLES: tuple[TableSpec, ...] = (
     IDEMPOTENCY,
     AUDIT,
     AGENT_PROFILES,
+    REALTIME_CONNECTIONS,
+    REALTIME_PRESENCE,
 )
 
 EXPORTED_TABLES: tuple[TableSpec, ...] = (*TABLES, RATE_LIMITS)

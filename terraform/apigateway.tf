@@ -75,6 +75,7 @@ locals {
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/slack",
       "/api/workspaces/{workspace_id}/discord",
+      "/api/workspaces/{workspace_id}/gitlab",
       "/api/workspaces/{workspace_id}/webhooks",
       "/api/workspaces/{workspace_id}/imports",
       "/api/workspaces/{workspace_id}/reviews",
@@ -170,6 +171,13 @@ locals {
     "POST /api/discord/interactions"  = { integration = "integrations", authorization_type = "NONE" }
   } : {}
 
+  # GitLab posts merge request events here with only the webhook secret it
+  # echoes in X-Gitlab-Token, so the route carries no authorizer and the
+  # receiver compares that secret against the one connection the path names.
+  gitlab_webhook_route_keys = contains(local.routed_lambda_domains, "integrations") ? {
+    "POST /api/gitlab/webhooks/{workspace_id}/{connection_id}" = { integration = "integrations", authorization_type = "NONE" }
+  } : {}
+
   # An anonymous reader following a share link has no workspace to name and no
   # membership that would let them name one: the token in the path is the whole
   # credential, and it resolves the one row it grants before anything else is
@@ -247,6 +255,11 @@ locals {
     "GET /api/auth/sso/saml/{connection_id}/metadata" = { integration = "identity", authorization_type = "NONE" }
   } : {}
 
+  email_unsubscribe_route_keys = contains(local.routed_lambda_domains, "identity") ? {
+    "GET /api/email/unsubscribe"  = { integration = "identity", authorization_type = "NONE" }
+    "POST /api/email/unsubscribe" = { integration = "identity", authorization_type = "NONE" }
+  } : {}
+
   lambda_domain_route_keys = merge(
     local.lambda_domain_generated_route_keys,
     local.identity_jwt_route_keys,
@@ -255,6 +268,7 @@ locals {
     local.github_webhook_route_keys,
     local.slack_route_keys,
     local.discord_route_keys,
+    local.gitlab_webhook_route_keys,
     local.share_link_public_route_keys,
     local.attachment_content_route_keys,
     local.cycle_calendar_route_keys,
@@ -264,6 +278,7 @@ locals {
     local.oauth_server_route_keys,
     local.sso_route_keys,
     local.mcp_route_keys,
+    local.email_unsubscribe_route_keys,
   )
 }
 

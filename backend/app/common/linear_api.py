@@ -360,6 +360,20 @@ query Initiatives($first: Int!, $after: String) {
 }
 """
 
+CUSTOMERS_QUERY = """
+query Customers($first: Int!, $after: String) {
+  customers(first: $first, after: $after) {
+    nodes {
+      id name domains revenue size createdAt
+      status { name color }
+      tier { name color }
+      owner { email }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+"""
+
 PROJECT_RELATIONS_QUERY = """
 query ProjectRelations($first: Int!, $after: String) {
   projectRelations(first: $first, after: $after) {

@@ -10,7 +10,9 @@
  * notice. The chip row also names the projects this one is blocked by and
  * the ones it blocks, and links or unlinks them in place. The chips answer
  * the keyboard too: S status, P priority, A lead, M members, H health,
- * Shift+S start date and Shift+D target date open the same pickers.
+ * Shift+S start date and Shift+D target date open the same pickers. R
+ * focuses the name to rename the project and Cmd or Ctrl+Shift+Comma copies
+ * its address, as they do for an issue in Linear.
  *
  * The updates tab is the project's running account of itself: each update is
  * a short write up and a health call, newest first. `?tab=updates` opens it,
@@ -53,12 +55,14 @@ import {
 } from '../../api/planning';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
 import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
+import { isFeatureOn } from '../../lib/features';
 import { isCoarse } from '../../lib/dateResolution';
 import EditableText from '../../components/planning/EditableText';
 import CustomerRequestsSection from '../../components/customers/CustomerRequestsSection';
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
+import ProjectOverviewEditor from '../../components/planning/ProjectOverviewEditor';
 import ProjectIssuesView, {
   PROJECT_VIEW_BASE,
 } from '../../components/planning/ProjectIssuesView';
@@ -106,6 +110,8 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
+import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
+import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import { cn } from '../../lib/cn';
@@ -119,7 +125,11 @@ import {
   writeViewState,
 } from '../../lib/issueView';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectPath, projectsPath } from '../../lib/paths';
+import {
+  projectMilestonePath,
+  projectPath,
+  projectsPath,
+} from '../../lib/paths';
 import {
   useReadableAddress,
   useRouteEntityId,
@@ -387,6 +397,38 @@ export const ProjectDetail: React.FC = () => {
       writeUpdate();
     },
   });
+  const heading = useRef<HTMLDivElement>(null);
+  useShortcut({
+    keys: RENAME_ISSUE_KEYS,
+    label: 'Rename project',
+    scope: 'page',
+    group: 'Project',
+    enabled: mayPost && tab === 'overview',
+    handler: (event) => {
+      const field = heading.current?.querySelector<HTMLInputElement>(
+        'input[aria-label="Project name"]'
+      );
+      if (field === null || field === undefined) return;
+      event?.preventDefault();
+      field.focus();
+      field.select();
+    },
+  });
+  useShortcut({
+    keys: COPY_ISSUE_URL_KEYS,
+    label: 'Copy project URL',
+    scope: 'page',
+    group: 'Project',
+    enabled: project !== null,
+    handler: (event) => {
+      if (project === null) return;
+      event?.preventDefault();
+      copyText(
+        `${globalThis.location.origin}${projectPath(slug, project)}`,
+        'Link to the project copied'
+      );
+    },
+  });
   useCreateDocumentCommand({
     workspaceId,
     slug,
@@ -614,6 +656,7 @@ export const ProjectDetail: React.FC = () => {
         variant="chip"
         value={project.status}
         statusId={project.status_id}
+        teamIds={project.team_ids}
         percent={percent}
         disabled={!canEdit}
         onChange={closePrompt.changeStatus}
@@ -656,6 +699,7 @@ export const ProjectDetail: React.FC = () => {
         variant="chip"
         value={project.label_ids ?? []}
         labels={projectLabels.labels}
+        teamIds={project.team_ids}
         disabled={!canEdit}
         onChange={(labelIds) => {
           void update({ label_ids: labelIds });
@@ -744,7 +788,7 @@ export const ProjectDetail: React.FC = () => {
           if (next.length > 0) void update({ team_ids: next });
         }}
       />
-      {workspace?.role !== 'guest' && (
+      {workspace?.role !== 'guest' && isFeatureOn(workspace, 'initiatives') && (
         <InitiativePicker
           variant="chip"
           value={project.initiative_id ?? null}
@@ -895,7 +939,7 @@ export const ProjectDetail: React.FC = () => {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
-              <div className="space-y-3">
+              <div ref={heading} className="space-y-3">
                 <ProjectLookPicker
                   icon={project.icon}
                   color={project.color}
@@ -941,23 +985,20 @@ export const ProjectDetail: React.FC = () => {
                     )}
                   </div>
                 )}
-                <EditableText
-                  multiline
-                  label="Description"
-                  placeholder={
-                    canEdit
-                      ? 'Add a description, the goal and what done looks like...'
-                      : 'No description.'
-                  }
-                  value={project.description ?? ''}
-                  disabled={!canEdit}
-                  className="text-sm leading-relaxed text-text-muted"
-                  onSave={(description) => {
-                    void update({
-                      description: description === '' ? null : description,
-                    });
-                  }}
-                />
+                <DocumentLinkContext.Provider
+                  value={{ kind: 'project', id: projectId }}
+                >
+                  <ProjectOverviewEditor
+                    workspaceId={workspaceId}
+                    project={project}
+                    canEdit={canEdit}
+                    people={people}
+                    onSaved={() => {
+                      invalidateQueries(detailKey);
+                      invalidateQueries(listKey);
+                    }}
+                  />
+                </DocumentLinkContext.Provider>
               </div>
               <MilestonesSection
                 milestones={milestones.milestones}
@@ -970,6 +1011,9 @@ export const ProjectDetail: React.FC = () => {
                 onDelete={setDeletingMilestone}
                 onConvert={setConvertingMilestone}
                 onOpenIssues={openMilestoneIssues}
+                milestoneUrl={(milestoneId) =>
+                  `${globalThis.location.origin}${projectMilestonePath(slug, project, milestoneId)}`
+                }
               />
               <ProjectResources
                 links={project.links ?? []}
@@ -995,25 +1039,28 @@ export const ProjectDetail: React.FC = () => {
                   ).catch(() => undefined)
                 }
               />
-              <DocumentsSection
-                workspaceId={workspaceId}
-                slug={slug}
-                parentKind="project"
-                parentId={projectId}
-                canCreate={canEdit}
-                people={people}
-              />
-              {workspace?.role !== 'guest' && (
-                <CustomerRequestsSection
+              {isFeatureOn(workspace, 'documents') && (
+                <DocumentsSection
                   workspaceId={workspaceId}
                   slug={slug}
-                  targetKind="project"
-                  targetId={projectId}
-                  targetLabel={project.name}
-                  canAdd={canEdit}
-                  variant="section"
+                  parentKind="project"
+                  parentId={projectId}
+                  canCreate={canEdit}
+                  people={people}
                 />
               )}
+              {workspace?.role !== 'guest' &&
+                isFeatureOn(workspace, 'customers') && (
+                  <CustomerRequestsSection
+                    workspaceId={workspaceId}
+                    slug={slug}
+                    targetKind="project"
+                    targetId={projectId}
+                    targetLabel={project.name}
+                    canAdd={canEdit}
+                    variant="section"
+                  />
+                )}
               <section aria-labelledby="project-issues-preview">
                 <div className="mb-2 flex items-center justify-between">
                   <h2

@@ -39,6 +39,7 @@ import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
   CycleSettingsRead,
   FavoriteRead,
+  MemberRead,
   ReviewsRead,
   SavedViewRead,
   TeamRead,
@@ -93,6 +94,13 @@ vi.mock('../../api/teams', () => ({
   getCycleSettings: (_w: string, teamId: string) => getCycleSettings(teamId),
 }));
 
+const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+
+vi.mock('../../api/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/workspaces')>()),
+  listMembers: () => listMembers(),
+}));
+
 vi.mock('../../api/views', () => ({
   getInboxCount: () => getInboxCount(),
   listViews: () => listViews(),
@@ -121,6 +129,33 @@ vi.mock('../../api/notifications', () => ({
 
 vi.mock('../../api/pulse', () => ({
   getPulseCount: () => getPulseCount(),
+}));
+
+const getTeamSubscription = vi.fn(() =>
+  Promise.resolve({
+    team_id: 'proj-1',
+    issue_created: false,
+    triage: false,
+    completed: false,
+    cancelled: false,
+  })
+);
+const updateTeamSubscription =
+  vi.fn<
+    (
+      workspaceId: string,
+      teamId: string,
+      body: Record<string, boolean>
+    ) => Promise<unknown>
+  >();
+
+vi.mock('../../api/teamSubscriptions', () => ({
+  getTeamSubscription: () => getTeamSubscription(),
+  updateTeamSubscription: (
+    workspaceId: string,
+    teamId: string,
+    body: Record<string, boolean>
+  ) => updateTeamSubscription(workspaceId, teamId, body),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -168,13 +203,17 @@ const design: TeamRead = {
 };
 
 /** The workspace the sidebar is rendered for, with the caller holding `role`. */
-const workspace = (role: WorkspaceRole): WorkspaceRead => ({
+const workspace = (
+  role: WorkspaceRole,
+  features?: WorkspaceRead['features']
+): WorkspaceRead => ({
   id: 'ws-1',
   name: 'Mine',
   slug: 'mine',
   plan: 'free',
   created_at: '2026-09-17T00:00:00Z',
   role,
+  ...(features === undefined ? {} : { features }),
 });
 
 /** The dialogs the workspace layout would provide around the sidebar. */
@@ -207,7 +246,8 @@ const withDialogs = (tree: ReactNode, dialogs: Dialogs): ReactNode => {
 const renderSidebar = (
   role: WorkspaceRole = 'owner',
   path = '/w/mine',
-  dialogs: Dialogs = {}
+  dialogs: Dialogs = {},
+  features?: WorkspaceRead['features']
 ) =>
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -215,19 +255,19 @@ const renderSidebar = (
         <Routes>
           <Route
             path="/w/:slug"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
           <Route
             path="/w/:slug/team/:keyPrefix"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
           <Route
             path="/w/:slug/projects"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
           <Route
             path="/w/:slug/issues/:key"
-            element={<Sidebar workspace={workspace(role)} />}
+            element={<Sidebar workspace={workspace(role, features)} />}
           />
         </Routes>,
         dialogs
@@ -258,6 +298,8 @@ const dragData = (): { dataTransfer: Partial<DataTransfer> } => ({
 });
 
 beforeEach(() => {
+  listMembers.mockReset();
+  listMembers.mockResolvedValue([]);
   listTeams.mockReset();
   getCycleSettings.mockReset();
   getCycleSettings.mockResolvedValue(cycleSettings(false));
@@ -271,6 +313,17 @@ beforeEach(() => {
   listFavorites.mockResolvedValue([]);
   getTriageSummary.mockReset();
   getTriageSummary.mockResolvedValue({ teams: [] });
+  updateTeamSubscription.mockReset();
+  updateTeamSubscription.mockImplementation((...args) =>
+    Promise.resolve({
+      team_id: args[1],
+      issue_created: false,
+      triage: false,
+      completed: false,
+      cancelled: false,
+      ...args[2],
+    })
+  );
   getReviews.mockReset();
   getReviews.mockResolvedValue({
     github_linked: true,
@@ -318,6 +371,56 @@ describe('the workspace level links', () => {
       'href',
       '/w/mine/roadmap'
     );
+  });
+});
+
+describe('the areas an admin turned off', () => {
+  it('shows Pulse, Initiatives and Customers while the workspace leaves them on', async () => {
+    renderSidebar();
+
+    expect(
+      await screen.findByRole('link', { name: 'Pulse' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Initiatives' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['pulse', 'Pulse'],
+    ['initiatives', 'Initiatives'],
+    ['customers', 'Customers'],
+  ] as const)(
+    'leaves the %s link out while that area is off',
+    async (feature, label) => {
+      renderSidebar('owner', '/w/mine', {}, { [feature]: false });
+
+      expect(
+        await screen.findByRole('link', { name: 'Projects' })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: label })).toBeNull();
+    }
+  );
+
+  it('leaves a team section without Releases while releases is off', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine', {}, { releases: false });
+
+    await user.click(await screen.findByRole('button', { name: /Engine/ }));
+
+    expect(screen.getByRole('link', { name: 'Cycles' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Releases' })).toBeNull();
+  });
+
+  it('leaves a team section without Initiatives while initiatives is off', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine', {}, { initiatives: false });
+
+    await user.click(await screen.findByRole('button', { name: /Engine/ }));
+
+    expect(screen.getByRole('link', { name: 'Cycles' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Initiatives' })).toBeNull();
   });
 });
 
@@ -372,6 +475,58 @@ describe('the sign-out affordance', () => {
     expect(await screen.findByTestId('sign-out')).toHaveAccessibleName(
       'Sign out'
     );
+  });
+});
+
+describe('the status the caller set', () => {
+  it('shows the away dot and emoji in the footer and opens the status dialog from it and from the menu', async () => {
+    auth.user['id'] = 'me-1';
+    listMembers.mockResolvedValue([
+      {
+        user_id: 'me-1',
+        email: 'me@example.com',
+        display_name: 'Me',
+        role: 'owner',
+        joined_at: '2026-09-17T00:00:00Z',
+        user_status: {
+          emoji: '🌴',
+          text: 'On vacation',
+          away: true,
+          until: null,
+          set_at: '2026-10-20T00:00:00Z',
+        },
+      },
+    ]);
+    const user = userEvent.setup();
+    try {
+      renderSidebar();
+
+      const footer = await screen.findByRole('button', {
+        name: 'Status: 🌴 On vacation',
+      });
+      expect(within(footer).getByTestId('avatar-away')).toBeInTheDocument();
+      await user.click(footer);
+      expect(
+        await screen.findByRole('dialog', { name: 'Set status' })
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Status')).toHaveValue('On vacation');
+    } finally {
+      delete auth.user['id'];
+    }
+  });
+
+  it('offers Set status in the workspace menu when none is set', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    await user.click(await screen.findByRole('button', { name: /Mine/ }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Set status' })
+    );
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Set status' })
+    ).toBeInTheDocument();
   });
 });
 
@@ -443,7 +598,10 @@ describe('the workspace menu', () => {
     const labels = screen
       .getAllByRole('menuitem')
       .map((item) => item.textContent);
-    expect(labels.slice(-2)).toEqual(['All workspaces', 'Log out']);
+    expect(labels.slice(-2)).toEqual([
+      'All workspaces',
+      expect.stringMatching(/^Log out/),
+    ]);
   });
 
   it('shows the one workspace and Create workspace when the caller has only one', async () => {
@@ -665,6 +823,37 @@ describe('the team options menu', () => {
     expect(writeText).toHaveBeenCalledWith(
       `${globalThis.location.origin}/w/mine/team/ENG`
     );
+  });
+
+  it('opens the personal team notifications and saves a switch', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    const section = await sectionOf(/Engine/);
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Notifications' })
+    );
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Engine notifications',
+    });
+    const created = await within(dialog).findByRole('checkbox', {
+      name: 'Issue created',
+    });
+    expect(created).not.toBeChecked();
+    for (const name of ['Added to triage', 'Completed', 'Cancelled']) {
+      expect(within(dialog).getByRole('checkbox', { name })).not.toBeChecked();
+    }
+
+    await user.click(created);
+    await waitFor(() => {
+      expect(updateTeamSubscription).toHaveBeenCalledWith('ws-1', 'proj-1', {
+        issue_created: true,
+      });
+    });
   });
 
   it('offers no leave, because the API has no route for it', async () => {

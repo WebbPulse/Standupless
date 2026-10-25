@@ -1,16 +1,16 @@
 /**
  * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
- * issues move through, its labels, its issue templates and the recurring issues made from them, its automatic cycles, the addresses mail files issues through, when stale open
+ * issues move through, its labels, the project labels and statuses its projects are offered beside the workspace's, its issue templates and the recurring issues made from them, its automatic cycles, the addresses mail files issues through, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
- * pipeline its releases move through, the Slack and Discord channels it
- * posts notifications to, its outbound webhooks, and a danger zone for
+ * pipeline its releases move through, the caller's own notifications for its
+ * issues, the Slack and Discord channels it posts notifications to, its outbound webhooks, and a danger zone for
  * retiring or deleting it. These are a route of
  * their own so a link to them survives being sent to someone else.
  *
- * The sections sit on one scrolling page with the settings search and a list
- * of anchors beside them rather than a page each, because they are short and a team admin setting up
+ * The sections sit on one scrolling page with a list of anchors beside them,
+ * under the settings sidebar's search, rather than a page each, because they are short and a team admin setting up
  * a new team walks through them in order.
  */
 
@@ -23,15 +23,18 @@ import CyclesSection from '../../components/team/CyclesSection';
 import EmailIntakeSection from '../../components/team/EmailIntakeSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
+import ProjectsSection from '../../components/team/ProjectsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
 import RecurringSection from '../../components/team/RecurringSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
 import SlaSection from '../../components/team/SlaSection';
+import { TeamNotificationsPanel } from '../../components/team/TeamNotifications';
 import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamParentSection from '../../components/team/TeamParentSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
+import SlackReactionIntakeSection from '../../components/team/SlackReactionIntakeSection';
 import TeamDangerZoneSection from '../../components/team/TeamDangerZoneSection';
 import RetiredTeamBanner from '../../components/team/RetiredTeamBanner';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
@@ -45,7 +48,6 @@ import TriageSection from '../../components/team/TriageSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
-import SettingsSearch from '../../components/workspace/SettingsSearch';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
@@ -60,6 +62,7 @@ import {
   isTeamAdmin,
 } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import { isFeatureOn } from '../../lib/features';
 import { teamSettingsPath } from '../../lib/paths';
 import { estimateOptionsOf } from '../../lib/validation';
 
@@ -69,6 +72,7 @@ const SECTIONS = [
   { id: 'members', label: 'Members' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
+  { id: 'projects', label: 'Projects' },
   { id: 'templates', label: 'Templates' },
   { id: 'recurring', label: 'Recurring' },
   { id: 'cycles', label: 'Cycles' },
@@ -155,8 +159,11 @@ const TeamSettings: React.FC = () => {
       : teamSettingsPath(slug ?? '', parent.key_prefix);
   const canDelete = canDeleteTeam(workspace?.role);
   const showDanger = canDelete || editable;
+  const releasesOn = isFeatureOn(workspace, 'releases');
   const sections = SECTIONS.filter(
-    (section) => section.id !== 'danger' || showDanger
+    (section) =>
+      (section.id !== 'danger' || showDanger) &&
+      (section.id !== 'releases' || releasesOn)
   );
 
   const makeRecurring = (templateId: string): void => {
@@ -207,11 +214,8 @@ const TeamSettings: React.FC = () => {
         />
       )}
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
-        <div className="w-full shrink-0 space-y-3 self-start sm:w-52 lg:sticky lg:top-0 lg:w-40">
-          {workspace !== null && (
-            <SettingsSearch workspace={workspace} teams={[team]} />
-          )}
-          <nav aria-label="Team settings sections" className="hidden lg:block">
+        <div className="hidden w-40 shrink-0 self-start lg:sticky lg:top-0 lg:block">
+          <nav aria-label="Team settings sections">
             <p className="px-2 pb-1 text-2xs font-medium text-text-faint">
               {team.name}
             </p>
@@ -282,6 +286,14 @@ const TeamSettings: React.FC = () => {
               teamId={team.id}
               slug={slug ?? ''}
               parentSettingsPath={parentSettings}
+              canEdit={editable}
+            />
+          )}
+          {frame(
+            'projects',
+            <ProjectsSection
+              workspaceId={workspaceId}
+              teamId={team.id}
               canEdit={editable}
             />
           )}
@@ -403,17 +415,25 @@ const TeamSettings: React.FC = () => {
               />
             </div>
           )}
-          {frame(
-            'releases',
-            <ReleasePipelineSection
-              workspaceId={workspaceId}
-              teamId={team.id}
-              canEdit={editable}
-            />
-          )}
+          {releasesOn &&
+            frame(
+              'releases',
+              <ReleasePipelineSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
+              />
+            )}
           {frame(
             'notifications',
-            <>
+            <div className="space-y-6">
+              <section className="space-y-3">
+                <h3 className="text-base font-semibold">Your notifications</h3>
+                <TeamNotificationsPanel
+                  workspaceId={workspaceId}
+                  teamId={team.id}
+                />
+              </section>
               <TeamChannelsSection
                 workspaceId={workspaceId}
                 teamId={team.id}
@@ -423,9 +443,17 @@ const TeamSettings: React.FC = () => {
                   ? {}
                   : { workspaceSlug: workspace.slug })}
               />
+              <SlackReactionIntakeSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
+                {...(workspace === null
+                  ? {}
+                  : { workspaceSlug: workspace.slug })}
+              />
               <SlackReturnToast />
               <DiscordReturnToast />
-            </>
+            </div>
           )}
           {frame(
             'webhooks',

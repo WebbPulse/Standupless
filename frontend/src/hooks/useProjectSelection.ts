@@ -1,9 +1,10 @@
 /**
- * Selection on the projects list and board, worked the way the issue list's
- * is: x toggles the project in focus, Shift and an arrow or j and k extends
- * the selection from it, Cmd or Ctrl and A takes every project shown, Escape
- * lets go, and a Shift click takes the run from the last project picked.
- * Selected projects that leave the page drop out of the selection.
+ * Selection on the projects list and board, the initiatives list, the
+ * customers list and the workspace members list, worked the way the issue list's is: x toggles the row in
+ * focus, Shift and an arrow or j and k extends the selection from it, Cmd or
+ * Ctrl and A takes every row shown, Escape lets go, and a Shift click takes
+ * the run from the last row picked. Selected rows that leave the page drop out
+ * of the selection.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -19,6 +20,8 @@ export interface ProjectSelectionOptions {
   onFocus: (projectId: string) => void;
   /** False while a dialog or another surface owns the keyboard. */
   enabled?: boolean;
+  /** How the x key reads in the shortcut help, `Select project` unless named. */
+  label?: string;
 }
 
 /** What {@link useProjectSelection} hands back. */
@@ -27,6 +30,8 @@ export interface ProjectSelection {
   selected: ReadonlySet<string>;
   /** Picks or drops one project, or takes the run from the anchor with `range`. */
   toggle: (projectId: string, range: boolean) => void;
+  /** Takes every row shown, as Cmd or Ctrl and A does, for a select-all checkbox. */
+  selectAll: () => void;
   clear: () => void;
 }
 
@@ -36,6 +41,7 @@ export const useProjectSelection = ({
   focusedId,
   onFocus,
   enabled = true,
+  label = 'Select project',
 }: ProjectSelectionOptions): ProjectSelection => {
   const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -70,6 +76,10 @@ export const useProjectSelection = ({
     setAnchor(null);
   }, []);
 
+  const selectAll = useCallback(() => {
+    setHeld(new Set(order));
+  }, [order]);
+
   const extend = (step: number): void => {
     if (order.length === 0) return;
     const at = focusedId === null ? -1 : order.indexOf(focusedId);
@@ -90,7 +100,7 @@ export const useProjectSelection = ({
   const live = enabled && order.length > 0;
   useShortcut({
     keys: 'x',
-    label: 'Select project',
+    label,
     group: 'List',
     enabled: live && focusedId !== null,
     handler: () => {
@@ -140,7 +150,7 @@ export const useProjectSelection = ({
     enabled: live,
     handler: (event) => {
       event?.preventDefault();
-      setHeld(new Set(order));
+      selectAll();
     },
   });
   useShortcut({
@@ -151,7 +161,7 @@ export const useProjectSelection = ({
     handler: clear,
   });
 
-  return { selected, toggle, clear };
+  return { selected, toggle, selectAll, clear };
 };
 
 export default useProjectSelection;

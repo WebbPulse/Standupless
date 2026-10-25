@@ -1,4 +1,4 @@
-"""Comment list, create and edit, shared by the comment routes and the MCP tools.
+"""Comment list, create, edit and delete, shared by the comment routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
 code, and a comment an agent adds must carry the same mentions, reply depth,
@@ -13,9 +13,11 @@ from typing import Optional
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
+from app.common import discussion_rules
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
+from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.comments import Comment, CommentAnchor, as_comment, build_comment
 from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
@@ -158,3 +160,55 @@ def edit_comment(repositories: Repositories, context: AuthzContext, comment: Com
             repositories, context, issue, comment.body, body, place="comment", comment_id=comment.comment_id
         )
     return updated
+
+
+def load_comment(repositories: Repositories, context: AuthzContext, issue_id: str, comment_id: str) -> Comment:
+    """One comment of a visible issue, or a 404.
+
+    The issue is loaded first, so a comment on an issue the caller cannot see is
+    the same 404 as one that never existed and the comment id itself leaks nothing.
+    """
+    discussion_rules.load_visible_issue(repositories, context, issue_id)
+    comment = repositories.comments.get(context.workspace_id, issue_id, comment_id)
+    if comment is None:
+        raise discussion_rules.not_found()
+    return comment
+
+
+def update_comment(
+    repositories: Repositories, context: AuthzContext, issue_id: str, comment_id: str, body: str
+) -> Comment:
+    """Rewrite one's own comment on an issue, or a 404 or 403, answering the stored comment.
+
+    The author alone, not a team admin: rewriting someone else's words is a
+    different act from removing them, and only the second has a moderation case.
+    """
+    if not body.strip():
+        raise unprocessable("body must not be empty")
+    if len(body.encode("utf-8")) > ISSUE_BODY_MAX_BYTES:
+        raise unprocessable(f"body must be at most {ISSUE_BODY_MAX_BYTES} bytes")
+    comment = load_comment(repositories, context, issue_id, comment_id)
+    if not discussion_rules.may_edit_comment(context, comment):
+        raise discussion_rules.forbidden()
+    return edit_comment(repositories, context, comment, body)
+
+
+def delete_comment(repositories: Repositories, context: AuthzContext, issue_id: str, comment_id: str) -> None:
+    """Remove one comment on an issue, reparenting its replies and dropping its reactions.
+
+    The author or an admin of the issue's current team. The replies are
+    reparented to the thread root rather than deleted with it, so removing a
+    comment never takes someone else's words with it, and the reactions go because
+    nothing but this comment's id names their partition.
+    """
+    issue = discussion_rules.load_visible_issue(repositories, context, issue_id)
+    comment = load_comment(repositories, context, issue_id, comment_id)
+    if not discussion_rules.may_delete_comment(repositories, context, comment, issue.team_id):
+        raise discussion_rules.forbidden()
+
+    for reply in repositories.comments.iter_for_issue(context.workspace_id, issue_id):
+        if reply.parent_comment_id == comment_id:
+            repositories.comments.clear_parent(context.workspace_id, issue_id, reply.comment_id)
+
+    repositories.reactions.delete_for_target(context.workspace_id, comment_id)
+    repositories.comments.delete(context.workspace_id, issue_id, comment_id)

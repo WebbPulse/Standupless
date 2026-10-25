@@ -25,13 +25,16 @@
  * The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
- * command palette.
+ * command palette. On a touch screen a list row swipes right to its status
+ * picker and left to a quick menu, and pulling the list down from its top
+ * refetches it.
  */
 
 import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -53,6 +56,8 @@ import { useBranchNaming } from '../../../hooks/useBranchNaming';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useStoredSet } from '../../../hooks/useStoredSet';
+import { useCoarsePointer } from '../../../hooks/useCoarsePointer';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
 import {
   subjectOf,
@@ -70,11 +75,13 @@ import {
   filterValuesFor,
   groupIssues,
   hiddenColumnKey,
+  splitHiddenSections,
   manualEdgeKeys,
   manualMoveKeys,
   narrowFilters,
   parentsIn,
   shownIssues,
+  showsCustomerProperties,
   type CustomerMove,
   sortIssues,
   statusGroupKey,
@@ -135,18 +142,26 @@ import {
   LuUsers,
 } from 'react-icons/lu';
 import { ErrorAlert } from '../../ui/alert';
-import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
-import EmptyState from '../../ui/empty-state';
+import EmptyState, { EmptyStateButton } from '../../ui/empty-state';
 import { SkeletonRows } from '../../ui/skeleton';
 import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
 import ConfirmRemoveCustomerRequestDialog from '../ConfirmRemoveCustomerRequestDialog';
 import BoardLayout from './BoardLayout';
 import BulkBar, { type BulkBarMenuItem } from './BulkBar';
-import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
+import {
+  createRowFocusStore,
+  IssueViewEnvContext,
+  RowFocusContext,
+  type IssueViewEnv,
+  type RowFocusStore,
+} from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
+import IssueQuickMenu from './IssueQuickMenu';
+import PullIndicator from '../../ui/PullIndicator';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
+import StatusPositionKeys from './StatusPositionKeys';
 import { usePropertyValues } from './propertyValues';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
@@ -180,6 +195,11 @@ export interface IssueListViewProps {
   estimateOptionsFor?: (teamId: string) => EstimateOptions;
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
+  /**
+   * Whether the viewer may edit one issue, for a view spanning teams where
+   * they write to some and not others. Left out, every issue follows `canEdit`.
+   */
+  canEditIssue?: ((issue: OrderedIssueRead) => boolean) | undefined;
   /** The team a group's create button files into, when the view has one team. */
   createTeamId?: string | undefined;
   /** The project new issues are filed into, when the view is one project's. */
@@ -189,10 +209,11 @@ export interface IssueListViewProps {
   /** What an empty list says. */
   emptyMessage?: string;
   /**
-   * Names the view for remembering folded groups and hidden board columns
-   * across visits. Left out, they last only while the view is open.
+   * The folded groups, swimlanes and hidden board columns, held by the page:
+   * a saved view keeps them with its display and any other list keeps them
+   * for the viewer. Left out, they last only while the view is open.
    */
-  collapseKey?: string | undefined;
+  folds?: ListFoldControl | undefined;
   /**
    * The fields a chip click may filter on. Left out, every field the view's
    * filter menu offers.
@@ -205,9 +226,24 @@ export interface IssueListViewProps {
   statusCategories?: readonly StatusCategory[] | undefined;
   /**
    * Which customers requested each issue, read by the page while the view
-   * groups by customer. Left out, customer groups hold no issue.
+   * groups by customer or shows a customer property. Left out, customer
+   * groups hold no issue and rows show no customers.
    */
   customerRequests?: CustomerRequestMap | undefined;
+}
+
+/**
+ * The folds a page holds for its list, the toggle for one of them, and a
+ * setter that folds or unfolds many at once.
+ */
+export interface ListFoldControl {
+  collapsed: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+  /**
+   * Folds or unfolds every key named in one write. Left out, each key that
+   * differs is toggled in turn, which suits a toggle that reads its latest set.
+   */
+  onSet?: ((keys: readonly string[], folded: boolean) => void) | undefined;
 }
 
 /** The palette label of each property command. */
@@ -260,6 +296,23 @@ const PropertyShortcut: React.FC<{
 };
 
 /** The view. */
+/**
+ * Hands rows the view environment and the focus store together, so focus
+ * moves reach rows through the store without changing the environment every
+ * row and cell reads.
+ */
+const IssueViewProviders: React.FC<{
+  env: IssueViewEnv;
+  focus: RowFocusStore;
+  children: React.ReactNode;
+}> = ({ env, focus, children }) => (
+  <IssueViewEnvContext.Provider value={env}>
+    <RowFocusContext.Provider value={focus}>
+      {children}
+    </RowFocusContext.Provider>
+  </IssueViewEnvContext.Provider>
+);
+
 export const IssueListView: React.FC<IssueListViewProps> = ({
   slug,
   state,
@@ -271,11 +324,12 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   estimateOptionsFor,
   teamNameFor,
   canEdit,
+  canEditIssue,
   createTeamId,
   createProjectId,
   createCycleId,
   emptyMessage = 'No issues match this view.',
-  collapseKey,
+  folds,
   filterFields,
   statusCategories,
   customerRequests,
@@ -292,7 +346,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const byCustomer =
     customerRequests !== undefined &&
     listContext.customers !== undefined &&
-    (state.groupBy === 'customer' || state.subGroupBy === 'customer');
+    (state.groupBy === 'customer' ||
+      state.subGroupBy === 'customer' ||
+      showsCustomerProperties(state.visible));
   const context = useMemo(
     () => ({
       ...listContext,
@@ -310,11 +366,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     ]
   );
 
-  const [collapsed, onToggle] = useStoredSet(
-    collapseKey === undefined
-      ? undefined
-      : `standupless.view.collapsed.${collapseKey}`
-  );
+  const [ownFolds, toggleOwnFold] = useStoredSet(undefined);
+  const collapsed = folds?.collapsed ?? ownFolds;
+  const onToggle = folds?.onToggle ?? toggleOwnFold;
+  const onFoldMany = folds?.onSet;
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set()
@@ -327,6 +382,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const [quick, setQuick] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const [withdrawing, setWithdrawing] = useState<{
     issue: OrderedIssueRead;
@@ -425,6 +485,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.subGroupBy,
   ]);
 
+  const listSections = useMemo(
+    () => splitHiddenSections(sections, collapsed).shown,
+    [sections, collapsed]
+  );
+
   const nest = state.layout === 'list' && showSubIssues;
   const { order, tree } = useMemo(() => {
     const nodes = new Map<string, TreeNode>();
@@ -443,7 +508,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         nodes.set(id, { parentId: row.parentId, childCount: row.childCount });
       }
     };
-    for (const { group, subs } of sections) {
+    for (const { group, subs } of listSections) {
       if (collapsed.has(group.key)) continue;
       if (subs === null) {
         take(group.issues);
@@ -454,7 +519,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       }
     }
     return { order: ids, tree: nodes };
-  }, [board, sections, collapsed, nest]);
+  }, [board, listSections, collapsed, nest]);
 
   const from = `${location.pathname}${location.search}`;
   const rememberOrder = useCallback(() => {
@@ -473,6 +538,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   };
 
   const focused = focusedId !== null && byId.has(focusedId) ? focusedId : null;
+  const [focusStore] = useState(() => createRowFocusStore(focused, peekedKey));
+  useLayoutEffect(() => {
+    focusStore.publish(focused, peekedKey);
+  }, [focusStore, focused, peekedKey]);
   const liveSelected = useMemo(
     () => new Set([...selected].filter((id) => byId.has(id))),
     [selected, byId]
@@ -601,7 +670,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       issues.filter(
         (issue) => (tree.get(issue.id)?.parentId ?? null) === parentId
       );
-    for (const { group, subs } of sections) {
+    for (const { group, subs } of listSections) {
       if (collapsed.has(group.key)) continue;
       if (subs === null) {
         if (group.issues.some((issue) => issue.id === id))
@@ -1194,6 +1263,25 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const closeMenu = useCallback(() => {
     setMenu(null);
   }, []);
+  const openStatus = useCallback((issue: OrderedIssueRead) => {
+    setFocusedId(issue.id);
+    setCommand({ property: 'status', ids: [issue.id] });
+  }, []);
+  const openQuickMenu = useCallback(
+    (issue: OrderedIssueRead, x: number, y: number) => {
+      setFocusedId(issue.id);
+      setQuick({ id: issue.id, x, y });
+    },
+    []
+  );
+  const coarse = useCoarsePointer();
+  const refetch = useCallback(() => {
+    invalidateQueries(queryKey);
+  }, [queryKey]);
+  const pullList = usePullToRefresh(
+    coarse && state.layout !== 'board',
+    refetch
+  );
 
   const createIn = useMemo(() => {
     if (!canEdit || !creator.canCreate) return undefined;
@@ -1312,17 +1400,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       ...(estimateOptionsFor === undefined ? {} : { estimateOptionsFor }),
       ...(teamNameFor === undefined ? {} : { teamNameFor }),
       canEdit,
+      ...(canEditIssue === undefined ? {} : { canEditIssue }),
       update,
       ...(byCustomer && workspaceId !== '' ? { moveCustomer } : {}),
       createLabel,
-      focusedId: focused,
       selected: liveSelected,
-      peekedKey,
       focus: setFocusedId,
       toggleSelected,
       selectMany,
       peek,
       openMenu,
+      openStatus,
+      openQuickMenu,
       onOpen: rememberOrder,
       filterFor,
       milestones,
@@ -1338,18 +1427,19 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       estimateOptionsFor,
       teamNameFor,
       canEdit,
+      canEditIssue,
       update,
       byCustomer,
       workspaceId,
       moveCustomer,
       createLabel,
-      focused,
       liveSelected,
-      peekedKey,
       toggleSelected,
       selectMany,
       peek,
       openMenu,
+      openStatus,
+      openQuickMenu,
       rememberOrder,
       filterFor,
       milestones,
@@ -1369,6 +1459,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [convertIssue] = converting === null ? [] : resolve([converting]);
   const [duplicateTarget] = duplicating === null ? [] : resolve([duplicating]);
   const [renameIssue] = renaming === null ? [] : resolve([renaming]);
+  const [quickIssue] = quick === null ? [] : resolve([quick.id]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const movingIssues = moving === null ? [] : resolve(moving);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
@@ -1499,35 +1590,96 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       </div>
     );
   } else if (sorted.length === 0 && state.layout === 'list') {
-    const firstIssue =
+    const filtered =
+      state.filters.length > 0 ||
+      state.groups.length > 0 ||
+      state.q.trim() !== '';
+    const hiddenDone =
+      state.completed === 'all'
+        ? 0
+        : shownIssues(
+            collection.issues,
+            { showSubIssues, completed: 'all' },
+            context
+          ).length;
+    const mayCreate =
+      !filtered &&
+      collection.issues.length === 0 &&
       createTeamId !== undefined &&
-      createProjectId === undefined &&
-      createCycleId === undefined &&
       canEdit &&
-      creator.canCreate &&
-      state.filters.length === 0 &&
-      state.q.trim() === '';
-    body = firstIssue ? (
+      creator.canCreate;
+    const firstIssue =
+      mayCreate && createProjectId === undefined && createCycleId === undefined;
+    const showDone =
+      hiddenDone > 0 ? (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-text-faint">
+            {hiddenDone === 1
+              ? '1 completed issue is hidden by the display options.'
+              : `${String(hiddenDone)} completed issues are hidden by the display options.`}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onStateChange({ ...state, completed: 'all' });
+            }}
+          >
+            Show completed issues
+          </Button>
+        </div>
+      ) : null;
+    const primary = filtered ? (
+      <EmptyStateButton
+        label="Clear filters"
+        variant="secondary"
+        onClick={() => {
+          onStateChange({
+            ...state,
+            filters: [],
+            match: 'all',
+            groups: [],
+            q: '',
+          });
+        }}
+      />
+    ) : mayCreate ? (
+      <EmptyStateButton
+        label="Create issue"
+        keys="c"
+        onClick={() => {
+          creator.open({
+            teamId: createTeamId,
+            ...(createProjectId === undefined
+              ? {}
+              : { projectId: createProjectId }),
+            ...(createCycleId === undefined ? {} : { cycleId: createCycleId }),
+            onCreated: () => {
+              invalidateQueries(queryKey);
+            },
+          });
+        }}
+      />
+    ) : null;
+    body = (
       <EmptyState
-        message="No issues in this team yet. Create the first one to get started."
+        message={
+          filtered
+            ? 'No results'
+            : firstIssue
+              ? 'No issues in this team yet. Create the first one to get started.'
+              : emptyMessage
+        }
         className="m-6"
         action={
-          <div className="flex flex-col items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => creator.open({ teamId: createTeamId })}
-            >
-              Create issue
-            </Button>
-            <span className="text-xs text-text-faint">
-              or press <Kbd>C</Kbd>
-            </span>
-          </div>
+          showDone === null && primary === null ? undefined : (
+            <div className="flex flex-col items-center gap-4">
+              {showDone}
+              {primary}
+            </div>
+          )
         }
       />
-    ) : (
-      <EmptyState message={emptyMessage} className="m-6" />
     );
   } else if (state.layout === 'board') {
     body = (
@@ -1542,13 +1694,19 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     );
   } else {
     body = (
-      <div className="min-h-0 flex-1 overflow-y-auto pb-20">
+      <div
+        ref={pullList.ref}
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-20"
+      >
+        <PullIndicator pull={pullList.pull} refreshing={pullList.refreshing} />
         <ListRows
           sections={sections}
           collapsed={collapsed}
           onToggle={onToggle}
+          onFoldMany={onFoldMany}
           nest={nest}
           createIn={createIn}
+          onStateChange={onStateChange}
         />
         {collection.truncated && (
           <p className="px-4 py-3 text-xs text-text-muted lg:px-6">
@@ -1561,7 +1719,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   }
 
   return (
-    <IssueViewEnvContext.Provider value={env}>
+    <IssueViewProviders env={env} focus={focusStore}>
+      <StatusPositionKeys
+        issues={targets}
+        enabled={canCommand}
+        statusesFor={(teamId) =>
+          forTeam(teamId).statuses.filter(
+            (status) =>
+              status.team_id === undefined || status.team_id === teamId
+          )
+        }
+        write={update}
+      />
       {RELATION_COMMANDS.map((relation) => (
         <PropertyShortcut
           key={relation.type}
@@ -1719,6 +1888,27 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }
         />
       )}
+      {quick !== null && quickIssue !== undefined && (
+        <IssueQuickMenu
+          x={quick.x}
+          y={quick.y}
+          issue={quickIssue}
+          workspaceId={workspaceId}
+          meId={me?.user_id}
+          canEdit={
+            canEdit && (canEditIssue === undefined || canEditIssue(quickIssue))
+          }
+          onAssignToMe={() => {
+            assignToMe([quickIssue], true);
+          }}
+          onPriority={() => {
+            openCommand('priority', [quickIssue]);
+          }}
+          onClose={() => {
+            setQuick(null);
+          }}
+        />
+      )}
       {menu !== null && menuIssues.length > 0 && (
         <IssueRowMenu
           x={menu.x}
@@ -1872,7 +2062,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           setAnchor(null);
         }}
       />
-    </IssueViewEnvContext.Provider>
+    </IssueViewProviders>
   );
 };
 

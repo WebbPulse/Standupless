@@ -22,6 +22,7 @@ from app.common.customer_index import CUSTOMER_SORTS, REVENUE_SORT, CustomerInde
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.planning import Cycle
 from app.common.issue_filters import MY_TEAMS, FilterValues, IssueFilter
+from app.common.team_time import teams_today
 
 if TYPE_CHECKING:
     from app.common.api.dependencies.repositories import Repositories
@@ -55,8 +56,8 @@ def unknown_cycle(value: str) -> HTTPException:
     )
 
 
-def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], today: date) -> FilterValues:
-    """One cycle set with relative values expanded per team and every id checked."""
+def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], days: Mapping[str, date]) -> FilterValues:
+    """One cycle set with relative values expanded per team, each on its own today, and every id checked."""
     known = {cycle.cycle_id for cycles in by_team.values() for cycle in cycles}
     resolved: set[Optional[str]] = set()
     for value in values:
@@ -65,8 +66,8 @@ def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], today
         elif value in RELATIVE_CYCLES:
             hits = {
                 cycle.cycle_id
-                for cycles in by_team.values()
-                if (cycle := relative_cycle(cycles, value, today)) is not None
+                for team, cycles in by_team.items()
+                if (cycle := relative_cycle(cycles, value, days[team])) is not None
             }
             resolved.update(hits or {NO_CYCLE_MATCH})
         elif value in known:
@@ -103,11 +104,19 @@ def resolve_issue_filter(
     today: Optional[date] = None,
     sort: Optional[str] = None,
 ) -> IssueFilter:
-    """The filter with relative cycles and `my_teams` named and the link, subscription and customer indexes attached.
+    """The filter with relative cycles and `my_teams` named and every index it needs attached.
+
+    The link, subscription, customer and release indexes are each read only when
+    the filter or its groups ask for them.
 
     The customer index is read when the filter names a customer or `sort` orders
     by customer requests, so a list sorting that way finds the counts on the
-    filter it already carries.
+    filter it already carries. A condition on a customer's status, tier, revenue
+    or size reads the customers in that same query, so any number of customer
+    conditions, groups included, costs one planning query.
+
+    A relative cycle is read on each team's own today, in its timezone, unless
+    `today` pins one day for every team.
 
     A cycle value that is neither `none`, a relative cycle nor a cycle of one of
     `teams` is refused with a 400 naming it, rather than quietly matching nothing.
@@ -118,15 +127,27 @@ def resolve_issue_filter(
     people = wanted.subscribers
     needs_customers = wanted.needs_customers or sort in CUSTOMER_SORTS
     needs_memberships = wanted.needs_memberships
-    if not (wanted.needs_cycles or wanted.needs_relations or people or needs_customers or needs_memberships):
+    needs_releases = wanted.needs_releases
+    if not (
+        wanted.needs_cycles
+        or wanted.needs_relations
+        or people
+        or needs_customers
+        or needs_memberships
+        or needs_releases
+    ):
         return wanted
     mine = viewer_team_ids(repositories, workspace_id, wanted.viewer_id) if needs_memberships else None
     by_team: Optional[dict[str, list[Cycle]]] = None
+    days: dict[str, date] = {}
     if wanted.needs_cycles:
         by_team = {}
         for team in dict.fromkeys(teams):
             rows, _ = repositories.planning.list_cycles(workspace_id, team, limit=TEAM_CYCLE_LIMIT)
             by_team[team] = rows
+        days = (
+            {team: today for team in by_team} if today is not None else teams_today(repositories, workspace_id, by_team)
+        )
     relation_ids = repositories.relations.issue_ids_by_type(workspace_id) if wanted.needs_relations else None
     subscribed: Optional[dict[str, frozenset[str]]] = None
     if people:
@@ -138,24 +159,31 @@ def resolve_issue_filter(
         }
     customers: Optional[CustomerIndex] = None
     if needs_customers:
-        customers = load_customer_index(repositories, workspace_id, with_revenue=sort == REVENUE_SORT)
-    return _attach(wanted, by_team, today or date.today(), relation_ids, subscribed, customers, mine)
+        customers = load_customer_index(
+            repositories,
+            workspace_id,
+            with_revenue=sort == REVENUE_SORT,
+            with_profiles=wanted.needs_customer_profiles,
+        )
+    releases = repositories.releases.release_ids_by_issue(workspace_id) if needs_releases else None
+    return _attach(wanted, by_team, days, relation_ids, subscribed, customers, mine, releases)
 
 
 def _attach(
     wanted: IssueFilter,
     by_team: Optional[dict[str, list[Cycle]]],
-    day: date,
+    days: Mapping[str, date],
     relation_ids: Optional[Mapping[str, frozenset[str]]],
     subscribed: Optional[Mapping[str, frozenset[str]]],
     customers: Optional[CustomerIndex] = None,
     mine: Optional[frozenset[str]] = None,
+    releases: Optional[Mapping[str, frozenset[str]]] = None,
 ) -> IssueFilter:
     """One filter and each of its groups with the reads `resolve_issue_filter` took applied."""
     cycle_ids, cycle_ids_not = wanted.cycle_ids, wanted.cycle_ids_not
     if by_team is not None:
-        cycle_ids = _resolve_cycles(cycle_ids, by_team, day)
-        cycle_ids_not = _resolve_cycles(cycle_ids_not, by_team, day)
+        cycle_ids = _resolve_cycles(cycle_ids, by_team, days)
+        cycle_ids_not = _resolve_cycles(cycle_ids_not, by_team, days)
     team_ids, team_ids_not = wanted.team_ids, wanted.team_ids_not
     if mine is not None:
         team_ids = _resolve_teams(team_ids, mine, keep=True)
@@ -169,7 +197,9 @@ def _attach(
         relation_ids=relation_ids if relation_ids is not None else wanted.relation_ids,
         subscribed_issue_ids=subscribed if subscribed is not None else wanted.subscribed_issue_ids,
         customer_index=customers if customers is not None else wanted.customer_index,
+        release_index=releases if releases is not None else wanted.release_index,
         groups=tuple(
-            _attach(group, by_team, day, relation_ids, subscribed, customers, mine) for group in wanted.groups
+            _attach(group, by_team, days, relation_ids, subscribed, customers, mine, releases)
+            for group in wanted.groups
         ),
     )

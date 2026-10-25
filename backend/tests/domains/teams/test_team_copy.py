@@ -121,7 +121,12 @@ def _configure(client: TestClient) -> dict[str, str]:
         201,
     )["id"]
     cancelled = next(row["id"] for row in _statuses(client, SOURCE) if row["category"] == "cancelled")
-    _ok(client.patch(f"{BASE}/teams/{SOURCE}/template-settings", json={"default_template_id": template}))
+    _ok(
+        client.patch(
+            f"{BASE}/teams/{SOURCE}/template-settings",
+            json={"default_template_id": template, "non_member_default_template_id": template},
+        )
+    )
     _ok(client.patch(f"{BASE}/teams/{SOURCE}", json=ESTIMATES))
     _ok(client.patch(f"{BASE}/teams/{SOURCE}/cycle-settings", json=CYCLES))
     _ok(client.patch(f"{BASE}/teams/{SOURCE}/archive-settings", json={"period_months": 3}))
@@ -196,6 +201,8 @@ def test_templates_and_their_sub_issues_point_at_the_copies(client: TestClient) 
     assert sub_issue["status_id"] == statuses["Review"]["id"]
     assert sub_issue["label_ids"] == [labels["Backend"]["id"]]
     assert listed["default_template_id"] == template["id"]
+    settings = _ok(client.get(f"{BASE}/teams/{team_id}/template-settings"))
+    assert settings["non_member_default_template_id"] == template["id"]
 
 
 def test_estimates_and_every_settings_page_are_copied(client: TestClient) -> None:

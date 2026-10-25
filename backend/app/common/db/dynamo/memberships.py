@@ -42,12 +42,21 @@ membership it stands for. None of these rows carries a `user_id`, so the user
 index never meets them, and none starts with `user#` or `team#`, so no member or
 team membership read does either.
 
+`invite_link` holds the workspace's one reusable invite link, as the SHA-256 hash of
+its token and never the token. It sets `user_id = invite_link#<hash>`, so the user
+index doubles as the token index the way it does for approved domains: "which
+workspace does this link join" is one query that answers at most one row. Resetting
+the link rewrites the row with a new hash, which moves its index entry, and
+disabling it deletes the row, so an old token stops matching either way.
+
 `app_approval#<client_id>` records whether the workspace lets its members authorize
 one third-party OAuth app, read by the identity function's consent gate under the
 grant it already holds here. It carries no `user_id`, so the user index never meets it.
 
 The workspace membership also carries the person's own sidebar team order,
-because it is the one row that is already per person and per workspace.
+because it is the one row that is already per person and per workspace. For the
+same reason it carries `last_active_at`, stamped by authorization at most once per
+`ACTIVITY_INTERVAL`, so admins can see which seats are in use.
 
 `user_id-workspace_id-index` answers "my workspaces" without a scan, which is what
 replaced the workspaces table's `owner_user_id-index`.
@@ -55,6 +64,7 @@ replaced the workspaces table's `owner_user_id-index`.
 
 from __future__ import annotations
 
+import hmac
 from datetime import datetime, timedelta
 from typing import Any, Literal, Mapping
 
@@ -74,6 +84,14 @@ TeamRole = Literal["admin", "member"]
 WORKSPACE_ROLES: tuple[str, ...] = ("owner", "admin", "member", "guest")
 
 TEAM_ROLES: tuple[str, ...] = ("admin", "member")
+
+ACTIVITY_INTERVAL = timedelta(minutes=15)
+"""How stale `last_active_at` must be before a request stamps it again.
+
+Coarse on purpose: the members page answers "is this seat in use", which a
+quarter hour of precision serves, and it keeps the stamp to at most one write per
+member per interval however busy they are.
+"""
 
 
 def workspace_member_key(user_id: str) -> str:
@@ -110,6 +128,25 @@ class ApprovedDomain(BaseModel):
     domain: str
     added_by: str
     added_at: datetime = Field(default_factory=utc_now)
+
+
+INVITE_LINK_KEY = "invite_link"
+
+INVITE_LINK_INDEX_PREFIX = "invite_link#"
+
+
+def invite_link_index_key(token_hash: str) -> str:
+    """The user index key of the invite link whose token hashes to `token_hash`."""
+    return f"{INVITE_LINK_INDEX_PREFIX}{token_hash}"
+
+
+class InviteLink(BaseModel):
+    """A workspace's reusable invite link: the hash of its token, who minted it and when."""
+
+    workspace_id: str
+    token_hash: str
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 SignInMethod = Literal["password", "google", "github", "passkey"]
@@ -375,8 +412,25 @@ class AppApproval(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class StoredUserStatus(BaseModel):
+    """A member's away status as the workspace membership row stores it.
+
+    Read through `app.common.member_status.current_status`, which ignores one whose
+    `until` has passed, so nothing has to sweep it.
+    """
+
+    emoji: str = ""
+    text: str = ""
+    away: bool = False
+    until: datetime | None = None
+    set_at: datetime = Field(default_factory=utc_now)
+
+
 class Membership(BaseModel):
-    """One person's membership of a workspace, or of a team inside it."""
+    """One person's membership of a workspace, or of a team inside it.
+
+    `user_status` is set only on the workspace row, by the member themselves.
+    """
 
     workspace_id: str
     member_key: str
@@ -387,6 +441,8 @@ class Membership(BaseModel):
     team_order: list[str] = Field(default_factory=list)
     suspended_at: datetime | None = None
     suspended_by: str | None = None
+    user_status: StoredUserStatus | None = None
+    last_active_at: datetime | None = None
 
     @property
     def is_team_membership(self) -> bool:
@@ -560,6 +616,76 @@ class MembershipRepository:
         except ConditionFailed:
             return None
         return _as_membership(item) if item is not None else None
+
+    def set_user_status(self, workspace_id: str, user_id: str, value: StoredUserStatus | None) -> Membership | None:
+        """Set or clear a workspace member's own status, or `None` when there is no such member.
+
+        Conditional on the row existing, so setting a status cannot create a
+        membership.
+        """
+        key = {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)}
+        if value is None:
+            update_expression = "REMOVE #status"
+            expression_values: dict[str, Any] | None = None
+        else:
+            update_expression = "SET #status = :status"
+            expression_values = {":status": value.model_dump(mode="json")}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression=update_expression,
+                expression_names={"#status": "user_status"},
+                expression_values=expression_values,
+                condition=Attr("member_key").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return _as_membership(item) if item is not None else None
+
+    def get_many(self, workspace_id: str, user_ids: list[str]) -> dict[str, Membership]:
+        """The named people's workspace memberships keyed by user id, skipping non-members.
+
+        One `BatchGetItem`, for surfaces that hold team rows or users and need the
+        workspace row's status alongside.
+        """
+        wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
+        if not workspace_id or not wanted:
+            return {}
+        items = self._repository.batch_get(
+            [{"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)} for user_id in wanted]
+        )
+        rows = (_as_membership(item) for item in items)
+        return {row.user_id: row for row in rows}
+
+    def touch_last_active(self, workspace_id: str, user_id: str, *, now: datetime | None = None) -> bool:
+        """Stamp a workspace member's `last_active_at`, unless it is already within `ACTIVITY_INTERVAL`.
+
+        One conditional update with no read first: the condition carries the
+        throttle, so concurrent requests write at most once per interval, and it
+        requires the row to exist, so a stamp can never create a membership.
+        Answers whether a write landed.
+        """
+        if not workspace_id or not user_id:
+            return False
+        moment = now or utc_now()
+        cutoff = (moment - ACTIVITY_INTERVAL).isoformat()
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "member_key": workspace_member_key(user_id)},
+                update_expression="SET #at = :at",
+                expression_names={"#at": "last_active_at"},
+                expression_values={":at": moment.isoformat()},
+                condition=Attr("member_key").exists()
+                & (
+                    Attr("last_active_at").not_exists()
+                    | Attr("last_active_at").attribute_type("NULL")
+                    | Attr("last_active_at").lt(cutoff)
+                ),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def set_team_role(self, workspace_id: str, team_id: str, user_id: str, role: str) -> Membership:
         """Grant or change a team role, creating the row when it is absent."""
@@ -834,6 +960,47 @@ class MembershipRepository:
         if not workspace_id or not domain:
             return
         self._repository.delete({"workspace_id": workspace_id, "member_key": approved_domain_key(domain)})
+
+    def get_invite_link(self, workspace_id: str) -> InviteLink | None:
+        """The workspace's invite link read strongly consistently, or `None` while it is disabled."""
+        if not workspace_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": INVITE_LINK_KEY}, consistent=True)
+        return None if item is None else _as_invite_link(item)
+
+    def put_invite_link(self, workspace_id: str, token_hash: str, *, created_by: str) -> InviteLink:
+        """Store the workspace's invite link under a new token hash, replacing any earlier one."""
+        row = InviteLink(workspace_id=workspace_id, token_hash=token_hash, created_by=created_by)
+        self._repository.put(
+            as_item(row, member_key=INVITE_LINK_KEY, user_id=invite_link_index_key(token_hash)),
+        )
+        return row
+
+    def delete_invite_link(self, workspace_id: str) -> None:
+        """Disable the workspace's invite link. Idempotent."""
+        if not workspace_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": INVITE_LINK_KEY})
+
+    def find_invite_link(self, token_hash: str) -> InviteLink | None:
+        """The live invite link whose token hashes to `token_hash`, or `None`.
+
+        The user index names the workspace, and the row is then read again
+        strongly consistently and its hash compared in constant time, because an
+        index entry can trail a reset or a disable for a moment and the old token
+        must stop working at once.
+        """
+        if not token_hash:
+            return None
+        page = self._repository.query(
+            Key("user_id").eq(invite_link_index_key(token_hash)), index_name=USER_INDEX, limit=1
+        )
+        if not page.items:
+            return None
+        row = self.get_invite_link(str(page.items[0].get("workspace_id", "")))
+        if row is None or not hmac.compare_digest(row.token_hash, token_hash):
+            return None
+        return row
 
     def workspaces_approving_domain(self, domain: str, *, limit: int = 200) -> list[str]:
         """The ids of every workspace approving this email domain, through the user index.
@@ -1302,6 +1469,12 @@ class MembershipRepository:
         )
         rows = [AppApproval.model_validate(dict(item)) for item in items]
         return sorted(rows, key=lambda row: row.updated_at, reverse=True)
+
+
+def _as_invite_link(item: Mapping[str, Any]) -> InviteLink:
+    """One stored item as an `InviteLink`, ignoring the key and index attributes."""
+    fields = {key: value for key, value in item.items() if key not in ("member_key", "user_id")}
+    return InviteLink.model_validate(fields)
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:

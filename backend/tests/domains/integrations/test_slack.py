@@ -404,6 +404,35 @@ def test_a_pasted_issue_link_is_unfurled_unless_its_team_is_private(
     assert "ABC-1" in card and "An issue" in card
 
 
+def test_a_link_with_a_retired_workspace_slug_still_unfurls(
+    slack_client: TestClient,
+    installed: SlackInstallation,
+    repositories: Any,
+    issue: Any,
+    slack: FakeSlack,
+) -> None:
+    """A link shared before the workspace changed its slug keeps unfurling, and so does one with the new slug."""
+    before = Links(repositories, WORKSPACE).issue("ABC-1")
+    repositories.workspaces.change_slug(WORKSPACE, "acme-renamed")
+    after = Links(repositories, WORKSPACE).issue("ABC-1")
+    assert before != after
+    envelope = {
+        "type": "event_callback",
+        "team_id": SLACK_TEAM,
+        "event_id": "Ev05",
+        "event": {
+            "type": "link_shared",
+            "channel": "C0ENG",
+            "message_ts": "1.3",
+            "unfurl_id": "U-2",
+            "source": "conversations_history",
+            "links": [{"url": before}, {"url": after}],
+        },
+    }
+    assert _event(slack_client, envelope).status_code == 200
+    assert sorted(slack.last("chat.unfurl")["unfurls"]) == sorted([before, after])
+
+
 def test_the_command_shows_help_and_an_issue_the_person_can_see(
     slack_client: TestClient, installed: SlackInstallation, issue: Any, hidden_issue: Any
 ) -> None:

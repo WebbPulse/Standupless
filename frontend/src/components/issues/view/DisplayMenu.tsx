@@ -19,9 +19,11 @@ import {
 import type { IssueListSort } from '../../../api/issues';
 import type { ViewGroupHeader } from '../../../api/views';
 import { cn } from '../../../lib/cn';
+import { FOCUS_FIELD } from '../../../lib/focusGrouping';
 import {
   COMPLETED_WINDOWS,
   COMPLETED_WINDOW_LABELS,
+  CUSTOMER_PROPERTIES,
   DISPLAY_PROPERTIES,
   GROUP_FIELDS,
   GROUP_HEADERS,
@@ -63,7 +65,8 @@ export interface DisplayMenuProps {
   teamDefault?: TeamDefaultActions | undefined;
   /**
    * True where the list is sorted on the server and the reader may see
-   * customers, so the customer request and revenue orderings are offered.
+   * customers, so the customer request and revenue orderings and the
+   * customers and customer revenue properties are offered.
    */
   customerSorts?: boolean;
   /**
@@ -183,6 +186,12 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
     onChange({ ...state, ...patch });
   };
   const groupFields = withCurrent(offered, [state.groupBy, state.subGroupBy]);
+  const shownProperties = DISPLAY_PROPERTIES.filter(
+    (property) =>
+      customerSorts ||
+      !CUSTOMER_PROPERTIES.includes(property) ||
+      state.visible.includes(property)
+  );
   const layouts = [
     { value: 'list', label: 'List', icon: <LuList className="h-4 w-4" /> },
     { value: 'board', label: 'Board', icon: <LuKanban className="h-4 w-4" /> },
@@ -270,7 +279,11 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             }}
           >
             {groupFields
-              .filter((field) => field === 'none' || field !== state.groupBy)
+              .filter(
+                (field) =>
+                  field === 'none' ||
+                  (field !== state.groupBy && field !== FOCUS_FIELD)
+              )
               .map((field) => (
                 <option key={field} value={field}>
                   {groupFieldLabel(field, context)}
@@ -406,7 +419,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>
         <div className="flex flex-wrap gap-1.5">
-          {DISPLAY_PROPERTIES.map((property) => {
+          {shownProperties.map((property) => {
             const on = state.visible.includes(property);
             return (
               <button

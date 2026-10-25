@@ -26,7 +26,9 @@
  * tokens, and a link may point at an attachment's content path as well as the
  * web. A YouTube, Loom, Vimeo or Descript link alone in its paragraph reads as
  * that provider's player and writes back as the bare link. A date chip reads
- * and writes as its ISO day in angle brackets, such as `<2026-10-01>`.
+ * and writes as its ISO day in angle brackets, such as `<2026-10-01>`. An
+ * equation reads and writes as `$...$` inside a line and a `$$` fence on lines
+ * of its own, and plain text that would read as one has its `$` escaped.
  */
 
 import type { AnyExtension, JSONContent } from '@tiptap/core';
@@ -44,6 +46,8 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
+import { escapeInlineMath } from '../../lib/math';
+import { BlockHandle } from './blockHandle';
 import { Callout } from './Callout';
 import { HighlightedCodeBlock } from './codeBlock';
 import { CollapsibleSectionKit } from './CollapsibleSection';
@@ -57,6 +61,7 @@ import {
 import { DocumentLinkSuggestion } from './DocumentLinkSuggestion';
 import { EmojiSuggestion } from './EmojiSuggestion';
 import { EmoticonConversion } from './emoticons';
+import { BlockMath, InlineMath, inlineMathTokenizer } from './mathNodes';
 import { MediaImage, MediaUpload } from './mediaNodes';
 import { SpreadsheetPaste } from './tablePaste';
 import { TableShortcut } from './tableShortcut';
@@ -94,8 +99,8 @@ const ISSUE_KEY = /(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])/g;
 /**
  * A marked instance of our own, so registering Tiptap's tokenizers never
  * touches the global one, with raw HTML switched off, single newlines read
- * as breaks, a bare video link alone in its paragraph read as an embed and
- * `<2026-10-01>` read as a date chip.
+ * as breaks, a bare video link alone in its paragraph read as an embed,
+ * `<2026-10-01>` read as a date chip and `$x^2$` read as an equation.
  */
 const createMarked = (): Marked => {
   const instance = new Marked({ gfm: true, breaks: true });
@@ -105,7 +110,7 @@ const createMarked = (): Marked => {
       html: refuse,
       tag: refuse,
     },
-    extensions: [videoEmbedTokenizer, dateChipTokenizer],
+    extensions: [videoEmbedTokenizer, dateChipTokenizer, inlineMathTokenizer],
   });
   return instance;
 };
@@ -126,6 +131,7 @@ interface Encoder {
 /**
  * Makes the manager write a text run verbatim whenever marked would read it
  * back as the same plain text, and fall back to its own escaping otherwise.
+ * Outside code, a `$` that would open an equation is escaped.
  */
 const preferVerbatimText = (
   manager: MarkdownManager,
@@ -134,7 +140,10 @@ const preferVerbatimText = (
   const encoder = manager as unknown as Encoder;
   const escape = encoder.encodeTextForMarkdown.bind(manager);
   encoder.encodeTextForMarkdown = (text, node, parent) => {
-    const escaped = escape(text, node, parent);
+    const inCode = escape('\\', node, parent) === '\\';
+    const escaped = inCode
+      ? escape(text, node, parent)
+      : escapeInlineMath(escape(text, node, parent));
     if (escaped === text || text.includes('\\')) return escaped;
     const tokens = new instance.Lexer(instance.defaults).inlineTokens(text);
     const verbatim =
@@ -321,6 +330,7 @@ export const markdownExtensions = (
       codeBlock: false,
       orderedList: false,
       heading: { levels: [1, 2, 3, 4, 5, 6] },
+      dropcursor: { color: false, width: 2, class: 'rich-drop-cursor' },
     }),
     CollapsingParagraph,
     NewlineBreak,
@@ -344,9 +354,12 @@ export const markdownExtensions = (
     VideoEmbed,
     VideoEmbedPaste,
     DateChip,
+    InlineMath,
+    BlockMath,
     CollapsibleSectionKit,
     Callout,
     EditorShortcuts,
+    BlockHandle,
     MentionChips,
     EmojiSuggestion,
     EmoticonConversion,

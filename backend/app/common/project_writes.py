@@ -25,6 +25,7 @@ from app.common.api.schemas.planning import (
     ProjectSortField,
     ProjectUpdate,
 )
+from app.common.body_versions import body_changed, body_condition, is_stale
 from app.common.customer_index import (
     CUSTOMER_SORTS,
     IMPORTANT_SORT,
@@ -38,6 +39,7 @@ from app.common.date_resolution import DateEdge, settle_date_fields, stored_reso
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
+from app.common.db.dynamo.workspaces import WorkspaceFeature
 from app.common.initiative_writes import require_initiative_access, require_initiative_target
 from app.common.issue_rules import COMPLETED_CATEGORIES, require_team_member
 from app.common.issue_writes import apply_patch, store_patch
@@ -56,6 +58,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_filters import ProjectPropertyFilter
 from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
 from app.common.project_link_writes import with_links
 from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
@@ -68,6 +71,7 @@ from app.common.project_statuses import (
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
+from app.common.workspace_features import refuse_if_disabled
 
 NOT_NULLABLE = (
     "name",
@@ -158,6 +162,7 @@ def list_projects(
     sort: Optional[str] = None,
     label_id: Optional[list[str]] = None,
     include_archived: bool = False,
+    properties: Optional[ProjectPropertyFilter] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -182,8 +187,10 @@ def list_projects(
     the named project labels, `none` standing for a project with no label.
     Archived projects are left out unless `include_archived` is set, as Linear
     hides them from its lists, though they still count as blockers.
-    `status_filter` names a workspace project status, or a category to keep
-    every status in it, the legacy `done` included.
+    `status_filter` names a project status, a team's included, or a category to keep
+    every status in it, the legacy `done` included. `properties` holds the
+    health, priority, member, date and update age filters, update age measured
+    back from now.
     """
     statuses = workspace_project_statuses(repositories, context.workspace_id) if status_filter is not None else []
     wanted_status = None if status_filter is None else status_filter_match(statuses, status_filter)
@@ -204,6 +211,8 @@ def list_projects(
     if filtered or sort in CUSTOMER_SORTS:
         index = load_customer_index(repositories, context.workspace_id, with_revenue=sort == REVENUE_SORT)
 
+    wanted_properties = properties if properties is not None and properties.active else None
+    now = utc_now()
     visible = set(visible_team_ids(repositories, context))
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     bodies: list[ProjectRead] = []
@@ -225,6 +234,8 @@ def list_projects(
         if initiative_id is not None and row.initiative_id != initiative_id:
             continue
         if not label_match(wanted_labels, row.label_ids):
+            continue
+        if wanted_properties is not None and not wanted_properties.matches(row, now):
             continue
         if index is not None and not customer_match(
             wanted_customers,
@@ -263,6 +274,8 @@ def list_projects(
     )
     if wanted_labels:
         scope = f"{scope}:labels={label_scope(wanted_labels)}"
+    if wanted_properties is not None:
+        scope = f"{scope}:{wanted_properties.scope()}"
     if include_archived:
         scope = f"{scope}:archived"
     if is_blocked is not None or is_blocking is not None:
@@ -322,14 +335,16 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     for member_id in payload.member_ids:
         require_workspace_member(repositories, context, member_id)
     if payload.initiative_id is not None:
+        refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
         require_initiative_target(repositories, context, payload.initiative_id)
-    require_project_labels(repositories, context.workspace_id, payload.label_ids)
+    require_project_labels(repositories, context.workspace_id, payload.label_ids, teams)
     explicit = "status" in payload.model_fields_set or payload.status_id is None
     chosen = choose_project_status(
         repositories,
         context.workspace_id,
         status_value=payload.status if explicit else None,
         status_id=payload.status_id,
+        team_ids=teams,
     )
     category, status_id = chosen if chosen is not None else (payload.status, payload.status)
 
@@ -477,12 +492,23 @@ def update_project(
     issues still open in it, read from the issues rather than the counters the
     consumer has yet to move. `open_issues` then keeps, moves or cancels those
     issues, and is refused on a patch that leaves the project open.
+
+    `base_body_version` holds a patch that changes the description to the
+    version the editor read: a stale one is the `BODY_CHANGED` 409, and the
+    write is conditioned on the description still being the one read.
     """
     existing, teams = load_readable_project(repositories, context, project_id, payload.team_id)
     require_project_editor(repositories, context, teams)
 
     choice = payload.open_issues
-    fields: dict[str, Any] = payload.model_dump(exclude_unset=True, exclude={"team_id", "open_issues"})
+    fields: dict[str, Any] = payload.model_dump(
+        exclude_unset=True, exclude={"team_id", "open_issues", "base_body_version"}
+    )
+    base = payload.base_body_version
+    before = existing.description or ""
+    guarded = base is not None and "description" in fields and (fields["description"] or "") != before
+    if guarded and is_stale(base, existing.description):
+        raise body_changed(existing.description)
     for name in NOT_NULLABLE:
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
@@ -504,8 +530,10 @@ def update_project(
             repositories,
             context.workspace_id,
             [label_id for label_id in fields["label_ids"] if label_id not in existing.label_ids],
+            fields.get("team_ids", existing.team_ids),
         )
     if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
+        refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
         require_initiative_access(context)
         if fields["initiative_id"] is not None:
             require_initiative_target(repositories, context, fields["initiative_id"])
@@ -514,6 +542,7 @@ def update_project(
         context.workspace_id,
         status_value=fields.pop("status", None),
         status_id=fields.pop("status_id", None),
+        team_ids=fields.get("team_ids", existing.team_ids),
         current=existing,
     )
     if chosen is not None:
@@ -528,7 +557,7 @@ def update_project(
             raise unprocessable(refusal)
 
     now = utc_now()
-    updated = existing.model_copy(update={**fields, "updated_at": now})
+    updated = existing.model_copy(update={**fields, "updated_at": now, "updated_by": context.user_id})
     check_project_dates(updated.start_date, updated.target_date)
 
     closed = normalise_project_status(updated.status) in CLOSED_STATUSES
@@ -544,8 +573,14 @@ def update_project(
             planned = plan_open_issues(repositories, context, project_id, open_issues, choice)
 
     try:
-        stored = repositories.planning.replace_project(updated)
+        stored = repositories.planning.replace_project(
+            updated, condition=body_condition(existing.description, "description") if guarded else None
+        )
     except ConditionFailed as exc:
+        if guarded:
+            current = repositories.planning.get_project(context.workspace_id, project_id)
+            if current is not None and is_stale(base, current.description):
+                raise body_changed(current.description) from exc
         raise not_found() from exc
     project_activity.record_project_changes(repositories, context, existing, stored)
     if "health" in fields:
@@ -611,7 +646,9 @@ def set_project_archived(
     stored = existing
     if (existing.archived_at is not None) != archived:
         now = utc_now()
-        updated = existing.model_copy(update={"archived_at": now if archived else None, "updated_at": now})
+        updated = existing.model_copy(
+            update={"archived_at": now if archived else None, "updated_at": now, "updated_by": context.user_id}
+        )
         try:
             stored = repositories.planning.replace_project(updated)
         except ConditionFailed as exc:

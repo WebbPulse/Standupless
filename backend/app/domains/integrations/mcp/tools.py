@@ -17,10 +17,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.common.db.dynamo.workspaces import WorkspaceFeature
 from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.asana_import_tools import ASANA_IMPORT_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
+from app.domains.integrations.mcp.comment_tools import COMMENT_TOOLS
 from app.domains.integrations.mcp.customer_tools import CUSTOMER_TOOLS
 from app.domains.integrations.mcp.dashboard_tools import DASHBOARD_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
@@ -30,8 +32,10 @@ from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
 from app.domains.integrations.mcp.import_tools import IMPORT_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
+from app.domains.integrations.mcp.issue_link_tools import ISSUE_LINK_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.jira_import_tools import JIRA_IMPORT_TOOLS
+from app.domains.integrations.mcp.member_status_tools import MEMBER_STATUS_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.project_label_tools import PROJECT_LABEL_TOOLS
 from app.domains.integrations.mcp.project_status_tools import PROJECT_STATUS_TOOLS
@@ -84,11 +88,27 @@ TOOLS: tuple[Tool, ...] = (
     *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
     *AGENT_PROFILE_TOOLS,
+    *COMMENT_TOOLS,
+    *ISSUE_LINK_TOOLS,
+    *MEMBER_STATUS_TOOLS,
 )
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
-__all__ = ["TOOLS", "TOOLS_BY_NAME", "Tool", "ToolCall", "render"]
+FEATURE_OF_TOOL: dict[str, WorkspaceFeature] = {
+    tool.name: feature
+    for tools, feature in (
+        (INITIATIVE_TOOLS, WorkspaceFeature.INITIATIVES),
+        (PULSE_TOOLS, WorkspaceFeature.PULSE),
+        (DOCUMENT_TOOLS, WorkspaceFeature.DOCUMENTS),
+        (CUSTOMER_TOOLS, WorkspaceFeature.CUSTOMERS),
+        (RELEASE_TOOLS, WorkspaceFeature.RELEASES),
+    )
+    for tool in tools
+}
+"""The area each tool belongs to, so a write tool is refused while its area is turned off."""
+
+__all__ = ["FEATURE_OF_TOOL", "TOOLS", "TOOLS_BY_NAME", "Tool", "ToolCall", "render"]
 
 
 def render(value: Any) -> str:

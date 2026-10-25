@@ -25,17 +25,35 @@ BOT_SCOPES: tuple[str, ...] = (
     "chat:write",
     "chat:write.public",
     "channels:read",
+    "channels:history",
+    "channels:join",
     "groups:read",
+    "groups:history",
     "commands",
     "links:read",
     "links:write",
+    "reactions:read",
     "users:read",
     "users:read.email",
 )
-"""What the bot asks for: posting, picking a channel, the command, unfurls and finding the person."""
+"""What the bot asks for: posting, channels, the command, unfurls, synced threads, emoji intake and people.
+
+The history scopes are what deliver a synced thread's replies, and joining is how
+the bot comes to receive them in a public channel it was not yet in. Reading
+reactions is what delivers an intake emoji and lets the bot read the message it
+was added to.
+"""
 
 GET_METHODS = frozenset(
-    {"conversations.list", "users.info", "users.lookupByEmail", "auth.test", "auth.revoke", "chat.getPermalink"}
+    {
+        "conversations.list",
+        "users.info",
+        "users.lookupByEmail",
+        "auth.test",
+        "auth.revoke",
+        "chat.getPermalink",
+        "reactions.get",
+    }
 )
 """The methods that take no JSON body, sent as a query string instead."""
 

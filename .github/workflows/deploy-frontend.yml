@@ -26,6 +26,7 @@ jobs:
       - id: pick
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_REALTIME_URL: ${{ vars.VITE_REALTIME_URL }}
           STANDUPLESS_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           STANDUPLESS_ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
         run: |
@@ -42,6 +43,7 @@ jobs:
 
           BUILD_ENV=$(python3 -c 'import json, os; print(json.dumps({
               "VITE_API_URL": os.environ["VITE_API_URL"],
+              "VITE_REALTIME_URL": os.environ.get("VITE_REALTIME_URL", ""),
               "VITE_DESKTOP_HANDOFF_SCHEMES": os.environ["VITE_DESKTOP_HANDOFF_SCHEMES"],
               "STANDUPLESS_MOBILE_APP_ID": os.environ["STANDUPLESS_MOBILE_APP_ID"],
               "STANDUPLESS_APPLE_TEAM_ID": os.environ.get("STANDUPLESS_APPLE_TEAM_ID", ""),

@@ -1,7 +1,7 @@
 /**
  * The person's interface preferences: where a workspace opens, the first day
  * of the week, whether people read by full name or username, the text size,
- * the colour theme, pointer cursors and emoticon conversion, and the workflow switches: assigning new issues to
+ * the colour theme, the code block theme, pointer cursors and emoticon conversion, and the workflow switches: assigning new issues to
  * themselves, and starting and assigning an issue when its git branch name is
  * copied.
  *
@@ -24,6 +24,7 @@ import { preferencesOf } from '../../lib/preferences';
 import { CURRENT_USER_KEY } from '../../lib/queryKeys';
 import type { Theme } from '../../lib/theme';
 import type {
+  CodeTheme,
   FontSize,
   HomeView,
   NameDisplay,
@@ -31,6 +32,7 @@ import type {
   WeekStart,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import CodingToolPreference from './CodingToolPreference';
 import { Select } from '../ui/select';
 
 /** One choice in a preference picker. */
@@ -74,6 +76,15 @@ const THEME_CHOICES: Choice<Theme>[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
+];
+
+/** The syntax highlighting themes for code blocks, in the order the picker lists them. */
+const CODE_THEME_CHOICES: Choice<CodeTheme>[] = [
+  { value: 'app', label: 'Match app theme' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'light_high_contrast', label: 'Light high contrast' },
+  { value: 'dark_high_contrast', label: 'Dark high contrast' },
 ];
 
 /** Props for PreferenceRow: the label, the help text and the picker. */
@@ -290,6 +301,7 @@ export const PreferencesSection: React.FC = () => {
               save({ branch_copy_assigns: on });
             }}
           />
+          <CodingToolPreference />
         </div>
       </div>
 
@@ -312,6 +324,16 @@ export const PreferencesSection: React.FC = () => {
             value={theme}
             choices={THEME_CHOICES}
             onChange={setTheme}
+          />
+          <PreferenceRow
+            label="Code block theme"
+            detail="The syntax highlighting colours of code blocks in descriptions, comments, documents and updates."
+            value={preferences.codeTheme}
+            choices={CODE_THEME_CHOICES}
+            disabled={saving}
+            onChange={(value) => {
+              save({ code_theme: value });
+            }}
           />
           <ToggleRow
             label="Use pointer cursors"

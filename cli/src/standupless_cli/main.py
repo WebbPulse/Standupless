@@ -47,6 +47,7 @@ from standupless_cli._generated.models import (
     ReleaseDetailRead,
     ReleaseRead,
     StatusCreate,
+    StatusOverrideUpdate,
     StatusRead,
     StatusUpdate,
     TeamCreate,
@@ -1200,6 +1201,13 @@ def team_update(
             help="Count each unestimated issue as 1 point in cycle and project progress, rather than skip it.",
         ),
     ] = None,
+    timezone: Annotated[
+        str | None,
+        typer.Option(
+            "--timezone",
+            help="IANA timezone such as America/Los_Angeles. Cycles start, end and roll over at midnight in it.",
+        ),
+    ] = None,
     parent: Annotated[
         str | None,
         typer.Option(
@@ -1223,10 +1231,12 @@ def team_update(
         body["estimate_allow_zero"] = allow_zero
     if count_unestimated is not None:
         body["estimate_count_unestimated"] = count_unestimated
+    if timezone is not None:
+        body["timezone"] = timezone
     if not body and parent is None:
         raise ConfigError(
             "Nothing to change. Pass --sync-pr-labels, --private, --public, --estimate-scale, --extended, "
-            "--allow-zero, --count-unestimated, --parent or one of their --no- forms."
+            "--allow-zero, --count-unestimated, --timezone, --parent or one of their --no- forms."
         )
     context = _state(ctx).context()
     found = context.team(team)
@@ -1244,6 +1254,8 @@ def team_update(
         output.success(f"{updated['key_prefix']} is now {visibility}.")
     if any(value is not None for value in (estimate_scale, extended, allow_zero, count_unestimated)):
         output.success(f"Estimates for {updated['key_prefix']}: {_estimate_summary(updated)}.")
+    if timezone is not None:
+        output.success(f"Cycles for {updated['key_prefix']} turn over at midnight {updated.get('timezone', 'UTC')}.")
     if parent is not None:
         above = context.team_by_id(str(updated.get("parent_team_id") or ""))
         where = f"now sits under {above['key_prefix']}" if above else "is now a top-level team"
@@ -1367,6 +1379,10 @@ def workspace_view(ctx: typer.Context, as_json: JsonFlag = False) -> None:
 def workspace_update(
     ctx: typer.Context,
     name: Annotated[str | None, typer.Option("--name", help="A new workspace name.")] = None,
+    slug: Annotated[
+        str | None,
+        typer.Option("--slug", help="A new workspace URL slug. Links with the old slug keep redirecting."),
+    ] = None,
     accent_color: Annotated[
         str | None, typer.Option("--accent-color", help="The accent color as #rrggbb, applied for every member.")
     ] = None,
@@ -1375,24 +1391,66 @@ def workspace_update(
     ] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rename the workspace or change its accent color. Needs workspace admin."""
+    """Rename the workspace or change its URL slug or accent color. Needs workspace admin."""
     if accent_color is not None and reset_accent:
         raise ConfigError("Pass --accent-color or --reset-accent, not both.")
     patch: dict[str, Any] = {}
     if name is not None:
         patch["name"] = name
+    if slug is not None:
+        patch["slug"] = slug
     if accent_color is not None:
         patch["accent_color"] = accent_color
     if reset_accent:
         patch["accent_color"] = None
     if not patch:
-        raise ConfigError("Nothing to change. Pass --name, --accent-color or --reset-accent.")
+        raise ConfigError("Nothing to change. Pass --name, --slug, --accent-color or --reset-accent.")
     context = _state(ctx).context()
     updated = context.client.update_workspace(context.workspace_id, cast(WorkspaceUpdate, patch))
     if as_json:
         output.print_json(updated)
         return
-    output.success(f"Updated {updated['name']}; accent is {updated.get('accent_color') or 'the default'}.")
+    output.success(
+        f"Updated {updated['name']} ({updated['slug']}); accent is {updated.get('accent_color') or 'the default'}."
+    )
+
+
+@workspace_app.command("status")
+def workspace_status(
+    ctx: typer.Context,
+    text: Annotated[str | None, typer.Argument(help="What you are up to, such as On vacation.")] = None,
+    emoji: Annotated[str, typer.Option("--emoji", help="An emoji shown beside your name.")] = "",
+    away: Annotated[bool, typer.Option("--away", help="Mark yourself away, shown as a dot on your avatar.")] = False,
+    until: Annotated[
+        str | None, typer.Option("--until", help="When the status clears itself, as an ISO 8601 time.")
+    ] = None,
+    clear: Annotated[bool, typer.Option("--clear", help="Clear your status instead.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Set your own status in the workspace, or clear it with --clear."""
+    if clear and (text or emoji or away or until):
+        raise ConfigError("Pass --clear on its own.")
+    if not clear and not (text or emoji):
+        raise ConfigError("Pass the status text or --emoji, or --clear to remove it.")
+    context = _state(ctx).context()
+    if clear:
+        member = context.client.clear_my_status(context.workspace_id)
+    else:
+        payload: dict[str, Any] = {"emoji": emoji, "text": text or "", "away": away}
+        if until:
+            payload["until"] = until
+        member = context.client.set_my_status(context.workspace_id, cast(Any, payload))
+    if as_json:
+        output.print_json(member)
+        return
+    current = member.get("user_status")
+    if not current:
+        output.success("Cleared your status.")
+        return
+    shown = " ".join(part for part in (current["emoji"], current["text"]) if part)
+    ends = current.get("until")
+    ending = f" until {ends}" if ends else ""
+    output.success(f"Your status is {shown}{ending}.")
 
 
 EXPORT_POLL_SECONDS = 3.0
@@ -1779,7 +1837,7 @@ def status_delete(
     output.success(f"Deleted {found['name']}.{moved}")
 
 
-def _override_status(ctx: typer.Context, status: str, team: str, body: OverrideUpdate, done: str) -> None:
+def _override_status(ctx: typer.Context, status: str, team: str, body: StatusOverrideUpdate, done: str) -> None:
     """Apply one team override to an inherited workspace status and report it."""
     context = _state(ctx).context()
     team_id = context.team(team)["id"]
@@ -2418,6 +2476,7 @@ def initiative_view(
         ("Status", found["status"]),
         ("Health", found.get("health") or ""),
         ("Owner", people.get(owner, owner)),
+        ("Start", _date_label(found.get("start_date"), found.get("start_date_resolution"))),
         ("Target", _date_label(found.get("target_date"), found.get("target_date_resolution"))),
         ("Projects", _health_mix(found)),
         ("Progress", _progress(found.get("counts") or {}, " of ") + " done"),
@@ -2450,6 +2509,7 @@ def initiative_create(
     description: Annotated[str | None, typer.Option("--description", "-d", help="Markdown description.")] = None,
     owner: Annotated[str | None, typer.Option("--owner", help="`me`, an email, a name or a user id.")] = None,
     status: Annotated[InitiativeStatus | None, typer.Option("--status", help="Defaults to planned.")] = None,
+    start: Annotated[str | None, typer.Option("--start", help="Start date, YYYY-MM-DD.")] = None,
     target: Annotated[str | None, typer.Option("--target", help="Target date, YYYY-MM-DD.")] = None,
     as_json: JsonFlag = False,
 ) -> None:
@@ -2462,6 +2522,8 @@ def initiative_create(
         body["owner_id"] = context.user_id(owner)
     if status:
         body["status"] = status.value
+    if start:
+        body["start_date"] = start
     if target:
         body["target_date"] = target
     created = context.client.create_initiative(context.workspace_id, body)
@@ -2482,6 +2544,7 @@ def initiative_edit(
         str | None, typer.Option("--owner", help="`me`, an email, a name, a user id, or `none` to clear.")
     ] = None,
     status: Annotated[InitiativeStatus | None, typer.Option("--status", help="New status.")] = None,
+    start: Annotated[str | None, typer.Option("--start", help="Start date, YYYY-MM-DD, or `none`.")] = None,
     target: Annotated[str | None, typer.Option("--target", help="Target date, YYYY-MM-DD, or `none`.")] = None,
     as_json: JsonFlag = False,
 ) -> None:
@@ -2496,6 +2559,8 @@ def initiative_edit(
         body["owner_id"] = None if owner.strip().lower() == "none" else context.user_id(owner)
     if status:
         body["status"] = status.value
+    if start is not None:
+        body["start_date"] = None if start.strip().lower() == "none" else start
     if target is not None:
         body["target_date"] = None if target.strip().lower() == "none" else target
     if not body:
@@ -2685,6 +2750,9 @@ CHANNEL_EVENTS = (
     "project_update_posted",
     "project_update_due",
     "standup_digest",
+    "initiative_update_posted",
+    "cycle_started",
+    "cycle_completed",
 )
 
 CHANNEL_COLUMNS = ["LABEL", "PROVIDER", "URL", "EVENTS", "STATE", "ID"]

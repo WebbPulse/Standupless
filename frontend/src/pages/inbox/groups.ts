@@ -35,12 +35,17 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   review_requested: 'Review requested',
   triage_new: 'New in triage',
   view_issue_added: 'New issue in view',
+  view_project_added: 'New project in view',
+  project_lead_assigned: 'Made project lead',
+  project_member_added: 'Added to project',
+  initiative_owner_assigned: 'Made initiative owner',
   reaction: 'Reaction',
   issue_completed: 'Completed',
   issue_cancelled: 'Canceled',
   priority_urgent: 'Marked urgent',
   blocking_changed: 'Blocking changed',
   document_comment: 'Document comment',
+  team_issue_created: 'New issue in team',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -77,6 +82,15 @@ const PROJECT_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
   'project_update',
   'project_update_comment',
   'project_update_due',
+  'view_project_added',
+  'project_lead_assigned',
+  'project_member_added',
+]);
+
+/** Kinds about an initiative rather than an issue. */
+const INITIATIVE_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
+  'initiative_update_due',
+  'initiative_owner_assigned',
 ]);
 
 /**
@@ -85,9 +99,12 @@ const PROJECT_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
  */
 export const groupKey = (row: NotificationRead): string => {
   const alone = `n:${row.notification_id}`;
-  if (PROJECT_KINDS.has(row.kind))
-    return row.project_id ? `project:${row.project_id}` : alone;
-  if (row.kind === 'initiative_update_due')
+  if (PROJECT_KINDS.has(row.kind) && row.project_id)
+    return `project:${row.project_id}`;
+  if (row.kind === 'project_update_comment' && row.initiative_id)
+    return `initiative:${row.initiative_id}`;
+  if (PROJECT_KINDS.has(row.kind)) return alone;
+  if (INITIATIVE_KINDS.has(row.kind))
     return row.initiative_id ? `initiative:${row.initiative_id}` : alone;
   if (row.kind === 'document_comment')
     return row.document_id ? `document:${row.document_id}` : alone;
@@ -182,6 +199,9 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
       'project_update_comment',
       'project_update_due',
       'initiative_update_due',
+      'project_lead_assigned',
+      'project_member_added',
+      'initiative_owner_assigned',
     ],
   },
   { id: 'due', label: 'Due dates', kinds: ['due_soon', 'overdue'] },
@@ -189,7 +209,12 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
   { id: 'sla', label: 'SLA', kinds: ['sla_at_risk', 'sla_breached'] },
   { id: 'reviews', label: 'Reviews', kinds: ['review_requested'] },
   { id: 'triage', label: 'Triage', kinds: ['triage_new'] },
-  { id: 'views', label: 'Views', kinds: ['view_issue_added'] },
+  { id: 'teams', label: 'Team issues', kinds: ['team_issue_created'] },
+  {
+    id: 'views',
+    label: 'Views',
+    kinds: ['view_issue_added', 'view_project_added'],
+  },
   { id: 'documents', label: 'Documents', kinds: ['document_comment'] },
   { id: 'standups', label: 'Standups', kinds: ['standup_digest'] },
   {

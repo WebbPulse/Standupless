@@ -180,12 +180,18 @@ def _reachable_teams(
 
 
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
-    """Handle one queued GitHub delivery."""
+    """Handle one queued GitHub delivery, or a GitLab merge request event, which names its workspace itself."""
     repositories = _GRANT.narrow(repositories)
     payload = _body(record)
     event = str(payload.get("event", ""))
     body = payload.get("body")
     if not event or not isinstance(body, Mapping):
+        return
+
+    if event == "gitlab.merge_request":
+        from app.domains.integrations.gitlab.events import handle as handle_gitlab
+
+        handle_gitlab(repositories, payload, _event_time(record, payload))
         return
 
     installation = body.get("installation")
@@ -611,7 +617,9 @@ def _merged_links_by_number(
     merged: dict[int, IssueLink] = {}
     for item in page.items:
         link = IssueLink.model_validate(dict(item))
-        if link.detached or link.pr_state != "merged" or link.link_id.startswith(f"{node_id}#"):
+        if link.detached or link.provider != "github" or link.pr_state != "merged":
+            continue
+        if link.link_id.startswith(f"{node_id}#"):
             continue
         if link.repository_id:
             same = link.repository_id == repository_id
@@ -906,6 +914,8 @@ def _apply_transition(
     event_at: datetime,
     base_branch: str = "",
     holds: bool = False,
+    actor_kind: str = GITHUB,
+    source: str = GITHUB,
 ) -> str | None:
     """Move one issue if a rule says to and nobody has moved it since.
 
@@ -920,6 +930,10 @@ def _apply_transition(
     finished, so partial work merged into `staging` reaches On Staging, but it never
     takes a rule for any branch or one that would finish the issue. An issue in a
     retired team is never moved.
+
+    `actor_kind` and `source` attribute the move, GitHub's by default; a GitLab
+    merge request moves an issue as the system, since GitLab is not a change
+    source of its own.
     """
     if is_retired(repositories.teams.get(workspace_id, issue.team_id)):
         _log.info(
@@ -958,7 +972,7 @@ def _apply_transition(
 
     previous = issue.status_id
     moved = issue.model_copy(
-        update={"status_id": target, "updated_at": utc_now(), "updated_by": None, "updated_source": GITHUB}
+        update={"status_id": target, "updated_at": utc_now(), "updated_by": None, "updated_source": source}
     )
     apply_sla(repositories, issue, moved)
     repositories.issues.replace(moved)
@@ -967,9 +981,10 @@ def _apply_transition(
             workspace_id,
             issue.team_id,
             issue.issue_id,
-            "github",
+            actor_kind,
             "field_changed",
-            actor_kind="github",
+            actor_kind=actor_kind,
+            source=source,
             field="status_id",
             from_value=previous,
             to_value=target,

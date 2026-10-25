@@ -117,6 +117,19 @@ def list_issues(
     has_relation: Values = None,
     customer_id: Values = None,
     customer_id_not: Values = None,
+    customer_status_id: Values = None,
+    customer_status_id_not: Values = None,
+    customer_tier_id: Values = None,
+    customer_tier_id_not: Values = None,
+    customer_revenue_min: Annotated[Optional[int], Query(ge=0)] = None,
+    customer_revenue_max: Annotated[Optional[int], Query(ge=0)] = None,
+    customer_size_min: Annotated[Optional[int], Query(ge=0)] = None,
+    customer_size_max: Annotated[Optional[int], Query(ge=0)] = None,
+    customer_request_count_min: Annotated[Optional[int], Query(ge=0)] = None,
+    customer_request_count_max: Annotated[Optional[int], Query(ge=0)] = None,
+    customer_important: Annotated[Optional[bool], Query()] = None,
+    release_id: Values = None,
+    release_id_not: Values = None,
     match: Annotated[Optional[str], Query()] = None,
     groups: Annotated[Optional[str], Query(max_length=8000)] = None,
     include_archived: Annotated[bool, Query()] = False,
@@ -157,6 +170,15 @@ def list_issues(
     `important` for an important one, and the `customer_requests_desc`,
     `customer_important_desc` and `customer_revenue_desc` sorts put the most
     requested, most importantly requested or highest revenue issues first.
+    `customer_status_id` and `customer_tier_id` keep the issues an asking
+    customer holds one of the named statuses or tiers, their `_not` forms drop
+    them, and `none` stands for no customer request. `customer_revenue_min` and
+    `_max`, and `customer_size_min` and `_max`, keep the issues one asking
+    customer falls within, inclusive. `customer_request_count_min` and `_max`
+    bound the request count, and `customer_important` keeps the issues with an
+    important request, or with `false` the rest.
+    `release_id` keeps the issues that shipped in one of the named releases and
+    `release_id_not` drops them, `none` standing for an issue in no release.
     Guests may use neither.
 
     Archived issues are left out unless `include_archived` is set, and
@@ -236,6 +258,19 @@ def list_issues(
             has_relation=has_relation,
             customer_id=customer_id,
             customer_id_not=customer_id_not,
+            customer_status_id=customer_status_id,
+            customer_status_id_not=customer_status_id_not,
+            customer_tier_id=customer_tier_id,
+            customer_tier_id_not=customer_tier_id_not,
+            customer_revenue_min=customer_revenue_min,
+            customer_revenue_max=customer_revenue_max,
+            customer_size_min=customer_size_min,
+            customer_size_max=customer_size_max,
+            customer_request_count_min=customer_request_count_min,
+            customer_request_count_max=customer_request_count_max,
+            customer_important=customer_important,
+            release_id=release_id,
+            release_id_not=release_id_not,
             include_triage=include_triage,
             triage_only=triage_only,
             match=match,

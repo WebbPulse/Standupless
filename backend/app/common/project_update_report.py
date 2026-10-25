@@ -43,11 +43,11 @@ def _done_and_scope(counts: RollupCounts) -> tuple[int, int]:
     return counts.done, counts.total - counts.cancelled
 
 
-def _lead_name(repositories: Repositories, lead_id: Optional[str]) -> Optional[str]:
-    """The lead's display name, or None when there is no lead or no name to show."""
-    if not lead_id:
+def person_name(repositories: Repositories, user_id: Optional[str]) -> Optional[str]:
+    """A person's display name, or None when there is no person or no name to show."""
+    if not user_id:
         return None
-    user = repositories.users.get(lead_id)
+    user = repositories.users.get(user_id)
     return (user.display_name or None) if user is not None else None
 
 
@@ -69,7 +69,7 @@ def take_snapshot(repositories: Repositories, project: Project) -> ProjectUpdate
         target_date=project.target_date,
         target_date_resolution=project.target_date_resolution,
         lead_id=project.lead_id,
-        lead_name=_lead_name(repositories, project.lead_id),
+        lead_name=person_name(repositories, project.lead_id),
         status=project.status,
         status_id=project.effective_status_id,
         status_name=status.name if status is not None else None,
@@ -139,7 +139,11 @@ def _progress_line(snapshot: ProjectUpdateSnapshot, previous: ProjectUpdateSnaps
 
 def _target_line(snapshot: ProjectUpdateSnapshot, previous: ProjectUpdateSnapshot) -> Optional[str]:
     """How the target date moved, or None when it did not."""
-    before, after = _target(previous), _target(snapshot)
+    return target_change(_target(previous), _target(snapshot))
+
+
+def target_change(before: Optional[str], after: Optional[str]) -> Optional[str]:
+    """How a target date moved between two labels, or None when it did not."""
     if before == after:
         return None
     if before and after:

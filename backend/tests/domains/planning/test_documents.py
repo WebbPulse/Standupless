@@ -4,7 +4,9 @@ The properties worth holding are that a document is reached only through a paren
 the caller can read, that project documents follow the project's teams while
 initiative documents refuse guests, that only the author, a parent admin or a
 workspace admin deletes one, that an edit by someone else or after a pause keeps
-the earlier text as a version, that a stale edit is refused, that issue keys in
+the earlier text as a version, that a stale edit is refused, that a body saved
+against an older body version is refused with the current body while a rename
+never is, that issue keys in
 the text backlink from the issue, and that deleting the parent deletes its
 documents.
 """
@@ -16,6 +18,7 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common.body_versions import BODY_CHANGED, body_version
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_member, make_user, sign_in
@@ -133,6 +136,84 @@ def test_a_stale_edit_is_a_conflict(client: TestClient, workspace: str) -> None:
 
     assert stale.status_code == 409
     assert client.get(path).json()["body"] == "New"
+
+
+def test_a_body_save_against_a_stale_version_is_refused_with_the_current_body(
+    client: TestClient, workspace: str
+) -> None:
+    """A body saved from an older version is a 409 carrying the current body, and one from the current version lands."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    created = _create(client, workspace, "project", project_id)
+    path = f"{_base(workspace)}/documents/{created['document_id']}"
+    assert created["body_version"] == body_version("We ship in October.")
+
+    fresh = client.patch(path, json={"body": "Theirs", "base_body_version": created["body_version"]})
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["body_version"] == body_version("Theirs")
+    stale = client.patch(path, json={"body": "Mine", "base_body_version": created["body_version"]})
+
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error_code"] == BODY_CHANGED
+    assert stale.json()["details"] == {"body": "Theirs", "body_version": body_version("Theirs")}
+    assert client.get(path).json()["body"] == "Theirs"
+
+
+def test_a_body_save_without_a_version_writes_as_before(client: TestClient, workspace: str) -> None:
+    """A caller that sends no version, such as an older client, still writes over the body."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    created = _create(client, workspace, "project", project_id)
+    path = f"{_base(workspace)}/documents/{created['document_id']}"
+    assert client.patch(path, json={"body": "Theirs"}).status_code == 200
+
+    blind = client.patch(path, json={"body": "Mine"})
+
+    assert blind.status_code == 200, blind.text
+    assert blind.json()["body"] == "Mine"
+
+
+def test_a_rename_is_never_held_to_the_body_version(client: TestClient, workspace: str) -> None:
+    """A rename sent with a stale body version lands, and a rename made meanwhile leaves the editor current."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    created = _create(client, workspace, "project", project_id)
+    path = f"{_base(workspace)}/documents/{created['document_id']}"
+
+    renamed = client.patch(path, json={"title": "Runbook", "base_body_version": "0" * 32})
+    assert renamed.status_code == 200, renamed.text
+    saved = client.patch(path, json={"body": "Second", "base_body_version": created["body_version"]})
+
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["title"], saved.json()["body"]) == ("Runbook", "Second")
+
+
+def test_a_body_save_that_loses_a_race_after_its_read_is_refused(
+    client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A body landing between the read and the write refuses the save and leaves every row as it was."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    created = _create(client, workspace, "project", project_id)
+    path = f"{_base(workspace)}/documents/{created['document_id']}"
+    documents = repositories.documents
+    original = documents.replace
+
+    def racing(previous: Any, document: Any, body: Any, **kwargs: Any) -> Any:
+        """Let a teammate's body land just before this write."""
+        stored = documents.get_body(workspace, created["document_id"])
+        documents._repository.put(stored.model_copy(update={"body": "Theirs"}).model_dump(mode="json"))
+        return original(previous, document, body, **kwargs)
+
+    monkeypatch.setattr(documents, "replace", racing)
+    stale = client.patch(path, json={"title": "Mine", "body": "Mine", "base_body_version": created["body_version"]})
+    monkeypatch.undo()
+
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error_code"] == BODY_CHANGED
+    assert stale.json()["details"]["body"] == "Theirs"
+    read = client.get(path).json()
+    assert (read["title"], read["body"]) == ("Launch plan", "Theirs")
 
 
 def test_only_the_author_or_an_admin_deletes(client: TestClient, workspace: str, peer: str) -> None:

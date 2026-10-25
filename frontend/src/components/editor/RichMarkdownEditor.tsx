@@ -27,6 +27,12 @@
  * the `@` menu shows when the text after the `@` reads as a date, and `|--`
  * on an empty line starts a table.
  *
+ * On a full-size editable surface, hovering a block or a list item shows a
+ * grip in the left gutter that drags the block to a new place and opens a
+ * menu to turn it into another block type, duplicate it or delete it.
+ * Alt+Shift+ArrowUp and Alt+Shift+ArrowDown move the block at the caret on
+ * every editable surface.
+ *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
  * Escape puts back the last committed text, except right after a video link
  * was pasted as an embed, when it keeps the link instead. Text input made
@@ -67,6 +73,7 @@ import {
 import { isTeamKey } from '../../lib/issueDisplay';
 import { isSafeUrl } from '../../lib/markdown';
 import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
+import { answersToSlug } from '../../lib/workspaceSlug';
 import type { CommentAnchor } from '../../types/Api';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
@@ -76,6 +83,7 @@ import {
   type DateMentionOption,
 } from '../../lib/dateChips';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
+import { isAway, statusSummary } from '../../lib/userStatus';
 import {
   currentOrigin,
   isSearchable,
@@ -88,6 +96,15 @@ import {
 } from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
+import {
+  BLOCK_MENU_EVENT,
+  canTurnInto,
+  deleteBlock,
+  duplicateBlock,
+  turnBlockInto,
+  type BlockMenuRequest,
+} from './blockHandle';
+import { BlockMenu, type TurnIntoOption } from './BlockMenu';
 import { DateChipPicker } from './DateChipPicker';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
 import { isAttachChord, toggleChecklistItem } from './editorShortcuts';
@@ -195,6 +212,11 @@ export interface RichMarkdownEditorProps {
    * Unset leaves the selection toolbar without the create issue button.
    */
   selectionIssue?: SelectionIssueSource;
+  /**
+   * Whether hovering a block shows the grip that drags it and opens its
+   * menu. Defaults to on, except on a compact surface such as a comment.
+   */
+  blockHandles?: boolean;
   /** Receives the imperative handle. */
   ref?: React.Ref<RichMarkdownHandle>;
 }
@@ -220,6 +242,13 @@ interface MentionDraft {
 type MentionOption =
   | { kind: 'person'; person: Assignable }
   | { kind: 'date'; date: DateMentionOption };
+
+/** Where the block menu opens and the position of the block it acts on. */
+interface BlockMenuDraft {
+  pos: number;
+  top: number;
+  left: number;
+}
 
 /** Where the `/date` picker opens and the position its chip goes in at. */
 interface DatePickerDraft {
@@ -307,6 +336,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   onExitTop,
   commentAnchors,
   selectionIssue,
+  blockHandles,
   ref,
 }) => {
   const surface = useRef<HTMLDivElement>(null);
@@ -360,6 +390,8 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   const readMentionRef = useRef<(editor: Editor) => void>(() => undefined);
   const chooseRef = useRef<(option: MentionOption) => void>(() => undefined);
   const [datePicker, setDatePicker] = useState<DatePickerDraft | null>(null);
+  const [blockMenu, setBlockMenu] = useState<BlockMenuDraft | null>(null);
+  const showBlockHandles = editable && (blockHandles ?? density !== 'compact');
   const openDatePickerRef = useRef<() => void>(() => undefined);
 
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
@@ -445,11 +477,11 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           return known !== null && isTeamKey(key, known);
         },
         isReferenceLink: (href) => {
-          const slug = lookup.current.workspace?.slug;
-          if (slug === undefined) return false;
+          const workspace = lookup.current.workspace;
+          if (workspace === null) return false;
           if (linkedPullRequest(href) !== null) return true;
           const target = linkedReference(href, currentOrigin());
-          return target?.slug === slug;
+          return target !== null && answersToSlug(workspace, target.slug);
         },
       }),
     [placeholder]
@@ -902,6 +934,48 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     if (editor.isEditable !== editable) editor.setEditable(editable, false);
   }, [editor, editable]);
 
+  useEffect(() => {
+    const dom = editor.view.dom;
+    const open = (event: Event): void => {
+      const { pos, anchor } = (event as CustomEvent<BlockMenuRequest>).detail;
+      const box = surface.current?.getBoundingClientRect();
+      if (box === undefined) return;
+      setBlockMenu({
+        pos,
+        top: anchor.bottom - box.top + 4,
+        left: Math.min(anchor.left - box.left, box.width - 176),
+      });
+    };
+    dom.addEventListener(BLOCK_MENU_EVENT, open);
+    return () => {
+      dom.removeEventListener(BLOCK_MENU_EVENT, open);
+    };
+  }, [editor]);
+
+  const closeBlockMenu = useCallback((): void => {
+    setBlockMenu(null);
+    editor.commands.focus();
+  }, [editor]);
+
+  const blockMenuNode =
+    blockMenu === null ? null : editor.state.doc.nodeAt(blockMenu.pos);
+
+  const turnInto = (option: TurnIntoOption): void => {
+    const open = blockMenu;
+    setBlockMenu(null);
+    if (open === null) return;
+    const { command } = option;
+    turnBlockInto(
+      editor,
+      open.pos,
+      command === null
+        ? null
+        : (target, range) => {
+            command.run(target, range, slashContext);
+          }
+    );
+  };
+
   const chipsDrawnFor = useRef({ teams, workspace });
   useEffect(() => {
     const drawn = chipsDrawnFor.current;
@@ -1103,6 +1177,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         className
       )}
       {...focusProps}
+      {...(showBlockHandles ? { 'data-block-handles': '' } : {})}
       onMouseDownCapture={() => {
         hadFocus.current = editor.isFocused;
       }}
@@ -1214,10 +1289,19 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
                   name={personLabel(person)}
                   src={personAvatar(person)}
                   size="sm"
+                  away={isAway(person.user_status)}
                 />
                 <span className="min-w-0 flex-1 truncate text-text">
                   {personLabel(person)}
                 </span>
+                {statusSummary(person.user_status) !== '' && (
+                  <span
+                    className="max-w-32 shrink truncate text-xs text-text-muted"
+                    data-testid="mention-status"
+                  >
+                    {statusSummary(person.user_status)}
+                  </span>
+                )}
                 <span className="shrink-0 text-xs text-text-faint">
                   @{mentionHandle(person)}
                 </span>
@@ -1225,6 +1309,34 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
             );
           })}
         </ul>
+      )}
+      {blockMenu !== null && blockMenuNode !== null && (
+        <BlockMenu
+          top={blockMenu.top}
+          left={blockMenu.left}
+          canTurnInto={canTurnInto(blockMenuNode)}
+          onTurnInto={turnInto}
+          onDuplicate={() => {
+            setBlockMenu(null);
+            editor.commands.focus();
+            duplicateBlock(editor.state, editor.view.dispatch, blockMenu.pos);
+          }}
+          onDelete={() => {
+            setBlockMenu(null);
+            editor.commands.focus();
+            deleteBlock(editor.state, editor.view.dispatch, blockMenu.pos);
+          }}
+          onClose={closeBlockMenu}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (next !== null && surface.current?.contains(next) === true) {
+              return;
+            }
+            setBlockMenu(null);
+            handlers.current.onFocusChange?.(false);
+            commit();
+          }}
+        />
       )}
       {datePicker !== null && (
         <DateChipPicker

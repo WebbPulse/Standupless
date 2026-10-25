@@ -3,6 +3,10 @@
  * pages. Every page mounts its own sidebar, so a read held inside it started
  * again from nothing on each navigation and the triage entries, the view list,
  * the inbox badge, the reviews badge, the Pulse badge and the favorites blinked out until it settled.
+ *
+ * It also holds the workspace change socket, since it is mounted exactly as
+ * long as a workspace is open, and stretches the triage and inbox polls while
+ * that socket's notices keep them current.
  */
 
 import React, { useMemo } from 'react';
@@ -14,6 +18,8 @@ import { getTriageSummary } from '../api/triage';
 import { getInboxCount, listViews } from '../api/views';
 import { useFavoritesState } from '../hooks/useFavorites';
 import { useWorkspace } from '../hooks/useWorkspace';
+import { useRealtimePollMs } from '../lib/polling';
+import { useRealtime } from '../lib/realtime';
 import {
   inboxCountKey,
   pulseCountKey,
@@ -37,11 +43,13 @@ export const SidebarDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const auth = useQueryAuth();
   const workspaceId = workspace?.id ?? '';
   const enabled = workspaceId !== '';
+  useRealtime(workspaceId);
+  const noticedPollMs = useRealtimePollMs(SIDEBAR_POLL_MS);
 
   const { data: triage } = usePolledQuery(
     ({ signal }) => getTriageSummary(workspaceId, signal),
     {
-      intervalMs: SIDEBAR_POLL_MS,
+      intervalMs: noticedPollMs,
       enabled,
       queryKey: triageSummaryKey(workspaceId),
       auth,
@@ -61,7 +69,7 @@ export const SidebarDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const { data: inboxCount } = usePolledQuery(
     ({ signal }) => getInboxCount(workspaceId, signal),
     {
-      intervalMs: SIDEBAR_POLL_MS,
+      intervalMs: noticedPollMs,
       enabled,
       queryKey: inboxCountKey(workspaceId),
       auth,

@@ -3,7 +3,10 @@
  * an issue may stay open before it breaches. A "Start timer" select picks
  * whether the timer starts when an issue leaves triage or counts from when it
  * was created, triage included; a new choice applies from each issue's next
- * move and leaves running timers alone.
+ * move and leaves running timers alone. A "Count time" select picks whether
+ * the hours run around the clock or on business days only, skipping Saturdays
+ * and Sundays in the team's timezone; switching moves open timers onto the
+ * new clock at once, each keeping its start.
  *
  * Every control is one choice, so each saves as soon as it is picked rather
  * than through a draft. A rule is stamped onto an issue when its SLA starts,
@@ -29,6 +32,7 @@ import {
   updateSlaSettings,
 } from '../../api/teams';
 import type {
+  SlaCalendar,
   SlaSettingsRead,
   SlaSettingsUpdate,
   SlaStartMode,
@@ -81,7 +85,14 @@ const DEFAULT_SLA: Omit<SlaSettingsRead, 'team_id' | 'updated_at'> = {
   low_hours: null,
   paused_status_ids: [],
   start_mode: 'on_triage_exit',
+  calendar: 'calendar',
 };
+
+/** The clocks the "Count time" select offers, in order. */
+const CALENDARS: { value: SlaCalendar; label: string }[] = [
+  { value: 'calendar', label: 'Every day' },
+  { value: 'business_days', label: 'Business days only' },
+];
 
 /** The start modes the "Start timer" select offers, in order. */
 const START_MODES: { value: SlaStartMode; label: string }[] = [
@@ -123,6 +134,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
   const switchLabelId = `${baseId}-enabled`;
   const pausedLabelId = `${baseId}-paused`;
   const startModeId = `${baseId}-start-mode`;
+  const calendarId = `${baseId}-calendar`;
   const queryKey: QueryKey = ['sla-settings', workspaceId, teamId];
 
   const { data, error, isLoading, refetch } = usePolledQuery(
@@ -152,6 +164,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
   const enabled = current.enabled;
   const paused = current.paused_status_ids ?? [];
   const startMode: SlaStartMode = current.start_mode ?? 'on_triage_exit';
+  const calendar: SlaCalendar = current.calendar ?? 'calendar';
   const pausable = (statuses ?? [])
     .filter(
       (status) =>
@@ -193,6 +206,17 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
       next === 'on_creation'
         ? 'SLA timers count from creation.'
         : 'SLA timers start when issues leave triage.'
+    );
+  };
+
+  const onCalendar = (raw: string): void => {
+    const next = CALENDARS.find((choice) => choice.value === raw)?.value;
+    if (next === undefined || next === calendar) return;
+    void apply(
+      { calendar: next },
+      next === 'business_days'
+        ? 'SLA timers skip weekends.'
+        : 'SLA timers count every day.'
     );
   };
 
@@ -308,6 +332,41 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
                 {START_MODES.map((mode) => (
                   <option key={mode.value} value={mode.value}>
                     {mode.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </li>
+          <li className="flex min-h-row items-center justify-between gap-4 px-3 py-2">
+            <div className="min-w-0">
+              <label
+                htmlFor={calendarId}
+                className={cn(
+                  'block text-sm font-medium',
+                  enabled ? 'text-text' : 'text-text-muted'
+                )}
+              >
+                Count time
+              </label>
+              <p className="text-xs text-text-muted">
+                Business days skip Saturdays and Sundays in the team&apos;s
+                timezone, so a weekend uses none of an issue&apos;s time.
+                Switching moves open timers over, each keeping its start.
+              </p>
+            </div>
+            <div className="shrink-0">
+              <Select
+                id={calendarId}
+                className="w-60"
+                value={calendar}
+                disabled={!canEdit || saving || !planIncluded}
+                onChange={(event) => {
+                  onCalendar(event.target.value);
+                }}
+              >
+                {CALENDARS.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
                   </option>
                 ))}
               </Select>

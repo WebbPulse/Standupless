@@ -20,17 +20,24 @@ import {
   LuIterationCw,
   LuLink,
   LuCircleDashed,
+  LuRocket,
   LuTriangle,
 } from 'react-icons/lu';
 import { NONE, type OrderedIssueRead } from '../../../api/issues';
 import { useTriageOn } from '../../../hooks/useTriageTeams';
 import { cn } from '../../../lib/cn';
+import { customerRevenueLabel } from '../../../lib/customerDisplay';
 import { PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
+  customerRevenueOf,
+  customersOf,
   labelsOf,
   milestoneOf,
+  releasesOf,
   type FilterField,
+  type IssueCustomer,
+  type IssueRelease,
 } from '../../../lib/issueView';
 import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
@@ -496,6 +503,130 @@ export const PullRequestChip: React.FC<{
   );
 };
 
+/**
+ * The releases an issue shipped in as one chip: the newest release's name and
+ * a count of the rest. Hovering names each one, with its stage where the chip
+ * cannot filter, and a click narrows the view to the newest release where the
+ * list offers that filter.
+ */
+export const ReleaseChip: React.FC<{
+  releases: readonly IssueRelease[];
+  className?: string;
+}> = ({ releases, className }) => {
+  const { filterFor } = useIssueViewEnv();
+  const filterRelease = filterFor?.('release');
+  const [lead] = releases;
+  if (lead === undefined) return null;
+  const rest = releases.length - 1;
+  const lines = releases.map((release) =>
+    release.stageName === undefined
+      ? release.name
+      : `${release.name} (${release.stageName})`
+  );
+  const body = (
+    <>
+      <LuRocket aria-hidden="true" className="h-3 w-3" />
+      <span className="truncate">{lead.name}</span>
+      {rest > 0 && (
+        <span className="shrink-0 text-text-faint">+{String(rest)}</span>
+      )}
+    </>
+  );
+  if (filterRelease === undefined) {
+    return (
+      <span
+        title={`Releases: ${lines.join(', ')}`}
+        className={cn(CHIP_CLASS, 'max-w-40', className)}
+      >
+        {body}
+      </span>
+    );
+  }
+  return (
+    <FilterChipButton
+      tooltip={
+        rest > 0
+          ? `Filter by release: ${lead.name}, also in ${lines.slice(1).join(', ')}`
+          : `Filter by release: ${lead.name}`
+      }
+      onFilter={() => {
+        filterRelease(lead.id);
+      }}
+      wrapperClassName={cn(className)}
+      className={cn(CHIP_CLASS, 'max-w-40')}
+    >
+      {body}
+    </FilterChipButton>
+  );
+};
+
+/** How many customers a chip draws before folding the rest into a count. */
+export const CUSTOMERS_SHOWN = 3;
+
+/**
+ * The customers that asked for an issue as one chip: up to three initials and
+ * a count of the rest. Hovering names each one, and a click narrows the view
+ * to the first customer where the list offers that filter.
+ */
+export const CustomersChip: React.FC<{
+  customers: readonly IssueCustomer[];
+  className?: string;
+}> = ({ customers, className }) => {
+  const { filterFor } = useIssueViewEnv();
+  const filterCustomer = filterFor?.('customer');
+  const [lead] = customers;
+  if (lead === undefined) return null;
+  const rest = customers.length - CUSTOMERS_SHOWN;
+  const names = customers.map((customer) => customer.name).join(', ');
+  const body = (
+    <>
+      <span className="flex -space-x-1">
+        {customers.slice(0, CUSTOMERS_SHOWN).map((customer) => (
+          <Avatar
+            key={customer.id}
+            name={customer.name}
+            size="xs"
+            shape="square"
+            className="ring-1 ring-surface"
+          />
+        ))}
+      </span>
+      {rest > 0 && (
+        <span className="shrink-0 text-text-faint">+{String(rest)}</span>
+      )}
+    </>
+  );
+  if (filterCustomer === undefined) {
+    return (
+      <span
+        title={`Customers: ${names}`}
+        className={cn(CHIP_CLASS, 'pl-0.5', className)}
+      >
+        {body}
+      </span>
+    );
+  }
+  return (
+    <FilterChipButton
+      tooltip={
+        customers.length > 1
+          ? `Filter by customer: ${lead.name}, also requested by ${customers
+              .slice(1)
+              .map((customer) => customer.name)
+              .join(', ')}`
+          : `Filter by customer: ${lead.name}`
+      }
+      onFilter={() => {
+        filterCustomer(lead.id);
+      }}
+      wrapperClassName={cn(className)}
+      className={cn(CHIP_CLASS, 'pl-0.5')}
+    >
+      {body}
+    </FilterChipButton>
+  );
+};
+
 /** Props for MetaChips: the issue and whether it is drawn on a card. */
 export interface MetaChipsProps {
   issue: OrderedIssueRead;
@@ -507,9 +638,10 @@ export interface MetaChipsProps {
 
 /**
  * The chips after the title: sub-issue progress, labels, pull requests,
- * project, milestone, cycle, relation count, estimate and dates, each only when the view shows it and
- * the issue has it, then the SLA countdown whenever the issue's team SLA
- * covers it.
+ * project, milestone, cycle, releases, relation count, estimate, dates, the
+ * requesting customers and their summed revenue, and the SLA countdown, each
+ * only when the view shows it and the issue has it. The customer chips also
+ * need the reader to be allowed to see customers.
  */
 export const MetaChips: React.FC<MetaChipsProps> = ({
   issue,
@@ -532,6 +664,11 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
     ? milestoneOf(issue, milestones ? { ...context, milestones } : context)
     : undefined;
   const links = issue.relation_count ?? 0;
+  const releases = shows('release') ? releasesOf(issue, context) : [];
+  const customers = shows('customers') ? customersOf(issue, context) : [];
+  const revenue = shows('customer_revenue')
+    ? customerRevenueLabel(customerRevenueOf(issue, context))
+    : null;
   const teamName = teamNameFor?.(issue.team_id);
   const hide = card ? '' : 'hidden md:inline-flex';
 
@@ -620,6 +757,12 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           <span className="truncate">{cycle.name}</span>
         </NavChipLink>
       )}
+      {releases.length > 0 && (
+        <ReleaseChip
+          releases={releases}
+          className={card ? '' : 'hidden lg:inline-flex'}
+        />
+      )}
       {shows('links') && links > 0 && (
         <Chip
           label={links === 1 ? '1 link' : `${String(links)} links`}
@@ -694,7 +837,15 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           {shortDateLabel(issue.due_date)}
         </Chip>
       )}
-      <SlaBadge issue={issue} className={hide} />
+      {customers.length > 0 && (
+        <CustomersChip customers={customers} className={hide} />
+      )}
+      {revenue !== null && (
+        <Chip label={`Customer revenue: ${revenue}`} className={hide}>
+          {revenue}
+        </Chip>
+      )}
+      {shows('sla') && <SlaBadge issue={issue} className={hide} />}
       {teamName !== undefined && (
         <span className={cn('text-2xs text-text-faint', hide)}>{teamName}</span>
       )}

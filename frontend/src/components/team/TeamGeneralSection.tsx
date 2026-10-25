@@ -1,6 +1,8 @@
 /**
  * A team's General settings: its icon, name, description, estimate scale and
- * estimate toggles, and the key its issues carry. Deleting the team is the
+ * estimate toggles, timezone, and the key its issues carry. The timezone is
+ * where the team's cycles start, end and roll over at midnight, and a sub-team
+ * takes its parent's along with its estimates. Deleting the team is the
  * danger zone at the bottom of the settings page.
  *
  * The key is shown but not editable because the API fixes it once allocated:
@@ -10,7 +12,7 @@
  * a refusal.
  */
 
-import React, { useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { Link } from 'react-router-dom';
 import { teamIcon, uploadIcon } from '../../api/icons';
@@ -29,7 +31,7 @@ import Button from '../ui/button';
 import Checkbox from '../ui/checkbox';
 import Field from '../ui/field';
 import IconUploader from '../ui/icon-uploader';
-import { Textarea } from '../ui/input';
+import { Input, Textarea } from '../ui/input';
 import Label from '../ui/label';
 import { SelectField } from '../ui/select';
 
@@ -51,6 +53,26 @@ interface GeneralFormProps {
   parentSettingsPath?: string | undefined;
   onSaved: () => void;
 }
+
+/** Every timezone the browser knows, for the picker's suggestions. */
+const knownZones = (): string[] => {
+  try {
+    return Intl.supportedValuesOf('timeZone');
+  } catch {
+    return [];
+  }
+};
+
+/** Whether the runtime accepts `zone` as an IANA timezone name. */
+const isTimezone = (zone: string): boolean => {
+  if (zone === '') return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** The values the extended toggle adds to a scale, as a short phrase. */
 const extendedPhrase = (scale: EstimateScale): string => {
@@ -80,19 +102,28 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
   const [countUnestimated, setCountUnestimated] = useState(
     team.estimate_count_unestimated ?? false
   );
+  const savedZone = team.timezone ?? 'UTC';
+  const [timezone, setTimezone] = useState(savedZone);
+  const zones = useMemo(knownZones, []);
+  const zoneListId = useId();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const nameError =
     name === '' ? 'Give the team a name.' : validateTeamName(name);
   const descriptionError = validateTeamDescription(description);
+  const zoneError = isTimezone(timezone.trim())
+    ? null
+    : 'Pick a timezone such as America/Los_Angeles.';
+  const zoneChanged = timezone.trim() !== savedZone;
   const dirty =
     name.trim() !== team.name ||
     description.trim() !== (team.description ?? '') ||
     estimateScale !== team.estimate_scale ||
     extended !== (team.estimate_extended ?? false) ||
     allowZero !== (team.estimate_allow_zero ?? false) ||
-    countUnestimated !== (team.estimate_count_unestimated ?? false);
+    countUnestimated !== (team.estimate_count_unestimated ?? false) ||
+    zoneChanged;
   const estimatesOn = estimateScale !== 'off';
   const inherited =
     team.parent_team_id !== undefined && team.parent_team_id !== null;
@@ -102,6 +133,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
     dirty &&
     nameError === null &&
     descriptionError === null &&
+    zoneError === null &&
     !isSaving;
 
   const onSubmit = async (event: React.FormEvent): Promise<void> => {
@@ -117,6 +149,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
         estimate_extended: extended,
         estimate_allow_zero: allowZero,
         estimate_count_unestimated: countUnestimated,
+        ...(zoneChanged ? { timezone: timezone.trim() } : {}),
       });
       invalidateQueries(teamsKey(workspaceId));
       onSaved();
@@ -254,6 +287,36 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
         </fieldset>
       )}
 
+      <div className="space-y-1">
+        <Label htmlFor="team-general-timezone">Timezone</Label>
+        <Input
+          id="team-general-timezone"
+          className="sm:w-56"
+          list={zoneListId}
+          value={timezone}
+          autoComplete="off"
+          disabled={estimatesLocked}
+          aria-invalid={zoneError === null ? undefined : true}
+          aria-describedby="team-general-timezone-help"
+          onChange={(event) => {
+            setTimezone(event.target.value);
+          }}
+        />
+        <datalist id={zoneListId}>
+          {zones.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
+        {!estimatesLocked && zoneError !== null && (
+          <p className="text-xs text-danger">{zoneError}</p>
+        )}
+        <p id="team-general-timezone-help" className="text-xs text-text-faint">
+          {inherited
+            ? "This sub-team's cycles run in its parent team's timezone."
+            : 'Cycles start, end and roll over at midnight here. The standup digest uses it unless the team sets its own.'}
+        </p>
+      </div>
+
       {canEdit && (
         <div className="flex justify-end">
           <Button type="submit" variant="primary" disabled={!canSave}>
@@ -280,7 +343,7 @@ export const TeamGeneralSection: React.FC<TeamGeneralSectionProps> = ({
         <h3 className="text-base font-semibold">General</h3>
         <p className="text-sm text-text-muted">
           {canEdit
-            ? 'How this team looks, is named and described, and how its issues are estimated.'
+            ? 'How this team looks, is named and described, how its issues are estimated and which timezone its cycles run in.'
             : 'Only a team admin can change these.'}
         </p>
       </div>

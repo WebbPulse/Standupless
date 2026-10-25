@@ -4,7 +4,8 @@
  * real authorization failure, the repository pin sent as an explicit null to
  * clear it, the transitions routes, the webhook routes in both the workspace
  * and the team scope, the issue links page shape, and the Slack App connection
- * with its channel list and the team it returns to.
+ * with its channel list and the team it returns to, and the GitLab connection
+ * routes.
  * Each is pinned because a wrong path, verb or parameter name type-checks
  * identically and fails only against a live backend.
  */
@@ -23,8 +24,15 @@ import {
   deleteTransition,
   deleteWebhook,
   discordChannelsPath,
+  createGitlabConnection,
+  deleteGitlabConnection,
   getInstallUrl,
   getInstallation,
+  gitlabConnectionPath,
+  gitlabConnectionsPath,
+  gitlabRotatePath,
+  listGitlabConnections,
+  rotateGitlabSecret,
   getSlackConnection,
   getSlackLink,
   getDiscordLink,
@@ -766,5 +774,60 @@ describe('webhooks', () => {
       undefined
     );
     expect(again.redelivery_of).toBe('dl-1');
+  });
+});
+
+describe('GitLab connections', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('lists the workspace connections', async () => {
+    get.mockResolvedValue({ data: { configured: true, connections: [] } });
+    await expect(listGitlabConnections(WS)).resolves.toEqual({
+      configured: true,
+      connections: [],
+    });
+    expect(get).toHaveBeenCalledWith(gitlabConnectionsPath(WS), undefined);
+    expect(gitlabConnectionsPath(WS)).toBe(
+      `/workspaces/${WS}/gitlab/connections`
+    );
+  });
+
+  it('connects a group with its token and reads the secret back', async () => {
+    post.mockResolvedValue({
+      data: { connection_id: 'gl', webhook_secret: 's' },
+    });
+    const body = {
+      instance_url: '',
+      scope_kind: 'group' as const,
+      scope_path: 'acme',
+      access_token: 'glpat-x',
+    };
+    const created = await createGitlabConnection(WS, body);
+    expect(post).toHaveBeenCalledWith(
+      gitlabConnectionsPath(WS),
+      body,
+      undefined
+    );
+    expect(created.webhook_secret).toBe('s');
+  });
+
+  it('rotates and removes one connection', async () => {
+    post.mockResolvedValue({
+      data: { connection_id: 'gl', webhook_secret: 't' },
+    });
+    await rotateGitlabSecret(WS, 'gl');
+    expect(post).toHaveBeenCalledWith(
+      gitlabRotatePath(WS, 'gl'),
+      {},
+      undefined
+    );
+    expect(gitlabRotatePath(WS, 'gl')).toBe(
+      `/workspaces/${WS}/gitlab/connections/gl/rotate-secret`
+    );
+    del.mockResolvedValue({ data: null });
+    await deleteGitlabConnection(WS, 'gl');
+    expect(del).toHaveBeenCalledWith(gitlabConnectionPath(WS, 'gl'), undefined);
   });
 });

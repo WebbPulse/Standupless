@@ -586,6 +586,20 @@ class ReleaseRepository:
         pairs = [(str(item["team_id"]), str(item["release_id"])) for item in items if item.get("kind") == RELEASE_ISSUE]
         return sorted(pairs, key=lambda pair: pair[1], reverse=True)
 
+    def release_ids_by_issue(self, workspace_id: str, *, max_items: int = 50000) -> dict[str, frozenset[str]]:
+        """Every release each issue of the workspace is linked to, read in one query of the link rows."""
+        if not workspace_id:
+            return {}
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(RELEASE_ISSUE_PREFIX),
+            max_items=max_items,
+        )
+        found: dict[str, set[str]] = {}
+        for item in items:
+            if item.get("kind") == RELEASE_ISSUE:
+                found.setdefault(str(item["issue_id"]), set()).add(str(item["release_id"]))
+        return {issue_id: frozenset(ids) for issue_id, ids in found.items()}
+
     def delete(self, release: Release) -> None:
         """Delete one release with its issue links, its commit pointer and its name claim if it holds one."""
         self.unlink_issues(release.workspace_id, release.release_id, release.issue_ids)

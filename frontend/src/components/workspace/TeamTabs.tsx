@@ -8,19 +8,22 @@
  * route it does not match exactly.
  */
 
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { SidebarDataContext } from '../../contexts/SidebarDataContextDefinition';
+import { useFeatureOn } from '../../hooks/useFeatureOn';
 import { cn } from '../../lib/cn';
 import {
   teamBoardPath,
   teamCyclesPath,
   teamDocumentsPagePath,
   teamPath,
+  teamProjectsPath,
   teamReleasesPath,
   teamSettingsPath,
   teamStandupPath,
   teamTriagePath,
+  teamViewsPath,
 } from '../../lib/paths';
 
 /** Which of a team's surfaces is showing. */
@@ -29,6 +32,8 @@ export type TeamTab =
   | 'triage'
   | 'board'
   | 'cycles'
+  | 'projects'
+  | 'views'
   | 'releases'
   | 'documents'
   | 'standup'
@@ -45,15 +50,18 @@ export interface TeamTabsProps {
 
 const tabClass = (active: boolean): string =>
   cn(
-    'flex h-7 items-center rounded-sm px-2.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 pointer-coarse:h-10',
-    'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
+    'flex h-7 shrink-0 items-center rounded-sm px-2.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 pointer-coarse:h-10',
+    'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset',
     active ? 'bg-raised text-text' : 'text-text-muted hover:text-text'
   );
 
 /**
- * The Issues, Board, Cycles, Releases, Documents, Standup and Settings switch for one
- * team, led by Triage whenever the team has triage on or the triage page is
- * showing, so the inbox is one click from any of the team's surfaces.
+ * The Issues, Board, Cycles, Projects, Views, Releases, Documents, Standup and
+ * Settings switch for one team, in Linear's order, led by Triage whenever the
+ * team has triage on or the triage page is showing, so the inbox is one click
+ * from any of the team's surfaces. Releases and Documents drop out while the
+ * workspace has them off. On a narrow screen the row scrolls sideways and
+ * brings the showing tab into view.
  */
 export const TeamTabs: React.FC<TeamTabsProps> = ({
   slug,
@@ -62,6 +70,15 @@ export const TeamTabs: React.FC<TeamTabsProps> = ({
   teamId,
 }) => {
   const shared = useContext(SidebarDataContext);
+  const releasesOn = useFeatureOn('releases');
+  const documentsOn = useFeatureOn('documents');
+  const activeRef = useRef<HTMLAnchorElement | null>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView?.({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  }, [current]);
   const triageOn =
     teamId !== undefined &&
     (shared?.triage?.teams ?? []).some((row) => row.team_id === teamId);
@@ -83,15 +100,29 @@ export const TeamTabs: React.FC<TeamTabsProps> = ({
       to: teamCyclesPath(slug, keyPrefix),
     },
     {
-      tab: 'releases',
-      label: 'Releases',
-      to: teamReleasesPath(slug, keyPrefix),
+      tab: 'projects',
+      label: 'Projects',
+      to: teamProjectsPath(slug, keyPrefix),
     },
-    {
-      tab: 'documents',
-      label: 'Documents',
-      to: teamDocumentsPagePath(slug, keyPrefix),
-    },
+    { tab: 'views', label: 'Views', to: teamViewsPath(slug, keyPrefix) },
+    ...(releasesOn
+      ? [
+          {
+            tab: 'releases' as const,
+            label: 'Releases',
+            to: teamReleasesPath(slug, keyPrefix),
+          },
+        ]
+      : []),
+    ...(documentsOn
+      ? [
+          {
+            tab: 'documents' as const,
+            label: 'Documents',
+            to: teamDocumentsPagePath(slug, keyPrefix),
+          },
+        ]
+      : []),
     {
       tab: 'standup',
       label: 'Standup',
@@ -105,18 +136,22 @@ export const TeamTabs: React.FC<TeamTabsProps> = ({
   ];
 
   return (
-    <div className="flex items-center gap-1">
+    <nav
+      aria-label="Team"
+      className="flex max-w-[calc(100vw-2rem)] min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {tabs.map((row) => (
         <Link
           key={row.tab}
           to={row.to}
+          ref={current === row.tab ? activeRef : undefined}
           className={tabClass(current === row.tab)}
           {...(current === row.tab ? { 'aria-current': 'page' as const } : {})}
         >
           {row.label}
         </Link>
       ))}
-    </div>
+    </nav>
   );
 };
 

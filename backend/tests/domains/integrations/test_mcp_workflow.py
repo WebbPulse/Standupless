@@ -103,3 +103,45 @@ def test_merge_workspace_labels_needs_admin_and_folds_the_label(
     assert merged["complete"] is True
     assert merged["target"]["label_id"] == bug["label_id"]
     assert [row.label_id for row in repositories.team_config.list_workspace_labels(WORKSPACE)] == [bug["label_id"]]
+
+
+def test_the_status_tools_carry_a_description(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Create, update and override statuses with a description, and a null clears it."""
+    secret = mint_for(repositories, ADMIN, ("statuses:write", "statuses:read", "admin"))
+
+    shared = answer(
+        tool(
+            client,
+            secret,
+            "create_workspace_status",
+            {"name": "Review", "category": "started", "description": "Waiting on a reviewer"},
+        )
+    )
+    reworded = answer(
+        tool(client, secret, "update_workspace_status", {"status": "Review", "description": "Waiting on review"})
+    )
+    own = answer(
+        tool(
+            client,
+            secret,
+            "create_status",
+            {"team_id": "ABC", "name": "Staging", "category": "started", "description": "Merged into staging"},
+        )
+    )
+    cleared = answer(
+        tool(client, secret, "update_status", {"team_id": "ABC", "status": "Staging", "description": None})
+    )
+    local = answer(
+        tool(
+            client,
+            secret,
+            "override_team_status",
+            {"team_id": "ABC", "status": "Review", "description": "Two approvals needed"},
+        )
+    )
+
+    assert shared["description"] == "Waiting on a reviewer"
+    assert reworded["description"] == "Waiting on review"
+    assert own["description"] == "Merged into staging"
+    assert cleared["description"] is None
+    assert (local["description"], local["inherited_description"]) == ("Two approvals needed", "Waiting on review")

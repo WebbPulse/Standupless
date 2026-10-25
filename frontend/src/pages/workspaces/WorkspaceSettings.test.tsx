@@ -96,6 +96,16 @@ vi.mock('../../api/workspaces', () => ({
   cancelWorkspaceDeletion: () => cancelWorkspaceDeletion(),
   updateWorkspace: (_workspaceId: string, body: unknown) =>
     updateWorkspace(body),
+  getInviteLink: () =>
+    Promise.resolve({ enabled: false, created_by: null, created_at: null }),
+  resetInviteLink: () =>
+    Promise.resolve({
+      enabled: true,
+      created_by: null,
+      created_at: null,
+      token: 'token',
+    }),
+  disableInviteLink: () => Promise.resolve(undefined),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -107,6 +117,16 @@ vi.mock('@webbpulse/auth/react', async () => {
     useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
   };
 });
+
+vi.mock('../../hooks/useMyStatus', () => ({
+  useMyStatus: () => ({
+    status: null,
+    saving: false,
+    error: null,
+    save: () => Promise.resolve(true),
+    clear: () => Promise.resolve(true),
+  }),
+}));
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 

@@ -47,7 +47,14 @@ def test_a_manifest_points_at_its_own_environment(name: str, host: str, command:
         "messages_tab_read_only_enabled": True,
     }
     assert settings["event_subscriptions"]["request_url"] == f"{api}/events"
-    assert sorted(settings["event_subscriptions"]["bot_events"]) == ["app_uninstalled", "link_shared", "tokens_revoked"]
+    assert sorted(settings["event_subscriptions"]["bot_events"]) == [
+        "app_uninstalled",
+        "link_shared",
+        "message.channels",
+        "message.groups",
+        "reaction_added",
+        "tokens_revoked",
+    ]
     assert settings["interactivity"] == {"is_enabled": True, "request_url": f"{api}/interactions"}
     assert settings["socket_mode_enabled"] is False
     assert settings["token_rotation_enabled"] is False

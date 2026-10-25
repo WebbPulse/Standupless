@@ -7,7 +7,8 @@
  * deleting is offered only to an admin and returns to the list. The updates
  * tab opens from `?tab=updates`, lists updates under their anchors, posts,
  * edits and deletes them, and a quiet live project nudges for one. The
- * overview's activity interleaves property changes with the updates.
+ * overview's activity interleaves property changes with the updates. R
+ * focuses the name and Cmd or Ctrl+Shift+Comma copies the project's address.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -29,6 +30,10 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import { projectPath } from '../../lib/paths';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import ProjectDetail from './ProjectDetail';
 
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
@@ -1047,5 +1052,198 @@ describe('ProjectDetail', () => {
       'aria-selected',
       'true'
     );
+  });
+
+  describe('overview', () => {
+    /** The overview surface once the lazy editor has arrived. */
+    const findOverview = (): Promise<HTMLElement> =>
+      screen.findByRole(
+        'textbox',
+        { name: 'Description' },
+        { timeout: 10_000 }
+      );
+
+    it('edits a plain text description in the rich editor with block grips, saving nothing unchanged', async () => {
+      getProject.mockResolvedValue({
+        ...launch,
+        description: 'Getting it out\n\nThen tidying up',
+        body_version: 'v1',
+      });
+      renderPage();
+
+      const surface = await findOverview();
+      expect(surface).toHaveTextContent('Getting it out');
+      expect(surface).toHaveTextContent('Then tidying up');
+      expect(surface.closest('[data-block-handles]')).not.toBeNull();
+      act(() => {
+        surface.focus();
+        surface.blur();
+      });
+
+      expect(updateProject).not.toHaveBeenCalled();
+    });
+
+    it('saves an edit against the version it read', async () => {
+      getProject.mockResolvedValue({ ...launch, body_version: 'v1' });
+      updateProject.mockResolvedValue({
+        ...launch,
+        description: 'Ship it',
+        body_version: 'v2',
+      });
+      renderPage();
+
+      typeInto(await findOverview(), 'Ship it');
+
+      await waitFor(
+        () => {
+          expect(updateProject).toHaveBeenCalledWith({
+            description: 'Ship it',
+            base_body_version: 'v1',
+          });
+        },
+        { timeout: 5_000 }
+      );
+      expect(updateProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers the conflict choices when someone else saved first, and keeps mine on request', async () => {
+      const user = userEvent.setup();
+      getProject.mockResolvedValue({ ...launch, body_version: 'v1' });
+      updateProject
+        .mockRejectedValueOnce(
+          new ApiError({
+            status: 409,
+            statusText: 'Conflict',
+            body: {
+              success: false,
+              error_code: 'BODY_CHANGED',
+              message: 'Someone else edited this since you opened it',
+              details: { body: 'Theirs', body_version: 'v9' },
+            },
+            url: '/api/workspaces/ws-1/projects/prj-1',
+            method: 'PATCH',
+          })
+        )
+        .mockResolvedValue({
+          ...launch,
+          description: 'Mine',
+          body_version: 'v10',
+        });
+      renderPage();
+
+      typeInto(await findOverview(), 'Mine');
+
+      expect(
+        await screen.findByText(
+          'Someone else edited this. Your changes are not saved yet.',
+          undefined,
+          { timeout: 5_000 }
+        )
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Keep mine' }));
+
+      await waitFor(() => {
+        expect(updateProject).toHaveBeenLastCalledWith({
+          description: 'Mine',
+          base_body_version: 'v9',
+        });
+      });
+      expect(
+        screen.queryByText(
+          'Someone else edited this. Your changes are not saved yet.'
+        )
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('keyboard', () => {
+    /** Renders the page inside a shortcut registry, as the workspace shell does. */
+    const renderWithKeys = (entry = '/w/mine/projects/prj-1') =>
+      render(
+        <ShortcutProvider>
+          <BoundKeys />
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/w/:slug/projects/:id" element={<ProjectDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </ShortcutProvider>
+      );
+
+    /** Dispatches one key the way the shortcut layer listens for it. */
+    const press = (key: string, init: KeyboardEventInit = {}) => {
+      act(() => {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, ...init })
+        );
+      });
+    };
+
+    it('focuses and selects the name on R', async () => {
+      renderWithKeys();
+      const name = await screen.findByRole<HTMLInputElement>('textbox', {
+        name: 'Project name',
+      });
+      await keysBound('r');
+
+      press('r');
+
+      expect(name).toHaveFocus();
+      expect(name.selectionStart).toBe(0);
+      expect(name.selectionEnd).toBe('Launch'.length);
+    });
+
+    it('leaves R to the field being typed in', async () => {
+      const user = userEvent.setup();
+      renderWithKeys();
+      const name = await screen.findByRole('textbox', {
+        name: 'Project name',
+      });
+      const description = await screen.findByRole(
+        'textbox',
+        { name: 'Description' },
+        { timeout: 10_000 }
+      );
+      await keysBound('r');
+
+      act(() => {
+        description.focus();
+      });
+      await user.keyboard('r');
+
+      expect(description).toHaveFocus();
+      expect(name).not.toHaveFocus();
+    });
+
+    it('does not bind R for a viewer who cannot rename', async () => {
+      useWorkspaceMock.mockReturnValue(resolved('guest'));
+      const outsider: TeamRead = { ...engine };
+      delete outsider.role;
+      listTeams.mockResolvedValue([outsider]);
+      renderWithKeys();
+      await screen.findByRole('textbox', { name: 'Project name' });
+      await keysBound('mod+shift+,');
+
+      expect(
+        screen.getByTestId('bound-keys').getAttribute('data-keys')?.split('|')
+      ).not.toContain('r');
+    });
+
+    it('copies the project URL on Cmd or Ctrl+Shift+,', async () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      renderWithKeys();
+      await screen.findByRole('group', { name: 'Properties' });
+      await keysBound('mod+shift+,');
+
+      press('<', { ctrlKey: true, shiftKey: true, code: 'Comma' });
+
+      expect(writeText).toHaveBeenCalledWith(
+        `${globalThis.location.origin}${projectPath('mine', launch)}`
+      );
+    });
   });
 });

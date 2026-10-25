@@ -1,5 +1,5 @@
 /**
- * The search field at the start of the settings nav: typing filters a list of
+ * The search field at the top of the settings sidebar: typing filters a list of
  * the settings pages, sections and controls the viewer may open, and choosing
  * one goes there, scrolls to its section and briefly highlights it, as
  * Linear's settings search does. `/` focuses it on any settings page.
@@ -44,7 +44,8 @@ export const SettingsAnchor: React.FC<SettingsAnchorProps> = ({
 
 /** Props for SettingsSearch. */
 export interface SettingsSearchProps {
-  workspace: Pick<WorkspaceRead, 'slug' | 'role'>;
+  workspace: Pick<WorkspaceRead, 'slug' | 'role'> &
+    Partial<Pick<WorkspaceRead, 'features'>>;
   /**
    * The teams whose settings are searched. Left unset, the teams the viewer
    * belongs to in the shared team list.

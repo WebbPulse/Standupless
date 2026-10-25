@@ -1,5 +1,5 @@
 /**
- * The workspace settings page: the logo, the accent color, the project update
+ * The workspace settings page: the logo, the workspace URL, the accent color, the project update
  * cadence, members, invites, the GitHub connection, the outbound webhook
  * endpoints, the CSV export, and the danger zone where an owner or admin
  * schedules the workspace's deletion. Every section but the danger zone is for
@@ -14,7 +14,6 @@ import AccentColorSection from '../../components/workspace/AccentColorSection';
 import DangerZoneSection from '../../components/workspace/DangerZoneSection';
 import ExportSection from '../../components/workspace/ExportSection';
 import GithubSection from '../../components/workspace/GithubSection';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import InvitesSection from '../../components/workspace/InvitesSection';
 import MembersSection from '../../components/workspace/MembersSection';
@@ -22,6 +21,7 @@ import ProjectUpdatesSection from '../../components/workspace/ProjectUpdatesSect
 import WebhooksSection from '../../components/workspace/WebhooksSection';
 import WorkspaceLogoSection from '../../components/workspace/WorkspaceLogoSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import WorkspaceUrlSection from '../../components/workspace/WorkspaceUrlSection';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canInviteMembers, canManageMembers } from '../../lib/capabilities';
 
@@ -30,18 +30,16 @@ const WorkspaceSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (
             <>
               <SettingsAnchor id="logo">
                 <WorkspaceLogoSection workspace={workspace} />
+              </SettingsAnchor>
+              <SettingsAnchor id="url">
+                <WorkspaceUrlSection workspace={workspace} />
               </SettingsAnchor>
               <SettingsAnchor id="accent">
                 <AccentColorSection workspace={workspace} />

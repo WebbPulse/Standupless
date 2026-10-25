@@ -24,7 +24,18 @@ ViewKind = Literal["list", "board"]
 VIEW_KINDS: tuple[str, ...] = ("list", "board")
 
 GroupBy = Literal[
-    "status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla", "customer"
+    "status",
+    "assignee",
+    "priority",
+    "label",
+    "milestone",
+    "project",
+    "cycle",
+    "parent",
+    "team",
+    "sla",
+    "customer",
+    "release",
 ]
 
 GROUP_BY_FIELDS: tuple[str, ...] = get_args(GroupBy)
@@ -97,6 +108,8 @@ class SavedView(BaseModel):
     view lists issues or projects, an absent value reading as issues because every
     view saved before project views existed was one; a project view keeps its
     arrangement in `projects_display` and leaves the issue display fields empty.
+    `collapsed_groups` holds the keys of the groups folded, the board columns and
+    swimlanes hidden and the parents folded, shared by everyone who opens the view.
     """
 
     workspace_id: str
@@ -119,6 +132,7 @@ class SavedView(BaseModel):
     completed_window: str | None = None
     show_archived: bool | None = None
     group_header: str | None = None
+    collapsed_groups: list[str] | None = None
     projects_display: dict[str, str] | None = None
     icon: str | None = None
     color: str | None = None
@@ -313,6 +327,37 @@ class IssueDraft(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+LIST_FOLDS_PREFIX = "folds#"
+"""The sort key prefix every member's remembered list folds share."""
+
+
+def list_folds_user_prefix(user_id: str) -> str:
+    """The sort key prefix every remembered list fold of one member shares."""
+    return f"{LIST_FOLDS_PREFIX}{user_id}#"
+
+
+def list_folds_key(user_id: str, list_key: str) -> str:
+    """The sort key of one member's folds on one list that is not a saved view."""
+    return f"{list_folds_user_prefix(user_id)}{list_key}"
+
+
+class ListFolds(BaseModel):
+    """One member's folded groups, hidden board columns and hidden swimlanes on one list.
+
+    A saved view carries its folds on its own row, shared by everyone who opens
+    it. A list that is not a saved view, such as a team's issues or a cycle,
+    keeps them per person here, so they follow the person across devices. The
+    row exists only while something is folded.
+    """
+
+    workspace_id: str
+    view_key: str
+    user_id: str
+    list_key: str
+    collapsed: list[str] = Field(default_factory=list)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 VIEW_SUBSCRIPTION_PREFIX = "viewsub#"
 """The sort key prefix every view subscription shares."""
 
@@ -359,6 +404,48 @@ class ViewSubscription(BaseModel):
     user_id: str
     saved_view_key: str
     created_at: datetime = Field(default_factory=utc_now)
+
+
+TEAM_SUBSCRIPTION_PREFIX = "teamsub#"
+"""The sort key prefix every team notification subscription shares."""
+
+TeamSubscriptionEvent = Literal["issue_created", "triage", "completed", "cancelled"]
+
+TEAM_SUBSCRIPTION_EVENTS: tuple[str, ...] = get_args(TeamSubscriptionEvent)
+
+
+def team_subscription_prefix(team_id: str) -> str:
+    """The sort key prefix every subscription to one team's issues shares."""
+    return f"{TEAM_SUBSCRIPTION_PREFIX}{team_id}#"
+
+
+def team_subscription_key(team_id: str, user_id: str) -> str:
+    """The sort key of one member's subscription to one team's issues."""
+    return f"{team_subscription_prefix(team_id)}{user_id}"
+
+
+class TeamNotificationSubscription(BaseModel):
+    """One member's choice of which of a team's issue events reach their inbox.
+
+    Every event defaults off, and a row exists only while at least one is on, so
+    the notify consumer reads a team's subscribers as one query and finds only
+    people who asked to hear something.
+    """
+
+    workspace_id: str
+    view_key: str
+    team_id: str
+    user_id: str
+    issue_created: bool = False
+    triage: bool = False
+    completed: bool = False
+    cancelled: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def wants(self, event: str) -> bool:
+        """Whether this subscription is on for one event of `TEAM_SUBSCRIPTION_EVENTS`."""
+        return event in TEAM_SUBSCRIPTION_EVENTS and bool(getattr(self, event))
 
 
 class ViewRepository(DashboardRows):
@@ -800,6 +887,109 @@ class ViewRepository(DashboardRows):
             if row.get("user_id") == user_id:
                 self._repository.delete({"workspace_id": workspace_id, "view_key": row["view_key"]})
         return removed
+
+    def get_team_subscription(
+        self, workspace_id: str, team_id: str, user_id: str
+    ) -> TeamNotificationSubscription | None:
+        """One member's subscription to one team's issue events, or `None` when every event is off."""
+        if not workspace_id or not team_id or not user_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "view_key": team_subscription_key(team_id, user_id)})
+        return TeamNotificationSubscription.model_validate(dict(item)) if item is not None else None
+
+    def set_team_subscription(
+        self, workspace_id: str, team_id: str, user_id: str, events: Mapping[str, bool]
+    ) -> TeamNotificationSubscription | None:
+        """Store which of a team's issue events one member hears, removing the row when every one is off.
+
+        Events left out of `events` keep their current value, so a caller can turn
+        one on without restating the others.
+        """
+        if not workspace_id or not team_id or not user_id:
+            return None
+        existing = self.get_team_subscription(workspace_id, team_id, user_id)
+        values = {event: bool(getattr(existing, event)) if existing else False for event in TEAM_SUBSCRIPTION_EVENTS}
+        values.update({event: bool(value) for event, value in events.items() if event in TEAM_SUBSCRIPTION_EVENTS})
+        key = {"workspace_id": workspace_id, "view_key": team_subscription_key(team_id, user_id)}
+        if not any(values.values()):
+            if existing is not None:
+                self._repository.delete(key)
+            return None
+        row = TeamNotificationSubscription(
+            workspace_id=workspace_id,
+            view_key=key["view_key"],
+            team_id=team_id,
+            user_id=user_id,
+            issue_created=values["issue_created"],
+            triage=values["triage"],
+            completed=values["completed"],
+            cancelled=values["cancelled"],
+            created_at=existing.created_at if existing else utc_now(),
+        )
+        self._repository.put(as_item(row))
+        return row
+
+    def team_subscriptions(self, workspace_id: str, team_id: str) -> list[TeamNotificationSubscription]:
+        """Every member subscribed to any of one team's issue events, oldest subscription first."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(team_subscription_prefix(team_id))
+        )
+        rows = [TeamNotificationSubscription.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: row.created_at)
+
+    def delete_team_subscriptions(self, workspace_id: str, team_id: str) -> int:
+        """Delete every subscription to one team's issue events, for when the team itself goes."""
+        if not workspace_id or not team_id:
+            return 0
+        return self._delete_prefix(workspace_id, team_subscription_prefix(team_id))
+
+    def delete_team_subscriptions_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every team subscription one member holds, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        removed = 0
+        for row in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(TEAM_SUBSCRIPTION_PREFIX)
+            )
+        ):
+            if row.get("user_id") == user_id:
+                self._repository.delete({"workspace_id": workspace_id, "view_key": row["view_key"]})
+                removed += 1
+        return removed
+
+    def get_list_folds(self, workspace_id: str, user_id: str, list_key: str) -> ListFolds | None:
+        """One member's folds on one list, or `None` when nothing is folded there."""
+        if not workspace_id or not user_id or not list_key:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "view_key": list_folds_key(user_id, list_key)})
+        return ListFolds.model_validate(dict(item)) if item else None
+
+    def set_list_folds(self, workspace_id: str, user_id: str, list_key: str, collapsed: list[str]) -> list[str]:
+        """Store one member's folds on one list, removing the row once nothing is folded."""
+        if not workspace_id or not user_id or not list_key:
+            return []
+        key = {"workspace_id": workspace_id, "view_key": list_folds_key(user_id, list_key)}
+        if not collapsed:
+            self._repository.delete(key)
+            return []
+        row = ListFolds(
+            workspace_id=workspace_id,
+            view_key=key["view_key"],
+            user_id=user_id,
+            list_key=list_key,
+            collapsed=list(collapsed),
+        )
+        self._repository.put(as_item(row))
+        return row.collapsed
+
+    def delete_list_folds_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every list fold one member holds in a workspace, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        return self._delete_prefix(workspace_id, list_folds_user_prefix(user_id))
 
     def _list(self, workspace_id: str, prefix: str, limit: int) -> list[SavedView]:
         """Every view under one sort key prefix, in creation order."""

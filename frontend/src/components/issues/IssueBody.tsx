@@ -77,6 +77,8 @@ export interface IssueBodyProps {
   onQuote?: (markdown: string) => void;
   /** Offers a thread pinned to a selected passage, under an anchored threads provider. */
   canComment?: boolean;
+  /** Hears whether the person is editing the description, for the presence ring. */
+  onEditingChange?: (editing: boolean) => void;
 }
 
 /** The body text as prose, shared by the editor and its stand in. */
@@ -125,6 +127,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   onDropFiles,
   onQuote,
   canComment = false,
+  onEditingChange,
 }) => {
   const [dragging, setDragging] = useState(false);
   const [bodyFocused, setBodyFocused] = useState(false);
@@ -139,6 +142,11 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   const passages = usePassageThreads();
   const [passage, setPassage] = useState<CommentAnchor | null>(null);
   const [posted, setPosted] = useState<string | null>(null);
+
+  const editing = canEdit && bodyFocused;
+  useEffect(() => {
+    onEditingChange?.(editing);
+  }, [editing, onEditingChange]);
 
   const showPosted = passages?.showThread;
   const postedListed =

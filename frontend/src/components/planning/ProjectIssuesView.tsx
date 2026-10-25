@@ -12,6 +12,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useIssueCollection } from '../../hooks/useIssueCollection';
+import { useListFolds } from '../../hooks/useListFolds';
 import {
   useIssueContext,
   type IssueContextState,
@@ -74,6 +75,10 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
       setParams(writeViewState(next, base, params), { replace: true });
     },
     [setParams, base, params]
+  );
+  const folds = useListFolds(
+    workspaceId,
+    projectId === '' ? undefined : `project:${projectId}`
   );
 
   const [triage, setTriage] = useState(() => ({
@@ -166,6 +171,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
             triage={{ shown: showTriage, onChange: changeTriage }}
             onReset={
               !showTriage &&
+              folds.collapsed.size === 0 &&
               sameViewState(
                 {
                   ...state,
@@ -179,6 +185,7 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
                 ? undefined
                 : () => {
                     changeTriage(false);
+                    folds.clear();
                     setState({
                       ...base,
                       filters: state.filters,
@@ -212,7 +219,11 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
         canEdit={canEdit}
         createTeamId={createTeamId}
         createProjectId={projectId}
-        collapseKey={`${workspaceId}.project:${projectId}`}
+        folds={{
+          collapsed: folds.collapsed,
+          onToggle: folds.toggle,
+          onSet: folds.set,
+        }}
         emptyMessage={
           state.filters.length === 0
             ? 'No issues are in this project yet.'

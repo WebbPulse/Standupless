@@ -468,11 +468,21 @@ const byDate = (a: string | null, b: string | null): number => {
   return a.localeCompare(b);
 };
 
+/** A row that runs in a shared manual order: its key, when it was made, and its name. */
+export interface ManuallyOrdered {
+  sort_order?: string | null;
+  created_at: string;
+  name: string;
+}
+
 /**
- * Compares two projects in the shared manual order: placed projects by their
- * key, then projects never placed, newest first, the way new ones arrive.
+ * Compares two rows in a shared manual order: placed rows by their key, then
+ * rows never placed, newest first, the way new ones arrive.
  */
-const byManual = (left: ProjectRead, right: ProjectRead): number => {
+export const byManual = (
+  left: ManuallyOrdered,
+  right: ManuallyOrdered
+): number => {
   const leftKey = left.sort_order ?? null;
   const rightKey = right.sort_order ?? null;
   if (leftKey !== null && rightKey !== null) {
@@ -1038,28 +1048,29 @@ export const cellChange = (
   return dropPatch(project, groups);
 };
 
-/** One project's new manual position. */
-export interface ProjectPlacement {
-  projectId: string;
+/** One row's new manual position. */
+export interface ManualPlacement {
+  id: string;
   sort_order: string;
 }
 
 /**
- * The manual positions that drop a project at `index` among the other rows
- * of one list or cell, given in the order they are shown. The project lands
- * just after the row shown above the drop point, or first when there is
- * none, so the drop reads right once the rows run in manual order. One key is
- * written when every row ahead of it is placed; otherwise the unplaced rows
- * up to it are placed too, in manual order, since unplaced rows sort last.
- * Null when no key fits.
+ * The manual positions that drop a row at `index` among the other rows of
+ * one list, given in the order they are shown. The row lands just after the
+ * row shown above the drop point, or first when there is none, so the drop
+ * reads right once the rows run in manual order. One key is written when
+ * every row ahead of it is placed; otherwise the unplaced rows up to it are
+ * placed too, in manual order, since unplaced rows sort last. Null when no
+ * key fits.
  */
-export const manualPlacements = (
-  rows: readonly ProjectRead[],
+export const manualOrderPlacements = <T extends ManuallyOrdered>(
+  rows: readonly T[],
+  idOf: (row: T) => string,
   movingId: string,
   index: number
-): ProjectPlacement[] | null => {
-  const shown = rows.filter((project) => project.project_id !== movingId);
-  const moving = rows.find((project) => project.project_id === movingId);
+): ManualPlacement[] | null => {
+  const shown = rows.filter((row) => idOf(row) !== movingId);
+  const moving = rows.find((row) => idOf(row) === movingId);
   if (moving === undefined) return null;
   const above =
     index > 0 ? shown[Math.min(index, shown.length) - 1] : undefined;
@@ -1069,26 +1080,50 @@ export const manualPlacements = (
   );
   const at = above === undefined ? 0 : manual.indexOf(above) + 1;
   const moved = [...manual.slice(0, at), moving, ...manual.slice(at)];
-  const keyOf = (project: ProjectRead | undefined): string | null =>
-    project?.sort_order ?? null;
+  const keyOf = (row: T | undefined): string | null => row?.sort_order ?? null;
   try {
     const firstLoose = moved
       .slice(0, at)
-      .findIndex((project) => keyOf(project) === null);
+      .findIndex((row) => keyOf(row) === null);
     if (firstLoose < 0) {
       const key = orderBetween(keyOf(moved[at - 1]), keyOf(moved[at + 1]));
-      return key === keyOf(moving)
-        ? []
-        : [{ projectId: movingId, sort_order: key }];
+      return key === keyOf(moving) ? [] : [{ id: movingId, sort_order: key }];
     }
     let bound = keyOf(moved[firstLoose - 1]);
-    const placements: ProjectPlacement[] = [];
-    for (const project of moved.slice(firstLoose, at + 1)) {
+    const placements: ManualPlacement[] = [];
+    for (const row of moved.slice(firstLoose, at + 1)) {
       bound = orderBetween(bound, undefined);
-      placements.push({ projectId: project.project_id, sort_order: bound });
+      placements.push({ id: idOf(row), sort_order: bound });
     }
     return placements;
   } catch {
     return null;
   }
+};
+
+/** One project's new manual position. */
+export interface ProjectPlacement {
+  projectId: string;
+  sort_order: string;
+}
+
+/**
+ * The manual positions that drop a project at `index` among the other rows
+ * of one list or cell, given in the order they are shown, as
+ * {@link manualOrderPlacements} reads them. Null when no key fits.
+ */
+export const manualPlacements = (
+  rows: readonly ProjectRead[],
+  movingId: string,
+  index: number
+): ProjectPlacement[] | null => {
+  const placements = manualOrderPlacements(
+    rows,
+    (project) => project.project_id,
+    movingId,
+    index
+  );
+  return placements === null
+    ? null
+    : placements.map(({ id, sort_order }) => ({ projectId: id, sort_order }));
 };

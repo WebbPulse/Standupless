@@ -379,3 +379,38 @@ describe('callouts', () => {
     expect(parseMarkdown('> body\n> [!NOTE]')[0]?.type).toBe('quote');
   });
 });
+
+describe('equations', () => {
+  it('reads an inline equation and leaves prices as text', () => {
+    expect(parseInline('Energy $E = mc^2$ costs $5 and $10')).toEqual([
+      { type: 'text', value: 'Energy ' },
+      { type: 'math', latex: 'E = mc^2' },
+      { type: 'text', value: ' costs $5 and $10' },
+    ]);
+  });
+
+  it('keeps an escaped dollar and code as text', () => {
+    expect(parseInline('Literal \\$x$ and `$y$`')).toEqual([
+      { type: 'text', value: 'Literal $x$ and ' },
+      { type: 'code', value: '$y$' },
+    ]);
+  });
+
+  it('reads a fenced block and a one line block as block equations', () => {
+    expect(parseMarkdown('$$\n\\frac{a}{b}\n$$\n\n$$ x^2 $$')).toEqual([
+      { type: 'math', latex: '\\frac{a}{b}' },
+      { type: 'math', latex: 'x^2' },
+    ]);
+  });
+
+  it('ends a paragraph at a block equation', () => {
+    expect(parseMarkdown('Area\n$$\n\\pi r^2\n$$')).toEqual([
+      { type: 'paragraph', children: [{ type: 'text', value: 'Area' }] },
+      { type: 'math', latex: '\\pi r^2' },
+    ]);
+  });
+
+  it('leaves a fence that never closes as text', () => {
+    expect(parseMarkdown('$$\nx')[0]?.type).toBe('paragraph');
+  });
+});

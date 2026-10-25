@@ -452,6 +452,58 @@
     "stream_view_type": "NEW_IMAGE",
     "ttl_attribute": null
   },
+  "realtime_connections": {
+    "attributes": [
+      {
+        "name": "workspace_id",
+        "type": "S"
+      },
+      {
+        "name": "connection_key",
+        "type": "S"
+      },
+      {
+        "name": "connection_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "connection_id",
+        "name": "connection_id-index",
+        "projection_type": "KEYS_ONLY",
+        "range_key": null
+      }
+    ],
+    "hash_key": "workspace_id",
+    "range_key": "connection_key",
+    "stream_view_type": null,
+    "ttl_attribute": "expires_at"
+  },
+  "realtime_presence": {
+    "attributes": [
+      {
+        "name": "ws_entity",
+        "type": "S"
+      },
+      {
+        "name": "connection_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "connection_id",
+        "name": "connection_id-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "ws_entity",
+    "range_key": "connection_id",
+    "stream_view_type": null,
+    "ttl_attribute": "expires_at"
+  },
   "relations": {
     "attributes": [
       {

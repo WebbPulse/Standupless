@@ -87,6 +87,34 @@ export const mentionDirectory = (
   return directory;
 };
 
+/**
+ * Maps every handle that names a member, lowercased, to that member, in the
+ * same order {@link mentionDirectory} resolves handles, so a mention's card
+ * names the person its label does.
+ */
+export const mentionMembers = <
+  Member extends Pick<
+    MemberRead,
+    'user_id' | 'email' | 'display_name' | 'previous_handles'
+  >,
+>(
+  members: Member[]
+): ReadonlyMap<string, Member> => {
+  const found = new Map<string, Member>();
+  for (const member of members) {
+    for (const handle of currentHandles(member)) {
+      if (!found.has(handle)) found.set(handle, member);
+    }
+  }
+  for (const member of members) {
+    for (const handle of member.previous_handles ?? []) {
+      const key = handle.toLowerCase();
+      if (key !== '' && !found.has(key)) found.set(key, member);
+    }
+  }
+  return found;
+};
+
 /** The people whose name or email matches the query, best matches first. */
 export const matchPeople = (
   people: Assignable[],

@@ -1,8 +1,9 @@
 """Request and response bodies for the workspace's project labels.
 
 Project labels tag projects the way issue labels tag issues, but they are their
-own set: one list for the whole workspace, managed by its admins, and never put
-on an issue.
+own set and never put on an issue. A label with no team belongs to the whole
+workspace and is managed by its admins; one with a team belongs to that team,
+is managed by its admins and is offered only to that team's projects.
 """
 
 from __future__ import annotations
@@ -44,6 +45,9 @@ class ProjectLabelCreate(BaseModel):
     name: str = Field(min_length=1, max_length=PROJECT_LABEL_NAME_MAX)
     color: str
     description: Optional[str] = Field(default=None, max_length=LABEL_DESCRIPTION_MAX)
+    team_id: Optional[str] = Field(
+        default=None, min_length=1, description="The team that owns the label, or null for a workspace label"
+    )
 
     @field_validator("name")
     @classmethod
@@ -85,6 +89,9 @@ class ProjectLabelRead(BaseModel):
     name: str
     color: str
     description: Optional[str] = None
+    team_id: Optional[str] = Field(
+        default=None, description="The team that owns the label, or null for a workspace label"
+    )
     project_count: int = Field(default=0, description="Projects of the workspace that carry the label")
     created_at: datetime
     updated_at: datetime
@@ -97,6 +104,7 @@ class ProjectLabelRead(BaseModel):
             name=label.name,
             color=label.color,
             description=label.description,
+            team_id=label.team_id,
             project_count=project_count,
             created_at=label.created_at,
             updated_at=label.updated_at,

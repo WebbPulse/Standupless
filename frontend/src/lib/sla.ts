@@ -7,10 +7,14 @@
  * once the time left is at most a quarter of the whole window or a day,
  * whichever is shorter, and on track before that. A timer paused because the
  * issue sits in one of its team's paused statuses reads as it stood when it
- * paused, so it neither turns at risk nor breaches until it resumes.
+ * paused, so it neither turns at risk nor breaches until it resumes. A timer
+ * on a team that counts business days carries its timezone, and then the
+ * window, the at risk stretch and the time left all skip local Saturdays and
+ * Sundays through `slaClock`.
  */
 
 import type { IssuePriority, IssueRead, SlaStatus } from '../types/Api';
+import { slaAdvance, slaElapsed, slaRetreat } from './slaClock';
 
 const MINUTE_MS = 60000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -25,7 +29,11 @@ export const AT_RISK_SHARE = 0.25;
 /** The SLA fields an issue carries. */
 export type SlaFields = Pick<
   IssueRead,
-  'sla_started_at' | 'sla_breaches_at' | 'sla_status' | 'sla_paused_at'
+  | 'sla_started_at'
+  | 'sla_breaches_at'
+  | 'sla_status'
+  | 'sla_paused_at'
+  | 'sla_timezone'
 >;
 
 /** The SLA statuses in filter menu order, `none` last. */
@@ -52,24 +60,34 @@ const parseTime = (value: string | null | undefined): number | null => {
 
 /**
  * The status an SLA has at `now`. A missing or malformed deadline is no SLA;
- * a missing start leaves the at risk window at its one day cap.
+ * a missing start leaves the at risk window at its one day cap. With a `zone`
+ * the window and the at risk stretch are business time in that timezone.
  */
 export const slaStatusAt = (
   startedAt: string | null | undefined,
   breachesAt: string | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  zone: string | null = null
 ): SlaStatus => {
   const deadline = parseTime(breachesAt);
   if (deadline === null) return 'none';
-  const left = deadline - now.getTime();
-  if (left <= 0) return 'breached';
+  if (now.getTime() >= deadline) return 'breached';
   const start = parseTime(startedAt);
   const riskWindow =
     start === null || start >= deadline
       ? AT_RISK_CAP_MS
-      : Math.min((deadline - start) * AT_RISK_SHARE, AT_RISK_CAP_MS);
-  return left <= riskWindow ? 'at_risk' : 'on_track';
+      : Math.min(
+          slaElapsed(start, deadline, zone) * AT_RISK_SHARE,
+          AT_RISK_CAP_MS
+        );
+  return now.getTime() >= slaRetreat(deadline, riskWindow, zone)
+    ? 'at_risk'
+    : 'on_track';
 };
+
+/** The timezone an issue's timer skips weekends in, null for calendar time. */
+export const slaZone = (issue: SlaFields): string | null =>
+  issue.sla_timezone ?? null;
 
 /** Whether an issue's SLA timer is paused. */
 export const slaPaused = (issue: SlaFields): boolean =>
@@ -91,7 +109,12 @@ export const slaEffectiveDeadline = (
 ): number | null => {
   const deadline = parseTime(issue.sla_breaches_at);
   if (deadline === null) return null;
-  return deadline + (now.getTime() - slaMoment(issue, now).getTime());
+  const zone = slaZone(issue);
+  return slaAdvance(
+    deadline,
+    slaElapsed(slaMoment(issue, now).getTime(), now.getTime(), zone),
+    zone
+  );
 };
 
 /**
@@ -108,7 +131,8 @@ export const liveSlaStatus = (
     : slaStatusAt(
         issue.sla_started_at,
         issue.sla_breaches_at,
-        slaMoment(issue, now)
+        slaMoment(issue, now),
+        slaZone(issue)
       );
 
 /**
@@ -138,7 +162,9 @@ export const formatSlaDuration = (ms: number): string => {
  * How an SLA reads on its badge at `now`: "Breaches in 2d 4h" before the
  * deadline and "Breached 3h ago" after it, or null when there is no SLA. A
  * paused timer reads "Paused, 2d 4h left", or "Breached, paused" when it
- * paused after its deadline.
+ * paused after its deadline. On a business-days timer the spans count
+ * business time, so a Monday noon deadline read on Saturday reads "Breaches
+ * in 12h".
  */
 export const slaLabel = (
   issue: SlaFields,
@@ -147,7 +173,11 @@ export const slaLabel = (
   const status = liveSlaStatus(issue, now);
   const deadline = parseTime(issue.sla_breaches_at);
   if (status === 'none' || deadline === null) return null;
-  const left = deadline - slaMoment(issue, now).getTime();
+  const left = slaElapsed(
+    slaMoment(issue, now).getTime(),
+    deadline,
+    slaZone(issue)
+  );
   if (slaPaused(issue)) {
     return status === 'breached'
       ? 'Breached, paused'

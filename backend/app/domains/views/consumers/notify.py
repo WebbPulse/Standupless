@@ -3,16 +3,20 @@
 It reads six streams on one route, the `issues` table's, the `comments` table's,
 the `subscriptions` table's, filtered to inserted rows one member made for
 another, the `planning` table's, filtered to inserted project updates and
-replies on them, the `reactions` table's, filtered to new reactions on
+replies on them and to written projects and initiatives, the `reactions` table's, filtered to new reactions on
 comments, and the `relations` table's, filtered to blocking links added or
 removed by a person, and tells them apart by `eventSourceARN` rather than by
 guessing from the attributes present, because a filtered record carries no
 marker of its own.
 
 A project has no subscriptions of its own, so a project update reaches the
-project's lead and members, never its author. A reply on an update reaches the
-update's author, everyone who replied before and anyone it mentions, in the inbox
-only.
+project's lead and members, never its author. A reply on a project or initiative
+update reaches the update's author, an initiative's owner, everyone who replied
+before and anyone it mentions, in the inbox only. A project created or changed
+into a saved project view reaches the view's subscribers, except the person whose
+write moved it there, each time it enters. A person made a project's lead, added
+to its members or made an initiative's owner by someone else hears about it once;
+a removal says nothing.
 
 Who hears about an issue is its subscribers, as in Linear: a comment or a status
 change reaches everyone following the issue except the person who made it, while
@@ -31,7 +35,9 @@ format. With `digest`, the default, it is held as a digest entry and mailed by t
 flush in `digest`, one message per recipient per five minute window, so a burst of
 activity on an issue becomes one email rather than one per change; a notification
 about an urgent issue makes its window due on the next flush. With `immediate` it
-is mailed on its own at once. The flush rides this consumer's own function,
+is mailed on its own at once. While the recipient has paused notifications or is
+outside their working hours, either format is held until they may be reached and
+then goes out as one digest. The flush rides this consumer's own function,
 triggered by a scheduled synthetic record. One record reaches at most `MAX_RECIPIENTS_PER_EVENT` people.
 
 Idempotency is the notification id. It is derived from the record rather than
@@ -62,26 +68,38 @@ from app.common.db.dynamo.inbox import (
     PRIORITY_URGENT,
     PROJECT_UPDATE_REPLIED,
     REACTION,
+    TEAM_ISSUE_CREATED,
     TRIAGE_NEW,
     VIEW_ISSUE_ADDED,
+    VIEW_PROJECT_ADDED,
     Notification,
     expires_at,
     inbox_partition,
     notification_id,
 )
 from app.common.db.dynamo.notify_digests import DigestEntry
-from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
-from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
+from app.common.db.dynamo.planning import INITIATIVE, PROJECT, PROJECT_UPDATE, Initiative, Project
+from app.common.db.dynamo.update_threads import INITIATIVE_UPDATE_COMMENT, PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
+from app.common.db.dynamo.views import SavedView
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.notification_pause import bypasses_hold, held_until
 from app.common.project_update_report import report_for_item
-from app.common.team_privacy import person_can_see_team
+from app.common.team_privacy import person_can_see_initiative, person_can_see_team
 from app.common.trash_stream import touches_trash
 from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
 from app.domains.views.consumers.document_comments import handle_document_comment
+from app.domains.views.consumers.initiative_update_replies import handle_initiative_update_reply
+from app.domains.views.consumers.planning_roles import (
+    RoleGrant,
+    image_initiative,
+    initiative_role_grants,
+    project_role_grants,
+)
+from app.domains.views.consumers.project_view_watch import image_project, newly_entered_projects
 from app.domains.views.consumers.view_watch import image_issue, newly_entered
 from app.domains.views.email import excerpt
 
@@ -227,6 +245,7 @@ def digest_entry(row: Notification, **fields: Any) -> DigestEntry:
         issue_id=row.issue_id,
         issue_key=row.issue_key,
         issue_title=row.issue_title,
+        comment_id=row.comment_id or "",
         project_id=row.project_id or "",
         project_name=row.project_name or "",
         initiative_id=row.initiative_id or "",
@@ -257,14 +276,19 @@ def hold_for_digest(
 ) -> None:
     """Send or hold the email for one inbox row that was just written, the way its recipient chose.
 
-    A recipient on immediate email is mailed now. Everyone else has the entry held
-    until their digest is flushed, and an `urgent` one makes that window due on the
-    next flush. Everything the email needs is captured off the row now, so neither
-    path reads the subject again. `recipient` saves a read when the caller has the
-    row already.
+    A recipient who paused notifications or is outside their working hours has the
+    entry held until they may be reached again, unless they let urgent ones through
+    and this is a direct mention or an urgent assignment. A recipient on immediate
+    email is mailed now. Everyone else has the entry held until their digest is
+    flushed, and an `urgent` one makes that window due on the next flush.
+    Everything the email needs is captured off the row now, so no path reads the
+    subject again. `recipient` saves a read when the caller has the row already.
     """
     entry = digest_entry(row, **fields)
     person = recipient if recipient is not None else repositories.users.get(row.recipient_id)
+    if person is not None and held_until(person) is not None and not bypasses_hold(person, row.kind, urgent):
+        repositories.inbox.digests.hold(entry)
+        return
     if person is not None and person.immediate_email:
         send_immediately(repositories, entry)
         return
@@ -379,7 +403,9 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     An issue newly matching a saved view tells each of the view's subscribers,
     naming the view in `new_value`, unless the record already earned them
     something more specific, and only the first time that issue enters that view
-    for them.
+    for them. Last, each member subscribed to the issue's team hears of the
+    events they turned on, an issue created, entering triage, completed or
+    cancelled, when nothing above already reached them for this record.
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
@@ -426,10 +452,14 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 headline_key="mentioned_in_description",
             )
 
+    team_events: list[tuple[str, str, str, dict[str, Any]]] = []
     if new_image.get("in_triage") and not (old_image and old_image.get("in_triage")):
         entered_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
         for user_id in duty_notified(repositories, workspace_id, issue.team_id):
             plan(user_id, TRIAGE_NEW, f"{issue_id}#triage#{entered_at}")
+        team_events.append(("triage", TRIAGE_NEW, f"{issue_id}#triage#{entered_at}", {}))
+    if not old_image:
+        team_events.append(("issue_created", TEAM_ISSUE_CREATED, f"{issue_id}#team_created", {}))
 
     new_status = _text(new_image, "status_id")
     old_status = _text(old_image, "status_id")
@@ -447,6 +477,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
         followers = issue_followers(repositories, workspace_id, issue_id, new_assignee)
         for recipient_id in followers:
             plan(recipient_id, kind, f"{issue_id}#status#{new_status}", **moved_to)
+        if category in STATUS_KINDS and (previous is None or previous.category != category):
+            team_events.append((category, kind, f"{issue_id}#status#{new_status}", moved_to))
 
     if (
         old_image
@@ -471,6 +503,13 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
             )
             if entry.user_id in planned and planned[entry.user_id][0] == VIEW_ISSUE_ADDED:
                 view_notices.setdefault(entry.user_id, entry.view.view_id)
+
+    if team_events:
+        subscriptions = repositories.views.team_subscriptions(workspace_id, issue.team_id)
+        for event, kind, source_id, extra in team_events:
+            for subscription in subscriptions:
+                if subscription.wants(event):
+                    plan(subscription.user_id, kind, source_id, **extra)
 
     written = 0
     for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):
@@ -793,7 +832,9 @@ def write_project_update_notification(
     The recipient must still see at least one of the project's teams, and that
     team is the one the row carries, so the inbox's visibility checks read it as
     they read an issue's team. `report` is the update's progress report, which
-    the email lists under the excerpt.
+    the email lists under the excerpt. A recipient who unfollowed the project,
+    from Pulse or from an email's unsubscribe link, still gets the inbox row but
+    no email.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -802,7 +843,12 @@ def write_project_update_notification(
         return False
     recipient = repositories.users.get(recipient_id)
     in_app = recipient.wants_notification(PROJECT_UPDATED, "in_app") if recipient is not None else True
-    email = recipient is not None and recipient.wants_notification(PROJECT_UPDATED, "email")
+    email = (
+        recipient is not None
+        and recipient.wants_notification(PROJECT_UPDATED, "email")
+        and repositories.planning.get_pulse_follow(project.workspace_id, recipient_id, "project", project.project_id)
+        is not False
+    )
     chat = wants_chat(repositories, recipient, PROJECT_UPDATED, project.workspace_id)
     if not in_app and not email and not chat:
         return False
@@ -926,18 +972,267 @@ def handle_update_reply(repositories: Repositories, new_image: Mapping[str, Any]
     return written
 
 
+def write_view_project_notification(
+    repositories: Repositories,
+    *,
+    project: Project,
+    recipient_id: str,
+    view_id: str,
+    view_name: str,
+    actor_id: str,
+    actor_display: str,
+) -> bool:
+    """Write one inbox row telling a project view's subscriber a project entered it, and mail it as they chose.
+
+    The recipient must still see one of the project's teams, which the row
+    carries. The id is keyed on the write's time, so a project that leaves the
+    view and comes back notifies again while a redelivered record stays one row.
+    """
+    if not recipient_id or recipient_id == actor_id:
+        return False
+    team_id = receiving_team(repositories, project, recipient_id)
+    if not team_id:
+        return False
+    recipient = repositories.users.get(recipient_id)
+    in_app = recipient.wants_notification(VIEW_PROJECT_ADDED, "in_app") if recipient is not None else True
+    email = recipient is not None and recipient.wants_notification(VIEW_PROJECT_ADDED, "email")
+    chat = wants_chat(repositories, recipient, VIEW_PROJECT_ADDED, project.workspace_id)
+    if not in_app and not email and not chat:
+        return False
+
+    stamped = (
+        project.updated_at if project.updated_at.tzinfo is not None else project.updated_at.replace(tzinfo=timezone.utc)
+    )
+    source_id = f"{project.project_id}#view#{view_id}#{stamped.isoformat()}"
+    row = Notification(
+        ws_user=inbox_partition(project.workspace_id, recipient_id),
+        notification_id=notification_id(stamped, VIEW_PROJECT_ADDED, recipient_id, source_id),
+        workspace_id=project.workspace_id,
+        kind=VIEW_PROJECT_ADDED,
+        team_id=team_id,
+        project_id=project.project_id,
+        project_name=project.name,
+        new_value=view_name,
+        actor_id=actor_id,
+        actor_name=actor_display,
+        recipient_id=recipient_id,
+        created_at=stamped,
+        unread_at=stamped.isoformat() if in_app else None,
+        expires_at=expires_at(stamped),
+    )
+    if not repositories.inbox.create(row):
+        return False
+    if email:
+        hold_for_digest(repositories, row, recipient=recipient)
+    if chat:
+        hold_for_chat(repositories, row)
+    return True
+
+
+def handle_project_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify the project view subscribers a created or changed project newly entered a view of.
+
+    Each subscriber hears once per write, about the first of their views it
+    entered, and never about their own write. A write that changes nothing a
+    view reads, such as a rollup of the project's issue counts, is skipped
+    before any read.
+    """
+    after = image_project(deserialize_image(record, "NewImage"))
+    if after is None:
+        return 0
+    old_image = deserialize_image(record, "OldImage")
+    before = image_project(old_image) if old_image else None
+    if old_image and before is None:
+        return 0
+    entries = newly_entered_projects(repositories, after.workspace_id, before, after)
+    if not entries:
+        return 0
+    actor_id = after.created_by if before is None else (after.updated_by or "")
+    chosen: dict[str, SavedView] = {}
+    for entry in entries:
+        if entry.user_id != actor_id:
+            chosen.setdefault(entry.user_id, entry.view)
+    if not chosen:
+        return 0
+    display = actor_name(repositories, actor_id)
+    written = 0
+    for recipient_id in cap_recipients(
+        list(chosen), workspace_id=after.workspace_id, source=f"project#{after.project_id}"
+    ):
+        view = chosen[recipient_id]
+        written += int(
+            write_view_project_notification(
+                repositories,
+                project=after,
+                recipient_id=recipient_id,
+                view_id=view.view_id,
+                view_name=view.name,
+                actor_id=actor_id,
+                actor_display=display,
+            )
+        )
+    return written
+
+
+def write_role_notification(
+    repositories: Repositories,
+    *,
+    grant: RoleGrant,
+    stamped: datetime,
+    actor_id: str,
+    actor_display: str,
+    project: Project | None = None,
+    initiative: Initiative | None = None,
+) -> bool:
+    """Write one inbox row telling a person they were handed a project or initiative role, and mail it as they chose.
+
+    A project row carries one of the project's teams the person can see, and an
+    initiative row is workspace level with an empty team, as its update reminder
+    is. The id is keyed on the write's time, so a redelivered record stays one
+    row while a later hand-back after a removal notifies again.
+    """
+    recipient_id = grant.user_id
+    if not recipient_id or recipient_id == actor_id:
+        return False
+    if project is not None:
+        workspace_id = project.workspace_id
+        subject_id = project.project_id
+        team_id = receiving_team(repositories, project, recipient_id)
+        if not team_id:
+            return False
+    elif initiative is not None:
+        workspace_id = initiative.workspace_id
+        subject_id = initiative.initiative_id
+        team_id = ""
+        if not person_can_see_initiative(repositories, initiative, recipient_id):
+            return False
+    else:
+        return False
+    recipient = repositories.users.get(recipient_id)
+    if recipient is None or recipient.disabled:
+        return False
+    in_app = recipient.wants_notification(grant.kind, "in_app")
+    email = recipient.wants_notification(grant.kind, "email")
+    chat = wants_chat(repositories, recipient, grant.kind, workspace_id)
+    if not in_app and not email and not chat:
+        return False
+
+    moment = stamped if stamped.tzinfo is not None else stamped.replace(tzinfo=timezone.utc)
+    source_id = f"{subject_id}#{grant.kind}#{moment.isoformat()}"
+    row = Notification(
+        ws_user=inbox_partition(workspace_id, recipient_id),
+        notification_id=notification_id(moment, grant.kind, recipient_id, source_id),
+        workspace_id=workspace_id,
+        kind=grant.kind,
+        team_id=team_id,
+        project_id=project.project_id if project is not None else None,
+        project_name=project.name if project is not None else None,
+        initiative_id=initiative.initiative_id if initiative is not None else None,
+        initiative_name=initiative.name if initiative is not None else None,
+        actor_id=actor_id,
+        actor_name=actor_display,
+        recipient_id=recipient_id,
+        created_at=moment,
+        unread_at=moment.isoformat() if in_app else None,
+        expires_at=expires_at(moment),
+    )
+    if not repositories.inbox.create(row):
+        return False
+    if email:
+        hold_for_digest(repositories, row, recipient=recipient)
+    if chat:
+        hold_for_chat(repositories, row)
+    return True
+
+
+def handle_project_roles(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Tell the people a created or changed project newly made its lead or a member, except whoever made the write."""
+    after = image_project(deserialize_image(record, "NewImage"))
+    if after is None:
+        return 0
+    old_image = deserialize_image(record, "OldImage")
+    before = image_project(old_image) if old_image else None
+    if old_image and before is None:
+        return 0
+    actor_id = after.created_by if before is None else (after.updated_by or "")
+    grants = [grant for grant in project_role_grants(before, after) if grant.user_id != actor_id]
+    if not grants:
+        return 0
+    display = actor_name(repositories, actor_id)
+    capped = set(
+        cap_recipients(
+            [grant.user_id for grant in grants], workspace_id=after.workspace_id, source=f"project#{after.project_id}"
+        )
+    )
+    return sum(
+        int(
+            write_role_notification(
+                repositories,
+                grant=grant,
+                stamped=after.updated_at,
+                actor_id=actor_id,
+                actor_display=display,
+                project=after,
+            )
+        )
+        for grant in grants
+        if grant.user_id in capped
+    )
+
+
+def handle_initiative_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Tell the person a created or changed initiative newly made its owner, unless they made the write."""
+    after = image_initiative(deserialize_image(record, "NewImage"))
+    if after is None:
+        return 0
+    old_image = deserialize_image(record, "OldImage")
+    before = image_initiative(old_image) if old_image else None
+    if old_image and before is None:
+        return 0
+    actor_id = after.created_by if before is None else (after.updated_by or "")
+    grants = [grant for grant in initiative_role_grants(before, after) if grant.user_id != actor_id]
+    if not grants:
+        return 0
+    display = actor_name(repositories, actor_id)
+    return sum(
+        int(
+            write_role_notification(
+                repositories,
+                grant=grant,
+                stamped=after.updated_at,
+                actor_id=actor_id,
+                actor_display=display,
+                initiative=after,
+            )
+        )
+        for grant in grants
+    )
+
+
 def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
     """Notify from one `planning` record, answering how many rows were written.
 
-    Only a newly posted project update or reply is news. An update reaches the
-    project's lead and members, each once, except its author; an edit or a delete
-    notifies nobody, and neither does a row a bulk import wrote.
+    A newly posted project update or reply is news, and so is a project created
+    or changed into a saved project view someone follows, and a project or
+    initiative write that hands someone its lead, a membership or its ownership.
+    An update reaches the project's lead and members, each once, except its
+    author; an edit or a delete of an update notifies nobody, and neither does a
+    row a bulk import wrote.
     """
-    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+    if from_bulk_import(record):
         return 0
+    event = str(record.get("eventName", "")).upper()
     new_image = deserialize_image(record, "NewImage")
+    if event in ("INSERT", "MODIFY") and new_image and _text(new_image, "kind") == PROJECT:
+        return handle_project_record(repositories, record) + handle_project_roles(repositories, record)
+    if event in ("INSERT", "MODIFY") and new_image and _text(new_image, "kind") == INITIATIVE:
+        return handle_initiative_record(repositories, record)
+    if event != "INSERT":
+        return 0
     if new_image and _text(new_image, "kind") == PROJECT_UPDATE_COMMENT:
         return handle_update_reply(repositories, new_image)
+    if new_image and _text(new_image, "kind") == INITIATIVE_UPDATE_COMMENT:
+        return handle_initiative_update_reply(repositories, new_image, limit=MAX_RECIPIENTS_PER_EVENT)
     if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:
         return 0
 

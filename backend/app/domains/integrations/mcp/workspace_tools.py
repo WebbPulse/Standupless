@@ -21,6 +21,7 @@ from app.common.api.schemas.workspaces import (
     WorkspaceUpdate,
 )
 from app.common.db.dynamo.invites import Invite
+from app.common.db.dynamo.workspaces import WorkspaceFeature
 from app.common.email.invite import accept_url
 from app.common.project_cadence import INTERVAL_OPTIONS
 from app.domains.integrations.mcp.toolkit import (
@@ -112,16 +113,18 @@ def _update_workspace_display_defaults(call: ToolCall) -> Any:
 
 UPDATE_WORKSPACE_ARGUMENTS = (
     "name",
+    "slug",
     "accent_color",
     "project_update_interval_days",
     "branch_format",
     "invite_permission",
     "team_creation_permission",
+    "features",
 )
 
 
 def _update_workspace(call: ToolCall) -> Any:
-    """Rename the workspace or set its accent, update cadence, branch format or permissions, as the PATCH route does.
+    """Rename the workspace or set its slug, accent, cadence, branch format, permissions or features, as PATCH does.
 
     An absent argument is left alone and a null `accent_color` returns the
     accent to the default, so the tool patches exactly what the caller named.
@@ -229,22 +232,30 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_workspace",
         description="The workspace this credential belongs to: name, slug, plan, the caller's role, any "
-        "scheduled deletion and the display defaults its projects page opens with.",
+        "scheduled deletion, the display defaults its projects page opens with, and `features`, which areas "
+        "(initiatives, customers, releases, documents, pulse) are on. Write tools in an area that is off are "
+        "refused with FEATURE_DISABLED; read tools still answer.",
         scopes=("settings:read",),
         schema=object_schema({}),
         handler=_get_workspace,
     ),
     Tool(
         name="update_workspace",
-        description="Rename the workspace, set its accent color, set the default cadence project leads are "
-        "reminded to post updates at, set the git branch name format, or choose whether only admins or every "
-        "member may invite people and create teams. The slug is fixed. Pass at least one of name, accent_color, "
-        "project_update_interval_days, branch_format, invite_permission and team_creation_permission. Needs "
+        description="Rename the workspace, change its URL slug, set its accent color, set the default cadence "
+        "project leads are reminded to post updates at, set the git branch name format, or choose whether only "
+        "admins or every member may invite people and create teams, or turn areas of the product on or off. "
+        "A changed slug keeps the old one as a redirect, and the slug can change 3 times a day. "
+        "Pass at least one of name, slug, accent_color, project_update_interval_days, branch_format, "
+        "invite_permission, team_creation_permission and features. Turning an area off keeps its data. Needs "
         "workspace owner or admin.",
         scopes=("settings:write", "admin"),
         schema=object_schema(
             {
                 "name": string("The new workspace name, 1 to 80 characters"),
+                "slug": string(
+                    "The new workspace URL slug, 3 to 40 characters of a to z, 0 to 9 and hyphens; links with the "
+                    "old slug keep working"
+                ),
                 "accent_color": nullable("The accent color as #rrggbb, or null for the Standupless default"),
                 "project_update_interval_days": {
                     "type": "integer",
@@ -266,6 +277,15 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
                     "type": "string",
                     "enum": ["admins", "members"],
                     "description": "Who may create teams: admins, or every member",
+                },
+                "features": {
+                    "type": "object",
+                    "properties": {
+                        feature.value: {"type": "boolean", "description": f"Whether {feature.value} is on"}
+                        for feature in WorkspaceFeature
+                    },
+                    "additionalProperties": False,
+                    "description": "Areas to turn on (true) or off (false); an area left out stays as it is",
                 },
             }
         ),
@@ -291,9 +311,9 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_workspace_members",
-        description="Every workspace member with user id, email, display name, workspace role, join date and "
-        "status. Active and suspended members by default; pass status to filter, and invited to include pending "
-        "invites, which only an admin sees.",
+        description="Every workspace member with user id, email, display name, workspace role, join date, "
+        "status and, for an admin, last active time (null when never seen). Active and suspended members "
+        "by default; pass status to filter, and invited to include pending invites, which only an admin sees.",
         scopes=("members:read",),
         schema=object_schema({"status": one_or_many("active, suspended or invited; one or a list")}),
         handler=_list_members,

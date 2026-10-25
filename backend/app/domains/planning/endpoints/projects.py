@@ -38,6 +38,7 @@ from app.common.api.schemas.planning import (
 from app.common.date_resolution import read_resolution
 from app.common.planning_rules import load_readable_project
 from app.common.project_cadence import workspace_interval
+from app.common.project_filters import MAX_UPDATE_AGE_DAYS, parse_property_filter
 from app.common.project_link_writes import with_links
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_writes import create_project as create_project_row
@@ -68,6 +69,15 @@ def list_projects(
     sort: Annotated[Optional[ProjectSortField], Query()] = None,
     label_id: Annotated[Optional[list[str]], Query()] = None,
     include_archived: Annotated[bool, Query()] = False,
+    health: Annotated[Optional[list[str]], Query()] = None,
+    priority: Annotated[Optional[list[str]], Query()] = None,
+    member_id: Annotated[Optional[list[str]], Query()] = None,
+    start_date_before: Annotated[Optional[str], Query()] = None,
+    start_date_after: Annotated[Optional[str], Query()] = None,
+    target_date_before: Annotated[Optional[str], Query()] = None,
+    target_date_after: Annotated[Optional[str], Query()] = None,
+    updated_within_days: Annotated[Optional[int], Query(ge=1, le=MAX_UPDATE_AGE_DAYS)] = None,
+    not_updated_within_days: Annotated[Optional[int], Query(ge=1, le=MAX_UPDATE_AGE_DAYS)] = None,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
@@ -91,6 +101,14 @@ def list_projects(
     `label_id` keeps the projects carrying any named project label, `none`
     standing for a project with none. Archived projects are left out unless
     `include_archived` is set.
+
+    `health` keeps the projects in any named health, `none` standing for no
+    health, `priority` the ones at any named priority, and `member_id` the ones
+    with any named member, `none` standing for no members. The date bounds are
+    exclusive days, `YYYY-MM-DD`, and a project without the date meets none.
+    `updated_within_days` keeps the projects whose newest project update is at
+    most that many days old and `not_updated_within_days` the rest, a project
+    never updated among them.
     """
     window, next_cursor = list_project_page(
         repositories,
@@ -108,6 +126,17 @@ def list_projects(
         sort=sort,
         label_id=label_id,
         include_archived=include_archived,
+        properties=parse_property_filter(
+            health=health,
+            priority=priority,
+            member_id=member_id,
+            start_date_before=start_date_before,
+            start_date_after=start_date_after,
+            target_date_before=target_date_before,
+            target_date_after=target_date_after,
+            updated_within_days=updated_within_days,
+            not_updated_within_days=not_updated_within_days,
+        ),
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 

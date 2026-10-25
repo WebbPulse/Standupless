@@ -46,6 +46,12 @@ export const invitesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** Whether one workspace's reusable invite link is on. */
+export const inviteLinkKey = (workspaceId: string): QueryKey => [
+  'invite-link',
+  workspaceId,
+];
+
 /** One team's status list. */
 export const statusesKey = (teamId: string): QueryKey => ['statuses', teamId];
 
@@ -152,6 +158,10 @@ export const teamMembersKey = (teamId: string): QueryKey => [
   'team-members',
   teamId,
 ];
+
+/** Builds the reusable link anyone opens to join a workspace as a member. */
+export const workspaceJoinLink = (token: string): string =>
+  `${globalThis.location.origin}/join?token=${encodeURIComponent(token)}`;
 
 /** Builds the link an invited person opens to redeem their invite. */
 export const inviteLink = (token: string): string =>
@@ -416,6 +426,12 @@ export const triageSettingsKey = (
   teamId: string
 ): QueryKey => ['triage-settings', workspaceId, teamId];
 
+/** The cache key for the caller's own notification subscription to a team. */
+export const teamSubscriptionKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['team-subscription', workspaceId, teamId];
+
 /** One team's cycle list, which varies on the status filter applied. */
 export const cyclesKey = (
   workspaceId: string,
@@ -448,12 +464,12 @@ export const projectUpdatesKey = (
   projectId: string
 ): QueryKey => ['projectUpdates', workspaceId, projectId];
 
-/** The key for one project update's replies. */
+/** The key for one project or initiative update's replies, by its parent's id. */
 export const projectUpdateCommentsKey = (
   workspaceId: string,
-  projectId: string,
+  parentId: string,
   updateId: string
-): QueryKey => ['projectUpdateComments', workspaceId, projectId, updateId];
+): QueryKey => ['projectUpdateComments', workspaceId, parentId, updateId];
 
 /**
  * One project's activity feed, nested under the project's own key so every
@@ -496,6 +512,16 @@ export const initiativeUpdatesKey = (
   workspaceId: string,
   initiativeId: string
 ): QueryKey => ['initiativeUpdates', workspaceId, initiativeId];
+
+/** The feed one project's or initiative's updates are read through, whichever it is. */
+export const statusUpdatesKey = (
+  workspaceId: string,
+  parentKind: 'project' | 'initiative',
+  parentId: string
+): QueryKey =>
+  parentKind === 'initiative'
+    ? initiativeUpdatesKey(workspaceId, parentId)
+    : projectUpdatesKey(workspaceId, parentId);
 
 /** One project's or initiative's documents, most recently edited first. */
 export const documentsKey = (
@@ -635,6 +661,12 @@ export const discordChannelsKey = (
   workspaceId: string,
   teamId: string | null
 ): QueryKey => ['discord-channels', workspaceId, teamId];
+
+/** The GitLab connections of one workspace. */
+export const gitlabConnectionsKey = (workspaceId: string): QueryKey => [
+  'gitlab-connections',
+  workspaceId,
+];
 
 /**
  * The webhooks of a workspace, or of one team in it. The two are different
@@ -819,6 +851,12 @@ export const customersKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The workspace's customer statuses or tiers, by position. */
+export const customerFieldsKey = (
+  workspaceId: string,
+  kind: 'statuses' | 'tiers'
+): QueryKey => ['customerFields', workspaceId, kind];
+
 /** One customer. */
 export const customerKey = (
   workspaceId: string,
@@ -834,6 +872,12 @@ export const customerRequestsKey = (
 /** Every visible customer request of the workspace, newest first. */
 export const workspaceCustomerRequestsKey = (workspaceId: string): QueryKey => [
   'workspaceCustomerRequests',
+  workspaceId,
+];
+
+/** Every visible release of the workspace with the issues it carries. */
+export const releaseIndexKey = (workspaceId: string): QueryKey => [
+  'releaseIndex',
   workspaceId,
 ];
 
@@ -861,3 +905,10 @@ export const memberActivityKey = (
   workspaceId: string,
   userId: string
 ): QueryKey => ['member', workspaceId, userId, 'activity'];
+
+/** One cycle's detail as the cycle page reads it. */
+export const cycleKey = (
+  workspaceId: string,
+  teamId: string,
+  cycleId: string
+): QueryKey => ['cycle', workspaceId, teamId, cycleId];

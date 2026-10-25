@@ -1,7 +1,9 @@
 /**
  * The board's keys: h and l and the side arrows cross columns, skipping empty
  * ones, j and k stay in the focused column, labels move to Shift+L, and the
- * column keys are listed for the help overlay and the palette only on a board.
+ * column keys are listed for the help overlay and the palette only on a board,
+ * and Cmd or Ctrl+Alt and a digit set the status at that workflow position on
+ * a focused card or a selection of rows.
  */
 
 import { act, render, screen } from '@testing-library/react';
@@ -235,5 +237,27 @@ describe('IssueListView board keys', () => {
     expect(
       registry.list().find((shortcut) => shortcut.keys === 'l')?.label
     ).toBe('Change labels');
+  });
+
+  it('sets the focused card to the status at a workflow position on Cmd or Ctrl+Alt and a digit', () => {
+    renderView();
+
+    press('j');
+    press('3', { ctrlKey: true, altKey: true, code: 'Digit3' });
+
+    expect(update).toHaveBeenCalledWith(['a1'], { status_id: 'st-c' });
+  });
+
+  it('sets every selected row to the status at a position in one write', () => {
+    renderView('list');
+
+    press('j');
+    press('x');
+    press('j');
+    press('x');
+    press('2', { ctrlKey: true, altKey: true, code: 'Digit2' });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(['a1', 'a2'], { status_id: 'st-b' });
   });
 });

@@ -116,6 +116,23 @@ def test_update_workspace_renames_it(client: TestClient, repositories: Any, work
     assert repositories.workspaces.get(WORKSPACE).name == "Acme Labs"
 
 
+def test_update_workspace_changes_the_slug_and_keeps_the_old_one(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An admin moves the workspace to a new slug, the old one still resolves, and a taken slug is refused."""
+    make_workspace(repositories, OTHER_WORKSPACE, "other", OWNER)
+    secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
+
+    moved = answer(tool(client, secret, "update_workspace", {"slug": "Acme-Labs"}))
+
+    assert moved["slug"] == "acme-labs"
+    assert moved["retired_slugs"] == ["acme"]
+    assert repositories.workspaces.get_by_slug("acme").id == WORKSPACE
+    assert "taken" in refusal(tool(client, secret, "update_workspace", {"slug": "other"}))
+    assert "slug" in refusal(tool(client, secret, "update_workspace", {"slug": "no spaces"}))
+    assert repositories.workspaces.get(WORKSPACE).slug == "acme-labs"
+
+
 def test_update_workspace_sets_the_branch_format(client: TestClient, repositories: Any, workspace: str) -> None:
     """An admin picks the branch name format through the tool, and an unknown one is refused."""
     secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
@@ -148,7 +165,7 @@ def test_update_workspace_sets_the_permission_settings(client: TestClient, repos
 
 
 def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, repositories: Any, workspace: str) -> None:
-    """A member cannot carry admin, a blank name is refused, and the slug is not a field."""
+    """A member cannot carry admin, a blank name is refused, and the tool takes the fields PATCH does."""
     scope_refused(
         tool(client, mint_for(repositories, MEMBER, ("settings:write", "admin")), "update_workspace", {"name": "X"})
     )
@@ -158,11 +175,13 @@ def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, rep
     assert repositories.workspaces.get(WORKSPACE).slug == "acme"
     assert TOOLS_BY_NAME["update_workspace"].schema["properties"].keys() == {
         "name",
+        "slug",
         "accent_color",
         "project_update_interval_days",
         "branch_format",
         "invite_permission",
         "team_creation_permission",
+        "features",
     }
     assert "required" in refusal(tool(client, secret, "update_workspace", {}))
 

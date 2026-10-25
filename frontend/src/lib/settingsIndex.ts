@@ -1,9 +1,11 @@
 /**
- * The static index the settings search and the command palette read: every
- * settings page, its main sections and the controls worth landing on, each
- * with a title, a few synonyms and the route and anchor it opens on.
+ * The static index the settings sidebar, the settings search and the command
+ * palette read: every settings page with the sidebar group it sits in, its
+ * main sections and the controls worth landing on, each with a title, a few
+ * synonyms and the route and anchor it opens on. One list feeds all three, so
+ * their order and labels never drift.
  *
- * Gating follows the settings nav: a page the nav hides from the viewer is
+ * Gating follows the settings sidebar: a page it hides from the viewer is
  * left out with everything on it, so a search never offers a page that would
  * only say the caller may not see it. Danger zones are left out, since deleting
  * something is not a place to land on from a search.
@@ -21,6 +23,7 @@ import {
   billingSettingsPath,
   connectedAppsPath,
   exportSettingsPath,
+  featuresSettingsPath,
   importSettingsPath,
   integrationsSettingsPath,
   labelsSettingsPath,
@@ -66,14 +69,41 @@ interface PageItem {
   under?: string;
 }
 
+/** The headed groups of the settings sidebar, before the viewer's teams. */
+export type SettingsGroupId =
+  'account' | 'workspace' | 'administration' | 'features' | 'integrations';
+
+/** One headed group of the settings sidebar. */
+export interface SettingsGroup {
+  id: SettingsGroupId;
+  title: string;
+}
+
+/** The settings sidebar's groups, in sidebar order. */
+export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
+  { id: 'account', title: 'Account' },
+  { id: 'workspace', title: 'Workspace' },
+  { id: 'administration', title: 'Administration' },
+  { id: 'features', title: 'Features' },
+  { id: 'integrations', title: 'Integrations' },
+];
+
 /** A workspace or account settings page. */
 export interface SettingsPage {
   id: string;
   title: string;
+  /** The settings sidebar group the page is listed under. */
+  group: SettingsGroupId;
   scope: 'account' | 'workspace';
   synonyms: readonly string[];
   path: (slug: string) => string;
   adminOnly?: boolean;
+  /**
+   * Lists an admin only page in the settings sidebar for every member, while
+   * search and the palette keep it admin only, for a page a member opens for
+   * one row of its own, such as Leave workspace.
+   */
+  navForMembers?: boolean;
   /** The row's name in the command palette, or none when the palette offers the page elsewhere. */
   paletteLabel?: string;
   items?: readonly PageItem[];
@@ -86,11 +116,12 @@ export const settingsAnchorId = (id: string): string => `settings-${id}`;
 export const teamSettingsAnchorId = (section: string): string =>
   `team-settings-${section}`;
 
-/** The workspace and personal settings pages, in settings nav order. */
+/** The workspace and personal settings pages, in index order; the settings sidebar groups them by `group`. */
 export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'profile',
     title: 'Profile',
+    group: 'account',
     scope: 'account',
     synonyms: ['account', 'me', 'personal'],
     path: profileSettingsPath,
@@ -108,6 +139,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         anchor: settingsAnchorId('profile'),
       },
       {
+        id: 'status',
+        title: 'Status',
+        synonyms: ['away', 'vacation', 'out of office', 'out sick', 'focus'],
+        anchor: settingsAnchorId('status'),
+      },
+      {
         id: 'avatar',
         title: 'Avatar',
         synonyms: ['photo', 'picture', 'profile image'],
@@ -118,6 +155,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'preferences',
     title: 'Preferences',
+    group: 'account',
     scope: 'account',
     synonyms: ['appearance', 'interface', 'personal'],
     path: preferencesSettingsPath,
@@ -171,11 +209,25 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         anchor: settingsAnchorId('preferences'),
         under: 'Workflow',
       },
+      {
+        id: 'coding-tool',
+        title: 'Default coding tool',
+        synonyms: [
+          'open in coding tool',
+          'cursor',
+          'claude code',
+          'vs code',
+          'codex',
+        ],
+        anchor: settingsAnchorId('preferences'),
+        under: 'Workflow',
+      },
     ],
   },
   {
     id: 'notifications',
     title: 'Notifications',
+    group: 'account',
     scope: 'account',
     paletteLabel: 'Notification settings',
     synonyms: [
@@ -215,6 +267,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'account-security',
     title: 'Security & access',
+    group: 'account',
     scope: 'account',
     synonyms: ['account security', 'login', 'sign in'],
     path: accountSecuritySettingsPath,
@@ -260,6 +313,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'workspace',
     title: 'Workspace',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Workspace settings',
     synonyms: [
@@ -275,6 +329,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
     path: settingsPath,
     adminOnly: true,
+    navForMembers: true,
     items: [
       {
         id: 'logo',
@@ -336,6 +391,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'security',
     title: 'Security',
+    group: 'administration',
     scope: 'workspace',
     paletteLabel: 'Workspace security',
     synonyms: [
@@ -390,8 +446,28 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
   },
   {
+    id: 'features',
+    title: 'Features',
+    group: 'features',
+    scope: 'workspace',
+    paletteLabel: 'Workspace features',
+    synonyms: [
+      'turn off',
+      'disable',
+      'enable',
+      'initiatives',
+      'customers',
+      'releases',
+      'documents',
+      'pulse',
+    ],
+    path: featuresSettingsPath,
+    adminOnly: true,
+  },
+  {
     id: 'teams',
     title: 'Teams',
+    group: 'workspace',
     scope: 'workspace',
     synonyms: ['create team', 'new team', 'manage teams'],
     path: settingsTeamsPath,
@@ -399,6 +475,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'workflow',
     title: 'Workflow',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Workspace workflow',
     synonyms: ['workflow', 'statuses', 'states', 'inherited'],
@@ -407,6 +484,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'labels',
     title: 'Labels',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Workspace labels',
     synonyms: ['labels', 'tags', 'inherited'],
@@ -415,6 +493,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'project-labels',
     title: 'Project labels',
+    group: 'workspace',
     scope: 'workspace',
     synonyms: ['project tags'],
     path: (slug) => `${settingsPath(slug)}/project-labels`,
@@ -422,6 +501,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'emoji',
     title: 'Emoji',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Custom emoji',
     synonyms: ['custom emoji', 'emoticons', 'reactions'],
@@ -430,13 +510,24 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'project-statuses',
     title: 'Project statuses',
+    group: 'workspace',
     scope: 'workspace',
     synonyms: ['project stages', 'project workflow', 'project states'],
     path: (slug) => `${settingsPath(slug)}/project-statuses`,
   },
   {
+    id: 'customers',
+    title: 'Customers',
+    group: 'workspace',
+    scope: 'workspace',
+    paletteLabel: 'Customer statuses and tiers',
+    synonyms: ['customer statuses', 'customer tiers', 'account tiers'],
+    path: (slug) => `${settingsPath(slug)}/customers`,
+  },
+  {
     id: 'templates',
     title: 'Templates',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Workspace templates',
     synonyms: ['templates', 'issue templates'],
@@ -445,6 +536,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'billing',
     title: 'Billing',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Billing and plan',
     synonyms: [
@@ -462,6 +554,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'api-keys',
     title: 'API keys',
+    group: 'integrations',
     scope: 'workspace',
     paletteLabel: 'API keys',
     synonyms: ['api keys', 'tokens', 'personal access', 'mint a key'],
@@ -470,6 +563,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'integrations',
     title: 'Integrations',
+    group: 'integrations',
     scope: 'workspace',
     paletteLabel: 'Integrations',
     synonyms: ['integrations', 'slack', 'discord', 'channels', 'connect'],
@@ -479,6 +573,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'connected-apps',
     title: 'Connected apps',
+    group: 'account',
     scope: 'workspace',
     paletteLabel: 'Connected apps',
     synonyms: ['connected apps', 'oauth', 'authorized clients', 'revoke'],
@@ -487,6 +582,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'mcp-and-cli',
     title: 'MCP and CLI',
+    group: 'integrations',
     scope: 'workspace',
     synonyms: ['agents', 'assistant'],
     path: mcpAndCliPath,
@@ -514,6 +610,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'agent-profiles',
     title: 'Agent profiles',
+    group: 'integrations',
     scope: 'workspace',
     paletteLabel: 'Agent profiles',
     synonyms: ['agent profiles', 'claude', 'guidance', 'instructions'],
@@ -522,6 +619,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'share-links',
     title: 'Share links',
+    group: 'workspace',
     scope: 'workspace',
     paletteLabel: 'Share links',
     synonyms: ['share links', 'public', 'published', 'revoke'],
@@ -530,6 +628,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'export',
     title: 'Export',
+    group: 'administration',
     scope: 'workspace',
     paletteLabel: 'Export workspace',
     synonyms: ['export', 'download', 'backup', 'json', 'data'],
@@ -546,6 +645,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'import',
     title: 'Import',
+    group: 'administration',
     scope: 'workspace',
     paletteLabel: 'Import issues',
     synonyms: [
@@ -572,6 +672,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
     id: 'audit-log',
     title: 'Audit log',
+    group: 'administration',
     scope: 'workspace',
     paletteLabel: 'Audit log',
     synonyms: ['audit', 'events', 'history', 'activity', 'security'],
@@ -624,6 +725,11 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
         synonyms: ['default estimate', 'progress'],
       },
       {
+        id: 'timezone',
+        title: 'Team timezone',
+        synonyms: ['time zone', 'cycle start', 'midnight', 'rollover'],
+      },
+      {
         id: 'parent',
         title: 'Parent team',
         synonyms: ['sub-team', 'nest', 'hierarchy'],
@@ -653,6 +759,12 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
     title: 'Labels',
     paletteLabel: 'Labels',
     synonyms: ['team labels', 'tags'],
+  },
+  {
+    id: 'projects',
+    title: 'Projects',
+    paletteLabel: 'Project labels and statuses',
+    synonyms: ['team project labels', 'project statuses'],
   },
   {
     id: 'templates',
@@ -839,7 +951,7 @@ const SCOPE_LABEL: Record<'account' | 'workspace', string> = {
   workspace: 'Workspace',
 };
 
-/** The settings pages the viewer may open, by the settings nav's gate. */
+/** The settings pages the viewer may open, by the settings index's admin gate. */
 export const visibleSettingsPages = (
   role: WorkspaceRead['role'] | undefined
 ): SettingsPage[] => {
@@ -847,10 +959,45 @@ export const visibleSettingsPages = (
   return SETTINGS_PAGES.filter((page) => admin || page.adminOnly !== true);
 };
 
+/** One group of the settings sidebar with the pages the viewer may open in it. */
+export interface SettingsNavGroup extends SettingsGroup {
+  pages: readonly SettingsPage[];
+}
+
+/**
+ * The settings sidebar's groups for a role, each with its pages in index
+ * order, leaving out a group the viewer has no page in. A page search keeps
+ * from a member is listed for them when it is marked navForMembers.
+ */
+export const settingsNavGroups = (
+  role: WorkspaceRead['role'] | undefined
+): SettingsNavGroup[] => {
+  const admin = canManageMembers(role);
+  const listed = SETTINGS_PAGES.filter(
+    (page) => admin || page.adminOnly !== true || page.navForMembers === true
+  );
+  return SETTINGS_GROUPS.flatMap((group) => {
+    const pages = listed.filter((page) => page.group === group.id);
+    return pages.length === 0 ? [] : [{ ...group, pages }];
+  });
+};
+
+/**
+ * The team settings sections the workspace offers, leaving out Releases while
+ * an admin has turned releases off for the workspace.
+ */
+export const teamSettingsSectionsFor = (
+  features?: WorkspaceRead['features']
+): readonly TeamSettingsSection[] =>
+  features?.releases !== false
+    ? TEAM_SETTINGS_SECTIONS
+    : TEAM_SETTINGS_SECTIONS.filter((section) => section.id !== 'releases');
+
 /** The entries of one team's settings page, itself first. */
 export const teamSettingsEntries = (
   slug: string,
-  team: Pick<TeamRead, 'name' | 'key_prefix'>
+  team: Pick<TeamRead, 'name' | 'key_prefix'>,
+  features?: WorkspaceRead['features']
 ): SettingsEntry[] => {
   const base = teamSettingsPath(slug, team.key_prefix);
   const entries: SettingsEntry[] = [
@@ -863,7 +1010,7 @@ export const teamSettingsEntries = (
       to: base,
     },
   ];
-  for (const section of TEAM_SETTINGS_SECTIONS) {
+  for (const section of teamSettingsSectionsFor(features)) {
     const to = `${base}#${teamSettingsAnchorId(section.id)}`;
     entries.push({
       id: `team:${team.key_prefix}:${section.id}`,
@@ -889,7 +1036,8 @@ export const teamSettingsEntries = (
 
 /** What the index is built for: the workspace and the teams to cover. */
 export interface SettingsIndexInput {
-  workspace: Pick<WorkspaceRead, 'slug' | 'role'>;
+  workspace: Pick<WorkspaceRead, 'slug' | 'role'> &
+    Partial<Pick<WorkspaceRead, 'features'>>;
   teams?: readonly Pick<TeamRead, 'name' | 'key_prefix'>[];
 }
 
@@ -925,7 +1073,9 @@ export const buildSettingsIndex = ({
     }
   }
   for (const team of teams) {
-    entries.push(...teamSettingsEntries(workspace.slug, team));
+    entries.push(
+      ...teamSettingsEntries(workspace.slug, team, workspace.features)
+    );
   }
   return entries;
 };

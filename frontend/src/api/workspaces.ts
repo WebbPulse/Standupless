@@ -20,20 +20,27 @@ import type {
   AuthPolicyUpdate,
   InviteCreate,
   InviteCreatedRead,
+  InviteLinkCreated,
+  InviteLinkPreview,
+  InviteLinkRead,
   InviteListRead,
   InviteRead,
   JoinableWorkspaceListRead,
   JoinableWorkspaceRead,
+  MemberBulkRead,
+  MemberBulkUpdate,
   MemberListRead,
   MemberRead,
   MemberStatus,
   MemberUpdate,
   ScimSettingsRead,
   ScimTokenCreated,
+  SlugAvailabilityRead,
   SsoConnectionUpdate,
   SsoDomainRead,
   SsoJoinRead,
   SsoSettingsRead,
+  UserStatusUpdate,
   WorkspaceCreate,
   WorkspaceDeletionRequest,
   WorkspaceListRead,
@@ -46,6 +53,10 @@ export const WORKSPACES_PATH = '/workspaces';
 
 /** The route an invite is redeemed at. */
 export const INVITE_ACCEPT_PATH = '/invites/accept';
+
+/** The routes a reusable invite link is previewed and joined through. */
+export const INVITE_LINK_PREVIEW_PATH = '/invites/link/preview';
+export const INVITE_LINK_JOIN_PATH = '/invites/link/join';
 
 /** The route one workspace is read from. */
 export const workspacePath = (workspaceId: string): string =>
@@ -413,6 +424,26 @@ export const updateWorkspace = async (
   return response.data;
 };
 
+/** The slug availability path the workspace URL field checks as an admin types. */
+export const slugAvailabilityPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/slug-availability`;
+
+/**
+ * Asks whether the workspace could move to `slug`, answering why not when it
+ * cannot, so the URL field can say so before the admin saves.
+ */
+export const checkSlugAvailability = async (
+  workspaceId: string,
+  slug: string,
+  signal?: AbortSignal
+): Promise<SlugAvailabilityRead> => {
+  const response = await apiClient.get<SlugAvailabilityRead>(
+    slugAvailabilityPath(workspaceId),
+    signal === undefined ? { query: { slug } } : { query: { slug }, signal }
+  );
+  return response.data;
+};
+
 /**
  * Schedules a workspace's permanent deletion at the end of its grace period.
  * Owner or admin only, and the name has to be typed out again. Asking twice
@@ -494,6 +525,18 @@ export const suspendMember = async (
   return response.data;
 };
 
+/** Applies one action to several members in one request, answering what happened to each. */
+export const bulkUpdateMembers = async (
+  workspaceId: string,
+  payload: MemberBulkUpdate
+): Promise<MemberBulkRead> => {
+  const response = await apiClient.post<MemberBulkRead>(
+    `${membersPath(workspaceId)}/bulk`,
+    payload
+  );
+  return response.data;
+};
+
 /** Reactivates a suspended member with the role and teams they held. */
 export const reactivateMember = async (
   workspaceId: string,
@@ -519,6 +562,32 @@ export const updateMember = async (
 };
 
 /** Removes one member. The API refuses to remove the last owner. */
+/** The route the caller's own status in a workspace is set and cleared at. */
+export const myStatusPath = (workspaceId: string): string =>
+  `${membersPath(workspaceId)}/me/status`;
+
+/** Sets the caller's own status in a workspace, answering their member row. */
+export const setMyStatus = async (
+  workspaceId: string,
+  body: UserStatusUpdate
+): Promise<MemberRead> => {
+  const response = await apiClient.put<MemberRead>(
+    myStatusPath(workspaceId),
+    body
+  );
+  return response.data;
+};
+
+/** Clears the caller's own status in a workspace, answering their member row. */
+export const clearMyStatus = async (
+  workspaceId: string
+): Promise<MemberRead> => {
+  const response = await apiClient.delete<MemberRead>(
+    myStatusPath(workspaceId)
+  );
+  return response.data;
+};
+
 export const removeMember = async (
   workspaceId: string,
   userId: string
@@ -565,6 +634,59 @@ export const revokeInvite = async (
 /** Redeems an invite token. Idempotent for a user who is already a member. */
 export const acceptInvite = async (token: string): Promise<MemberRead> => {
   const response = await apiClient.post<MemberRead>(INVITE_ACCEPT_PATH, {
+    token,
+  });
+  return response.data;
+};
+
+/** The path of a workspace's reusable invite link. */
+const inviteLinkPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/invite-link`;
+
+/** Reads whether the workspace's invite link is on. The token is never returned here. */
+export const getInviteLink = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<InviteLinkRead> => {
+  const response = await apiClient.get<InviteLinkRead>(
+    inviteLinkPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Enables the invite link, or resets it so the old link stops working. The
+ * response carries the token once, so the caller must surface it immediately.
+ */
+export const resetInviteLink = async (
+  workspaceId: string
+): Promise<InviteLinkCreated> => {
+  const response = await apiClient.post<InviteLinkCreated>(
+    inviteLinkPath(workspaceId)
+  );
+  return response.data;
+};
+
+/** Disables the invite link. People who joined through it stay members. */
+export const disableInviteLink = async (workspaceId: string): Promise<void> => {
+  await apiClient.delete<void>(inviteLinkPath(workspaceId));
+};
+
+/** Names the workspace an invite link joins, for the join page. */
+export const previewInviteLink = async (
+  token: string
+): Promise<InviteLinkPreview> => {
+  const response = await apiClient.post<InviteLinkPreview>(
+    INVITE_LINK_PREVIEW_PATH,
+    { token }
+  );
+  return response.data;
+};
+
+/** Joins a workspace as a member through its invite link. Idempotent for a member. */
+export const joinInviteLink = async (token: string): Promise<MemberRead> => {
+  const response = await apiClient.post<MemberRead>(INVITE_LINK_JOIN_PATH, {
     token,
   });
   return response.data;

@@ -19,6 +19,9 @@
  * without a new read, and Shift Backspace offers to delete every read row.
  * With the split inbox on, the Priority and Other tabs each read their own
  * bucket and show their unread counts, and Mark all read keeps to the open tab.
+ * On a touch screen a long swipe left removes a row and a long swipe right
+ * marks it read, each with Undo, and a short swipe holds the row open on the
+ * action's button.
  */
 
 import {
@@ -52,9 +55,17 @@ import {
 } from '../../lib/undo';
 import BoundKeys from '../../test/BoundKeys';
 import { boundKeys, keysBound } from '../../test/shortcuts';
+import { swipe } from '../../test/touch';
 import Inbox from './Inbox';
 
 const auth = vi.hoisted(() => ({ user: null as UserRead | null }));
+const pointer = vi.hoisted(() => ({ coarse: false }));
+
+vi.mock('../../hooks/useCoarsePointer', () => ({
+  useCoarsePointer: () => pointer.coarse,
+}));
+
+vi.mock('../../lib/haptics', () => ({ buzz: () => undefined }));
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
 const getInboxCounts = vi.fn<() => Promise<Required<InboxCountRead>>>();
 const updatePreferences =
@@ -213,6 +224,10 @@ const renderPage = (entry = '/w/mine/inbox') =>
           <Route path="/w/:slug/inbox" element={<Inbox />} />
           <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
           <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
+          <Route
+            path="/w/:slug/initiatives/:id"
+            element={<p>Initiative page</p>}
+          />
         </Routes>
         <Where />
       </ShortcutProvider>
@@ -249,6 +264,7 @@ afterEach(() => {
 
 beforeEach(() => {
   clearUndo();
+  pointer.coarse = false;
   auth.user = null;
   globalThis.localStorage.removeItem('standupless.inbox.tab');
   getInboxCounts.mockReset();
@@ -1085,6 +1101,144 @@ describe('inbox', () => {
     );
   });
 
+  it('says which view a project entered and opens the project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-10',
+          kind: 'view_project_added',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-1',
+          project_name: 'Public beta',
+          new_value: 'In flight',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Public beta/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Public beta was added to In flight');
+
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-1'
+    );
+    expect(screen.getByLabelText('location')).not.toHaveTextContent(
+      'tab=updates'
+    );
+  });
+
+  it('says who made you a project lead and opens the project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-11',
+          kind: 'project_lead_assigned',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-2',
+          project_name: 'Billing revamp',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Billing revamp/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Grace made you the lead of Billing revamp');
+
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-2'
+    );
+    expect(screen.getByLabelText('location')).not.toHaveTextContent(
+      'tab=updates'
+    );
+  });
+
+  it('says who added you to a project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-12',
+          kind: 'project_member_added',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-3',
+          project_name: 'Payments',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /^Payments/ }));
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Grace added you to Payments');
+  });
+
+  it('says who made you an initiative owner and opens the initiative', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-13',
+          kind: 'initiative_owner_assigned',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          team_id: '',
+          initiative_id: 'init-1',
+          initiative_name: 'Expand to Europe',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Expand to Europe/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Initiative update' })
+    ).toHaveTextContent('Grace made you the owner of Expand to Europe');
+
+    await user.click(screen.getByRole('button', { name: 'Open initiative' }));
+
+    expect(await screen.findByText('Initiative page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/initiatives/'
+    );
+    expect(screen.getByLabelText('location')).not.toHaveTextContent(
+      'tab=updates'
+    );
+  });
+
   it('shows a review request and opens its pull request on enter', async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
@@ -1564,5 +1718,49 @@ describe('split inbox', () => {
     const [query] = listInbox.mock.calls[0] ?? [];
     expect(query).not.toHaveProperty('bucket');
     expect(getInboxCounts).not.toHaveBeenCalled();
+  });
+});
+
+describe('inbox touch gestures', () => {
+  beforeEach(() => {
+    pointer.coarse = true;
+  });
+
+  it('removes a row on a long swipe left, with undo', async () => {
+    renderPage();
+
+    swipe(await screen.findByText('Cache the token'), -300);
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
+  });
+
+  it('marks a row read on a long swipe right, with undo', async () => {
+    renderPage();
+
+    swipe(await screen.findByText('Cache the token'), 300);
+
+    await waitFor(() => {
+      expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    });
+    expect(currentUndo().at(-1)?.message).toBe('Marked ENG-1 read');
+    await act(async () => {
+      await undoLast('ws-1');
+    });
+    expect(markUnread).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+  });
+
+  it('holds a short swipe open on the delete button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    swipe(await screen.findByText('Cache the token'), -80);
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Delete notification', hidden: true })
+    );
+
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
   });
 });
