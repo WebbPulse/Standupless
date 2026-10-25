@@ -46,6 +46,7 @@ import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
+import { activeTeams } from '../../lib/teamRetirement';
 import { emptyFilters } from '../../lib/issueFilters';
 import { rememberWorkspace } from '../../lib/lastWorkspace';
 import { showToast } from '../../lib/toast';
@@ -242,7 +243,7 @@ const WorkspaceOverlays: React.FC = () => {
   usePublishCustomEmoji(workspaceId);
 
   const writable = useMemo(
-    () => teams.filter((team) => canWriteIssues(role, team.role)),
+    () => activeTeams(teams).filter((team) => canWriteIssues(role, team.role)),
     [teams, role]
   );
   const routePrefix = routeTeamPrefix(location.pathname, location.search);

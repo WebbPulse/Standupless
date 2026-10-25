@@ -21510,7 +21510,7 @@
         "type": "object"
       },
       "TeamRead": {
-        "description": "One team as the API returns it, carrying the caller's team role.\n\n`parent_team_id` names the team this one sits under, `null` for a top-level team.",
+        "description": "One team as the API returns it, carrying the caller's team role.\n\n`parent_team_id` names the team this one sits under, `null` for a top-level team.\n`retired_at` is set while the team is retired and read-only, with `retired_by`\nnaming who retired it.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -21595,6 +21595,29 @@
             "default": false,
             "title": "Private",
             "type": "boolean"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retired_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired By"
           },
           "retired_key_prefixes": {
             "items": {
@@ -49844,7 +49867,7 @@
     },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
-        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.\n\nThe answer carries a weak `ETag` over its body, so a poll that sends it\nback in `If-None-Match` gets a 304 with no body while nothing changed.",
+        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams. Retired teams are listed with\n`retired_at` set, so the client can keep them out of the sidebar and pickers\nwhile workspace settings still lists them for un-retiring.\n\nThe answer carries a weak `ETag` over its body, so a poll that sends it\nback in `If-None-Match` gets a 304 with no body while nothing changed.",
         "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
         "parameters": [
           {
@@ -53304,6 +53327,55 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/retire": {
+      "post": {
+        "description": "Retire a team: it leaves the sidebar and pickers, and its issues, projects and cycles turn read-only.\n\nRetiring a team already retired answers it unchanged. A parent team with an\nactive sub-team is a 409 until the sub-team is retired or moved.",
+        "operationId": "retire_team_api_workspaces__workspace_id__teams__team_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Retire Team",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/sla-settings": {
       "get": {
         "description": "A team's SLA rules by priority, off with the urgent and high defaults when none were saved.",
@@ -54671,6 +54743,55 @@
           }
         ],
         "summary": "Update Triage Settings",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/unretire": {
+      "post": {
+        "description": "Bring a retired team back into the sidebar and pickers, writable again.\n\nA team that is not retired answers unchanged. A sub-team whose parent is\nstill retired is a 409 until the parent comes back.",
+        "operationId": "unretire_team_api_workspaces__workspace_id__teams__team_id__unretire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unretire Team",
         "tags": [
           "teams"
         ]

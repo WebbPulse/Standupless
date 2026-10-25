@@ -95,6 +95,8 @@ EXPECTED_TOOLS = frozenset(
         "delete_project_update",
         "delete_status",
         "delete_team",
+        "retire_team",
+        "unretire_team",
         "delete_view",
         "export_workspace",
         "delete_workspace_label",

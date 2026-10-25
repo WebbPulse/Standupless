@@ -19,6 +19,7 @@ import { Link } from 'react-router-dom';
 import { updateTeam } from '../../api/teams';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useTeamsFor } from '../../hooks/useTeams';
+import { activeTeams } from '../../lib/teamRetirement';
 import { errorMessage } from '../../lib/errors';
 import { teamSettingsPath } from '../../lib/paths';
 import {
@@ -63,7 +64,7 @@ export const TeamParentSection: React.FC<TeamParentSectionProps> = ({
   const parent = all.find((other) => other.id === current);
   const isTopLevel =
     team.parent_team_id === null || team.parent_team_id === undefined;
-  const candidates = all.filter(
+  const candidates = activeTeams(all).filter(
     (other) =>
       other.id !== team.id &&
       (other.parent_team_id === null || other.parent_team_id === undefined)

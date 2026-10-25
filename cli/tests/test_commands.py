@@ -567,6 +567,36 @@ def test_team_update_sets_the_estimate_settings(runner: CliRunner, api: respx.Mo
 SUB_TEAM = {**TEAM, "id": "team-2", "name": "Platform", "key_prefix": "PLT", "parent_team_id": "team-1"}
 
 
+def test_team_list_hides_retired_teams_unless_asked(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Retired teams stay out of the list until `--include-retired`, which marks them."""
+    retired = {**SUB_TEAM, "retired_at": "2026-10-25T00:00:00Z"}
+    api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, retired]})
+    hidden = invoke(runner, "team", "list", "--json")
+    assert hidden.exit_code == 0, hidden.output
+    assert [team["key_prefix"] for team in json.loads(hidden.stdout)] == ["ENG"]
+
+    shown = invoke(runner, "team", "list", "--include-retired")
+    assert shown.exit_code == 0, shown.output
+    assert any("PLT" in line and "yes" in line for line in shown.stdout.splitlines())
+
+
+def test_team_retire_and_unretire_post_to_the_team(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Both commands post to the team's retire routes and name the team in the reply."""
+    retire = api.post(f"/api/workspaces/{WS}/teams/team-1/retire").respond(
+        json={**TEAM, "retired_at": "2026-10-25T00:00:00Z"}
+    )
+    unretire = api.post(f"/api/workspaces/{WS}/teams/team-1/unretire").respond(json={**TEAM, "retired_at": None})
+    retired = invoke(runner, "team", "retire", "-t", "ENG")
+    assert retired.exit_code == 0, retired.output
+    assert retire.called
+    assert "Retired ENG" in retired.output
+
+    restored = invoke(runner, "team", "unretire", "-t", "ENG")
+    assert restored.exit_code == 0, restored.output
+    assert unretire.called
+    assert "Un-retired ENG" in restored.output
+
+
 def test_team_list_shows_each_parent_and_filters_to_sub_teams(runner: CliRunner, api: respx.MockRouter) -> None:
     """The parent column names the parent's key, and `--parent` keeps only that team's sub-teams."""
     api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, SUB_TEAM]})

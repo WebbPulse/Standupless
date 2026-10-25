@@ -63,6 +63,7 @@ from app.common.db.dynamo.team_config import Label
 from app.common.issue_keys import current
 from app.common.labels import github_label_names, one_per_group
 from app.common.sla import apply_sla
+from app.common.team_retirement import is_retired
 from app.domains.integrations import github_issues
 
 _log = logging.getLogger(__name__)
@@ -463,6 +464,14 @@ def apply_github_issue(
     return any(kept == "standupless" for _field, kept in conflicts)
 
 
+def team_is_retired(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
+    """Whether a synced team is retired, logging the skip, since a retired team takes no GitHub changes."""
+    if not is_retired(repositories.teams.get(workspace_id, team_id)):
+        return False
+    _log.info("Skipped a GitHub delivery for a retired team.", extra={"event": "integrations.sync.team_retired"})
+    return True
+
+
 def handle_issue_event(repositories: Repositories, workspace_id: str, body: Mapping[str, Any]) -> None:
     """Route one `issues` delivery to an import or an update."""
     github_issue = body.get("issue")
@@ -473,7 +482,7 @@ def handle_issue_event(repositories: Repositories, workspace_id: str, body: Mapp
         return
     repository_id = str(repository.get("id", ""))
     config = repositories.github.team_sync_for_repository(workspace_id, repository_id)
-    if config is None or not config.enabled:
+    if config is None or not config.enabled or team_is_retired(repositories, workspace_id, config.team_id):
         return
 
     action = str(body.get("action", ""))
@@ -526,7 +535,7 @@ def handle_comment_event(repositories: Repositories, workspace_id: str, body: Ma
         return
     repository_id = str(repository.get("id", ""))
     config = repositories.github.team_sync_for_repository(workspace_id, repository_id)
-    if config is None or not config.enabled:
+    if config is None or not config.enabled or team_is_retired(repositories, workspace_id, config.team_id):
         return
     sync = repositories.github.issue_sync_for_github(workspace_id, repository_id, int(github_issue.get("number") or 0))
     if sync is None:

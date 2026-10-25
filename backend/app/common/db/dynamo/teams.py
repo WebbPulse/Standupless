@@ -101,6 +101,8 @@ class Team(BaseModel):
     parent_team_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    retired_at: datetime | None = None
+    retired_by: str | None = None
 
 
 class TeamRepository:
@@ -229,6 +231,27 @@ class TeamRepository:
             item = self._repository.set_attributes(
                 key, {"icon_key": icon_key, "updated_at": utc_now().isoformat()}, condition=condition
             )
+        except ConditionFailed:
+            return None
+        return _as_team(item) if item is not None else None
+
+    def set_retired(self, workspace_id: str, team_id: str, retired_by: str | None) -> Team | None:
+        """Retire a live team as `retired_by`, or bring it back with `None`.
+
+        Separate from `update`, which drops `None` values and so cannot clear the mark.
+        """
+        if team_id.startswith(ALIAS_PREFIX):
+            return None
+        now = utc_now().isoformat()
+        values: dict[str, Any] = {
+            "retired_at": now if retired_by is not None else None,
+            "retired_by": retired_by,
+            "updated_at": now,
+        }
+        key = {"workspace_id": workspace_id, "team_id": team_id}
+        condition = Attr("name").exists() & Attr("deleting_at").not_exists()
+        try:
+            item = self._repository.set_attributes(key, values, condition=condition)
         except ConditionFailed:
             return None
         return _as_team(item) if item is not None else None

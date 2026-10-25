@@ -89,6 +89,8 @@ EVENTS: dict[str, str] = {
     "plan.changed": "Plan changed",
     "team.created": "Team created",
     "team.deleted": "Team deleted",
+    "team.retired": "Team retired",
+    "team.unretired": "Team un-retired",
     "team.parent_changed": "Team parent changed",
     "team.privacy_changed": "Team privacy changed",
     "team.triage_changed": "Team triage settings changed",

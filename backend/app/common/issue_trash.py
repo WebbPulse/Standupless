@@ -57,12 +57,13 @@ def may_trash(repositories: Repositories, context: AuthzContext, issue: Issue) -
 
     A team admin always may. Anyone else may only for an issue they created that
     has no live sub-issues, so an ordinary member cannot hide someone else's tree.
+    A retired team is read-only, so its 409 reaches the caller for everyone.
     """
     try:
         require_team_admin(repositories, context, issue.team_id)
         return True
     except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
+        if exc.status_code in (status.HTTP_404_NOT_FOUND, status.HTTP_409_CONFLICT):
             raise
     if issue.created_by != context.user_id:
         return False

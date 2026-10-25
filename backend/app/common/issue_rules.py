@@ -28,6 +28,7 @@ from app.common.db.dynamo.teams import Team
 from app.common.estimates import allowed_estimates
 from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
+from app.common.team_retirement import refuse_if_retired
 
 COMPLETED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """Which status categories count an issue as finished for the parent's rollup.
@@ -420,10 +421,17 @@ def require_team_reader(repositories: Repositories, context: AuthzContext, team_
     A guest outside the team gets the same answer as for a team that never
     existed, which is what keeps the team set unenumerable.
     """
+    _readable_team(repositories, context, team_id)
+
+
+def _readable_team(repositories: Repositories, context: AuthzContext, team_id: str) -> Team:
+    """The team the caller may read, or 404, read once for the checks built on it."""
     if not context.can_see_team(team_id):
         raise team_not_found(team_id)
-    if repositories.teams.get(context.workspace_id, team_id) is None:
+    team = repositories.teams.get(context.workspace_id, team_id)
+    if team is None:
         raise team_not_found(team_id)
+    return team
 
 
 def require_team_member(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
@@ -431,8 +439,9 @@ def require_team_member(repositories: Repositories, context: AuthzContext, team_
 
     Invisibility is a 404 so nothing leaks, but a caller who can see the team and
     still may not write gets a 403: the resource is not in doubt, only the verb.
+    A retired team is read-only, so a write into it is a 409.
     """
-    require_team_reader(repositories, context, team_id)
+    refuse_if_retired(_readable_team(repositories, context, team_id))
     role = team_role(repositories, context, team_id)
     if role is None:
         raise HTTPException(
@@ -442,8 +451,8 @@ def require_team_member(repositories: Repositories, context: AuthzContext, team_
 
 
 def require_team_admin(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
-    """Hold that the caller administers one team, or 404 or 403."""
-    require_team_reader(repositories, context, team_id)
+    """Hold that the caller administers one team, or 404 or 403, and that it is not retired, or 409."""
+    refuse_if_retired(_readable_team(repositories, context, team_id))
     if context.is_workspace_admin:
         return
     if team_role(repositories, context, team_id) != "admin":

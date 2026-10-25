@@ -24,6 +24,8 @@ from fastapi import HTTPException, status
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.planning import Cycle, Project
+from app.common.db.dynamo.teams import Team
+from app.common.team_retirement import is_retired, refuse_if_retired, team_retired
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -82,15 +84,22 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
 
 def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
     """Hold that the caller may read one team, or 404."""
+    _readable_team(repositories, context, team_id)
+
+
+def _readable_team(repositories: Repositories, context: AuthzContext, team_id: str) -> Team:
+    """The team the caller may read, or 404, read once for the checks built on it."""
     if not context.can_see_team(team_id):
         raise not_found()
-    if repositories.teams.get(context.workspace_id, team_id) is None:
+    team = repositories.teams.get(context.workspace_id, team_id)
+    if team is None:
         raise not_found()
+    return team
 
 
 def require_team_member(repositories: Repositories, context: AuthzContext, team_id: str) -> None:
-    """Hold that the caller may write in one team, or 404 or 403."""
-    require_team_reader(repositories, context, team_id)
+    """Hold that the caller may write in one team, or 404 or 403, and that it is not retired, or 409."""
+    refuse_if_retired(_readable_team(repositories, context, team_id))
     if team_role(repositories, context, team_id) is None:
         raise forbidden()
 
@@ -99,9 +108,9 @@ def require_team_admin(repositories: Repositories, context: AuthzContext, team_i
     """Hold that the caller administers one team, or 404 or 403.
 
     Deleting a cycle or a project detaches every issue pointing at it, so it is an
-    administrator's call rather than any member's.
+    administrator's call rather than any member's. A retired team refuses it with a 409.
     """
-    require_team_reader(repositories, context, team_id)
+    refuse_if_retired(_readable_team(repositories, context, team_id))
     if context.is_workspace_admin:
         return
     if team_role(repositories, context, team_id) != "admin":
@@ -163,11 +172,21 @@ def require_project_editor(repositories: Repositories, context: AuthzContext, te
 
     Editing a project's own fields changes nothing any one team owns alone, so a
     writer on any of its teams may make it, which is how Linear treats a project
-    shared between teams.
+    shared between teams. A retired team grants nothing, and a project whose
+    teams are all retired is read-only, a 409.
     """
+    retired: Team | None = None
+    active = False
     for team_id in teams:
+        team = repositories.teams.get(context.workspace_id, team_id)
+        if team is not None and is_retired(team):
+            retired = team
+            continue
+        active = True
         if team_role(repositories, context, team_id) is not None:
             return
+    if retired is not None and not active:
+        raise team_retired(retired)
     raise forbidden()
 
 

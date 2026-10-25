@@ -22,6 +22,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "create_team": {"name": "Should not land", "key_prefix": "SNL"},
         "update_team": {"team_id": team, "name": "Should not land"},
         "delete_team": {"team_id": team},
+        "retire_team": {"team_id": team},
+        "unretire_team": {"team_id": team},
         "update_team_cycle_settings": {"team_id": team, "enabled": True},
         "update_team_archive_settings": {"team_id": team, "period_months": 1},
         "update_team_sla_settings": {"team_id": team, "enabled": True},

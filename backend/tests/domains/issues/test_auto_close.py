@@ -234,3 +234,19 @@ def test_the_hourly_record_runs_the_sweep(
     handle_record(repositories, {"eventSource": CYCLE_CLOSE_SOURCE, "eventName": "SWEEP", "eventID": "cycle-close"})
 
     assert _stored(repositories, issue).status_id == statuses["cancelled"].status_id
+
+
+def test_a_retired_team_is_skipped(
+    client: TestClient, workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Retirement freezes a team's backlog, so the sweep closes nothing in it."""
+    sign_in(client, MEMBER)
+    _enable(repositories)
+    backlog = statuses["backlog"].status_id
+    stale = _seed(client, workspace, repositories, backlog, OLD)
+    repositories.teams.set_retired(WORKSPACE, TEAM, MEMBER)
+
+    summary = sweep(repositories, now=NOW)
+
+    assert summary.closed == 0
+    assert _stored(repositories, stale).status_id == backlog

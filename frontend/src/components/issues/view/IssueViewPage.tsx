@@ -398,6 +398,8 @@ export interface IssueViewPageProps {
    * columns it cannot fill stay hidden. Left out, every category shows.
    */
   statusCategories?: readonly StatusCategory[] | undefined;
+  /** A notice above the list, such as the banner of a retired team. */
+  notice?: ReactNode;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -434,6 +436,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   titleAccessory,
   teamDefault,
   statusCategories,
+  notice,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -920,6 +923,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     >
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {notice !== undefined && <div className="px-4 pt-3">{notice}</div>}
           <IssueListView
             slug={slug}
             state={state}

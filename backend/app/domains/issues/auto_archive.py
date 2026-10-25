@@ -31,6 +31,7 @@ from typing import Any
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.team_config import ARCHIVE_PERIODS, DEFAULT_ARCHIVE_PERIOD_MONTHS, ArchiveTarget
+from app.common.team_retirement import is_active
 
 _log = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ def sweep(repositories: Any, now: datetime | None = None) -> ArchiveSummary:
     for target in repositories.team_config.iter_archive_targets(
         teams_of=lambda workspace_id: [team.team_id for team in repositories.teams.list_for_workspace(workspace_id)]
     ):
-        if repositories.teams.get(target.workspace_id, target.team_id) is None:
+        if not is_active(repositories.teams.get(target.workspace_id, target.team_id)):
             continue
         summary.teams += 1
         archived, skipped = archive_team(repositories, target, moment)

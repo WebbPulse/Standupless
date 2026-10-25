@@ -1,7 +1,8 @@
 /**
  * The workspace settings Teams page: every visible team with its key and the
  * caller's role, each row's way into that team's settings, and a Create team
- * button offered only to the roles the create route accepts.
+ * button offered only to the roles the create route accepts, and the retired
+ * teams listed apart with an un-retire action.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -17,6 +18,7 @@ import type { TeamRead, WorkspaceRead, WorkspaceRole } from '../../types/Api';
 import TeamsSettings from './TeamsSettings';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const unretireTeam = vi.fn<() => Promise<TeamRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -32,6 +34,7 @@ vi.mock('../../hooks/useAuth', () => ({
 
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  unretireTeam: () => unretireTeam(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -212,5 +215,45 @@ describe('creating a team', () => {
         name: 'Create team',
       })
     ).toHaveLength(2);
+  });
+});
+
+describe('retired teams', () => {
+  it('lists a retired team apart and un-retires it', async () => {
+    const retired = { ...engine, retired_at: '2026-10-20T00:00:00Z' };
+    listTeams.mockResolvedValue([retired, design]);
+    unretireTeam.mockResolvedValue(engine);
+    const user = userEvent.setup();
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
+
+    const section = (
+      await screen.findByRole('heading', { name: 'Retired teams' })
+    ).closest('section');
+    if (section === null) throw new Error('the retired section did not render');
+    expect(
+      within(screen.getByRole('table')).queryByText('Engine')
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Un-retire Engine' })
+    );
+
+    expect(unretireTeam).toHaveBeenCalled();
+  });
+
+  it('offers un-retire only to an admin of the team', async () => {
+    listTeams.mockResolvedValue([
+      engine,
+      { ...design, retired_at: '2026-10-20T00:00:00Z' },
+    ]);
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Retired teams' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Un-retire Design' })
+    ).not.toBeInTheDocument();
   });
 });

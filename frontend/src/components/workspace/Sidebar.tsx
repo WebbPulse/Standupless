@@ -156,6 +156,7 @@ import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
 import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
+import { activeTeams } from '../../lib/teamRetirement';
 
 /** Props for Sidebar: the workspace and what to do when a link is followed. */
 export interface SidebarProps {
@@ -782,7 +783,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     () =>
       nestTeams(
         applyTeamOrder(
-          (teams ?? []).filter(
+          activeTeams(teams ?? []).filter(
             (team) => team.private !== true || team.is_member === true
           ),
           pendingOrder

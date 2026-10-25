@@ -6,7 +6,7 @@
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
  * pipeline its releases move through, the Slack and Discord channels it
  * posts notifications to, its outbound webhooks, and a danger zone for
- * deleting it. These are a route of
+ * retiring or deleting it. These are a route of
  * their own so a link to them survives being sent to someone else.
  *
  * The sections sit on one scrolling page with the settings search and a list
@@ -32,6 +32,7 @@ import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamParentSection from '../../components/team/TeamParentSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
 import TeamDangerZoneSection from '../../components/team/TeamDangerZoneSection';
+import RetiredTeamBanner from '../../components/team/RetiredTeamBanner';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
@@ -151,8 +152,9 @@ const TeamSettings: React.FC = () => {
       ? undefined
       : teamSettingsPath(slug ?? '', parent.key_prefix);
   const canDelete = canDeleteTeam(workspace?.role);
+  const showDanger = canDelete || editable;
   const sections = SECTIONS.filter(
-    (section) => section.id !== 'danger' || canDelete
+    (section) => section.id !== 'danger' || showDanger
   );
 
   const makeRecurring = (templateId: string): void => {
@@ -193,6 +195,13 @@ const TeamSettings: React.FC = () => {
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not load this team.')}
+        />
+      )}
+      {workspace !== null && (
+        <RetiredTeamBanner
+          workspaceId={workspace.id}
+          team={team}
+          canUnretire={editable}
         />
       )}
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
@@ -416,13 +425,15 @@ const TeamSettings: React.FC = () => {
               canEdit={editable}
             />
           )}
-          {canDelete &&
+          {showDanger &&
             frame(
               'danger',
               <TeamDangerZoneSection
                 workspaceId={workspaceId}
                 slug={slug ?? ''}
                 team={team}
+                canRetire={editable}
+                canDelete={canDelete}
               />
             )}
         </div>

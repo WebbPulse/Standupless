@@ -27,6 +27,7 @@ from typing import Any, Mapping, Sequence
 
 from app.common.cycle_rollover import carry_unfinished
 from app.common.db.dynamo.planning import Cycle
+from app.common.team_retirement import is_active
 
 _log = logging.getLogger(__name__)
 
@@ -87,7 +88,12 @@ def close_cycle(repositories: Any, ended: Cycle, today: str) -> tuple[int, bool]
 
 
 def moves_unfinished(repositories: Any, workspace_id: str, team_id: str) -> bool:
-    """Whether a team rolls unfinished issues forward, on for a team that never saved settings."""
+    """Whether a team rolls unfinished issues forward, on for a team that never saved settings.
+
+    A retired team is read-only, so its issues stay in the cycle that ended.
+    """
+    if not is_active(repositories.teams.get(workspace_id, team_id)):
+        return False
     settings = repositories.team_config.get_cycle_settings(workspace_id, team_id)
     return settings is None or settings.move_unfinished
 

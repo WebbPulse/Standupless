@@ -67,7 +67,7 @@ def put_team_member(
 )
 def remove_team_member(
     user_id: Annotated[str, Path(min_length=1)],
-    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN, allow_retired=True))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Remove someone from the team. A guest loses access to it entirely."""
@@ -98,7 +98,7 @@ def join_team(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def leave_team(
-    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ, allow_retired=True))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Leave a team. The last admin must hand the role on first."""

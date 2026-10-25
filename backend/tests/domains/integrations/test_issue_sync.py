@@ -309,6 +309,19 @@ def test_nothing_imports_without_an_enabled_link(
     assert repositories.github.issue_sync_for_github(WORKSPACE, REPOSITORY_ID, 12) is None
 
 
+def test_a_retired_team_takes_no_github_changes(
+    repositories: Any,
+    synced: TeamSync,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A retired team is read-only, so an opened GitHub issue imports nothing into it."""
+    repositories.teams.set_retired(WORKSPACE, TEAM, ADMIN)
+    events.handle_record(repositories, sqs_record(issues_delivery("opened", github_issue())))
+
+    assert repositories.github.issue_sync_for_github(WORKSPACE, REPOSITORY_ID, 12) is None
+    assert repositories.issues.list_for_team(WORKSPACE, TEAM).items == []
+
+
 def test_the_apps_own_delivery_is_ignored(
     repositories: Any,
     synced: TeamSync,
