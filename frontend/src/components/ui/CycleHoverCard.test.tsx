@@ -59,7 +59,7 @@ const workspaceValue: WorkspaceContextType = {
 
 const today = new Date(2026, 9, 20);
 
-const cycle: CycleCardCycle & { team_id: string } = {
+const unpointed: CycleCardCycle & { team_id: string } = {
   cycle_id: 'cyc-1',
   team_id: 'team-1',
   name: 'Polish sprint',
@@ -69,6 +69,11 @@ const cycle: CycleCardCycle & { team_id: string } = {
   goal: 'Ship the hover cards',
   status: 'active',
   counts: { todo: 2, in_progress: 1, done: 3, cancelled: 2, total: 8 },
+};
+
+/** The same cycle with its estimate point buckets. */
+const cycle: CycleCardCycle & { team_id: string } = {
+  ...unpointed,
   points: { todo: 4, in_progress: 2, done: 6, cancelled: 0, total: 12 },
 };
 
@@ -94,7 +99,7 @@ describe('CycleCard', () => {
     render(
       inWorkspace(
         <CycleCard
-          cycle={{ ...cycle, points: undefined }}
+          cycle={unpointed}
           href="/w/acme/team/ENG/cycles/cyc-1"
           today={today}
         />
@@ -120,12 +125,11 @@ describe('CycleCard', () => {
       inWorkspace(
         <CycleCard
           cycle={{
-            ...cycle,
+            ...unpointed,
             status: 'upcoming',
             start_date: '2026-10-23',
             end_date: '2026-11-05',
             goal: null,
-            points: undefined,
           }}
           today={today}
         />
