@@ -10,7 +10,9 @@ InitiativesOrderField = Literal["target", "name", "progress", "created", "update
 
 InitiativesCompletedField = Literal["show", "hide"]
 
-INITIATIVES_COLUMNS: tuple[str, ...] = ("health", "owner", "projects", "target", "progress")
+InitiativesGroupingField = Literal["status", "team"]
+
+INITIATIVES_COLUMNS: tuple[str, ...] = ("health", "team", "owner", "projects", "target", "progress")
 """Every property the initiatives list can show beside the name, in the order it draws them."""
 
 DEFAULT_INITIATIVES_COLUMNS = ",".join(INITIATIVES_COLUMNS)
@@ -34,12 +36,15 @@ def _ordered_columns(value: Any) -> str:
 class InitiativesDisplay(BaseModel):
     """How the person arranges the workspace initiatives list.
 
-    `order` sorts the initiatives inside each status group, sub-initiatives
-    staying under their parent. `completed` shows or hides the completed group.
+    `grouping` groups the list by status or by lead team, with a group for the
+    workspace level ones. `order` sorts the initiatives inside each group,
+    sub-initiatives staying under their parent. `completed` shows or hides the
+    completed initiatives.
     `columns` names the properties shown beside the name, comma separated in the
     list's own order, and empty shows the name alone.
     """
 
+    grouping: InitiativesGroupingField = "status"
     order: InitiativesOrderField = "target"
     completed: InitiativesCompletedField = "show"
     columns: str = DEFAULT_INITIATIVES_COLUMNS
@@ -52,6 +57,7 @@ class InitiativesDisplay(BaseModel):
 
 
 INITIATIVES_DISPLAY_FIELDS: dict[str, tuple[str, ...]] = {
+    "grouping": get_args(InitiativesGroupingField),
     "order": get_args(InitiativesOrderField),
     "completed": get_args(InitiativesCompletedField),
 }

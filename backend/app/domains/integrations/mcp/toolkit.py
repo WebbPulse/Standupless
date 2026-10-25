@@ -27,7 +27,7 @@ from app.common.issue_rules import TRIAGE_STATUS_NAME, load_visible_issue, shown
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
 from app.common.plan_limits import PLAN_LIMIT_REACHED
-from app.common.planning_rules import visible_project_teams, visible_team_ids
+from app.common.planning_rules import can_see_initiative, visible_project_teams, visible_team_ids
 from app.common.sla import sla_status
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.common.team_retirement import refuse_if_retired
@@ -304,10 +304,11 @@ def project_id_ref(call: ToolCall, value: Any) -> str:
 
 
 def initiative_id_ref(call: ToolCall, value: Any) -> str:
-    """An initiative id from an id or a name unique within the workspace.
+    """An initiative id from an id or a name unique among the initiatives the caller sees.
 
     A guest is never matched, since initiatives span the workspace and a guest is
-    refused every one of them.
+    refused every one of them, and one on a private team the caller is outside
+    answers as unknown.
     """
     reference = str(value).strip()
     if not reference:
@@ -315,10 +316,15 @@ def initiative_id_ref(call: ToolCall, value: Any) -> str:
     if call.context.is_guest:
         raise ToolError(NOT_VISIBLE)
     workspace_id = call.context.workspace_id
-    if call.repositories.planning.get_initiative(workspace_id, reference) is not None:
+    found = call.repositories.planning.get_initiative(workspace_id, reference)
+    if found is not None and can_see_initiative(call.context, found):
         return reference
     folded = reference.casefold()
-    named = [row for row in call.repositories.planning.list_initiatives(workspace_id) if row.name.casefold() == folded]
+    named = [
+        row
+        for row in call.repositories.planning.list_initiatives(workspace_id)
+        if row.name.casefold() == folded and can_see_initiative(call.context, row)
+    ]
     if len(named) > 1:
         raise ambiguous("initiative", reference)
     if not named:

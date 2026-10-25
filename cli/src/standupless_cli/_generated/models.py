@@ -1061,6 +1061,7 @@ class InitiativeCreate(TypedDict):
     status: NotRequired[Literal["planned", "active", "completed"]]
     target_date: NotRequired[str | None]
     target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    team_id: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1093,6 +1094,7 @@ class InitiativeUpdate(TypedDict):
     status: NotRequired[Literal["planned", "active", "completed"] | None]
     target_date: NotRequired[str | None]
     target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    team_id: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1124,6 +1126,7 @@ class InitiativeUpdateRead(TypedDict):
 class InitiativesDisplay(TypedDict):
     columns: NotRequired[str]
     completed: NotRequired[Literal["show", "hide"]]
+    grouping: NotRequired[Literal["status", "team"]]
     order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
 
 
@@ -4016,6 +4019,7 @@ class InitiativeRead(TypedDict):
     sub_initiative_ids: NotRequired[list[str]]
     target_date: NotRequired[str | None]
     target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    team_id: NotRequired[str | None]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
     update_interval_days: NotRequired[int]
     update_interval_inherited: NotRequired[bool]

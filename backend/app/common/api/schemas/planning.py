@@ -1569,12 +1569,18 @@ class HealthBreakdownRead(BaseModel):
     none: int = 0
 
 
+INITIATIVE_TEAM_HELP = (
+    "The lead team, by id; its page lists the initiative, and a private team's initiative is seen only by its members"
+)
+
+
 class InitiativeCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/initiatives` takes."""
 
     name: str = Field(min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     owner_id: Optional[str] = Field(default=None, min_length=1)
+    team_id: Optional[str] = Field(default=None, min_length=1, description=INITIATIVE_TEAM_HELP)
     status: InitiativeStatusField = "planned"
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
@@ -1618,11 +1624,14 @@ class InitiativeCreate(BaseModel):
 
 
 class InitiativeUpdate(BaseModel):
-    """The body an initiative patch takes; null clears the description, owner, health, date, cadence or parent."""
+    """The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent."""
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     owner_id: Optional[str] = Field(default=None, min_length=1)
+    team_id: Optional[str] = Field(
+        default=None, min_length=1, description=f"{INITIATIVE_TEAM_HELP}; null makes it workspace level"
+    )
     status: Optional[InitiativeStatusField] = None
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
@@ -1681,6 +1690,7 @@ class InitiativeRead(BaseModel):
     name: str
     description: Optional[str] = None
     owner_id: Optional[str] = None
+    team_id: Optional[str] = Field(default=None, description="The lead team, null for a workspace level initiative")
     status: InitiativeStatusField
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
@@ -1755,6 +1765,7 @@ class InitiativeRead(BaseModel):
             name=initiative.name,
             description=initiative.description,
             owner_id=initiative.owner_id,
+            team_id=initiative.team_id,
             status=initiative.status,  # pyright: ignore[reportArgumentType]
             health=initiative.health,  # pyright: ignore[reportArgumentType]
             target_date=initiative.target_date,

@@ -50,6 +50,7 @@ import {
   InitiativePicker,
   InitiativeStatusPicker,
   LeadPicker,
+  LeadTeamPicker,
 } from '../../components/planning/ProjectPickers';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
@@ -73,6 +74,7 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
+import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { descendantIds, parentCandidates } from '../../lib/initiativeTree';
@@ -510,6 +512,11 @@ export const InitiativeDetail: React.FC = () => {
     (userId !== undefined &&
       (userId === initiative.created_by || userId === initiative.owner_id));
   const workspaceCadence = workspace?.project_update_interval_days ?? 7;
+  const leadTeams = teams.filter(
+    (team) =>
+      team.id === initiative.team_id ||
+      ((team.retired_at ?? null) === null && canWriteIssues(role, team.role))
+  );
 
   const refreshMembership = (): void => {
     invalidateQueries(detailKey);
@@ -694,6 +701,15 @@ export const InitiativeDetail: React.FC = () => {
         disabled={!canEdit}
         onChange={(ownerId) => {
           void update({ owner_id: ownerId });
+        }}
+      />
+      <LeadTeamPicker
+        variant="chip"
+        value={initiative.team_id ?? null}
+        teams={leadTeams}
+        disabled={!canEdit}
+        onChange={(teamId) => {
+          void update({ team_id: teamId });
         }}
       />
       <PlanningDatePicker
@@ -1113,6 +1129,8 @@ export const InitiativeDetail: React.FC = () => {
           workspaceId={workspaceId}
           people={people}
           initialOwnerId={userId ?? null}
+          teams={leadTeams.filter((team) => (team.retired_at ?? null) === null)}
+          initialTeamId={initiative.team_id ?? null}
           parent={{
             initiative_id: initiative.initiative_id,
             name: initiative.name,

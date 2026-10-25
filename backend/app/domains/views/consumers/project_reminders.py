@@ -34,6 +34,7 @@ from app.common.project_cadence import (
     next_update_due_at,
     queue_update_due_announcement,
 )
+from app.common.team_privacy import person_can_see_initiative
 from app.domains.views.consumers.chat_digest import hold_for_chat, wants_chat
 from app.domains.views.consumers.notify import (
     can_receive_workspace_subject,
@@ -191,8 +192,8 @@ def write_initiative_reminder(
 ) -> bool:
     """Write the owner's reminder for one initiative stage under their preferences, answering whether one was written.
 
-    An initiative belongs to the workspace rather than a team, so the row carries
-    no team and the owner must be a workspace member other than a guest. The row
+    An initiative spans teams, so the row carries no team; the owner must be a
+    workspace member other than a guest, and inside the lead team when it is private. The row
     is stamped at the stage's start, so its id is the same on every pass and a
     repeat write is dropped by the conditional put.
     """
@@ -200,6 +201,8 @@ def write_initiative_reminder(
     if not owner_id:
         return False
     if not can_receive_workspace_subject(repositories, initiative.workspace_id, owner_id):
+        return False
+    if not person_can_see_initiative(repositories, initiative, owner_id):
         return False
     owner = repositories.users.get(owner_id)
     if owner is None or owner.disabled:

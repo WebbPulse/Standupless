@@ -83,9 +83,10 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         },
         "projects_display_saved": False,
         "initiatives_display": {
+            "grouping": "status",
             "order": "target",
             "completed": "show",
-            "columns": "health,owner,projects,target,progress",
+            "columns": "health,team,owner,projects,target,progress",
         },
         "initiatives_display_saved": False,
         "auto_assign_to_self": False,
@@ -440,7 +441,12 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
         json={"initiatives_display": {"order": "name", "completed": "hide", "columns": ["progress", "owner"]}},
     )
     assert saved.status_code == 200, saved.text
-    assert saved.json()["initiatives_display"] == {"order": "name", "completed": "hide", "columns": "owner,progress"}
+    assert saved.json()["initiatives_display"] == {
+        "grouping": "status",
+        "order": "name",
+        "completed": "hide",
+        "columns": "owner,progress",
+    }
     assert saved.json()["initiatives_display_saved"] is True
     assert repositories.users.get(OWNER).initiatives_display["order"] == "name"
     assert client.get("/api/users/me").json()["projects_display_saved"] is False
@@ -464,7 +470,7 @@ def test_a_retired_initiatives_display_choice_reads_as_the_default(client: TestC
 
     display = client.get("/api/users/me").json()["initiatives_display"]
 
-    assert display == {"order": "target", "completed": "show", "columns": "health"}
+    assert display == {"grouping": "status", "order": "target", "completed": "show", "columns": "health"}
 
 
 def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:

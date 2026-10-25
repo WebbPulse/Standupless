@@ -173,13 +173,20 @@ def follows_project(subjects: PulseSubjects, project: Project, user_id: str) -> 
     return parent is not None and follows_initiative(subjects, parent, user_id)
 
 
+def viewer_sees_initiative(viewer: PulseViewer, initiative: Initiative) -> bool:
+    """Whether a reader may see one initiative: not a guest, and inside its lead team when it has one."""
+    if viewer.is_guest:
+        return False
+    return initiative.team_id is None or initiative.team_id in viewer.visible_teams
+
+
 def _resolve(
     event: PulseEvent, viewer: PulseViewer, subjects: PulseSubjects, scope: str
 ) -> tuple[Project | None, Initiative | None] | None:
     """The project or initiative an event is about when this reader may see it in this scope, else `None`."""
     if event.subject_type == "initiative":
         initiative = subjects.initiatives.get(event.initiative_id or "")
-        if initiative is None or viewer.is_guest:
+        if initiative is None or not viewer_sees_initiative(viewer, initiative):
             return None
         if scope == "for_me" and not follows_initiative(subjects, initiative, viewer.user_id):
             return None
@@ -189,7 +196,9 @@ def _resolve(
         return None
     if scope == "for_me" and not follows_project(subjects, project, viewer.user_id):
         return None
-    initiative = subjects.initiatives.get(project.initiative_id or "") if not viewer.is_guest else None
+    initiative = subjects.initiatives.get(project.initiative_id or "")
+    if initiative is not None and not viewer_sees_initiative(viewer, initiative):
+        initiative = None
     return project, initiative
 
 

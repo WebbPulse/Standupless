@@ -71,6 +71,8 @@ export interface UserRead {
 
 /** The initiatives page arrangement an account saves, every field filled. */
 export interface InitiativesDisplayPreference {
+  /** What the list groups rows by: the initiative status or the lead team. */
+  grouping: 'status' | 'team';
   order: 'target' | 'name' | 'progress' | 'created' | 'updated';
   completed: 'show' | 'hide';
   /** The shown properties, comma separated in the list's own order. */
@@ -3203,6 +3205,8 @@ export interface InitiativeRead {
   name: string;
   description: string | null;
   owner_id: string | null;
+  /** The lead team, or null for a workspace level initiative. A private lead team hides it from everyone outside. */
+  team_id?: string | null;
   status: InitiativeStatus;
   health: ProjectHealth | null;
   target_date: string | null;
@@ -3267,6 +3271,8 @@ export interface InitiativeListRead {
 /** The filters and paging the initiative list reads. */
 export interface InitiativeListQuery {
   status?: InitiativeStatus;
+  /** One lead team's initiatives, or `none` for the workspace level ones. */
+  team_id?: string;
   cursor?: string;
   limit?: number;
 }
@@ -3276,6 +3282,7 @@ export interface InitiativeCreate {
   name: string;
   description?: string | null;
   owner_id?: string | null;
+  team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
   target_date?: string | null;
@@ -3284,11 +3291,12 @@ export interface InitiativeCreate {
   parent_initiative_id?: string | null;
 }
 
-/** The editable fields on an initiative. A null clears an owner, a date or the parent. */
+/** The editable fields on an initiative. A null clears an owner, the team, a date or the parent. */
 export interface InitiativeUpdate {
   name?: string;
   description?: string | null;
   owner_id?: string | null;
+  team_id?: string | null;
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
   target_date?: string | null;

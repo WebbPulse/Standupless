@@ -247,6 +247,10 @@ export const viewPath = (slug: string, viewId: string): string =>
 export const teamProjectsPath = (slug: string, keyPrefix: string): string =>
   `${projectsPath(slug)}?team=${encodeURIComponent(keyPrefix)}`;
 
+/** The initiatives list filtered to the ones one team leads. */
+export const teamInitiativesPath = (slug: string, keyPrefix: string): string =>
+  `${initiativesPath(slug)}?team=${encodeURIComponent(keyPrefix)}`;
+
 /** The saved views shared with one team. */
 export const teamViewsPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/views`;
@@ -337,9 +341,9 @@ export const cliSetupPath = (slug: string): string =>
 
 /**
  * The key prefix of the team the current route is inside, or null. A team page
- * names it in the path, an issue page in the issue key, and the projects list
- * in its `team` query. The shell reads this rather than route params because
- * it sits above the route that declares them.
+ * names it in the path, an issue page in the issue key, and the projects and
+ * initiatives lists in their `team` query. The shell reads this rather than
+ * route params because it sits above the route that declares them.
  */
 export const routeTeamPrefix = (
   pathname: string,
@@ -351,7 +355,7 @@ export const routeTeamPrefix = (
     pathname
   );
   if (issue?.[1] !== undefined) return issue[1].toUpperCase();
-  if (/^\/w\/[^/]+\/projects(\/|$)/.test(pathname)) {
+  if (/^\/w\/[^/]+\/(projects(\/|$)|initiatives\/?$)/.test(pathname)) {
     return new URLSearchParams(search).get('team');
   }
   return null;

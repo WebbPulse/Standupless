@@ -3,10 +3,12 @@
 Held in `common` because the integrations image may not import another domain's
 code, and an initiative an agent edits must pass the same rules a person's does.
 
-An initiative is workspace level and spans teams, so it has no team to decide
-visibility by. Every member but a guest reads every initiative and may create,
-edit and post updates on one; the projects it rolls up are narrowed to the ones
-the caller can see, so an initiative never reveals work on a hidden team. A
+An initiative spans teams and may name one lead team. Every member but a guest
+reads an initiative and may create, edit and post updates on one, unless its
+lead team is private, when only that team's members see it at all and everyone
+else gets the 404 an absent one gets. The projects it rolls up are narrowed to
+the ones the caller can see, so an initiative never reveals work on a hidden
+team, and a hidden sub-initiative or parent is left out of its tree. A
 project joins an initiative through its own `initiative_id`, which is why it
 belongs to at most one, and joining or leaving is an edit of that project. Only
 the initiative's creator, its owner or a workspace admin deletes it.
@@ -19,12 +21,12 @@ that is gone.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
-from app.common import document_templates, pulse
+from app.common import audit, document_templates, pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
@@ -53,10 +55,12 @@ from app.common.db.dynamo.planning import (
 )
 from app.common.initiative_tree import InitiativeTree
 from app.common.planning_rules import (
+    can_see_initiative,
     forbidden,
     load_readable_project,
     not_found,
     require_project_editor,
+    require_team_member,
     require_workspace_member,
     unprocessable,
     visible_project_teams,
@@ -66,6 +70,9 @@ from app.common.project_cadence import workspace_interval
 
 NOT_NULLABLE = ("name", "status")
 """Patch fields that may be omitted but never cleared, because every initiative has one."""
+
+NO_TEAM = "none"
+"""The team filter value that keeps only workspace level initiatives."""
 
 
 def require_initiative_access(context: AuthzContext) -> None:
@@ -79,19 +86,29 @@ def require_initiative_access(context: AuthzContext) -> None:
 
 
 def load_initiative(repositories: Repositories, context: AuthzContext, initiative_id: str) -> Initiative:
-    """One initiative of the caller's workspace, or a 403 for a guest and a 404 when absent."""
+    """One initiative the caller can see, or a 403 for a guest and a 404 when absent or on a hidden private team."""
     require_initiative_access(context)
     initiative = repositories.planning.get_initiative(context.workspace_id, initiative_id)
-    if initiative is None:
+    if initiative is None or not can_see_initiative(context, initiative):
         raise not_found()
     return initiative
 
 
 def require_initiative_target(repositories: Repositories, context: AuthzContext, initiative_id: str) -> None:
-    """Hold that a project may be put in one initiative, or 403 for a guest and 422 when it is absent."""
+    """Hold that a project may be put in one initiative, or 403 for a guest and 422 when absent or hidden."""
     require_initiative_access(context)
-    if repositories.planning.get_initiative(context.workspace_id, initiative_id) is None:
+    initiative = repositories.planning.get_initiative(context.workspace_id, initiative_id)
+    if initiative is None or not can_see_initiative(context, initiative):
         raise unprocessable(f"No such initiative: {initiative_id}")
+
+
+def visible_initiatives(repositories: Repositories, context: AuthzContext) -> list[Initiative]:
+    """Every initiative of the workspace the caller can see."""
+    if context.is_guest:
+        return []
+    return [
+        row for row in repositories.planning.list_initiatives(context.workspace_id) if can_see_initiative(context, row)
+    ]
 
 
 def visible_projects_by_initiative(repositories: Repositories, context: AuthzContext) -> dict[str, list[Project]]:
@@ -122,25 +139,40 @@ def _initiative_read(
     tree: InitiativeTree,
     grouped: Mapping[str, list[Project]],
     default_interval_days: int,
+    hidden: frozenset[str] = frozenset(),
 ) -> InitiativeRead:
-    """One initiative in its response shape from an already built tree and project grouping."""
+    """One initiative in its response shape from an already built tree and project grouping.
+
+    `hidden` names the initiatives the caller cannot see, which are dropped from
+    its parents and sub-initiatives while their visible projects still roll up.
+    """
+    shown = initiative
+    if initiative.parent_initiative_id in hidden:
+        shown = initiative.model_copy(update={"parent_initiative_id": None})
     return InitiativeRead.from_row(
-        initiative,
+        shown,
         rollup_projects(tree, grouped, initiative.initiative_id),
         direct_project_ids=[project.project_id for project in grouped.get(initiative.initiative_id, [])],
-        ancestors=tree.ancestors(initiative.initiative_id),
-        sub_initiative_ids=list(tree.children.get(initiative.initiative_id, [])),
+        ancestors=[node for node in tree.ancestors(initiative.initiative_id) if node.initiative_id not in hidden],
+        sub_initiative_ids=[child for child in tree.children.get(initiative.initiative_id, []) if child not in hidden],
         default_interval_days=default_interval_days,
     )
 
 
+def hidden_initiative_ids(context: AuthzContext, rows: Iterable[Initiative]) -> frozenset[str]:
+    """The ids among `rows` the caller cannot see."""
+    return frozenset(row.initiative_id for row in rows if not can_see_initiative(context, row))
+
+
 def read_initiative(repositories: Repositories, context: AuthzContext, initiative: Initiative) -> InitiativeRead:
     """One initiative in its response shape, rolled up from the projects this caller sees across its subtree."""
+    tree = initiative_tree(repositories, context.workspace_id, initiative)
     return _initiative_read(
         initiative,
-        initiative_tree(repositories, context.workspace_id, initiative),
+        tree,
         visible_projects_by_initiative(repositories, context),
         workspace_interval(repositories.workspaces, context.workspace_id),
+        hidden_initiative_ids(context, tree.rows.values()),
     )
 
 
@@ -156,8 +188,13 @@ def list_initiatives(
     status_filter: Optional[str],
     cursor: Optional[str],
     limit: int,
+    team_filter: Optional[str] = None,
 ) -> tuple[list[InitiativeRead], Optional[str]]:
-    """One page of the workspace's initiatives by target date, undated last, and the next cursor."""
+    """One page of the initiatives the caller sees by target date, undated last, and the next cursor.
+
+    `team_filter` keeps one lead team's initiatives, or with `none` only the
+    workspace level ones; a team the caller cannot see answers an empty page.
+    """
     require_initiative_access(context)
     if status_filter is not None and status_filter not in INITIATIVE_STATUSES:
         raise unprocessable(f"Unknown initiative status: {status_filter}")
@@ -165,12 +202,16 @@ def list_initiatives(
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     rows = repositories.planning.list_initiatives(context.workspace_id)
     tree = InitiativeTree.build(rows)
+    hidden = hidden_initiative_ids(context, rows)
+    wanted_team = None if team_filter in (None, NO_TEAM) else team_filter
     bodies = [
-        _initiative_read(row, tree, grouped, default_days)
+        _initiative_read(row, tree, grouped, default_days, hidden)
         for row in rows
-        if status_filter is None or row.status == status_filter
+        if row.initiative_id not in hidden
+        and (status_filter is None or row.status == status_filter)
+        and (team_filter is None or row.team_id == wanted_team)
     ]
-    scope = f"initiatives:{context.workspace_id}:{status_filter or 'all'}"
+    scope = f"initiatives:{context.workspace_id}:{status_filter or 'all'}:{team_filter or 'all'}"
     offset = decode_offset_cursor(cursor, scope)
     window = bodies[offset : offset + limit]
     next_offset = offset + len(window)
@@ -181,10 +222,32 @@ def list_initiatives(
 def require_parent(
     repositories: Repositories, context: AuthzContext, initiative_id: Optional[str], parent_id: str
 ) -> None:
-    """Hold that an initiative may sit under a parent, or 422 for a missing parent, a cycle or too deep a chain."""
-    refusal = initiative_tree(repositories, context.workspace_id).refusal(initiative_id, parent_id)
+    """Hold that an initiative may sit under a parent: 422 for a hidden or missing parent, a cycle or a deep chain."""
+    tree = initiative_tree(repositories, context.workspace_id)
+    parent = tree.rows.get(parent_id)
+    if parent is not None and not can_see_initiative(context, parent):
+        raise unprocessable(f"No such initiative: {parent_id}")
+    refusal = tree.refusal(initiative_id, parent_id)
     if refusal is not None:
         raise unprocessable(refusal)
+
+
+def record_team_change(
+    repositories: Repositories, context: AuthzContext, initiative: Initiative, previous_team_id: Optional[str]
+) -> None:
+    """Audit a change of an initiative's lead team, a new one with a team counting as a change from none."""
+    if initiative.team_id == previous_team_id:
+        return
+    audit.record(
+        repositories,
+        context,
+        "initiative.team_changed",
+        target_type="initiative",
+        target_id=initiative.initiative_id,
+        target_label=initiative.name,
+        before={"team_id": previous_team_id},
+        after={"team_id": initiative.team_id},
+    )
 
 
 def create_initiative(repositories: Repositories, context: AuthzContext, payload: InitiativeCreate) -> InitiativeRead:
@@ -192,6 +255,8 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
     require_initiative_access(context)
     if payload.owner_id is not None:
         require_workspace_member(repositories, context, payload.owner_id)
+    if payload.team_id is not None:
+        require_team_member(repositories, context, payload.team_id)
     if payload.parent_initiative_id is not None:
         require_parent(repositories, context, None, payload.parent_initiative_id)
     initiative_id = new_planning_id()
@@ -202,6 +267,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         name=payload.name,
         description=payload.description,
         owner_id=payload.owner_id,
+        team_id=payload.team_id,
         parent_initiative_id=payload.parent_initiative_id,
         status=payload.status,
         health=payload.health,
@@ -217,13 +283,18 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That initiative already exists"},
         ) from exc
+    record_team_change(repositories, context, created, None)
     return read_initiative(repositories, context, created)
 
 
 def update_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, payload: InitiativeUpdate
 ) -> InitiativeRead:
-    """Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent."""
+    """Patch an initiative's fields; null clears the description, owner, team, health, date, cadence or parent.
+
+    A new lead team must be one the caller writes in, as a project's team must;
+    clearing it makes the initiative workspace level.
+    """
     existing = load_initiative(repositories, context, initiative_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
     for name in NOT_NULLABLE:
@@ -232,6 +303,9 @@ def update_initiative(
     owner_id = fields.get("owner_id")
     if owner_id is not None and owner_id != existing.owner_id:
         require_workspace_member(repositories, context, owner_id)
+    team_id = fields.get("team_id")
+    if team_id is not None and team_id != existing.team_id:
+        require_team_member(repositories, context, team_id)
     parent_id = fields.get("parent_initiative_id")
     if parent_id is not None and parent_id != existing.parent_initiative_id:
         require_parent(repositories, context, existing.initiative_id, parent_id)
@@ -252,6 +326,7 @@ def update_initiative(
             health=stored.health,
             previous_health=existing.health,
         )
+    record_team_change(repositories, context, stored, existing.team_id)
     return read_initiative(repositories, context, stored)
 
 
