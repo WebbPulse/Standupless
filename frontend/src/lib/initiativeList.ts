@@ -307,7 +307,7 @@ export const healthGroups = (
     ...PROJECT_HEALTHS.map((health) => ({
       key: `health:${health}`,
       label: PROJECT_HEALTH_LABELS[health],
-      value: health as string,
+      value: health,
       rows: ordered.filter((initiative) => initiative.health === health),
     })),
     {
