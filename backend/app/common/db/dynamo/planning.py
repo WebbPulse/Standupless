@@ -683,6 +683,9 @@ class Initiative(BaseModel):
     `team_id` names a lead team, so the team's page lists it and a private
     team's initiative is seen only by that team's members; None keeps it
     workspace level, seen by every member but a guest.
+    `sort_order` is the workspace-wide manual position, a base 62 fractional
+    key shared by every viewer; None on a row never placed, which the manual
+    ordering puts last.
     """
 
     workspace_id: str
@@ -700,6 +703,7 @@ class Initiative(BaseModel):
     target_date_resolution: str | None = None
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
+    sort_order: str | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -1036,6 +1040,7 @@ INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "target_date_resolution",
     "last_update_at",
     "update_interval_days",
+    "sort_order",
     "import_batch_id",
 )
 """The initiative attributes a null value removes from the row rather than storing."""

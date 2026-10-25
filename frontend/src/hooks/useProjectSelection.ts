@@ -1,9 +1,9 @@
 /**
- * Selection on the projects list and board, worked the way the issue list's
- * is: x toggles the project in focus, Shift and an arrow or j and k extends
- * the selection from it, Cmd or Ctrl and A takes every project shown, Escape
- * lets go, and a Shift click takes the run from the last project picked.
- * Selected projects that leave the page drop out of the selection.
+ * Selection on the projects list and board and the initiatives list, worked
+ * the way the issue list's is: x toggles the row in focus, Shift and an arrow
+ * or j and k extends the selection from it, Cmd or Ctrl and A takes every row
+ * shown, Escape lets go, and a Shift click takes the run from the last row
+ * picked. Selected rows that leave the page drop out of the selection.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -19,6 +19,8 @@ export interface ProjectSelectionOptions {
   onFocus: (projectId: string) => void;
   /** False while a dialog or another surface owns the keyboard. */
   enabled?: boolean;
+  /** How the x key reads in the shortcut help, `Select project` unless named. */
+  label?: string;
 }
 
 /** What {@link useProjectSelection} hands back. */
@@ -36,6 +38,7 @@ export const useProjectSelection = ({
   focusedId,
   onFocus,
   enabled = true,
+  label = 'Select project',
 }: ProjectSelectionOptions): ProjectSelection => {
   const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -90,7 +93,7 @@ export const useProjectSelection = ({
   const live = enabled && order.length > 0;
   useShortcut({
     keys: 'x',
-    label: 'Select project',
+    label,
     group: 'List',
     enabled: live && focusedId !== null,
     handler: () => {

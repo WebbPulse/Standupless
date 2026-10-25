@@ -54,6 +54,7 @@ from app.common.db.dynamo.planning import (
     new_planning_id,
 )
 from app.common.initiative_tree import InitiativeTree
+from app.common.order_keys import order_key_first
 from app.common.planning_rules import (
     can_see_initiative,
     forbidden,
@@ -251,7 +252,10 @@ def record_team_change(
 
 
 def create_initiative(repositories: Repositories, context: AuthzContext, payload: InitiativeCreate) -> InitiativeRead:
-    """Create an initiative with no projects yet, under a parent when one is named; any member but a guest may."""
+    """Create an initiative with no projects yet, under a parent when one is named; any member but a guest may.
+
+    It is placed first in the shared manual order, the way a new project is.
+    """
     require_initiative_access(context)
     if payload.owner_id is not None:
         require_workspace_member(repositories, context, payload.owner_id)
@@ -259,6 +263,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         require_team_member(repositories, context, payload.team_id)
     if payload.parent_initiative_id is not None:
         require_parent(repositories, context, None, payload.parent_initiative_id)
+    first = order_key_first(row.sort_order for row in repositories.planning.list_initiatives(context.workspace_id))
     initiative_id = new_planning_id()
     initiative = Initiative(
         workspace_id=context.workspace_id,
@@ -274,6 +279,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         target_date=payload.target_date,
         target_date_resolution=stored_resolution(payload.target_date_resolution),
         update_interval_days=payload.update_interval_days,
+        sort_order=first,
         created_by=context.user_id,
     )
     try:

@@ -469,7 +469,12 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
     assert repositories.users.get(OWNER).initiatives_display["order"] == "name"
     assert client.get("/api/users/me").json()["projects_display_saved"] is False
 
-    for field, value in (("order", "manual"), ("completed", "yes"), ("columns", "owner,budget")):
+    for field, value in (
+        ("order", "priority"),
+        ("grouping", "lead"),
+        ("completed", "yes"),
+        ("columns", "owner,budget"),
+    ):
         refused = client.patch("/api/users/me/preferences", json={"initiatives_display": {field: value}})
         assert refused.status_code == 422
 
@@ -480,11 +485,28 @@ def test_the_initiatives_display_is_saved_whole_refused_when_unknown_and_forgott
     assert repositories.users.get(OWNER).initiatives_display == {}
 
 
+def test_the_initiatives_display_saves_manual_order_and_the_new_groupings(
+    client: TestClient, repositories: Any
+) -> None:
+    """Manual order and the owner, health and target date groupings round trip through the account."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    for grouping in ("owner", "health", "target_date"):
+        saved = client.patch(
+            "/api/users/me/preferences", json={"initiatives_display": {"grouping": grouping, "order": "manual"}}
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["initiatives_display"]["grouping"] == grouping
+        assert saved.json()["initiatives_display"]["order"] == "manual"
+        assert client.get("/api/users/me").json()["initiatives_display"]["grouping"] == grouping
+
+
 def test_a_retired_initiatives_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
     """A stored choice the list no longer offers reads back as the default rather than failing the read."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
     sign_in(client, OWNER)
-    repositories.users.update(OWNER, initiatives_display={"order": "manual", "columns": "budget,health"})
+    repositories.users.update(OWNER, initiatives_display={"order": "priority", "columns": "budget,health"})
 
     display = client.get("/api/users/me").json()["initiatives_display"]
 
