@@ -662,6 +662,12 @@ export const discordChannelsKey = (
   teamId: string | null
 ): QueryKey => ['discord-channels', workspaceId, teamId];
 
+/** The GitLab connections of one workspace. */
+export const gitlabConnectionsKey = (workspaceId: string): QueryKey => [
+  'gitlab-connections',
+  workspaceId,
+];
+
 /**
  * The webhooks of a workspace, or of one team in it. The two are different
  * reads, since the workspace one includes every team's, so the team is a

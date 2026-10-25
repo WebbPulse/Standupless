@@ -29,6 +29,7 @@ from app.common.db.dynamo.base import as_item, build_repository, delete_partitio
 from app.common.db.dynamo.channels import ChannelStore
 from app.common.db.dynamo.discord import DiscordStore
 from app.common.db.dynamo.email_intake import EmailIntakeStore
+from app.common.db.dynamo.gitlab import GitlabStore
 from app.common.db.dynamo.slack import SlackStore
 from app.common.db.dynamo.tables import GITHUB
 
@@ -393,6 +394,11 @@ class IssueLink(BaseModel):
     has what a stack and its status icons need without a second read. A row
     written before they existed reads as an unstacked pull request with no review
     and no checks.
+
+    `provider` is `gitlab` for a GitLab merge request, which shares this row so an
+    issue lists its pull requests and merge requests together. Such a row carries
+    no comment, check run, labels or review state, because nothing is written back
+    to GitLab. A row written before it existed is a GitHub pull request.
     """
 
     workspace_id: str
@@ -414,6 +420,7 @@ class IssueLink(BaseModel):
     comment_id: str | None = None
     check_run_id: str | None = None
     pr_updated_ms: int = 0
+    provider: Literal["github", "gitlab"] = "github"
     repository_id: str = ""
     applied_labels: list[str] = Field(default_factory=list)
     detached: bool = False
@@ -831,6 +838,7 @@ class GithubRepository:
         self.slack = SlackStore(self._repository)
         self.discord = DiscordStore(self._repository)
         self.email_intake = EmailIntakeStore(self._repository)
+        self.gitlab = GitlabStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""

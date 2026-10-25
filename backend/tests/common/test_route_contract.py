@@ -122,6 +122,7 @@ def test_the_route_contract_matches_the_fixture() -> None:
 PUBLIC_ROUTES = {
     ("POST", "/api/github/webhooks"),
     ("GET", "/api/github/callback"),
+    ("POST", "/api/gitlab/webhooks/{workspace_id}/{connection_id}"),
     ("GET", "/api/slack/oauth/callback"),
     ("POST", "/api/slack/events"),
     ("POST", "/api/slack/commands"),

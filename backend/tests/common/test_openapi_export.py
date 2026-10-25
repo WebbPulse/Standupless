@@ -47,6 +47,7 @@ PUBLIC_OPERATIONS = {
     ("GET", "/api/shared/{token}/view"),
     ("GET", "/api/github/callback"),
     ("POST", "/api/github/webhooks"),
+    ("POST", "/api/gitlab/webhooks/{workspace_id}/{connection_id}"),
     ("GET", "/api/slack/oauth/callback"),
     ("POST", "/api/slack/events"),
     ("POST", "/api/slack/commands"),

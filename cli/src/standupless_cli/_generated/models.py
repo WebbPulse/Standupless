@@ -1033,6 +1033,49 @@ class GithubThreadWrite(TypedDict, closed=True):
     repository_id: str
 
 
+class GitlabConnectionCreated(TypedDict):
+    connected_at: str
+    connected_by: str
+    connection_id: str
+    instance_url: str
+    scope_id: str
+    scope_kind: Literal["group", "project"]
+    scope_name: str
+    scope_path: str
+    secret_rotated_at: NotRequired[str | None]
+    token_hint: str
+    web_url: str
+    webhook_secret: str
+    webhook_url: str
+
+
+class GitlabConnectionRead(TypedDict):
+    connected_at: str
+    connected_by: str
+    connection_id: str
+    instance_url: str
+    scope_id: str
+    scope_kind: Literal["group", "project"]
+    scope_name: str
+    scope_path: str
+    secret_rotated_at: NotRequired[str | None]
+    token_hint: str
+    web_url: str
+    webhook_url: str
+
+
+class GitlabConnectionWrite(TypedDict):
+    access_token: str
+    instance_url: NotRequired[str]
+    scope_kind: Literal["group", "project"]
+    scope_path: str
+
+
+class GitlabConnectionsRead(TypedDict):
+    configured: bool
+    connections: list[GitlabConnectionRead]
+
+
 class HealthBreakdownRead(TypedDict):
     at_risk: NotRequired[int]
     none: NotRequired[int]
@@ -4544,6 +4587,7 @@ class IssueLinkRead(TypedDict):
     pr_state: Literal["open", "draft", "merged", "closed"]
     pr_title: str
     pr_url: str
+    provider: NotRequired[Literal["github", "gitlab"]]
     repository_full_name: str
     review_state: NotRequired[Literal["none", "pending", "approved", "changes_requested"]]
     stack: NotRequired[StackRead | None]

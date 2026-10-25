@@ -3894,6 +3894,8 @@ export interface GithubIssueLinkRead {
   review_state?: PullRequestReviewState;
   ci_state?: PullRequestCiState;
   stack?: PullRequestStackRead | null;
+  /** Where the link came from, a GitHub pull request or a GitLab merge request; absent from an older server. */
+  provider?: 'github' | 'gitlab';
   linked_at: string;
   updated_at: string;
 }
@@ -4956,6 +4958,45 @@ export interface DiscordConnectionRead {
   guild_name?: string | null;
   installed_by?: string | null;
   installed_at?: string | null;
+}
+
+/** Which GitLab group or project a workspace receives merge request events from. */
+export type GitlabScopeKind = 'group' | 'project';
+
+/** What a workspace admin enters to connect one GitLab group or project. */
+export interface GitlabConnectionWrite {
+  /** The GitLab instance, gitlab.com when empty. */
+  instance_url?: string;
+  scope_kind: GitlabScopeKind;
+  scope_path: string;
+  access_token: string;
+}
+
+/** One connected GitLab group or project, without its token or webhook secret. */
+export interface GitlabConnectionRead {
+  connection_id: string;
+  instance_url: string;
+  scope_kind: GitlabScopeKind;
+  scope_id: string;
+  scope_path: string;
+  scope_name: string;
+  web_url: string;
+  token_hint: string;
+  webhook_url: string;
+  connected_by: string;
+  connected_at: string;
+  secret_rotated_at?: string | null;
+}
+
+/** A connection as its create or rotate call answers it, with the webhook secret shown once. */
+export interface GitlabConnectionCreated extends GitlabConnectionRead {
+  webhook_secret: string;
+}
+
+/** Whether this environment can hold GitLab tokens, and the workspace's connections. */
+export interface GitlabConnectionsRead {
+  configured: boolean;
+  connections: GitlabConnectionRead[];
 }
 
 /** One Discord text or announcement channel the installed bot can post to. */

@@ -2865,3 +2865,47 @@ class TestDiscordApp:
 
             stale = interact({"type": 1}, timestamp=int(time.time()) - 600)
             assert stale.status_code == 401, stale.text[:400]
+
+
+class TestGitlabConnections:
+    """A workspace's GitLab connections and the receiver GitLab calls.
+
+    No run holds a GitLab access token, so no connection is made: the list reads
+    empty, a connect aimed at a private address is refused before anything leaves
+    the function, the routes on one connection answer 404 for an id that never
+    existed, and the receiver refuses a delivery whose token does not match.
+    """
+
+    @WRITES
+    def test_the_workspace_routes_answer_without_a_connection(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """Nothing is listed, an unsafe instance is refused, and an unknown connection is not found."""
+        base = f"/api/workspaces/{workspace['id']}/gitlab/connections"
+        listed = api.get(base)
+        assert listed.status_code == 200, listed.text[:400]
+        assert listed.json()["connections"] == [], listed.json()
+
+        refused = api.post(
+            base,
+            json={
+                "instance_url": "https://127.0.0.1",
+                "scope_kind": "group",
+                "scope_path": "e2e-group",
+                "access_token": "glpat-not-a-real-token",
+            },
+        )
+        expected = 422 if listed.json()["configured"] else 409
+        assert refused.status_code == expected, refused.text[:400]
+        assert "glpat-not-a-real-token" not in refused.text
+
+        unknown = f"{base}/01HZZZZZZZZZZZZZZZZZZZZZZZ"
+        assert api.post(f"{unknown}/rotate-secret").status_code in (404, 409)
+        assert api.delete(unknown).status_code == 404
+
+    def test_the_receiver_refuses_a_delivery_without_the_secret(self, anon: Any) -> None:
+        """A delivery to a connection that does not exist is refused exactly as a wrong token is."""
+        response = anon.post(
+            "/api/gitlab/webhooks/01HZZZZZZZZZZZZZZZZZZZZZZZ/01HZZZZZZZZZZZZZZZZZZZZZZZ",
+            json={"object_kind": "merge_request"},
+            headers={"X-Gitlab-Token": "not-the-secret", "X-Gitlab-Event": "Merge Request Hook"},
+        )
+        assert response.status_code == 401, response.text[:400]

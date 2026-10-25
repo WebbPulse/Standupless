@@ -4,7 +4,8 @@
  * transition rules, a team's issue sync link, and the outbound webhooks of a
  * workspace or of one team, with their delivery logs, the Slack and Discord
  * channels a team posts its notifications to, and the Slack App and Discord
- * App connections those channels can post through.
+ * App connections those channels can post through, and the GitLab groups and
+ * projects whose merge requests link to issues.
  *
  * The routes GitHub, Slack and Discord themselves call are deliberately absent. The callback is a
  * browser redirect and the webhook receiver is called by GitHub, so neither is
@@ -25,6 +26,9 @@ import type {
   EmailIntakeList,
   EmailIntakeRead,
   GithubInstallationRead,
+  GitlabConnectionCreated,
+  GitlabConnectionsRead,
+  GitlabConnectionWrite,
   GithubIssueLinkRead,
   GithubLabelSetRead,
   GithubLabelSetWrite,
@@ -147,6 +151,22 @@ export const slackChannelsPath = (
 /** The route a workspace's Discord App connection is read and removed on. */
 export const discordConnectionPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/discord`;
+
+/** The route a workspace's GitLab connections are listed and created on. */
+export const gitlabConnectionsPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/gitlab/connections`;
+
+/** The route one GitLab connection is removed on. */
+export const gitlabConnectionPath = (
+  workspaceId: string,
+  connectionId: string
+): string => `${gitlabConnectionsPath(workspaceId)}/${connectionId}`;
+
+/** The route that replaces one GitLab connection's webhook secret. */
+export const gitlabRotatePath = (
+  workspaceId: string,
+  connectionId: string
+): string => `${gitlabConnectionPath(workspaceId, connectionId)}/rotate-secret`;
 
 /** The route that mints the Discord App install link. */
 export const discordInstallUrlPath = (workspaceId: string): string =>
@@ -938,4 +958,52 @@ export const listDiscordChannels = async (
     signalOptions(signal)
   );
   return Array.isArray(response.data) ? response.data : [];
+};
+
+/** Whether GitLab can be connected here, and every group or project this workspace is connected to. */
+export const listGitlabConnections = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<GitlabConnectionsRead> => {
+  const response = await apiClient.get<GitlabConnectionsRead>(
+    gitlabConnectionsPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Connects one GitLab group or project. The server checks the token against
+ * GitLab first, and the answer carries the webhook secret, which nothing can
+ * read again.
+ */
+export const createGitlabConnection = async (
+  workspaceId: string,
+  body: GitlabConnectionWrite
+): Promise<GitlabConnectionCreated> => {
+  const response = await apiClient.post<GitlabConnectionCreated>(
+    gitlabConnectionsPath(workspaceId),
+    body
+  );
+  return response.data;
+};
+
+/** Replaces a GitLab connection's webhook secret, answering the new one once. */
+export const rotateGitlabSecret = async (
+  workspaceId: string,
+  connectionId: string
+): Promise<GitlabConnectionCreated> => {
+  const response = await apiClient.post<GitlabConnectionCreated>(
+    gitlabRotatePath(workspaceId, connectionId),
+    {}
+  );
+  return response.data;
+};
+
+/** Removes a GitLab connection and its stored token; links already made stay. */
+export const deleteGitlabConnection = async (
+  workspaceId: string,
+  connectionId: string
+): Promise<void> => {
+  await apiClient.delete(gitlabConnectionPath(workspaceId, connectionId));
 };
