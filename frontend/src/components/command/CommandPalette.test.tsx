@@ -362,7 +362,7 @@ describe('the navigation commands', () => {
 
     const group = await screen.findByRole('group', { name: 'Go to' });
     const rows = within(group).getAllByRole('option');
-    expect(rows[0]).toHaveAccessibleName(/^Views/);
+    expect(rows[0]).toHaveAccessibleName(/^Go to Views/);
   });
 
   it('finds Pulse by name and by what it holds', async () => {
@@ -561,7 +561,7 @@ describe('the actions', () => {
 
     await user.keyboard('{Control>}k{/Control}');
     const [createRow] = await screen.findAllByRole('option', {
-      name: /Create issue/,
+      name: /Create new issue/,
     });
     if (createRow === undefined) throw new Error('no Create issue row');
     await user.click(createRow);

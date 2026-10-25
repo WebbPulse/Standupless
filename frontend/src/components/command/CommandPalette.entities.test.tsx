@@ -428,7 +428,7 @@ describe('an area an admin turned off', () => {
     await user.type(screen.getByRole('combobox'), 'pulse');
 
     expect(
-      await screen.findByRole('option', { name: /^Pulse/ })
+      await screen.findByRole('option', { name: /^Go to Pulse/ })
     ).toBeInTheDocument();
   });
 
@@ -437,6 +437,6 @@ describe('an area an admin turned off', () => {
     await user.type(screen.getByRole('combobox'), 'pulse');
 
     await screen.findAllByRole('option');
-    expect(screen.queryByRole('option', { name: /^Pulse/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /^Go to Pulse/ })).toBeNull();
   });
 });

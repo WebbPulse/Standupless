@@ -108,12 +108,33 @@ describe('propertyValues', () => {
     expect(labels).toContain('Add label Bug');
   });
 
-  it('leaves out the values every target already has', () => {
-    const labels = labelsOf([issueOn('1', 'team-1')]);
+  it('checks the values every target already has and makes them inert', () => {
+    const update = vi.fn<IssueWrite>();
+    const applied = valuesFor([issueOn('1', 'team-1')], update).filter(
+      (value) => value.inert === true
+    );
 
-    expect(labels).not.toContain('Change status to Todo');
-    expect(labels).not.toContain('Set priority to High');
-    expect(labels).not.toContain('Unassign');
+    expect(applied.map((value) => value.label)).toEqual(
+      expect.arrayContaining([
+        'Change status to Todo',
+        'Set priority to High',
+        'Unassign',
+      ])
+    );
+    expect(applied.every((value) => value.checked === true)).toBe(true);
+    applied.forEach((value) => {
+      value.run();
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('tags each value with its property', () => {
+    const urgent = valuesFor([issueOn('1', 'team-1')]).find(
+      (value) => value.label === 'Set priority to Urgent'
+    );
+
+    expect(urgent?.property).toBe('priority');
+    expect(urgent?.checked).toBe(false);
   });
 
   it('offers removing a label every target carries', () => {
@@ -121,6 +142,11 @@ describe('propertyValues', () => {
 
     expect(labels).toContain('Remove label Bug');
     expect(labels).toContain('Add label Infra');
+    const bug = valuesFor([
+      issueOn('1', 'team-1', { label_ids: ['lb-1'] }),
+    ]).find((value) => value.label === 'Remove label Bug');
+    expect(bug?.checked).toBe(true);
+    expect(bug?.inert).toBe(false);
   });
 
   it('offers no estimates while the team has them off', () => {
