@@ -8,6 +8,11 @@
  * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard, and
  * Cmd or Ctrl+Shift+Up and Down peek its parent and its first sub-issue in
  * place, and O then G opens its linked pull request.
+ *
+ * As in Linear, a sub-issue shows its parent on a line above the title, and a
+ * parent lists its sub-issues under the description with the same section the
+ * page uses, read under the same key so both stay in step. A plain click on
+ * either peeks that issue in place, and Cmd or Ctrl+click opens its page.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -15,8 +20,11 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuMaximize2, LuX } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
+import { IssueHoverTrigger } from '../ui/IssueHoverCard';
+import { StatusIcon } from '../ui/StatusIcon';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
+import { useIssueChildren } from '../../hooks/useIssueChildren';
 import { isTypingTarget } from '../../hooks/useCommandPalette';
 import {
   useIssueTreeKeys,
@@ -40,7 +48,7 @@ import { activityKey, issueKey } from '../../lib/queryKeys';
 import { fullTimestamp } from '../../lib/relativeTime';
 import { enteredStatusAt, timeInStatusSentence } from '../../lib/timeInStatus';
 import { TRIAGE_STATUS } from '../../lib/triageStatus';
-import type { IssueRead, IssueUpdate } from '../../types/Api';
+import type { IssueRead, IssueUpdate, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
 import Spinner from '../ui/spinner';
@@ -53,6 +61,7 @@ import IssueTimeline from './IssueTimeline';
 import { IssueMilestonePicker } from './PlanningPickers';
 import PlanningRowLink from './PlanningRowLink';
 import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
+import SubIssues from './SubIssues';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -67,6 +76,74 @@ export interface IssuePeekProps {
 
 /** How often the issue and its lists are re-read while the pane is open. */
 const POLL_MS = 60000;
+
+/** True for a click that should follow a link rather than peek in place. */
+const opensPage = (event: React.MouseEvent): boolean =>
+  event.button !== 0 ||
+  event.metaKey ||
+  event.ctrlKey ||
+  event.shiftKey ||
+  event.altKey;
+
+/**
+ * The parent of a sub-issue, as a line above its title. The parent is found
+ * among the team's candidate parents the pane already holds, and read on its
+ * own under the issue key only when it is not one of them.
+ */
+const PeekParentLine: React.FC<{
+  workspaceId: string;
+  slug: string;
+  parentId: string;
+  known: readonly IssueRead[];
+  statuses: StatusRead[];
+  onOpenIssue?: (issue: IssueTreeTarget) => void;
+}> = ({ workspaceId, slug, parentId, known, statuses, onOpenIssue }) => {
+  const auth = useQueryAuth();
+  const held = known.find((candidate) => candidate.id === parentId);
+  const { data: fetched } = usePolledQuery(
+    (context) => getIssue(workspaceId, parentId, context),
+    {
+      intervalMs: POLL_MS,
+      enabled: held === undefined && workspaceId !== '',
+      queryKey: issueKey(workspaceId, parentId),
+      auth,
+    }
+  );
+  const parent =
+    held ?? (fetched !== null && fetched.id === parentId ? fetched : undefined);
+  if (parent === undefined) return null;
+  const status =
+    parent.in_triage === true
+      ? TRIAGE_STATUS
+      : statuses.find((item) => item.id === parent.status_id);
+  return (
+    <IssueHoverTrigger issueKey={parent.key}>
+      {(hover) => (
+        <Link
+          to={issuePath(slug, parent.key)}
+          {...hover}
+          aria-label={`Sub-issue of ${parent.key} ${parent.title}`}
+          onClick={(event) => {
+            if (onOpenIssue === undefined || opensPage(event)) return;
+            event.preventDefault();
+            onOpenIssue({ id: parent.id, key: parent.key });
+          }}
+          className="-mx-1 -mb-3 flex h-6 w-fit max-w-full items-center gap-1.5 rounded-sm px-1 text-xs text-text-muted transition-colors duration-100 hover:bg-raised hover:text-text"
+        >
+          <StatusIcon
+            status={status}
+            statuses={statuses}
+            {...(status === undefined ? {} : { name: status.name })}
+          />
+          <span className="shrink-0 font-mono text-text-faint">
+            {parent.key}
+          </span>
+          <span className="min-w-0 truncate">{parent.title}</span>
+        </Link>
+      )}
+    </IssueHoverTrigger>
+  );
+};
 
 /** The side pane showing one issue's title, properties and description. */
 export const IssuePeek: React.FC<IssuePeekProps> = ({
@@ -179,11 +256,21 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
     });
   };
 
+  const children = useIssueChildren(
+    workspaceId,
+    issueId,
+    (issue?.progress.total ?? 0) > 0
+  );
+  const showSubIssues =
+    issue !== null &&
+    (canEdit || children.rows.length > 0 || issue.progress.total > 0);
+
   useIssueTreeKeys({
     workspaceId,
     issue,
     statuses: options.statuses,
     known: options.parents,
+    subIssues: children.rows,
     ...(onOpenIssue === undefined ? {} : { onOpen: onOpenIssue }),
   });
 
@@ -269,6 +356,16 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
         ) : (
           <PassageThreadsProvider key={issue.id}>
             <div className="space-y-5 px-4 py-4">
+              {issue.parent_id !== null && workspace !== null && (
+                <PeekParentLine
+                  workspaceId={workspaceId}
+                  slug={workspace.slug}
+                  parentId={issue.parent_id}
+                  known={options.parents}
+                  statuses={options.statuses}
+                  {...(onOpenIssue === undefined ? {} : { onOpenIssue })}
+                />
+              )}
               <IssueBody
                 key={issue.id}
                 workspaceId={workspaceId}
@@ -279,6 +376,28 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                 canComment={canEdit}
                 {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
               />
+
+              {showSubIssues && (
+                <SubIssues
+                  workspaceId={workspaceId}
+                  slug={workspace?.slug ?? ''}
+                  parent={issue}
+                  rows={children.rows}
+                  isLoading={children.isLoading && issue.progress.total > 0}
+                  error={children.error}
+                  progress={issue.progress}
+                  statuses={options.statuses}
+                  people={options.people}
+                  canEdit={canEdit}
+                  emptyHint={false}
+                  {...(user?.id === undefined
+                    ? {}
+                    : { currentUserId: user.id })}
+                  {...(onOpenIssue === undefined
+                    ? {}
+                    : { onOpenRow: onOpenIssue })}
+                />
+              )}
 
               <div className="space-y-3">
                 {team !== undefined && (

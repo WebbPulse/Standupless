@@ -5,7 +5,9 @@
  * status picked or a child added here shows at once rather than when the
  * rollup lands. A row opens its issue on click, Space on a focused row peeks
  * it, and its status, priority and assignee chips open the shared pickers,
- * writing through the optimistic layer so each change can be undone.
+ * writing through the optimistic layer so each change can be undone. In the
+ * peek pane a plain click opens the row in place instead, and Cmd or Ctrl+click
+ * still opens its page.
  *
  * Rows drag into a manual order, move a step with Alt+Up and Alt+Down, or go
  * to the top or bottom with Alt+Shift+Up and Alt+Shift+Down; j
@@ -100,6 +102,14 @@ export interface SubIssuesProps {
   canEdit?: boolean;
   /** The signed in person, listed first in the assignee picker. */
   currentUserId?: string;
+  /**
+   * Opens a row in place, as the peek pane does, on a plain click or Space.
+   * A modified click still follows the link to the full page. Without it a
+   * click navigates and Space peeks.
+   */
+  onOpenRow?: (issue: { id: string; key: string }) => void;
+  /** Says "No sub-issues" under an empty header. Defaults to true. */
+  emptyHint?: boolean;
 }
 
 /** The categories the rollup counts as done. */
@@ -466,8 +476,11 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
   people,
   canEdit = false,
   currentUserId,
+  onOpenRow,
+  emptyHint = true,
 }) => {
   const { peekIssue } = usePeekIssue();
+  const openRow = onOpenRow ?? peekIssue;
   const triageOn = useTriageOn(parent.team_id);
   const [adding, setAdding] = useState(false);
   const [created, setCreated] = useState<IssueRead[]>([]);
@@ -706,7 +719,10 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
           <Skeleton className="h-4 w-full" />
         </div>
       ) : shown.length === 0 ? (
-        !adding && <p className="py-1 text-xs text-text-faint">No sub-issues</p>
+        !adding &&
+        emptyHint && (
+          <p className="py-1 text-xs text-text-faint">No sub-issues</p>
+        )
       ) : (
         <>
           <ul
@@ -787,10 +803,23 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                           draggable={false}
                           data-hover="parent"
                           className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm pr-1 text-xs focus-visible:outline-none"
+                          onClick={(event) => {
+                            if (
+                              onOpenRow === undefined ||
+                              event.button !== 0 ||
+                              event.metaKey ||
+                              event.ctrlKey ||
+                              event.shiftKey ||
+                              event.altKey
+                            )
+                              return;
+                            event.preventDefault();
+                            onOpenRow({ id: child.id, key: child.key });
+                          }}
                           onKeyDown={(event) => {
                             if (event.key !== ' ') return;
                             event.preventDefault();
-                            peekIssue({ id: child.id, key: child.key });
+                            openRow({ id: child.id, key: child.key });
                           }}
                         >
                           <span className="shrink-0 font-mono text-text-faint">

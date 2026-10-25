@@ -70,12 +70,10 @@ import {
 } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  appendIssues,
   archiveIssue,
   deleteIssue,
   getIssue,
   getIssueByKey,
-  listChildren,
   listLinks,
   restoreIssue,
   unarchiveIssue,
@@ -87,7 +85,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBranchNaming } from '../../hooks/useBranchNaming';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
-import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { useIssueChildren } from '../../hooks/useIssueChildren';
 import {
   DETAILS_PANEL_KEYS,
   detailsPanelLabel,
@@ -199,9 +197,6 @@ import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
-
-/** How many sub-issues one page asks for. */
-const CHILDREN_PAGE = 50;
 
 /** The team link in the bar, in the shared link colour. */
 const TEAM_LINK_CLASS = `${LINK_CLASS} truncate font-normal`;
@@ -347,42 +342,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   );
   const links = useMemo(() => linkRows ?? [], [linkRows]);
 
-  const readChildren = useCallback(
-    async (
-      cursor: string | undefined,
-      signal?: AbortSignal
-    ): Promise<CursorPage<IssueRead>> => {
-      const page = await listChildren(
-        workspaceId,
-        issueId,
-        { limit: CHILDREN_PAGE, ...(cursor === undefined ? {} : { cursor }) },
-        signal
-      );
-      return { rows: page.issues, nextCursor: page.next_cursor };
-    },
-    [workspaceId, issueId]
-  );
-  const mergeChildren = useCallback(
-    (held: IssueRead[], incoming: IssueRead[]): IssueRead[] =>
-      appendIssues(held, { issues: incoming, next_cursor: null }),
-    []
-  );
-  const children = useCursorPages(readChildren, mergeChildren, {
-    queryKey: childrenKey(issueId),
-    enabled: workspaceId !== '' && issueId !== '',
-    intervalMs: POLL_MS,
-  });
-  const {
-    hasMore: childrenHasMore,
-    isPaging: childrenPaging,
-    isLoading: childrenLoading,
-    loadMore: loadMoreChildren,
-  } = children;
-  useEffect(() => {
-    if (childrenHasMore && !childrenPaging && !childrenLoading) {
-      loadMoreChildren();
-    }
-  }, [childrenHasMore, childrenPaging, childrenLoading, loadMoreChildren]);
+  const children = useIssueChildren(workspaceId, issueId);
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const descriptionQuotes = useQuoteRequest(issue?.id ?? '');
