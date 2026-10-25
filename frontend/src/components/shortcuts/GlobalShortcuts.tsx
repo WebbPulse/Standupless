@@ -1,5 +1,6 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
+ * `V` to create one in fullscreen,
  * Alt+C to pick a template of the team in context and create from it,
  * `G` then a letter to go somewhere: the team's active issues, backlog,
  * board, archive, cycles and, as in Linear, `G` then `V` for its current
@@ -19,6 +20,7 @@ import {
 } from '../../hooks/useCommandPalette';
 import {
   CREATE_FROM_TEMPLATE_KEYS,
+  CREATE_FULLSCREEN_KEYS,
   useCreateIssue,
 } from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -110,6 +112,14 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: 'Create issue',
     handler: () => {
       createIssue.open();
+    },
+    enabled: createIssue.canCreate,
+  });
+  useShortcut({
+    keys: CREATE_FULLSCREEN_KEYS,
+    label: 'Create issue in fullscreen',
+    handler: () => {
+      createIssue.open({ expanded: true });
     },
     enabled: createIssue.canCreate,
   });

@@ -202,6 +202,8 @@ export interface CreateIssueDialogProps {
   teamName?: string;
   /** Properties the draft starts on, such as the status column it was opened from. */
   preset?: CreateIssuePreset;
+  /** Whether the dialog opens expanded. The person can still collapse it. */
+  initialExpanded?: boolean;
 }
 
 /** What a caller may start a draft on. Each is dropped if the team changes. */
@@ -563,6 +565,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   currentUserId,
   teamName,
   preset,
+  initialExpanded = false,
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const auth = useQueryAuth();
@@ -611,7 +614,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     similar.some((issue) => issue.issue_id === duplicateOf.issue_id)
       ? similar
       : [duplicateOf, ...similar];
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
   const [subIssues, setSubIssues] = useState<SubIssueRow[]>(() =>
     restored === null ? [] : rowsOfStored(restored, 'sub-saved-')
   );

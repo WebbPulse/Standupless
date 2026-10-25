@@ -98,6 +98,8 @@ interface CreateIssueHostProps {
   currentUserId: string | undefined;
   /** What the caller asked the draft to start on. */
   preset: CreateIssuePreset;
+  /** Whether the dialog opens expanded. */
+  expanded: boolean;
 }
 
 /** The dialog preset a create request carries, leaving out what it does not set. */
@@ -135,6 +137,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   onCreatedMore,
   currentUserId,
   preset,
+  expanded,
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
@@ -167,6 +170,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       onCreatedMore={onCreatedMore}
       {...(currentUserId === undefined ? {} : { currentUserId })}
       preset={preset}
+      initialExpanded={expanded}
       onClose={onClose}
     />
   );
@@ -407,6 +411,7 @@ const WorkspaceOverlays: React.FC = () => {
                         onCreatedMore={onIssueCreatedMore}
                         currentUserId={user?.id}
                         preset={presetOf(request)}
+                        expanded={request.expanded === true}
                       />
                     )}
 
