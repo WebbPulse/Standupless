@@ -27,6 +27,7 @@ from app.common.api.schemas.issues import (
     IssueBulkUpdate,
     IssueConversionRead,
     IssueCreate,
+    IssueDuplicate,
     IssueListRead,
     IssueMove,
     IssueRead,
@@ -430,15 +431,20 @@ def duplicate(
     issue_id: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    payload: IssueDuplicate | None = None,
 ) -> IssueRead:
     """Create a copy of an issue in its team, answering the new issue under its own key.
 
     The copy carries the title with a copy suffix, the description, labels,
     priority, estimate, parent, project and milestone, and starts in the team's
-    default status, unassigned and outside any cycle, as in Linear.
+    default status, unassigned and outside any cycle, as in Linear. With
+    `include_sub_issues` its sub-issue tree is copied under it too, and a tree
+    above the cap is refused with a 422.
     """
     issue = load_visible_issue(repositories, context, issue_id)
-    return IssueRead.from_row(current(repositories.teams, duplicate_issue(repositories, context, issue)))
+    include = payload is not None and payload.include_sub_issues
+    copy = duplicate_issue(repositories, context, issue, include_sub_issues=include)
+    return IssueRead.from_row(current(repositories.teams, copy))
 
 
 @router.post("/{workspace_id}/issues/{issue_id}/convert-to-project", response_model=IssueConversionRead)

@@ -279,6 +279,12 @@ class IssueUpdate(BaseModel):
         return _check_sort_order(value)
 
 
+class IssueDuplicate(BaseModel):
+    """The optional body a duplicate takes: whether the sub-issue tree is copied too."""
+
+    include_sub_issues: StrictBool = False
+
+
 class IssueMove(BaseModel):
     """The body a move to another team takes: the team the issue lands in."""
 

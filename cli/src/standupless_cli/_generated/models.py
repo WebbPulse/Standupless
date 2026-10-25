@@ -1299,6 +1299,10 @@ class IssueDraftWrite(TypedDict):
     title: NotRequired[str]
 
 
+class IssueDuplicate(TypedDict):
+    include_sub_issues: NotRequired[bool]
+
+
 class IssueExportRead(TypedDict):
     csv: str
     next_cursor: NotRequired[str | None]

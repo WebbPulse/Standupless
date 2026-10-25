@@ -47,6 +47,20 @@ def test_duplicate_issue_files_a_copy_under_a_new_key(client: TestClient, reposi
     assert copy["priority"] == "high"
 
 
+def test_duplicate_issue_can_copy_the_sub_issue_tree(client: TestClient, repositories: Any, workspace: str) -> None:
+    """With include_sub_issues the copy gets its own copies of the sub-issues, titles unchanged."""
+    secret = mint_for(repositories, MEMBER, WRITE)
+    parent = _file(client, secret, title="Checklist")
+    _file(client, secret, title="Step", parent_id=parent["issue_id"])
+
+    copy = answer(
+        tool(client, secret, "duplicate_issue", {"issue_id": parent["issue_key"], "include_sub_issues": True})
+    )
+
+    children = list(repositories.issues.iter_children(WORKSPACE, copy["issue_id"]))
+    assert [row.title for row in children] == ["Step"]
+
+
 def test_convert_issue_to_project_moves_sub_issues_and_closes_the_issue(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
