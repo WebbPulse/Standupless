@@ -5,7 +5,7 @@ license = "LicenseRef-PolyForm-Strict-1.0.0"
 requires-python = ">=3.13"
 dependencies = [
   "webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys,github,stripe,sso,saml]>=0.105.0,<1",
-  "fastapi>=0.161.0",
+  "fastapi>=0.161.1",
   "pydantic[email]>=2.13.5",
   "pydantic-settings>=2.16.1",
   "python-json-logger>=4.2.0",
