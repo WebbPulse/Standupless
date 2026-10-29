@@ -1,7 +1,8 @@
 /**
  * The glyph a group of projects is headed with: the status, health or
  * priority glyph, the initiative mark, the team key, the lead's or member's
- * avatar or a calendar for a date period, matching what the group is by. Shared by the projects list, its board and
+ * avatar, a label's colour dot or a calendar for a date period, matching
+ * what the group is by. Shared by the projects list, its board and
  * the roadmap so their group headers read alike.
  */
 
@@ -74,6 +75,18 @@ export const ProjectGroupGlyph: React.FC<ProjectGroupGlyphProps> = ({
     case 'lead':
     case 'member':
       return value === 'none' ? null : <Avatar name={group.label} size="xs" />;
+    case 'label':
+      return value === 'none' ? null : (
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full bg-text-faint"
+          style={
+            group.color === undefined
+              ? undefined
+              : { backgroundColor: group.color }
+          }
+        />
+      );
     case 'start_date':
     case 'target_date':
       return (

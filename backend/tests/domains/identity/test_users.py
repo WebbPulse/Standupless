@@ -509,12 +509,12 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
 
     for field, value in (
         ("layout", "gallery"),
-        ("group", "label"),
+        ("group", "labels"),
         ("closed", "year"),
         ("closed", "quarter"),
         ("zoom", "day"),
         ("direction", "up"),
-        ("rows", "label"),
+        ("rows", "labels"),
         ("lead_team", "yes"),
         ("empty", "true"),
         ("dependencies", "off"),
