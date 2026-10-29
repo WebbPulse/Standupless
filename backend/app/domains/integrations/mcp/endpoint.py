@@ -59,8 +59,10 @@ from app.domains.integrations.mcp.transport import (
     PARSE_ERROR,
     PROTOCOL_VERSION,
     ProtocolError,
+    ToolContent,
     ToolError,
     challenge_header,
+    content_result,
     failure,
     parse_request,
     success,
@@ -293,7 +295,10 @@ def _call_tool(
                 repositories, context.workspace_id, *features_for_tool(FEATURE_OF_TOOL.get(tool.name), checked)
             )
         resolved = resolve_team_arguments(call, administer=tool.administers_team, writes=writes)
-        return tool_result(render(tool.handler(resolved)))
+        answered = tool.handler(resolved)
+        if isinstance(answered, ToolContent):
+            return content_result(render(answered.summary), answered.blocks)
+        return tool_result(render(answered))
     except ToolError as exc:
         return tool_result(exc.message, is_error=True)
     except HTTPException as exc:
