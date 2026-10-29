@@ -687,6 +687,38 @@ const railSection = async (name: string): Promise<HTMLElement> =>
   screen.findByRole('region', { name });
 
 describe('the sub-issues', () => {
+  it('offers Add sub-issues under the description when there are none', async () => {
+    getIssueByKey.mockResolvedValue({
+      ...issue,
+      progress: { total: 0, completed: 0 },
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    const add = await screen.findByRole('button', { name: 'Add sub-issues' });
+    expect(
+      screen.queryByRole('region', { name: 'Sub-issues' })
+    ).not.toBeInTheDocument();
+    await user.click(add);
+
+    const section = await railSection('Sub-issues');
+    expect(
+      within(section).getByRole('textbox', { name: 'New sub-issue title' })
+    ).toHaveFocus();
+    expect(
+      screen.queryByRole('button', { name: 'Add sub-issues' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides Add sub-issues once the issue has sub-issues', async () => {
+    renderPage();
+
+    await railSection('Sub-issues');
+    expect(
+      screen.queryByRole('button', { name: 'Add sub-issues' })
+    ).not.toBeInTheDocument();
+  });
+
   it('counts done over total from the rollup, not from the rows', async () => {
     renderPage();
 
@@ -724,16 +756,28 @@ describe('the sub-issues', () => {
 });
 
 describe('the parent', () => {
-  it('shows the parent the issue is a sub-issue of, linked', async () => {
+  it('shows the parent above the title and in the rail, linked', async () => {
     const epic = { ...issue, id: 'iss-9', key: 'ENG-9', title: 'The epic' };
     getIssueByKey.mockResolvedValue({ ...issue, parent_id: 'iss-9' });
     listIssues.mockResolvedValue({ issues: [epic], next_cursor: null });
     renderPage();
 
-    const link = await screen.findByRole('link', {
+    const links = await screen.findAllByRole('link', {
       name: 'Sub-issue of ENG-9 The epic',
     });
-    expect(link).toHaveAttribute('href', '/w/mine/issues/ENG-9');
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/w/mine/issues/ENG-9');
+    }
+  });
+
+  it('shows no parent line for an issue without a parent', async () => {
+    renderPage();
+
+    await railSection('Sub-issues');
+    expect(
+      screen.queryByRole('link', { name: /^Sub-issue of / })
+    ).not.toBeInTheDocument();
   });
 });
 
