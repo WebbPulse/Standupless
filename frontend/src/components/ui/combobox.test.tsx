@@ -132,4 +132,31 @@ describe('Combobox', () => {
     await user.keyboard('{Enter}');
     expect(onCreate).toHaveBeenCalledWith('Delta');
   });
+
+  it('keeps every row when two options share a value', () => {
+    const errors = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    render(
+      <Combobox
+        label="Pick"
+        options={[
+          { value: '2026-10-30', label: 'Tomorrow' },
+          { value: '2026-10-30', label: 'End of this week' },
+          { value: '2026-11-02', label: 'Next week' },
+        ]}
+        selected={[]}
+        onSelect={vi.fn()}
+      />
+    );
+    const duplicateKey = errors.mock.calls.some((call) =>
+      call.some((part) => String(part).includes('same key'))
+    );
+    errors.mockRestore();
+
+    expect(
+      screen.getAllByRole('option').map((option) => option.textContent)
+    ).toEqual(['Tomorrow', 'End of this week', 'Next week']);
+    expect(duplicateKey).toBe(false);
+  });
 });
