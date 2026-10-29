@@ -23403,6 +23403,56 @@
         "title": "SlackLinkRead",
         "type": "object"
       },
+      "SlackStatusPostsRead": {
+        "description": "Whether a team posts status changes into the Slack threads its issues came from.\n\n`enabled` is the team's switch, on until an admin turns it off, and reads true\neven before Slack is connected, so the setting is ready once it is.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "SlackStatusPostsRead",
+        "type": "object"
+      },
+      "SlackStatusPostsWrite": {
+        "description": "A team admin's choice to post status changes into paired Slack threads or not.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SlackStatusPostsWrite",
+        "type": "object"
+      },
       "SlackThread": {
         "description": "The Slack thread a root comment's thread is synced with.\n\nSet on the root that pairing writes when an issue is created from a Slack\nmessage: replies in the Slack thread land under this root, and replies under\nthis root are posted to the Slack thread. `permalink` is what the comment\narea links to.",
         "properties": {
@@ -66422,6 +66472,132 @@
           }
         ],
         "summary": "Put Slack Intake",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts": {
+      "get": {
+        "description": "Whether this team posts status changes into the Slack threads its issues came from.",
+        "operationId": "get_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusPostsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Status Posts",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Turn status posts into paired Slack threads on or off for this team.",
+        "operationId": "put_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackStatusPostsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusPostsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Slack Status Posts",
         "tags": [
           "integrations"
         ]

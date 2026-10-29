@@ -581,6 +581,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/teams/{team_id}/webhooks/slack-intake"): TEAMS_READ,
     ("PUT", "/{workspace_id}/teams/{team_id}/webhooks/slack-intake"): TEAMS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}/webhooks/slack-intake"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts"): TEAMS_READ,
+    ("PUT", "/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/webhooks/channels"): SETTINGS_READ_ADMIN,
     ("GET", "/{workspace_id}/slack/channels"): SETTINGS_READ_ADMIN,
     ("GET", "/{workspace_id}/discord/channels"): SETTINGS_READ_ADMIN,

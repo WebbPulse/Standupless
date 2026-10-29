@@ -900,6 +900,18 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-intake"
   },
   {
+    "auth": "team:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts"
+  },
+  {
     "auth": "team:admin",
     "domain": "integrations",
     "method": "DELETE",
