@@ -5,16 +5,17 @@
  * the issue id the shared components key on is the document id here.
  *
  * Every page of the thread is read, oldest first, so a long discussion reads
- * whole, and a `#comment-` link scrolls to its comment once it has loaded.
- * A print leaves the thread out and lists its open threads as endnotes.
+ * whole, and a `#comment-` link scrolls to and highlights its comment once
+ * it has loaded, opening a resolved thread that holds it. A print leaves the
+ * thread out and lists its open threads as endnotes.
  * Open threads pinned to a passage are reported to the page's passage
  * threads, so the body highlights what they quote.
  */
 
-import React, { useCallback, useEffect, useId, useMemo, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useCallback, useEffect, useId, useMemo } from 'react';
 import { appendComments, listDocumentComments } from '../../api/discussion';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { useLinkedComment } from '../../hooks/useLinkedComment';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
@@ -98,17 +99,7 @@ export const DocumentThread: React.FC<DocumentThreadProps> = ({
     reportThreads?.(anchoredThreads(comments.rows));
   }, [comments.rows, reportThreads]);
 
-  const { hash } = useLocation();
-  const scrolledTo = useRef<string | null>(null);
-  useEffect(() => {
-    if (!hash.startsWith('#comment-') || scrolledTo.current === hash) return;
-    const target = document.getElementById(hash.slice(1));
-    if (target === null) return;
-    scrolledTo.current = hash;
-    if (typeof target.scrollIntoView === 'function') {
-      target.scrollIntoView({ block: 'start' });
-    }
-  }, [hash, comments.rows]);
+  useLinkedComment(comments.rows);
 
   return (
     <>
