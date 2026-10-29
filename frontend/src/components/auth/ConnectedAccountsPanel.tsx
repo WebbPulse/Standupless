@@ -1,20 +1,14 @@
 /**
  * The connected accounts section: one row per sign-in provider this
  * deployment offers, showing the linked account or "Not connected", with
- * Connect and Disconnect. Both changes need a recent sign-in, so each call goes
- * through the `@webbpulse/auth` step-up gate, which parks a `STEP_UP_REQUIRED`
- * refusal behind the verify prompt and replays it once the person has proven
- * it is them. The provider callback lands back here, where its flag becomes a
- * toast.
+ * Connect and Disconnect. The state machine is `useConnectedAccountsPanel`
+ * from `@webbpulse/auth`, wired to the step-up gate so a `STEP_UP_REQUIRED`
+ * refusal waits behind the verify prompt and replays once the person has
+ * proven it is them. The provider callback lands back here, where its flag
+ * becomes a toast.
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   GITHUB_PROVIDER,
   GOOGLE_PROVIDER,
@@ -24,7 +18,8 @@ import {
   stripOAuthParams,
   type OAuthLink,
 } from '@webbpulse/auth';
-import { useStepUp } from '@webbpulse/auth/react';
+import { useConnectedAccountsPanel } from '@webbpulse/auth/panels';
+import { useStepUp, type StepUpGate } from '@webbpulse/auth/react';
 import { useOAuthProviders } from '@webbpulse/discovery/react';
 import { FaGithub, FaGoogle } from 'react-icons/fa';
 import { LuLink } from 'react-icons/lu';
@@ -203,97 +198,51 @@ const ConnectedAccountsList: React.FC<{ client: IdentityClient }> = ({
 }) => {
   const providers = useOAuthProviders({ identityOrigin: identityOrigin() });
   const gate = useStepUp();
-  const [links, setLinks] = useState<OAuthLink[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [action, setAction] = useState('');
   const [confirming, setConfirming] = useState<OAuthProviderInfo | null>(null);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
   useCallbackToast();
 
-  const load = useCallback(async (): Promise<void> => {
-    try {
-      const outcome = await client.listOAuthLinks();
-      if (outcome.ok) {
-        setLinks(outcome.links);
-        setLoadError(null);
-      } else {
-        setLoadError(outcome.message);
-      }
-    } catch (error) {
-      setLoadError(errorMessage(error, 'Could not load connected accounts.'));
-    }
-  }, [client]);
+  const { withStepUp: gateStepUp } = gate;
+  const withStepUp = useCallback<StepUpGate['withStepUp']>(
+    (fn) => {
+      const gated = gateStepUp(fn);
+      return async (...args) => {
+        try {
+          return await gated(...args);
+        } catch (thrown) {
+          if (thrown instanceof StepUpCancelledError) setConfirming(null);
+          throw thrown;
+        }
+      };
+    },
+    [gateStepUp]
+  );
 
+  const panel = useConnectedAccountsPanel({
+    client,
+    providers,
+    returnTo: SECURITY_PATH,
+    withStepUp,
+    messages: { removed: 'Disconnected.' },
+  });
+  const links = panel.items;
+
+  const linkFor = useCallback(
+    (provider: string): OAuthLink | undefined =>
+      links?.find((row) => row.provider === provider),
+    [links]
+  );
+
+  const { notice, dismiss } = panel;
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const { withStepUp } = gate;
-  const link = useMemo(
-    () =>
-      withStepUp((provider: string) =>
-        client.linkOAuthProvider(provider, { returnTo: SECURITY_PATH })
-      ),
-    [client, withStepUp]
-  );
-  const unlink = useMemo(
-    () =>
-      withStepUp((provider: string) => client.unlinkOAuthProvider(provider)),
-    [client, withStepUp]
-  );
-
-  const connect = async (provider: OAuthProviderInfo): Promise<void> => {
-    setBusy(true);
-    setAction(`connect ${provider.displayName}`);
-    try {
-      const outcome = await link(provider.id);
-      if (outcome.ok) {
-        window.location.assign(outcome.authorizationUrl);
-        return;
-      }
-      showErrorToast(outcome.message);
-    } catch (error) {
-      if (!(error instanceof StepUpCancelledError)) {
-        showErrorToast(
-          errorMessage(error, `Could not connect ${provider.displayName}.`)
-        );
-      }
-    }
-    setBusy(false);
-  };
-
-  const disconnect = async (provider: OAuthProviderInfo): Promise<void> => {
-    setBusy(true);
-    setConfirmError(null);
-    setAction(`disconnect ${provider.displayName}`);
-    try {
-      const outcome = await unlink(provider.id);
-      if (outcome.ok) {
-        setConfirming(null);
-        showToast(`${provider.displayName} disconnected.`);
-        await load();
-        return;
-      }
-      if (outcome.reason === 'not-linked') void load();
-      setConfirmError(outcome.message);
-    } catch (error) {
-      if (error instanceof StepUpCancelledError) {
-        setConfirming(null);
-      } else {
-        setConfirmError(
-          errorMessage(error, `Could not disconnect ${provider.displayName}.`)
-        );
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+    if (notice === null || confirming === null) return;
+    showToast(`${confirming.displayName} disconnected.`);
+    setConfirming(null);
+    dismiss();
+  }, [notice, confirming, dismiss]);
 
   if (providers.length === 0) return null;
 
-  const linkFor = (provider: string): OAuthLink | undefined =>
-    links?.find((row) => row.provider === provider);
   const confirmingLink =
     confirming === null ? undefined : linkFor(confirming.id);
   const reauth = (links ?? [])
@@ -315,23 +264,33 @@ const ConnectedAccountsList: React.FC<{ client: IdentityClient }> = ({
         </p>
       </div>
 
-      <ErrorAlert message={loadError} />
+      <ErrorAlert message={confirming === null ? panel.error : null} />
 
-      {links === null && loadError === null && (
-        <Spinner label="Loading connected accounts" />
-      )}
+      {panel.loading && <Spinner label="Loading connected accounts" />}
 
-      {links !== null && (
+      {!panel.loading && !panel.unavailable && links !== null && (
         <ul className="divide-y divide-line rounded-md border border-line">
           {providers.map((provider) => (
             <ProviderRow
               key={provider.id}
               provider={provider}
               link={linkFor(provider.id)}
-              busy={busy}
-              onConnect={() => void connect(provider)}
+              busy={panel.busy}
+              onConnect={() => {
+                setAction(`connect ${provider.displayName}`);
+                panel
+                  .link(provider.id)
+                  .catch((error: unknown) =>
+                    showErrorToast(
+                      errorMessage(
+                        error,
+                        `Could not connect ${provider.displayName}.`
+                      )
+                    )
+                  );
+              }}
               onDisconnect={() => {
-                setConfirmError(null);
+                panel.dismiss();
                 setConfirming(provider);
               }}
             />
@@ -345,11 +304,26 @@ const ConnectedAccountsList: React.FC<{ client: IdentityClient }> = ({
         account={
           confirmingLink === undefined ? '' : accountLabel(confirmingLink)
         }
-        busy={busy}
-        error={confirmError}
-        onCancel={() => setConfirming(null)}
+        busy={panel.busy}
+        error={confirming === null ? null : panel.error}
+        onCancel={() => {
+          panel.dismiss();
+          setConfirming(null);
+        }}
         onConfirm={() => {
-          if (confirming !== null) void disconnect(confirming);
+          if (confirming === null) return;
+          setAction(`disconnect ${confirming.displayName}`);
+          const provider = confirming;
+          panel
+            .unlink(provider.id)
+            .catch((error: unknown) =>
+              showErrorToast(
+                errorMessage(
+                  error,
+                  `Could not disconnect ${provider.displayName}.`
+                )
+              )
+            );
         }}
       />
       <StepUpDialog gate={gate} action={action} reauth={reauth} />
