@@ -2864,11 +2864,13 @@ class SlackStatusPostsRead(TypedDict):
     configured: bool
     enabled: NotRequired[bool]
     installed: bool
+    private_asks: NotRequired[bool]
     updated_at: NotRequired[str | None]
 
 
 class SlackStatusPostsWrite(TypedDict):
-    enabled: bool
+    enabled: NotRequired[bool | None]
+    private_asks: NotRequired[bool | None]
 
 
 class SlackThread(TypedDict):
@@ -4208,6 +4210,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     parent_key: NotRequired[str | None]
     parent_title: NotRequired[str | None]
     priority: Literal["none", "urgent", "high", "medium", "low"]
+    private: NotRequired[bool]
     progress: ProgressRead
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]

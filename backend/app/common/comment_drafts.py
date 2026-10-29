@@ -35,6 +35,7 @@ from app.common.document_comments import NO_TEAM, require_document_commenter
 from app.common.documents import load_readable_document
 from app.common.initiative_writes import load_initiative
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member
 from app.common.planning_rules import unprocessable
 from app.common.project_update_threads import load_readable_update
@@ -299,7 +300,7 @@ def list_drafts(
         if issue is None:
             repositories.views.delete_draft(context.workspace_id, context.user_id, row.issue_id, row.parent_comment_id)
             continue
-        if context.can_see_team(issue.team_id):
+        if can_see_issue(repositories, context, issue):
             answer.append(_read(repositories, row, _issue_parent(issue)))
     return answer
 

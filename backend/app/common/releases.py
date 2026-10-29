@@ -64,6 +64,7 @@ from app.common.db.dynamo.releases import (
 )
 from app.common.issue_key_search import find_keys, moving_commit_keys
 from app.common.issue_move import find_issue_by_number
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import load_visible_issue, status_categories, visible_team_ids
 from app.common.planning_rules import (
     not_found,
@@ -693,7 +694,7 @@ def _visible_issues(repositories: Repositories, context: AuthzContext, release: 
     """The release's issues the caller may see, keys as they read today, in key order."""
     rows = repositories.issues.get_many(context.workspace_id, list(release.issue_ids))
     visible = [rows[issue_id] for issue_id in release.issue_ids if issue_id in rows]
-    visible = [issue for issue in visible if context.can_see_team(issue.team_id)]
+    visible = [issue for issue in visible if can_see_issue(repositories, context, issue)]
     current = issue_keys.current_all(repositories.teams, visible)
     return sorted(current, key=lambda issue: (issue.key.rpartition("-")[0], issue.number))
 
@@ -918,7 +919,7 @@ def _status_counts(
         tally: dict[str, int] = {}
         for issue_id in release.issue_ids:
             issue = issues.get(issue_id)
-            if issue is None or not context.can_see_team(issue.team_id):
+            if issue is None or not can_see_issue(repositories, context, issue):
                 continue
             if issue.team_id not in categories:
                 categories[issue.team_id] = status_categories(repositories, context.workspace_id, issue.team_id)

@@ -195,7 +195,9 @@ def build_digest(
     """One team's digest for the team local `day`.
 
     `cadence` overrides the team's own, so a team with the digest off still
-    gets a daily view, and anyone can ask for the weekly one.
+    gets a daily view, and anyone can ask for the weekly one. Private asks are
+    left out, since the digest is posted to the team's channels and read by
+    anyone who sees the team.
     """
     team = repositories.teams.get(workspace_id, team_id)
     if team is None:
@@ -218,7 +220,12 @@ def build_digest(
     missing = sorted(touched - set(issues))
     if missing:
         issues.update(repositories.issues.get_many(workspace_id, missing))
-    issues = {issue_id: issue_keys.current(repositories.teams, issue) for issue_id, issue in issues.items()}
+    issues = {
+        issue_id: issue_keys.current(repositories.teams, issue)
+        for issue_id, issue in issues.items()
+        if not issue.private
+    }
+    open_issues = [issue for issue in open_issues if not issue.private]
     builder = _Builder(projects, issues)
     _credit_status_changes(builder, feed, categories)
     for issue_id, author_id, at in comments:

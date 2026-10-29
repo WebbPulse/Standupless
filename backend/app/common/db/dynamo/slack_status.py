@@ -1,7 +1,9 @@
 """Status posts into the Slack thread an issue came from, in the `github` table.
 
 A team's switch is one row, `slackposts#<team id>`, written only once an admin
-touches it; a team without the row has status posts on. Each paired issue that
+touches it; a team without the row has status posts on and private asks off.
+The same row carries whether the team takes private asks from Slack DMs and
+private channels. Each paired issue that
 moved holds one debounce row, `slackstatus#<issue id>`, which a status change
 schedules and the delayed job claims, so a burst of changes inside the debounce
 window queues one job and that job posts once. The row keeps the signature of
@@ -45,12 +47,13 @@ def _stored(value: datetime) -> str:
 
 
 class SlackStatusSetting(BaseModel):
-    """Whether one team posts status changes into the Slack threads its issues came from."""
+    """Whether one team posts status changes into the Slack threads its issues came from, and takes private asks."""
 
     workspace_id: str
     github_key: str
     team_id: str
     enabled: bool = True
+    private_asks: bool = False
     updated_by: str
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -98,6 +101,11 @@ class SlackStatusStore:
         """Whether one team posts status changes, on unless an admin turned it off."""
         setting = self.get_setting(workspace_id, team_id)
         return setting is None or setting.enabled
+
+    def allows_private_asks(self, workspace_id: str, team_id: str) -> bool:
+        """Whether one team's Slack request form offers a private ask, off until an admin turns it on."""
+        setting = self.get_setting(workspace_id, team_id)
+        return setting is not None and setting.private_asks
 
     def put_setting(self, setting: SlackStatusSetting) -> SlackStatusSetting:
         """Store one team's switch, replacing the one before it."""

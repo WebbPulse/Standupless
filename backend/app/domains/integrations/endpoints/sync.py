@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Path, Response, status
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.github import IssueSync
+from app.common.issue_privacy import can_see_issue
 from app.domains.integrations.schemas.integrations import IssueSyncRead, TeamSyncRead, TeamSyncWrite
 from app.domains.integrations.service import not_found, require_team_content
 from app.domains.integrations.team_sync import read_team_sync, remove_team_sync, save_team_sync
@@ -105,7 +106,7 @@ def get_issue_sync(
     link, so the answer confirms nothing about the id.
     """
     issue = repositories.issues.get(context.workspace_id, issue_id)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         raise not_found()
     row = repositories.github.get_issue_sync(context.workspace_id, issue_id)
     if row is None or row.state != "linked" or not row.number:

@@ -241,3 +241,24 @@ def test_the_team_switch_is_on_by_default_and_admin_only(
 
     _issue, completed = _move(repositories, paired, status_id=ids["completed"])
     assert not stream.queue_slack_status_post(repositories, completed)
+
+
+def test_private_asks_start_off_and_change_without_touching_status_posts(
+    slack_client: TestClient, repositories: Any
+) -> None:
+    """Private asks read off until an admin turns them on, and each field of a write is kept when left out."""
+    sign_in(slack_client, ADMIN)
+    assert slack_client.get(SETTING_PATH).json()["private_asks"] is False
+    assert not repositories.github.slack_status.allows_private_asks(WORKSPACE, TEAM)
+
+    turned = slack_client.put(SETTING_PATH, json={"private_asks": True})
+    assert turned.status_code == 200
+    assert turned.json()["private_asks"] is True and turned.json()["enabled"] is True
+    assert repositories.github.slack_status.allows_private_asks(WORKSPACE, TEAM)
+
+    slack_client.put(SETTING_PATH, json={"enabled": False})
+    read = slack_client.get(SETTING_PATH).json()
+    assert read["enabled"] is False and read["private_asks"] is True
+
+    sign_in(slack_client, MEMBER)
+    assert slack_client.put(SETTING_PATH, json={"private_asks": False}).status_code == 403

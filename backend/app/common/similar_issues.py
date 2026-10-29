@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Iterable
 
 from app.common.db.dynamo.search_index import ranked_terms, tokenize
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import COMPLETED_CATEGORIES, visible_team_ids
 
 if TYPE_CHECKING:
@@ -189,7 +190,7 @@ def find_similar(
     found: list[tuple[int, SimilarIssue]] = []
     for issue_id in ranked:
         issue = fetched.get(issue_id)
-        if issue is None or issue.archived_at is not None or not context.can_see_team(issue.team_id):
+        if issue is None or issue.archived_at is not None or not can_see_issue(repositories, context, issue):
             continue
         overlap = len(tokenize(issue.title) & terms)
         if overlap < shared:

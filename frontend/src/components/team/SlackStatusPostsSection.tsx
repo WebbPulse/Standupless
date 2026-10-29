@@ -1,11 +1,17 @@
 /**
- * A team's switch for status posts into the Slack threads its issues came from.
+ * A team's Slack switches: status posts into the threads its issues came from,
+ * and private asks from direct messages and private channels.
  *
  * An issue filed from Slack, by the message shortcut, the slash command, an
  * emoji reaction or a request form, stays paired with its thread. With the
  * switch on, the bot tells that thread when the issue leaves triage, starts,
  * completes, is cancelled or is marked a duplicate. It is on until a team admin
  * turns it off, and the section shows only where this environment has a Slack App.
+ *
+ * With private asks on, the team's Slack request forms offer a "Private" option,
+ * checked to start with in a direct message with the bot. A private ask is seen
+ * only by its requester and the team's members, and syncs only with the direct
+ * message or private channel it came from. Private asks are off until turned on.
  */
 
 import React from 'react';
@@ -19,6 +25,7 @@ import {
   getSlackStatusPosts,
   saveSlackStatusPosts,
 } from '../../api/integrations';
+import type { SlackStatusPostsWrite } from '../../types/Api';
 import { errorMessage } from '../../lib/errors';
 import { showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
@@ -36,7 +43,7 @@ export interface SlackStatusPostsSectionProps {
 /** How often the switch is re-read while the tab is open. */
 const POLL_MS = 60000;
 
-/** Shows and flips a team's Slack status posts switch. */
+/** Shows and flips a team's Slack status posts and private asks switches. */
 export const SlackStatusPostsSection: React.FC<
   SlackStatusPostsSectionProps
 > = ({ workspaceId, teamId, canEdit }) => {
@@ -53,24 +60,23 @@ export const SlackStatusPostsSection: React.FC<
     error: saveError,
     isMutating: saving,
   } = useMutationWithRefetch(
-    async (enabled: boolean) => {
-      await saveSlackStatusPosts(workspaceId, teamId, { enabled });
+    async (change: SlackStatusPostsWrite) => {
+      await saveSlackStatusPosts(workspaceId, teamId, change);
     },
     [queryKey]
   );
 
   if (data !== null && !data.configured) return null;
 
-  const flip = async (enabled: boolean): Promise<void> => {
+  const flip = async (
+    change: SlackStatusPostsWrite,
+    toast: string
+  ): Promise<void> => {
     if (!canEdit) return;
     try {
-      await save(enabled);
+      await save(change);
       await refetch();
-      showToast(
-        enabled
-          ? 'Slack status posts turned on'
-          : 'Slack status posts turned off'
-      );
+      showToast(toast);
     } catch {
       return;
     }
@@ -110,20 +116,54 @@ export const SlackStatusPostsSection: React.FC<
       {isLoading && data === null ? (
         <Spinner label="Loading the Slack status post setting" />
       ) : data === null ? null : canEdit ? (
-        <Checkbox
-          label="Post status changes in the originating Slack thread"
-          checked={data.enabled}
-          disabled={saving}
-          onChange={(event) => {
-            void flip(event.target.checked);
-          }}
-        />
+        <div className="space-y-2">
+          <Checkbox
+            label="Post status changes in the originating Slack thread"
+            checked={data.enabled}
+            disabled={saving}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              void flip(
+                { enabled },
+                enabled
+                  ? 'Slack status posts turned on'
+                  : 'Slack status posts turned off'
+              );
+            }}
+          />
+          <Checkbox
+            label="Allow private asks from Slack DMs and private channels"
+            checked={data.private_asks}
+            disabled={saving}
+            onChange={(event) => {
+              const privateAsks = event.target.checked;
+              void flip(
+                { private_asks: privateAsks },
+                privateAsks
+                  ? 'Private Slack asks turned on'
+                  : 'Private Slack asks turned off'
+              );
+            }}
+          />
+          <p className="text-sm text-text-muted">
+            A private ask is seen only by the person who asked and this
+            team&apos;s members, and its updates go only to the DM or private
+            channel it came from.
+          </p>
+        </div>
       ) : (
-        <p className="text-sm text-text-muted">
-          {data.enabled
-            ? 'Status changes are posted in the originating Slack thread.'
-            : 'Status changes are not posted to Slack.'}
-        </p>
+        <div className="space-y-1 text-sm text-text-muted">
+          <p>
+            {data.enabled
+              ? 'Status changes are posted in the originating Slack thread.'
+              : 'Status changes are not posted to Slack.'}
+          </p>
+          <p>
+            {data.private_asks
+              ? 'Requests from Slack DMs and private channels can be private.'
+              : 'Requests from Slack are visible to everyone who can see this team.'}
+          </p>
+        </div>
       )}
     </section>
   );

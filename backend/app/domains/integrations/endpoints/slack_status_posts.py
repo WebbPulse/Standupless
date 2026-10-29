@@ -47,6 +47,7 @@ def _read(repositories: Repositories, workspace_id: str, team_id: str) -> SlackS
         configured=settings.slack_configured,
         installed=installed,
         enabled=setting is None or setting.enabled,
+        private_asks=setting is not None and setting.private_asks,
         updated_at=setting.updated_at if setting is not None else None,
     )
 
@@ -69,16 +70,25 @@ def put_slack_status_posts(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Bundle,
 ) -> SlackStatusPostsRead:
-    """Turn status posts into paired Slack threads on or off for this team."""
+    """Turn status posts into paired Slack threads, or private asks from Slack, on or off for this team."""
     team = _team(repositories, context, team_id)
     store = repositories.github.slack_status
-    before = store.enabled(context.workspace_id, team_id)
+    current = store.get_setting(context.workspace_id, team_id)
+    before = {
+        "enabled": current is None or current.enabled,
+        "private_asks": current is not None and current.private_asks,
+    }
+    after = {
+        "enabled": before["enabled"] if payload.enabled is None else payload.enabled,
+        "private_asks": before["private_asks"] if payload.private_asks is None else payload.private_asks,
+    }
     store.put_setting(
         SlackStatusSetting(
             workspace_id=context.workspace_id,
             github_key=setting_key(team_id),
             team_id=team_id,
-            enabled=payload.enabled,
+            enabled=after["enabled"],
+            private_asks=after["private_asks"],
             updated_by=context.user_id,
             updated_at=utc_now(),
         )
@@ -90,7 +100,7 @@ def put_slack_status_posts(
         target_type="team",
         target_id=team.team_id,
         target_label=team.name,
-        before={"enabled": before},
-        after={"enabled": payload.enabled},
+        before=before,
+        after=after,
     )
     return _read(repositories, context.workspace_id, team_id)

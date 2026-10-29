@@ -41,6 +41,7 @@ from app.common.db.dynamo.email_replies import EmailReplyToken
 from app.common.email import deliver
 from app.common.email.brand import render
 from app.common.email_replies import is_expired, resolve_reply_token
+from app.common.issue_privacy import can_see_issue
 from app.common.recurring_issues import creator_context
 from app.domains.integrations.intake_mail import IntakeMail, message_key
 
@@ -116,7 +117,7 @@ def handle_reply(repositories: Repositories, mail: IntakeMail, token: str) -> Op
 
     context = creator_context(repositories, row.workspace_id, row.user_id)
     issue = repositories.issues.get(row.workspace_id, row.issue_id)
-    if context is None or issue is None or not context.can_see_team(issue.team_id):
+    if context is None or issue is None or not can_see_issue(repositories, context, issue):
         _dropped("no_access")
         _notify_refused(repositories, mail, row, user.email_lower, "no_access")
         return None

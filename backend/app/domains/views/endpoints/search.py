@@ -67,6 +67,7 @@ from app.common.db.dynamo.team_config import Status
 from app.common.documents import readable_parents, search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import TRIAGE_STATUS_CATEGORY, TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME
 from app.common.planning_rules import can_see_initiative, visible_project_teams
 from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
@@ -136,7 +137,9 @@ def _key_hit(
     if team is None:
         return []
     issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
-    return [issue] if issue is not None and issue.team_id in teams else []
+    if issue is None or issue.team_id not in teams or not can_see_issue(repositories, context, issue):
+        return []
+    return [issue]
 
 
 def source_ref_term(query: str) -> str | None:
@@ -264,7 +267,7 @@ def _first_hits(
             issues[issue_id]
             for issue_id in batch
             if issue_id in issues
-            and context.can_see_team(issues[issue_id].team_id)
+            and can_see_issue(repositories, context, issues[issue_id])
             and (keep is None or keep(issues[issue_id]))
         )
     return hits
@@ -471,7 +474,7 @@ def _comment_hits(
         issues = repositories.issues.get_many(workspace_id, sorted({issue_id for _, issue_id in wanted}))
         for comment_id, issue_id in wanted:
             issue = issues.get(issue_id)
-            if issue is None or not context.can_see_team(issue.team_id):
+            if issue is None or not can_see_issue(repositories, context, issue):
                 continue
             comment = repositories.comments.get(workspace_id, issue_id, comment_id)
             if comment is None or (query.needs_check and not query.prefix_in(comment.body)):

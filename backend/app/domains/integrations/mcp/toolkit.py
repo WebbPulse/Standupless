@@ -24,6 +24,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team, TeamRepository
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import TRIAGE_STATUS_NAME, load_visible_issue, shown_status_id
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
@@ -376,7 +377,7 @@ def issue_by_key(call: ToolCall, key: str, *, include_deleted: bool = False) -> 
     issue = find_issue_by_number(
         call.repositories, call.context.workspace_id, team.team_id, int(number), include_deleted=include_deleted
     )
-    if issue is None or not call.context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(call.repositories, call.context, issue):
         raise issue_not_found()
     return issue
 

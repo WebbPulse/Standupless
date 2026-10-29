@@ -1,7 +1,7 @@
 /**
  * The Slack status posts switch. It hides where the environment has no Slack
  * App, shows on by default, lets a team admin turn it off and shows anyone else
- * a read only line.
+ * a read only line. Private asks start off and a team admin turns them on.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -57,6 +57,7 @@ const on: SlackStatusPostsRead = {
   configured: true,
   installed: true,
   enabled: true,
+  private_asks: false,
   updated_at: null,
 };
 
@@ -101,6 +102,26 @@ describe('the Slack status posts section', () => {
     await waitFor(() => {
       expect(saveSlackStatusPosts).toHaveBeenCalledWith('ws-1', 'team-1', {
         enabled: false,
+      });
+    });
+  });
+
+  it('keeps private asks off until a team admin turns them on', async () => {
+    getSlackStatusPosts.mockResolvedValueOnce(on);
+    getSlackStatusPosts.mockResolvedValue({ ...on, private_asks: true });
+    render(
+      <SlackStatusPostsSection workspaceId="ws-1" teamId="team-1" canEdit />
+    );
+
+    const box = await screen.findByRole('checkbox', {
+      name: /Allow private asks/,
+    });
+    expect(box).not.toBeChecked();
+    await userEvent.click(box);
+
+    await waitFor(() => {
+      expect(saveSlackStatusPosts).toHaveBeenCalledWith('ws-1', 'team-1', {
+        private_asks: true,
       });
     });
   });

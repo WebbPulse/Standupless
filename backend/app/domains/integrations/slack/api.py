@@ -50,6 +50,7 @@ message mode filed.
 
 GET_METHODS = frozenset(
     {
+        "conversations.info",
         "conversations.list",
         "users.info",
         "users.lookupByEmail",

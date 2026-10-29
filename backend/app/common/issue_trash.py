@@ -24,6 +24,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, Issue
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import (
     default_status,
     issue_changed,
@@ -162,7 +163,8 @@ def recount_far_sides(repositories: Repositories, workspace_id: str, issue_id: s
 def list_trash(repositories: Repositories, context: AuthzContext, team_id: str) -> list[Issue]:
     """One team's deleted issues, newest number first, for anyone who may read the team."""
     require_team_reader(repositories, context, team_id)
-    return repositories.issues.iter_trash(context.workspace_id, team_id)
+    readable = issue_reader(repositories, context)
+    return [issue for issue in repositories.issues.iter_trash(context.workspace_id, team_id) if readable(issue)]
 
 
 def purge_now(repositories: Repositories, context: AuthzContext, issue: Issue) -> None:

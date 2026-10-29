@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.slack import SlackInstallation
+from app.common.db.dynamo.slack_status import SlackStatusSetting, setting_key
 from app.common.db.dynamo.team_config import default_triage_settings
 from app.common.db.dynamo.team_templates import (
     FormFieldBlueprint,
@@ -39,6 +40,9 @@ HIDDEN_FORM = "01JB0000000000000000FORM03"
 PLAIN = "01JB0000000000000000PLAIN1"
 
 DM_CHANNEL = "D0DIRECT"
+
+PRIVATE_CHANNELS = {"G0PRIVATE"}
+"""The channels the fake answers `conversations.info` for as private."""
 
 FIELDS = [
     FormFieldBlueprint(key="happened", label="What happened?", type="long_text", required=True),
@@ -74,6 +78,10 @@ class RequestSlack(FakeSlack):
                 "channel": DM_CHANNEL if channel.startswith("U") else channel,
                 "ts": f"1800000000.{self.posted:06d}",
             }
+        if method == "conversations.info" and method not in self.errors:
+            self.calls.append((method, token, body))
+            channel = str(body.get("channel", ""))
+            return {"ok": True, "channel": {"id": channel, "is_private": channel in PRIVATE_CHANNELS}}
         return super().call(method, token, payload)
 
 
@@ -513,3 +521,120 @@ def test_the_create_form_still_needs_a_team_when_no_form_is_picked(
     }
     reply = _interaction(slack_client, payload).json()
     assert reply["response_action"] == "errors" and commands.TEAM_BLOCK in reply["errors"]
+
+
+def _allow_private_asks(repositories: Any, team_id: str = TEAM) -> None:
+    """Turn private asks on for one team, the way its admin would."""
+    repositories.github.slack_status.put_setting(
+        SlackStatusSetting(
+            workspace_id=WORKSPACE,
+            github_key=setting_key(team_id),
+            team_id=team_id,
+            private_asks=True,
+            updated_by=OWNER,
+        )
+    )
+
+
+def _private_values(**overrides: Any) -> dict[str, Any]:
+    """The bug report form submitted with the "Private" option ticked."""
+    values = _values(**overrides)
+    values[request_forms.PRIVATE_BLOCK] = {
+        request_forms.PRIVATE_BLOCK: {"selected_options": [{"value": request_forms.CHECKED}]}
+    }
+    return values
+
+
+def _links(repositories: Any, issue: Issue) -> list[tuple[str, str]]:
+    """The Slack threads one issue is paired with."""
+    return [
+        (link.channel_id, link.thread_ts)
+        for link in repositories.github.slack_threads.list_links(WORKSPACE)
+        if link.issue_id == issue.issue_id
+    ]
+
+
+def test_the_private_option_shows_only_where_the_team_allows_it_and_starts_checked_in_a_dm() -> None:
+    """A team without private asks shows no option; with them, a DM starts it checked and a channel does not."""
+    template = IssueTemplate(
+        workspace_id=WORKSPACE,
+        config_key=template_key(TEAM, FORM),
+        template_id=FORM,
+        team_id=TEAM,
+        name="Bug report",
+        form_fields=FIELDS,
+        in_slack=True,
+    )
+    assert request_forms.PRIVATE_BLOCK not in _blocks(request_forms.form_view(_group(template), template, origin="D0X"))
+
+    allowed = request_forms.TeamForms(
+        team_id=TEAM, label="Engineering (ABC)", templates=(template,), allows_private=True
+    )
+    from_dm = _blocks(request_forms.form_view(allowed, template, origin="D0X"))[request_forms.PRIVATE_BLOCK]
+    assert from_dm["optional"] is True
+    assert from_dm["element"]["initial_options"][0]["value"] == request_forms.CHECKED
+    from_channel = _blocks(request_forms.form_view(allowed, template, origin="C0ENG"))[request_forms.PRIVATE_BLOCK]
+    assert "initial_options" not in from_channel["element"]
+
+
+def test_ask_in_a_dm_opens_the_form_private_by_default_once_the_team_allows_it(
+    slack_client: TestClient, repositories: Any, slack: RequestSlack, form: IssueTemplate
+) -> None:
+    """`/standupless ask` typed in a DM with the bot starts the "Private" option ticked."""
+    _command(slack_client, "ask Payroll export", channel="D0ASKER")
+    assert request_forms.PRIVATE_BLOCK not in _blocks(slack.last("views.open")["view"])
+
+    _allow_private_asks(repositories)
+    _command(slack_client, "ask Payroll export", channel="D0ASKER")
+    view = slack.last("views.open")["view"]
+    assert json.loads(view["private_metadata"])["origin"] == "D0ASKER"
+    assert _blocks(view)[request_forms.PRIVATE_BLOCK]["element"]["initial_options"]
+
+    _command(slack_client, "ask Payroll export", channel="C0ENG")
+    public = _blocks(slack.last("views.open")["view"])[request_forms.PRIVATE_BLOCK]
+    assert "initial_options" not in public["element"]
+
+
+def test_a_private_ask_is_filed_private_and_pairs_with_the_requesters_dm(
+    slack_client: TestClient, repositories: Any, slack: RequestSlack, form: IssueTemplate
+) -> None:
+    """With the option ticked the issue is private and its sync and status posts go to the DM."""
+    _allow_private_asks(repositories)
+    reply = _interaction(slack_client, _form_submission(_private_values(title="Salary question"))).json()
+    assert reply["response_action"] == "update"
+    issue = _created(repositories, "Salary question")
+    assert issue.private is True
+    assert _links(repositories, issue) == [(DM_CHANNEL, "1800000000.000001")]
+
+
+def test_the_private_option_is_ignored_when_the_team_does_not_allow_it(
+    slack_client: TestClient, repositories: Any, form: IssueTemplate
+) -> None:
+    """A tick sent for a team without private asks, say one turned off since, files an ordinary issue."""
+    _interaction(slack_client, _form_submission(_private_values(title="Not private")))
+    assert _created(repositories, "Not private").private is False
+
+
+def test_a_private_ask_from_a_public_thread_pairs_with_the_dm_instead(
+    slack_client: TestClient, repositories: Any, slack: RequestSlack, form: IssueTemplate
+) -> None:
+    """A private ask never syncs with a public channel, so its thread is the requester's DM."""
+    _allow_private_asks(repositories)
+    metadata = {"channel_id": "C0ENG", "thread_ts": "1700000000.000100", "origin": "C0ENG"}
+    _interaction(slack_client, _form_submission(_private_values(title="From public"), metadata=metadata))
+    issue = _created(repositories, "From public")
+    assert issue.private is True
+    assert _links(repositories, issue) == [(DM_CHANNEL, "1800000000.000001")]
+    posted = {body.get("channel") for method, _, body in slack.calls if method == "chat.postMessage"}
+    assert "C0ENG" not in posted
+
+
+def test_a_private_ask_from_a_private_channel_pairs_with_that_thread(
+    slack_client: TestClient, repositories: Any, slack: RequestSlack, form: IssueTemplate
+) -> None:
+    """A private channel is a place a private ask may sync with, so it stays paired with its thread."""
+    _allow_private_asks(repositories)
+    metadata = {"channel_id": "G0PRIVATE", "thread_ts": "1700000000.000200", "origin": "G0PRIVATE"}
+    _interaction(slack_client, _form_submission(_private_values(title="From private"), metadata=metadata))
+    issue = _created(repositories, "From private")
+    assert _links(repositories, issue) == [("G0PRIVATE", "1700000000.000200")]

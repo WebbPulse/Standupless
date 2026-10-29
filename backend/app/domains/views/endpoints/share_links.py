@@ -36,6 +36,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.core.config import settings
 from app.common.db.dynamo.base import expiry_timestamp
 from app.common.db.dynamo.share_links import ShareLinkView, share_capability
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import not_found, require_team_member, visible_team_ids
 from app.common.plan_features import Feature, enforce_feature
 from app.domains.views.schemas.share import (
@@ -190,7 +191,7 @@ def _audit_fields(link: ShareLinkView) -> dict[str, Any]:
 def _issue_target(repositories: Repositories, context: AuthzContext, issue_id: str) -> tuple[str, str]:
     """The team and title of an issue the caller may share, or a 404."""
     issue = repositories.issues.get(context.workspace_id, issue_id)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         raise not_found()
     return issue.team_id, issue.title
 
