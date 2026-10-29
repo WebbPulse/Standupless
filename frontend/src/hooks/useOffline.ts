@@ -1,20 +1,19 @@
 /**
- * The one offline signal every write control reads. It follows the
- * connectivity monitor, which joins the shared client's reachability with a
- * session refresh that failed at the network layer, probes the API the moment
- * either reports trouble, and only calls the app offline once the browser says
- * so or the trouble outlasts a short grace period. A dropped request on an
- * idle page is disproved by the probe, so it neither shows the offline notice
- * nor disables every write control.
+ * The one offline signal every write control reads. It follows the shared
+ * reachability signal from `@webbpulse/api-client`, which probes the API the
+ * moment a request or a session refresh fails at the network layer and only
+ * reads offline once the browser says so or the trouble outlasts its grace
+ * period. A dropped request on an idle page is disproved by the probe, so it
+ * neither shows the offline notice nor disables every write control.
  */
 
-import { useConfirmedOffline } from '../lib/connectivity';
+import { useOnline } from '@webbpulse/api-client/react';
 
 /** The hint a write control carries while it is disabled for being offline. */
 export const OFFLINE_WRITE_HINT = 'Changes need a connection';
 
 /** Whether the app cannot reach the server, so writes should be held back. */
-export const useOffline = (): boolean => useConfirmedOffline();
+export const useOffline = (): boolean => !useOnline();
 
 /**
  * Whether writes are possible right now: the caller's own permission, held

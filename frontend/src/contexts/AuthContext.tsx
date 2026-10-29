@@ -10,11 +10,9 @@ import {
   useAuth as usePackageAuth,
   type AnyAuthClient,
 } from '@webbpulse/auth/react';
-import { ApiNetworkError } from '@webbpulse/api-client';
 import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
-import { connectivity } from '../lib/connectivity';
 import { preferencesOf, setPreferences } from '../lib/preferences';
 import { clearQueryPersistence } from '../lib/queryPersistence';
 import { isAppShell, SHELL_SIGN_IN_PATH } from '../lib/shell';
@@ -207,8 +205,8 @@ const useSignedOutCacheClear = (
  * Supplies the session calls `@webbpulse/auth` does not own. Mounted inside the
  * package provider so `useAuth` resolves, and holding no user of its own: the
  * package store is the single source of truth. A refresh that failed because
- * the network was down keeps the person signed in, and is handed to the
- * connectivity monitor rather than read as a sign out.
+ * the network was down keeps the person signed in, and the package retries it
+ * while the shared reachability signal decides whether the app reads offline.
  */
 const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -221,13 +219,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
     isAuthenticated,
     isLoading,
     user,
-    error,
   } = usePackageAuth<UserRead>();
-  const sessionOffline = isAuthenticated && error instanceof ApiNetworkError;
-
-  useEffect(() => {
-    connectivity.setSessionOffline(sessionOffline);
-  }, [sessionOffline]);
 
   useSignedInHint(isAuthenticated, isLoading);
   useSignedOutCacheClear(isAuthenticated, isLoading);
