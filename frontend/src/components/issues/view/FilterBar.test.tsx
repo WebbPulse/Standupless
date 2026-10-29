@@ -1,6 +1,7 @@
 /**
  * The Filter button: that F opens its field list from anywhere in the view,
- * as Linear's does, and that the key stands down while the list is open. The
+ * as Linear's does, that the key stands down while the list is open, and that
+ * typing in it finds values across fields, as Linear's does. The
  * chips: that team and date clauses read and flip like the others, that a
  * relative date reads as a rolling window and a preset stores its offset. The
  * removal keys: that Shift F drops the newest filter and Alt Shift F clears
@@ -8,7 +9,7 @@
  * My teams: that the chip names it and the hint names the platform modifier.
  */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -75,6 +76,91 @@ describe('FilterButton', () => {
     expect(onChange).toHaveBeenCalledWith([
       { field: 'cycle_added', op: 'is', values: ['after_start'] },
     ]);
+  });
+});
+
+describe('FilterButton value search', () => {
+  const searchable: IssueContext = {
+    ...context,
+    labels: [
+      { id: 'lb-bug', name: 'Bug', color: '#ef4444', team_id: 'team-1' },
+      { id: 'lb-ui', name: 'UI', color: '#3b82f6', team_id: 'team-1' },
+    ],
+    people: [
+      { user_id: 'user-2', email: 'ada@example.com', display_name: 'Ada' },
+    ],
+  };
+
+  /** Opens the Filter menu on F and types into its field list. */
+  const search = async (
+    text: string,
+    filters: Parameters<typeof FilterButton>[0]['filters'] = []
+  ) => {
+    const user = userEvent.setup();
+    const registry = createShortcutRegistry();
+    const onChange = vi.fn();
+    render(
+      <ShortcutRegistryContext.Provider value={registry}>
+        <FilterButton
+          filters={filters}
+          context={searchable}
+          onChange={onChange}
+        />
+      </ShortcutRegistryContext.Provider>
+    );
+    act(() => {
+      registry.handleKey(new KeyboardEvent('keydown', { key: 'f' }));
+    });
+    await user.type(screen.getByRole('combobox', { name: 'Filter by' }), text);
+    return { user, onChange };
+  };
+
+  it('adds a label filter from a value typed at the top and closes', async () => {
+    const { user, onChange } = await search('bug');
+
+    const labels = screen.getByRole('group', { name: 'Labels' });
+    await user.click(within(labels).getByRole('option', { name: /Bug/ }));
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'label', op: 'is', values: ['lb-bug'] },
+    ]);
+    expect(screen.queryByRole('combobox', { name: 'Filter by' })).toBeNull();
+  });
+
+  it('offers a person under each person field', async () => {
+    const { user, onChange } = await search('ada');
+
+    expect(
+      within(screen.getByRole('group', { name: 'Assignee' })).getByRole(
+        'option',
+        { name: /Ada/ }
+      )
+    ).toBeInTheDocument();
+    const creator = screen.getByRole('group', { name: 'Creator' });
+    await user.click(within(creator).getByRole('option', { name: /Ada/ }));
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'creator', op: 'is', values: ['user-2'] },
+    ]);
+  });
+
+  it('adds a value to the chip its field already has', async () => {
+    const { user, onChange } = await search('bug', [
+      { field: 'label', op: 'is', values: ['lb-ui'] },
+    ]);
+
+    await user.click(screen.getByRole('option', { name: /Bug/ }));
+
+    expect(onChange).toHaveBeenCalledWith([
+      { field: 'label', op: 'is', values: ['lb-ui', 'lb-bug'] },
+    ]);
+  });
+
+  it('matches values on their own names, not their field', async () => {
+    await search('labels');
+
+    expect(screen.getByRole('option', { name: /^Labels/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Bug/ })).toBeNull();
   });
 });
 

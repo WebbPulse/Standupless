@@ -2,7 +2,9 @@
  * The filters over a list or board. The Filter button walks from a property
  * to its values, and each active filter is a chip reading "Status is any of
  * Todo, In Progress" whose verb flips between keeping and excluding and whose
- * values reopen the same list. Chips combine under the bar's match, every
+ * values reopen the same list. Typing in the field list also finds values
+ * across every field that takes picked ones, so "bug" offers the bug label
+ * and a name offers that person as assignee or creator. Chips combine under the bar's match, every
  * filter by default or any one of them, and a filter group boxes a few chips
  * that combine under a match of their own and stand as one filter. Values
  * are offered by name, so a status or label shared by name across teams is
@@ -1255,7 +1257,31 @@ const useFilterRemovalKeys = ({
   });
 };
 
-/** The field picker that walks from a field to its values, optionally offering a new group. */
+/** How many values the field list offers at most while it is searched. */
+const VALUE_MATCH_LIMIT = 30;
+
+/** Joins a field and one of its values into a field list option value. */
+const VALUE_SEPARATOR = '\u0001';
+
+/** Whether a field takes picked values rather than text, a date or a number. */
+const isChoiceField = (field: FilterField): boolean =>
+  !isTextField(field) && !isDateField(field) && !isNumberField(field);
+
+/** Whether a value matches the search on its own name, not its field's. */
+const valueMatches = (option: ComboboxOption, query: string): boolean => {
+  const needle = query.trim().toLowerCase();
+  return [option.label, option.detail ?? '', ...(option.keywords ?? [])]
+    .join(' ')
+    .toLowerCase()
+    .includes(needle);
+};
+
+/**
+ * The field picker that walks from a field to its values, optionally offering
+ * a new group. Once searched, it also lists the matching values of every
+ * field that takes picked values, under each field's name, so one pick adds
+ * the filter or joins its field's chip and closes the menu.
+ */
 const FieldPicker: React.FC<{
   offered: FilterField[];
   filters: FilterClause[];
@@ -1263,17 +1289,64 @@ const FieldPicker: React.FC<{
   onChange: (filters: FilterClause[]) => void;
   field: FilterField | null;
   onField: (field: FilterField) => void;
+  onDone: () => void;
   onAddGroup?: () => void;
-}> = ({ offered, filters, context, onChange, field, onField, onAddGroup }) =>
-  field === null ? (
+}> = ({
+  offered,
+  filters,
+  context,
+  onChange,
+  field,
+  onField,
+  onDone,
+  onAddGroup,
+}) => {
+  const [query, setQuery] = useState('');
+  const searching = field === null && query.trim() !== '';
+  const triage = useTriageInList(context);
+  const choiceContext = useMilestoneContext(
+    context,
+    searching && offered.includes('milestone')
+  );
+  if (field !== null) {
+    return (
+      <ValueList
+        field={field}
+        filters={filters}
+        context={context}
+        onChange={onChange}
+      />
+    );
+  }
+  const values = new Map<string, { field: FilterField; choice: FilterChoice }>();
+  if (searching) {
+    for (const item of offered.filter(isChoiceField)) {
+      for (const choice of filterChoices(item, choiceContext, triage)) {
+        if (values.size >= VALUE_MATCH_LIMIT) break;
+        if (!valueMatches(choice.option, query)) continue;
+        values.set(`${item}${VALUE_SEPARATOR}${choice.option.value}`, {
+          field: item,
+          choice,
+        });
+      }
+    }
+  }
+  return (
     <Combobox
       label="Filter by"
       placeholder="Filter by..."
+      onQueryChange={setQuery}
       options={[
         ...offered.map((item) => ({
           value: item,
           label: FILTER_LABELS[item],
           icon: FIELD_ICONS[item],
+        })),
+        ...[...values].map(([value, { field: item, choice }]) => ({
+          ...choice.option,
+          value,
+          icon: choice.option.icon ?? FIELD_ICONS[item],
+          group: FILTER_LABELS[item],
         })),
         ...(onAddGroup === undefined
           ? []
@@ -1288,18 +1361,16 @@ const FieldPicker: React.FC<{
       ]}
       selected={[]}
       onSelect={(value) => {
-        if (value === ADD_GROUP) onAddGroup?.();
+        const picked = values.get(value);
+        if (picked !== undefined) {
+          onChange(toggleChoice(filters, picked.field, picked.choice));
+          onDone();
+        } else if (value === ADD_GROUP) onAddGroup?.();
         else onField(value as FilterField);
       }}
     />
-  ) : (
-    <ValueList
-      field={field}
-      filters={filters}
-      context={context}
-      onChange={onChange}
-    />
   );
+};
 
 /**
  * The Filter button that adds a filter, walking from a field to its values; F
@@ -1356,6 +1427,10 @@ export const FilterButton: React.FC<FilterBarProps> = ({
         onChange={onChange}
         field={field}
         onField={setField}
+        onDone={() => {
+          setOpen(false);
+          setField(null);
+        }}
         {...(canGroup
           ? {
               onAddGroup: () => {
@@ -1458,6 +1533,10 @@ const GroupBox: React.FC<{
           onChange={setFilters}
           field={field}
           onField={setField}
+          onDone={() => {
+            setOpen(false);
+            setField(null);
+          }}
         />
       </Popover>
       <button
