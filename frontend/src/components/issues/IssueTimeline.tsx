@@ -19,13 +19,7 @@
  * A print leaves the timeline out and lists the open threads as endnotes.
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   LuBox,
   LuCalendar,
