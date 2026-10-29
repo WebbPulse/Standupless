@@ -411,7 +411,9 @@ describe('inbox', () => {
     renderPage();
 
     await screen.findByText('Cache the token');
-    const actions = within(screen.getByRole('region', { name: 'Page actions' }));
+    const actions = within(
+      screen.getByRole('region', { name: 'Page actions' })
+    );
     await waitFor(() => {
       expect(
         actions.getByRole('button', { name: 'Inbox: Mark all read' })
