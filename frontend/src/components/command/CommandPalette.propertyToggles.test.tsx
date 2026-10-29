@@ -302,9 +302,11 @@ describe('the due date list in the command palette', () => {
     await openSubPage(user, /Set due date…/);
     await user.type(input(), 'nov 3');
 
-    expect(screen.getAllByRole('option')[0]).toHaveTextContent(
-      typed?.label ?? ''
-    );
+    await waitFor(() => {
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent(
+        typed?.label ?? ''
+      );
+    });
     await user.keyboard('{Enter}');
 
     await waitFor(() => {
