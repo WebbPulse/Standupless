@@ -1007,6 +1007,7 @@ class DisplayOptionsBody(BaseModel):
     sub_group_by: Optional[DisplayGroupField] = None
     ordering: Optional[SortField] = None
     ordering_reversed: Optional[StrictBool] = None
+    order_completed_by_recency: Optional[StrictBool] = None
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     show_sub_issues: Optional[StrictBool] = None
     completed_window: Optional[CompletedWindowField] = None

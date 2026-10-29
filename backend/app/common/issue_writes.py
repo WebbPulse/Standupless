@@ -235,6 +235,24 @@ def unset_value(sort: str, customers: Optional[CustomerIndex] = None) -> Optiona
     return None
 
 
+def closed_at(issue: Issue) -> Optional[datetime]:
+    """When an issue was completed or cancelled, or `None` while its status is open."""
+    return issue.completed_at or issue.cancelled_at
+
+
+def closed_by_recency(rows: list[Issue]) -> list[Issue]:
+    """Rows with the open ones first in their given order, then the closed ones newest closed first.
+
+    The order completed by recency display option: a done column or group reads
+    the latest work at the top whatever the main ordering is. Closed ties go to
+    the higher id, as the client's own sort breaks them.
+    """
+    open_rows = [issue for issue in rows if closed_at(issue) is None]
+    closed = [issue for issue in rows if closed_at(issue) is not None]
+    closed.sort(key=lambda issue: (closed_at(issue) or NEVER, issue.issue_id), reverse=True)
+    return open_rows + closed
+
+
 def order_issues(
     rows: list[Issue],
     sort: str,
@@ -242,13 +260,17 @@ def order_issues(
     reverse: bool = False,
     ranks: Optional[StatusRanks] = None,
     customers: Optional[CustomerIndex] = None,
+    completed_by_recency: bool = False,
 ) -> list[Issue]:
-    """Rows in one sort's order, or its reverse with issues lacking the sorted value still last."""
+    """Rows in one sort's order, or its reverse with issues lacking the sorted value still last.
+
+    `completed_by_recency` then moves the closed issues after the open ones, newest closed first.
+    """
     ordered = merge_sorted(rows, sort_key(sort, ranks, customers), descending=descending(sort) != reverse)
     missing = unset_value(sort, customers) if reverse else None
-    if missing is None:
-        return ordered
-    return [issue for issue in ordered if not missing(issue)] + [issue for issue in ordered if missing(issue)]
+    if missing is not None:
+        ordered = [issue for issue in ordered if not missing(issue)] + [issue for issue in ordered if missing(issue)]
+    return closed_by_recency(ordered) if completed_by_recency else ordered
 
 
 def list_issues(
@@ -263,6 +285,7 @@ def list_issues(
     subscribed: bool = False,
     include_sub_teams: bool = False,
     reverse: bool = False,
+    completed_by_recency: bool = False,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of the issues the caller may see, filtered and sorted, and the next cursor.
 
@@ -276,8 +299,9 @@ def list_issues(
     reads that person's index instead of every team; the mode is part of the
     cursor scope, since the keyed and fanned out sets differ. `include_sub_teams`
     rolls the named team's visible sub-teams into the list, and `reverse` turns the
-    sort around, issues lacking the sorted value still last. With no team named,
-    retired teams are left out unless the team filter asks for one.
+    sort around, issues lacking the sorted value still last. `completed_by_recency`
+    lists the closed issues after the open ones, newest closed first. With no team
+    named, retired teams are left out unless the team filter asks for one.
     """
     teams = listed_teams(
         repositories, context, team_id, include_sub_teams=include_sub_teams, named=wanted.named_team_ids
@@ -295,6 +319,8 @@ def list_issues(
 
     mode = "subscribed" if subscribed else "all"
     direction = "reverse" if reverse else "forward"
+    if completed_by_recency:
+        direction += "+recency"
     scope = digest_scope(
         f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{direction}:{mode}:{wanted.fingerprint()}"
     )
@@ -315,6 +341,7 @@ def list_issues(
         descending=descending(sort) != reverse,
         rows=keyed,
         last=unset_value(sort, wanted.customer_index) if reverse else None,
+        completed_by_recency=completed_by_recency,
     )
 
 
@@ -363,6 +390,7 @@ def walk_page(
     rows: Optional[list[Issue]] = None,
     budget: Optional[int] = None,
     last: Optional[Callable[[Issue], bool]] = None,
+    completed_by_recency: bool = False,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of the issues `keep` admits, in `key` order, and the next cursor.
 
@@ -373,6 +401,8 @@ def walk_page(
     stands in for the walk when an index other than the team one already holds
     every candidate. `last` holds the rows it admits after every other row, in
     their order, so a reversed sort still lists issues lacking its value last.
+    `completed_by_recency` then moves the closed issues after the open ones,
+    newest closed first.
     """
     position = resume_key(cursor, scope) or {}
     start = (_position(position, "t"), _position(position, "b"))
@@ -383,6 +413,8 @@ def walk_page(
     ordered = merge_sorted([issue for issue in rows if keep(issue)], key, descending=descending)
     if last is not None:
         ordered = [issue for issue in ordered if not last(issue)] + [issue for issue in ordered if last(issue)]
+    if completed_by_recency:
+        ordered = closed_by_recency(ordered)
     window_rows = ordered[offset : offset + limit]
     next_offset = offset + len(window_rows)
     if next_offset < len(ordered):

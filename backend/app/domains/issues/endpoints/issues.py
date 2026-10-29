@@ -148,6 +148,7 @@ def list_issues(
     triage_only: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
     reverse: Annotated[bool, Query()] = False,
+    completed_by_recency: Annotated[bool, Query()] = False,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     updated_since: Annotated[Optional[datetime], Query()] = None,
@@ -209,6 +210,8 @@ def list_issues(
     `include_sub_teams` with a `team_id` rolls that team's sub-teams the caller
     may see into the list, so a parent team's views show its sub-teams' issues.
     `reverse` turns the sort around, issues lacking the sorted value still last.
+    `completed_by_recency` lists the completed and cancelled issues after the open
+    ones, newest closed first, whatever the sort.
     Each sub-issue carries its parent's `parent_key` and `parent_title`, so a row
     listed apart from its parent can still name it.
 
@@ -313,6 +316,7 @@ def list_issues(
             subscribed=subscribed,
             include_sub_teams=include_sub_teams,
             reverse=reverse,
+            completed_by_recency=completed_by_recency,
         )
         changed_parents = parents_of(repositories.issues, repositories.teams, context.workspace_id, changes.issues)
         delta = IssueSyncListRead(
@@ -336,6 +340,7 @@ def list_issues(
         subscribed=subscribed,
         include_sub_teams=include_sub_teams,
         reverse=reverse,
+        completed_by_recency=completed_by_recency,
     )
     parents = parents_of(repositories.issues, repositories.teams, context.workspace_id, rows)
     return IssueSyncListRead(

@@ -827,6 +827,7 @@ class DisplayOptionsBody(TypedDict):
     ]
     group_header: NotRequired[Literal["count", "estimate"] | None]
     layout: NotRequired[Literal["list", "board"] | None]
+    order_completed_by_recency: NotRequired[bool | None]
     ordering: NotRequired[
         Literal[
             "updated_desc",
@@ -3562,6 +3563,7 @@ class ViewCreate(TypedDict):
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
+    order_completed_by_recency: NotRequired[bool]
     ordering: NotRequired[
         Literal[
             "updated_desc",
@@ -3672,6 +3674,7 @@ class ViewRead(TypedDict):
     kind: str
     layout: str
     name: str
+    order_completed_by_recency: NotRequired[bool]
     ordering: NotRequired[str | None]
     ordering_reversed: NotRequired[bool]
     owner_id: str
@@ -3721,6 +3724,7 @@ class ViewUpdate(TypedDict):
     icon: NotRequired[str | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
+    order_completed_by_recency: NotRequired[bool | None]
     ordering: NotRequired[
         Literal[
             "updated_desc",

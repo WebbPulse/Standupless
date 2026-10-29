@@ -125,6 +125,7 @@ class SavedView(BaseModel):
     sub_group_by: str | None = None
     ordering: str | None = None
     ordering_reversed: bool | None = None
+    order_completed_by_recency: bool | None = None
     visible_properties: list[str] | None = None
     layout: str | None = None
     show_sub_issues: bool | None = None

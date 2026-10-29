@@ -327,6 +327,11 @@ export interface ViewState {
   ordering: IssueListSort;
   /** True to read the ordering backwards, issues lacking its value still last. */
   reverse: boolean;
+  /**
+   * True to sort completed and canceled issues by when they closed, newest
+   * first, after the open ones, whatever the ordering.
+   */
+  completedByRecency: boolean;
   visible: ViewVisibleProperty[];
   layout: ViewLayout;
   showEmpty: boolean;
@@ -955,6 +960,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   subGroupBy: 'none',
   ordering: 'priority_desc',
   reverse: false,
+  completedByRecency: false,
   visible: [...DEFAULT_VISIBLE],
   layout,
   showEmpty: layout === 'board',
@@ -1102,6 +1108,7 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.subGroupBy === right.subGroupBy &&
   left.ordering === right.ordering &&
   left.reverse === right.reverse &&
+  left.completedByRecency === right.completedByRecency &&
   sameList(left.visible, right.visible) &&
   left.layout === right.layout &&
   left.showEmpty === right.showEmpty &&
@@ -1143,6 +1150,7 @@ export const parseViewState = (
   const sub = params.get('sub');
   const order = params.get('order');
   const rev = params.get('rev');
+  const recency = params.get('recency');
   const props = params.get('props');
   const empty = params.get('empty');
   const subs = params.get('subs');
@@ -1161,6 +1169,8 @@ export const parseViewState = (
     subGroupBy: subGroupBy === groupBy ? 'none' : subGroupBy,
     ordering: isOrdering(order) ? order : base.ordering,
     reverse: rev === null ? base.reverse : rev === '1',
+    completedByRecency:
+      recency === null ? base.completedByRecency : recency === '1',
     visible:
       props === null
         ? base.visible
@@ -1203,6 +1213,7 @@ export const writeViewState = (
         'sub',
         'order',
         'rev',
+        'recency',
         'props',
         'layout',
         'empty',
@@ -1232,6 +1243,8 @@ export const writeViewState = (
   if (state.ordering !== base.ordering) params.set('order', state.ordering);
   if (state.reverse !== base.reverse)
     params.set('rev', state.reverse ? '1' : '0');
+  if (state.completedByRecency !== base.completedByRecency)
+    params.set('recency', state.completedByRecency ? '1' : '0');
   if (!sameList(state.visible, base.visible)) {
     params.set('props', state.visible.join(','));
   }
@@ -1587,6 +1600,7 @@ export const viewStateQuery = (
     ...(state.showArchived ? { include_archived: true } : {}),
     sort: state.ordering,
     ...(state.reverse ? { reverse: true } : {}),
+    ...(state.completedByRecency ? { completed_by_recency: true } : {}),
   };
 };
 
@@ -1715,6 +1729,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     subGroupBy: sub === groupBy ? 'none' : sub,
     ordering: isOrdering(ordering) ? ordering : 'priority_desc',
     reverse: view.ordering_reversed === true,
+    completedByRecency: view.order_completed_by_recency === true,
     visible: view.visible_properties ?? [...DEFAULT_VISIBLE],
     layout,
     showEmpty: layout === 'board',
@@ -1760,6 +1775,7 @@ export const stateToViewFilter = (
     if (
       key !== 'sort' &&
       key !== 'reverse' &&
+      key !== 'completed_by_recency' &&
       key !== 'cursor' &&
       key !== 'limit' &&
       key !== 'include_archived' &&
@@ -1790,6 +1806,7 @@ export const stateToViewDisplay = (
   | 'sort'
   | 'ordering'
   | 'ordering_reversed'
+  | 'order_completed_by_recency'
   | 'group_by'
   | 'sub_group_by'
   | 'visible_properties'
@@ -1804,6 +1821,7 @@ export const stateToViewDisplay = (
   sort: state.ordering,
   ordering: state.ordering,
   ordering_reversed: state.reverse,
+  order_completed_by_recency: state.completedByRecency,
   group_by: storedGrouping(state.groupBy),
   sub_group_by:
     state.subGroupBy === state.groupBy
@@ -2729,7 +2747,16 @@ export interface SortOptions {
    * issue's sort order, such as the order a one-off key list names them in.
    */
   rank?: ReadonlyMap<string, number> | undefined;
+  /**
+   * Move completed and canceled rows after the open ones, newest closed
+   * first, as the list route's `completed_by_recency` does.
+   */
+  completedByRecency?: boolean;
 }
+
+/** When an issue was completed or canceled, or null while it is open. */
+const closedAt = (issue: OrderedIssueRead): string | null =>
+  issue.completed_at ?? issue.cancelled_at ?? null;
 
 /**
  * Orders rows the way the list route does, so an optimistic change lands in
@@ -2737,6 +2764,8 @@ export interface SortOptions {
  * to the newest created, then the higher id; status ties go to the higher
  * priority; other ties keep their incoming order. Reversing flips the
  * comparison but keeps rows lacking the sorted value last, as the server does.
+ * Ordering completed by recency puts closed rows after the open ones, newest
+ * closed first, whatever the ordering or its direction.
  */
 export const sortIssues = (
   issues: OrderedIssueRead[],
@@ -2814,6 +2843,17 @@ export const sortIssues = (
     }
   };
   const ranked = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
+    if (options.completedByRecency === true) {
+      const leftClosed = closedAt(left);
+      const rightClosed = closedAt(right);
+      if ((leftClosed === null) !== (rightClosed === null))
+        return leftClosed === null ? -1 : 1;
+      if (leftClosed !== null && rightClosed !== null)
+        return (
+          rightClosed.localeCompare(leftClosed) ||
+          right.id.localeCompare(left.id)
+        );
+    }
     const leftMissing = lacksValue(left, ordering, options.rank);
     const rightMissing = lacksValue(right, ordering, options.rank);
     if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;

@@ -344,6 +344,14 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             </Select>
           </div>
         </Row>
+        <Toggle
+          id="display-recency"
+          label="Order completed by recency"
+          checked={state.completedByRecency}
+          onChange={(completedByRecency) => {
+            set({ completedByRecency });
+          }}
+        />
       </div>
       <div className="flex flex-col gap-2.5 border-t border-line p-3">
         <p className="text-xs text-text-muted">View options</p>
