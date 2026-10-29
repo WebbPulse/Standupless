@@ -99,9 +99,9 @@ NOT_LINKED = (
 )
 
 
-    """The Slack forms one team offers: its id, group label, templates, and whether asks may be private."""
+@dataclass(frozen=True)
 class TeamForms:
-    """The Slack forms one team offers: its id, the label its group shows, the templates, and whether asks may be private."""
+    """The Slack forms one team offers: its id, group label, templates, and whether asks may be private."""
 
     team_id: str
     label: str
