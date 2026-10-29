@@ -522,6 +522,17 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
 
   const railEntry = (column: IssueGroup, showable: boolean) => {
     const isTarget = railTarget === column.key;
+    const railClass = cn(
+      'flex h-8 items-center gap-2 rounded-md border px-2 text-left text-sm pointer-coarse:h-11 transition-colors duration-100',
+      showable && 'focus-visible:outline-2 focus-visible:outline-accent',
+      isTarget
+        ? 'border-accent bg-accent-soft text-text'
+        : drag !== null
+          ? 'border-dashed border-line text-text-muted'
+          : showable
+            ? 'border-transparent text-text-muted hover:bg-raised hover:text-text'
+            : 'border-transparent text-text-faint'
+    );
     const props = {
       'data-drop-target': isTarget ? '' : undefined,
       'data-empty-column': showable ? undefined : '',
@@ -539,17 +550,6 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
         event.preventDefault();
         drop({ lane: null, column: column.key, index: null });
       },
-      className: cn(
-        'flex h-8 items-center gap-2 rounded-md border px-2 text-left text-sm pointer-coarse:h-11 transition-colors duration-100',
-        showable && 'focus-visible:outline-2 focus-visible:outline-accent',
-        isTarget
-          ? 'border-accent bg-accent-soft text-text'
-          : drag !== null
-            ? 'border-dashed border-line text-text-muted'
-            : showable
-              ? 'border-transparent text-text-muted hover:bg-raised hover:text-text'
-              : 'border-transparent text-text-faint'
-      ),
     };
     const content = (
       <>
@@ -564,6 +564,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           key={column.key}
           title={`${column.label} is empty. Drop issues here to move them to it`}
           {...props}
+          className={railClass}
         >
           {content}
         </div>
@@ -578,6 +579,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           onToggle(hiddenColumnKey(column.key));
         }}
         {...props}
+        className={railClass}
       >
         {content}
       </button>
