@@ -370,8 +370,8 @@ class Settings(BaseServiceSettings):
     BILLING_BUSINESS_ENABLED: bool = Field(
         default=False,
         description=(
-            "Whether the Business plan is on sale. Needs BILLING_ENABLED too; off until "
-            "private teams ship, so Standard is the only plan Checkout offers."
+            "Whether the Business plan is on sale. Needs BILLING_ENABLED too; off leaves "
+            "Standard as the only plan Checkout offers."
         ),
     )
 

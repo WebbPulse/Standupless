@@ -9,6 +9,7 @@ ephemeral_users_enabled = true
 adopt_spans_log_group   = true
 
 billing_enabled                  = true
+billing_business_enabled         = true
 plan_limit_e2e_exemption_enabled = true
 identity_e2e_user_ids            = ["c52c681e-019c-4c31-9866-a4538997bd80"]
 
