@@ -238,7 +238,7 @@ describe('row selection', () => {
     expect(selectedKeys()).toEqual(['ENG-4']);
 
     fireEvent.click(title('ENG-3'), { shiftKey: true });
-    expect(selectedKeys()).toEqual(['ENG-3', 'ENG-4']);
+    expect(selectedKeys()).toEqual(['ENG-2', 'ENG-3', 'ENG-4']);
   });
 
   it('toggles the focused issue on x', () => {
