@@ -635,6 +635,27 @@ class CycleSettingsRead(BaseModel):
         )
 
 
+class CycleSettingsSaved(CycleSettingsRead):
+    """A team's cycle settings as a save returns them, with what a lower upcoming count removed.
+
+    `removed_cycles` counts the empty upcoming cycles the save deleted, and
+    `kept_cycles` the upcoming cycles beyond the new count that stayed because
+    they hold issues or a planner changed them.
+    """
+
+    removed_cycles: int = 0
+    kept_cycles: int = 0
+
+    @classmethod
+    def from_save(cls, settings: CycleSettings, removed: int, kept: int) -> "CycleSettingsSaved":
+        """Build the save response from the stored row and the trim counts."""
+        return cls(
+            **CycleSettingsRead.from_row(settings).model_dump(),
+            removed_cycles=removed,
+            kept_cycles=kept,
+        )
+
+
 AutoClosePeriodField = Literal[1, 3, 6, 9, 12]
 
 

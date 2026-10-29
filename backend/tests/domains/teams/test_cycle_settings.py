@@ -3,7 +3,8 @@
 These pin who may read and change the settings, the ranges each field is held
 to, that turning cycles on creates the team's cycles before the response, and
 that turning them off or deleting the team never brings cycles back, and that
-a new cycle length moves the upcoming cycles while the current one stays put.
+a new cycle length moves the upcoming cycles while the current one stays put,
+and that a lower upcoming count removes only the empty surplus cycles.
 """
 
 from __future__ import annotations
@@ -192,3 +193,61 @@ def test_a_new_length_moves_the_upcoming_cycles(client: TestClient, team: str, r
         ((current_end + timedelta(days=1)).isoformat(), (current_end + timedelta(days=7)).isoformat()),
         ((current_end + timedelta(days=8)).isoformat(), (current_end + timedelta(days=14)).isoformat()),
     ]
+
+
+def _upcoming(repositories: Any, team_id: str) -> list[Any]:
+    """The team's cycles after the first, in start order."""
+    return sorted(repositories.planning.list_for_roadmap(WORKSPACE, team_id), key=lambda c: c.start_date)[1:]
+
+
+def test_a_lower_upcoming_count_removes_the_empty_surplus(client: TestClient, team: str, repositories: Any) -> None:
+    """Going from four upcoming cycles to two deletes the latest two and says so."""
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"enabled": True, "upcoming_count": 4})
+    before = _upcoming(repositories, team)
+
+    response = client.patch(URL, json={"upcoming_count": 2})
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["removed_cycles"], response.json()["kept_cycles"]) == (2, 0)
+    assert [c.cycle_id for c in _upcoming(repositories, team)] == [c.cycle_id for c in before[:2]]
+
+
+def test_an_upcoming_cycle_holding_issues_is_kept(client: TestClient, team: str, repositories: Any) -> None:
+    """A surplus cycle with an issue stays, and so does the one before it, so the chain keeps no hole."""
+    from app.common.db.dynamo.issues import Issue
+
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"enabled": True, "upcoming_count": 4})
+    before = _upcoming(repositories, team)
+    repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            team_id=team,
+            key="APO-1",
+            number=1,
+            title="Planned",
+            status_id="todo",
+            created_by=ADMIN,
+            cycle_id=before[2].cycle_id,
+        )
+    )
+
+    response = client.patch(URL, json={"upcoming_count": 1})
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["removed_cycles"], response.json()["kept_cycles"]) == (1, 2)
+    assert [c.cycle_id for c in _upcoming(repositories, team)] == [c.cycle_id for c in before[:3]]
+
+
+def test_a_renamed_upcoming_cycle_is_kept(client: TestClient, team: str, repositories: Any) -> None:
+    """A cycle a planner renamed is theirs, so a lower count leaves it in place."""
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"enabled": True, "upcoming_count": 3})
+    latest = _upcoming(repositories, team)[-1]
+    repositories.planning.replace_cycle(latest.model_copy(update={"name": "Launch"}))
+
+    response = client.patch(URL, json={"upcoming_count": 2})
+
+    assert (response.json()["removed_cycles"], response.json()["kept_cycles"]) == (0, 1)
+    assert len(_upcoming(repositories, team)) == 3

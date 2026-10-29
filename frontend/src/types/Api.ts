@@ -2761,6 +2761,17 @@ export interface CycleSettingsRead {
   updated_at: string | null;
 }
 
+/**
+ * A team's cycle schedule as a save answers it. `removed_cycles` counts the
+ * empty upcoming cycles a lower upcoming count deleted, and `kept_cycles` the
+ * ones beyond the new count that stayed because they hold issues or were
+ * changed by hand.
+ */
+export interface CycleSettingsSaved extends CycleSettingsRead {
+  removed_cycles?: number;
+  kept_cycles?: number;
+}
+
 /** The editable fields of a team's cycle schedule, each optional. */
 export interface CycleSettingsUpdate {
   enabled?: boolean;

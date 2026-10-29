@@ -632,7 +632,7 @@ def _unretire_team(call: ToolCall) -> Any:
 
 
 def _update_cycle_settings(call: ToolCall) -> Any:
-    """Change a team's automatic cycle settings, creating due cycles when they are on."""
+    """Change a team's automatic cycle settings, creating due cycles and trimming surplus empty ones."""
     team = admin_team(call)
     fields = (
         "enabled",
@@ -645,8 +645,15 @@ def _update_cycle_settings(call: ToolCall) -> Any:
         "move_unfinished",
     )
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
-    saved = team_writes.update_cycle_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
-    return {"team_id": team.team_id, **_cycle_settings_json(saved)}
+    saved, trimmed = team_writes.update_cycle_settings(
+        call.repositories, call.context.workspace_id, team.team_id, payload
+    )
+    return {
+        "team_id": team.team_id,
+        **_cycle_settings_json(saved),
+        "removed_cycles": len(trimmed.removed),
+        "kept_cycles": trimmed.kept,
+    }
 
 
 def _update_auto_close_settings(call: ToolCall) -> Any:

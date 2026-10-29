@@ -5,7 +5,8 @@
  * lists, that a reader sees the schedule without being able to change it,
  * that a sub-team links to its parent's cycle settings, and that once cycles
  * run the preview follows the current cycle and warns that a schedule change
- * moves the upcoming ones.
+ * moves the upcoming ones, and that a lower upcoming count says how many empty
+ * upcoming cycles saving removes and keeps.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -17,14 +18,16 @@ import type {
   CycleListRead,
   CycleRead,
   CycleSettingsRead,
+  CycleSettingsSaved,
   CycleSettingsUpdate,
 } from '../../types/Api';
 import CyclesSection from './CyclesSection';
 
 const getCycleSettings = vi.fn<() => Promise<CycleSettingsRead>>();
 const updateCycleSettings =
-  vi.fn<(body: CycleSettingsUpdate) => Promise<CycleSettingsRead>>();
-const listCycles = vi.fn<() => Promise<CycleListRead>>();
+  vi.fn<(body: CycleSettingsUpdate) => Promise<CycleSettingsSaved>>();
+const listCycles =
+  vi.fn<(query: { status?: string }) => Promise<CycleListRead>>();
 const invalidated: unknown[] = [];
 
 vi.mock('../../api/planning', async () => {
@@ -32,7 +35,10 @@ vi.mock('../../api/planning', async () => {
     await vi.importActual<typeof import('../../api/planning')>(
       '../../api/planning'
     );
-  return { ...actual, listCycles: () => listCycles() };
+  return {
+    ...actual,
+    listCycles: (_w: string, query: { status?: string }) => listCycles(query),
+  };
 });
 
 vi.mock('../../api/teams', async () => {
@@ -76,6 +82,28 @@ vi.mock('@webbpulse/auth/react', async () => {
     useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
   };
 });
+
+/** An upcoming automatic cycle numbered `number`, holding `issues` to do. */
+const upcomingCycle = (number: number, start: string, issues = 0): CycleRead =>
+  ({
+    cycle_id: `auto-${start.split('-').join('')}`,
+    team_id: 'team-1',
+    name: `Cycle ${String(number)}`,
+    number,
+    start_date: start,
+    end_date: start,
+    goal: null,
+    cancelled: false,
+    status: 'upcoming',
+    counts: {
+      todo: issues,
+      in_progress: 0,
+      done: 0,
+      cancelled: 0,
+      total: issues,
+    },
+    created_by: 'system',
+  }) as CycleRead;
 
 /** A schedule in the shape the contract answers with, defaults first. */
 const settings = (
@@ -201,6 +229,7 @@ describe('the cycles section', () => {
         ['cycle-settings', 'ws-1', 'team-1'],
         ['cycles', 'ws-1', 'team-1', ''],
         ['cycles', 'ws-1', 'team-1', 'active'],
+        ['cycles', 'ws-1', 'team-1', 'upcoming'],
         ['cycleVelocity', 'ws-1', 'team-1'],
         ['planning-options', 'team-1'],
       ],
@@ -246,6 +275,55 @@ describe('the cycles section', () => {
     expect(screen.getByTestId('cycle-preview')).toHaveTextContent(
       'Preview: next cycle starts Mon, Oct 12 and ends Sun, Oct 18, then a 1 week cooldown. Upcoming cycles move to the new schedule when you save. The current cycle keeps its dates.'
     );
+  });
+
+  it('says how many empty upcoming cycles a lower count removes and keeps', async () => {
+    getCycleSettings.mockResolvedValue(
+      settings({ enabled: true, upcoming_count: 4 })
+    );
+    listCycles.mockImplementation((query) =>
+      Promise.resolve({
+        cycles:
+          query.status === 'upcoming'
+            ? [
+                upcomingCycle(2, '2026-10-05'),
+                upcomingCycle(3, '2026-10-19', 2),
+                upcomingCycle(4, '2026-11-02'),
+                upcomingCycle(5, '2026-11-16'),
+              ]
+            : [],
+        next_cursor: null,
+      })
+    );
+    updateCycleSettings.mockImplementation((body) =>
+      Promise.resolve({
+        ...settings({ enabled: true, ...body }),
+        removed_cycles: 2,
+        kept_cycles: 1,
+      })
+    );
+    renderSection();
+
+    const upcoming = await screen.findByLabelText('Upcoming cycles');
+    await userEvent.selectOptions(upcoming, '2');
+    await waitFor(() => {
+      expect(screen.getByTestId('cycle-preview')).toHaveTextContent(
+        'Saving removes 2 empty upcoming cycles.'
+      );
+    });
+    expect(screen.getByTestId('cycle-preview')).not.toHaveTextContent('stays');
+
+    await userEvent.selectOptions(upcoming, '1');
+    expect(screen.getByTestId('cycle-preview')).toHaveTextContent(
+      'Saving removes 2 empty upcoming cycles. 1 upcoming cycle beyond the new count stays because it, or a later cycle, holds issues or was changed by hand.'
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(currentToasts().map((toast) => toast.message)).toEqual([
+        'Cycle settings saved. Upcoming cycles are scheduled. Removed 2 empty upcoming cycles. 1 upcoming cycle beyond the new count stays because it, or a later cycle, holds issues or was changed by hand.',
+      ]);
+    });
   });
 
   it('turns moving unfinished issues off', async () => {

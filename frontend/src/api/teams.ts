@@ -26,6 +26,7 @@ import type {
   ParentAutoCloseSettingsRead,
   ParentAutoCloseSettingsUpdate,
   CycleSettingsRead,
+  CycleSettingsSaved,
   CycleSettingsUpdate,
   LabelCreate,
   LabelListRead,
@@ -603,14 +604,14 @@ export const getCycleSettings = async (
 /**
  * Changes a team's automatic cycle schedule. Team admin only. When the result
  * is enabled the server creates the current and upcoming cycles before it
- * answers.
+ * answers, and a lower upcoming count removes the empty surplus ones.
  */
 export const updateCycleSettings = async (
   workspaceId: string,
   teamId: string,
   body: CycleSettingsUpdate
-): Promise<CycleSettingsRead> => {
-  const response = await apiClient.patch<CycleSettingsRead>(
+): Promise<CycleSettingsSaved> => {
+  const response = await apiClient.patch<CycleSettingsSaved>(
     cycleSettingsPath(workspaceId, teamId),
     body
   );

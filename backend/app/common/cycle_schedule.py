@@ -15,7 +15,9 @@ chain simply continues after the latest end date of any cycle the team has. The
 one exception is a change to the cycle length, cooldown or start day: as in
 Linear, the upcoming automatic cycles then move onto the new schedule while the
 current cycle keeps its dates, unless a planner already shaped the upcoming
-chain by hand. The
+chain by hand. Lowering the number of upcoming cycles removes the latest
+upcoming automatic cycles beyond the new count, as in Linear, but only while
+they are empty and untouched. The
 numbering continues from the latest numbered cycle, so a planner who renames a
 cycle to a name ending in a number starts a new sequence, as Linear does.
 
@@ -33,6 +35,7 @@ from typing import Iterable
 from webbpulse.dynamodb import ConditionFailed
 
 from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.issues import IssueRepository
 from app.common.db.dynamo.planning import Cycle, PlanningRepository, cycle_key
 from app.common.db.dynamo.team_config import CycleSettings
 
@@ -63,6 +66,15 @@ class ScheduleResult:
     team_id: str
     created: list[Cycle] = field(default_factory=list)
     moved: list[Cycle] = field(default_factory=list)
+
+
+@dataclass
+class TrimResult:
+    """What lowering the upcoming count did: the cycles removed and how many beyond it were kept."""
+
+    team_id: str
+    removed: list[Cycle] = field(default_factory=list)
+    kept: int = 0
 
 
 def auto_cycle_id(start: date, attempt: int = 1) -> str:
@@ -243,6 +255,58 @@ def replan_upcoming(settings: CycleSettings, existing: list[Cycle], today: date)
         planned.append((cycle, start, end))
         chain_end = end
     return planned
+
+
+def untouched_automatic(cycle: Cycle) -> bool:
+    """Whether a cycle is one the schedule made and nobody renamed, cancelled or gave a goal."""
+    return (
+        cycle.created_by == SYSTEM_ACTOR
+        and not cycle.cancelled
+        and cycle.number is not None
+        and cycle.name == automatic_name(cycle.number)
+        and not cycle.goal
+        and cycle.counts.total == 0
+    )
+
+
+def surplus_upcoming(settings: CycleSettings, existing: list[Cycle], today: date) -> list[Cycle]:
+    """The live upcoming cycles beyond `upcoming_count`, latest first."""
+    now = today.isoformat()
+    upcoming = sorted(
+        (c for c in existing if not c.cancelled and c.start_date > now),
+        key=lambda c: (c.start_date, c.cycle_id),
+        reverse=True,
+    )
+    return upcoming[: max(0, len(upcoming) - settings.upcoming_count)]
+
+
+def trim_upcoming(
+    planning: PlanningRepository,
+    issues: IssueRepository,
+    settings: CycleSettings,
+    today: date | None = None,
+) -> TrimResult:
+    """Delete the latest upcoming cycles beyond `upcoming_count` that are empty and untouched.
+
+    Removal walks back from the latest cycle and stops at the first one that
+    holds an issue or that a planner made or edited, so the chain never gains
+    a hole; every surplus cycle left is counted as kept. The current cycle is
+    never upcoming, so it is never touched. Does nothing when the settings are off.
+    """
+    result = TrimResult(team_id=settings.team_id)
+    if not settings.enabled:
+        return result
+    now = today or date.today()
+    surplus = surplus_upcoming(settings, planning.list_for_roadmap(settings.workspace_id, settings.team_id), now)
+    for index, cycle in enumerate(surplus):
+        holds_issues = bool(issues.iter_for_cycle(cycle.workspace_id, cycle.team_id, cycle.cycle_id, max_items=1))
+        if holds_issues or not untouched_automatic(cycle):
+            result.kept = len(surplus) - index
+            break
+        planning.delete(cycle.workspace_id, cycle_key(cycle.team_id, cycle.cycle_id))
+        planning.delete_cycle_history(cycle.workspace_id, cycle.team_id, cycle.cycle_id)
+        result.removed.append(cycle)
+    return result
 
 
 def reschedule_upcoming(

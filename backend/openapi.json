@@ -4719,6 +4719,82 @@
         "title": "CycleSettingsRead",
         "type": "object"
       },
+      "CycleSettingsSaved": {
+        "description": "A team's cycle settings as a save returns them, with what a lower upcoming count removed.\n\n`removed_cycles` counts the empty upcoming cycles the save deleted, and\n`kept_cycles` the upcoming cycles beyond the new count that stayed because\nthey hold issues or a planner changed them.",
+        "properties": {
+          "auto_add_completed": {
+            "title": "Auto Add Completed",
+            "type": "boolean"
+          },
+          "auto_add_started": {
+            "title": "Auto Add Started",
+            "type": "boolean"
+          },
+          "cooldown_weeks": {
+            "title": "Cooldown Weeks",
+            "type": "integer"
+          },
+          "duration_weeks": {
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "kept_cycles": {
+            "default": 0,
+            "title": "Kept Cycles",
+            "type": "integer"
+          },
+          "move_unfinished": {
+            "title": "Move Unfinished",
+            "type": "boolean"
+          },
+          "removed_cycles": {
+            "default": 0,
+            "title": "Removed Cycles",
+            "type": "integer"
+          },
+          "start_weekday": {
+            "title": "Start Weekday",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "upcoming_count": {
+            "title": "Upcoming Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "enabled",
+          "duration_weeks",
+          "cooldown_weeks",
+          "start_weekday",
+          "upcoming_count",
+          "auto_add_started",
+          "auto_add_completed",
+          "move_unfinished"
+        ],
+        "title": "CycleSettingsSaved",
+        "type": "object"
+      },
       "CycleSettingsUpdate": {
         "description": "The body a team's cycle settings patch takes, every field optional.\n\n`start_weekday` counts from Monday as 0 to Sunday as 6.",
         "properties": {
@@ -60962,7 +61038,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's automatic cycle settings.\n\nWhen cycles are on after the change, the team's missing current and upcoming\ncycles are created before the response, so the cycles page shows them at\nonce rather than after the next hourly run. Turning cycles off keeps every\ncycle already created.",
+        "description": "Change a team's automatic cycle settings.\n\nWhen cycles are on after the change, the team's missing current and upcoming\ncycles are created before the response, so the cycles page shows them at\nonce rather than after the next hourly run. A lower upcoming count removes\nthe empty surplus upcoming cycles and says how many it removed and kept.\nTurning cycles off keeps every cycle already created.",
         "operationId": "update_cycle_settings_api_workspaces__workspace_id__teams__team_id__cycle_settings_patch",
         "parameters": [
           {
@@ -60991,7 +61067,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CycleSettingsRead"
+                  "$ref": "#/components/schemas/CycleSettingsSaved"
                 }
               }
             },
