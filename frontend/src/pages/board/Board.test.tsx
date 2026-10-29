@@ -2,7 +2,9 @@
  * The board page. Covers the columns it opens on, dragging a card to another
  * column to change its status, dragging within a column to set a manual
  * order, dragging a selection in one move, dropping on a hidden column,
- * empty columns joining the rail when empty groups are off,
+ * previewing a hidden column's issues from the rail, opening or peeking one
+ * from there and showing the column again, empty columns joining the rail
+ * when empty groups are off,
  * swimlanes when rows are sub-grouped, and the keyboard walking cards in
  * board order.
  */
@@ -265,6 +267,14 @@ const press = (key: string, init: KeyboardEventInit = {}) => {
       new KeyboardEvent('keydown', { key, bubbles: true, ...init })
     );
   });
+};
+
+/** Hides a board column from its header menu. */
+const hideColumn = async (name: string) => {
+  fireEvent.click(
+    screen.getByRole('button', { name: `${name} column options` })
+  );
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Hide column' }));
 };
 
 /** The row element of an issue. */
@@ -657,11 +667,104 @@ describe('the board', () => {
     ).not.toBeInTheDocument();
     const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
     fireEvent.click(within(rail).getByRole('button', { name: /Doing/ }));
+    const preview = await screen.findByRole('dialog', {
+      name: 'Doing issues',
+    });
+    fireEvent.click(
+      within(preview).getByRole('button', { name: 'Show column' })
+    );
 
     expect(screen.getByRole('list', { name: 'Doing' })).toBeInTheDocument();
     expect(
       screen.queryByRole('complementary', { name: 'Hidden columns' })
     ).not.toBeInTheDocument();
+  });
+
+  it('previews a hidden column from the rail and walks it with the keys', async () => {
+    renderPage();
+    await screen.findByRole('list', { name: 'Todo' });
+    await hideColumn('Todo');
+
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    fireEvent.click(within(rail).getByRole('button', { name: /Todo/ }));
+    const preview = await screen.findByRole('dialog', { name: 'Todo issues' });
+    const first = within(preview).getByRole('link', {
+      name: /Cache the token/,
+    });
+    const second = within(preview).getByRole('link', { name: /Write docs/ });
+    const show = within(preview).getByRole('button', { name: 'Show column' });
+
+    expect(first).toHaveTextContent('ENG-1');
+    expect(first).toHaveAttribute('href', '/w/mine/issues/ENG-1');
+    expect(
+      screen.queryByRole('list', { name: 'Todo' })
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(first).toHaveFocus();
+    });
+    fireEvent.keyDown(first, { key: 'j' });
+    expect(second).toHaveFocus();
+    fireEvent.keyDown(second, { key: 'ArrowDown' });
+    expect(show).toHaveFocus();
+    fireEvent.keyDown(show, { key: 'k' });
+    expect(second).toHaveFocus();
+    fireEvent.keyDown(second, { key: 'ArrowUp' });
+    expect(first).toHaveFocus();
+
+    fireEvent.keyDown(first, { key: 'Escape' });
+    expect(
+      screen.queryByRole('dialog', { name: 'Todo issues' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'Todo' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens an issue from a hidden column preview', async () => {
+    renderPage();
+    await screen.findByRole('list', { name: 'Todo' });
+    await hideColumn('Todo');
+
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    fireEvent.click(within(rail).getByRole('button', { name: /Todo/ }));
+    const preview = await screen.findByRole('dialog', { name: 'Todo issues' });
+    fireEvent.click(within(preview).getByRole('link', { name: /Write docs/ }));
+
+    expect(await screen.findByText('Issue page')).toBeInTheDocument();
+  });
+
+  it('peeks an issue from a hidden column preview with Space', async () => {
+    renderPage();
+    await screen.findByRole('list', { name: 'Todo' });
+    await hideColumn('Todo');
+
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    fireEvent.click(within(rail).getByRole('button', { name: /Todo/ }));
+    const preview = await screen.findByRole('dialog', { name: 'Todo issues' });
+    fireEvent.keyDown(
+      within(preview).getByRole('link', { name: /Cache the token/ }),
+      { key: ' ' }
+    );
+
+    expect(
+      await screen.findAllByRole('complementary', { name: 'Peek iss-1' })
+    ).not.toHaveLength(0);
+    expect(
+      screen.queryByRole('dialog', { name: 'Todo issues' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'Todo' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens no preview from an empty column in the rail', async () => {
+    renderPage('/w/mine/team/ENG/board?empty=0');
+    await screen.findByRole('list', { name: 'Todo' });
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+
+    fireEvent.click(within(rail).getByTitle(/^Done is empty/));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('lists empty columns in the rail when empty groups are off', async () => {

@@ -14,11 +14,12 @@
  *
  * A column can be hidden from its header menu. Hidden columns sit in a rail
  * on the right, or below the board on phones, with their counts, and one
- * click brings a column back. Each one in the rail also takes a drop, which
- * sets its value without showing it again. With empty groups turned off, the
- * empty columns join the rail after the hidden ones as drop targets only, so
- * every column stays reachable, and a drop on one brings it onto the board by
- * filling it. On touch screens the columns snap into place.
+ * click previews a column's issues in a popover without showing it, with a
+ * Show column action that brings it back. Each one in the rail also takes a
+ * drop, which sets its value without showing it again. With empty groups
+ * turned off, the empty columns join the rail after the hidden ones as drop
+ * targets only, so every column stays reachable, and a drop on one brings it
+ * onto the board by filling it. On touch screens the columns snap into place.
  *
  * A quiet New issue row closes each cell the viewer may create in. It shows on
  * hover or focus, and always in an empty cell, and opens the create dialog with
@@ -45,6 +46,7 @@ import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
+import { Popover } from '../../ui/popover';
 import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
 import { RelationMarkers } from '../BlockedMarker';
 import {
@@ -53,6 +55,7 @@ import {
   PriorityCell,
   StatusCell,
 } from './IssueProperties';
+import HiddenColumnPreview from './HiddenColumnPreview';
 import { useIssueViewEnv, useRowFocus } from './IssueViewContext';
 import { ArchivedMarker, GroupFigure, GroupGlyph } from './ListRows';
 import { CardParentRef } from './SubIssueCues';
@@ -571,18 +574,33 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       );
     }
     return (
-      <button
+      <Popover
         key={column.key}
-        type="button"
-        title={`Show ${column.label}`}
-        onClick={() => {
-          onToggle(hiddenColumnKey(column.key));
-        }}
-        {...props}
-        className={railClass}
+        block
+        label={`${column.label} issues`}
+        contentClassName="w-80"
+        trigger={(triggerProps) => (
+          <button
+            type="button"
+            title={`Preview ${column.label}`}
+            {...triggerProps}
+            {...props}
+            className={cn(railClass, 'w-full')}
+          >
+            {content}
+          </button>
+        )}
       >
-        {content}
-      </button>
+        {(close) => (
+          <HiddenColumnPreview
+            column={column}
+            onShow={() => {
+              onToggle(hiddenColumnKey(column.key));
+            }}
+            onClose={close}
+          />
+        )}
+      </Popover>
     );
   };
 
