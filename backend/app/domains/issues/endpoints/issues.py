@@ -49,6 +49,7 @@ from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_move import move_issue as move_issue_row
 from app.common.issue_parents import parents_of
+from app.common.issue_privacy import can_see_issue, issue_reader
 from app.common.issue_rules import (
     load_visible_issue,
     not_found,
@@ -403,7 +404,7 @@ def read_issue_by_key(
         raise not_found()
 
     issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number, include_deleted=True)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         raise not_found()
     return conditional_response(request, IssueRead.from_row(current(repositories.teams, issue)))
 
@@ -437,7 +438,7 @@ def lookup_issues_by_key(
         if team_id is None:
             continue
         issue = find_issue_by_number(repositories, context.workspace_id, team_id, number)
-        if issue is None or not context.can_see_team(issue.team_id):
+        if issue is None or not can_see_issue(repositories, context, issue):
             continue
         resolved[raw] = issue.issue_id
         if issue.issue_id not in found:
@@ -656,7 +657,8 @@ def list_children(
         limit=limit,
         start_key=resume_key(cursor, scope),
     )
-    rows = [as_issue(item) for item in page.items]
+    readable = issue_reader(repositories, context)
+    rows = [issue for issue in (as_issue(item) for item in page.items) if readable(issue)]
     return IssueListRead(
         items=[IssueRead.from_row(current(repositories.teams, issue)) for issue in rows],
         next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),

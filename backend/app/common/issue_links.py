@@ -16,6 +16,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import Relation
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import (
     TRIAGE_STATUS_CATEGORY,
     TRIAGE_STATUS_ID,
@@ -46,7 +47,7 @@ def list_links(repositories: Repositories, context: AuthzContext, issue_id: str)
     load_visible_issue(repositories, context, issue_id)
     relations = repositories.relations.list_for_issue(context.workspace_id, issue_id)
     targets = repositories.issues.get_many(context.workspace_id, [relation.target_issue_id for relation in relations])
-    visible = {key: row for key, row in targets.items() if context.can_see_team(row.team_id)}
+    visible = {key: row for key, row in targets.items() if can_see_issue(repositories, context, row)}
     statuses = link_statuses(repositories, context.workspace_id, visible.values())
     links = []
     for relation in relations:
@@ -97,7 +98,7 @@ def create_link(repositories: Repositories, context: AuthzContext, issue_id: str
         raise unprocessable("An issue cannot link to itself")
 
     target = repositories.issues.get(context.workspace_id, payload.target_issue_id)
-    if target is None or not context.can_see_team(target.team_id):
+    if target is None or not can_see_issue(repositories, context, target):
         raise not_found()
 
     relation = repositories.relations.link(

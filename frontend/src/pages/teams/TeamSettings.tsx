@@ -35,6 +35,7 @@ import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamParentSection from '../../components/team/TeamParentSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
 import SlackReactionIntakeSection from '../../components/team/SlackReactionIntakeSection';
+import SlackStatusPostsSection from '../../components/team/SlackStatusPostsSection';
 import TeamDangerZoneSection from '../../components/team/TeamDangerZoneSection';
 import RetiredTeamBanner from '../../components/team/RetiredTeamBanner';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
@@ -457,6 +458,11 @@ const TeamSettings: React.FC = () => {
                 {...(workspace === null
                   ? {}
                   : { workspaceSlug: workspace.slug })}
+              />
+              <SlackStatusPostsSection
+                workspaceId={workspaceId}
+                teamId={team.id}
+                canEdit={editable}
               />
               <SlackReturnToast />
               <DiscordReturnToast />

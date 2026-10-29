@@ -17,6 +17,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.github import PullRequestState
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.domains.integrations import pr_status
 from app.domains.integrations.schemas.reviews import (
     REVIEW_GROUPS,
@@ -72,7 +73,7 @@ def _issues(repositories: Repositories, context: AuthzContext, state: PullReques
             continue
         seen.add(link.issue_id)
         issue = repositories.issues.get(context.workspace_id, link.issue_id)
-        if issue is None or not context.can_see_team(issue.team_id):
+        if issue is None or not can_see_issue(repositories, context, issue):
             continue
         issue = current(repositories.teams, issue)
         found.append(ReviewIssueRead(issue_id=issue.issue_id, key=issue.key, title=issue.title, team_id=issue.team_id))

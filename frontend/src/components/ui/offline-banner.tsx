@@ -2,8 +2,9 @@
  * The slim notice that the app has lost its connection. It sits at the foot
  * of the window, away from the toast stack, says the lists are the copy kept
  * on this device and that changes will not save until the connection is
- * back, and leaves as soon as any request gets an answer again. A session
- * refresh that failed for the network shows it too, rather than signing out.
+ * back, and leaves as soon as any request gets an answer again. It follows
+ * the confirmed offline signal, so a single dropped request or a refresh that
+ * failed once on an idle page is probed away quietly and never shows it.
  */
 
 import React from 'react';

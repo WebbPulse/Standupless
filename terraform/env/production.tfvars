@@ -8,6 +8,8 @@ passkeys_second_factor = true
 ephemeral_users_enabled = false
 adopt_spans_log_group   = true
 
+billing_enabled = true
+
 github_app_slug       = "standupless"
 github_queues_enabled = true
 

@@ -512,3 +512,52 @@ describe('hiding completed sub-issues', () => {
     expect(screen.getByText('Done one')).toBeInTheDocument();
   });
 });
+
+describe('the phone layout', () => {
+  it('keeps a row to its status, title and set properties', () => {
+    const set = {
+      ...child('2', 'Has both'),
+      priority: 'high' as const,
+      assignee_id: 'u-1',
+    };
+    renderSection({
+      rows: [set, child('3', 'Has neither')],
+      progress: { total: 2, completed: 0 },
+      people,
+    });
+
+    expect(screen.getByText('ENG-2')).toHaveClass('max-sm:hidden');
+    expect(screen.getByText('Has both')).toHaveClass('truncate');
+    const [full, bare] = screen.getAllByRole('listitem');
+    expect(
+      within(full as HTMLElement).getByRole('button', {
+        name: 'Priority: High',
+      })
+    ).not.toHaveClass('max-sm:hidden');
+    expect(
+      within(full as HTMLElement).getByRole('button', {
+        name: /^Assignee: /,
+      })
+    ).not.toHaveClass('max-sm:hidden');
+    expect(
+      within(bare as HTMLElement).getByRole('button', {
+        name: 'Priority: No priority',
+      })
+    ).toHaveClass('max-sm:hidden');
+    expect(
+      within(bare as HTMLElement).getByRole('button', {
+        name: 'Assignee: No assignee',
+      })
+    ).toHaveClass('max-sm:hidden');
+  });
+
+  it('draws a progress ring beside the count', () => {
+    renderSection({
+      rows: [child('2', 'A child', 'st-4'), child('3', 'Another')],
+      progress: { total: 2, completed: 1 },
+    });
+
+    const count = screen.getByText('1/2');
+    expect(count.querySelector('svg')).not.toBeNull();
+  });
+});

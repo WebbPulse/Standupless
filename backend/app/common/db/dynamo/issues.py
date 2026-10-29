@@ -338,6 +338,7 @@ class Issue(BaseModel):
     external_ref: str | None = None
     import_batch_id: str | None = None
     requester: IssueRequester | None = None
+    private: bool = False
 
     _revision: int | None = PrivateAttr(default=None)
 
@@ -450,6 +451,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "external_ref",
         "import_batch_id",
         "requester",
+        "private",
         PULL_REQUEST_SUMMARY,
     )
     for attachment in (*optional, *SLA_FIELDS):

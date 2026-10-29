@@ -29,14 +29,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  LuArrowLeft,
-  LuArrowRight,
-  LuChevronLeft,
-  LuChevronRight,
-  LuMinus,
-  LuPlus,
-} from 'react-icons/lu';
+import { LuArrowLeft, LuArrowRight, LuChevronRight } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
 import { useTimelineLinks } from '../../hooks/useTimelineLinks';
@@ -55,7 +48,6 @@ import MilestoneGlyph from './MilestoneGlyph';
 import ProjectIcon from './ProjectIcon';
 import ProjectStatusGlyph from './ProjectStatusGlyph';
 import Avatar from '../ui/avatar';
-import Button, { IconButton } from '../ui/button';
 import { PriorityGlyph } from '../ui/glyphs';
 import { ContextMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import type { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
@@ -86,15 +78,12 @@ import {
 import type { ProjectColumn, ProjectGroup } from '../../lib/projectList';
 import {
   PX_PER_DAY,
-  TIMELINE_ZOOMS,
-  TIMELINE_ZOOM_LABELS,
   barDays,
   clampLabel,
   dayValue,
   dragBar,
   milestoneMarks,
   offscreenSide,
-  stepZoom,
   timelineDate,
   timelineHeader,
   timelineRange,
@@ -1224,94 +1213,6 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   );
 };
 
-/** Props for TimelineControls: the zoom and what its buttons do. */
-export interface TimelineControlsProps {
-  zoom: TimelineZoom;
-  onZoomChange: (zoom: TimelineZoom) => void;
-  onToday: () => void;
-  /** Moves the view earlier or later, left out where the page offers no stepping. */
-  onStep?: (direction: -1 | 1) => void;
-}
-
-/** The earlier, Today and later buttons and the zoom scale a timeline's toolbar carries. */
-export const TimelineControls: React.FC<TimelineControlsProps> = ({
-  zoom,
-  onZoomChange,
-  onToday,
-  onStep,
-}) => (
-  <>
-    {onStep !== undefined && (
-      <IconButton
-        label="Earlier"
-        size="sm"
-        onClick={() => {
-          onStep(-1);
-        }}
-      >
-        <LuChevronLeft className="h-3.5 w-3.5" />
-      </IconButton>
-    )}
-    <Button variant="ghost" size="sm" onClick={onToday}>
-      Today
-    </Button>
-    {onStep !== undefined && (
-      <IconButton
-        label="Later"
-        size="sm"
-        onClick={() => {
-          onStep(1);
-        }}
-      >
-        <LuChevronRight className="h-3.5 w-3.5" />
-      </IconButton>
-    )}
-    <IconButton
-      label="Zoom out"
-      size="sm"
-      disabled={zoom === 'year'}
-      onClick={() => {
-        onZoomChange(stepZoom(zoom, 1));
-      }}
-    >
-      <LuMinus className="h-3.5 w-3.5" />
-    </IconButton>
-    <div
-      role="radiogroup"
-      aria-label="Zoom"
-      className="flex items-center rounded-sm border border-line p-0.5 max-sm:hidden"
-    >
-      {TIMELINE_ZOOMS.map((value) => (
-        <button
-          key={value}
-          type="button"
-          role="radio"
-          aria-checked={zoom === value}
-          onClick={() => {
-            onZoomChange(value);
-          }}
-          className={cn(
-            'h-6 rounded-xs px-2 text-xs transition-colors duration-100',
-            zoom === value
-              ? 'bg-raised text-text'
-              : 'text-text-muted hover:text-text'
-          )}
-        >
-          {TIMELINE_ZOOM_LABELS[value]}
-        </button>
-      ))}
-    </div>
-    <IconButton
-      label="Zoom in"
-      size="sm"
-      disabled={zoom === 'week'}
-      onClick={() => {
-        onZoomChange(stepZoom(zoom, -1));
-      }}
-    >
-      <LuPlus className="h-3.5 w-3.5" />
-    </IconButton>
-  </>
-);
+export { TimelineControls, type TimelineControlsProps } from './TimelineFrame';
 
 export default ProjectTimeline;

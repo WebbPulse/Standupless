@@ -4,27 +4,36 @@
  * Subscribed (`subscriber_id=me`) draw the same grouped list or board as a
  * team's issues, resolved server side from a keyed index across every team
  * the caller belongs to. Activity lists the issues the caller last changed or
- * commented on, one row per issue led by its latest action, from the same
- * member activity read the member page uses. The tab lives in the URL, so a
- * link lands on it, and the number keys switch tabs while the page is open.
+ * commented on as the same keyboard list, one row per issue ordered by their
+ * latest action on it, which each row names beside its title, paging on as
+ * the list scrolls. The tab lives in the URL, so a link lands on it, and the
+ * number keys switch tabs while the page is open.
  * Assigned opens grouped by Focus, as Linear's does, and is the only list
  * that offers that grouping.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ME, type IssueListFilters } from '../../api/issues';
+import {
+  ME,
+  type IssueListFilters,
+  type OrderedIssueRead,
+} from '../../api/issues';
 import IssueViewPage from '../../components/issues/view/IssueViewPage';
-import MemberActivityFeed from '../../components/members/MemberActivityFeed';
 import { ErrorAlert } from '../../components/ui/alert';
+import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
+import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useAuth } from '../../hooks/useAuth';
 import {
-  useMemberActivity,
+  useTouchedIssues,
   type MemberActivity,
 } from '../../hooks/useMemberActivity';
+import {
+  memberAction,
+  useMemberActivityContext,
+} from '../../hooks/useMemberActivityContext';
 import { useShortcut, type ShortcutDefinition } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -37,7 +46,7 @@ import {
   type FilterField,
   type ViewState,
 } from '../../lib/issueView';
-import type { MemberActivityRead } from '../../types/Api';
+import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
 /** Which of the caller's relationships to an issue the page lists. */
 export type MyIssuesTab = 'assigned' | 'created' | 'subscribed' | 'activity';
@@ -85,6 +94,19 @@ const TABS: Record<IssueTab, TabSpec> = {
 export const ACTIVITY_EMPTY =
   'Issues you change or comment on will show up here.';
 
+/** The most issues the Activity tab lists, the most ids one list read names. */
+export const ACTIVITY_LIMIT = 100;
+
+/** An id no issue holds, so an empty id scope reads nothing rather than everything. */
+const UNMATCHED_ISSUE_ID = '-';
+
+/** The settings the Activity tab opens with: one ungrouped list in activity order. */
+export const activityBase = (): ViewState => ({
+  ...defaultViewState('list'),
+  groupBy: 'none',
+  ordering: 'manual',
+});
+
 /** Every tab's label, in the order the switch shows them. */
 const TAB_LABELS: Record<MyIssuesTab, string> = {
   assigned: TABS.assigned.label,
@@ -109,21 +131,6 @@ export const tabBase = (tab: IssueTab): ViewState => {
 /** The address of a tab, relative to the page. */
 const tabSearch = (tab: MyIssuesTab): string =>
   tab === 'assigned' ? '' : `?${TAB_PARAM}=${tab}`;
-
-/**
- * Keeps the newest row for each issue, so the Activity tab lists each issue
- * once, ordered by the caller's latest action on it.
- */
-export const latestPerIssue = (
-  rows: MemberActivityRead[]
-): MemberActivityRead[] => {
-  const seen = new Set<string>();
-  return rows.filter((row) => {
-    if (seen.has(row.issue_id)) return false;
-    seen.add(row.issue_id);
-    return true;
-  });
-};
 
 /** Reads the tab from the URL, falling back to Assigned for anything unknown. */
 const readTab = (value: string | null): MyIssuesTab =>
@@ -176,23 +183,163 @@ const useTabShortcuts = (): void => {
   useShortcut(bind('activity', 3));
 };
 
-/** The caller's activity feed, folded to one row per issue. */
-const useMyActivity = (
-  workspaceId: string,
-  enabled: boolean
-): MemberActivity => {
-  const feed = useMemberActivity(workspaceId, ME, enabled);
-  const activity = useMemo(
-    () => latestPerIssue(feed.activity),
+/**
+ * The foot of the Activity list: reads the next page once it scrolls into
+ * view, with a button for anyone who would rather ask, and says when the list
+ * has reached its ceiling.
+ */
+const ActivityPager: React.FC<{ feed: MemberActivity; capped: boolean }> = ({
+  feed,
+  capped,
+}) => {
+  const sentinel = useRef<HTMLDivElement | null>(null);
+  const { hasMore, isPaging, loadMore } = feed;
+  const wanted = hasMore && !capped;
+  useEffect(() => {
+    const node = sentinel.current;
+    if (
+      !wanted ||
+      isPaging ||
+      node === null ||
+      typeof IntersectionObserver === 'undefined'
+    )
+      return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore();
+    });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [wanted, isPaging, loadMore]);
+
+  if (capped) {
+    return (
+      <p className="px-4 py-3 text-xs text-text-muted lg:px-6">
+        Showing the {ACTIVITY_LIMIT} issues you touched most recently.
+      </p>
+    );
+  }
+  if (!hasMore) return null;
+  return (
+    <div ref={sentinel} className="flex justify-center px-4 py-3">
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={isPaging}
+        onClick={loadMore}
+      >
+        {isPaging ? 'Loading' : 'Load more'}
+      </Button>
+    </div>
+  );
+};
+
+/** Props for {@link ActivityList}. */
+interface ActivityListProps {
+  workspace: WorkspaceRead;
+  teams: TeamRead[];
+  canEdit: boolean;
+}
+
+/**
+ * The Activity tab: the issues the caller touched as a full issue list, so
+ * j and k, selection, the bulk bar and the property menus work as on the
+ * other tabs. The rows are read by id in the order of the caller's latest
+ * action, and each names that action and when.
+ */
+const ActivityList: React.FC<ActivityListProps> = ({
+  workspace,
+  teams,
+  canEdit,
+}) => {
+  const feed = useTouchedIssues(workspace.id, ME);
+  const touched = useMemo(
+    () => feed.activity.slice(0, ACTIVITY_LIMIT),
     [feed.activity]
   );
-  return { ...feed, activity };
+  const context = useMemberActivityContext(workspace.id, touched);
+  const ids = useMemo(() => touched.map((row) => row.issue_id), [touched]);
+  const idsJson = ids.join(',');
+  const scope = useMemo<IssueListFilters>(
+    () => ({
+      issue_id: idsJson === '' ? [UNMATCHED_ISSUE_ID] : idsJson.split(','),
+    }),
+    [idsJson]
+  );
+  const rank = useMemo(
+    () => new Map(ids.map((id, index) => [id, index])),
+    [ids]
+  );
+  const base = useMemo(activityBase, []);
+  const latest = useMemo(
+    () => new Map(touched.map((row) => [row.issue_id, row])),
+    [touched]
+  );
+  const rowNote = useCallback(
+    (issue: OrderedIssueRead): React.ReactNode => {
+      const row = latest.get(issue.id);
+      if (row === undefined) return undefined;
+      return (
+        <>
+          You {memberAction(row, context)}
+          <span aria-hidden="true"> · </span>
+          <RelativeTime value={row.created_at} />
+        </>
+      );
+    },
+    [latest, context]
+  );
+
+  const tabs = <MyIssuesTabs current="activity" />;
+  if (touched.length === 0) {
+    return (
+      <WorkspaceShell title="My issues" toolbar={tabs} flush>
+        {feed.error !== null && feed.error !== undefined ? (
+          <div className="px-4 pt-3 lg:px-6">
+            <ErrorAlert
+              message={errorMessage(feed.error, 'Could not load the activity.')}
+            />
+          </div>
+        ) : feed.isLoading || feed.isPaging ? (
+          <SkeletonRows label="Loading activity" />
+        ) : (
+          <EmptyState message={ACTIVITY_EMPTY} />
+        )}
+      </WorkspaceShell>
+    );
+  }
+
+  return (
+    <IssueViewPage
+      workspaceId={workspace.id}
+      slug={workspace.slug}
+      title="My issues"
+      tabs={tabs}
+      scopeKey="mine-activity"
+      scope={scope}
+      teams={teams}
+      base={base}
+      canEdit={canEdit}
+      homeTeam={teams.length === 1 ? teams[0] : undefined}
+      emptyMessage={ACTIVITY_EMPTY}
+      rank={rank}
+      saveScope={{ issue_id: ids }}
+      rowNote={rowNote}
+      holdRows
+      footer={
+        <ActivityPager
+          feed={feed}
+          capped={feed.activity.length >= ACTIVITY_LIMIT}
+        />
+      }
+    />
+  );
 };
 
 /** The cross-team list of the caller's own issues. */
 export const MyIssues: React.FC = () => {
   const { workspace } = useWorkspace();
-  const { user } = useAuth();
   const { teams, isLoading, error } = useTeam(undefined);
   const [params] = useSearchParams();
   const tab = readTab(params.get(TAB_PARAM));
@@ -202,32 +349,9 @@ export const MyIssues: React.FC = () => {
   );
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
-  const feed = useMyActivity(workspaceId, tab === 'activity');
   useTabShortcuts();
 
-  if (tab === 'activity') {
-    return (
-      <WorkspaceShell
-        title="My issues"
-        toolbar={<MyIssuesTabs current={tab} />}
-      >
-        {workspace === null ? (
-          <SkeletonRows label="Loading activity" />
-        ) : (
-          <MemberActivityFeed
-            feed={feed}
-            workspaceId={workspaceId}
-            slug={slug}
-            name="You"
-            avatarUrl={user?.avatar_url ?? null}
-            emptyMessage={ACTIVITY_EMPTY}
-          />
-        )}
-      </WorkspaceShell>
-    );
-  }
-
-  const spec = TABS[tab];
+  const empty = tab === 'activity' ? ACTIVITY_EMPTY : TABS[tab].empty;
 
   if (workspace === null || teams.length === 0) {
     return (
@@ -241,7 +365,7 @@ export const MyIssues: React.FC = () => {
         ) : isLoading || workspace === null ? (
           <SkeletonRows label="Loading issues" />
         ) : (
-          <EmptyState message={spec.empty} />
+          <EmptyState message={empty} />
         )}
       </WorkspaceShell>
     );
@@ -250,6 +374,19 @@ export const MyIssues: React.FC = () => {
   const canEdit = teams.some((team) =>
     canWriteIssues(workspace.role, team.role)
   );
+
+  if (tab === 'activity') {
+    return (
+      <ActivityList
+        key="activity"
+        workspace={workspace}
+        teams={teams}
+        canEdit={canEdit}
+      />
+    );
+  }
+
+  const spec = TABS[tab];
 
   return (
     <IssueViewPage

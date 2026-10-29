@@ -56,3 +56,30 @@ export const listMemberActivity = async (
     next_cursor: body?.next_cursor ?? null,
   };
 };
+
+/** The route listing the issues a member touched, one row per issue. */
+export const memberIssuesPath = (workspaceId: string, userId: string): string =>
+  `${memberProfilePath(workspaceId, userId)}/issues`;
+
+/**
+ * Reads one page of the issues a member recently changed or commented on,
+ * each led by their latest action, newest first. The cursor walks the feed,
+ * so a later page can name an issue an earlier one did.
+ */
+export const listMemberIssues = async (
+  workspaceId: string,
+  userId: string,
+  query: MemberActivityQuery = {},
+  signal?: AbortSignal
+): Promise<MemberActivityListRead> => {
+  const bag: Record<string, string | number> = { ...query };
+  const response = await apiClient.get<MemberActivityListRead>(
+    memberIssuesPath(workspaceId, userId),
+    signal === undefined ? { query: bag } : { query: bag, signal }
+  );
+  const body = response.data;
+  return {
+    activity: Array.isArray(body?.activity) ? body.activity : [],
+    next_cursor: body?.next_cursor ?? null,
+  };
+};

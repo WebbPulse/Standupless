@@ -55,6 +55,7 @@ from app.common.db.dynamo.documents import (
 )
 from app.common.db.dynamo.search_index import SearchQuery, ranked_terms
 from app.common.initiative_writes import load_initiative
+from app.common.issue_privacy import can_see_issue
 from app.common.planning_rules import (
     can_see_initiative,
     forbidden,
@@ -212,7 +213,7 @@ def resolve_mentions(repositories: Repositories, context: AuthzContext, keys: It
         if team_id is None or not context.can_see_team(team_id):
             continue
         issue = repositories.issues.get_by_number(context.workspace_id, team_id, int(number))
-        if issue is None or issue.issue_id in seen or not context.can_see_team(issue.team_id):
+        if issue is None or issue.issue_id in seen or not can_see_issue(repositories, context, issue):
             continue
         seen.add(issue.issue_id)
         found.append(DocumentMention(key=key, issue_id=issue.issue_id, team_id=issue.team_id))
@@ -565,7 +566,7 @@ def restore_document_version(
 def list_issue_documents(repositories: Repositories, context: AuthzContext, issue_id: str) -> list[DocumentSummaryRead]:
     """The readable documents that mention one visible issue, most recently edited first."""
     issue = repositories.issues.get(context.workspace_id, issue_id)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         raise not_found()
     links = repositories.documents.list_links(context.workspace_id, issue.issue_id)
     if not links:

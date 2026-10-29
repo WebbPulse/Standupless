@@ -1,35 +1,37 @@
 /**
- * The offline signal: it follows the shared client's reachability and a
- * session refresh that failed at the network layer, and holds writes back
- * while either says the connection is gone.
+ * The offline signal: it follows the shared reachability signal, so a request
+ * that fails once is probed away without disabling writes, trouble that
+ * outlasts the grace period holds writes back, and with the grace period
+ * turned off a failure reads offline at once.
  */
 
-import React from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  configureReachability,
+  DEFAULT_OFFLINE_GRACE_MS,
   reportNetworkFailure,
   reportNetworkSuccess,
 } from '@webbpulse/api-client/react';
-import { SessionOfflineContext } from '../contexts/SessionOfflineContext';
 import { useOffline, useWritable } from './useOffline';
 
 vi.unmock('./useOffline');
 
-/** A wrapper that marks the session as held through a network outage. */
-const sessionOffline: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => (
-  <SessionOfflineContext.Provider value={true}>
-    {children}
-  </SessionOfflineContext.Provider>
-);
+const reachable = (): Promise<void> => Promise.resolve();
+const unreachable = (): Promise<void> =>
+  Promise.reject(new TypeError('Failed to fetch'));
 
 describe('useOffline', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   afterEach(() => {
     act(() => {
       reportNetworkSuccess();
     });
+    configureReachability();
+    vi.useRealTimers();
   });
 
   it('is online by default and lets permitted writes through', () => {
@@ -38,10 +40,28 @@ describe('useOffline', () => {
     expect(renderHook(() => useWritable(false)).result.current).toBe(false);
   });
 
-  it('goes offline when a request cannot reach the server', () => {
+  it('stays online when a probe answers after one failed request', async () => {
     const { result } = renderHook(() => useWritable(true));
     act(() => {
-      reportNetworkFailure();
+      reportNetworkFailure(reachable);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_OFFLINE_GRACE_MS * 2);
+    });
+    expect(result.current).toBe(true);
+  });
+
+  it('holds writes back once the server stays unreachable past the grace period', async () => {
+    const { result } = renderHook(() => useWritable(true));
+    act(() => {
+      reportNetworkFailure(unreachable);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_OFFLINE_GRACE_MS - 1);
+    });
+    expect(result.current).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(result.current).toBe(false);
     act(() => {
@@ -50,9 +70,11 @@ describe('useOffline', () => {
     expect(result.current).toBe(true);
   });
 
-  it('goes offline while the session is held through an outage', () => {
-    const { result } = renderHook(() => useOffline(), {
-      wrapper: sessionOffline,
+  it('goes offline at once with the grace period and probes turned off', () => {
+    configureReachability({ graceMs: 0, probe: false });
+    const { result } = renderHook(() => useOffline());
+    act(() => {
+      reportNetworkFailure();
     });
     expect(result.current).toBe(true);
   });

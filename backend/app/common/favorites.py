@@ -39,6 +39,7 @@ from app.common.db.dynamo.views import (
     new_favorite_folder_id,
 )
 from app.common.issue_keys import current
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import not_found, unprocessable
 from app.common.planning_rules import can_see_initiative, visible_project_teams
 from app.common.saved_views import load_visible_view
@@ -101,7 +102,8 @@ class _Resolver:
         if not issue_ids:
             return {}
         found = self.repositories.issues.get_many(self.context.workspace_id, issue_ids)
-        visible = [issue for issue in found.values() if issue.team_id in self.visible]
+        readable = issue_reader(self.repositories, self.context)
+        visible = [issue for issue in found.values() if issue.team_id in self.visible and readable(issue)]
         statuses: dict[str, dict[str, StatusRead]] = defaultdict(dict)
         for team_id in {issue.team_id for issue in visible}:
             for status in self.repositories.team_config.list_statuses(self.context.workspace_id, team_id):

@@ -474,6 +474,13 @@ class IssueRead(BaseModel):
         default=None,
         description="Who asked, for an issue Slack or email intake filed on someone's behalf, seat or no seat.",
     )
+    private: bool = Field(
+        default=False,
+        description=(
+            "A private ask from a Slack DM or private channel, read only by its requester, its creator and assignee,"
+            " and the team's explicit members."
+        ),
+    )
 
     @classmethod
     def from_row(cls, issue: Issue, parent: Optional[Issue] = None) -> "IssueRead":
@@ -532,6 +539,7 @@ class IssueRead(BaseModel):
             cycle_added_at=issue.cycle_added_at if issue.cycle_id else None,
             external_ref=issue.external_ref,
             requester=IssueRequesterRead.from_requester(issue.requester),
+            private=issue.private,
         )
 
 

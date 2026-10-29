@@ -23403,6 +23403,76 @@
         "title": "SlackLinkRead",
         "type": "object"
       },
+      "SlackStatusPostsRead": {
+        "description": "Whether a team posts status changes into the Slack threads its issues came from.\n\n`enabled` is the team's switch, on until an admin turns it off, and reads true\neven before Slack is connected, so the setting is ready once it is.\n`private_asks` is whether the team's Slack request form offers a private ask,\noff until an admin turns it on.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "private_asks": {
+            "default": false,
+            "title": "Private Asks",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "SlackStatusPostsRead",
+        "type": "object"
+      },
+      "SlackStatusPostsWrite": {
+        "description": "A team admin's change to the team's Slack settings; a field left out keeps its value.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "private_asks": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Asks"
+          }
+        },
+        "title": "SlackStatusPostsWrite",
+        "type": "object"
+      },
       "SlackThread": {
         "description": "The Slack thread a root comment's thread is synced with.\n\nSet on the root that pairing writes when an issue is created from a Slack\nmessage: replies in the Slack thread land under this root, and replies under\nthis root are posted to the Slack thread. `permalink` is what the comment\narea links to.",
         "properties": {
@@ -31653,6 +31723,12 @@
             ],
             "title": "Priority",
             "type": "string"
+          },
+          "private": {
+            "default": false,
+            "description": "A private ask from a Slack DM or private channel, read only by its requester, its creator and assignee, and the team's explicit members.",
+            "title": "Private",
+            "type": "boolean"
           },
           "progress": {
             "$ref": "#/components/schemas/ProgressRead"
@@ -66427,6 +66503,132 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts": {
+      "get": {
+        "description": "Whether this team posts status changes into the Slack threads its issues came from.",
+        "operationId": "get_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusPostsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Status Posts",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Turn status posts into paired Slack threads, or private asks from Slack, on or off for this team.",
+        "operationId": "put_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackStatusPostsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusPostsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Slack Status Posts",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}": {
       "delete": {
         "description": "Delete one of a team's webhooks.",
@@ -69660,6 +69862,94 @@
           }
         ],
         "summary": "List Member Activity",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/members/{user_id}/issues": {
+      "get": {
+        "description": "The issues a member recently changed or commented on, one row per issue with their latest action.\n\nNewest first, only issues the caller can read. `next_cursor` resumes the feed,\nso a later page can repeat an issue an earlier one listed, which the caller drops.",
+        "operationId": "list_member_touched_issues_api_workspaces__workspace_id__views_members__user_id__issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberActivityListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Member Touched Issues",
         "tags": [
           "views"
         ]

@@ -57,6 +57,7 @@ from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
 from app.common.issue_parents import parents_of
+from app.common.issue_privacy import can_see_issue, issue_reader
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_trash import list_trash, restore_issue
@@ -75,6 +76,7 @@ from app.common.issue_writes import (
 from app.common.similar_issues import find_similar
 from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.integrations import pr_status, thread_sync
+from app.domains.integrations.mcp.attachment_tools import embedded_attachments
 from app.domains.integrations.mcp.team_tools import boolean
 from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
@@ -544,6 +546,8 @@ def _search_issues(call: ToolCall) -> Any:
             for row in call.repositories.team_config.list_statuses(call.context.workspace_id, candidate):
                 categories[row.status_id] = row.category
 
+    readable = issue_reader(call.repositories, call.context)
+
     def keep(issue: Issue) -> bool:
         """Whether one issue carries the key or holds the text, and passes the filters."""
         if (
@@ -554,7 +558,7 @@ def _search_issues(call: ToolCall) -> Any:
             and query not in (issue.body or "").lower()
         ):
             return False
-        return wanted.matches(issue, categories)
+        return readable(issue) and wanted.matches(issue, categories)
 
     workspace_id = call.context.workspace_id
     direction = "reverse" if reverse else "forward"
@@ -592,12 +596,14 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 def _get_issue(call: ToolCall) -> Any:
     """One issue by its id or its key, with its linked pull requests and the stacks they form.
 
-    A deleted issue still answers, with `deleted_at` set, so an agent can tell it
+    The files its description embeds are listed under `attachments`, so an agent
+    knows what `get_attachment` can fetch. A deleted issue still answers, with `deleted_at` set, so an agent can tell it
     sits in the trash and restore it.
     """
     issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
     answer = _answer(call, issue)
     answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
+    [answer["attachments"]] = embedded_attachments(call, issue, [issue.body])
     return answer
 
 
@@ -940,7 +946,10 @@ def _list_document_comments(call: ToolCall) -> Any:
 
 
 def _list_comments(call: ToolCall) -> Any:
-    """One page of an issue's or a document's comments, oldest first, replies carrying their parent."""
+    """One page of an issue's or a document's comments, oldest first, replies carrying their parent.
+
+    Each issue comment lists the files it embeds under `attachments`.
+    """
     if _document_target(call):
         return _list_document_comments(call)
     issue = issue_ref(call, call.require("issue_id"))
@@ -951,7 +960,11 @@ def _list_comments(call: ToolCall) -> Any:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
-    return {"comments": [_comment_json(row) for row in rows], "next_cursor": next_cursor}
+    embedded = embedded_attachments(call, issue, [row.body for row in rows])
+    return {
+        "comments": [{**_comment_json(row), "attachments": files} for row, files in zip(rows, embedded, strict=True)],
+        "next_cursor": next_cursor,
+    }
 
 
 def _list_issue_activity(call: ToolCall) -> Any:
@@ -1182,14 +1195,14 @@ def _bulk_selection(call: ToolCall) -> list[str]:
 def _selection_team(call: ToolCall, issue_ids: list[str]) -> str | None:
     """The one team every visible issue of the selection sits in, or `None` when they span teams."""
     rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
-    teams = {row.team_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    teams = {row.team_id for row in rows.values() if can_see_issue(call.repositories, call.context, row)}
     return teams.pop() if len(teams) == 1 else None
 
 
 def _selection_projects(call: ToolCall, issue_ids: list[str]) -> set[str | None]:
     """The projects the visible issues of a selection sit in now, `None` for an issue in no project."""
     rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
-    return {row.project_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    return {row.project_id for row in rows.values() if can_see_issue(call.repositories, call.context, row)}
 
 
 def _bulk_milestone(call: ToolCall, patch: dict[str, Any], issue_ids: list[str]) -> None:
@@ -1383,7 +1396,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="get_issue",
         description=(
             "Read one issue in full, by its id or its key such as ABC-123, with its linked pull requests: "
-            "each one's review and check state, and its position when it is stacked on another."
+            "each one's review and check state, and its position when it is stacked on another. attachments "
+            "lists the files its description embeds; read one with get_attachment."
         ),
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
@@ -1569,7 +1583,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="list_comments",
         description=(
             "One page of an issue's or a document's comments, oldest first; name issue_id or document_id. "
-            "Replies carry parent_comment_id. A document also needs projects:read."
+            "Replies carry parent_comment_id. A document also needs projects:read. Each issue comment lists the "
+            "files it embeds under attachments; read one with get_attachment."
         ),
         scopes=("issues:read",),
         schema=object_schema(

@@ -13,6 +13,9 @@
  * parent lists its sub-issues under the description with the same section the
  * page uses, read under the same key so both stay in step. A plain click on
  * either peeks that issue in place, and Cmd or Ctrl+click opens its page.
+ *
+ * The pane holds the issue's media tokens as the page does, so images and
+ * videos embedded in the description and the comments load in place.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -57,6 +60,7 @@ import Spinner from '../ui/spinner';
 import { Toaster } from '../ui/toast';
 import { RelationMarkers } from './BlockedMarker';
 import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
+import IssueMediaProvider from '../media/IssueMediaProvider';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import RequesterBadge from './RequesterBadge';
@@ -367,176 +371,180 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
             </div>
           ) : null
         ) : (
-          <PassageThreadsProvider key={issue.id}>
-            <div className="space-y-5 px-4 py-4">
-              {issue.parent_id !== null && workspace !== null && (
-                <PeekParentLine
-                  workspaceId={workspaceId}
-                  slug={workspace.slug}
-                  parentId={issue.parent_id}
-                  known={options.parents}
-                  statuses={options.statuses}
-                  {...(onOpenIssue === undefined ? {} : { onOpenIssue })}
-                />
-              )}
-              <IssueBody
-                key={issue.id}
-                workspaceId={workspaceId}
-                issue={issue}
-                canEdit={canEdit}
-                onSaved={receive}
-                people={options.people}
-                canComment={canEdit}
-                onEditingChange={setEditingBody}
-                {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
-              />
-
-              {showSubIssues && (
-                <SubIssues
-                  workspaceId={workspaceId}
-                  slug={workspace?.slug ?? ''}
-                  parent={issue}
-                  rows={children.rows}
-                  isLoading={children.isLoading && issue.progress.total > 0}
-                  error={children.error}
-                  progress={issue.progress}
-                  statuses={options.statuses}
-                  people={options.people}
-                  canEdit={canEdit}
-                  emptyHint={false}
-                  {...(user?.id === undefined
-                    ? {}
-                    : { currentUserId: user.id })}
-                  {...(onOpenIssue === undefined
-                    ? {}
-                    : { onOpenRow: onOpenIssue })}
-                />
-              )}
-
-              <div className="space-y-3">
-                {team !== undefined && (
-                  <IssueFields
-                    issue={issue}
-                    estimateScale={team.estimate_scale}
-                    estimateOptions={estimateOptionsOf(team)}
+          <IssueMediaProvider workspaceId={workspaceId} issueId={issue.id}>
+            <PassageThreadsProvider key={issue.id}>
+              <div className="space-y-5 px-4 py-4">
+                {issue.parent_id !== null && workspace !== null && (
+                  <PeekParentLine
+                    workspaceId={workspaceId}
+                    slug={workspace.slug}
+                    parentId={issue.parent_id}
+                    known={options.parents}
                     statuses={options.statuses}
-                    labels={options.labels}
+                    {...(onOpenIssue === undefined ? {} : { onOpenIssue })}
+                  />
+                )}
+                <IssueBody
+                  key={issue.id}
+                  workspaceId={workspaceId}
+                  issue={issue}
+                  canEdit={canEdit}
+                  onSaved={receive}
+                  people={options.people}
+                  canComment={canEdit}
+                  onEditingChange={setEditingBody}
+                  {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
+                />
+
+                {showSubIssues && (
+                  <SubIssues
+                    workspaceId={workspaceId}
+                    slug={workspace?.slug ?? ''}
+                    parent={issue}
+                    rows={children.rows}
+                    isLoading={children.isLoading && issue.progress.total > 0}
+                    error={children.error}
+                    progress={issue.progress}
+                    statuses={options.statuses}
                     people={options.people}
-                    parents={parents}
                     canEdit={canEdit}
+                    emptyHint={false}
                     {...(user?.id === undefined
                       ? {}
                       : { currentUserId: user.id })}
-                    {...(isAdmin ? { onCreateLabel: options.createLabel } : {})}
-                    onUpdate={onUpdate}
+                    {...(onOpenIssue === undefined
+                      ? {}
+                      : { onOpenRow: onOpenIssue })}
                   />
                 )}
 
-                {issue.requester ? (
-                  <PropertySection title="Request">
-                    <PropertyRow label="Requester">
-                      <RequesterBadge
-                        requester={issue.requester}
-                        slug={workspace?.slug ?? ''}
-                        people={options.people}
-                        className="px-2 py-1"
-                      />
-                    </PropertyRow>
-                  </PropertySection>
-                ) : null}
+                <div className="space-y-3">
+                  {team !== undefined && (
+                    <IssueFields
+                      issue={issue}
+                      estimateScale={team.estimate_scale}
+                      estimateOptions={estimateOptionsOf(team)}
+                      statuses={options.statuses}
+                      labels={options.labels}
+                      people={options.people}
+                      parents={parents}
+                      canEdit={canEdit}
+                      {...(user?.id === undefined
+                        ? {}
+                        : { currentUserId: user.id })}
+                      {...(isAdmin
+                        ? { onCreateLabel: options.createLabel }
+                        : {})}
+                      onUpdate={onUpdate}
+                    />
+                  )}
 
-                {team !== undefined && (
-                  <PropertySection title="Planning">
-                    <PropertyRow label="Project">
-                      <PlanningRowLink
-                        to={
-                          issue.project_id === null || workspace === null
-                            ? null
-                            : projectPath(
-                                workspace.slug,
-                                projectRef ?? issue.project_id
-                              )
-                        }
-                        label="Open project"
-                      >
-                        <ProjectPicker
-                          disabled={!canEdit}
-                          projects={options.projects}
-                          value={issue.project_id}
-                          onChange={(projectId) => {
-                            onUpdate(projectPatch(issue, projectId));
-                          }}
+                  {issue.requester ? (
+                    <PropertySection title="Request">
+                      <PropertyRow label="Requester">
+                        <RequesterBadge
+                          requester={issue.requester}
+                          slug={workspace?.slug ?? ''}
+                          people={options.people}
+                          className="px-2 py-1"
                         />
-                      </PlanningRowLink>
-                    </PropertyRow>
-                    {issue.project_id !== null && (
-                      <PropertyRow label="Milestone">
+                      </PropertyRow>
+                    </PropertySection>
+                  ) : null}
+
+                  {team !== undefined && (
+                    <PropertySection title="Planning">
+                      <PropertyRow label="Project">
                         <PlanningRowLink
                           to={
-                            issue.project_milestone_id == null ||
-                            workspace === null
+                            issue.project_id === null || workspace === null
                               ? null
-                              : projectMilestonePath(
+                              : projectPath(
                                   workspace.slug,
-                                  projectRef ?? issue.project_id,
-                                  issue.project_milestone_id
+                                  projectRef ?? issue.project_id
                                 )
                           }
-                          label="Open milestone"
+                          label="Open project"
                         >
-                          <IssueMilestonePicker
-                            workspaceId={workspaceId}
-                            projectId={issue.project_id}
-                            value={issue.project_milestone_id ?? null}
+                          <ProjectPicker
                             disabled={!canEdit}
-                            onChange={(milestoneId) => {
-                              onUpdate({ project_milestone_id: milestoneId });
+                            projects={options.projects}
+                            value={issue.project_id}
+                            onChange={(projectId) => {
+                              onUpdate(projectPatch(issue, projectId));
                             }}
                           />
                         </PlanningRowLink>
                       </PropertyRow>
-                    )}
-                    <PropertyRow label="Cycle">
-                      <CyclePicker
-                        disabled={!canEdit}
-                        cycles={options.cycles}
-                        value={issue.cycle_id}
-                        onChange={(cycleId) => {
-                          onUpdate({ cycle_id: cycleId });
-                        }}
-                      />
-                    </PropertyRow>
-                  </PropertySection>
-                )}
+                      {issue.project_id !== null && (
+                        <PropertyRow label="Milestone">
+                          <PlanningRowLink
+                            to={
+                              issue.project_milestone_id == null ||
+                              workspace === null
+                                ? null
+                                : projectMilestonePath(
+                                    workspace.slug,
+                                    projectRef ?? issue.project_id,
+                                    issue.project_milestone_id
+                                  )
+                            }
+                            label="Open milestone"
+                          >
+                            <IssueMilestonePicker
+                              workspaceId={workspaceId}
+                              projectId={issue.project_id}
+                              value={issue.project_milestone_id ?? null}
+                              disabled={!canEdit}
+                              onChange={(milestoneId) => {
+                                onUpdate({ project_milestone_id: milestoneId });
+                              }}
+                            />
+                          </PlanningRowLink>
+                        </PropertyRow>
+                      )}
+                      <PropertyRow label="Cycle">
+                        <CyclePicker
+                          disabled={!canEdit}
+                          cycles={options.cycles}
+                          value={issue.cycle_id}
+                          onChange={(cycleId) => {
+                            onUpdate({ cycle_id: cycleId });
+                          }}
+                        />
+                      </PropertyRow>
+                    </PropertySection>
+                  )}
 
-                {peekStatusName !== undefined && (
-                  <p
-                    className="text-xs text-text-faint"
-                    title={fullTimestamp(enteredStatusAt(issue))}
-                  >
-                    {timeInStatusSentence(peekStatusName, issue)}
+                  {peekStatusName !== undefined && (
+                    <p
+                      className="text-xs text-text-faint"
+                      title={fullTimestamp(enteredStatusAt(issue))}
+                    >
+                      {timeInStatusSentence(peekStatusName, issue)}
+                    </p>
+                  )}
+                  <p className="text-xs text-text-faint">
+                    Last updated {timestampLabel(issue.updated_at)}
                   </p>
-                )}
-                <p className="text-xs text-text-faint">
-                  Last updated {timestampLabel(issue.updated_at)}
-                </p>
-              </div>
+                </div>
 
-              <div className="border-t border-line pt-5">
-                <IssueTimeline
-                  workspaceId={workspaceId}
-                  issueId={issue.id}
-                  currentUserId={user?.id ?? ''}
-                  canComment={canEdit}
-                  isAdmin={isAdmin}
-                  context={context}
-                  slug={workspace?.slug ?? ''}
-                  teamKeyPrefix={team?.key_prefix ?? ''}
-                  quote={descriptionQuotes.request}
-                />
+                <div className="border-t border-line pt-5">
+                  <IssueTimeline
+                    workspaceId={workspaceId}
+                    issueId={issue.id}
+                    currentUserId={user?.id ?? ''}
+                    canComment={canEdit}
+                    isAdmin={isAdmin}
+                    context={context}
+                    slug={workspace?.slug ?? ''}
+                    teamKeyPrefix={team?.key_prefix ?? ''}
+                    quote={descriptionQuotes.request}
+                  />
+                </div>
               </div>
-            </div>
-          </PassageThreadsProvider>
+            </PassageThreadsProvider>
+          </IssueMediaProvider>
         )}
       </div>
     </aside>

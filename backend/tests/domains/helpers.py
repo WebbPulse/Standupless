@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 from webbpulse.identity.claims import GATE_CLAIMS_KEY
 
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.memberships import Membership, team_member_key, workspace_member_key
 from app.common.db.dynamo.teams import Team
 from app.common.db.dynamo.users import User
@@ -106,3 +107,10 @@ def make_team(repositories: Any, workspace_id: str, team_id: str, key_prefix: st
     )
     repositories.team_config.seed_statuses(workspace_id, team_id)
     return team
+
+
+def make_private(repositories: Any, workspace_id: str, issue_id: str) -> None:
+    """Mark a stored issue a private ask, as the Slack request form files one."""
+    stored = repositories.issues.get(workspace_id, issue_id)
+    assert stored is not None
+    repositories.issues.replace(stored.model_copy(update={"private": True, "updated_at": utc_now()}))

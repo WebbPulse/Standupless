@@ -26,6 +26,7 @@ from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.teams import Team
 from app.common.estimates import allowed_estimates
+from app.common.issue_privacy import can_see_issue
 from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
 from app.common.team_retirement import refuse_if_retired
@@ -480,7 +481,7 @@ def load_visible_issue(
     issue = repositories.issues.get(context.workspace_id, issue_id, include_deleted=include_deleted)
     if issue is None:
         raise not_found()
-    if not context.can_see_team(issue.team_id):
+    if not can_see_issue(repositories, context, issue):
         raise not_found()
     return issue
 

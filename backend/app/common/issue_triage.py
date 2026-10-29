@@ -39,6 +39,7 @@ from app.common.db.dynamo.team_config import TriageSettings, default_triage_sett
 from app.common.db.dynamo.teams import Team
 from app.common.issue_keys import current_all
 from app.common.issue_links import create_link
+from app.common.issue_privacy import can_see_issue, issue_reader
 from app.common.issue_rules import (
     check_status,
     issue_changed,
@@ -198,10 +199,11 @@ def list_triage(
     require_team_reader(repositories, context, team_id)
     now = utc_now()
     wanted = requester or RequesterFilter()
+    readable = issue_reader(repositories, context)
     rows = [
         issue
         for issue in repositories.issues.iter_triage(context.workspace_id, team_id, max_items=TRIAGE_READ_CAP)
-        if is_snoozed(issue, now) == snoozed and wanted.matches(issue)
+        if is_snoozed(issue, now) == snoozed and wanted.matches(issue) and readable(issue)
     ]
     rows.sort(key=lambda issue: (issue.created_at, issue.issue_id), reverse=True)
     scope = f"triage:{context.workspace_id}:{team_id}:{snoozed}"
@@ -219,11 +221,16 @@ def triage_summary(repositories: Repositories, context: AuthzContext) -> list[Tr
     enabled = set(repositories.team_config.triage_team_ids(context.workspace_id))
     now = utc_now()
     counts: list[TriageTeamCount] = []
+    readable = issue_reader(repositories, context)
     for team_id in visible_team_ids(repositories, context):
         if team_id not in enabled:
             continue
         waiting = repositories.issues.iter_triage(context.workspace_id, team_id, max_items=TRIAGE_READ_CAP)
-        counts.append(TriageTeamCount(team_id=team_id, count=sum(1 for issue in waiting if not is_snoozed(issue, now))))
+        counts.append(
+            TriageTeamCount(
+                team_id=team_id, count=sum(1 for issue in waiting if not is_snoozed(issue, now) and readable(issue))
+            )
+        )
     return counts
 
 
@@ -327,7 +334,7 @@ def mark_duplicate(repositories: Repositories, context: AuthzContext, issue_id: 
     if payload.duplicate_of_id == issue.issue_id:
         raise unprocessable("An issue cannot duplicate itself")
     target = repositories.issues.get(context.workspace_id, payload.duplicate_of_id)
-    if target is None or not context.can_see_team(target.team_id):
+    if target is None or not can_see_issue(repositories, context, target):
         raise not_found()
     _leave(repositories, context, issue, issue.status_id, "duplicate")
     create_link(repositories, context, issue.issue_id, LinkCreate(type="duplicate_of", target_issue_id=target.issue_id))

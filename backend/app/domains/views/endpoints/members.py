@@ -1,4 +1,4 @@
-"""Member page routes: one person's profile and their recent activity.
+"""Member page routes: one person's profile, their recent activity and the issues it touched.
 
 Served under `/views` so the gateway's existing views prefix routes it, and
 registered before the saved view routes so `members` is never read as a view id.
@@ -17,7 +17,7 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.issues import DEFAULT_LIMIT, MAX_LIMIT
 from app.common.api.schemas.member_pages import MemberActivityListRead, MemberActivityRead, MemberProfileRead
-from app.common.member_activity import member_activity_page, member_profile
+from app.common.member_activity import member_activity_page, member_profile, member_touched_issues_page
 
 router = APIRouter()
 
@@ -51,4 +51,22 @@ def list_member_activity(
     while `next_cursor` still walks the whole history.
     """
     items, next_cursor = member_activity_page(repositories, context, user_id, cursor=cursor, limit=limit)
+    return MemberActivityListRead(items=items, next_cursor=next_cursor)
+
+
+@router.get("/{workspace_id}/views/members/{user_id}/issues", response_model=MemberActivityListRead)
+def list_member_touched_issues(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    user_id: Annotated[str, Path(min_length=1, max_length=64)],
+    cursor: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+) -> CursorPage[MemberActivityRead]:
+    """The issues a member recently changed or commented on, one row per issue with their latest action.
+
+    Newest first, only issues the caller can read. `next_cursor` resumes the feed,
+    so a later page can repeat an issue an earlier one listed, which the caller drops.
+    """
+    items, next_cursor = member_touched_issues_page(repositories, context, user_id, cursor=cursor, limit=limit)
     return MemberActivityListRead(items=items, next_cursor=next_cursor)

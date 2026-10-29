@@ -26,6 +26,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import TITLE_MAX, IssueCreate
 from app.common.db.dynamo.slack import SlackInstallation
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_writes import create_issue
 from app.domains.integrations.channels.messages import clip, slack_escape
 from app.domains.integrations.chat import issues as chat_issues
@@ -204,7 +205,7 @@ def _show(repositories: Repositories, context: AuthzContext, key: str) -> dict[s
     """The card of one issue the member can see, or a reply saying there is none."""
     wanted = key.upper()
     issue = issue_by_key(repositories, context.workspace_id, wanted)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         return ephemeral(f"No issue {slack_escape(wanted)} that you can see.")
     blocks = issue_blocks(repositories, issue)
     summary = chat_issues.summarize(repositories, issue)

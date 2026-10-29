@@ -5,11 +5,18 @@
  * their team, that the assignee filter is left out because the page
  * fixes it, that the display options hide sub-issues and completed issues,
  * that the Created and Subscribed tabs read by creator and subscriber, that the
- * Activity tab lists each issue once under the caller's latest action, newest
- * first, that the number keys switch tabs, and the empty and failed states.
+ * Activity tab lists each issue the caller touched once, in the order of their
+ * latest action, as the same keyboard list with that action beside each row,
+ * that the number keys switch tabs, and the empty and failed states.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,15 +36,15 @@ import type {
   TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
-import MyIssues, { ACTIVITY_EMPTY, latestPerIssue } from './MyIssues';
+import MyIssues, { ACTIVITY_EMPTY } from './MyIssues';
 
-const listMemberActivity =
+const listMemberIssues =
   vi.fn<(userId: string) => Promise<MemberActivityListRead>>();
 
 vi.mock('../../api/members', () => ({
   getMemberProfile: vi.fn(),
-  listMemberActivity: (_w: string, userId: string) =>
-    listMemberActivity(userId),
+  listMemberActivity: vi.fn(),
+  listMemberIssues: (_w: string, userId: string) => listMemberIssues(userId),
 }));
 
 const listIssues =
@@ -255,17 +262,10 @@ const statusChange = (
 
 const myActivity: MemberActivityListRead = {
   activity: [
-    statusChange(
-      'a-3',
-      '2026-10-21T10:00:00Z',
-      {},
-      'team-1-todo',
-      'team-1-done'
-    ),
     {
       type: 'comment',
       id: 'c-1',
-      created_at: '2026-10-20T10:00:00Z',
+      created_at: '2026-10-21T10:00:00Z',
       issue_id: 'iss-2',
       issue_key: 'WEB-4',
       issue_title: 'Ship the pricing page',
@@ -278,19 +278,33 @@ const myActivity: MemberActivityListRead = {
       },
     },
     statusChange(
-      'a-1',
-      '2026-10-19T10:00:00Z',
+      'a-3',
+      '2026-10-20T10:00:00Z',
       {},
-      'team-1-done',
-      'team-1-todo'
+      'team-1-todo',
+      'team-1-done'
     ),
   ],
   next_cursor: null,
 };
 
+/** The issues a list read names by id, or every issue when it names none. */
+const issuesFor = (query: Record<string, unknown>): OrderedIssueRead[] => {
+  const named = query['issue_id'];
+  if (named === undefined) return issues;
+  const ids = new Set(Array.isArray(named) ? named : [named]);
+  return issues.filter((row) => ids.has(row.id));
+};
+
+/** The ids of the list's rows, top to bottom. */
+const rowIds = (): string[] =>
+  Array.from(document.querySelectorAll('[data-row-id]')).map(
+    (node) => node.getAttribute('data-row-id') ?? ''
+  );
+
 beforeEach(() => {
-  listMemberActivity.mockReset();
-  listMemberActivity.mockResolvedValue(myActivity);
+  listMemberIssues.mockReset();
+  listMemberIssues.mockResolvedValue(myActivity);
   listIssues.mockReset();
   listTeams.mockReset();
   listStatuses.mockReset();
@@ -300,7 +314,9 @@ beforeEach(() => {
   listStatuses.mockImplementation((teamId) =>
     Promise.resolve(statusesFor(teamId))
   );
-  listIssues.mockResolvedValue({ issues, next_cursor: null });
+  listIssues.mockImplementation((query) =>
+    Promise.resolve({ issues: issuesFor(query), next_cursor: null })
+  );
 });
 
 describe('my issues', () => {
@@ -492,40 +508,84 @@ describe('my issues', () => {
     });
   });
 
-  it('lists the issues the caller acted on, latest action first, once each', async () => {
+  it('lists the issues the caller acted on in the order of their latest action', async () => {
     renderPage('/w/mine/issues?tab=activity');
 
-    const feed = await screen.findByRole('list', { name: 'Activity' });
     await waitFor(() => {
-      expect(within(feed).getAllByRole('listitem')[0]).toHaveTextContent(
-        'You changed the status'
-      );
+      expect(rowIds()).toEqual(['iss-2', 'iss-1']);
     });
-    const rows = within(feed).getAllByRole('listitem');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent('ENG-1');
-    expect(rows[1]).toHaveTextContent('You commented on');
-    expect(rows[1]).toHaveTextContent('Pricing copy is ready');
-    expect(
-      within(feed).getByRole('link', { name: /Ship the pricing page/ })
-    ).toHaveAttribute('href', '/w/mine/issues/WEB-4');
-    expect(listMemberActivity).toHaveBeenCalledWith('me');
-    expect(listIssues).not.toHaveBeenCalled();
+    expect(listMemberIssues).toHaveBeenCalledWith('me');
+    expect(listIssues).toHaveBeenCalledWith(
+      expect.objectContaining({ issue_id: ['iss-2', 'iss-1'] })
+    );
     expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute(
       'aria-current',
       'page'
     );
   });
 
+  it("names the caller's latest action beside each row", async () => {
+    renderPage('/w/mine/issues?tab=activity');
+
+    await waitFor(() => {
+      expect(rowIds()).toHaveLength(2);
+    });
+    const [first, second] = Array.from(
+      document.querySelectorAll('[data-row-id]')
+    );
+    expect(first?.querySelector('[data-slot="note"]')).toHaveTextContent(
+      'You commented'
+    );
+    expect(second?.querySelector('[data-slot="note"]')).toHaveTextContent(
+      'You changed the status'
+    );
+  });
+
+  it('moves and selects through the rows with j, k and x', async () => {
+    renderPage('/w/mine/issues?tab=activity');
+
+    await waitFor(() => {
+      expect(rowIds()).toEqual(['iss-2', 'iss-1']);
+    });
+    const press = (key: string) => {
+      fireEvent.keyDown(document.body, { key });
+    };
+    press('j');
+    press('x');
+    await waitFor(() => {
+      expect(
+        screen.getByRole('checkbox', { name: 'Select WEB-4' })
+      ).toBeChecked();
+    });
+    press('j');
+    press('x');
+    await waitFor(() => {
+      expect(
+        screen.getByRole('checkbox', { name: 'Select ENG-1' })
+      ).toBeChecked();
+    });
+    expect(
+      screen.getByRole('toolbar', { name: 'Selected issues' })
+    ).toBeInTheDocument();
+    press('k');
+    press('x');
+    await waitFor(() => {
+      expect(
+        screen.getByRole('checkbox', { name: 'Select WEB-4' })
+      ).not.toBeChecked();
+    });
+  });
+
   it('says so when the caller has no activity yet', async () => {
-    listMemberActivity.mockResolvedValue({ activity: [], next_cursor: null });
+    listMemberIssues.mockResolvedValue({ activity: [], next_cursor: null });
     renderPage('/w/mine/issues?tab=activity');
 
     expect(await screen.findByText(ACTIVITY_EMPTY)).toBeInTheDocument();
+    expect(listIssues).not.toHaveBeenCalled();
   });
 
   it('surfaces a failed activity read', async () => {
-    listMemberActivity.mockRejectedValue(new Error('boom'));
+    listMemberIssues.mockRejectedValue(new Error('boom'));
     renderPage('/w/mine/issues?tab=activity');
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
@@ -535,7 +595,7 @@ describe('my issues', () => {
     renderPage();
 
     await screen.findByText('Cache the token');
-    expect(listMemberActivity).not.toHaveBeenCalled();
+    expect(listMemberIssues).not.toHaveBeenCalled();
   });
 
   it('switches to the Activity tab with 4 and back to Assigned with 1', async () => {
@@ -545,9 +605,15 @@ describe('my issues', () => {
     await screen.findByText('Cache the token');
     await user.keyboard('4');
 
-    expect(
-      await screen.findByRole('list', { name: 'Activity' })
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+    });
+    await waitFor(() => {
+      expect(listMemberIssues).toHaveBeenCalledWith('me');
+    });
 
     await user.keyboard('1');
     await waitFor(() => {
@@ -556,14 +622,5 @@ describe('my issues', () => {
         'page'
       );
     });
-  });
-});
-
-describe('latestPerIssue', () => {
-  it('keeps the newest row for each issue and the order of the rest', () => {
-    const rows = myActivity.activity;
-
-    expect(latestPerIssue(rows).map((row) => row.id)).toEqual(['a-3', 'c-1']);
-    expect(latestPerIssue([])).toEqual([]);
   });
 });

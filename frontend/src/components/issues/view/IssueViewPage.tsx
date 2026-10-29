@@ -439,6 +439,12 @@ export interface IssueViewPageProps {
   saveScope?: IssueListFilters | undefined;
   /** Told the rows each settled read holds, for a page that labels or orders by them. */
   onRowsRead?: ((issues: readonly OrderedIssueRead[]) => void) | undefined;
+  /** Muted text after each list row's title, such as the caller's latest action on it. */
+  rowNote?: ((issue: OrderedIssueRead) => ReactNode) | undefined;
+  /** What the list shows below its last row, such as a pager that reads further. */
+  footer?: ReactNode;
+  /** Keeps the rows shown while a changed scope reads, for a scope that grows as it pages. */
+  holdRows?: boolean;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -480,6 +486,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   rank,
   saveScope,
   onRowsRead,
+  rowNote,
+  footer,
+  holdRows = false,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -612,7 +621,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId,
     scopeKey,
     viewStateQuery(state, scope),
-    workspaceId !== '' && teamIds.length > 0
+    workspaceId !== '' && teamIds.length > 0,
+    { holdRows }
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
   useEffect(() => {
@@ -1113,6 +1123,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             statusCategories={statusCategories}
             {...(customersShown ? { customerRequests } : {})}
             rank={rank}
+            rowNote={rowNote}
+            footer={footer}
           />
         </div>
         {insightsOpen && (

@@ -32,6 +32,7 @@ from app.common.icons import icon_url
 from app.common.issue_activity import with_current_keys
 from app.common.issue_keys import current
 from app.common.issue_mentions import visible_backlink
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import not_found
 
 ME = "me"
@@ -42,6 +43,12 @@ EXCERPT_LENGTH = 280
 
 OVERFETCH = 20
 """Rows read past the page from each stream, covering the second the stored stamps round to."""
+
+TOUCHED_BATCH = 100
+"""How many feed rows one scan of the touched issues read takes."""
+
+TOUCHED_SCANS = 10
+"""How many feed pages one touched issues page reads at most before handing back a cursor."""
 
 
 @dataclass(frozen=True)
@@ -143,7 +150,7 @@ def member_activity_page(
     workspace_id = context.workspace_id
     if repositories.memberships.get(workspace_id, member_id) is None:
         raise not_found()
-    scope = f"member-activity:{workspace_id}:{member_id}"
+    scope = _scope(workspace_id, member_id)
     boundary = _boundary(cursor, scope)
     before = boundary[0] if boundary is not None else None
     fetch = limit + 1 + OVERFETCH
@@ -159,8 +166,55 @@ def member_activity_page(
     next_cursor = None
     if more and page:
         last = page[-1]
-        next_cursor = encode_start_key({"t": last.created_at.isoformat(), "i": last.id}, scope=scope)
+        next_cursor = _cursor_at(scope, last.created_at, last.id)
     return _visible(repositories, context, page), next_cursor
+
+
+def _scope(workspace_id: str, member_id: str) -> str:
+    """The cursor scope of one member's feed, shared by the feed and the touched issues read."""
+    return f"member-activity:{workspace_id}:{member_id}"
+
+
+def _cursor_at(scope: str, created_at: datetime, row_id: str) -> Optional[str]:
+    """A cursor that resumes the feed strictly after the row it names."""
+    return encode_start_key({"t": created_at.isoformat(), "i": row_id}, scope=scope)
+
+
+def member_touched_issues_page(
+    repositories: Repositories,
+    context: AuthzContext,
+    user_id: str,
+    *,
+    cursor: Optional[str] = None,
+    limit: int,
+) -> tuple[list[MemberActivityRead], Optional[str]]:
+    """The issues a member most recently changed or commented on, one row per issue, newest first.
+
+    Each row is the member's latest action on its issue. The read walks the feed
+    until `limit` distinct issues are found or `TOUCHED_SCANS` pages are read, and
+    the cursor resumes the feed after the last row used, so it is a feed cursor.
+    An issue seen on an earlier page can come back on a later one with an older
+    action, which the caller drops. A 404 when they are not a workspace member.
+    """
+    scope = _scope(context.workspace_id, resolve_member_id(context, user_id))
+    seen: set[str] = set()
+    items: list[MemberActivityRead] = []
+    page_cursor = cursor
+    for _ in range(TOUCHED_SCANS):
+        rows, after = member_activity_page(repositories, context, user_id, cursor=page_cursor, limit=TOUCHED_BATCH)
+        for index, row in enumerate(rows):
+            if row.issue_id in seen:
+                continue
+            seen.add(row.issue_id)
+            items.append(row)
+            if len(items) == limit:
+                if index < len(rows) - 1:
+                    return items, _cursor_at(scope, row.created_at, row.id)
+                return items, after
+        if after is None:
+            return items, None
+        page_cursor = after
+    return items, page_cursor
 
 
 def _visible(repositories: Repositories, context: AuthzContext, page: list[_Entry]) -> list[MemberActivityRead]:
@@ -169,7 +223,7 @@ def _visible(repositories: Repositories, context: AuthzContext, page: list[_Entr
     readable = {
         issue_id: current(repositories.teams, issue)
         for issue_id, issue in issues.items()
-        if context.can_see_team(issue.team_id)
+        if can_see_issue(repositories, context, issue)
     }
     changes = [entry.activity for entry in page if entry.activity is not None and entry.issue_id in readable]
     rekeyed = {row.activity_id: row for row in with_current_keys(repositories, context.workspace_id, changes)}

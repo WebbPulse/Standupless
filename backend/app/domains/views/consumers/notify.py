@@ -77,6 +77,7 @@ from app.common.db.dynamo.inbox import (
     inbox_partition,
     notification_id,
 )
+from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import (
     INITIATIVE,
@@ -90,6 +91,7 @@ from app.common.db.dynamo.update_threads import INITIATIVE_UPDATE_COMMENT, PROJE
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView, UpdateDraftTarget
 from app.common.issue_keys import display_key
+from app.common.issue_privacy import person_can_see_issue
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.notification_pause import bypasses_hold, held_until
 from app.common.project_update_report import report_for_item
@@ -347,6 +349,8 @@ def write_notification(
     if not recipient_id or recipient_id == actor_id:
         return False
     if not can_receive(repositories, workspace_id, issue.team_id, recipient_id):
+        return False
+    if isinstance(issue, Issue) and issue.private and not person_can_see_issue(repositories, issue, recipient_id):
         return False
     recipient = repositories.users.get(recipient_id)
     in_app = recipient.wants_notification(kind, "in_app") if recipient is not None else True

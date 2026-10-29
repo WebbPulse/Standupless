@@ -6,6 +6,8 @@
  * step, zoom and jump to today the same way, and each only draws its own rows.
  * Each opens, rezooms and jumps back with the today line centred in the lanes
  * in view, so how long current work has run and what comes next both show.
+ * A timeline with no names, such as the cycles band, passes a name width of
+ * zero and its lanes take the whole view.
  */
 
 import React, {
@@ -16,11 +18,17 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { LuChevronLeft, LuChevronRight, LuMinus, LuPlus } from 'react-icons/lu';
+import Button, { IconButton } from '../ui/button';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import type {
-  TimelineHeader,
-  TimelineRange,
-  TimelineZoom,
+import { cn } from '../../lib/cn';
+import {
+  TIMELINE_ZOOMS,
+  TIMELINE_ZOOM_LABELS,
+  stepZoom,
+  type TimelineHeader,
+  type TimelineRange,
+  type TimelineZoom,
 } from '../../lib/timeline';
 
 /** The width of the pinned name column, in pixels. */
@@ -65,6 +73,8 @@ export interface TimelineViewOptions {
   /** Whether any row is drawn, so the first placement waits for one. */
   hasRows: boolean;
   ref?: React.Ref<TimelineHandle> | undefined;
+  /** The pinned name column's width, left out for the responsive column. */
+  nameWidth?: number | undefined;
 }
 
 /** What useTimelineView answers: the scroller to attach and how to move it. */
@@ -94,11 +104,13 @@ export const useTimelineView = ({
   today,
   hasRows,
   ref,
+  nameWidth: fixedNameWidth,
 }: TimelineViewOptions): TimelineView => {
   const scroller = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<ViewWindow>({ left: 0, right: 0 });
   const centre = useRef<number | null>(null);
-  const nameWidth = useNameWidth();
+  const responsiveNameWidth = useNameWidth();
+  const nameWidth = fixedNameWidth ?? responsiveNameWidth;
 
   const readView = useCallback((): void => {
     const node = scroller.current;
@@ -183,6 +195,8 @@ interface TimelineScaleProps {
   laneWidth: number;
   /** Where the today line runs, in lane pixels. */
   todayLeft: number;
+  /** The pinned name column's width, left out for the responsive column. */
+  nameWidth?: number | undefined;
 }
 
 /** Props for TimelineDateHeader: the scale and what the name column says. */
@@ -199,16 +213,20 @@ export const TimelineDateHeader: React.FC<TimelineDateHeaderProps> = ({
   laneWidth,
   todayLeft,
   countLabel,
+  nameWidth: fixedNameWidth,
 }) => {
-  const nameWidth = useNameWidth();
+  const responsiveNameWidth = useNameWidth();
+  const nameWidth = fixedNameWidth ?? responsiveNameWidth;
   return (
     <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
-      <div
-        className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
-        style={{ width: nameWidth }}
-      >
-        {countLabel}
-      </div>
+      {nameWidth > 0 && (
+        <div
+          className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
+          style={{ width: nameWidth }}
+        >
+          {countLabel}
+        </div>
+      )}
       <div
         className="relative h-12 shrink-0"
         style={{ width: laneWidth }}
@@ -264,8 +282,10 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
   laneWidth,
   todayLeft,
   children,
+  nameWidth: fixedNameWidth,
 }) => {
-  const nameWidth = useNameWidth();
+  const responsiveNameWidth = useNameWidth();
+  const nameWidth = fixedNameWidth ?? responsiveNameWidth;
   return (
     <div
       aria-hidden="true"
@@ -288,3 +308,93 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
     </div>
   );
 };
+
+/** Props for TimelineControls: the zoom and what its buttons do. */
+export interface TimelineControlsProps {
+  zoom: TimelineZoom;
+  onZoomChange: (zoom: TimelineZoom) => void;
+  onToday: () => void;
+  /** Moves the view earlier or later, left out where the page offers no stepping. */
+  onStep?: (direction: -1 | 1) => void;
+}
+
+/** The earlier, Today and later buttons and the zoom scale a timeline's toolbar carries. */
+export const TimelineControls: React.FC<TimelineControlsProps> = ({
+  zoom,
+  onZoomChange,
+  onToday,
+  onStep,
+}) => (
+  <>
+    {onStep !== undefined && (
+      <IconButton
+        label="Earlier"
+        size="sm"
+        onClick={() => {
+          onStep(-1);
+        }}
+      >
+        <LuChevronLeft className="h-3.5 w-3.5" />
+      </IconButton>
+    )}
+    <Button variant="ghost" size="sm" onClick={onToday}>
+      Today
+    </Button>
+    {onStep !== undefined && (
+      <IconButton
+        label="Later"
+        size="sm"
+        onClick={() => {
+          onStep(1);
+        }}
+      >
+        <LuChevronRight className="h-3.5 w-3.5" />
+      </IconButton>
+    )}
+    <IconButton
+      label="Zoom out"
+      size="sm"
+      disabled={zoom === 'year'}
+      onClick={() => {
+        onZoomChange(stepZoom(zoom, 1));
+      }}
+    >
+      <LuMinus className="h-3.5 w-3.5" />
+    </IconButton>
+    <div
+      role="radiogroup"
+      aria-label="Zoom"
+      className="flex items-center rounded-sm border border-line p-0.5 max-sm:hidden"
+    >
+      {TIMELINE_ZOOMS.map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={zoom === value}
+          onClick={() => {
+            onZoomChange(value);
+          }}
+          className={cn(
+            'h-6 rounded-xs px-2 text-xs transition-colors duration-100',
+            zoom === value
+              ? 'bg-raised text-text'
+              : 'text-text-muted hover:text-text'
+          )}
+        >
+          {TIMELINE_ZOOM_LABELS[value]}
+        </button>
+      ))}
+    </div>
+    <IconButton
+      label="Zoom in"
+      size="sm"
+      disabled={zoom === 'week'}
+      onClick={() => {
+        onZoomChange(stepZoom(zoom, -1));
+      }}
+    >
+      <LuPlus className="h-3.5 w-3.5" />
+    </IconButton>
+  </>
+);

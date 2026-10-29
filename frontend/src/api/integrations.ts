@@ -42,6 +42,8 @@ import type {
   SlackConnectionRead,
   SlackIntakeRead,
   SlackIntakeWrite,
+  SlackStatusPostsRead,
+  SlackStatusPostsWrite,
   SlackLinkRead,
   TeamSyncRead,
   TeamSyncWrite,
@@ -153,6 +155,13 @@ export const slackChannelsPath = (
 /** The route a team's Slack emoji reaction intake is read and changed through. */
 export const slackIntakePath = (workspaceId: string, teamId: string): string =>
   `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-intake`;
+
+/** The route a team's Slack status posts switch is read and changed through. */
+export const slackStatusPostsPath = (
+  workspaceId: string,
+  teamId: string
+): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-status-posts`;
 
 /** The route a workspace's Discord App connection is read and removed on. */
 export const discordConnectionPath = (workspaceId: string): string =>
@@ -924,6 +933,32 @@ export const disableSlackIntake = async (
   teamId: string
 ): Promise<void> => {
   await apiClient.delete(slackIntakePath(workspaceId, teamId));
+};
+
+/** Whether a team posts status changes into the Slack threads its issues came from, and takes private asks. */
+export const getSlackStatusPosts = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<SlackStatusPostsRead> => {
+  const response = await apiClient.get<SlackStatusPostsRead>(
+    slackStatusPostsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Turns a team's status posts into paired Slack threads, or its private asks, on or off. */
+export const saveSlackStatusPosts = async (
+  workspaceId: string,
+  teamId: string,
+  payload: SlackStatusPostsWrite
+): Promise<SlackStatusPostsRead> => {
+  const response = await apiClient.put<SlackStatusPostsRead>(
+    slackStatusPostsPath(workspaceId, teamId),
+    payload
+  );
+  return response.data;
 };
 
 /** Whether this environment offers the Discord App and whether the workspace installed it. */
