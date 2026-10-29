@@ -4,10 +4,11 @@
  * the read carries no cursor because the contract caps rather than pages, that
  * the team and status filters narrow the call, that the term and filters live
  * in the address, that each kind of hit is grouped and linked, and that
- * Escape clears the term before it leaves search.
+ * Escape clears the term before it leaves search. Also covers moving through
+ * the hits with the arrow keys or J and K and opening one with Enter.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +20,9 @@ import type {
   SearchResultRead,
   WorkspaceRead,
 } from '../../types/Api';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import Search from './Search';
 import { hasIndexableTerm } from '../../lib/searchTerms';
 import {
@@ -136,27 +140,48 @@ const Address = () => {
   return <output aria-label="Address">{location.search}</output>;
 };
 
+const routes = (
+  <Routes>
+    <Route path="/w/:slug" element={<p>Workspace home</p>} />
+    <Route path="/w/:slug/inbox" element={<p>Inbox page</p>} />
+    <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
+    <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
+    <Route
+      path="/w/:slug/search"
+      element={
+        <>
+          <Search />
+          <Address />
+        </>
+      }
+    />
+  </Routes>
+);
+
 const renderPage = (entry = '/w/mine/search', before: string[] = []) =>
   render(
     <MemoryRouter
       initialEntries={[...before, entry]}
       initialIndex={before.length}
     >
-      <Routes>
-        <Route path="/w/:slug" element={<p>Workspace home</p>} />
-        <Route path="/w/:slug/inbox" element={<p>Inbox page</p>} />
-        <Route
-          path="/w/:slug/search"
-          element={
-            <>
-              <Search />
-              <Address />
-            </>
-          }
-        />
-      </Routes>
+      {routes}
     </MemoryRouter>
   );
+
+/** Renders the page inside the shortcut layer, so J, K and Enter reach it. */
+const renderWithShortcuts = (entry: string) =>
+  render(
+    <MemoryRouter initialEntries={[entry]}>
+      <ShortcutProvider>
+        <BoundKeys />
+        {routes}
+      </ShortcutProvider>
+    </MemoryRouter>
+  );
+
+/** The hit link the keyboard has highlighted, if any. */
+const highlighted = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('a[aria-current="true"]');
 
 const member: MemberRead = {
   user_id: 'user-1',
@@ -455,6 +480,94 @@ describe('search page', () => {
       '/w/mine/issues/ENG-2#comment-cm-1'
     );
     expect(screen.getByText('The cache expires too early')).toBeInTheDocument();
+  });
+
+  it('highlights hits with the arrow keys in the term and opens one on Enter', async () => {
+    search.mockResolvedValue([
+      result(),
+      result({ issue_id: 'iss-2', key: 'ENG-2', title: 'Cache the session' }),
+    ]);
+    others.mockReturnValue({
+      ...noOthers(),
+      projects: [
+        {
+          project_id: 'pj-1',
+          name: 'Cache rollout',
+          status: 'in_progress',
+          health: null,
+          icon: null,
+          color: null,
+          lead_id: null,
+          team_ids: ['proj-1'],
+          target_date: null,
+          updated_at: '2026-09-17T00:00:00Z',
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText('Search'), 'cache');
+    await screen.findByRole('link', { name: /Cache rollout/ });
+    expect(highlighted()).toBeNull();
+
+    await user.keyboard('{ArrowDown}');
+    expect(highlighted()).toHaveTextContent('ENG-1');
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}');
+    expect(highlighted()).toHaveTextContent('Cache rollout');
+    await user.keyboard('{ArrowUp}');
+    expect(highlighted()).toHaveTextContent('ENG-2');
+    expect(screen.getByLabelText('Search')).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByText('Issue page')).toBeInTheDocument();
+    expect(readRecentSearches('ws-1').map((row) => row.q)).toEqual(['cache']);
+  });
+
+  it('starts the highlight over when the term changes', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText('Search'), 'cache');
+    await screen.findByRole('link', { name: /ENG-1/ });
+    await user.keyboard('{ArrowDown}');
+    expect(highlighted()).toHaveTextContent('ENG-1');
+
+    await user.type(screen.getByLabelText('Search'), 's');
+
+    await waitFor(() => {
+      expect(highlighted()).toBeNull();
+    });
+  });
+
+  it('moves through the hits with J and K and opens one on Enter', async () => {
+    search.mockResolvedValue([
+      result(),
+      result({ issue_id: 'iss-2', key: 'ENG-2', title: 'Cache the session' }),
+    ]);
+    const user = userEvent.setup();
+    renderWithShortcuts('/w/mine/search?q=cache');
+
+    await screen.findByRole('link', { name: /ENG-2/ });
+    act(() => {
+      screen.getByLabelText('Search').blur();
+    });
+    await keysBound('j', 'k');
+
+    await user.keyboard('j');
+    expect(highlighted()).toHaveTextContent('ENG-1');
+    await user.keyboard('j');
+    expect(highlighted()).toHaveTextContent('ENG-2');
+    await user.keyboard('j');
+    expect(highlighted()).toHaveTextContent('ENG-2');
+    await user.keyboard('k');
+    expect(highlighted()).toHaveTextContent('ENG-1');
+
+    await keysBound('enter');
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByText('Issue page')).toBeInTheDocument();
   });
 
   it('narrows to one kind on its tab and remembers the tab', async () => {

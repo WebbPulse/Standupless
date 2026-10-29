@@ -19,11 +19,17 @@
  * with its filters. With the term focused and empty, those recent searches
  * are offered newest first: the arrow keys move through them and Enter runs
  * one again, filters and all.
+ *
+ * The hits move from the keyboard the way Linear's do: the arrow keys in the
+ * term, or J and K with focus elsewhere, highlight one hit after another
+ * across the kinds, and Enter opens the highlighted one. The highlight starts
+ * over whenever the term, the tab or a filter changes.
  */
 
 import React, {
   useCallback,
   useDeferredValue,
+  useEffect,
   useId,
   useMemo,
   useState,
@@ -55,6 +61,7 @@ import Spinner from '../../components/ui/spinner';
 import { StatusIcon } from '../../components/ui/StatusIcon';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
@@ -89,6 +96,7 @@ import {
 import type { StatusLike } from '../../lib/statusAppearance';
 import type {
   MemberRead,
+  SearchCommentRead,
   SearchResultRead,
   SearchType,
   StatusCategory,
@@ -123,6 +131,9 @@ const CATEGORIES = new Set<string>(STATUS_CATEGORY_ORDER);
 const ROW =
   'flex h-row items-center border-b border-line px-4 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6';
 
+const COMMENT_ROW =
+  'flex items-start border-b border-line px-4 py-2 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6';
+
 const ROW_LINK = 'flex min-w-0 flex-1 items-center gap-2.5 rounded-xs';
 
 /** The status a hit carries, in the shape the glyph resolves. */
@@ -135,6 +146,26 @@ const statusOf = (hit: SearchResultRead): StatusLike | undefined =>
         color: hit.status_color ?? null,
         icon: hit.status_icon ?? null,
       };
+
+/** The kinds in the order the page lists them. */
+const KIND_ORDER: SearchType[] = [
+  'issues',
+  'projects',
+  'initiatives',
+  'documents',
+  'comments',
+];
+
+/** The address a comment hit opens: its document or issue, scrolled to it. */
+const commentHitPath = (
+  slug: string,
+  comment: Pick<SearchCommentRead, 'comment_id' | 'document_id' | 'issue_key'>
+): string =>
+  `${
+    comment.document_id
+      ? documentPath(slug, comment.document_id)
+      : issuePath(slug, comment.issue_key)
+  }#comment-${comment.comment_id}`;
 
 /** One kind's heading, with a way into its own tab when the All tab cut it short. */
 const SectionHeading: React.FC<{
@@ -318,56 +349,6 @@ export const Search: React.FC = () => {
     void navigate(issuePath(slug, deferred.toUpperCase()));
   }, [isKey, navigate, slug, deferred]);
 
-  /**
-   * Moves through and reruns the recent searches while they show, clears a
-   * non-empty term on Escape, or leaves search when the term is already empty.
-   */
-  const onTermKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.nativeEvent.isComposing) return;
-      if (showsRecent && event.key === 'ArrowDown') {
-        event.preventDefault();
-        setHighlight(active + 1 >= recent.length ? 0 : active + 1);
-        return;
-      }
-      if (showsRecent && event.key === 'ArrowUp') {
-        event.preventDefault();
-        setHighlight(active <= 0 ? recent.length - 1 : active - 1);
-        return;
-      }
-      if (showsRecent && event.key === 'Enter' && active >= 0) {
-        event.preventDefault();
-        const entry = recent[active];
-        if (entry !== undefined) rerunSearch(entry);
-        return;
-      }
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (term !== '') {
-        setParam('q', '', true);
-        return;
-      }
-      event.currentTarget.blur();
-      if (location.key === 'default') {
-        void navigate(workspacePath(slug), { replace: true });
-      } else {
-        void navigate(-1);
-      }
-    },
-    [
-      showsRecent,
-      active,
-      recent,
-      rerunSearch,
-      term,
-      setParam,
-      location.key,
-      navigate,
-      slug,
-    ]
-  );
-
   const results = data?.results ?? [];
   const projects = data?.projects ?? [];
   const initiatives = data?.initiatives ?? [];
@@ -391,6 +372,208 @@ export const Search: React.FC = () => {
   const visible = <T,>(rows: T[]): T[] =>
     tab === '' ? rows.slice(0, PREVIEW_LIMIT) : rows;
 
+  const emptyTab = tab !== '' && counts[tab] === 0;
+  const listsHits =
+    !isKey &&
+    deferred !== '' &&
+    indexable &&
+    !isLoading &&
+    total > 0 &&
+    !emptyTab;
+
+  const pathsByKind: Record<SearchType, string[]> = {
+    issues: visible(results).map((result) => issuePath(slug, result.key)),
+    projects: visible(projects).map((project) => projectPath(slug, project)),
+    initiatives: visible(initiatives).map((initiative) =>
+      initiativePath(slug, initiative)
+    ),
+    documents: visible(documents).map((row) =>
+      documentPath(slug, row.document_id)
+    ),
+    comments: visible(comments).map((comment) => commentHitPath(slug, comment)),
+  };
+  const hitPaths = listsHits
+    ? KIND_ORDER.filter((kind) => shows(kind)).flatMap(
+        (kind) => pathsByKind[kind]
+      )
+    : [];
+  const offsets = {} as Record<SearchType, number>;
+  KIND_ORDER.filter((kind) => shows(kind)).reduce((start, kind) => {
+    offsets[kind] = start;
+    return start + pathsByKind[kind].length;
+  }, 0);
+
+  const hitListId = useId();
+  const resultsScope = [deferred, tab, teamId, statusCategory].join('\u0000');
+  const [cursorState, setCursorState] = useState({
+    scope: resultsScope,
+    index: -1,
+  });
+  const cursor =
+    cursorState.scope === resultsScope && cursorState.index < hitPaths.length
+      ? cursorState.index
+      : -1;
+  const hitCount = hitPaths.length;
+  const cursorPath = cursor >= 0 ? (hitPaths[cursor] ?? null) : null;
+
+  /** Moves the highlight one hit down or up, stopping at either end. */
+  const moveCursor = useCallback(
+    (step: 1 | -1) => {
+      if (hitCount === 0) return;
+      const start = step > 0 ? 0 : hitCount - 1;
+      const next =
+        cursor < 0 ? start : Math.min(hitCount - 1, Math.max(0, cursor + step));
+      setCursorState({ scope: resultsScope, index: next });
+    },
+    [cursor, hitCount, resultsScope]
+  );
+
+  /** Opens the highlighted hit, remembering the search first. */
+  const openCursor = useCallback(() => {
+    if (cursorPath === null) return;
+    rememberSearch();
+    void navigate(cursorPath);
+  }, [cursorPath, rememberSearch, navigate]);
+
+  useEffect(() => {
+    if (cursor < 0) return;
+    document
+      .getElementById(`${hitListId}-${cursor}`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [cursor, hitListId]);
+
+  useShortcut({
+    keys: 'j',
+    label: 'Next result',
+    group: 'Search',
+    enabled: hitCount > 0,
+    handler: () => {
+      moveCursor(1);
+    },
+  });
+  useShortcut({
+    keys: 'k',
+    label: 'Previous result',
+    group: 'Search',
+    enabled: hitCount > 0,
+    handler: () => {
+      moveCursor(-1);
+    },
+  });
+  useShortcut({
+    keys: 'arrowdown',
+    label: 'Next result',
+    group: 'Search',
+    enabled: hitCount > 0,
+    handler: () => {
+      moveCursor(1);
+    },
+  });
+  useShortcut({
+    keys: 'arrowup',
+    label: 'Previous result',
+    group: 'Search',
+    enabled: hitCount > 0,
+    handler: () => {
+      moveCursor(-1);
+    },
+  });
+  useShortcut({
+    keys: 'enter',
+    label: 'Open result',
+    group: 'Search',
+    enabled: cursorPath !== null,
+    handler: () => {
+      openCursor();
+    },
+  });
+
+  /** The props that mark one hit's link as the highlighted one. */
+  const hitProps = (kind: SearchType, index: number) => {
+    const position = offsets[kind] + index;
+    const highlighted = position === cursor;
+    return {
+      id: `${hitListId}-${position}`,
+      ...(highlighted
+        ? { 'aria-current': true as const, 'data-highlighted': 'true' }
+        : {}),
+    };
+  };
+
+  /** The row class, lit while its hit is highlighted. */
+  const rowClass = (kind: SearchType, index: number, base = ROW): string =>
+    cn(base, offsets[kind] + index === cursor && 'bg-surface');
+
+  /**
+   * Moves through the hits or the recent searches, opens the highlighted one,
+   * clears a
+   * non-empty term on Escape, or leaves search when the term is already empty.
+   */
+  const onTermKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.nativeEvent.isComposing) return;
+      if (showsRecent && event.key === 'ArrowDown') {
+        event.preventDefault();
+        setHighlight(active + 1 >= recent.length ? 0 : active + 1);
+        return;
+      }
+      if (showsRecent && event.key === 'ArrowUp') {
+        event.preventDefault();
+        setHighlight(active <= 0 ? recent.length - 1 : active - 1);
+        return;
+      }
+      if (showsRecent && event.key === 'Enter' && active >= 0) {
+        event.preventDefault();
+        const entry = recent[active];
+        if (entry !== undefined) rerunSearch(entry);
+        return;
+      }
+      if (!showsRecent && hitCount > 0 && event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveCursor(1);
+        return;
+      }
+      if (!showsRecent && hitCount > 0 && event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveCursor(-1);
+        return;
+      }
+      if (!showsRecent && cursorPath !== null && event.key === 'Enter') {
+        event.preventDefault();
+        openCursor();
+        return;
+      }
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (term !== '') {
+        setParam('q', '', true);
+        return;
+      }
+      event.currentTarget.blur();
+      if (location.key === 'default') {
+        void navigate(workspacePath(slug), { replace: true });
+      } else {
+        void navigate(-1);
+      }
+    },
+    [
+      showsRecent,
+      active,
+      recent,
+      rerunSearch,
+      hitCount,
+      moveCursor,
+      cursorPath,
+      openCursor,
+      term,
+      setParam,
+      location.key,
+      navigate,
+      slug,
+    ]
+  );
+
   /** The heading for one kind, offering its tab when the All tab cut it short. */
   const heading = (kind: SearchType, label: string) => (
     <SectionHeading
@@ -408,7 +591,6 @@ export const Search: React.FC = () => {
   );
 
   const showsIssueFilter = tab === '' || tab === 'issues';
-  const emptyTab = tab !== '' && counts[tab] === 0;
   const capped = (Object.keys(counts) as SearchType[]).some(
     (kind) => shows(kind) && counts[kind] >= RESULT_LIMIT
   );
@@ -670,15 +852,19 @@ export const Search: React.FC = () => {
               <section aria-labelledby="search-issues">
                 {heading('issues', 'Issues')}
                 <ul>
-                  {visible(results).map((result) => {
+                  {visible(results).map((result, index) => {
                     const assignee =
                       result.assignee_id === null
                         ? undefined
                         : people.get(result.assignee_id);
                     return (
-                      <li key={result.issue_id} className={ROW}>
+                      <li
+                        key={result.issue_id}
+                        className={rowClass('issues', index)}
+                      >
                         <Link
                           to={issuePath(slug, result.key)}
+                          {...hitProps('issues', index)}
                           data-hover="parent"
                           className={ROW_LINK}
                         >
@@ -729,10 +915,14 @@ export const Search: React.FC = () => {
               <section aria-labelledby="search-projects">
                 {heading('projects', 'Projects')}
                 <ul>
-                  {visible(projects).map((project) => (
-                    <li key={project.project_id} className={ROW}>
+                  {visible(projects).map((project, index) => (
+                    <li
+                      key={project.project_id}
+                      className={rowClass('projects', index)}
+                    >
                       <Link
                         to={projectPath(slug, project)}
+                        {...hitProps('projects', index)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >
@@ -763,10 +953,14 @@ export const Search: React.FC = () => {
               <section aria-labelledby="search-initiatives">
                 {heading('initiatives', 'Initiatives')}
                 <ul>
-                  {visible(initiatives).map((initiative) => (
-                    <li key={initiative.initiative_id} className={ROW}>
+                  {visible(initiatives).map((initiative, index) => (
+                    <li
+                      key={initiative.initiative_id}
+                      className={rowClass('initiatives', index)}
+                    >
                       <Link
                         to={initiativePath(slug, initiative)}
+                        {...hitProps('initiatives', index)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >
@@ -790,10 +984,14 @@ export const Search: React.FC = () => {
               <section aria-labelledby="search-documents">
                 {heading('documents', 'Documents')}
                 <ul>
-                  {visible(documents).map((row) => (
-                    <li key={row.document_id} className={ROW}>
+                  {visible(documents).map((row, index) => (
+                    <li
+                      key={row.document_id}
+                      className={rowClass('documents', index)}
+                    >
                       <Link
                         to={documentPath(slug, row.document_id)}
+                        {...hitProps('documents', index)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >
@@ -817,19 +1015,16 @@ export const Search: React.FC = () => {
               <section aria-labelledby="search-comments">
                 {heading('comments', 'Comments')}
                 <ul>
-                  {visible(comments).map((comment) => {
+                  {visible(comments).map((comment, index) => {
                     const author = people.get(comment.author_id);
                     return (
                       <li
                         key={comment.comment_id}
-                        className="flex items-start border-b border-line px-4 py-2 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6"
+                        className={rowClass('comments', index, COMMENT_ROW)}
                       >
                         <Link
-                          to={`${
-                            comment.document_id
-                              ? documentPath(slug, comment.document_id)
-                              : issuePath(slug, comment.issue_key)
-                          }#comment-${comment.comment_id}`}
+                          to={commentHitPath(slug, comment)}
+                          {...hitProps('comments', index)}
                           data-hover="parent"
                           className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xs"
                         >
