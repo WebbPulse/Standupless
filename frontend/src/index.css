@@ -768,3 +768,24 @@ input[type='checkbox']:not([role='switch']):indeterminate {
     outline-offset: 4px;
   }
 }
+
+@keyframes comment-highlight {
+  0%,
+  50% {
+    background-color: var(--accent-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+[data-comment-highlight] {
+  animation: comment-highlight 2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-comment-highlight] {
+    animation: none;
+    background-color: var(--accent-soft);
+  }
+}
