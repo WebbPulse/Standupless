@@ -3,6 +3,8 @@
  * away, optional sub-group headers inside them, and one dense row per issue.
  * A row is a stretched link to the issue with the pickers lifted above it,
  * so a click on the row opens the issue and a click on a glyph edits it.
+ * Cmd or Ctrl+click toggles the row in the selection instead, and
+ * Shift+click selects the range from the last toggled row.
  * Every row reserves the same leading slots (select, disclosure, priority,
  * key, status) at fixed widths, so the glyphs line up across every group
  * whether or not a group holds a parent. Nested sub-issues indent their
@@ -811,6 +813,11 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
         {...(drag?.draggable === true && !coarse ? { draggable: false } : {})}
         data-hover="parent"
         onClick={(event) => {
+          if ((event.metaKey || event.ctrlKey) && selectable) {
+            event.preventDefault();
+            env.toggleSelected(issue.id, false);
+            return;
+          }
           if (event.shiftKey && selectable) {
             event.preventDefault();
             env.toggleSelected(issue.id, true);
