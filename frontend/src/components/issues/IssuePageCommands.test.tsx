@@ -2,7 +2,8 @@
  * The issue page's keys: the list's pickers write through the page's update as
  * an IssueUpdate patch, I assigns the issue to the viewer or back off them,
  * Shift+M picks a milestone of the issue's project, labels arrive as the whole label_ids set, and Cmd or
- * Ctrl+Backspace deletes only after the confirmation, and Cmd or Ctrl+Shift+C,
+ * Ctrl+Backspace deletes only after the confirmation, unless the surface
+ * around the page takes that key, and Cmd or Ctrl+Shift+C,
  * D and L add the issue to the active cycle, clear its due date and clear its
  * labels, Cmd or Ctrl+Alt+1 to 9 set the status at that workflow position,
  * and the palette offers Copy issue as Markdown.
@@ -32,6 +33,7 @@ import type {
 import { issuePath } from '../../lib/paths';
 import { SUB_ISSUE_DISPLAY_KEY } from '../../lib/subIssues';
 import IssuePageCommands from './IssuePageCommands';
+import { DeleteIssueKeyContext } from './view/propertyKeys';
 
 vi.mock(
   '../../hooks/useProjectStatuses',
@@ -97,31 +99,38 @@ const renderCommands = (
   milestones: MilestoneRead[] = [],
   statuses: StatusRead[] = [
     { id: 'st-1', name: 'Todo', category: 'unstarted', position: 0 },
-  ]
+  ],
+  bindsDelete = true
 ) => {
   render(
     <MemoryRouter>
       <ShortcutRegistryContext.Provider value={registry}>
-        <IssuePageCommands
-          slug="mine"
-          issue={shown}
-          statuses={statuses}
-          labels={[
-            { id: 'lb-1', name: 'Bug', color: '#f00' },
-            { id: 'lb-2', name: 'Infra', color: '#0f0' },
-          ]}
-          people={[
-            { user_id: 'user-1', email: 'me@example.com', display_name: 'Me' },
-          ]}
-          projects={[]}
-          cycles={cycles}
-          milestones={milestones}
-          estimateScale="off"
-          currentUserId="user-1"
-          canEdit={canEdit}
-          onUpdate={onUpdate}
-          onDelete={onDelete}
-        />
+        <DeleteIssueKeyContext.Provider value={bindsDelete}>
+          <IssuePageCommands
+            slug="mine"
+            issue={shown}
+            statuses={statuses}
+            labels={[
+              { id: 'lb-1', name: 'Bug', color: '#f00' },
+              { id: 'lb-2', name: 'Infra', color: '#0f0' },
+            ]}
+            people={[
+              {
+                user_id: 'user-1',
+                email: 'me@example.com',
+                display_name: 'Me',
+              },
+            ]}
+            projects={[]}
+            cycles={cycles}
+            milestones={milestones}
+            estimateScale="off"
+            currentUserId="user-1"
+            canEdit={canEdit}
+            onUpdate={onUpdate}
+            onDelete={onDelete}
+          />
+        </DeleteIssueKeyContext.Provider>
       </ShortcutRegistryContext.Provider>
     </MemoryRouter>
   );
@@ -232,6 +241,14 @@ describe('IssuePageCommands', () => {
     });
 
     expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Cmd or Ctrl+Backspace to a surface that takes it', () => {
+    renderCommands(true, issue, [], undefined, false);
+    press('Backspace', { ctrlKey: true });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 
   it('binds nothing for a reader who cannot edit', () => {
