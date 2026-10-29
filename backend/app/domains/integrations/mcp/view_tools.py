@@ -104,6 +104,7 @@ VIEW_FIELDS: tuple[str, ...] = (
     "sub_group_by",
     "ordering",
     "ordering_reversed",
+    "order_completed_by_recency",
     "visible_properties",
     "layout",
     "show_sub_issues",
@@ -186,6 +187,9 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "sub_group_by": _grouping("Sub group within each group, needs group_by", clearable=clearable),
         "ordering": ordering,
         "ordering_reversed": _boolean("Reverse the sort direction, keeping issues without the value last"),
+        "order_completed_by_recency": _boolean(
+            "Sort completed and cancelled issues by when they closed, newest first, after the open ones"
+        ),
         "visible_properties": properties_list,
         "show_sub_issues": _boolean("Show sub-issues"),
         "show_completed": _boolean("Show completed issues, all of them or none"),

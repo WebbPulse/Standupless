@@ -218,6 +218,8 @@ export interface IssueListFilters {
   sort?: IssueListSort;
   /** True to turn the sort around, issues lacking the sorted value still last. */
   reverse?: boolean;
+  /** True to list closed issues after the open ones, newest closed first. */
+  completed_by_recency?: boolean;
   cursor?: string;
   limit?: number;
   /**

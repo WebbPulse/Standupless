@@ -435,12 +435,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       sortIssues(
         shownIssues(loaded, { showSubIssues, completed }, context),
         state.ordering,
-        { reverse: state.reverse, context, rank }
+        {
+          reverse: state.reverse,
+          context,
+          rank,
+          completedByRecency: state.completedByRecency,
+        }
       ),
     [
       loaded,
       state.ordering,
       state.reverse,
+      state.completedByRecency,
       showSubIssues,
       completed,
       context,
