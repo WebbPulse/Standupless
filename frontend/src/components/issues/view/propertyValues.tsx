@@ -9,8 +9,10 @@
 import React from 'react';
 import {
   LuBox,
+  LuCalendar,
   LuCircleDashed,
   LuIterationCw,
+  LuMilestone,
   LuSignal,
   LuTag,
   LuTriangle,
@@ -34,6 +36,8 @@ export const VALUE_PROPERTIES = [
   'project',
   'cycle',
   'estimate',
+  'milestone',
+  'dueDate',
 ] as const satisfies readonly CommandProperty[];
 
 /** One of the properties the palette offers values of. */
@@ -48,6 +52,8 @@ export const PROPERTY_SHORTCUT_LABELS: Record<ValueProperty, string> = {
   project: 'Move to project',
   cycle: 'Move to cycle',
   estimate: 'Set estimate',
+  milestone: 'Set milestone',
+  dueDate: 'Set due date',
 };
 
 const ICON = 'h-3.5 w-3.5 shrink-0';
@@ -61,6 +67,8 @@ const KEYWORDS: Record<ValueProperty, string> = {
   project: 'project',
   cycle: 'cycle sprint',
   estimate: 'estimate points size',
+  milestone: 'milestone project phase',
+  dueDate: 'due date deadline',
 };
 
 /** The glyph a value shows when its picker draws none. */
@@ -72,6 +80,8 @@ const FALLBACK_ICONS: Record<ValueProperty, React.ReactNode> = {
   project: <LuBox className={ICON} />,
   cycle: <LuIterationCw className={ICON} />,
   estimate: <LuTriangle className={ICON} />,
+  milestone: <LuMilestone className={ICON} />,
+  dueDate: <LuCalendar className={ICON} />,
 };
 
 /** How a value reads as a command, given whether every target already has it. */
@@ -98,8 +108,31 @@ const phrase = (
       return clear ? 'Remove from cycle' : `Move to cycle ${option.label}`;
     case 'estimate':
       return clear ? 'Remove estimate' : `Set estimate to ${option.label}`;
+    case 'milestone':
+      return clear
+        ? 'Remove from milestone'
+        : `Set milestone to ${option.label}`;
+    case 'dueDate':
+      return clear ? 'Remove due date' : `Set due date to ${option.label}`;
   }
 };
+
+/** How a value reads in its property's own list in the palette. */
+const nameOf = (property: ValueProperty, option: ComboboxOption): string =>
+  property === 'dueDate' && option.value === NONE
+    ? 'Remove due date'
+    : option.label;
+
+/**
+ * Whether the issues' milestone can be set: their view names milestones and
+ * at least one of them is in a project.
+ */
+const offersMilestones = (
+  issues: readonly OrderedIssueRead[],
+  env: IssueViewEnv
+): boolean =>
+  env.context.milestones !== undefined &&
+  issues.some((issue) => issue.project_id !== null);
 
 /** What {@link propertyValues} builds from. */
 export interface PropertyValuesInput {
@@ -107,22 +140,31 @@ export interface PropertyValuesInput {
   env: IssueViewEnv;
   triageTeams: ReadonlySet<string>;
   today: Date;
+  /**
+   * The term typed in the palette, from which a property such as the due date
+   * may read a value of its own, such as the day "nov 3" names.
+   */
+  query?: string;
 }
 
 /**
  * Every value the issues' properties can be set to, as commands. A value
  * every issue already has is checked and marked inert, since running it
  * would change nothing, except a label, which reads as removing it, as its
- * picker does.
+ * picker does. Removing the due date is offered only while one is set, and
+ * a milestone only while an issue is in a project whose milestones the view
+ * names. Given a typed term, the due date leads with the day it reads as.
  */
 export const propertyValues = ({
   issues,
   env,
   triageTeams,
   today,
+  query,
 }: PropertyValuesInput): SubjectValue[] => {
   if (issues.length === 0) return [];
   return VALUE_PROPERTIES.flatMap((property) => {
+    if (property === 'milestone' && !offersMilestones(issues, env)) return [];
     const choices = propertyChoices({
       property,
       issues,
@@ -131,26 +173,40 @@ export const propertyValues = ({
       today,
       onDone: () => undefined,
     });
-    return choices.options.flatMap((option) => {
+    const typed =
+      query === undefined || query.trim() === ''
+        ? null
+        : (choices.leadOption?.(query.trim()) ?? null);
+    const toValue = (option: ComboboxOption, lead: boolean): SubjectValue[] => {
       if (option.disabled === true) return [];
       const applied = choices.selected.includes(option.value);
+      if (property === 'dueDate' && option.value === NONE && applied) return [];
       const inert = applied && !choices.multiple;
       return [
         {
-          id: `${property}-${encodeURIComponent(option.value)}`,
+          id: `${property}-${lead ? 'typed-' : ''}${encodeURIComponent(option.value)}`,
           label: phrase(property, option, applied),
-          name: option.label,
+          name: nameOf(property, option),
           keywords: [KEYWORDS[property], ...(option.keywords ?? [])].join(' '),
           icon: option.icon ?? FALLBACK_ICONS[property],
           property,
           checked: applied,
           inert,
+          ...(choices.multiple ? { toggles: true } : {}),
+          ...(lead ? { lead: true } : {}),
+          ...(property === 'dueDate' && option.detail !== undefined
+            ? { detail: option.detail }
+            : {}),
           run: () => {
             if (!inert) choices.pick(option.value);
           },
         },
       ];
-    });
+    };
+    return [
+      ...(typed === null ? [] : toValue(typed, true)),
+      ...choices.options.flatMap((option) => toValue(option, false)),
+    ];
   });
 };
 
@@ -162,8 +218,15 @@ export const usePropertyValues = (
   issues: readonly OrderedIssueRead[],
   env: IssueViewEnv,
   enabled: boolean
-): (() => SubjectValue[]) | null => {
+): ((query?: string) => SubjectValue[]) | null => {
   const triageTeams = useTriageTeamIds();
   if (!enabled || issues.length === 0) return null;
-  return () => propertyValues({ issues, env, triageTeams, today: new Date() });
+  return (query) =>
+    propertyValues({
+      issues,
+      env,
+      triageTeams,
+      today: new Date(),
+      ...(query === undefined ? {} : { query }),
+    });
 };

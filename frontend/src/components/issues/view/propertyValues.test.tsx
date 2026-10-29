@@ -196,6 +196,70 @@ describe('propertyValues', () => {
     expect(urgent?.keywords).toContain('priority');
   });
 
+  it('offers the due date presets and removing a set due date', () => {
+    const none = labelsOf([issueOn('1', 'team-1')]);
+    expect(none).toContain('Set due date to Tomorrow');
+    expect(none).not.toContain('Remove due date');
+
+    const due = valuesFor([
+      issueOn('1', 'team-1', { due_date: '2026-11-20' }),
+    ]).find((value) => value.label === 'Remove due date');
+    expect(due?.name).toBe('Remove due date');
+    expect(due?.property).toBe('dueDate');
+  });
+
+  it('leads the due dates with the day a typed term names', () => {
+    const values = propertyValues({
+      issues: [issueOn('1', 'team-1')],
+      env: envWith(vi.fn()),
+      triageTeams: new Set(),
+      today: new Date('2026-10-24T12:00:00Z'),
+      query: 'nov 3',
+    });
+    const lead = values.find((value) => value.lead === true);
+
+    expect(lead?.property).toBe('dueDate');
+    expect(lead?.id).toBe('dueDate-typed-2026-11-03');
+  });
+
+  it('offers milestones only for an issue in a project the view names', () => {
+    const update = vi.fn<IssueWrite>();
+    const milestone = {
+      milestone_id: 'ms-1',
+      project_id: 'pr-1',
+      name: 'Beta',
+    };
+    const env = {
+      ...envWith(update),
+      context: { ...context, milestones: [milestone] },
+    } as unknown as IssueViewEnv;
+    const offered = (issue: OrderedIssueRead) =>
+      propertyValues({
+        issues: [issue],
+        env,
+        triageTeams: new Set(),
+        today: new Date('2026-10-24T12:00:00Z'),
+      }).map((value) => value.label);
+
+    expect(offered(issueOn('1', 'team-1'))).not.toContain(
+      'Set milestone to Beta'
+    );
+    expect(
+      labelsOf([issueOn('1', 'team-1', { project_id: 'pr-1' })])
+    ).not.toContain('Set milestone to Beta');
+    expect(offered(issueOn('1', 'team-1', { project_id: 'pr-1' }))).toContain(
+      'Set milestone to Beta'
+    );
+  });
+
+  it('marks a label as toggling', () => {
+    const bug = valuesFor([issueOn('1', 'team-1')]).find(
+      (value) => value.label === 'Add label Bug'
+    );
+
+    expect(bug?.toggles).toBe(true);
+  });
+
   it('offers nothing with no issue in focus', () => {
     expect(valuesFor([])).toEqual([]);
   });

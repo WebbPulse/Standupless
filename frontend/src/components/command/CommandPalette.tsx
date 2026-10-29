@@ -137,7 +137,10 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { isFeatureOn } from '../../lib/features';
 import { LOG_OUT_KEYS } from '../../lib/logOut';
-import { useIssueSubject } from '../../hooks/useIssueSubject';
+import {
+  useIssueSubject,
+  type SubjectValue,
+} from '../../hooks/useIssueSubject';
 import {
   PROPERTY_SHORTCUT_LABELS,
   VALUE_PROPERTIES,
@@ -305,6 +308,11 @@ interface Command {
   page?: Page;
   /** Opens the values of this property on the subject as a nested list. */
   property?: ValueProperty;
+  /**
+   * Runs in place and keeps the list open, as a label toggles on the subject
+   * while more are picked.
+   */
+  toggles?: boolean;
   /** Draws the row one step in, as a sub-team under its parent. */
   indent?: boolean;
   /** The label characters the typed term matched, for highlighting. */
@@ -389,6 +397,16 @@ const PROPERTY_COPY: Record<
     row: 'Set estimate\u2026',
     name: 'Set estimate',
     placeholder: 'Set estimate to\u2026',
+  },
+  milestone: {
+    row: 'Set milestone\u2026',
+    name: 'Set milestone',
+    placeholder: 'Set milestone to\u2026',
+  },
+  dueDate: {
+    row: 'Set due date\u2026',
+    name: 'Set due date',
+    placeholder: 'Try: tomorrow, next friday, nov 3\u2026',
   },
 };
 
@@ -1683,23 +1701,30 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
 
     if (page === 'property') {
-      const rows = rank(
-        (subject?.values?.() ?? [])
-          .filter((value) => value.property === property)
-          .map((value) => ({
-            id: `value-${value.id}`,
-            label: value.name,
-            keywords: value.keywords,
-            icon: (
-              <span className="inline-flex h-4 w-4 items-center justify-center">
-                {value.icon}
-              </span>
-            ),
-            checked: value.checked === true,
-            run: value.run,
-          })),
-        deferred
+      const own = (subject?.values?.(deferred) ?? []).filter(
+        (value) => value.property === property
       );
+      const toRow = (value: SubjectValue): Command => ({
+        id: `value-${value.id}`,
+        label: value.name,
+        keywords: value.keywords,
+        ...(value.detail === undefined ? {} : { hint: value.detail }),
+        icon: (
+          <span className="inline-flex h-4 w-4 items-center justify-center">
+            {value.icon}
+          </span>
+        ),
+        checked: value.checked === true,
+        ...(value.toggles === true ? { toggles: true } : {}),
+        run: value.run,
+      });
+      const rows = [
+        ...own.filter((value) => value.lead === true).map(toRow),
+        ...rank(
+          own.filter((value) => value.lead !== true).map(toRow),
+          deferred
+        ),
+      ];
       return rows.length === 0
         ? []
         : [{ heading: PROPERTY_COPY[property].name, commands: rows }];
@@ -1950,6 +1975,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const index = flat.length === 0 ? 0 : Math.min(active, flat.length - 1);
   const current = flat[index];
 
+  const [toggled, setToggled] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (toggled === null || deferred !== '') return;
+    const at = flat.findIndex((command) => command.id === toggled);
+    if (at >= 0) setActive(at);
+    setToggled(null);
+  }, [toggled, flat, deferred]);
+
   const enterPage = useCallback((next: Page) => {
     setPage(next);
     setTerm('');
@@ -1966,6 +2000,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }
       if (command.page !== undefined) {
         enterPage(command.page);
+        return;
+      }
+      if (command.toggles === true) {
+        command.run?.();
+        setTerm('');
+        setToggled(command.id);
+        input.current?.focus();
         return;
       }
       onClose();

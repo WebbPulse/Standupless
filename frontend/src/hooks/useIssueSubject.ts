@@ -20,8 +20,12 @@ export interface IssueSubject {
   key: string | null;
   /** The issue title, or a phrase such as "3 issues". */
   title: string;
-  /** The property values the subject can be set to, built on demand. */
-  values?: () => SubjectValue[];
+  /**
+   * The property values the subject can be set to, built on demand. Given the
+   * typed term, a property may lead with a value read from it, such as the day
+   * "nov 3" names.
+   */
+  values?: (query?: string) => SubjectValue[];
 }
 
 /** One property value offered as a palette command on the subject. */
@@ -41,6 +45,12 @@ export interface SubjectValue {
   checked?: boolean;
   /** Whether running the value would change nothing, as for the current status. */
   inert?: boolean;
+  /** Whether the value toggles on a property holding several, as a label does. */
+  toggles?: boolean;
+  /** Whether the value was read from the typed term and leads its list. */
+  lead?: boolean;
+  /** A short note drawn at the end of the row, such as a preset's date. */
+  detail?: string;
   /** Writes the value to every issue of the subject. */
   run: () => void;
 }
@@ -67,6 +77,17 @@ const subscribe = (listener: () => void): (() => void) => {
   };
 };
 
+/** Gives a publisher's subject a new identity so readers rebuild its values. */
+const refresh = (id: number): void => {
+  let changed = false;
+  entries = entries.map((entry) => {
+    if (entry.id !== id) return entry;
+    changed = true;
+    return { id, subject: { ...entry.subject } };
+  });
+  if (changed) emit();
+};
+
 /** The subject the latest mounted publisher set, or null. */
 const snapshot = (): IssueSubject | null =>
   entries[entries.length - 1]?.subject ?? null;
@@ -84,16 +105,21 @@ export const subjectOf = (
 /**
  * Publishes a subject while the caller is mounted and the subject is not null,
  * with the values its properties can take when the caller can write them.
+ * When the values change, as after a write to the subject, readers are told,
+ * so a list the palette holds open redraws its check marks.
  */
 export const usePublishIssueSubject = (
   subject: IssueSubject | null,
-  values?: (() => SubjectValue[]) | null
+  values?: ((query?: string) => SubjectValue[]) | null
 ): void => {
   const key = subject?.key ?? null;
   const title = subject?.title ?? null;
   const latest = useRef(values ?? null);
+  const published = useRef<number | null>(null);
   useEffect(() => {
+    const changed = latest.current !== (values ?? null);
     latest.current = values ?? null;
+    if (changed && published.current !== null) refresh(published.current);
   });
   const offers = values !== undefined && values !== null;
   useEffect(() => {
@@ -101,14 +127,20 @@ export const usePublishIssueSubject = (
     const entry: Entry = {
       id: nextId,
       subject: offers
-        ? { key, title, values: () => latest.current?.() ?? [] }
+        ? {
+            key,
+            title,
+            values: (query) => latest.current?.(query) ?? [],
+          }
         : { key, title },
     };
     nextId += 1;
     entries = [...entries, entry];
+    published.current = entry.id;
     emit();
     return () => {
       entries = entries.filter((held) => held.id !== entry.id);
+      if (published.current === entry.id) published.current = null;
       emit();
     };
   }, [key, title, offers]);
