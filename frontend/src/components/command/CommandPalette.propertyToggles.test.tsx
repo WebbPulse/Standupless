@@ -116,7 +116,7 @@ const Page = ({ start }: { start: IssueRead }) => {
       canEdit
       onUpdate={(patch) => {
         onUpdate(patch);
-        setIssue((held) => ({ ...held, ...patch }) as IssueRead);
+        setIssue((held) => ({ ...held, ...patch }));
       }}
     />
   );
