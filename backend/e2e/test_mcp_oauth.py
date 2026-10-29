@@ -338,6 +338,7 @@ EXPECTED_TOOLS = frozenset(
         "create_issue_link",
         "update_issue_link",
         "delete_issue_link",
+        "get_attachment",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.

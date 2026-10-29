@@ -823,6 +823,14 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Resource = ["${aws_apigatewayv2_api.realtime[0].execution_arn}/${local.realtime_stage}/POST/@connections/*"]
         },
       ] : [],
+      each.key == "integrations" ? [
+        {
+          Sid      = "ReadAttachmentObjectsForMcp"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
+        },
+      ] : [],
       each.key == "workspaces-export-consumer" ? [
         {
           Sid      = "PresignAttachmentObjects"
