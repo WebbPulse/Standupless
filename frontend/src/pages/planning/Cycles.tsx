@@ -4,6 +4,12 @@
  * and it offers cancelling, which is the one piece of state the dates cannot
  * imply.
  *
+ * A timeline band heads the page: every cycle as a bar on a time axis around
+ * the today line, the current one in the accent, each naming its dates and
+ * how much of its scope is done. It carries the same Today, step and zoom
+ * controls as the other planning timelines, remembers its zoom per viewer,
+ * and rings the cycle the list's keyboard highlight rests on.
+ *
  * The current cycle leads, because it is the one a person is working in and
  * the only one whose remaining days matter. Upcoming follows it, and
  * everything finished collapses into a section that stays shut until asked
@@ -41,7 +47,7 @@
  * links an admin to the team's cycle settings instead.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   useMutationWithRefetch,
@@ -83,6 +89,11 @@ import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import Spinner from '../../components/ui/spinner';
 import CapacityDial from '../../components/planning/CapacityDial';
 import CycleCalendarDialog from '../../components/planning/CycleCalendarDialog';
+import CycleTimeline from '../../components/planning/CycleTimeline';
+import {
+  TimelineControls,
+  type TimelineHandle,
+} from '../../components/planning/TimelineFrame';
 import EditCycleDialog from '../../components/planning/EditCycleDialog';
 import ProgressBar from '../../components/planning/ProgressBar';
 import ProgressRing from '../../components/planning/ProgressRing';
@@ -120,6 +131,7 @@ import {
 } from '../../lib/planningModel';
 import { cycleSettingsKey, cyclesKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
+import { TIMELINE_ZOOMS, type TimelineZoom } from '../../lib/timeline';
 import { validateCycleDates } from '../../lib/validation';
 import type {
   CycleListRead,
@@ -130,6 +142,31 @@ import type {
 
 /** How often the list re-reads. */
 const POLL_MS = 60000;
+
+/** Where the band's zoom is remembered for this viewer. */
+const ZOOM_STORAGE_KEY = 'standupless:cycles-timeline-zoom';
+
+/** The zoom the band opens at when none is remembered. */
+const DEFAULT_ZOOM: TimelineZoom = 'month';
+
+/** The band's remembered zoom, or the default when storage is empty or blocked. */
+const readZoom = (): TimelineZoom => {
+  try {
+    const held = globalThis.localStorage.getItem(ZOOM_STORAGE_KEY);
+    return TIMELINE_ZOOMS.find((zoom) => zoom === held) ?? DEFAULT_ZOOM;
+  } catch {
+    return DEFAULT_ZOOM;
+  }
+};
+
+/** Remembers the band's zoom, quietly doing nothing where storage is blocked. */
+const writeZoom = (zoom: TimelineZoom): void => {
+  try {
+    globalThis.localStorage.setItem(ZOOM_STORAGE_KEY, zoom);
+  } catch {
+    return;
+  }
+};
 
 /** The badge tint each cycle status takes. */
 const STATUS_TONES: Record<CycleStatus, BadgeTone> = {
@@ -599,6 +636,12 @@ export const Cycles: React.FC = () => {
   const [overlay, setOverlay] = useState<Record<string, Partial<CycleRead>>>(
     {}
   );
+  const [zoom, setZoom] = useState<TimelineZoom>(readZoom);
+  const timeline = useRef<TimelineHandle | null>(null);
+  const changeZoom = useCallback((next: TimelineZoom): void => {
+    setZoom(next);
+    writeZoom(next);
+  }, []);
 
   const teamId = team?.id ?? '';
   const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
@@ -1015,6 +1058,30 @@ export const Cycles: React.FC = () => {
           )
         ) : (
           <>
+            <section aria-label="Cycle timeline" className="space-y-2">
+              <div className="flex items-center gap-1">
+                <h2 className="mr-auto text-xs font-medium text-text-muted">
+                  Timeline
+                </h2>
+                <TimelineControls
+                  zoom={zoom}
+                  onZoomChange={changeZoom}
+                  onToday={() => {
+                    timeline.current?.scrollToToday();
+                  }}
+                  onStep={(direction) => {
+                    timeline.current?.step(direction);
+                  }}
+                />
+              </div>
+              <CycleTimeline
+                ref={timeline}
+                cycles={cycles}
+                hrefFor={hrefFor}
+                zoom={zoom}
+                highlightedId={visible[activeIndex]?.cycle_id ?? null}
+              />
+            </section>
             {active.map((cycle, index) => (
               <ActiveCycle
                 key={cycle.cycle_id}
