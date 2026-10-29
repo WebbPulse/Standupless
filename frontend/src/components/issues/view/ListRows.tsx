@@ -652,6 +652,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
   const parent =
     depth === 0 ? (env.parentOf?.(issue) ?? parentRefOf(issue)) : undefined;
   const showsProgress = shows('sub_issues') && issue.progress.total > 0;
+  const note = env.rowNote?.(issue);
   const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
   const coarse = useCoarsePointer();
   const own = React.useRef<HTMLLIElement | null>(null);
@@ -831,6 +832,14 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
       </Link>
       {titleTip.tip}
       {showsProgress && <SubIssueProgressChip progress={issue.progress} />}
+      {note !== undefined && note !== null && (
+        <span
+          data-slot="note"
+          className="min-w-0 shrink-[2] truncate text-xs text-text-faint max-sm:hidden"
+        >
+          {note}
+        </span>
+      )}
       <span aria-hidden="true" className="flex-1" />
       {archived && <ArchivedMarker />}
       <RelationMarkers issue={issue} />

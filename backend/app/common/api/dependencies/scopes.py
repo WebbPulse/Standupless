@@ -479,6 +479,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ),
     ("GET", "/{workspace_id}/views/members/{user_id}"): ISSUES_READ,
     ("GET", "/{workspace_id}/views/members/{user_id}/activity"): ISSUES_READ,
+    ("GET", "/{workspace_id}/views/members/{user_id}/issues"): ISSUES_READ,
     ("GET", "/{workspace_id}/views/teams/{team_id}/subscription"): VIEWS_READ,
     ("PUT", "/{workspace_id}/views/teams/{team_id}/subscription"): VIEWS_WRITE,
     ("GET", "/{workspace_id}/views/folds"): VIEWS_READ,

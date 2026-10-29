@@ -924,6 +924,12 @@ export const memberActivityKey = (
   userId: string
 ): QueryKey => ['member', workspaceId, userId, 'activity'];
 
+/** The issues one member recently touched, one row per issue. */
+export const memberIssuesKey = (
+  workspaceId: string,
+  userId: string
+): QueryKey => ['member', workspaceId, userId, 'issues'];
+
 /** One cycle's detail as the cycle page reads it. */
 export const cycleKey = (
   workspaceId: string,

@@ -244,3 +244,66 @@ def test_the_backfill_stamps_older_rows_into_the_feed(client: TestClient, worksp
 
     second = backfill(repositories.activity, table.iter_scan(), [workspace], dry_run=False)
     assert second.stamped == 0
+
+
+def _touched(client: TestClient, workspace: str, user_id: str, **params: Any) -> "dict[str, Any]":
+    """Read one page of the issues a member touched, failing loudly on a refusal."""
+    response = client.get(f"/api/workspaces/{workspace}/views/members/{user_id}/issues", params=params)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_touched_issues_list_each_issue_once_by_latest_action(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """One row per issue, ordered by the member's latest action on it, which the row carries."""
+    _issue(repositories, workspace, OPEN_ISSUE, TEAM, 1)
+    _issue(repositories, workspace, HIDDEN_ISSUE, TEAM, 2)
+    _change(repositories, workspace, OPEN_ISSUE, TEAM, START)
+    _change(repositories, workspace, HIDDEN_ISSUE, TEAM, START + timedelta(minutes=1))
+    _comment(repositories, workspace, OPEN_ISSUE, TEAM, START + timedelta(minutes=2), "Latest")
+
+    sign_in(client, OWNER)
+    body = _touched(client, workspace, OWNER)
+    assert [(row["issue_id"], row["type"]) for row in body["activity"]] == [
+        (OPEN_ISSUE, "comment"),
+        (HIDDEN_ISSUE, "issue_change"),
+    ]
+    assert body["activity"][0]["comment"]["body"] == "Latest"
+    assert body["next_cursor"] is None
+
+
+def test_touched_issues_page_by_distinct_issue(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A page of two holds two issues however many rows each has, and the cursor walks on to the rest."""
+    issues = [f"01JB0000000000000000TOUCH{n}" for n in range(4)]
+    for number, issue_id in enumerate(issues, start=1):
+        _issue(repositories, workspace, issue_id, TEAM, number)
+    for minute in range(8):
+        _change(repositories, workspace, issues[minute // 2], TEAM, START + timedelta(minutes=minute))
+
+    sign_in(client, OWNER)
+    walked: list[str] = []
+    cursor = None
+    for _ in range(10):
+        params: "dict[str, Any]" = {"limit": 2}
+        if cursor:
+            params["cursor"] = cursor
+        page = _touched(client, workspace, OWNER, **params)
+        assert len({row["issue_id"] for row in page["activity"]}) == len(page["activity"])
+        walked += [row["issue_id"] for row in page["activity"] if row["issue_id"] not in walked]
+        cursor = page["next_cursor"]
+        if not cursor:
+            break
+    assert walked == list(reversed(issues))
+
+
+def test_touched_issues_hide_what_the_caller_cannot_read(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A guest sees the issues on their team, never a hidden or deleted one, and an outsider is a 404."""
+    _seed(repositories, workspace)
+
+    sign_in(client, OWNER)
+    assert [row["issue_id"] for row in _touched(client, workspace, OWNER)["activity"]] == [HIDDEN_ISSUE, OPEN_ISSUE]
+
+    sign_in(client, GUEST)
+    assert [row["issue_id"] for row in _touched(client, workspace, OWNER)["activity"]] == [OPEN_ISSUE]
+    assert client.get(f"/api/workspaces/{workspace}/views/members/{OUTSIDER}/issues").status_code == 404

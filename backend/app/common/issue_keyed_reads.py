@@ -2,7 +2,8 @@
 
 "Subscribed by me", "created by" one person and "assigned to" one person each have
 an index keyed on that person and the workspace, which is what the My issues tabs
-ask for. Reading it touches only that person's issues, where the general list has
+ask for. A list naming its issues by id, as the Activity tab and key lists do, is
+read by those ids directly. Reading it touches only that person's issues, where the general list has
 to fan out across every visible team, and the workspace being the index range key
 keeps another tenant's rows out of the read itself.
 """
@@ -40,7 +41,8 @@ def keyed_rows(
 
     The narrowest index wins; the remaining filters still run afterwards, so a
     request carrying two of them gets the intersection. A filter matching `any`
-    of its conditions cannot narrow by one person, so it fans out instead. Rows in teams the caller
+    of its conditions cannot narrow by one person, so it fans out instead. Named
+    issue ids are read by id, so an old issue is found without a fan out. Rows in teams the caller
     may not read are dropped here, before anything is sorted or counted.
     """
     workspace_id = context.workspace_id
@@ -50,6 +52,9 @@ def keyed_rows(
         rows = list(repositories.issues.get_many(workspace_id, ids).values())
     elif wanted.match != "all":
         return None
+    elif wanted.issue_ids:
+        ids = sorted(str(value) for value in wanted.issue_ids if value)[:KEYED_READ_CAP]
+        rows = list(repositories.issues.get_many(workspace_id, ids).values())
     elif (creator := single(wanted.creator_ids)) is not None:
         ids = repositories.issues.issue_ids_created_by(workspace_id, creator, max_items=KEYED_READ_CAP)
         rows = list(repositories.issues.get_many(workspace_id, ids).values())

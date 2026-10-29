@@ -5,15 +5,15 @@
  * shows one person's activity, the caller's own included, draws it the same.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { LuMessageSquare } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import type { MemberActivity } from '../../hooks/useMemberActivity';
-import { useIssueContext } from '../../hooks/useIssueContext';
 import {
-  describeActivity,
-  type ActivityContext,
-} from '../../lib/activityDisplay';
+  memberAction,
+  useMemberActivityContext,
+} from '../../hooks/useMemberActivityContext';
+import type { ActivityContext } from '../../lib/activityDisplay';
 import { errorMessage } from '../../lib/errors';
 import { issuePath } from '../../lib/paths';
 import type { MemberActivityRead } from '../../types/Api';
@@ -36,19 +36,8 @@ export interface MemberActivityFeedProps {
 }
 
 /** The sentence a row reads after the member's name. */
-const sentence = (
-  row: MemberActivityRead,
-  context: ActivityContext
-): string => {
-  if (
-    row.type === 'comment' ||
-    row.activity === null ||
-    row.activity === undefined
-  ) {
-    return 'commented on';
-  }
-  return `${describeActivity(row.activity, context).text} on`;
-};
+const sentence = (row: MemberActivityRead, context: ActivityContext): string =>
+  `${memberAction(row, context)} on`;
 
 /** One row: who, what, which issue and when. */
 const FeedRow: React.FC<{
@@ -105,31 +94,7 @@ export const MemberActivityFeed: React.FC<MemberActivityFeedProps> = ({
   avatarUrl = null,
   emptyMessage = 'No recent activity.',
 }) => {
-  const teamIds = useMemo(
-    () => [...new Set(feed.activity.map((row) => row.team_id))],
-    [feed.activity]
-  );
-  const { context: lists } = useIssueContext(workspaceId, teamIds);
-  const context = useMemo<ActivityContext>(
-    () => ({
-      statuses: lists.statuses,
-      people: lists.people,
-      labels: lists.labels.map((label) => ({ id: label.id, name: label.name })),
-      issues: feed.activity.map((row) => ({
-        id: row.issue_id,
-        key: row.issue_key,
-      })),
-      projects: lists.projects.map((project) => ({
-        id: project.project_id,
-        name: project.name,
-      })),
-      cycles: lists.cycles.map((cycle) => ({
-        id: cycle.cycle_id,
-        name: cycle.name,
-      })),
-    }),
-    [lists, feed.activity]
-  );
+  const context = useMemberActivityContext(workspaceId, feed.activity);
 
   if (
     feed.error !== null &&
