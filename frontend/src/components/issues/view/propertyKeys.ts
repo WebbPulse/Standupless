@@ -3,6 +3,8 @@
  * each one opens on, shared so the hint in the bar is the key that works.
  */
 
+import { createContext } from 'react';
+
 /** The properties the keyboard can set. */
 export type CommandProperty =
   | 'status'
@@ -33,6 +35,13 @@ export const ARCHIVE_ISSUE_KEYS = '#';
 
 /** The keys that delete the issues in focus, after a confirmation. */
 export const DELETE_ISSUE_KEYS = 'mod+backspace';
+
+/**
+ * Whether the issue view takes the delete shortcut. A surface that binds the
+ * same keys itself, such as the inbox where they delete every notification,
+ * turns it off around the issue it shows, and the issue menu drops the keycap.
+ */
+export const DeleteIssueKeyContext = createContext(true);
 
 /** The key that renames the issue in focus. */
 export const RENAME_ISSUE_KEYS = 'r';

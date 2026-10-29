@@ -4,15 +4,17 @@
  * property pickers, i assigns the issue to the viewer or back off them, and
  * Cmd or Ctrl+Delete deletes the issue after a confirmation, and Cmd or
  * Ctrl+Shift+Up and Down open the parent and the first sub-issue, and Cmd or
- * Ctrl+Alt+1 to 9 set the status at that position of the workflow. The
- * pickers are the list's own, fed the page's lists and writing through the
- * page's optimistic update, so both surfaces behave alike. The confirmation
+ * Ctrl+Alt+1 to 9 set the status at that position of the workflow. A surface
+ * that binds Cmd or Ctrl+Delete itself turns the delete key off through
+ * `DeleteIssueKeyContext`. The pickers are the list's own, fed the page's
+ * lists and writing through the page's optimistic update, so both surfaces
+ * behave alike. The confirmation
  * can be held by the page, so its menu's Delete opens the same dialog. The
  * pickers' values are published with the page's subject, so the command palette
  * can set them directly.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../api/issues';
 import { usePublishIssueSubject } from '../../hooks/useIssueSubject';
@@ -52,7 +54,11 @@ import {
 import PropertyCommand from './view/PropertyCommand';
 import StatusPositionKeys from './view/StatusPositionKeys';
 import { usePropertyValues } from './view/propertyValues';
-import { PROPERTY_KEYS, type CommandProperty } from './view/propertyKeys';
+import {
+  DeleteIssueKeyContext,
+  PROPERTY_KEYS,
+  type CommandProperty,
+} from './view/propertyKeys';
 
 /** The properties the page binds, with their palette labels. */
 const PAGE_PROPERTIES: { property: CommandProperty; label: string }[] = [
@@ -258,12 +264,13 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
     },
   });
 
+  const bindsDelete = useContext(DeleteIssueKeyContext);
   useShortcut({
     keys: 'mod+backspace',
     label: 'Delete issue',
     scope: 'issue',
     group: 'Issue',
-    enabled: canEdit && onDelete !== undefined,
+    enabled: bindsDelete && canEdit && onDelete !== undefined,
     handler: (event) => {
       event?.preventDefault();
       setDeleting(true);
