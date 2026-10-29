@@ -91,8 +91,7 @@ export const Roadmap: React.FC = () => {
 
   const rows = useMemo(() => [...projects].sort(byStart), [projects]);
   const groups = useMemo(
-    () =>
-      groupProjects(rows, grouping, people, teams, { initiatives, labels }),
+    () => groupProjects(rows, grouping, people, teams, { initiatives, labels }),
     [rows, grouping, people, teams, initiatives, labels]
   );
 
