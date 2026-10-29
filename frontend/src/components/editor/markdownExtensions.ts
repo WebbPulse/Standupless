@@ -590,14 +590,19 @@ const ReferenceChips = Extension.create<ReferenceChipOptions>({
   addProseMirrorPlugins() {
     const options = this.options;
     return [
-      new Plugin({
+      new Plugin<ReferenceChipState>({
         key: referenceChipsKey,
         state: {
-          init: (_, state) => ({
+          init: (_, state): ReferenceChipState => ({
             decorations: referenceDecorations(state.doc, options),
             typing: null,
           }),
-          apply: (transaction, held, _previous, state) => {
+          apply: (
+            transaction,
+            held,
+            _previous,
+            state
+          ): ReferenceChipState => {
             const typing =
               transaction.docChanged || transaction.selectionSet
                 ? typingCaret(transaction, state)
