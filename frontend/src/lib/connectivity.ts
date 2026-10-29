@@ -93,8 +93,9 @@ export class ConnectivityMonitor {
   private stopNetwork: (() => void) | null = null;
 
   constructor(options: ConnectivityOptions = {}) {
-    this.isNetworkOnline = options.isNetworkOnline ?? isOnline;
-    this.subscribeNetwork = options.subscribeNetwork ?? subscribeToOnline;
+    this.isNetworkOnline = options.isNetworkOnline ?? (() => isOnline());
+    this.subscribeNetwork =
+      options.subscribeNetwork ?? ((listener) => subscribeToOnline(listener));
     this.browserOnline = options.browserOnline ?? navigatorOnline;
     this.probe = options.probe ?? defaultProbe;
     this.graceMs = options.graceMs ?? OFFLINE_GRACE_MS;
