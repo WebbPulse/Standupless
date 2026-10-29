@@ -12,6 +12,10 @@ forced, and team visibility stays a filter over a bounded set.
 
 Creating and revoking a link are recorded in the workspace audit log, keyed by the
 token hash so the entry never carries the token itself.
+
+A view or filter link is the public roadmap, a Standard feature, so below Standard
+its create answers the plan refusal once the target and team checks pass. Issue
+links stay free on every plan.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.base import expiry_timestamp
 from app.common.db.dynamo.share_links import ShareLinkView, share_capability
 from app.common.issue_rules import not_found, require_team_member, visible_team_ids
+from app.common.plan_features import Feature, enforce_feature
 from app.domains.views.schemas.share import (
     MAX_LINKS_PER_WORKSPACE,
     ShareLinkCreate,
@@ -140,6 +145,8 @@ def create_share_link(
         sort = payload.sort or DEFAULT_SORT
 
     require_team_member(repositories, context, team_id)
+    if payload.target_type != "issue":
+        enforce_feature(repositories, context.workspace_id, Feature.PUBLIC_ROADMAP)
 
     if _live_link_count(repositories, context) >= MAX_LINKS_PER_WORKSPACE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=AT_LIMIT)

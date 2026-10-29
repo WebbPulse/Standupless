@@ -4,6 +4,7 @@
  * popover closes; the live links are listed by hash and can only be revoked.
  */
 
+import { ApiError } from '@webbpulse/api-client';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -234,6 +235,38 @@ describe('the share popover', () => {
 
     expect(
       await screen.findByText('Could not create a share link.')
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Share link')).not.toBeInTheDocument();
+  });
+  it('shows the plan refusal for a view share below Standard', async () => {
+    createShareLink.mockRejectedValue(
+      new ApiError({
+        status: 403,
+        statusText: 'Forbidden',
+        body: {
+          error_code: 'PLAN_FEATURE_UNAVAILABLE',
+          message:
+            'Public roadmap is not included in the Free plan. Upgrade the workspace to the Standard plan to use it.',
+          details: {
+            feature: 'public_roadmap',
+            plan: 'free',
+            required_plan: 'standard',
+          },
+        },
+        url: '/api/workspaces/ws-1/share-links',
+        method: 'POST',
+      })
+    );
+    const user = setup();
+    renderButton({ targetType: 'view', targetId: 'view-1' });
+
+    await user.click(screen.getByRole('button', { name: 'Share' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Create public link' })
+    );
+
+    expect(
+      await screen.findByText(/Upgrade the workspace to the Standard plan/)
     ).toBeInTheDocument();
     expect(screen.queryByLabelText('Share link')).not.toBeInTheDocument();
   });
