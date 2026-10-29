@@ -2,8 +2,9 @@
  * Issue mentions in rendered Markdown. Covers that a key draws as a chip with
  * its status glyph, muted key and title linking to the issue, that every
  * mention in a body is read in one lookup, that inline code holding only a key
- * draws as a chip while other code stays code, and that a key naming nothing
- * the reader can see stays the text it was written as.
+ * draws as a chip while other code stays code, that a long title sits on the
+ * text line in one box that never wraps and truncates, and that a key naming
+ * nothing the reader can see stays the text it was written as.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -130,6 +131,29 @@ describe('IssueChip', () => {
     expect(await screen.findByText('Write the runbook')).toBeInTheDocument();
     expect(lookup).toHaveBeenCalledTimes(1);
     expect(lookup.mock.calls[0]?.[1]).toEqual(['ENG-12', 'ENG-13']);
+  });
+
+  it('draws a long-titled chip as one inline box on the text line that truncates', async () => {
+    renderBody('See ENG-12 now');
+
+    const title = await screen.findByText('Ship the importer');
+    const chip = title.closest('a');
+    expect(chip?.parentElement?.tagName).toBe('P');
+    expect(chip?.className.split(' ')).toEqual(
+      expect.arrayContaining([
+        'inline-flex',
+        'whitespace-nowrap',
+        'max-w-[min(24rem,100%)]',
+        'align-baseline',
+      ])
+    );
+    expect(title.className.split(' ')).toEqual(
+      expect.arrayContaining(['min-w-0', 'truncate'])
+    );
+    expect(chip?.textContent).toBe('ENG-12Ship the importer');
+    expect(chip?.parentElement?.textContent).toBe(
+      'See ENG-12Ship the importer now'
+    );
   });
 
   it('draws inline code holding only a key as a chip and leaves other code', async () => {

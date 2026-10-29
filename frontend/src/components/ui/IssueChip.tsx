@@ -30,9 +30,12 @@ import { StatusIcon } from './StatusIcon';
 /** How often a mentioned issue is re-read, so its status stays current. */
 const POLL_MS = 60000;
 
-/** The classes the chip shares with the editor's drawing of it. */
+/**
+ * The chip's classes, matching the editor's `.rich-issue-chip`: one box on the
+ * text line that never wraps, whose title truncates at the same width.
+ */
 export const ISSUE_CHIP_CLASS =
-  'inline-flex max-w-full items-baseline gap-1 rounded-sm px-0.5 align-baseline text-text no-underline decoration-transparent transition-colors duration-100 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none';
+  'inline-flex max-w-[min(24rem,100%)] items-baseline gap-1 rounded-sm px-0.5 align-baseline whitespace-nowrap indent-0 text-text no-underline decoration-transparent transition-colors duration-100 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none';
 
 /** What a resolved mention draws from: the issue and its status. */
 export interface IssueMention {
