@@ -15,7 +15,8 @@
  * snooze unsnoozes and keeps read rows read. Each row's menu, from a right
  * click or its "more" button, offers the issue-only entries only on issue
  * rows, and unsubscribing from it, or with Cmd or Ctrl Shift S, offers
- * Undo. Ctrl F opens quick search over the loaded rows, Show unread first reorders them
+ * Undo. Its triage actions show in the command palette while it is open.
+ * Ctrl F opens quick search over the loaded rows, Show unread first reorders them
  * without a new read, and Shift Backspace offers to delete every read row.
  * With the split inbox on, the Priority and Other tabs each read their own
  * bucket and show their unread counts, and Mark all read keeps to the open tab.
@@ -40,6 +41,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
+import { useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   InboxCountRead,
@@ -211,6 +213,28 @@ const resolved = (): WorkspaceContextType => {
   };
 };
 
+/** Lists the page actions the command palette shows, as buttons that run them. */
+const PageActions = () => {
+  const registered = useRegisteredShortcuts();
+  return (
+    <section aria-label="Page actions">
+      {registered
+        .filter((shortcut) => shortcut.scope === 'page')
+        .map((shortcut) => (
+          <button
+            key={shortcut.id}
+            type="button"
+            onClick={() => {
+              shortcut.run();
+            }}
+          >
+            {`${shortcut.group}: ${shortcut.label}`}
+          </button>
+        ))}
+    </section>
+  );
+};
+
 /** Shows where the router is, so a test can read the selection. */
 const Where = () => {
   const location = useLocation();
@@ -224,6 +248,7 @@ const renderPage = (entry = '/w/mine/inbox') =>
     <MemoryRouter initialEntries={[entry]}>
       <ShortcutProvider>
         <BoundKeys />
+        <PageActions />
         <Routes>
           <Route path="/w/:slug/inbox" element={<Inbox />} />
           <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
@@ -379,6 +404,40 @@ describe('inbox', () => {
       expect(markAllRead).toHaveBeenCalled();
     });
     expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it('offers its triage actions to the command palette while it is open', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    const actions = within(
+      screen.getByRole('region', { name: 'Page actions' })
+    );
+    await waitFor(() => {
+      expect(
+        actions.getByRole('button', { name: 'Inbox: Mark all read' })
+      ).toBeInTheDocument();
+    });
+    expect(
+      actions.getByRole('button', { name: 'Inbox: Search notifications' })
+    ).toBeInTheDocument();
+    expect(
+      actions.getByRole('button', {
+        name: 'Inbox: Delete all read notifications',
+      })
+    ).toBeInTheDocument();
+    expect(
+      actions.queryByRole('button', { name: 'Inbox: Next notification' })
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      actions.getByRole('button', { name: 'Inbox: Mark all read' })
+    );
+
+    await waitFor(() => {
+      expect(markAllRead).toHaveBeenCalled();
+    });
   });
 
   it('marks only the filtered types read under a filter', async () => {

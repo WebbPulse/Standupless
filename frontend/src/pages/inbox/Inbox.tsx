@@ -20,6 +20,8 @@
  * snoozed row leaves the list and the badge and comes back unread on its own
  * when its time comes; Show snoozed lists what is still waiting, and H on a
  * snoozed row offers to unsnooze it now.
+ * Those triage actions register at page scope, so the command palette lists
+ * them under Inbox while the page is open, the way Linear's does.
  *
  * Every row also offers its actions to the mouse: hover or select it for
  * quick buttons, or right click it, or press its "more" button, for the full
@@ -1948,12 +1950,14 @@ export const Inbox: React.FC = () => {
   const current = selected?.latest ?? null;
   useShortcut({
     keys: SEARCH_KEYS,
+    scope: 'page',
     label: 'Search notifications',
     group: 'Inbox',
     handler: openSearch,
   });
   useShortcut({
     keys: DELETE_READ_KEYS,
+    scope: 'page',
     label: 'Delete all read notifications',
     group: 'Inbox',
     enabled: !isClearing,
@@ -2020,6 +2024,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: REMOVE_KEYS,
+    scope: 'page',
     label: 'Remove notification',
     group: 'Inbox',
     enabled: selected !== null,
@@ -2030,6 +2035,7 @@ export const Inbox: React.FC = () => {
 
   useShortcut({
     keys: TOGGLE_READ_KEYS,
+    scope: 'page',
     label: 'Toggle read or unread',
     group: 'Inbox',
     enabled: selected !== null,
@@ -2039,6 +2045,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: SNOOZE_KEYS,
+    scope: 'page',
     label: 'Snooze notification',
     group: 'Inbox',
     enabled: selected !== null,
@@ -2048,6 +2055,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: TOGGLE_SUBSCRIPTION_KEYS,
+    scope: 'page',
     label: 'Toggle subscription to issue',
     group: 'Inbox',
     enabled: selected !== null && isIssueRow(selected.latest),
@@ -2057,6 +2065,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: MARK_ALL_READ_KEYS,
+    scope: 'page',
     label: readAllLabel,
     group: 'Inbox',
     enabled: allGroups.length > 0 && !isReadingAll,
