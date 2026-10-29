@@ -40,8 +40,18 @@ import { TaskItem } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
 import { Markdown, type MarkdownManager } from '@tiptap/markdown';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from '@tiptap/pm/state';
+import {
+  Decoration,
+  DecorationSet,
+  type EditorView,
+} from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
@@ -101,12 +111,25 @@ export interface IssueLook {
   signature: string;
 }
 
+/** What the reference chips plugin holds between transactions. */
+interface ReferenceChipState {
+  /** The chips as drawn. */
+  decorations: DecorationSet;
+  /**
+   * The caret while text is being typed at it, so a key still being written
+   * there stays text rather than closing into a chip, or null.
+   */
+  typing: number | null;
+}
+
 /**
  * The meta a transaction carries to redraw the reference chips when what
  * counts as a reference changed, such as the team list arriving, while the
  * document itself did not.
  */
-export const referenceChipsKey = new PluginKey<DecorationSet>('referenceChips');
+export const referenceChipsKey = new PluginKey<ReferenceChipState>(
+  'referenceChips'
+);
 
 /** The @mention shape the server resolves, as `lib/markdown.ts` reads it. */
 const MENTION = /(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])/g;
@@ -251,61 +274,63 @@ interface ReferenceChipOptions {
   issueLook?: (key: string) => IssueLook | undefined;
 }
 
-/** A part of a mention chip drawn beside its key, carrying the key for the hover card. */
-const chipPart = (key: string, part: string): HTMLElement => {
+/** A part of a mention chip, as a span with `className`. */
+const chipPart = (className: string): HTMLElement => {
   const element = document.createElement('span');
-  element.className = `rich-issue-ref rich-issue-${part}`;
-  element.setAttribute('data-issue-key', key);
-  element.setAttribute('data-issue-open', '');
-  element.contentEditable = 'false';
+  element.className = className;
   return element;
 };
 
 /**
- * The decorations drawing one mention: the status glyph before the key, the
- * key itself in muted text and the title after it. Nothing is drawn until the
+ * The one chip a resolved mention is drawn as: the status glyph, the key in
+ * muted text and the truncated title, in a single box that never wraps, so
+ * the text line flows around it as around a word.
+ */
+const issueChip = (key: string, look: IssueLook): HTMLElement => {
+  const chip = chipPart('rich-issue-ref rich-issue-chip');
+  chip.setAttribute('data-issue-key', key);
+  chip.setAttribute('data-issue-open', '');
+  chip.contentEditable = 'false';
+  if (look.icon !== null) {
+    const icon = chipPart('rich-issue-icon');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.append(look.icon.cloneNode(true));
+    chip.append(icon);
+  }
+  const label = chipPart('rich-issue-key');
+  label.setAttribute('aria-hidden', 'true');
+  label.textContent = key;
+  const title = chipPart('rich-issue-title');
+  title.textContent = look.title;
+  chip.title = `${key} ${look.title}`;
+  chip.append(label, title);
+  return chip;
+};
+
+/**
+ * The decorations drawing one mention: the chip in front of the key, and the
+ * key itself shrunk out of sight behind it, so the stored text is untouched
+ * while the caret steps over the pair as one atom. Nothing is drawn until the
  * mention resolves, so an unknown key stays the text it was written as.
  */
 const issueChipDecorations = (
   start: number,
   key: string,
   look: IssueLook
-): Decoration[] => {
-  const end = start + key.length;
-  const drawn: Decoration[] = [];
-  const icon = look.icon;
-  if (icon !== null) {
-    drawn.push(
-      Decoration.widget(
-        start,
-        () => {
-          const element = chipPart(key, 'icon');
-          element.setAttribute('aria-hidden', 'true');
-          element.append(icon.cloneNode(true));
-          return element;
-        },
-        { side: -1, key: `issue-icon:${key}:${look.signature}` }
-      )
-    );
-  }
-  drawn.push(
-    Decoration.inline(start, end, {
-      class: 'rich-issue-ref rich-issue-chip',
-      'data-issue-key': key,
-    }),
-    Decoration.widget(
-      end,
-      () => {
-        const element = chipPart(key, 'title');
-        element.textContent = look.title;
-        element.title = look.title;
-        return element;
-      },
-      { side: 1, key: `issue-title:${key}:${look.signature}` }
-    )
-  );
-  return drawn;
-};
+): Decoration[] => [
+  Decoration.widget(start, () => issueChip(key, look), {
+    side: 1,
+    marks: [],
+    ignoreSelection: true,
+    key: `issue-chip:${key}:${look.signature}`,
+  }),
+  Decoration.inline(
+    start,
+    start + key.length,
+    { class: 'rich-issue-source' },
+    { issueChip: true }
+  ),
+];
 
 /**
  * Finds each issue key naming a team, and each link to a project or document,
@@ -313,7 +338,8 @@ const issueChipDecorations = (
  */
 const referenceDecorations = (
   doc: ProseMirrorNode,
-  options: ReferenceChipOptions
+  options: ReferenceChipOptions,
+  typing: number | null = null
 ): DecorationSet => {
   const { isIssueKey, isReferenceLink, issueLook } = options;
   const found: Decoration[] = [];
@@ -325,8 +351,12 @@ const referenceDecorations = (
         key === null || isIssueKey?.(key) !== true
           ? undefined
           : issueLook?.(key);
-      if (key !== null && look !== undefined) {
-        const start = position + node.text.indexOf(key);
+      const start = key === null ? -1 : position + node.text.indexOf(key);
+      if (
+        key !== null &&
+        look !== undefined &&
+        start + key.length !== typing
+      ) {
         found.push(...issueChipDecorations(start, key, look));
       }
       return;
@@ -353,7 +383,7 @@ const referenceDecorations = (
       const start = position + match.index;
       if (issueLook !== undefined) {
         const look = issueLook(match[0]);
-        if (look !== undefined) {
+        if (look !== undefined && start + match[0].length !== typing) {
           found.push(...issueChipDecorations(start, match[0], look));
         }
         continue;
@@ -394,10 +424,163 @@ export const issueKeysIn = (
   return [...keys];
 };
 
+/** The stretch of document one drawn issue chip stands over. */
+interface ChipSpan {
+  from: number;
+  to: number;
+}
+
+/** Every drawn issue chip touching `from` to `to` in `state`. */
+const chipSpans = (state: EditorState, from: number, to: number): ChipSpan[] =>
+  (referenceChipsKey.getState(state)?.decorations ?? DecorationSet.empty)
+    .find(from, to, (spec: { issueChip?: boolean }) => spec.issueChip === true)
+    .map((found) => ({ from: found.from, to: found.to }));
+
+/** The issue chip `position` falls strictly inside, if any. */
+const chipAround = (state: EditorState, position: number): ChipSpan | null =>
+  chipSpans(state, position, position).find(
+    (span) => span.from < position && position < span.to
+  ) ?? null;
+
+/** The issue chip starting or ending at `position`, by `edge`. */
+const chipAt = (
+  state: EditorState,
+  position: number,
+  edge: 'from' | 'to'
+): ChipSpan | null =>
+  chipSpans(state, position, position).find(
+    (span) => span[edge] === position
+  ) ?? null;
+
+/** Text that would run into a key beside it and stop it reading as one. */
+const JOINS_KEY_AFTER = /^[\w-]/;
+const JOINS_KEY_BEFORE = /[\w/-]$/;
+
+/**
+ * Moves the caret, or extends the selection, across the chip beside it with
+ * the arrow keys, and removes the whole chip with Backspace or Delete.
+ */
+const stepOverChip = (view: EditorView, event: KeyboardEvent): boolean => {
+  if (event.altKey || event.metaKey || event.ctrlKey) return false;
+  const { state } = view;
+  const { selection } = state;
+  if (!(selection instanceof TextSelection)) return false;
+  const head = selection.head;
+  const move = (chip: ChipSpan | null, target: 'from' | 'to'): boolean => {
+    if (chip === null) return false;
+    const anchor = event.shiftKey ? selection.anchor : chip[target];
+    view.dispatch(
+      state.tr
+        .setSelection(TextSelection.create(state.doc, anchor, chip[target]))
+        .scrollIntoView()
+    );
+    return true;
+  };
+  const remove = (chip: ChipSpan | null): boolean => {
+    if (chip === null) return false;
+    view.dispatch(state.tr.delete(chip.from, chip.to).scrollIntoView());
+    return true;
+  };
+  if (!event.shiftKey && !selection.empty) return false;
+  switch (event.key) {
+    case 'ArrowRight':
+      return move(chipAt(state, head, 'from'), 'to');
+    case 'ArrowLeft':
+      return move(chipAt(state, head, 'to'), 'from');
+    case 'Backspace':
+      return !event.shiftKey && remove(chipAt(state, head, 'to'));
+    case 'Delete':
+      return !event.shiftKey && remove(chipAt(state, head, 'from'));
+    default:
+      return false;
+  }
+};
+
+/**
+ * Types text beside a chip with a space between, when the text would
+ * otherwise join the key and turn the chip back into plain text.
+ */
+const typeBesideChip = (
+  view: EditorView,
+  from: number,
+  to: number,
+  text: string
+): boolean => {
+  if (from !== to) return false;
+  const { state } = view;
+  if (chipAt(state, from, 'to') !== null && JOINS_KEY_AFTER.test(text)) {
+    view.dispatch(state.tr.insertText(` ${text}`, from));
+    return true;
+  }
+  if (chipAt(state, from, 'from') !== null && JOINS_KEY_BEFORE.test(text)) {
+    const tr = state.tr.insertText(`${text} `, from);
+    view.dispatch(
+      tr.setSelection(TextSelection.create(tr.doc, from + text.length))
+    );
+    return true;
+  }
+  return false;
+};
+
+/**
+ * The caret when `transaction` is text typed at it: a change to the caret's
+ * own paragraph that is not a paste, drop or cut. Null otherwise.
+ */
+const typingCaret = (
+  transaction: Transaction,
+  state: EditorState
+): number | null => {
+  const { selection } = state;
+  if (!transaction.docChanged || !selection.empty) return null;
+  if (transaction.getMeta('uiEvent') !== undefined) return null;
+  const $caret = selection.$head;
+  if (!$caret.parent.isTextblock) return null;
+  const blockStart = $caret.start();
+  const blockEnd = $caret.end();
+  let inBlock = true;
+  transaction.mapping.maps.forEach((map, index) => {
+    const rest = transaction.mapping.slice(index + 1);
+    map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+      if (rest.map(newStart) < blockStart || rest.map(newEnd) > blockEnd) {
+        inBlock = false;
+      }
+    });
+  });
+  return inBlock ? selection.head : null;
+};
+
+/**
+ * Keeps either end of the selection out of a chip's hidden key, moving it to
+ * the edge it was travelling towards, or the nearer edge when it jumped in.
+ */
+const keepOutOfChips = (
+  previous: EditorState,
+  state: EditorState
+): Transaction | null => {
+  const { selection } = state;
+  if (!(selection instanceof TextSelection)) return null;
+  const settle = (position: number, before: number): number => {
+    const chip = chipAround(state, position);
+    if (chip === null) return position;
+    if (before <= chip.from) return chip.to;
+    if (before >= chip.to) return chip.from;
+    return position - chip.from <= chip.to - position ? chip.from : chip.to;
+  };
+  const head = settle(selection.head, previous.selection.head);
+  const anchor = settle(selection.anchor, previous.selection.anchor);
+  if (head === selection.head && anchor === selection.anchor) return null;
+  return state.tr.setSelection(TextSelection.create(state.doc, anchor, head));
+};
+
 /**
  * Shows issue keys and project and document links as chips while editing,
  * without making them nodes, so the stored text is exactly what was written.
- * A transaction carrying {@link referenceChipsKey} redraws them in place.
+ * A drawn issue chip behaves as one atom: the arrow keys step over it,
+ * Backspace and Delete remove it whole, the caret never rests inside its
+ * key, and a word typed against it is kept a space apart so the key still
+ * reads as one. A key being typed stays text until the caret leaves its end,
+ * so `ENG-1` does not close into a chip on the way to `ENG-12`. A transaction carrying {@link referenceChipsKey} redraws them
+ * in place.
  */
 const ReferenceChips = Extension.create<ReferenceChipOptions>({
   name: 'referenceChips',
@@ -410,17 +593,41 @@ const ReferenceChips = Extension.create<ReferenceChipOptions>({
       new Plugin({
         key: referenceChipsKey,
         state: {
-          init: (_, state) => referenceDecorations(state.doc, options),
-          apply: (transaction, held) =>
-            transaction.docChanged ||
-            transaction.getMeta(referenceChipsKey) !== undefined
-              ? referenceDecorations(transaction.doc, options)
-              : held,
+          init: (_, state) => ({
+            decorations: referenceDecorations(state.doc, options),
+            typing: null,
+          }),
+          apply: (transaction, held, _previous, state) => {
+            const typing =
+              transaction.docChanged || transaction.selectionSet
+                ? typingCaret(transaction, state)
+                : held.typing;
+            return transaction.docChanged ||
+              typing !== held.typing ||
+              transaction.getMeta(referenceChipsKey) !== undefined
+              ? {
+                  decorations: referenceDecorations(
+                    transaction.doc,
+                    options,
+                    typing
+                  ),
+                  typing,
+                }
+              : held;
+          },
         },
+        appendTransaction: (transactions, previous, state) =>
+          transactions.some(
+            (transaction) => transaction.selectionSet || transaction.docChanged
+          )
+            ? keepOutOfChips(previous, state)
+            : null,
         props: {
           decorations(state) {
-            return this.getState(state);
+            return this.getState(state)?.decorations;
           },
+          handleKeyDown: stepOverChip,
+          handleTextInput: typeBesideChip,
         },
       }),
     ];
