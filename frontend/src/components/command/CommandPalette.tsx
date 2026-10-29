@@ -36,6 +36,10 @@
  * does, since the index does not hold keys and a key is the most common thing
  * anyone types here.
  *
+ * A searchable term always ends the top level on a row that opens the full
+ * search page with the term filled in, as Linear's does, so a term that
+ * matched no command is not typed twice.
+ *
  * The issues the viewer opened most recently in this workspace head the top
  * level, so an empty palette is one Enter away from the issue seen a minute
  * ago, and a typed term narrows them along with everything else. A typed term
@@ -1925,6 +1929,21 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }
     }
 
+    const query = deferred.trim();
+    if (indexable || isKey) {
+      built.push({
+        heading: 'Search',
+        commands: [
+          {
+            id: 'search-term',
+            label: `Search for "${query}"`,
+            icon: <LuSearch className={ICON} />,
+            to: `${searchPath(slug)}?${new URLSearchParams({ q: query }).toString()}`,
+          },
+        ],
+      });
+    }
+
     return built;
   }, [
     page,
@@ -1948,6 +1967,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     routePrefix,
     deferred,
     isKey,
+    indexable,
     recents,
     workspaceId,
     issueActions,
