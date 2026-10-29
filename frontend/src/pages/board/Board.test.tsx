@@ -2,6 +2,7 @@
  * The board page. Covers the columns it opens on, dragging a card to another
  * column to change its status, dragging within a column to set a manual
  * order, dragging a selection in one move, dropping on a hidden column,
+ * empty columns joining the rail when empty groups are off,
  * swimlanes when rows are sub-grouped, and the keyboard walking cards in
  * board order.
  */
@@ -658,6 +659,59 @@ describe('the board', () => {
     fireEvent.click(within(rail).getByRole('button', { name: /Doing/ }));
 
     expect(screen.getByRole('list', { name: 'Doing' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('complementary', { name: 'Hidden columns' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('lists empty columns in the rail when empty groups are off', async () => {
+    renderPage('/w/mine/team/ENG/board?empty=0');
+    await screen.findByRole('list', { name: 'Todo' });
+
+    expect(
+      screen.queryByRole('list', { name: 'Done' })
+    ).not.toBeInTheDocument();
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    const done = within(rail).getByTitle(/^Done is empty/);
+    expect(done).toHaveAttribute('data-empty-column');
+    expect(within(done).getByText('Done')).toBeInTheDocument();
+    expect(
+      within(rail).queryByRole('button', { name: /Done/ })
+    ).not.toBeInTheDocument();
+    expect(within(rail).queryByText('Doing')).not.toBeInTheDocument();
+  });
+
+  it('keeps the rail to hidden columns while empty groups show', async () => {
+    renderPage();
+    await screen.findByRole('list', { name: 'Done' });
+
+    expect(
+      screen.queryByRole('complementary', { name: 'Hidden columns' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('fills an empty column by a drop on the rail and brings it onto the board', async () => {
+    renderPage('/w/mine/team/ENG/board?empty=0');
+    await screen.findByText('Cache the token');
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    const done = within(rail).getByTitle(/^Done is empty/);
+    const data = transfer();
+
+    fireEvent.dragStart(row('iss-1'), { dataTransfer: data });
+    fireEvent.dragOver(done, { dataTransfer: data });
+    expect(done).toHaveAttribute('data-drop-target');
+    fireEvent.drop(done, { dataTransfer: data });
+
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledWith('iss-1', {
+        status_id: 'st-done',
+      });
+    });
+    expect(
+      within(await screen.findByRole('list', { name: 'Done' })).getByText(
+        'Cache the token'
+      )
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole('complementary', { name: 'Hidden columns' })
     ).not.toBeInTheDocument();

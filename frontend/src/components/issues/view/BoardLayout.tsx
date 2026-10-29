@@ -15,8 +15,10 @@
  * A column can be hidden from its header menu. Hidden columns sit in a rail
  * on the right, or below the board on phones, with their counts, and one
  * click brings a column back. Each one in the rail also takes a drop, which
- * sets its value without showing it again. On touch screens the columns snap
- * into place.
+ * sets its value without showing it again. With empty groups turned off, the
+ * empty columns join the rail after the hidden ones as drop targets only, so
+ * every column stays reachable, and a drop on one brings it onto the board by
+ * filling it. On touch screens the columns snap into place.
  *
  * A quiet New issue row closes each cell the viewer may create in. It shows on
  * hover or focus, and always in an empty cell, and opens the create dialog with
@@ -246,7 +248,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   const columnField = state.groupBy === 'none' ? 'status' : state.groupBy;
   const laneField = state.subGroupBy;
 
-  const { columns, hidden, lanes } = useMemo(() => {
+  const { columns, hidden, empty, lanes } = useMemo(() => {
     const all = withinStatusCategories(
       groupIssues(issues, columnField, context, true),
       columnField,
@@ -273,6 +275,13 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       hidden: all.filter((column) =>
         collapsed.has(hiddenColumnKey(column.key))
       ),
+      empty: state.showEmpty
+        ? []
+        : all.filter(
+            (column) =>
+              column.issues.length === 0 &&
+              !collapsed.has(hiddenColumnKey(column.key))
+          ),
       lanes: laneGroups.map((lane) => ({
         lane,
         cells: groupIssues(lane.issues, columnField, context, true),
@@ -343,8 +352,8 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       laneField,
       cellIssues,
       columnLabel: (key) =>
-        [...columns, ...hidden].find((column) => column.key === key)?.label ??
-        key,
+        [...columns, ...hidden, ...empty].find((column) => column.key === key)
+          ?.label ?? key,
       laneLabel: (key) =>
         lanes.find((item) => item.lane.key === key)?.lane.label ?? key,
     });
@@ -511,6 +520,70 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
     );
   };
 
+  const railEntry = (column: IssueGroup, showable: boolean) => {
+    const isTarget = railTarget === column.key;
+    const props = {
+      'data-drop-target': isTarget ? '' : undefined,
+      'data-empty-column': showable ? undefined : '',
+      onDragOver: (event: React.DragEvent) => {
+        if (drag === null) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        if (target !== null) setTarget(null);
+        if (railTarget !== column.key) setRailTarget(column.key);
+      },
+      onDragLeave: () => {
+        if (railTarget === column.key) setRailTarget(null);
+      },
+      onDrop: (event: React.DragEvent) => {
+        event.preventDefault();
+        drop({ lane: null, column: column.key, index: null });
+      },
+      className: cn(
+        'flex h-8 items-center gap-2 rounded-md border px-2 text-left text-sm pointer-coarse:h-11 transition-colors duration-100',
+        showable && 'focus-visible:outline-2 focus-visible:outline-accent',
+        isTarget
+          ? 'border-accent bg-accent-soft text-text'
+          : drag !== null
+            ? 'border-dashed border-line text-text-muted'
+            : showable
+              ? 'border-transparent text-text-muted hover:bg-raised hover:text-text'
+              : 'border-transparent text-text-faint'
+      ),
+    };
+    const content = (
+      <>
+        <GroupGlyph group={column} />
+        <TruncatedText className="min-w-0 flex-1">{column.label}</TruncatedText>
+        <GroupFigure issues={column.issues} requests={column.requests} />
+      </>
+    );
+    if (!showable) {
+      return (
+        <div
+          key={column.key}
+          title={`${column.label} is empty. Drop issues here to move them to it`}
+          {...props}
+        >
+          {content}
+        </div>
+      );
+    }
+    return (
+      <button
+        key={column.key}
+        type="button"
+        title={`Show ${column.label}`}
+        onClick={() => {
+          onToggle(hiddenColumnKey(column.key));
+        }}
+        {...props}
+      >
+        {content}
+      </button>
+    );
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       <div className="min-h-0 flex-1 scroll-px-3 overflow-auto pointer-coarse:snap-x pointer-coarse:snap-mandatory lg:scroll-px-5">
@@ -625,7 +698,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           })}
         </div>
       </div>
-      {hidden.length > 0 && (
+      {hidden.length + empty.length > 0 && (
         <aside
           aria-label="Hidden columns"
           className="flex max-h-48 w-full shrink-0 flex-col gap-0.5 overflow-y-auto border-t border-line px-2 pt-3 pb-6 md:max-h-none md:w-56 md:border-t-0 md:border-l"
@@ -633,45 +706,8 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           <p className="flex h-8 items-center px-2 text-xs font-medium text-text-muted">
             Hidden columns
           </p>
-          {hidden.map((column) => (
-            <button
-              key={column.key}
-              type="button"
-              title={`Show ${column.label}`}
-              data-drop-target={railTarget === column.key ? '' : undefined}
-              onClick={() => {
-                onToggle(hiddenColumnKey(column.key));
-              }}
-              onDragOver={(event) => {
-                if (drag === null) return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-                if (target !== null) setTarget(null);
-                if (railTarget !== column.key) setRailTarget(column.key);
-              }}
-              onDragLeave={() => {
-                if (railTarget === column.key) setRailTarget(null);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                drop({ lane: null, column: column.key, index: null });
-              }}
-              className={cn(
-                'flex h-8 items-center gap-2 rounded-md border px-2 text-left text-sm pointer-coarse:h-11 transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-accent',
-                railTarget === column.key
-                  ? 'border-accent bg-accent-soft text-text'
-                  : drag !== null
-                    ? 'border-dashed border-line text-text-muted'
-                    : 'border-transparent text-text-muted hover:bg-raised hover:text-text'
-              )}
-            >
-              <GroupGlyph group={column} />
-              <TruncatedText className="min-w-0 flex-1">
-                {column.label}
-              </TruncatedText>
-              <GroupFigure issues={column.issues} requests={column.requests} />
-            </button>
-          ))}
+          {hidden.map((column) => railEntry(column, true))}
+          {empty.map((column) => railEntry(column, false))}
         </aside>
       )}
     </div>
