@@ -390,9 +390,7 @@ export const Search: React.FC = () => {
     documents: visible(documents).map((row) =>
       documentPath(slug, row.document_id)
     ),
-    comments: visible(comments).map((comment) =>
-      commentHitPath(slug, comment)
-    ),
+    comments: visible(comments).map((comment) => commentHitPath(slug, comment)),
   };
   const hitPaths = listsHits
     ? KIND_ORDER.filter((kind) => shows(kind)).flatMap(
@@ -424,9 +422,7 @@ export const Search: React.FC = () => {
       if (hitCount === 0) return;
       const start = step > 0 ? 0 : hitCount - 1;
       const next =
-        cursor < 0
-          ? start
-          : Math.min(hitCount - 1, Math.max(0, cursor + step));
+        cursor < 0 ? start : Math.min(hitCount - 1, Math.max(0, cursor + step));
       setCursorState({ scope: resultsScope, index: next });
     },
     [cursor, hitCount, resultsScope]
