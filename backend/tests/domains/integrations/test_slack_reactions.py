@@ -329,3 +329,143 @@ def test_a_purged_team_loses_its_setting(intake_on: TestClient, repositories: An
     """Purging a team removes its reaction intake row."""
     assert repositories.github.slack_intake.delete_team(WORKSPACE, TEAM) is True
     assert repositories.github.slack_intake.get(WORKSPACE, TEAM) is None
+
+
+ASK_TS = "1700000100.000100"
+
+
+def _posted(
+    event_id: str, *, user: str = "UOWNER", channel: str = CHANNEL, ts: str = ASK_TS, **extra: Any
+) -> dict[str, Any]:
+    """One `message` envelope: a new top-level message in a channel unless `extra` says otherwise."""
+    event = {
+        "type": "message",
+        "channel": channel,
+        "channel_type": "channel",
+        "user": user,
+        "text": "Can someone look at the deploy?\nIt hangs",
+        "ts": ts,
+        **extra,
+    }
+    return {"type": "event_callback", "team_id": SLACK_TEAM, "event_id": event_id, "event": event}
+
+
+@pytest.fixture
+def asks_on(slack_client: TestClient) -> TestClient:
+    """The team filing every top-level message in `#eng`, with `:ticket:` as its emoji."""
+    response = slack_client.put(
+        INTAKE, json={"emoji": "ticket", "channel_ids": [CHANNEL], "message_channel_ids": [CHANNEL]}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["message_channel_ids"] == [CHANNEL]
+    return slack_client
+
+
+@pytest.mark.parametrize(
+    ("extra", "taken"),
+    [
+        ({}, True),
+        ({"subtype": "file_share"}, True),
+        ({"thread_ts": ASK_TS}, True),
+        ({"thread_ts": "1700000000.000001"}, False),
+        ({"subtype": "thread_broadcast", "thread_ts": "1700000000.000001"}, False),
+        ({"subtype": "channel_join"}, False),
+        ({"subtype": "message_changed"}, False),
+        ({"subtype": "message_deleted"}, False),
+        ({"subtype": "bot_message"}, False),
+        ({"bot_id": "B0BOT"}, False),
+        ({"app_id": "A0APP"}, False),
+        ({"hidden": True}, False),
+        ({"channel_type": "im", "channel": "D0DM"}, False),
+        ({"user": ""}, False),
+        ({"ts": ""}, False),
+    ],
+)
+def test_only_a_persons_new_top_level_message_is_taken(extra: dict[str, Any], taken: bool) -> None:
+    """Thread replies, edits, joins, bot and app posts and direct messages are left alone."""
+    assert reactions.message_wanted(_posted("Ev1", **extra)["event"]) is taken
+
+
+def test_every_message_mode_files_each_new_message_once_and_acknowledges_it(
+    asks_on: TestClient, slack: ReactionSlack, repositories: Any
+) -> None:
+    """A top-level message becomes one issue paired with its thread, and the bot reacts with the team's emoji."""
+    assert _event(asks_on, _posted("Ev1")).status_code == 200
+    [issue] = _issues(repositories)
+    assert issue.title == "Can someone look at the deploy?"
+    assert issue.created_by == OWNER
+    assert "It hangs" in (issue.body or "") and PERMALINK in (issue.body or "")
+    assert slack.last("reactions.add") == {"channel": CHANNEL, "timestamp": ASK_TS, "name": "ticket"}
+    reply = slack.last("chat.postMessage")
+    assert reply["channel"] == CHANNEL and reply["thread_ts"] == ASK_TS
+    assert repositories.github.slack_threads.get_link(WORKSPACE, CHANNEL, ASK_TS, issue.issue_id) is not None
+    claim = repositories.github.slack_intake.get_claim(WORKSPACE, CHANNEL, ASK_TS, TEAM)
+    assert claim is not None and claim.state == "filed" and claim.issue_id == issue.issue_id
+
+    assert _event(asks_on, _posted("Ev2")).status_code == 200
+    assert _event(asks_on, _reaction("Ev3", ts=ASK_TS)).status_code == 200
+    assert len(_issues(repositories)) == 1
+    assert slack.methods().count("reactions.add") == 1
+    assert "reactions.get" not in slack.methods()
+
+
+def test_every_message_mode_skips_replies_bots_and_joins(
+    asks_on: TestClient, slack: ReactionSlack, repositories: Any
+) -> None:
+    """Only a person's new top-level message files anything, and the bot's own posts never do."""
+    assert _event(asks_on, _posted("Ev1", ts="1700000100.000200", thread_ts=MESSAGE_TS)).status_code == 200
+    assert _event(asks_on, _posted("Ev2", user="UBOT")).status_code == 200
+    assert _event(asks_on, _posted("Ev3", bot_id="B0BOT")).status_code == 200
+    assert _event(asks_on, _posted("Ev4", subtype="channel_join")).status_code == 200
+    assert _event(asks_on, _posted("Ev5", subtype="message_changed")).status_code == 200
+    assert _issues(repositories) == []
+    assert "reactions.add" not in slack.methods()
+
+
+def test_a_reaction_mode_channel_files_no_plain_message(
+    intake_on: TestClient, slack: ReactionSlack, repositories: Any
+) -> None:
+    """Without every message mode a new message waits for the emoji, which still files it."""
+    assert _event(intake_on, _posted("Ev1", channel=CHANNEL)).status_code == 200
+    assert _event(intake_on, _posted("Ev2", channel="C0OPS")).status_code == 200
+    assert _issues(repositories) == []
+    assert "reactions.add" not in slack.methods()
+
+
+def test_a_message_from_someone_without_an_account_files_as_the_admin(asks_on: TestClient, repositories: Any) -> None:
+    """An author with no Standupless member still files their ask, written as the admin who turned it on."""
+    assert _event(asks_on, _posted("Ev1", user="USTRANGER")).status_code == 200
+    [issue] = _issues(repositories)
+    assert issue.created_by == ADMIN
+
+
+def test_an_acknowledgement_slack_refuses_still_files_once(
+    asks_on: TestClient, slack: ReactionSlack, repositories: Any
+) -> None:
+    """A refused reaction leaves the filed issue and its claim in place."""
+    slack.errors["reactions.add"] = "missing_scope"
+    assert _event(asks_on, _posted("Ev1")).status_code == 200
+    assert _event(asks_on, _posted("Ev2")).status_code == 200
+    assert len(_issues(repositories)) == 1
+
+
+def test_every_message_mode_needs_the_channel_and_one_team_per_channel(asks_on: TestClient) -> None:
+    """A message channel has to be picked as well, and a second team cannot file every message in it too."""
+    refused = asks_on.put(
+        OTHER_INTAKE, json={"emoji": "bug", "channel_ids": ["C0OPS"], "message_channel_ids": [CHANNEL]}
+    )
+    assert refused.status_code == 422
+    clash = asks_on.put(OTHER_INTAKE, json={"emoji": "bug", "channel_ids": [CHANNEL], "message_channel_ids": [CHANNEL]})
+    assert clash.status_code == 409
+    reaction_only = asks_on.put(OTHER_INTAKE, json={"emoji": "bug", "channel_ids": [CHANNEL]})
+    assert reaction_only.status_code == 200
+
+
+def test_every_message_mode_asks_for_a_reinstall_without_the_reaction_write_scope(
+    asks_on: TestClient, installed: SlackInstallation
+) -> None:
+    """An App added before acknowledgements existed lacks `reactions:write`, which only every message mode needs."""
+    older = installed.model_copy(update={"scopes": [scope for scope in installed.scopes if scope != "reactions:write"]})
+    assert reactions.needs_reinstall(older) is False
+    assert reactions.needs_reinstall(older, every_message=True) is True
+    assert asks_on.get(INTAKE).json()["reinstall"] is False

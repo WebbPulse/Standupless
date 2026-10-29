@@ -34,6 +34,7 @@ BOT_SCOPES: tuple[str, ...] = (
     "links:read",
     "links:write",
     "reactions:read",
+    "reactions:write",
     "users:read",
     "users:read.email",
 )
@@ -43,7 +44,8 @@ The history scopes are what deliver a synced thread's replies, the direct messag
 one for a request whose thread is the requester's confirmation, and joining is how
 the bot comes to receive them in a public channel it was not yet in. Reading
 reactions is what delivers an intake emoji and lets the bot read the message it
-was added to.
+was added to, and writing them is how the bot acknowledges a message every
+message mode filed.
 """
 
 GET_METHODS = frozenset(

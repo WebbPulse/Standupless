@@ -6,7 +6,9 @@
  * back, and is paired with the message's thread, so the bot replies there with
  * the issue link and the thread's replies sync with the issue's comments. It is
  * created as the person who reacted when they are a member who can create issues
- * here, and otherwise as the admin who turned intake on.
+ * here, and otherwise as the admin who turned intake on. A channel set to every
+ * message files each new top-level message without the emoji, and the bot
+ * reacts with the emoji to acknowledge it.
  *
  * The section shows only where this environment has a Slack App. Anyone who can
  * read the team sees the setting; only a team admin changes it, because picking
@@ -35,6 +37,7 @@ import { ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
+import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
 
 /** Props for SlackReactionIntakeSection: which team, and whether the caller may edit. */
@@ -80,7 +83,12 @@ const channelNames = (
 
 /** One change to the setting the section can make. */
 type IntakeChange =
-  | { action: 'save'; emoji: string; channelIds: string[] }
+  | {
+      action: 'save';
+      emoji: string;
+      channelIds: string[];
+      messageChannelIds: string[];
+    }
   | { action: 'disable' };
 
 /** Props for the editor an admin turns intake on and changes it with. */
@@ -89,7 +97,11 @@ interface EditorProps {
   teamId: string;
   intake: SlackIntakeRead;
   saving: boolean;
-  onSave: (emoji: string, channelIds: string[]) => void;
+  onSave: (
+    emoji: string,
+    channelIds: string[],
+    messageChannelIds: string[]
+  ) => void;
   onDisable: () => void;
 }
 
@@ -110,6 +122,9 @@ const Editor: React.FC<EditorProps> = ({
   const emojiId = useId();
   const [emoji, setEmoji] = useState(intake.emoji ?? SUGGESTED_EMOJI);
   const [picked, setPicked] = useState<string[]>(intake.channel_ids);
+  const [everyMessage, setEveryMessage] = useState<string[]>(
+    intake.message_channel_ids
+  );
   const {
     data: channels,
     error: channelsError,
@@ -135,6 +150,28 @@ const Editor: React.FC<EditorProps> = ({
       on ? [...current, id] : current.filter((row) => row !== id)
     );
   };
+
+  const setMode = (id: string, every: boolean): void => {
+    setEveryMessage((current) =>
+      every ? [...current, id] : current.filter((row) => row !== id)
+    );
+  };
+
+  const modeFor = (id: string, label: string): React.ReactNode =>
+    picked.includes(id) ? (
+      <Select
+        aria-label={`Mode for ${label}`}
+        className="mt-1 ml-6 max-w-56"
+        value={everyMessage.includes(id) ? 'message' : 'reaction'}
+        disabled={saving}
+        onChange={(event) => {
+          setMode(id, event.target.value === 'message');
+        }}
+      >
+        <option value="reaction">When reacted with the emoji</option>
+        <option value="message">Every new message</option>
+      </Select>
+    ) : null;
 
   return (
     <div className="space-y-4 rounded-md border border-line p-3">
@@ -172,7 +209,8 @@ const Editor: React.FC<EditorProps> = ({
         <legend className="text-sm font-medium">Channels</legend>
         <p className="text-xs text-text-muted">
           Standupless joins the public channels you pick. Invite it to a private
-          channel before picking it.
+          channel before picking it. Set a channel to every new message to file
+          each top-level message there without the emoji.
         </p>
         {channelsError !== null && (
           <ErrorAlert
@@ -196,6 +234,7 @@ const Editor: React.FC<EditorProps> = ({
                     toggle(row.id, event.target.checked);
                   }}
                 />
+                {modeFor(row.id, `#${row.name}`)}
               </li>
             ))}
             {orphaned.map((id) => (
@@ -208,6 +247,7 @@ const Editor: React.FC<EditorProps> = ({
                     toggle(id, event.target.checked);
                   }}
                 />
+                {modeFor(id, id)}
               </li>
             ))}
             {listed.length === 0 && orphaned.length === 0 && (
@@ -224,7 +264,11 @@ const Editor: React.FC<EditorProps> = ({
           size="sm"
           disabled={!canSave}
           onClick={() => {
-            onSave(name, picked);
+            onSave(
+              name,
+              picked,
+              everyMessage.filter((id) => picked.includes(id))
+            );
           }}
         >
           {intake.enabled ? 'Save' : 'Turn on'}
@@ -268,6 +312,7 @@ export const SlackReactionIntakeSection: React.FC<
         await saveSlackIntake(workspaceId, teamId, {
           emoji: next.emoji,
           channel_ids: next.channelIds,
+          message_channel_ids: next.messageChannelIds,
         });
       } else {
         await disableSlackIntake(workspaceId, teamId);
@@ -352,9 +397,9 @@ export const SlackReactionIntakeSection: React.FC<
               teamId={teamId}
               intake={data}
               saving={saving}
-              onSave={(emoji, channelIds) => {
+              onSave={(emoji, channelIds, messageChannelIds) => {
                 void run(
-                  { action: 'save', emoji, channelIds },
+                  { action: 'save', emoji, channelIds, messageChannelIds },
                   data.enabled
                     ? 'Slack reaction settings saved.'
                     : 'Create from Slack reactions turned on.'
@@ -370,7 +415,7 @@ export const SlackReactionIntakeSection: React.FC<
           ) : (
             <p className="text-sm text-text-muted">
               {data.enabled && data.emoji !== null
-                ? `Reacting with :${data.emoji}: in ${channelNames(data.channel_ids, null)} files the message here. Only a team admin can change this.`
+                ? `Reacting with :${data.emoji}: in ${channelNames(data.channel_ids, null)} files the message here.${data.message_channel_ids.length > 0 ? ` Every new message in ${channelNames(data.message_channel_ids, null)} is filed too.` : ''} Only a team admin can change this.`
                 : 'Off. Only a team admin can turn this on.'}
             </p>
           )}

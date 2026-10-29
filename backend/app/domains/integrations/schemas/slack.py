@@ -67,6 +67,8 @@ class SlackIntakeRead(BaseModel):
     `enabled` is false until a team admin picks an emoji and channels. `reinstall`
     says the workspace's Slack App was added before it could read reactions, so it
     has to be connected again before a reaction files anything.
+    `message_channel_ids` are the channels in every message mode, where each
+    top-level message is filed without the emoji.
     """
 
     configured: bool
@@ -75,6 +77,7 @@ class SlackIntakeRead(BaseModel):
     reinstall: bool = False
     emoji: str | None = None
     channel_ids: list[str] = Field(default_factory=list)
+    message_channel_ids: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 
@@ -82,10 +85,14 @@ class SlackIntakeWrite(BaseModel):
     """The emoji a team files messages with and the channels it listens in.
 
     The emoji is taken with or without its colons and any skin tone, and is stored
-    the way Slack names it in a reaction.
+    the way Slack names it in a reaction. `message_channel_ids` puts some of the
+    channels in every message mode; each has to be one of `channel_ids`.
     """
 
     emoji: str = Field(min_length=1, max_length=EMOJI_INPUT_MAX)
     channel_ids: list[Annotated[str, Field(pattern=r"^[CG][A-Z0-9]{2,30}$")]] = Field(
         min_length=1, max_length=MAX_INTAKE_CHANNELS
+    )
+    message_channel_ids: list[Annotated[str, Field(pattern=r"^[CG][A-Z0-9]{2,30}$")]] = Field(
+        default_factory=list, max_length=MAX_INTAKE_CHANNELS
     )

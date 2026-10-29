@@ -71,6 +71,7 @@ const off: SlackIntakeRead = {
   reinstall: false,
   emoji: null,
   channel_ids: [],
+  message_channel_ids: [],
   updated_at: null,
 };
 
@@ -159,6 +160,31 @@ describe('the Slack reaction intake section', () => {
       expect(saveSlackIntake).toHaveBeenCalledWith('ws-1', 'team-1', {
         emoji: 'eyes',
         channel_ids: ['C0001', 'G0002'],
+        message_channel_ids: [],
+      });
+    });
+  });
+
+  it('sets a picked channel to file every new message', async () => {
+    getSlackIntake.mockResolvedValue(off);
+    const user = userEvent.setup();
+    render(
+      <SlackReactionIntakeSection workspaceId="ws-1" teamId="team-1" canEdit />
+    );
+
+    await user.click(await screen.findByLabelText('#support'));
+    await user.click(screen.getByLabelText('#oncall (private)'));
+    await user.selectOptions(
+      screen.getByLabelText('Mode for #oncall'),
+      'message'
+    );
+    await user.click(screen.getByRole('button', { name: 'Turn on' }));
+
+    await waitFor(() => {
+      expect(saveSlackIntake).toHaveBeenCalledWith('ws-1', 'team-1', {
+        emoji: 'ticket',
+        channel_ids: ['C0001', 'G0002'],
+        message_channel_ids: ['G0002'],
       });
     });
   });
