@@ -120,6 +120,10 @@ export interface SubIssuesProps {
   onPeekRow?: (issue: { id: string; key: string }) => void;
   /** Says "No sub-issues" under an empty header. Defaults to true. */
   emptyHint?: boolean;
+  /** Opens the inline add row on mount, for a section opened to add one. */
+  startAdding?: boolean;
+  /** Called when the inline add row closes, saying whether it filed any. */
+  onAddDone?: (createdAny: boolean) => void;
 }
 
 /** The categories the rollup counts as done. */
@@ -489,10 +493,12 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
   onOpenRow,
   onPeekRow,
   emptyHint = true,
+  startAdding = false,
+  onAddDone,
 }) => {
   const openRow = onOpenRow ?? onPeekRow;
   const triageOn = useTriageOn(parent.team_id);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding);
   const [created, setCreated] = useState<IssueRead[]>([]);
   const [display, setDisplay] = useState<SubIssueDisplay>(readSubIssueDisplay);
   const [completedOpen, setCompletedOpen] = useState(false);
@@ -913,6 +919,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
           onCreateMany={addChildren}
           onDone={() => {
             setAdding(false);
+            onAddDone?.(rows.length > 0 || created.length > 0);
           }}
         />
       )}
