@@ -22,6 +22,7 @@ import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
+import { useProjectLabels } from '../../hooks/useProjectLabels';
 import { useTeam } from '../../hooks/useTeam';
 import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -86,11 +87,13 @@ export const Roadmap: React.FC = () => {
     workspaceId,
     grouping === 'initiative'
   );
+  const { labels } = useProjectLabels(workspaceId, grouping === 'label');
 
   const rows = useMemo(() => [...projects].sort(byStart), [projects]);
   const groups = useMemo(
-    () => groupProjects(rows, grouping, people, teams, { initiatives }),
-    [rows, grouping, people, teams, initiatives]
+    () =>
+      groupProjects(rows, grouping, people, teams, { initiatives, labels }),
+    [rows, grouping, people, teams, initiatives, labels]
   );
 
   const setParam = (field: string, value: string): void => {
