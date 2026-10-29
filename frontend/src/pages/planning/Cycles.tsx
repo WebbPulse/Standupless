@@ -110,6 +110,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { useWritable } from '../../hooks/useOffline';
 import { cn } from '../../lib/cn';
+import { endTodayMessage, startTodayMessage } from '../../lib/cycleActions';
 import { cycleTitle } from '../../lib/cycleBreakdown';
 import { readRolledUpCycles, rollUpCycles } from '../../lib/cycleRollUp';
 import { errorMessage } from '../../lib/errors';
@@ -296,34 +297,6 @@ const CycleMenu: React.FC<CycleMenuProps> = ({
       )}
     </Menu>
   );
-};
-
-/** How many issues starting a cycle today moves out of the current one. */
-const movingCount = (current: CycleRead | undefined): number =>
-  current === undefined ? 0 : current.counts.todo + current.counts.in_progress;
-
-/** The confirm sentence for starting a cycle today. */
-const startTodayMessage = (
-  cycle: CycleRead,
-  current: CycleRead | undefined
-): string => {
-  const title = cycleTitle(cycle);
-  if (current === undefined) return `${title} will start today.`;
-  const count = movingCount(current);
-  const issues = count === 1 ? '1 open issue' : `${String(count)} open issues`;
-  return `${title} will start today and ${cycleTitle(current)} will end yesterday. ${issues} will move from ${cycleTitle(current)} into ${title}.`;
-};
-
-/** The confirm sentence for ending the current cycle today. */
-const endTodayMessage = (cycle: CycleRead): string => {
-  const count = movingCount(cycle);
-  const issues =
-    count === 0
-      ? 'Any unfinished issues'
-      : count === 1
-        ? 'Its 1 unfinished issue'
-        : `Its ${String(count)} unfinished issues`;
-  return `${cycleTitle(cycle)} will end at the close of today. ${issues} will roll into the next cycle. This cannot be undone.`;
 };
 
 /** A muted row for the days between two cycles that no cycle covers. */

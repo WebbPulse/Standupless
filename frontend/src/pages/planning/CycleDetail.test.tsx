@@ -12,10 +12,19 @@
  * The name, goal and dates edit in place with an optimistic save that rolls
  * back on failure, an end before the start is refused, and a closed cycle
  * reads only. A cycle that has not started carries the capacity dial in its
- * header, read against the team's last three closed cycles.
+ * header, read against the team's last three closed cycles. The header's
+ * actions menu ends a running cycle today and starts the next upcoming one
+ * today behind their confirms, cancels a cycle, and deletes one for an admin
+ * before returning to the team's cycles.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,6 +54,11 @@ const updateCycle =
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const getVelocity = vi.fn<(teamId: string) => Promise<VelocityRead>>();
+const startCycleToday =
+  vi.fn<(id: string, teamId: string) => Promise<unknown>>();
+const endCycleToday =
+  vi.fn<(id: string, teamId: string) => Promise<CycleRead>>();
+const deleteCycle = vi.fn<(id: string, teamId: string) => Promise<void>>();
 
 /** One closed cycle that finished four issues, with nothing being planned. */
 const velocity: VelocityRead = {
@@ -95,6 +109,12 @@ vi.mock('../../api/planning', () => ({
     updateCycle(id, body),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
   getVelocity: (_w: string, teamId: string) => getVelocity(teamId),
+  startCycleToday: (_w: string, id: string, teamId: string) =>
+    startCycleToday(id, teamId),
+  endCycleToday: (_w: string, id: string, teamId: string) =>
+    endCycleToday(id, teamId),
+  deleteCycle: (_w: string, id: string, teamId: string) =>
+    deleteCycle(id, teamId),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -285,6 +305,10 @@ const renderPage = (entry = '/w/mine/team/ENG/cycles/cyc-1') =>
           path="/w/:slug/team/:keyPrefix/cycles/:cycleId"
           element={<CycleDetail />}
         />
+        <Route
+          path="/w/:slug/team/:keyPrefix/cycles"
+          element={<p>Team cycles</p>}
+        />
       </Routes>
     </MemoryRouter>
   );
@@ -312,6 +336,9 @@ describe('CycleDetail', () => {
     getVelocity.mockResolvedValue(velocity);
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
     listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
+    startCycleToday.mockResolvedValue({});
+    endCycleToday.mockResolvedValue(cycle);
+    deleteCycle.mockResolvedValue(undefined);
     updateCycle.mockImplementation((_id, body) =>
       Promise.resolve({
         ...cycle,
@@ -795,6 +822,108 @@ describe('CycleDetail', () => {
       expect(screen.queryByRole('textbox', { name: 'Cycle name' })).toBeNull();
       expect(screen.queryByRole('textbox', { name: 'Cycle goal' })).toBeNull();
       expect(screen.queryByRole('button', { name: /^End date:/ })).toBeNull();
+    });
+  });
+  describe('the actions menu', () => {
+    /** Opens the header's actions menu and picks one item from it. */
+    const pick = async (action: string): Promise<void> => {
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Sprint 1 actions' })
+      );
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: action })
+      );
+    };
+
+    it('ends the running cycle today behind the rollover confirm', async () => {
+      renderPage();
+
+      await pick('End cycle today');
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent(
+        'Its 2 unfinished issues will roll into the next cycle.'
+      );
+      await userEvent.click(
+        screen.getByRole('button', { name: 'End Sprint 1 today' })
+      );
+
+      await waitFor(() => {
+        expect(endCycleToday).toHaveBeenCalledWith('cyc-1', 'proj-1');
+      });
+      expect(
+        screen.queryByRole('menuitem', { name: 'Start cycle today' })
+      ).toBeNull();
+    });
+
+    it('starts the next upcoming cycle today, naming the issues that move', async () => {
+      const next = { ...cycle, status: 'upcoming' as const };
+      getCycle.mockResolvedValue(next);
+      listCycles.mockResolvedValue({
+        cycles: [
+          next,
+          { ...cycle, cycle_id: 'cyc-0', name: 'Sprint 0', status: 'active' },
+        ],
+        next_cursor: null,
+      });
+      renderPage();
+
+      await waitFor(() => {
+        expect(listCycles).toHaveBeenCalledWith({ team_id: 'proj-1' });
+      });
+      await pick('Start cycle today');
+      expect(await screen.findByRole('dialog')).toHaveTextContent(
+        '2 open issues will move from Sprint 0 into Sprint 1.'
+      );
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Start Sprint 1' })
+      );
+
+      await waitFor(() => {
+        expect(startCycleToday).toHaveBeenCalledWith('cyc-1', 'proj-1');
+      });
+    });
+
+    it('cancels the cycle', async () => {
+      renderPage();
+
+      await pick('Cancel cycle');
+
+      await waitFor(() => {
+        expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+          team_id: 'proj-1',
+          cancelled: true,
+        });
+      });
+    });
+
+    it('offers delete only to an admin', async () => {
+      renderPage();
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Sprint 1 actions' })
+      );
+      expect(
+        await screen.findByRole('menuitem', { name: 'Copy link' })
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Delete cycle' })
+      ).toBeNull();
+    });
+
+    it('deletes the cycle for an admin and returns to the team cycles', async () => {
+      useWorkspaceMock.mockReturnValue(resolved('admin'));
+      renderPage();
+
+      await pick('Delete cycle');
+      const dialog = await screen.findByRole('dialog');
+      await userEvent.click(
+        within(dialog).getByRole('button', { name: 'Delete Sprint 1' })
+      );
+
+      await waitFor(() => {
+        expect(deleteCycle).toHaveBeenCalledWith('cyc-1', 'proj-1');
+      });
+      expect(await screen.findByText('Team cycles')).toBeInTheDocument();
     });
   });
 });
