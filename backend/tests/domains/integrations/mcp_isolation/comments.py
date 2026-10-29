@@ -42,4 +42,5 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "create_issue_link": {"issue_id": issue, "url": "https://example.com/should-not-land"},
         "update_issue_link": {"issue_id": issue, "link_id": link, "title": "Should not land"},
         "delete_issue_link": {"issue_id": issue, "link_id": link},
+        "get_attachment": {"issue_id": issue, "attachment_id": link},
     }

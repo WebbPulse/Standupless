@@ -75,6 +75,7 @@ from app.common.issue_writes import (
 from app.common.similar_issues import find_similar
 from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.integrations import pr_status, thread_sync
+from app.domains.integrations.mcp.attachment_tools import embedded_attachments
 from app.domains.integrations.mcp.team_tools import boolean
 from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
@@ -592,12 +593,14 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 def _get_issue(call: ToolCall) -> Any:
     """One issue by its id or its key, with its linked pull requests and the stacks they form.
 
-    A deleted issue still answers, with `deleted_at` set, so an agent can tell it
+    The files its description embeds are listed under `attachments`, so an agent
+    knows what `get_attachment` can fetch. A deleted issue still answers, with `deleted_at` set, so an agent can tell it
     sits in the trash and restore it.
     """
     issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
     answer = _answer(call, issue)
     answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
+    [answer["attachments"]] = embedded_attachments(call, issue, [issue.body])
     return answer
 
 
@@ -940,7 +943,10 @@ def _list_document_comments(call: ToolCall) -> Any:
 
 
 def _list_comments(call: ToolCall) -> Any:
-    """One page of an issue's or a document's comments, oldest first, replies carrying their parent."""
+    """One page of an issue's or a document's comments, oldest first, replies carrying their parent.
+
+    Each issue comment lists the files it embeds under `attachments`.
+    """
     if _document_target(call):
         return _list_document_comments(call)
     issue = issue_ref(call, call.require("issue_id"))
@@ -951,7 +957,11 @@ def _list_comments(call: ToolCall) -> Any:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
-    return {"comments": [_comment_json(row) for row in rows], "next_cursor": next_cursor}
+    embedded = embedded_attachments(call, issue, [row.body for row in rows])
+    return {
+        "comments": [{**_comment_json(row), "attachments": files} for row, files in zip(rows, embedded, strict=True)],
+        "next_cursor": next_cursor,
+    }
 
 
 def _list_issue_activity(call: ToolCall) -> Any:
@@ -1383,7 +1393,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="get_issue",
         description=(
             "Read one issue in full, by its id or its key such as ABC-123, with its linked pull requests: "
-            "each one's review and check state, and its position when it is stacked on another."
+            "each one's review and check state, and its position when it is stacked on another. attachments "
+            "lists the files its description embeds; read one with get_attachment."
         ),
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
@@ -1569,7 +1580,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="list_comments",
         description=(
             "One page of an issue's or a document's comments, oldest first; name issue_id or document_id. "
-            "Replies carry parent_comment_id. A document also needs projects:read."
+            "Replies carry parent_comment_id. A document also needs projects:read. Each issue comment lists the "
+            "files it embeds under attachments; read one with get_attachment."
         ),
         scopes=("issues:read",),
         schema=object_schema(

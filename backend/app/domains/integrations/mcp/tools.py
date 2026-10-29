@@ -20,6 +20,7 @@ from typing import Any
 from app.common.db.dynamo.workspaces import WorkspaceFeature
 from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.asana_import_tools import ASANA_IMPORT_TOOLS
+from app.domains.integrations.mcp.attachment_tools import ATTACHMENT_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.comment_tools import COMMENT_TOOLS
@@ -90,6 +91,7 @@ TOOLS: tuple[Tool, ...] = (
     *AGENT_PROFILE_TOOLS,
     *COMMENT_TOOLS,
     *ISSUE_LINK_TOOLS,
+    *ATTACHMENT_TOOLS,
     *MEMBER_STATUS_TOOLS,
 )
 

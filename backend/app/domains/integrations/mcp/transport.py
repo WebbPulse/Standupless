@@ -13,6 +13,7 @@ wearing a streaming interface.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -88,6 +89,23 @@ def tool_result(text: str, *, is_error: bool = False) -> dict[str, Any]:
     nothing.
     """
     return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+@dataclass(frozen=True)
+class ToolContent:
+    """A tool answer that carries content blocks beyond its JSON summary, such as an image.
+
+    The summary still goes first as the usual JSON text, so a client that skips
+    images reads what the answer was, and the blocks follow in MCP's own shapes.
+    """
+
+    summary: Any
+    blocks: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
+
+
+def content_result(text: str, blocks: tuple[Mapping[str, Any], ...]) -> dict[str, Any]:
+    """A successful tool answer of one text block followed by further content blocks."""
+    return {"content": [{"type": "text", "text": text}, *(dict(block) for block in blocks)], "isError": False}
 
 
 def challenge_header(issuer: str) -> str:
