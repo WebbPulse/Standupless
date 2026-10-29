@@ -4,8 +4,9 @@
  * Todo, In Progress" whose verb flips between keeping and excluding and whose
  * values reopen the same list. Typing in the field list also finds values
  * across every field that takes picked ones, so "bug" offers the bug label
- * and a name offers that person as assignee or creator. Chips combine under the bar's match, every
- * filter by default or any one of them, and a filter group boxes a few chips
+ * and a name offers that person as assignee or creator. Chips combine under
+ * the bar's match, every filter by default or any one of them, and a filter
+ * group boxes a few chips
  * that combine under a match of their own and stand as one filter. Values
  * are offered by name, so a status or label shared by name across teams is
  * one choice that matches in every team. A date field takes one day instead,
@@ -1318,7 +1319,10 @@ const FieldPicker: React.FC<{
       />
     );
   }
-  const values = new Map<string, { field: FilterField; choice: FilterChoice }>();
+  const values = new Map<
+    string,
+    { field: FilterField; choice: FilterChoice }
+  >();
   if (searching) {
     for (const item of offered.filter(isChoiceField)) {
       for (const choice of filterChoices(item, choiceContext, triage)) {
@@ -1365,8 +1369,11 @@ const FieldPicker: React.FC<{
         if (picked !== undefined) {
           onChange(toggleChoice(filters, picked.field, picked.choice));
           onDone();
-        } else if (value === ADD_GROUP) onAddGroup?.();
-        else onField(value as FilterField);
+        } else if (value === ADD_GROUP) {
+          onAddGroup?.();
+        } else {
+          onField(value as FilterField);
+        }
       }}
     />
   );
