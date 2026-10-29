@@ -304,10 +304,29 @@ describe('the due date list in the command palette', () => {
 
     expect(input()).toHaveValue('nov 3');
     await waitFor(() => {
+      console.log('DIAG A', JSON.stringify(screen.getAllByRole('option').map((item) => item.textContent)));
       expect(
         screen.getAllByRole('option').map((item) => item.textContent)
       ).toContain(typed?.label);
     });
+    const dump = (tag: string): void => {
+      console.log(
+        'DIAG',
+        tag,
+        JSON.stringify({
+          value: (input() as HTMLInputElement).value,
+          active: document.activeElement?.tagName,
+          comboboxes: screen.getAllByRole('combobox').length,
+          listboxes: screen.getAllByRole('listbox').map((box) => box.getAttribute('aria-label')),
+          options: screen.getAllByRole('option').map((item) => item.textContent),
+          typed,
+          now: new Date().toString(),
+        })
+      );
+    };
+    dump('B');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    dump('C');
     expect(screen.getAllByRole('option')[0]).toHaveTextContent(
       typed?.label ?? ''
     );
