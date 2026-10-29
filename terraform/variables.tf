@@ -280,7 +280,7 @@ variable "identity_e2e_user_ids" {
 }
 
 variable "billing_business_enabled" {
-  description = "Whether the Business plan is on sale. Needs billing_enabled too, and stays off until private teams ship."
+  description = "Whether the Business plan is on sale. Needs billing_enabled too."
   type        = bool
   default     = false
 }
