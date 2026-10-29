@@ -89,7 +89,7 @@ def _issue_link(repositories: Repositories, issue: Issue) -> str:
 
 
 def is_private_conversation(installation: SlackInstallation, channel_id: str) -> bool:
-    """Whether a Slack conversation is a DM, a group DM or a private channel, the only places a private ask may sync with.
+    """Whether a Slack conversation is a DM, group DM or private channel, where a private ask may sync.
 
     A DM id is recognised by its prefix without a call. Anything else is asked of
     Slack, and an unreadable answer counts as public, so a private ask is never

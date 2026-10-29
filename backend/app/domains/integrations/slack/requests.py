@@ -99,7 +99,7 @@ NOT_LINKED = (
 )
 
 
-@dataclass(frozen=True)
+    """The Slack forms one team offers: its id, group label, templates, and whether asks may be private."""
 class TeamForms:
     """The Slack forms one team offers: its id, the label its group shows, the templates, and whether asks may be private."""
 
