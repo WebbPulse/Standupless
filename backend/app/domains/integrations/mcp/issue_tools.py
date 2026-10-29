@@ -57,6 +57,7 @@ from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
 from app.common.issue_parents import parents_of
+from app.common.issue_privacy import can_see_issue, issue_reader
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_trash import list_trash, restore_issue
@@ -544,6 +545,8 @@ def _search_issues(call: ToolCall) -> Any:
             for row in call.repositories.team_config.list_statuses(call.context.workspace_id, candidate):
                 categories[row.status_id] = row.category
 
+    readable = issue_reader(call.repositories, call.context)
+
     def keep(issue: Issue) -> bool:
         """Whether one issue carries the key or holds the text, and passes the filters."""
         if (
@@ -554,7 +557,7 @@ def _search_issues(call: ToolCall) -> Any:
             and query not in (issue.body or "").lower()
         ):
             return False
-        return wanted.matches(issue, categories)
+        return readable(issue) and wanted.matches(issue, categories)
 
     workspace_id = call.context.workspace_id
     direction = "reverse" if reverse else "forward"
@@ -1182,14 +1185,14 @@ def _bulk_selection(call: ToolCall) -> list[str]:
 def _selection_team(call: ToolCall, issue_ids: list[str]) -> str | None:
     """The one team every visible issue of the selection sits in, or `None` when they span teams."""
     rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
-    teams = {row.team_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    teams = {row.team_id for row in rows.values() if can_see_issue(call.repositories, call.context, row)}
     return teams.pop() if len(teams) == 1 else None
 
 
 def _selection_projects(call: ToolCall, issue_ids: list[str]) -> set[str | None]:
     """The projects the visible issues of a selection sit in now, `None` for an issue in no project."""
     rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
-    return {row.project_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    return {row.project_id for row in rows.values() if can_see_issue(call.repositories, call.context, row)}
 
 
 def _bulk_milestone(call: ToolCall, patch: dict[str, Any], issue_ids: list[str]) -> None:

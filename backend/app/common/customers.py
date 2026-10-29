@@ -46,6 +46,7 @@ from app.common.customer_fields import (
 )
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.customers import TARGET_KINDS, Customer, CustomerRequest, TargetKind, new_customer_id
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import load_visible_issue
 from app.common.planning_rules import (
     forbidden,
@@ -104,7 +105,7 @@ def resolve_targets(repositories: Repositories, context: AuthzContext, requests:
     targets = Targets()
     if issue_ids:
         for issue in repositories.issues.get_many(context.workspace_id, issue_ids).values():
-            if context.can_see_team(issue.team_id):
+            if can_see_issue(repositories, context, issue):
                 targets.found[("issue", issue.issue_id)] = Target(
                     kind="issue", target_id=issue.issue_id, key=issue.key, title=issue.title, teams=[issue.team_id]
                 )

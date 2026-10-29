@@ -70,7 +70,7 @@ def unfurls_for(repositories: Repositories, workspace_id: str, links: list[Mappi
         url = str(link.get("url", "")) if isinstance(link, Mapping) else ""
         key = _key_in(url, workspace) if url else ""
         issue = issue_by_key(repositories, workspace_id, key) if key else None
-        if issue is None or issue.team_id in private:
+        if issue is None or issue.private or issue.team_id in private:
             continue
         found[url] = {"blocks": issue_blocks(repositories, issue)}
     return found

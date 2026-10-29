@@ -32,6 +32,7 @@ from app.common.icons import icon_url
 from app.common.issue_activity import with_current_keys
 from app.common.issue_keys import current
 from app.common.issue_mentions import visible_backlink
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import not_found
 
 ME = "me"
@@ -222,7 +223,7 @@ def _visible(repositories: Repositories, context: AuthzContext, page: list[_Entr
     readable = {
         issue_id: current(repositories.teams, issue)
         for issue_id, issue in issues.items()
-        if context.can_see_team(issue.team_id)
+        if can_see_issue(repositories, context, issue)
     }
     changes = [entry.activity for entry in page if entry.activity is not None and entry.issue_id in readable]
     rekeyed = {row.activity_id: row for row in with_current_keys(repositories, context.workspace_id, changes)}

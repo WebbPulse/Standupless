@@ -45,6 +45,7 @@ from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_mentions import record_issue_mentions
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import (
     TRIAGE_STATUS_ID,
     changed_fields,
@@ -298,6 +299,7 @@ def list_issues(
         f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{direction}:{mode}:{wanted.fingerprint()}"
     )
     ranks = status_ranks(repositories, context.workspace_id, teams) if sort == "status_asc" else None
+    readable = issue_reader(repositories, context)
     keyed = keyed_rows(repositories, context, wanted, subscribed, teams)
     if keyed is None and wanted.archived_only:
         keyed = archived_rows(repositories, context.workspace_id, teams, TEAM_SCAN_BUDGET)
@@ -308,7 +310,7 @@ def list_issues(
         cursor=cursor,
         scope=scope,
         limit=limit,
-        keep=lambda issue: wanted.matches(issue, categories),
+        keep=lambda issue: readable(issue) and wanted.matches(issue, categories),
         key=sort_key(sort, ranks, wanted.customer_index),
         descending=descending(sort) != reverse,
         rows=keyed,
@@ -453,10 +455,18 @@ def create_issue(
     origin_ref: Optional[str] = None,
     inherit: bool = True,
     requester: Optional[IssueRequester] = None,
+    private: bool = False,
 ) -> Issue:
     """Create an issue and the sub-issues its template adds, answering the issue."""
     return create_issue_tree(
-        repositories, context, payload, fresh=fresh, origin_ref=origin_ref, inherit=inherit, requester=requester
+        repositories,
+        context,
+        payload,
+        fresh=fresh,
+        origin_ref=origin_ref,
+        inherit=inherit,
+        requester=requester,
+        private=private,
     )[0]
 
 
@@ -469,6 +479,7 @@ def create_issue_tree(
     origin_ref: Optional[str] = None,
     inherit: bool = True,
     requester: Optional[IssueRequester] = None,
+    private: bool = False,
 ) -> tuple[Issue, list[Issue]]:
     """Create an issue and the sub-issues its template adds, all of them or none.
 
@@ -482,11 +493,19 @@ def create_issue_tree(
     of the mail that filed it. `inherit` off keeps a sub-issue from taking its
     parent's cycle and assignee, for a blueprint that already plans both.
     `requester` is who asked, for an issue an intake files on someone's behalf,
-    and is kept on the issue alone, never on its sub-issues.
+    and is kept on the issue alone, never on its sub-issues. `private` makes it a
+    private ask, and its sub-issues with it, so nothing under it is readable wider.
     """
     fresh = fresh or FreshRows()
     issue, template, filled = _create_one(
-        repositories, context, payload, fresh, origin_ref=origin_ref, inherit=inherit, requester=requester
+        repositories,
+        context,
+        payload,
+        fresh,
+        origin_ref=origin_ref,
+        inherit=inherit,
+        requester=requester,
+        private=private,
     )
     created: list[Issue] = []
     try:
@@ -508,7 +527,7 @@ def create_issue_tree(
                 project=fresh.project, milestones=fresh.milestones, issues={**fresh.issues, issue.issue_id: issue}
             )
             try:
-                created.append(_create_one(repositories, context, child, known, inherit=False)[0])
+                created.append(_create_one(repositories, context, child, known, inherit=False, private=private)[0])
             except HTTPException as exc:
                 raise unprocessable(
                     f"Could not create the sub-issue {item.title}: {_reason(exc)}. Nothing was created."
@@ -550,6 +569,7 @@ def _create_one(
     origin_ref: Optional[str] = None,
     inherit: bool = True,
     requester: Optional[IssueRequester] = None,
+    private: bool = False,
 ) -> tuple[Issue, Optional[IssueTemplate], IssueCreate]:
     """Create one issue, allocating its key from the team's counter, and answer the template and the filled create.
 
@@ -646,6 +666,7 @@ def _create_one(
         mentioned_user_ids=mentions,
         in_triage=in_triage,
         requester=requester,
+        private=private or bool(parent is not None and parent.private),
     )
     apply_sla(repositories, None, issue)
     try:
@@ -958,10 +979,11 @@ def bulk_update_issues(
     one another writer changed after it was read, since its estimate may have moved.
     """
     loaded = repositories.issues.get_many(context.workspace_id, payload.issue_ids)
+    readable = issue_reader(repositories, context)
     issues: list[Issue] = []
     for issue_id in payload.issue_ids:
         issue = loaded.get(issue_id)
-        if issue is None or not context.can_see_team(issue.team_id):
+        if issue is None or not readable(issue):
             raise not_found()
         issues.append(issue)
 

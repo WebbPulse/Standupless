@@ -18,6 +18,7 @@ from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue
+from app.common.issue_privacy import can_see_issue
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -60,7 +61,7 @@ def load_visible_issue(repositories: Repositories, context: AuthzContext, issue_
     issue = repositories.issues.get(context.workspace_id, issue_id)
     if issue is None:
         raise not_found()
-    if not context.can_see_team(issue.team_id):
+    if not can_see_issue(repositories, context, issue):
         raise not_found()
     return issue
 

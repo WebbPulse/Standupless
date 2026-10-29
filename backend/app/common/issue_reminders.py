@@ -29,6 +29,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.documents import load_readable_document
 from app.common.initiative_writes import load_initiative
 from app.common.issue_keys import display_key
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import load_visible_issue, not_found, unprocessable
 from app.common.planning_rules import load_readable_project
 
@@ -102,7 +103,7 @@ def list_reminders(
     items: list[IssueReminderRead] = []
     for reminder in reminders:
         issue = issues.get(reminder.issue_id)
-        if issue is None or not context.can_see_team(issue.team_id):
+        if issue is None or not can_see_issue(repositories, context, issue):
             continue
         items.append(_as_read(repositories, reminder, issue))
     return items

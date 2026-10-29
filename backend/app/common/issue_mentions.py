@@ -22,6 +22,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import Activity, build_activity
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 
 MENTIONED = "mentioned"
 """The activity kind a backlink row carries."""
@@ -76,7 +77,7 @@ def resolve_issue_keys(repositories: Repositories, context: AuthzContext, keys: 
         if team_id is None or not context.can_see_team(team_id):
             continue
         issue = repositories.issues.get_by_number(context.workspace_id, team_id, int(number))
-        if issue is None or issue.issue_id in seen or not context.can_see_team(issue.team_id):
+        if issue is None or issue.issue_id in seen or not can_see_issue(repositories, context, issue):
             continue
         seen.add(issue.issue_id)
         found.append(issue)

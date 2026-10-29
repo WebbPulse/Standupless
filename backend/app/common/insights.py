@@ -38,6 +38,7 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import unprocessable
 from app.common.issue_writes import archived_rows
 from app.common.plan_features import Feature, enforce_feature
@@ -214,7 +215,10 @@ def insight_rows(repositories: Repositories, context: AuthzContext, scope: Insig
             categories.update(
                 {row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team)}
             )
-    matched = [issue for issue in candidates if all(item.matches(issue, categories) for item in filters)]
+    readable = issue_reader(repositories, context)
+    matched = [
+        issue for issue in candidates if readable(issue) and all(item.matches(issue, categories) for item in filters)
+    ]
     return matched, truncated
 
 

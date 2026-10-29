@@ -1223,6 +1223,11 @@ export interface IssueRead {
    */
   requester?: IssueRequester | null;
   /**
+   * A private ask from a Slack DM or private channel, read only by its
+   * requester, its creator and assignee, and the team's explicit members.
+   */
+  private?: boolean;
+  /**
    * When the issue first landed in a started status, kept after it moves on.
    * Optional so a row read before it was stamped reads as none.
    */
@@ -5146,12 +5151,15 @@ export interface SlackStatusPostsRead {
   configured: boolean;
   installed: boolean;
   enabled: boolean;
+  /** Whether the team's Slack request forms offer a private ask. */
+  private_asks: boolean;
   updated_at: string | null;
 }
 
-/** A team admin's choice to post status changes into paired Slack threads. */
+/** A team admin's change to the team's Slack settings; a field left out keeps its value. */
 export interface SlackStatusPostsWrite {
-  enabled: boolean;
+  enabled?: boolean | null;
+  private_asks?: boolean | null;
 }
 
 /** Whether this environment has a Discord App and whether this workspace added it to a server. */

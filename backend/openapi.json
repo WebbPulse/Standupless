@@ -23404,7 +23404,7 @@
         "type": "object"
       },
       "SlackStatusPostsRead": {
-        "description": "Whether a team posts status changes into the Slack threads its issues came from.\n\n`enabled` is the team's switch, on until an admin turns it off, and reads true\neven before Slack is connected, so the setting is ready once it is.",
+        "description": "Whether a team posts status changes into the Slack threads its issues came from.\n\n`enabled` is the team's switch, on until an admin turns it off, and reads true\neven before Slack is connected, so the setting is ready once it is.\n`private_asks` is whether the team's Slack request form offers a private ask,\noff until an admin turns it on.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -23417,6 +23417,11 @@
           },
           "installed": {
             "title": "Installed",
+            "type": "boolean"
+          },
+          "private_asks": {
+            "default": false,
+            "title": "Private Asks",
             "type": "boolean"
           },
           "updated_at": {
@@ -23440,16 +23445,31 @@
         "type": "object"
       },
       "SlackStatusPostsWrite": {
-        "description": "A team admin's choice to post status changes into paired Slack threads or not.",
+        "description": "A team admin's change to the team's Slack settings; a field left out keeps its value.",
         "properties": {
           "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "private_asks": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Asks"
           }
         },
-        "required": [
-          "enabled"
-        ],
         "title": "SlackStatusPostsWrite",
         "type": "object"
       },
@@ -31703,6 +31723,12 @@
             ],
             "title": "Priority",
             "type": "string"
+          },
+          "private": {
+            "default": false,
+            "description": "A private ask from a Slack DM or private channel, read only by its requester, its creator and assignee, and the team's explicit members.",
+            "title": "Private",
+            "type": "boolean"
           },
           "progress": {
             "$ref": "#/components/schemas/ProgressRead"
@@ -66536,7 +66562,7 @@
         ]
       },
       "put": {
-        "description": "Turn status posts into paired Slack threads on or off for this team.",
+        "description": "Turn status posts into paired Slack threads, or private asks from Slack, on or off for this team.",
         "operationId": "put_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_put",
         "parameters": [
           {

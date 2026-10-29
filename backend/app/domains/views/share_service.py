@@ -385,7 +385,7 @@ def shared_issues(
         categories = {row.status_id: row.category for row in statuses}
         ranks = {row.status_id: (_category_rank(row.category), row.position) for row in statuses}
 
-    matched = [issue for issue in rows if wanted.matches(issue, categories)]
+    matched = [issue for issue in rows if not issue.private and wanted.matches(issue, categories)]
     ordered = merge_sorted(matched, shared_sort_key(sort, ranks), descending=shared_sort_descending(sort))
     chosen = ordered[start : start + limit]
     return chosen, start + len(chosen) < len(ordered)

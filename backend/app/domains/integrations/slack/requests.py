@@ -14,6 +14,12 @@ rendered and mapped by the same code and the issue lands in the team's triage. T
 requester then gets a direct message naming the issue, and the issue is paired with
 the thread it came from, or with that direct message, so replies on either side
 stay in step through `threads`. Nothing here reads the text to decide anything.
+
+A team that takes private asks adds a "Private" option to its forms, checked to
+start with when the ask began in a direct message with the bot. A private ask is
+read only by its requester and the team's members, and it pairs only with the
+direct message or private channel it came from, else with the requester's direct
+message, so its thread replies and status posts never reach a public channel.
 """
 
 from __future__ import annotations
@@ -59,6 +65,9 @@ TITLE_BLOCK = "request_title"
 
 DESCRIPTION_BLOCK = "request_description"
 
+PRIVATE_BLOCK = "request_private"
+"""The checkbox, offered only by a team that takes private asks, that files the ask as private."""
+
 FIELD_PREFIX = "field:"
 """What each question's block id starts with, ahead of the field's key."""
 
@@ -92,11 +101,12 @@ NOT_LINKED = (
 
 @dataclass(frozen=True)
 class TeamForms:
-    """The Slack forms one team offers: its id, the label its group shows, and the templates."""
+    """The Slack forms one team offers: its id, the label its group shows, the templates, and whether asks may be private."""
 
     team_id: str
     label: str
     templates: tuple[IssueTemplate, ...]
+    allows_private: bool = False
 
 
 def _context(repositories: Repositories, installation: SlackInstallation, slack_user_id: str) -> AuthzContext | None:
@@ -131,7 +141,14 @@ def slack_forms(repositories: Repositories, context: AuthzContext) -> list[TeamF
                 seen.add(row.template_id)
                 forms.append(row)
         if forms:
-            found.append(TeamForms(team_id=team_id, label=f"{name} ({prefix})", templates=tuple(forms[:MAX_OPTIONS])))
+            found.append(
+                TeamForms(
+                    team_id=team_id,
+                    label=f"{name} ({prefix})",
+                    templates=tuple(forms[:MAX_OPTIONS]),
+                    allows_private=repositories.github.slack_status.allows_private_asks(context.workspace_id, team_id),
+                )
+            )
     return found
 
 
@@ -220,15 +237,15 @@ def read_metadata(view: Mapping[str, Any]) -> dict[str, str]:
     return {str(key): str(value) for key, value in metadata.items() if isinstance(value, str)}
 
 
-def picker_view(forms: list[TeamForms], *, title: str = "") -> dict[str, Any]:
-    """The modal that picks which form to answer, carrying a title typed with the command."""
+def picker_view(forms: list[TeamForms], *, title: str = "", origin: str = "") -> dict[str, Any]:
+    """The modal that picks which form to answer, carrying a title typed with the command and where it was typed."""
     return {
         "type": "modal",
         "callback_id": PICK_CALLBACK,
         "title": _plain("Submit a request", 24),
         "submit": _plain("Next"),
         "close": _plain("Cancel"),
-        "private_metadata": _metadata({"title": clip(title, PREFILL_TITLE_MAX)}),
+        "private_metadata": _metadata({"title": clip(title, PREFILL_TITLE_MAX), "origin": origin}),
         "blocks": [picker_block(forms, optional=False)],
     }
 
@@ -289,6 +306,30 @@ def field_block(field: FormFieldBlueprint) -> dict[str, Any]:
     return block
 
 
+def from_direct_message(channel_id: str) -> bool:
+    """Whether a Slack conversation id names a direct message, where an ask starts out private."""
+    return channel_id.startswith("D")
+
+
+def private_block(*, checked: bool) -> dict[str, Any]:
+    """The checkbox that files an ask as private, checked to start with when it came from a direct message."""
+    option = {
+        "text": _plain("Private"),
+        "description": _plain("Only you and the team's members can see it.", 150),
+        "value": CHECKED,
+    }
+    element: dict[str, Any] = {"type": "checkboxes", "action_id": PRIVATE_BLOCK, "options": [option]}
+    if checked:
+        element["initial_options"] = [option]
+    return {
+        "type": "input",
+        "block_id": PRIVATE_BLOCK,
+        "optional": True,
+        "label": _plain("Visibility"),
+        "element": element,
+    }
+
+
 def form_view(
     group: TeamForms,
     template: IssueTemplate,
@@ -298,13 +339,16 @@ def form_view(
     permalink: str = "",
     channel_id: str = "",
     thread_ts: str = "",
+    origin: str = "",
 ) -> dict[str, Any]:
-    """The modal that answers one form: a title, each question in order, then an optional description.
+    """The modal that answers one form: a title, each question in order, an optional description, then privacy.
 
     The title starts from what the person typed or the message's first line, else
-    the template's own title. The team, the template and any message the form
-    came from ride in the private metadata.
+    the template's own title. The team, the template, any message the form came
+    from and the conversation it was opened in ride in the private metadata. The
+    "Private" option shows only when the team takes private asks.
     """
+    origin = origin or channel_id
     title_input: dict[str, Any] = {"type": "plain_text_input", "action_id": TITLE_BLOCK, "max_length": TITLE_MAX}
     starting_title = title or template.title or ""
     if starting_title:
@@ -323,6 +367,7 @@ def form_view(
         "permalink": permalink,
         "channel_id": channel_id if thread_ts else "",
         "thread_ts": thread_ts if channel_id else "",
+        "origin": origin,
     }
     heading = f"*{slack_escape(clip(template.name, 150))}* for {slack_escape(group.label)}"
     blocks: list[dict[str, Any]] = [
@@ -337,6 +382,8 @@ def form_view(
             "element": description_input,
         },
     ]
+    if group.allows_private:
+        blocks.append(private_block(checked=from_direct_message(origin)))
     return {
         "type": "modal",
         "callback_id": FORM_CALLBACK,
@@ -374,6 +421,14 @@ def selected(values: Mapping[str, Any], block_id: str, action_id: str) -> str:
 def text(values: Mapping[str, Any], block_id: str, action_id: str) -> str:
     """The text typed into one input, or an empty string."""
     return str(element_state(values, block_id, action_id).get("value") or "")
+
+
+def checked(values: Mapping[str, Any], block_id: str) -> bool:
+    """Whether the single checkbox in one block was ticked."""
+    chosen = element_state(values, block_id, block_id).get("selected_options") or []
+    return isinstance(chosen, list) and any(
+        isinstance(option, Mapping) and option.get("value") == CHECKED for option in chosen
+    )
 
 
 def _raw_answer(field: FormFieldBlueprint, values: Mapping[str, Any]) -> Optional[str | bool]:
@@ -439,11 +494,11 @@ def open_view(installation: SlackInstallation, trigger_id: str, view: Mapping[st
     return True
 
 
-def start_view(forms: list[TeamForms], *, title: str = "") -> dict[str, Any]:
+def start_view(forms: list[TeamForms], *, title: str = "", origin: str = "") -> dict[str, Any]:
     """The first modal a request opens with: the only form straight away, else the picker."""
     if len(forms) == 1 and len(forms[0].templates) == 1:
-        return form_view(forms[0], forms[0].templates[0], title=title)
-    return picker_view(forms, title=title)
+        return form_view(forms[0], forms[0].templates[0], title=title, origin=origin)
+    return picker_view(forms, title=title, origin=origin)
 
 
 def ask_command(
@@ -456,7 +511,9 @@ def ask_command(
     forms = slack_forms(repositories, context)
     if not forms:
         return NO_FORMS
-    if not open_view(installation, form.get("trigger_id", ""), start_view(forms, title=title)):
+    if not open_view(
+        installation, form.get("trigger_id", ""), start_view(forms, title=title, origin=form.get("channel_id", ""))
+    ):
         return "Slack could not open the form. Try again."
     return ""
 
@@ -494,7 +551,8 @@ def submit_pick(repositories: Repositories, installation: SlackInstallation, pay
     view = payload.get("view") or {}
     metadata = read_metadata(view) if isinstance(view, Mapping) else {}
     group, template = found
-    return {"response_action": "update", "view": form_view(group, template, title=metadata.get("title", ""))}
+    view = form_view(group, template, title=metadata.get("title", ""), origin=metadata.get("origin", ""))
+    return {"response_action": "update", "view": view}
 
 
 def continue_from_create(
@@ -519,6 +577,7 @@ def continue_from_create(
         permalink=metadata.get("permalink", ""),
         channel_id=metadata.get("channel_id", ""),
         thread_ts=metadata.get("thread_ts", ""),
+        origin=metadata.get("origin", "") or metadata.get("channel_id", ""),
     )
     return {"response_action": "update", "view": view}
 
@@ -570,6 +629,8 @@ def _create(
     title: str,
     description: str,
     answers: dict[str, str | bool],
+    *,
+    private: bool = False,
 ) -> Issue | dict:
     """File the issue through the shared create path, or the reply that keeps the form open."""
     fields: dict[str, Any] = {
@@ -585,7 +646,7 @@ def _create(
     except ValidationError:
         return errors_reply({TITLE_BLOCK: f"A title is 1 to {TITLE_MAX} characters."})
     try:
-        return create_issue(repositories, context, payload)
+        return create_issue(repositories, context, payload, private=private)
     except HTTPException as error:
         if error.status_code == 422:
             return errors_reply({DESCRIPTION_BLOCK: _message(error)})
@@ -597,7 +658,9 @@ def submit_form(repositories: Repositories, installation: SlackInstallation, pay
 
     The form and its team are checked again, since either may have changed since
     the modal opened. The confirmation and the pairing are best effort: a request
-    Slack would not confirm is still filed, and simply is not synced.
+    Slack would not confirm is still filed, and simply is not synced. A private
+    ask pairs with the thread it came from only when that is a direct message or
+    a private channel, and otherwise with the requester's direct message.
     """
     slack_user_id, context = _submitter(repositories, installation, payload)
     if context is None:
@@ -621,7 +684,8 @@ def submit_form(repositories: Repositories, installation: SlackInstallation, pay
         errors[TITLE_BLOCK] = f"A title is 1 to {TITLE_MAX} characters."
     if errors:
         return errors_reply(errors)
-    created = _create(context, repositories, group.team_id, template, title, description, answers)
+    private = group.allows_private and checked(values, PRIVATE_BLOCK)
+    created = _create(context, repositories, group.team_id, template, title, description, answers, private=private)
     if isinstance(created, dict):
         return created
     issue = created
@@ -629,6 +693,8 @@ def submit_form(repositories: Repositories, installation: SlackInstallation, pay
     dm_channel, dm_ts = _confirm(repositories, installation, slack_user_id, issue, group.label)
     channel_id, thread_ts = metadata.get("channel_id", ""), metadata.get("thread_ts", "")
     if not (channel_id and thread_ts):
+        channel_id, thread_ts = dm_channel, dm_ts
+    elif private and not threads.is_private_conversation(installation, channel_id):
         channel_id, thread_ts = dm_channel, dm_ts
     threads.pair(
         repositories,

@@ -43,6 +43,7 @@ from app.common.db.dynamo.views import (
 )
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
+from app.common.issue_privacy import person_can_see_issue
 from app.common.team_privacy import person_can_see_team
 
 _log = logging.getLogger(__name__)
@@ -217,6 +218,8 @@ def newly_entered(
             if in_view(view, wanted, before, categories) or not in_view(view, wanted, after, categories):
                 continue
             if repositories.views.notice_sent(workspace_id, view.view_id, row.user_id, after.issue_id):
+                continue
+            if after.private and not person_can_see_issue(repositories, after, row.user_id):
                 continue
             if subscriber_can_read(repositories, workspace_id, view, row.user_id):
                 entries.append(ViewEntry(user_id=row.user_id, view=view))

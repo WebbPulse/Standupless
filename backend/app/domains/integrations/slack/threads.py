@@ -88,6 +88,27 @@ def _issue_link(repositories: Repositories, issue: Issue) -> str:
     return issue_url(workspace.slug, current(repositories.teams, issue).key)
 
 
+def is_private_conversation(installation: SlackInstallation, channel_id: str) -> bool:
+    """Whether a Slack conversation is a DM, a group DM or a private channel, the only places a private ask may sync with.
+
+    A DM id is recognised by its prefix without a call. Anything else is asked of
+    Slack, and an unreadable answer counts as public, so a private ask is never
+    paired with a conversation that might be open to the whole Slack workspace.
+    """
+    if not channel_id:
+        return False
+    if channel_id.startswith("D"):
+        return True
+    try:
+        answer = install.call(installation, "conversations.info", {"channel": channel_id})
+    except (SlackError, install.BotUnavailable):
+        return False
+    channel = answer.get("channel")
+    if not isinstance(channel, Mapping):
+        return False
+    return bool(channel.get("is_im") or channel.get("is_mpim") or channel.get("is_private"))
+
+
 def pair(
     repositories: Repositories,
     installation: SlackInstallation,
@@ -103,9 +124,13 @@ def pair(
     The bot joins a public channel first so Slack sends it the thread's replies; a
     private channel it was not invited to refuses the join and the reply both, and
     then nothing is paired. The pairing is written only once the reply landed, so
-    an issue is never marked synced with a thread that never heard of it.
+    an issue is never marked synced with a thread that never heard of it. A
+    private ask pairs only with a DM or private conversation, which is what keeps
+    its synced replies and status posts out of public channels.
     """
     if not channel_id or not thread_ts:
+        return False
+    if issue.private and not is_private_conversation(installation, channel_id):
         return False
     try:
         install.call(installation, "conversations.join", {"channel": channel_id})

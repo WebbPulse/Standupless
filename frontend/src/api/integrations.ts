@@ -935,7 +935,7 @@ export const disableSlackIntake = async (
   await apiClient.delete(slackIntakePath(workspaceId, teamId));
 };
 
-/** Whether a team posts status changes into the Slack threads its issues came from. */
+/** Whether a team posts status changes into the Slack threads its issues came from, and takes private asks. */
 export const getSlackStatusPosts = async (
   workspaceId: string,
   teamId: string,
@@ -948,7 +948,7 @@ export const getSlackStatusPosts = async (
   return response.data;
 };
 
-/** Turns a team's status posts into paired Slack threads on or off. */
+/** Turns a team's status posts into paired Slack threads, or its private asks, on or off. */
 export const saveSlackStatusPosts = async (
   workspaceId: string,
   teamId: string,
