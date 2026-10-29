@@ -25,6 +25,10 @@
  * hover or focus, and always in an empty cell, and opens the create dialog with
  * the column's value, and the lane's in swimlanes, already set.
  *
+ * A click on a card opens the issue. Cmd or Ctrl+click toggles the card in
+ * the selection instead, and Shift+click selects the range from the last
+ * toggled card.
+ *
  * Native drag and drop keeps this dependency free. The keyboard path to the
  * same writes is the property shortcuts on the focused card.
  */
@@ -188,6 +192,11 @@ const BoardCard: React.FC<BoardCardProps> = ({
           draggable={false}
           data-hover="parent"
           onClick={(event) => {
+            if (event.metaKey || event.ctrlKey) {
+              event.preventDefault();
+              env.toggleSelected(issue.id, false);
+              return;
+            }
             if (event.shiftKey) {
               event.preventDefault();
               env.toggleSelected(issue.id, true);

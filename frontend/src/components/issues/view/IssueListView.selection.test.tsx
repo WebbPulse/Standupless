@@ -1,7 +1,8 @@
 /**
  * Bulk selection on the list: a section header selects or clears its whole
  * section, folded or not, and shows a partial selection as indeterminate;
- * shift-click selects a range; x, shift+arrow, Cmd or Ctrl+A and Escape work
+ * Cmd or Ctrl+click on a row toggles it without opening it; shift-click
+ * selects a range; x, shift+arrow, Cmd or Ctrl+A and Escape work
  * from the keyboard, including while a checkbox holds focus; and the bulk bar
  * counts and acts on every selected issue.
  */
@@ -222,6 +223,22 @@ describe('row selection', () => {
 
     expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2', 'ENG-3', 'ENG-4']);
     expect(count()).toContain('4 selected');
+  });
+
+  it('toggles a row on Cmd or Ctrl+click without opening it', () => {
+    renderView();
+    const title = (key: string): HTMLElement =>
+      screen.getByText(`Issue ${key.slice(4)}`).closest('a') as HTMLElement;
+
+    expect(fireEvent.click(title('ENG-2'), { metaKey: true })).toBe(false);
+    fireEvent.click(title('ENG-4'), { ctrlKey: true });
+    expect(selectedKeys()).toEqual(['ENG-2', 'ENG-4']);
+
+    fireEvent.click(title('ENG-2'), { metaKey: true });
+    expect(selectedKeys()).toEqual(['ENG-4']);
+
+    fireEvent.click(title('ENG-3'), { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-3', 'ENG-4']);
   });
 
   it('toggles the focused issue on x', () => {
