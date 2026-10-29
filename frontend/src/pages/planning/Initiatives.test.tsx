@@ -23,7 +23,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
@@ -41,6 +41,18 @@ import type {
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
 import Initiatives from './Initiatives';
+
+const network = vi.hoisted(() => ({ offline: false }));
+
+vi.mock('../../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOffline: () => network.offline,
+  useWritable: (permitted: boolean) => permitted && !network.offline,
+}));
+
+afterEach(() => {
+  network.offline = false;
+});
 
 const listInitiatives = vi.fn<() => Promise<InitiativeListRead>>();
 const createInitiative =
@@ -745,5 +757,31 @@ describe('Initiatives', () => {
     expect(
       await screen.findByRole('option', { name: /Active/ })
     ).toBeInTheDocument();
+  });
+});
+
+describe('creating an initiative offline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    listMembers.mockResolvedValue([ada]);
+    listTeams.mockResolvedValue([team('team-1', 'Platform', 'PLT')]);
+    listInitiatives.mockResolvedValue({ initiatives: [], next_cursor: null });
+  });
+
+  it('holds the create back with the connection hint', async () => {
+    network.offline = true;
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'New initiative' })
+    );
+    await user.type(screen.getByLabelText('Initiative name'), 'Launch');
+
+    const create = screen.getByRole('button', { name: 'Create initiative' });
+    expect(create).toBeDisabled();
+    expect(create).toHaveAttribute('title', 'Changes need a connection');
+    expect(createInitiative).not.toHaveBeenCalled();
   });
 });

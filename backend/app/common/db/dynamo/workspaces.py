@@ -232,6 +232,9 @@ class Workspace(BaseModel):
     OAuth app that is not first party. `features` holds the areas an admin has
     turned on or off by `WorkspaceFeature` value; an area missing from it is on,
     so a workspace written before the map existed keeps every area.
+    `e2e_owned` is stamped once, at creation, when the creator is an e2e user, and
+    no route writes it afterwards. Where `PLAN_LIMIT_E2E_EXEMPTION` is on it keeps
+    the free plan's preview limits while billing is on; the plan still reads free.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -249,6 +252,7 @@ class Workspace(BaseModel):
     comp_reason: Optional[str] = None
     comp_expires_at: Optional[datetime] = None
     comp_granted_at: Optional[datetime] = None
+    e2e_owned: bool = False
     icon_key: Optional[str] = None
     accent_color: Optional[str] = None
     project_update_interval_days: int = 7

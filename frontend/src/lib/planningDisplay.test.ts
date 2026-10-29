@@ -2,7 +2,8 @@
  * How a planning row's counts read. The completion percentage is the one piece
  * of arithmetic this application does on a server number, so it is pinned:
  * cancelled work is out of the denominator, which is what lets a finished
- * cycle reach 100 rather than stalling below it.
+ * cycle reach 100 rather than stalling below it. A cycle picker offers the
+ * current cycle first and reads each cycle as Current, Next or Upcoming.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -14,14 +15,17 @@ import {
   completionPercent,
   countsLabel,
   cycleDatesLabel,
+  cycleOptionDetail,
+  cyclePlace,
   dateLabel,
   measureUnit,
+  pickerCycleOrder,
   progressLabel,
   progressMeasureOf,
   progressPercent,
   updateNudge,
 } from './planningDisplay';
-import type { RollupCounts } from '../types/Api';
+import type { CycleRead, RollupCounts } from '../types/Api';
 
 const counts = (over: Partial<RollupCounts> = {}): RollupCounts => ({
   todo: 0,
@@ -226,5 +230,52 @@ describe('measured progress', () => {
     expect(measureUnit('points', 1)).toBe('point');
     expect(measureUnit('points', 3)).toBe('points');
     expect(measureUnit('issues', 1)).toBe('issue');
+  });
+});
+
+describe('the cycle picker', () => {
+  const cycle = (
+    id: string,
+    status: CycleRead['status'],
+    start: string,
+    end: string,
+    team = 'team-1'
+  ): CycleRead =>
+    ({
+      cycle_id: id,
+      team_id: team,
+      status,
+      start_date: start,
+      end_date: end,
+    }) as CycleRead;
+  const later = cycle('c4', 'upcoming', '2026-11-02', '2026-11-15');
+  const next = cycle('c3', 'upcoming', '2026-10-19', '2026-11-01');
+  const current = cycle('c2', 'active', '2026-10-05', '2026-10-18');
+  const done = cycle('c1', 'completed', '2026-09-21', '2026-10-04');
+  const other = cycle('o1', 'upcoming', '2026-11-09', '2026-11-22', 'team-2');
+  const all = [later, done, next, other, current];
+
+  it('offers the current cycle first, then upcoming ones by start date', () => {
+    expect(pickerCycleOrder(all).map((row) => row.cycle_id)).toEqual([
+      'c2',
+      'c3',
+      'c4',
+      'o1',
+      'c1',
+    ]);
+  });
+
+  it('reads each cycle by its place on its own team schedule', () => {
+    expect(cyclePlace(current, all)).toBe('Current');
+    expect(cyclePlace(next, all)).toBe('Next');
+    expect(cyclePlace(later, all)).toBe('Upcoming');
+    expect(cyclePlace(other, all)).toBe('Next');
+    expect(cyclePlace(done, all)).toBe('Completed');
+  });
+
+  it('adds the dates after the place', () => {
+    expect(cycleOptionDetail(next, all, new Date(2026, 9, 25))).toBe(
+      'Next · Oct 19 to Nov 1'
+    );
   });
 });

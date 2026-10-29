@@ -60,15 +60,18 @@ def _read(repositories: Repositories, workspace_id: str, team_id: str) -> SlackI
         configured=settings.slack_configured,
         installed=installation is not None,
         enabled=live,
-        reinstall=reactions.needs_reinstall(installation),
+        reinstall=reactions.needs_reinstall(
+            installation, every_message=intake is not None and live and bool(intake.message_channel_ids)
+        ),
         emoji=intake.emoji if intake is not None and live else None,
         channel_ids=list(intake.channel_ids) if intake is not None and live else [],
+        message_channel_ids=list(intake.message_channel_ids) if intake is not None and live else [],
         updated_at=intake.updated_at if intake is not None and live else None,
     )
 
 
 def _join(installation: SlackInstallation, channel_ids: list[str]) -> None:
-    """Have the bot join each chosen public channel, so Slack sends it the reactions there.
+    """Have the bot join each chosen public channel, so Slack sends it the reactions and messages there.
 
     A private channel refuses the join, and the bot has to be invited to it instead.
     """
@@ -102,10 +105,11 @@ def put_slack_intake(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Bundle,
 ) -> SlackIntakeRead:
-    """Turn emoji reaction intake on, or change its emoji or channels.
+    """Turn Slack intake on, or change its emoji, channels or which channels file every message.
 
-    The same emoji in the same channel can file into only one team, so a reaction
-    never splits one message across teams by accident.
+    The same emoji in the same channel can file into only one team, and so can a
+    channel in every message mode, so one message never splits across teams by
+    accident.
     """
     team = _team(repositories, context, team_id)
     if not settings.slack_configured:
@@ -117,11 +121,16 @@ def put_slack_intake(
     if not reactions.valid_emoji(emoji):
         raise unprocessable("Use an emoji name such as ticket or :ticket:.")
     channel_ids = list(dict.fromkeys(payload.channel_ids))
+    message_channel_ids = list(dict.fromkeys(payload.message_channel_ids))
+    if not set(message_channel_ids) <= set(channel_ids):
+        raise unprocessable("Every message mode needs the channel picked as well.")
     store = repositories.github.slack_intake
     for other in store.list_workspace(context.workspace_id):
-        if other.team_id == team_id or other.slack_team_id != installation.slack_team_id or other.emoji != emoji:
+        if other.team_id == team_id or other.slack_team_id != installation.slack_team_id:
             continue
-        if set(other.channel_ids) & set(channel_ids):
+        if set(other.message_channel_ids) & set(message_channel_ids):
+            raise conflict("Another team already files every message in one of these channels.")
+        if other.emoji == emoji and set(other.channel_ids) & set(channel_ids):
             raise conflict("Another team already files messages with this emoji in one of these channels.")
     current = store.get(context.workspace_id, team_id)
     now = utc_now()
@@ -131,6 +140,7 @@ def put_slack_intake(
         team_id=team_id,
         emoji=emoji,
         channel_ids=channel_ids,
+        message_channel_ids=message_channel_ids,
         slack_team_id=installation.slack_team_id,
         enabled_by=context.user_id,
         created_at=current.created_at if current is not None else now,
@@ -145,8 +155,16 @@ def put_slack_intake(
         target_type="team",
         target_id=team.team_id,
         target_label=team.name,
-        before={"emoji": current.emoji, "channel_ids": current.channel_ids} if current is not None else None,
-        after={"emoji": emoji, "channel_ids": channel_ids},
+        before=(
+            {
+                "emoji": current.emoji,
+                "channel_ids": current.channel_ids,
+                "message_channel_ids": current.message_channel_ids,
+            }
+            if current is not None
+            else None
+        ),
+        after={"emoji": emoji, "channel_ids": channel_ids, "message_channel_ids": message_channel_ids},
     )
     return _read(repositories, context.workspace_id, team_id)
 

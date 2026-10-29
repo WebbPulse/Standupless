@@ -244,13 +244,13 @@ def test_a_token_missing_a_scope_is_refused_with_insufficient_scope(
 def test_a_token_missing_a_scope_is_told_where_to_grant_it(
     client: TestClient, workspace: str, mcp_tokens: None, signing_key: Any
 ) -> None:
-    """The refusal names the scope and the connected apps page, where it is granted without a re-auth."""
+    """The refusal names the scope, says to authorize again for it, and links the connected apps page."""
     token = issue_token(signing_key, scopes=("teams:read",))
 
     error = tool(client, token, "create_issue", {"team_id": "x", "title": "No"}).json()["error"]
 
     assert error["data"]["missing"] == ["issues:write"]
-    assert "Grant new permissions" in error["message"]
+    assert "authorize it again" in error["message"]
     assert error["data"]["grant_url"].endswith("/settings/connected-apps")
     assert error["data"]["grant_url"] in error["message"]
 

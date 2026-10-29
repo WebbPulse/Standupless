@@ -15,11 +15,23 @@
  * A project's graph turns the target pace off and instead passes a forecast,
  * a dashed line from today to a named day, and its target date, drawn as a
  * marker on the day it falls.
+ *
+ * Hovering the chart, or focusing it and stepping with the arrow keys, snaps
+ * a guide to a day and shows that day's scope, started and completed values
+ * (and the target pace when it is drawn). Days still to come show the
+ * projected values, labelled as such, and the same words are announced
+ * through a live region.
  */
 
 import React from 'react';
 import { useElementWidth } from '../../hooks/useElementWidth';
 import type { BurnUpPoint, ProjectForecast } from '../../lib/planningModel';
+import {
+  ChartReadout,
+  formatValue,
+  useChartCursor,
+  type ReadoutRow,
+} from './ChartReadout';
 
 /** Props for BurnUpChart: the series so far and every day of the cycle. */
 export interface BurnUpChartProps {
@@ -86,6 +98,132 @@ const axisLabel = (value: string): string => {
   });
 };
 
+/** One day's values as the hover readout shows them. */
+export interface BurnUpReading {
+  date: string;
+  scope: number | null;
+  started: number | null;
+  completed: number | null;
+  target: number | null;
+  /** Whether the values are projected because the day is still to come. */
+  projected: boolean;
+}
+
+/** What readingAt needs to know about the chart. */
+export interface BurnUpReadingInput {
+  points: BurnUpPoint[];
+  days: string[];
+  projection: number | null;
+  forecast: ProjectForecast | null;
+  showPace: boolean;
+}
+
+/**
+ * The values of day `index`: recorded ones for a day the series has reached,
+ * and for a day still to come the scope and started work held where they are
+ * with completed work read off the projection or forecast line, or `null`
+ * where there is neither.
+ */
+export const readingAt = (
+  index: number,
+  { points, days, projection, forecast, showPace }: BurnUpReadingInput
+): BurnUpReading => {
+  const count = Math.max(days.length, 1);
+  const date = days[index] ?? points[index]?.date ?? '';
+  const last = points[points.length - 1];
+  const target =
+    showPace && last !== undefined ? (last.scope * (index + 1)) / count : null;
+  const recorded = points[index];
+  if (recorded !== undefined) {
+    return {
+      date,
+      scope: recorded.scope,
+      started: recorded.started,
+      completed: recorded.completed,
+      target,
+      projected: false,
+    };
+  }
+  if (last === undefined) {
+    return {
+      date,
+      scope: null,
+      started: null,
+      completed: null,
+      target,
+      projected: false,
+    };
+  }
+  const reached = points.length;
+  const along = (end: number, value: number): number => {
+    const span = end - reached;
+    if (span <= 0) return value;
+    const share = Math.min(1, (index + 1 - reached) / span);
+    return last.completed + (value - last.completed) * share;
+  };
+  const forecastIndex = forecast === null ? -1 : days.indexOf(forecast.date);
+  const completed =
+    forecast !== null && forecastIndex >= 0
+      ? along(forecastIndex + 1, forecast.value)
+      : projection !== null
+        ? along(count, projection)
+        : null;
+  return {
+    date,
+    scope: completed === null ? null : last.scope,
+    started: completed === null ? null : Math.max(last.started, completed),
+    completed,
+    target,
+    projected: completed !== null,
+  };
+};
+
+/** The words a screen reader hears for one day's reading. */
+export const readingText = (reading: BurnUpReading, unit: string): string => {
+  const day = axisLabel(reading.date);
+  if (reading.completed === null) {
+    const pace =
+      reading.target === null
+        ? ''
+        : ` Target ${formatValue(reading.target)} ${unit}.`;
+    return `${day}: not reached yet.${pace}`;
+  }
+  const values = `scope ${formatValue(reading.scope ?? 0)}, started ${formatValue(reading.started ?? 0)}, completed ${formatValue(reading.completed)} ${unit}`;
+  const pace =
+    reading.target === null ? '' : `, target ${formatValue(reading.target)}`;
+  return `${day}${reading.projected ? ', projected' : ''}: ${values}${pace}.`;
+};
+
+/** The rows the readout card lists for one day's reading. */
+const readingRows = (reading: BurnUpReading): ReadoutRow[] => {
+  const rows: ReadoutRow[] = [];
+  if (reading.scope !== null)
+    rows.push({
+      label: 'Scope',
+      value: formatValue(reading.scope),
+      swatch: 'bg-text-muted',
+    });
+  if (reading.started !== null)
+    rows.push({
+      label: 'Started',
+      value: formatValue(reading.started),
+      swatch: 'bg-warning',
+    });
+  if (reading.completed !== null)
+    rows.push({
+      label: 'Completed',
+      value: formatValue(reading.completed),
+      swatch: 'bg-accent',
+    });
+  if (reading.target !== null)
+    rows.push({
+      label: 'Target',
+      value: formatValue(reading.target),
+      swatch: 'bg-text-faint',
+    });
+  return rows;
+};
+
 /** The burn-up chart for one cycle. */
 export const BurnUpChart: React.FC<BurnUpChartProps> = ({
   points,
@@ -125,6 +263,38 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
   const fullSummary = showForecast
     ? `${summary} Projected to complete ${String(forecast.value)} by ${forecast.date}.`
     : summary;
+  const slotWidth = plotWidth / count;
+  const cursor = useChartCursor(
+    days.length,
+    (offset) => Math.floor((offset - PAD_LEFT) / slotWidth),
+    Math.max(0, points.length - 1)
+  );
+  const reading =
+    cursor.active === null
+      ? null
+      : readingAt(cursor.active, {
+          points,
+          days,
+          projection,
+          forecast,
+          showPace,
+        });
+  const guideX = cursor.active === null ? 0 : x(cursor.active) + slotWidth / 2;
+  const dots =
+    reading === null
+      ? []
+      : [
+          { key: 'scope', value: reading.scope, color: 'var(--text-muted)' },
+          { key: 'started', value: reading.started, color: 'var(--warning)' },
+          {
+            key: 'completed',
+            value: reading.completed,
+            color: 'var(--accent)',
+          },
+        ].filter(
+          (dot): dot is { key: string; value: number; color: string } =>
+            dot.value !== null
+        );
 
   if (isLoading) {
     return (
@@ -148,7 +318,14 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
 
   return (
     <figure className="space-y-2">
-      <div ref={measureRef} className="w-full">
+      <div
+        ref={measureRef}
+        className="relative w-full rounded-sm focus-visible:outline-2 focus-visible:outline-accent"
+        role="group"
+        aria-label="Burn-up chart days. Use the left and right arrow keys to read each day."
+        data-testid="burn-up-frame"
+        {...cursor.frameProps}
+      >
         <svg
           width={width}
           height={HEIGHT}
@@ -286,7 +463,50 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
               </text>
             </g>
           )}
+          {reading !== null && (
+            <g data-testid="burn-up-guide" pointerEvents="none">
+              <line
+                x1={guideX}
+                x2={guideX}
+                y1={PAD_TOP}
+                y2={PAD_TOP + plotHeight}
+                stroke="var(--text-faint)"
+                strokeWidth="1"
+              />
+              {dots.map((dot) => (
+                <circle
+                  key={dot.key}
+                  cx={guideX}
+                  cy={y(dot.value)}
+                  r="3"
+                  fill="var(--surface)"
+                  stroke={dot.color}
+                  strokeWidth="1.5"
+                />
+              ))}
+            </g>
+          )}
         </svg>
+        {reading !== null && (
+          <ChartReadout
+            anchor={guideX}
+            width={width}
+            top={PAD_TOP}
+            title={axisLabel(reading.date)}
+            caption={
+              reading.completed === null
+                ? 'Not reached yet'
+                : reading.projected
+                  ? `Projected, in ${unit}`
+                  : `In ${unit}`
+            }
+            rows={readingRows(reading)}
+            testId="burn-up-readout"
+          />
+        )}
+        <p className="sr-only" aria-live="polite" data-testid="burn-up-live">
+          {reading === null ? '' : readingText(reading, unit)}
+        </p>
       </div>
       <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
         <span className="inline-flex items-center gap-1.5">

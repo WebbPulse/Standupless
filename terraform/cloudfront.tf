@@ -16,7 +16,13 @@
  * signed manifest to github.com.
  *
  * The API origin is spelled from the domain rather than read from module.api,
- * whose CORS origins already depend on this distribution.
+ * whose CORS origins already depend on this distribution. It is in img-src and
+ * media-src too, because attachment previews and icons load from API routes that
+ * redirect to presigned bucket URLs.
+ *
+ * Link attachment favicons come from Google's favicon service, which redirects to
+ * gstatic. Slack requester avatars come from slack-edge, or from Gravatar, which
+ * redirects a default avatar through the wp.com image proxy.
  *
  * The attachments bucket is listed in both host forms because presigned URLs
  * use the global s3.amazonaws.com host while regional ones may appear in time.
@@ -28,6 +34,20 @@ locals {
   attachments_bucket_origins = [
     "https://${module.attachments_bucket.bucket_id}.s3.amazonaws.com",
     "https://${module.attachments_bucket.bucket_id}.s3.${var.aws_region}.amazonaws.com",
+  ]
+
+  link_favicon_origins = [
+    "https://www.google.com",
+    "https://*.gstatic.com",
+  ]
+
+  slack_avatar_origins = [
+    "https://avatars.slack-edge.com",
+    "https://a.slack-edge.com",
+    "https://secure.gravatar.com",
+    "https://i0.wp.com",
+    "https://i1.wp.com",
+    "https://i2.wp.com",
   ]
 
   video_embed_origins = [
@@ -73,11 +93,11 @@ module "frontend" {
 
   security_headers = {
     content_security_policy = {
-      mode        = "report_only"
+      mode        = "enforce"
       script_src  = local.frontend_inline_script_hashes
       connect_src = concat([local.api_origin, local.realtime_origin], local.attachments_bucket_origins)
-      img_src     = concat(["blob:", "https://avatars.githubusercontent.com"], local.attachments_bucket_origins)
-      media_src   = concat(["blob:"], local.attachments_bucket_origins)
+      img_src     = concat(["blob:", local.api_origin, "https://avatars.githubusercontent.com"], local.attachments_bucket_origins, local.link_favicon_origins, local.slack_avatar_origins)
+      media_src   = concat(["blob:", local.api_origin], local.attachments_bucket_origins)
       frame_src   = local.video_embed_origins
       form_action = ["https://github.com"]
     }

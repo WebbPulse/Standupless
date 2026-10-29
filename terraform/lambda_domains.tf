@@ -293,10 +293,14 @@ locals {
         IDENTITY_AUDIENCE = local.identity_audience
         IDENTITY_JWKS_URL = "${local.identity_issuer}/.well-known/jwks.json"
 
-        BILLING_ENABLED = tostring(var.billing_enabled)
+        BILLING_ENABLED          = tostring(var.billing_enabled)
+        PLAN_LIMIT_E2E_EXEMPTION = tostring(var.plan_limit_e2e_exemption_enabled)
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
-      name == "workspaces" ? { BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled) } : {},
+      name == "workspaces" ? {
+        BILLING_BUSINESS_ENABLED = tostring(var.billing_business_enabled)
+        IDENTITY_E2E_USER_IDS    = jsonencode(var.identity_e2e_user_ids)
+      } : {},
 
       contains(concat(["discussion", "discussion-purge-consumer"], keys(local.icon_object_prefixes), local.workspace_export_object_users, local.issue_import_object_users, local.email_intake_users), name) ? { ATTACHMENTS_BUCKET = module.attachments_bucket.bucket_id } : {},
 
@@ -372,6 +376,8 @@ locals {
         IDENTITY_FRONTEND_BASE_URL = local.frontend_url
         IDENTITY_MCP_LOGIN_URL     = "${local.frontend_url}/login"
 
+        IDENTITY_MCP_INCLUDE_GRANTED_SCOPES = "true"
+
         IDENTITY_EMAIL_FROM            = local.email_from
         IDENTITY_SES_CONFIGURATION_SET = module.ses.configuration_set_name
 
@@ -393,6 +399,8 @@ locals {
         IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
 
         IDENTITY_DESKTOP_HANDOFF_SCHEMES = jsonencode(var.desktop_handoff_schemes)
+
+        IDENTITY_E2E_USER_IDS = jsonencode(var.identity_e2e_user_ids)
         },
 
       module.identity.identity_environment) : {},
@@ -513,7 +521,7 @@ locals {
           filter_patterns = [
             jsonencode({
               eventName = ["INSERT"]
-              dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment", "initiative_update_comment"] } } }
+              dynamodb  = { NewImage = { kind = { S = ["project_update", "initiative_update", "project_update_comment", "initiative_update_comment"] } } }
             }),
             jsonencode({ eventName = ["INSERT", "MODIFY"], dynamodb = { NewImage = { kind = { S = ["project", "initiative"] } } } }),
           ]
@@ -813,6 +821,14 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["execute-api:ManageConnections"]
           Resource = ["${aws_apigatewayv2_api.realtime[0].execution_arn}/${local.realtime_stage}/POST/@connections/*"]
+        },
+      ] : [],
+      each.key == "integrations" ? [
+        {
+          Sid      = "ReadAttachmentObjectsForMcp"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
         },
       ] : [],
       each.key == "workspaces-export-consumer" ? [

@@ -23,6 +23,7 @@ import {
   LuBox,
   LuBuilding2,
   LuCalendar,
+  LuCalendarRange,
   LuCalendarCheck,
   LuCalendarClock,
   LuCalendarPlus,
@@ -59,6 +60,8 @@ import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
   ALL_OF_FIELDS,
+  CYCLE_ADDED_LABELS,
+  CYCLE_ADDED_PHASES,
   FILTER_LABELS,
   KEEP_ONLY_FIELDS,
   MAX_FILTER_GROUPS,
@@ -129,6 +132,8 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   project: <LuBox className="h-3.5 w-3.5" />,
   milestone: <LuMilestone className="h-3.5 w-3.5" />,
   cycle: <LuIterationCw className="h-3.5 w-3.5" />,
+  cycle_added: <LuIterationCw className="h-3.5 w-3.5" />,
+  cycle_added_at: <LuCalendarRange className="h-3.5 w-3.5" />,
   parent: <LuCornerLeftUp className="h-3.5 w-3.5" />,
   sub_issues: <LuListTree className="h-3.5 w-3.5" />,
   content: <LuFileText className="h-3.5 w-3.5" />,
@@ -503,6 +508,7 @@ const filterChoices = (
     case 'updated':
     case 'completed':
     case 'due':
+    case 'cycle_added_at':
     case 'content':
     case 'customer_revenue':
     case 'customer_size':
@@ -595,6 +601,22 @@ const filterChoices = (
           ids: [cycle.cycle_id],
         })),
       ];
+    case 'cycle_added':
+      return CYCLE_ADDED_PHASES.map((phase) => ({
+        option: {
+          value: phase,
+          label: CYCLE_ADDED_LABELS[phase],
+          icon: (
+            <LuIterationCw
+              className={cn(
+                'h-3.5 w-3.5',
+                phase === 'planned' ? 'text-accent' : 'text-warning'
+              )}
+            />
+          ),
+        },
+        ids: [phase],
+      }));
     case 'sla':
       return SLA_STATUSES.map((status) => ({
         option: {

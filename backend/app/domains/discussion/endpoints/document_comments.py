@@ -74,9 +74,17 @@ def list_document_comments(
 def post_document_comment(
     payload: DocumentCommentCreate, document_id: DocumentId, context: Context, repositories: Repos
 ) -> CommentRead:
-    """Add a comment or a reply to a document, subscribing the author and everyone it mentions."""
+    """Add a comment or a reply to a document, subscribing the author and everyone it mentions.
+
+    A new thread may be pinned to a passage of the document through `anchor`.
+    """
     created = create_document_comment(
-        repositories, context, document_id, payload.body, parent_comment_id=payload.parent_comment_id
+        repositories,
+        context,
+        document_id,
+        payload.body,
+        parent_comment_id=payload.parent_comment_id,
+        anchor=payload.anchor,
     )
     return _render(repositories, context, [created])[0]
 

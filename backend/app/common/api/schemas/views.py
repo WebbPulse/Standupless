@@ -209,6 +209,8 @@ DATE_FILTER_FIELDS: frozenset[str] = frozenset(
         "updated_before",
         "completed_after",
         "completed_before",
+        "cycle_added_after",
+        "cycle_added_before",
         "due_after",
         "due_before",
     }
@@ -257,10 +259,15 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "label_id_all",
         "parent_id_not",
         "has_sub_issues",
+        "issue_id",
         "content",
         "content_not",
         "completed_after",
         "completed_before",
+        "cycle_added",
+        "cycle_added_not",
+        "cycle_added_after",
+        "cycle_added_before",
         "customer_id",
         "customer_id_not",
         "customer_status_id",
@@ -354,6 +361,8 @@ SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
         "content_not",
         "completed_after",
         "completed_before",
+        "cycle_added_after",
+        "cycle_added_before",
         "customer_important",
         *NUMBER_FILTER_FIELDS,
         "match",
@@ -625,7 +634,8 @@ class ViewUpdate(BaseModel):
     of an update. `shared` is the one exception, for a view without a team: it
     moves a personal view to the whole workspace or back, which refiles the row
     under the same view id. `entity` is fixed at create, and `projects_display`
-    applies only to a project view.
+    applies only to a project view. `owner_id` hands a shared view to another
+    member, the owner's or a workspace admin's call.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_NAME_MAX)
@@ -648,6 +658,7 @@ class ViewUpdate(BaseModel):
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
     shared: Optional[StrictBool] = None
+    owner_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("visible_properties")
     @classmethod
@@ -1011,3 +1022,30 @@ class IssueReminderListRead(BaseModel):
     """The caller's pending reminders, soonest first."""
 
     reminders: list[IssueReminderRead] = Field(default_factory=list)
+
+
+ReminderEntityType = Literal["issue", "project", "initiative", "document"]
+"""The kinds of subject a reminder may be set on."""
+
+
+class ReminderRead(BaseModel):
+    """One pending reminder of the caller's on any kind of subject, with the subject as it reads now.
+
+    `issue_key` is set for an issue alone, and `team_id` is empty for a subject that
+    belongs to the workspace rather than one team, such as an initiative or a
+    workspace document.
+    """
+
+    entity_type: ReminderEntityType
+    entity_id: str
+    title: str
+    issue_key: str | None = None
+    team_id: str = ""
+    remind_at: datetime
+    created_at: datetime
+
+
+class ReminderListRead(BaseModel):
+    """The caller's pending reminders on every kind of subject, soonest first."""
+
+    reminders: list[ReminderRead] = Field(default_factory=list)

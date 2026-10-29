@@ -23,6 +23,7 @@ import React, { useState } from 'react';
 import {
   LuArrowDown,
   LuArrowUp,
+  LuLink,
   LuPencil,
   LuRepeat,
   LuTrash2,
@@ -100,6 +101,11 @@ export interface TemplateEditorProps {
   defaultTemplateId?: string | null;
   /** Opens a recurring schedule for a template; the button shows when set. */
   onMakeRecurring?: (template: TemplateRead) => void;
+  /**
+   * Copies a link that opens the create dialog with a template applied; the
+   * button shows on every issue template row when set, to anyone who can see it.
+   */
+  onCopyCreateUrl?: (template: TemplateRead) => void;
   /** What the templates fill: a new issue, or a new document or update. */
   kind?: EditorKind;
 }
@@ -120,6 +126,7 @@ interface FormState {
   projectId: string | null;
   cycleId: string | null;
   isForm: boolean;
+  inSlack: boolean;
   formFields: FormField[];
   subIssues: SubIssueDraft[];
 }
@@ -136,6 +143,7 @@ const EMPTY_FORM: FormState = {
   projectId: null,
   cycleId: null,
   isForm: false,
+  inSlack: false,
   formFields: [],
   subIssues: [],
 };
@@ -153,6 +161,7 @@ const formOf = (template: TemplateRead): FormState => ({
   projectId: template.project_id,
   cycleId: template.cycle_id,
   isForm: (template.form_fields ?? []).length > 0,
+  inSlack: template.in_slack ?? false,
   formFields: template.form_fields ?? [],
   subIssues: subIssueDrafts(template.sub_issues),
 });
@@ -185,6 +194,7 @@ const fieldsOf = (form: FormState) => ({
   project_id: form.projectId,
   cycle_id: form.cycleId,
   form_fields: formFieldsOf(form),
+  in_slack: form.isForm && form.inSlack,
   sub_issues: subIssuesOf(form.subIssues),
 });
 
@@ -194,15 +204,16 @@ const documentFieldsOf = (form: FormState) => ({
   body: form.body.trim() === '' ? null : form.body,
 });
 
-/** The create body, leaving out every field still empty. */
+/** The create body, leaving out every field still empty or switched off. */
 const createBodyOf = (form: FormState, kind: EditorKind): TemplateCreate => {
   const body: TemplateCreate =
     kind === 'document'
       ? { name: form.name.trim(), kind: 'document' }
       : { name: form.name.trim() };
   const fields = kind === 'document' ? documentFieldsOf(form) : fieldsOf(form);
-  for (const [name, value] of Object.entries(fields)) {
-    if (value === null) continue;
+  const entries: [string, unknown][] = Object.entries(fields);
+  for (const [name, value] of entries) {
+    if (value === null || value === false) continue;
     if (Array.isArray(value) && value.length === 0) continue;
     Object.assign(body, { [name]: value });
   }
@@ -359,6 +370,17 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
                   set({ formFields });
                 }}
               />
+              <Checkbox
+                label="Offer this form in Slack"
+                checked={form.inSlack}
+                onChange={(event) => {
+                  set({ inSlack: event.target.checked });
+                }}
+              />
+              <p className="text-xs text-text-muted">
+                People pick it from the Submit a request shortcut or the ask
+                command, and the request files into triage.
+              </p>
             </>
           )}
         </div>
@@ -502,11 +524,24 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   actions,
   defaultTemplateId = null,
   onMakeRecurring,
+  onCopyCreateUrl,
   kind = 'issue',
 }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const copyButton = (template: TemplateRead): React.ReactNode =>
+    onCopyCreateUrl === undefined || kind !== 'issue' ? null : (
+      <IconButton
+        size="sm"
+        label={`Copy URL to create issue from template ${template.name}`}
+        onClick={() => {
+          onCopyCreateUrl(template);
+        }}
+      >
+        <LuLink className="h-3.5 w-3.5" />
+      </IconButton>
+    );
   const own = templates.filter(
     (template) => scope === 'workspace' || template.scope === 'team'
   );
@@ -612,6 +647,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </p>
                   )}
                 </div>
+                {confirming !== template.id && copyButton(template)}
                 {canEdit &&
                   (confirming === template.id ? (
                     <div
@@ -746,6 +782,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 )}
                 {isFormTemplate(template) && <Badge>Form</Badge>}
                 <Badge>{TEMPLATE_GROUPS[template.scope]}</Badge>
+                {copyButton(template)}
                 {canEdit && recurrable(template) && (
                   <IconButton
                     size="sm"

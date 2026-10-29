@@ -93,3 +93,54 @@ def test_update_document_refuses_a_stale_body_and_answers_the_current_one(
     assert BODY_CHANGED in text
     assert body_version("Theirs") in text and "Theirs" in text
     assert blind["body"] == "Mine"
+
+
+def test_update_project_refuses_a_stale_description_and_answers_the_current_one(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A description sent against the version read before a teammate's edit is refused with that edit."""
+    secret = mint_for(repositories, MEMBER, DOCUMENT_SCOPES)
+    created = answer(
+        tool(client, secret, "create_project", {"name": "Launch", "team_ids": [TEAM], "description": "First"})
+    )
+    assert created["body_version"] == body_version("First")
+    project_id = created["project_id"]
+    theirs = answer(
+        tool(
+            client,
+            secret,
+            "update_project",
+            {"project_id": project_id, "description": "Theirs", "base_body_version": created["body_version"]},
+        )
+    )
+    assert theirs["description"] == "Theirs"
+    assert theirs["body_version"] == body_version("Theirs")
+
+    text = refusal(
+        tool(
+            client,
+            secret,
+            "update_project",
+            {"project_id": project_id, "description": "Mine", "base_body_version": created["body_version"]},
+        )
+    )
+    current = answer(tool(client, secret, "get_project", {"project_id": project_id}))
+
+    assert BODY_CHANGED in text
+    assert body_version("Theirs") in text and "Theirs" in text
+    assert current["description"] == "Theirs"
+
+
+def test_update_project_without_a_version_writes_as_before(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """An agent that sends no version still writes the description."""
+    secret = mint_for(repositories, MEMBER, DOCUMENT_SCOPES)
+    created = answer(
+        tool(client, secret, "create_project", {"name": "Launch", "team_ids": [TEAM], "description": "First"})
+    )
+    answer(tool(client, secret, "update_project", {"project_id": created["project_id"], "description": "Theirs"}))
+
+    mine = answer(tool(client, secret, "update_project", {"project_id": created["project_id"], "description": "Mine"}))
+
+    assert mine["description"] == "Mine"

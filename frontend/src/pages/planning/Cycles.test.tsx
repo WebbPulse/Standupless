@@ -16,7 +16,10 @@
  * undone. Days with no cycle read as a "Cycles paused" row, and an upcoming
  * row carries a capacity dial against the recent velocity. An empty team
  * offers Create cycle to a writer and the message alone to a guest, and a
- * team with cycles turned off links an admin to its cycle settings.
+ * team with cycles turned off links an admin to its cycle settings. The
+ * timeline band draws every cycle as a bar that opens it, folded past ones
+ * included, remembers its zoom, rings the cycle the J and K highlight rests
+ * on, and moves focus between bars with the arrow, Home and End keys.
  */
 
 import { ApiError } from '@webbpulse/api-client';
@@ -402,11 +405,13 @@ describe('reading the list', () => {
 
     const group = await screen.findByRole('button', { name: /Past/ });
     expect(group).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Sprint 0')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Sprint 0' })
+    ).not.toBeInTheDocument();
 
     await userEvent.click(group);
 
-    expect(screen.getByText('Sprint 0')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sprint 0' })).toBeInTheDocument();
   });
 
   it('offers the first cycle with its shortcut when the team has none', async () => {
@@ -482,7 +487,7 @@ describe('reading the list', () => {
 describe('writing', () => {
   it('creates without a status, which the server derives from the dates', async () => {
     renderPage();
-    await screen.findByText('Sprint 1');
+    await screen.findByRole('link', { name: 'Sprint 1' });
     await openCreate();
 
     await userEvent.type(screen.getByLabelText('Name'), 'Sprint 2');
@@ -501,7 +506,7 @@ describe('writing', () => {
 
   it('refuses to create until both dates are set', async () => {
     renderPage();
-    await screen.findByText('Sprint 1');
+    await screen.findByRole('link', { name: 'Sprint 1' });
     await openCreate();
 
     await userEvent.type(screen.getByLabelText('Name'), 'Sprint 2');
@@ -511,7 +516,7 @@ describe('writing', () => {
 
   it('refuses an end date before the start date', async () => {
     renderPage();
-    await screen.findByText('Sprint 1');
+    await screen.findByRole('link', { name: 'Sprint 1' });
     await openCreate();
 
     await userEvent.type(screen.getByLabelText('Name'), 'Sprint 2');
@@ -781,7 +786,7 @@ describe('what a role is offered', () => {
     listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
 
     renderPage();
-    await screen.findByText('Sprint 2');
+    await screen.findByRole('link', { name: 'Sprint 2' });
 
     expect(
       screen.queryByRole('button', { name: 'New cycle' })
@@ -1146,5 +1151,112 @@ describe('cycles paused and capacity', () => {
       })
     ).toBeInTheDocument();
     expect(screen.getAllByTestId('capacity-dial')).toHaveLength(1);
+  });
+});
+
+describe('timeline band', () => {
+  const closed: CycleRead = {
+    ...upcoming,
+    cycle_id: 'cyc-0',
+    name: 'Sprint 0',
+    start_date: '2026-08-18',
+    end_date: '2026-08-31',
+    status: 'completed',
+    counts: { todo: 0, in_progress: 0, done: 3, cancelled: 1, total: 4 },
+  };
+
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+    listCycles.mockResolvedValue({
+      cycles: [closed, cycle, upcoming],
+      next_cursor: null,
+    });
+  });
+
+  it('draws past, current and upcoming cycles as bars that open them', async () => {
+    renderPage();
+
+    const band = within(await screen.findByTestId('cycle-timeline'));
+    const bars = band.getAllByRole('link');
+    expect(bars.map((bar) => bar.getAttribute('data-cycle-bar'))).toEqual([
+      'cyc-0',
+      'cyc-1',
+      'cyc-2',
+    ]);
+    expect(
+      band.getByRole('link', {
+        name: 'Sprint 1, current, Sep 1 to Sep 14, 2 of 4 done, 50%',
+      })
+    ).toHaveAttribute('href', '/w/mine/team/ENG/cycles/cyc-1');
+    expect(
+      band.getByRole('link', {
+        name: 'Sprint 0, completed, Aug 18 to Aug 31, 3 of 3 done, 100%',
+      })
+    ).toHaveAttribute('data-status', 'completed');
+    expect(band.getByText('Current')).toBeInTheDocument();
+    expect(band.getByTestId('timeline-today')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Past/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
+  it('remembers the zoom picked from its controls', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByTestId('cycle-timeline');
+
+    const band = within(screen.getByRole('region', { name: 'Cycle timeline' }));
+    expect(band.getByRole('radio', { name: 'Months' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await user.click(band.getByRole('radio', { name: 'Weeks' }));
+
+    expect(band.getByRole('radio', { name: 'Weeks' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(
+      globalThis.localStorage.getItem('standupless:cycles-timeline-zoom')
+    ).toBe('week');
+  });
+
+  it('rings the cycle the list highlight rests on', async () => {
+    const user = userEvent.setup();
+    renderNavigable();
+    const band = within(await screen.findByTestId('cycle-timeline'));
+
+    await user.keyboard('j');
+    expect(band.getByRole('link', { name: /^Sprint 1,/ })).toHaveAttribute(
+      'data-highlighted',
+      'true'
+    );
+
+    await user.keyboard('j');
+    expect(band.getByRole('link', { name: /^Sprint 1,/ })).not.toHaveAttribute(
+      'data-highlighted'
+    );
+    expect(band.getByRole('link', { name: /^Sprint 2,/ })).toHaveAttribute(
+      'data-highlighted',
+      'true'
+    );
+  });
+
+  it('moves focus between bars with the arrow keys and opens one on Enter', async () => {
+    const user = userEvent.setup();
+    renderNavigable();
+    const band = within(await screen.findByTestId('cycle-timeline'));
+
+    band.getByRole('link', { name: /^Sprint 1,/ }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(band.getByRole('link', { name: /^Sprint 2,/ })).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(band.getByRole('link', { name: /^Sprint 0,/ })).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByTestId('detail')).toHaveTextContent(
+      '/w/mine/team/ENG/cycles/cyc-0'
+    );
   });
 });

@@ -80,6 +80,7 @@ from app.common.project_writes import (
 )
 from app.common.readable_ids import project_web_url
 from app.common.team_time import team_today
+from app.common.update_drafts import clear_posted_update_draft
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.project_status_tools import (
     STATUS_HELP,
@@ -261,7 +262,8 @@ def _project_json(project: ProjectRead, names: dict[str, str]) -> dict[str, Any]
     """One project as the tools answer it, its teams narrowed to the visible ones.
 
     `status` is the category every rule reads, and `status_id` and `status_name`
-    the workspace project status the project sits in.
+    the workspace project status the project sits in. `body_version` is the
+    description's version, sent back as `base_body_version` when editing it.
     """
     return {
         "project_id": project.project_id,
@@ -269,6 +271,7 @@ def _project_json(project: ProjectRead, names: dict[str, str]) -> dict[str, Any]
         "team_ids": project.team_ids,
         "name": project.name,
         "description": project.description,
+        "body_version": project.body_version,
         "lead_id": project.lead_id,
         "status": project.status,
         "status_id": project.status_id,
@@ -678,9 +681,16 @@ def _open_issues(call: ToolCall) -> Optional[dict[str, Any]]:
 
 
 def _update_project(call: ToolCall) -> Any:
-    """Patch a project's fields or its teams, through the route's own path."""
+    """Patch a project's fields or its teams, through the route's own path.
+
+    `base_body_version` guards a new description against overwriting one someone
+    else changed since it was read; a stale one is refused with the current
+    description and its version.
+    """
     project_id = _project_id(call, call.require("project_id"))
     fields = _project_payload(call, nullable_fields=True)
+    if call.optional("base_body_version") is not None:
+        fields["base_body_version"] = call.arguments["base_body_version"]
     choice = _open_issues(call)
     if choice is not None:
         fields["open_issues"] = choice
@@ -882,7 +892,16 @@ def _create_project_update(call: ToolCall) -> Any:
     payload = ProjectUpdateCreate.model_validate(
         {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
     )
-    return _project_update_json(create_project_update(call.repositories, call.context, project_id, payload))
+    created = create_project_update(call.repositories, call.context, project_id, payload)
+    clear_posted_update_draft(
+        call.repositories,
+        call.context.workspace_id,
+        created.author_id,
+        "project",
+        created.project_id,
+        created.created_at,
+    )
+    return _project_update_json(created)
 
 
 def _update_project_update(call: ToolCall) -> Any:
@@ -1224,6 +1243,10 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             {
                 "project_id": string(PROJECT_HELP),
                 **PROJECT_PROPERTIES,
+                "base_body_version": string(
+                    "The body_version the new description was written against; when the description changed "
+                    "since, the update is refused with the current description and version instead of overwriting it"
+                ),
                 "open_issues": enum(
                     OPEN_ISSUE_ACTIONS,
                     "When the status is completed or canceled, what to do with the issues still open: keep them, "

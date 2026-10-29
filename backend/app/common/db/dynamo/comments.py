@@ -89,10 +89,10 @@ class ThreadResolution(BaseModel):
 
 
 class CommentAnchor(BaseModel):
-    """The passage of the issue description a root comment is pinned to.
+    """The passage of the issue description, or of the document, a root comment is pinned to.
 
     The quoted text plus a little of the text either side, which is what finds the
-    passage again among repeats of it. Never written into the description, so an
+    passage again among repeats of it. Never written into the text, so an
     edit that removes the passage leaves the quote here and the reader shows it as
     changed.
     """

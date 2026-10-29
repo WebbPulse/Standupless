@@ -204,6 +204,11 @@ class User(BaseModel):
     `timezone`. While either holds, email and desktop notifications wait and the
     inbox still fills. `urgent_bypasses_pause` lets direct mentions and urgent
     assignments through regardless, off by default.
+
+    `e2e_user` marks an account the identity package's admin-only ephemeral e2e
+    route created, under the package's reserved `E2E_USER_ATTRIBUTE`. Only that
+    route's `create_user` call sets it, so neither self sign-up nor any profile route
+    can write it. Read it with `webbpulse.identity.is_e2e_user`.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -243,6 +248,7 @@ class User(BaseModel):
     auto_grant_new_scopes: bool = False
     disabled: bool = False
     is_admin: bool = False
+    e2e_user: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     deletion_scheduled_at: Optional[datetime] = None
     purge_after: Optional[datetime] = None

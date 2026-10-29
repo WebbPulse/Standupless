@@ -25,6 +25,7 @@ import type {
   IssueExportRead,
   IssueListQuery,
   IssueListRead,
+  IssueLookupRead,
   IssueMove,
   IssuePriority,
   IssueRead,
@@ -53,6 +54,10 @@ export const issuePath = (workspaceId: string, issueId: string): string =>
 /** The route one issue is read from by its human key, such as `ENG-12`. */
 export const issueByKeyPath = (workspaceId: string, key: string): string =>
   `${issuesPath(workspaceId)}/by-key/${encodeURIComponent(key)}`;
+
+/** The route several issues are read from at once by their human keys. */
+export const issuesByKeysPath = (workspaceId: string): string =>
+  `${issuesPath(workspaceId)}/by-keys`;
 
 /** The route an issue's direct children are read from. */
 export const issueChildrenPath = (
@@ -107,6 +112,10 @@ export interface IssueListFilters {
   /** Narrows a workspace list to these teams. */
   team_id_in?: FilterValues;
   team_id_not?: FilterValues;
+  /** Only these issues. */
+  issue_id?: FilterValues;
+  /** Only the issues these keys name, across teams; keys naming nothing are skipped. */
+  key?: FilterValues;
   created_after?: string;
   created_before?: string;
   updated_after?: string;
@@ -135,6 +144,13 @@ export interface IssueListFilters {
   has_sub_issues?: 'true' | 'false';
   cycle_id?: FilterValues;
   cycle_id_not?: FilterValues;
+  /** Issues added to their cycle before it started or within its first day (`planned`), or later (`after_start`). */
+  cycle_added?: FilterValues<'planned' | 'after_start'>;
+  cycle_added_not?: FilterValues<'planned' | 'after_start'>;
+  /** Issues added to their cycle after this day. */
+  cycle_added_after?: string;
+  /** Issues added to their cycle before this day. */
+  cycle_added_before?: string;
   project_id?: FilterValues;
   project_id_not?: FilterValues;
   project_milestone_id?: FilterValues;
@@ -413,6 +429,29 @@ export function getIssue(
  * Reads one issue by its key, which the contract matches case insensitively.
  * Handed a polled query's context, the read is conditional on the held ETag.
  */
+/**
+ * Reads the issues several keys name in one request, for the chips a body
+ * draws. Keys that name nothing the caller can see are simply absent from
+ * `resolved`, so the batch never fails on one stale mention.
+ */
+export const lookupIssuesByKey = async (
+  workspaceId: string,
+  keys: readonly string[],
+  signal?: AbortSignal
+): Promise<IssueLookupRead> => {
+  const response = await apiClient.get<IssueLookupRead>(
+    issuesByKeysPath(workspaceId),
+    listOptions({ key: [...keys] }, signal)
+  );
+  const body = response.data;
+  const issues = Array.isArray(body?.issues) ? body.issues : [];
+  const resolved = body?.resolved ?? {};
+  for (const [key, id] of Object.entries(resolved)) {
+    rememberIssueRef(workspaceId, id, key);
+  }
+  return { issues, resolved };
+};
+
 export function getIssueByKey(
   workspaceId: string,
   key: string,

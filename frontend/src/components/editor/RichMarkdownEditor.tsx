@@ -107,6 +107,7 @@ import {
 import { BlockMenu, type TurnIntoOption } from './BlockMenu';
 import { DateChipPicker } from './DateChipPicker';
 import { DocumentLinkMenu } from './DocumentLinkMenu';
+import { IssueLooks, IssueMentionChips } from './issueMentionChips';
 import { isAttachChord, toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
@@ -421,6 +422,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   );
   const lookup = useRef({ workspace, teams });
   lookup.current = { workspace, teams };
+  const [issueLooks] = useState(() => new IssueLooks());
   const { keyboardFocused, focusProps } = useKeyboardFocus();
 
   const filePicker = useRef<HTMLInputElement>(null);
@@ -483,8 +485,9 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           const target = linkedReference(href, currentOrigin());
           return target !== null && answersToSlug(workspace, target.slug);
         },
+        issueLook: issueLooks.get,
       }),
-    [placeholder]
+    [placeholder, issueLooks]
   );
 
   const commitRef = useRef<() => void>(() => undefined);
@@ -1190,6 +1193,13 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     >
       <EditorContent editor={editor} />
       {issueHoverCard}
+      <IssueMentionChips
+        editor={editor}
+        looks={issueLooks}
+        surface={surface}
+        workspace={workspace}
+        teams={teams}
+      />
       {editable && (
         <FormattingToolbar editor={editor} context={formatContext} />
       )}

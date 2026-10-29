@@ -8,7 +8,8 @@
  * expanding it, and unresolving it. And quoting: a whole comment from its
  * menu, or a selected passage of it, into the thread's reply as a blockquote.
  * And a thread pinned to a passage of the description: the quote at its top,
- * which scrolls to the passage, and the note once the passage is edited away.
+ * which scrolls to the passage, and the note once the passage is edited away,
+ * on an issue's description and on a document alike.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -164,6 +165,17 @@ describe('comment card', () => {
     renderCard([], { source: 'mcp' });
 
     expect(screen.getByText('via MCP')).toBeInTheDocument();
+  });
+
+  it('links the timestamp to the comment', () => {
+    renderCard();
+
+    const link = document.querySelector('a[href="#comment-c-1"]');
+    expect(link).not.toBeNull();
+    expect(link?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-09-20T10:00:00Z'
+    );
   });
 
   it('leaves a web comment and an old comment unlabelled', () => {
@@ -628,8 +640,8 @@ describe('a thread pinned to a passage', () => {
     showPassage: vi.fn(),
   });
 
-  /** Renders the anchored thread under the shared state given. */
-  const renderPinned = (value: PassageThreads): void => {
+  /** Renders the anchored thread under the shared state given, on a document when named. */
+  const renderPinned = (value: PassageThreads, documentId?: string): void => {
     render(
       <MemoryRouter>
         <PassageThreadsContext.Provider value={value}>
@@ -638,7 +650,8 @@ describe('a thread pinned to a passage', () => {
             replies={[]}
             people={[]}
             workspaceId="ws-1"
-            issueId="iss-1"
+            issueId={documentId ?? 'iss-1'}
+            {...(documentId === undefined ? {} : { documentId })}
             currentUserId="user-1"
             canComment
             isAdmin={false}
@@ -678,5 +691,26 @@ describe('a thread pinned to a passage', () => {
         name: 'Show the passage in the description',
       })
     ).toBeNull();
+  });
+
+  it('names the document for a thread pinned to one', async () => {
+    const user = userEvent.setup();
+    const value = passages(['c-1']);
+    renderPinned(value, 'doc-1');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Show the passage in the document' })
+    );
+
+    expect(value.showPassage).toHaveBeenCalledWith('c-1');
+  });
+
+  it('says the document lost the text once it is edited away', () => {
+    renderPinned(passages([]), 'doc-1');
+
+    expect(screen.getByText('cache the board query')).toBeTruthy();
+    expect(
+      screen.getByText('The document no longer has this text.')
+    ).toBeTruthy();
   });
 });

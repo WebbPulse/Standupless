@@ -12,8 +12,9 @@
  * on the create body and are snapshotted onto the link, so what the link shows
  * is what was on screen when it was made.
  *
- * Creating a link is gated on being able to write in the target's team. The
- * server decides that too, and a refusal is surfaced rather than guessed at.
+ * Creating a link is gated on being able to write in the target's team, and a
+ * view or filter link also needs the Standard plan. The server decides both,
+ * and its refusal, the plan sentence included, is surfaced rather than guessed at.
  */
 
 import React, { useState } from 'react';

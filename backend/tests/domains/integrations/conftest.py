@@ -253,6 +253,13 @@ def workspace(repositories: Any) -> str:
 
 
 @pytest.fixture
+def business_plan(repositories: Any, workspace: str) -> str:
+    """The workspace on the Business plan, which includes Insights and dashboards."""
+    repositories.workspaces.set_billing(workspace, plan="business")
+    return workspace
+
+
+@pytest.fixture
 def installed(repositories: Any, workspace: str) -> str:
     """One recorded installation with one repository, pinned to no team."""
     from app.common.db.dynamo.base import utc_now

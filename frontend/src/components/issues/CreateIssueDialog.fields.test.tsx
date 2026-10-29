@@ -3,7 +3,8 @@
  * chip appearing once a project is chosen and scoped to it, the parent chip
  * searching the team and prefilled from an issue, sub-issue rows filed under
  * the new issue in the same save, a pasted file held in the description and
- * uploaded once the issue exists, and the expand toggle.
+ * uploaded once the issue exists, web links from a prefilled link attached
+ * once to the first issue made, and the expand toggle.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -84,6 +85,14 @@ const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listMilestones = vi.fn<(projectId: string) => Promise<MilestoneRead[]>>();
 const uploadAttachment =
   vi.fn<(issueId: string, file: File) => Promise<AttachmentRead>>();
+const createUrlAttachment =
+  vi.fn<
+    (body: {
+      issue_id: string;
+      url: string;
+      title?: string;
+    }) => Promise<AttachmentRead>
+  >();
 
 vi.mock('../../api/issues', () => ({
   createIssue: (_w: string, body: IssueCreate) => createIssue(body),
@@ -96,6 +105,10 @@ vi.mock('../../api/issues', () => ({
 vi.mock('../../api/discussion', () => ({
   uploadAttachment: (_w: string, issueId: string, file: File) =>
     uploadAttachment(issueId, file),
+  createUrlAttachment: (
+    _w: string,
+    body: { issue_id: string; url: string; title?: string }
+  ) => createUrlAttachment(body),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -269,6 +282,7 @@ beforeEach(() => {
     listIssues,
     listMilestones,
     uploadAttachment,
+    createUrlAttachment,
     onCreated,
   ]) {
     spy.mockReset();
@@ -393,6 +407,35 @@ describe('sub-issues', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Sub-issue 1 title' })
     ).toBeNull();
+  });
+});
+
+describe('prefilled links', () => {
+  it('attaches the links once the issue exists', async () => {
+    const user = userEvent.setup();
+    createUrlAttachment.mockResolvedValue({} as AttachmentRead);
+    renderDialog({
+      title: 'Crash on save',
+      links: [
+        { url: 'https://example.com/log', title: 'Log' },
+        { url: 'https://example.com/trace' },
+      ],
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createUrlAttachment).toHaveBeenCalledTimes(2);
+    });
+    expect(createUrlAttachment).toHaveBeenCalledWith({
+      issue_id: 'id-ENG-1',
+      url: 'https://example.com/log',
+      title: 'Log',
+    });
+    expect(createUrlAttachment).toHaveBeenCalledWith({
+      issue_id: 'id-ENG-1',
+      url: 'https://example.com/trace',
+    });
   });
 });
 

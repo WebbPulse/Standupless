@@ -13,7 +13,8 @@ Moving one to another parent takes the right to edit under both.
 
 History is kept per edit session rather than per keystroke: an editor saving as
 they type keeps writing over one version, and the state before the session is
-kept once another person edits or the last edit is `SESSION_GAP` old.
+kept once another person edits or the last edit is `SESSION_GAP` old. Restoring
+a version is an edit that always keeps the body it replaced, so it can be undone.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from app.common.api.schemas.documents import (
     DocumentRead,
     DocumentSummaryRead,
     DocumentVersionRead,
+    DocumentVersionRestore,
 )
 from app.common.body_versions import body_changed, body_condition, body_version, is_stale
 from app.common.change_source import ChangeSource
@@ -53,6 +55,7 @@ from app.common.db.dynamo.documents import (
 )
 from app.common.db.dynamo.search_index import SearchQuery, ranked_terms
 from app.common.initiative_writes import load_initiative
+from app.common.issue_privacy import can_see_issue
 from app.common.planning_rules import (
     can_see_initiative,
     forbidden,
@@ -210,7 +213,7 @@ def resolve_mentions(repositories: Repositories, context: AuthzContext, keys: It
         if team_id is None or not context.can_see_team(team_id):
             continue
         issue = repositories.issues.get_by_number(context.workspace_id, team_id, int(number))
-        if issue is None or issue.issue_id in seen or not context.can_see_team(issue.team_id):
+        if issue is None or issue.issue_id in seen or not can_see_issue(repositories, context, issue):
             continue
         seen.add(issue.issue_id)
         found.append(DocumentMention(key=key, issue_id=issue.issue_id, team_id=issue.team_id))
@@ -419,9 +422,19 @@ def _destination(
 
 
 def update_document(
-    repositories: Repositories, context: AuthzContext, document_id: str, payload: DocumentPatch
+    repositories: Repositories,
+    context: AuthzContext,
+    document_id: str,
+    payload: DocumentPatch,
+    *,
+    keep_version: bool = False,
 ) -> DocumentRead:
-    """Rename, rewrite, restyle or move a document, keeping the state before a new edit session as a version."""
+    """Rename, rewrite, restyle or move a document, keeping the state before a new edit session as a version.
+
+    `keep_version` keeps the state before this edit as a version even inside
+    the caller's own edit session, so a restore never folds away the text it
+    replaced.
+    """
     parent, existing, body = _load(repositories, context, document_id)
     rights = Rights(repositories, context)
     if not rights.can_edit(parent):
@@ -444,7 +457,8 @@ def update_document(
     if not rewritten and icon == existing.icon and not moved:
         return _read(rights, parent, existing, body)
     now = utc_now()
-    if rewritten and (existing.updated_by != context.user_id or now - existing.updated_at > SESSION_GAP):
+    new_session = existing.updated_by != context.user_id or now - existing.updated_at > SESSION_GAP
+    if rewritten and (keep_version or new_session):
         body = repositories.documents.add_version(
             DocumentVersion(
                 workspace_id=context.workspace_id,
@@ -517,10 +531,42 @@ def list_document_versions(
     ]
 
 
+def restore_document_version(
+    repositories: Repositories,
+    context: AuthzContext,
+    document_id: str,
+    version_id: str,
+    payload: DocumentVersionRestore | None = None,
+) -> DocumentRead:
+    """Put one kept version's body back as the document's current body, as an edit by the caller.
+
+    Runs the ordinary document edit, so it takes the right to edit the
+    document, is held to the stale body guard, and leaves the body it replaced
+    as a version of its own, which makes the restore itself restorable. A
+    restore with no `base_body_version` is guarded on the body read here. The
+    title is left as it stands, as a restore of an issue description leaves
+    the issue's title.
+    """
+    parent, document, body = _load(repositories, context, document_id)
+    if not Rights(repositories, context).can_edit(parent):
+        raise forbidden()
+    version = repositories.documents.get_version(context.workspace_id, document.document_id, version_id)
+    if version is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": "NOT_FOUND", "message": "That document version does not exist"},
+        )
+    base = payload.base_body_version if payload is not None else None
+    if is_stale(base, body.body):
+        raise body_changed(body.body)
+    patch = DocumentPatch(body=version.body, base_body_version=base or body_version(body.body))
+    return update_document(repositories, context, document.document_id, patch, keep_version=True)
+
+
 def list_issue_documents(repositories: Repositories, context: AuthzContext, issue_id: str) -> list[DocumentSummaryRead]:
     """The readable documents that mention one visible issue, most recently edited first."""
     issue = repositories.issues.get(context.workspace_id, issue_id)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         raise not_found()
     links = repositories.documents.list_links(context.workspace_id, issue.issue_id)
     if not links:

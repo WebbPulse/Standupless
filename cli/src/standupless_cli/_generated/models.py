@@ -457,11 +457,6 @@ class ConnectedAppMemberRead(TypedDict):
     id: str
 
 
-class ConnectedAppScopesGrant(TypedDict):
-    scopes: list[str]
-    workspace_id: NotRequired[str | None]
-
-
 class ConnectedAppWorkspaceRead(TypedDict):
     authorized_at: NotRequired[str | None]
     id: str
@@ -708,6 +703,21 @@ class CycleSettingsRead(TypedDict):
     updated_at: NotRequired[str | None]
 
 
+class CycleSettingsSaved(TypedDict):
+    auto_add_completed: bool
+    auto_add_started: bool
+    cooldown_weeks: int
+    duration_weeks: int
+    enabled: bool
+    kept_cycles: NotRequired[int]
+    move_unfinished: bool
+    removed_cycles: NotRequired[int]
+    start_weekday: int
+    team_id: str
+    upcoming_count: int
+    updated_at: NotRequired[str | None]
+
+
 class CycleSettingsUpdate(TypedDict):
     auto_add_completed: NotRequired[bool | None]
     auto_add_started: NotRequired[bool | None]
@@ -892,6 +902,7 @@ class DisplayOptionsBody(TypedDict):
 
 
 class DocumentCommentCreate(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     body: str
     parent_comment_id: NotRequired[str | None]
 
@@ -969,6 +980,10 @@ class DocumentVersionRead(TypedDict):
     version_id: str
 
 
+class DocumentVersionRestore(TypedDict):
+    base_body_version: NotRequired[str | None]
+
+
 class DownloadRead(TypedDict):
     expires_at: str
     url: str
@@ -977,11 +992,17 @@ class DownloadRead(TypedDict):
 class DraftRead(TypedDict):
     body: str
     created_at: str
-    issue_id: str
+    document_id: NotRequired[str | None]
+    document_title: NotRequired[str | None]
+    initiative_id: NotRequired[str | None]
+    issue_id: NotRequired[str | None]
     issue_key: NotRequired[str | None]
     issue_title: NotRequired[str | None]
     parent_comment_id: NotRequired[str | None]
-    team_id: str
+    parent_kind: NotRequired[Literal["issue", "document", "project_update", "initiative_update"]]
+    project_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+    update_id: NotRequired[str | None]
     updated_at: str
 
 
@@ -1516,6 +1537,16 @@ class IssueReminderRead(TypedDict):
 
 class IssueReminderWrite(TypedDict):
     remind_at: str
+
+
+class IssueRequesterRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    external_id: NotRequired[str | None]
+    handle: NotRequired[str | None]
+    masked_email: NotRequired[str | None]
+    name: NotRequired[str]
+    source: Literal["slack", "email"]
+    user_id: NotRequired[str | None]
 
 
 class IssueSyncRead(TypedDict):
@@ -2456,6 +2487,16 @@ class ReleaseUpdate(TypedDict):
     version: NotRequired[str | None]
 
 
+class ReminderRead(TypedDict):
+    created_at: str
+    entity_id: str
+    entity_type: Literal["issue", "project", "initiative", "document"]
+    issue_key: NotRequired[str | None]
+    remind_at: str
+    team_id: NotRequired[str]
+    title: str
+
+
 class RepositoryReleaseSourceRead(TypedDict):
     kind: NotRequired[Literal["deployments", "tags", "github_releases"]]
     move_issues: NotRequired[bool]
@@ -2792,6 +2833,7 @@ class SlackIntakeRead(TypedDict):
     emoji: NotRequired[str | None]
     enabled: NotRequired[bool]
     installed: bool
+    message_channel_ids: NotRequired[list[str]]
     reinstall: NotRequired[bool]
     updated_at: NotRequired[str | None]
 
@@ -2799,9 +2841,13 @@ class SlackIntakeRead(TypedDict):
 ChannelId: TypeAlias = str
 
 
+MessageChannelId: TypeAlias = str
+
+
 class SlackIntakeWrite(TypedDict):
     channel_ids: list[ChannelId]
     emoji: str
+    message_channel_ids: NotRequired[list[MessageChannelId]]
 
 
 class SlackLinkRead(TypedDict):
@@ -2812,6 +2858,19 @@ class SlackLinkRead(TypedDict):
     problem: NotRequired[str | None]
     slack_team_name: NotRequired[str | None]
     slack_user_id: NotRequired[str | None]
+
+
+class SlackStatusPostsRead(TypedDict):
+    configured: bool
+    enabled: NotRequired[bool]
+    installed: bool
+    private_asks: NotRequired[bool]
+    updated_at: NotRequired[str | None]
+
+
+class SlackStatusPostsWrite(TypedDict):
+    enabled: NotRequired[bool | None]
+    private_asks: NotRequired[bool | None]
 
 
 class SlackThread(TypedDict):
@@ -3377,6 +3436,22 @@ class TriageTeamCount(TypedDict):
     team_id: str
 
 
+class UpdateDraftRead(TypedDict):
+    body: str
+    created_at: str
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    initiative_id: NotRequired[str | None]
+    project_id: NotRequired[str | None]
+    target_kind: Literal["project", "initiative"]
+    target_name: NotRequired[str | None]
+    updated_at: str
+
+
+class UpdateDraftWrite(TypedDict):
+    body: str
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+
+
 class UploadCommit(TypedDict):
     issue_id: str
     ticket: str
@@ -3667,6 +3742,7 @@ class ViewUpdate(TypedDict):
         | None
     ]
     ordering_reversed: NotRequired[bool | None]
+    owner_id: NotRequired[str | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
@@ -4118,6 +4194,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     completed_at: NotRequired[str | None]
     created_at: str
     created_by: str
+    cycle_added_at: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     deleted_at: NotRequired[str | None]
     deleted_by: NotRequired[str | None]
@@ -4133,11 +4210,13 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     parent_key: NotRequired[str | None]
     parent_title: NotRequired[str | None]
     priority: Literal["none", "urgent", "high", "medium", "low"]
+    private: NotRequired[bool]
     progress: ProgressRead
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     relation_count: NotRequired[int]
+    requester: NotRequired[IssueRequesterRead | None]
     sla_breaches_at: NotRequired[str | None]
     sla_calendar: NotRequired[Literal["calendar", "business_days"]]
     sla_paused_at: NotRequired[str | None]
@@ -4703,6 +4782,11 @@ class IssueListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class IssueLookupRead(TypedDict):
+    issues: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    resolved: NotRequired[dict[str, str]]
+
+
 class IssueReleaseRead(TypedDict):
     created_at: str
     current_stage: NotRequired[ReleaseStageRead | None]
@@ -5039,6 +5123,10 @@ class ReleaseRead(TypedDict):
     workspace_id: str
 
 
+class ReminderListRead(TypedDict):
+    reminders: NotRequired[list[ReminderRead]]
+
+
 class RepositoryLinkWrite(TypedDict):
     release_source: NotRequired[RepositoryReleaseSourceWrite | None]
     team_id: NotRequired[str | None]
@@ -5164,6 +5252,7 @@ class TemplateCreate(TypedDict):
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
     form_fields: NotRequired[list[FormField]]
+    in_slack: NotRequired[bool]
     kind: NotRequired[Literal["issue", "project", "document"]]
     label_ids: NotRequired[list[str]]
     name: str
@@ -5186,6 +5275,7 @@ class TemplateRead(TypedDict):
     estimate: NotRequired[str | None]
     form_fields: NotRequired[list[FormFieldBlueprint]]
     id: str
+    in_slack: NotRequired[bool]
     kind: NotRequired[Literal["issue", "project", "document"]]
     label_ids: NotRequired[list[str]]
     name: str
@@ -5208,6 +5298,7 @@ class TemplateUpdate(TypedDict):
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
     form_fields: NotRequired[list[FormField] | None]
+    in_slack: NotRequired[bool | None]
     label_ids: NotRequired[list[str] | None]
     name: NotRequired[str | None]
     position: NotRequired[int | None]
@@ -5239,6 +5330,10 @@ class TriageSettingsUpdate(TypedDict):
 
 class TriageSummaryRead(TypedDict):
     teams: NotRequired[list[TriageTeamCount]]
+
+
+class UpdateDraftListRead(TypedDict):
+    drafts: list[UpdateDraftRead]
 
 
 class UserPreferencesUpdate(TypedDict):

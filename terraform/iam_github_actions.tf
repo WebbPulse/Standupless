@@ -124,6 +124,7 @@ module "github_actions_role" {
     local.gate_policy_statements,
     local.e2e_signing_policy_statements,
     local.codeartifact_read_policy_statements,
+    local.slack_config_assume_policy_statements,
   )
 
   lambda_image_deploy = local.domain_functions_enabled ? {

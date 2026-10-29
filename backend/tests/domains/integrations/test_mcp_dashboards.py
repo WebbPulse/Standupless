@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import GUEST, MEMBER, OWNER
 from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, seed_issue
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
+
+pytestmark = pytest.mark.usefixtures("business_plan")
 
 READ_WRITE = ("views:read", "views:write", "issues:read")
 

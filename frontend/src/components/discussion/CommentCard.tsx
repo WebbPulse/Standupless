@@ -185,13 +185,14 @@ const commentUrl = (
 /** Props for PassageQuote. */
 interface PassageQuoteProps {
   anchor: CommentAnchor;
-  /** Whether the description still holds the passage; unknown counts as held. */
+  /** Whether the text still holds the passage; unknown counts as held. */
   held: boolean;
   /** Scrolls to the passage, or undefined when there is none to scroll to. */
   onShow?: (() => void) | undefined;
+  /** What holds the passage, as the card names it: the description or the document. */
+  source: 'description' | 'document';
 }
 
-/** The passage of the description a thread is pinned to, at the top of its card. */
 /** The mark on a root synced with a Slack thread, linking there when Slack gave a link. */
 const SlackThreadBadge: React.FC<{ permalink: string }> = ({ permalink }) => {
   const className =
@@ -223,10 +224,12 @@ const SlackThreadBadge: React.FC<{ permalink: string }> = ({ permalink }) => {
   );
 };
 
+/** The passage of the description or document a thread is pinned to, at the top of its card. */
 const PassageQuote: React.FC<PassageQuoteProps> = ({
   anchor,
   held,
   onShow,
+  source,
 }) => {
   const text = (
     <span className="line-clamp-3 border-l-2 border-warning/60 pl-2 text-left whitespace-pre-line">
@@ -238,7 +241,7 @@ const PassageQuote: React.FC<PassageQuoteProps> = ({
       {held && onShow !== undefined ? (
         <button
           type="button"
-          aria-label="Show the passage in the description"
+          aria-label={`Show the passage in the ${source}`}
           className="block w-full rounded-sm transition-colors duration-100 hover:text-text"
           onClick={onShow}
         >
@@ -249,7 +252,7 @@ const PassageQuote: React.FC<PassageQuoteProps> = ({
       )}
       {!held && (
         <p className="text-2xs text-text-faint">
-          The description no longer has this text.
+          {`The ${source} no longer has this text.`}
         </p>
       )}
     </div>
@@ -460,7 +463,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
             {author}
           </span>
         </MemberLink>
-        <RelativeTime value={comment.created_at} />
+        <a
+          href={`#${anchorOf(comment.comment_id)}`}
+          className="rounded-xs decoration-text-faint hover:underline"
+        >
+          <RelativeTime value={comment.created_at} />
+        </a>
         <ViaSource source={comment.source} />
         {comment.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>
@@ -895,6 +903,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
         <PassageQuote
           anchor={anchor}
           held={held}
+          source={documentId === undefined ? 'description' : 'document'}
           onShow={
             passages === null || resolution !== null
               ? undefined

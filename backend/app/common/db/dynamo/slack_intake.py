@@ -2,12 +2,15 @@
 
 A team that turns intake on holds one row in the workspace's partition, keyed
 `slackintake#<team id>`, naming the emoji, the Slack channels it listens in and
-the Slack workspace those channel ids belong to. A reaction finds every team's
-row with one prefix query, since a workspace has few teams.
+the Slack workspace those channel ids belong to. A channel named in
+`message_channel_ids` as well is in every message mode: each top-level message
+posted there is filed without waiting for the emoji. A reaction or a message
+finds every team's row with one prefix query, since a workspace has few teams.
 
 Each message a team files claims one row before the issue is written,
 `slackreact#<channel>#<message ts>#<team id>`, so a second reaction, a second
-person reacting or a redelivered event files nothing more. The claim outlives a
+person reacting, a redelivered event or a reaction on a message every message
+mode already filed files nothing more. The claim outlives a
 disconnect on purpose: reconnecting Slack must not refile old messages.
 
 Every row lives in the workspace's own partition, so the workspace purge removes
@@ -41,13 +44,18 @@ def reaction_key(channel_id: str, message_ts: str, team_id: str) -> str:
 
 
 class SlackReactionIntake(BaseModel):
-    """One team's emoji reaction intake: which emoji, in which channels of which Slack workspace."""
+    """One team's Slack intake: which emoji, in which channels of which Slack workspace.
+
+    `message_channel_ids` holds the channels, among `channel_ids`, where every
+    top-level message is filed; the rest file a message only on the emoji.
+    """
 
     workspace_id: str
     github_key: str
     team_id: str
     emoji: str
     channel_ids: list[str] = Field(default_factory=list)
+    message_channel_ids: list[str] = Field(default_factory=list)
     slack_team_id: str
     enabled_by: str
     created_at: datetime = Field(default_factory=utc_now)

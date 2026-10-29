@@ -186,8 +186,51 @@
   @apply outline-1 outline-focus;
 }
 
-.rich-markdown .rich-issue-ref {
-  @apply font-mono text-[0.9em];
+.rich-markdown .rich-issue-chip {
+  @apply text-text-muted no-underline;
+}
+
+.rich-markdown code:has(> .rich-issue-chip) {
+  @apply bg-transparent p-0 font-sans text-[1em];
+}
+
+.rich-markdown .rich-issue-icon,
+.rich-markdown .rich-issue-title {
+  @apply cursor-pointer select-none;
+}
+
+.rich-markdown .rich-issue-icon {
+  @apply inline-flex rounded-l-sm pr-1 pl-0.5 align-[-0.1em];
+}
+
+.rich-markdown .rich-issue-icon svg {
+  @apply h-3 w-3;
+}
+
+.rich-markdown .rich-issue-title {
+  @apply inline-block max-w-[min(24rem,100%)] truncate rounded-r-sm pr-0.5 pl-1 align-bottom text-text;
+}
+
+.rich-markdown .ProseMirror[contenteditable='false'] .rich-issue-chip {
+  @apply cursor-pointer;
+}
+
+.rich-markdown
+  :is(.rich-issue-icon, .rich-issue-chip, .rich-issue-title, code):is(
+    .rich-issue-icon:hover,
+    .rich-issue-icon:hover + *,
+    .rich-issue-icon:hover + * + .rich-issue-title,
+    :has(+ .rich-issue-chip:hover),
+    .rich-issue-chip:hover,
+    code:has(> .rich-issue-chip:hover),
+    :has(+ code > .rich-issue-chip:hover),
+    .rich-issue-chip:hover + .rich-issue-title,
+    code:has(> .rich-issue-chip:hover) + .rich-issue-title,
+    .rich-issue-title:hover,
+    :has(+ .rich-issue-title:hover),
+    :has(+ * + .rich-issue-title:hover)
+  ) {
+  @apply bg-raised;
 }
 
 .rich-markdown .ProseMirror-gapcursor::after {

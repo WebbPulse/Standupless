@@ -8,6 +8,8 @@ passkeys_second_factor = true
 ephemeral_users_enabled = false
 adopt_spans_log_group   = true
 
+billing_enabled = true
+
 github_app_slug       = "standupless"
 github_queues_enabled = true
 
@@ -29,3 +31,5 @@ oauth_github_client_id = "Ov23liZzrfg6s7FT5wnh"
 oauth_google_client_id = "564116507829-vlse1e633244k5rdijm04g53gas1ojiu.apps.googleusercontent.com"
 
 desktop_handoff_schemes = ["standupless"]
+
+slack_config_trusted_role_arns = ["arn:aws:iam::212598081999:role/standupless-staging-github-actions-deploy"]

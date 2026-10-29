@@ -23,6 +23,8 @@ vi.mock('./client', () => ({
   },
 }));
 
+const ISSUE = { kind: 'issue', id: 'i1' } as const;
+
 beforeEach(() => {
   get.mockReset();
   put.mockReset();
@@ -36,8 +38,8 @@ describe('comment draft routes', () => {
     });
     get.mockResolvedValueOnce({ data: undefined });
 
-    const found = await listIssueDrafts('ws-1', 'i1');
-    const empty = await listIssueDrafts('ws-1', 'i1');
+    const found = await listIssueDrafts('ws-1', ISSUE);
+    const empty = await listIssueDrafts('ws-1', ISSUE);
 
     expect(get).toHaveBeenCalledWith('/workspaces/ws-1/drafts', {
       query: { issue_id: 'i1' },
@@ -50,10 +52,10 @@ describe('comment draft routes', () => {
     put.mockResolvedValue({ data: { issue_id: 'i1', body: 'Hi' } });
     del.mockResolvedValue({ data: undefined });
 
-    await saveDraft('ws-1', 'i1', undefined, 'Hi');
-    await saveDraft('ws-1', 'i1', 'c1', 'Hi');
-    await deleteDraft('ws-1', 'i1', null);
-    await deleteDraft('ws-1', 'i1', 'c1');
+    await saveDraft('ws-1', ISSUE, undefined, 'Hi');
+    await saveDraft('ws-1', ISSUE, 'c1', 'Hi');
+    await deleteDraft('ws-1', ISSUE, null);
+    await deleteDraft('ws-1', ISSUE, 'c1');
 
     expect(put).toHaveBeenNthCalledWith(
       1,
@@ -73,5 +75,64 @@ describe('comment draft routes', () => {
     expect(del).toHaveBeenNthCalledWith(2, '/workspaces/ws-1/drafts/i1', {
       query: { parent_comment_id: 'c1' },
     });
+  });
+
+  it('lists, saves and discards a document draft on its own route', async () => {
+    get.mockResolvedValue({ data: { drafts: [] } });
+    put.mockResolvedValue({ data: { document_id: 'd1', body: 'Hi' } });
+    del.mockResolvedValue({ data: undefined });
+    const document = { kind: 'document', id: 'd1' } as const;
+
+    await listIssueDrafts('ws-1', document);
+    await saveDraft('ws-1', document, 'c1', 'Hi');
+    await deleteDraft('ws-1', document, null);
+
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-1/drafts', {
+      query: { document_id: 'd1' },
+    });
+    expect(put).toHaveBeenCalledWith(
+      '/workspaces/ws-1/drafts/documents/d1',
+      { body: 'Hi' },
+      { query: { parent_comment_id: 'c1' } }
+    );
+    expect(del).toHaveBeenCalledWith('/workspaces/ws-1/drafts/documents/d1', {
+      query: {},
+    });
+  });
+
+  it('keeps an update reply draft on the update reply route of its project or initiative', async () => {
+    get.mockResolvedValue({ data: { drafts: [] } });
+    put.mockResolvedValue({ data: { update_id: 'u1', body: 'Hi' } });
+    del.mockResolvedValue({ data: undefined });
+
+    await listIssueDrafts('ws-1', {
+      kind: 'project_update',
+      projectId: 'p1',
+      updateId: 'u1',
+    });
+    await saveDraft(
+      'ws-1',
+      { kind: 'project_update', projectId: 'p1', updateId: 'u1' },
+      undefined,
+      'Hi'
+    );
+    await deleteDraft(
+      'ws-1',
+      { kind: 'initiative_update', initiativeId: 'n1', updateId: 'u2' },
+      null
+    );
+
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-1/drafts', {
+      query: { update_id: 'u1' },
+    });
+    expect(put).toHaveBeenCalledWith(
+      '/workspaces/ws-1/drafts/update-replies/projects/p1/u1',
+      { body: 'Hi' },
+      { query: {} }
+    );
+    expect(del).toHaveBeenCalledWith(
+      '/workspaces/ws-1/drafts/update-replies/initiatives/n1/u2',
+      { query: {} }
+    );
   });
 });

@@ -9,6 +9,8 @@
  * edits and deletes them, and a quiet live project nudges for one. The
  * overview's activity interleaves property changes with the updates. R
  * focuses the name and Cmd or Ctrl+Shift+Comma copies the project's address.
+ * On a phone the header keeps its actions to icons and the property chips
+ * scroll in one line.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -16,7 +18,15 @@ import { ApiError } from '@webbpulse/api-client';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   MilestoneRead,
@@ -35,6 +45,18 @@ import { projectPath } from '../../lib/paths';
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
 import ProjectDetail from './ProjectDetail';
+
+const network = vi.hoisted(() => ({ offline: false }));
+
+vi.mock('../../hooks/useOffline', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOffline: () => network.offline,
+  useWritable: (permitted: boolean) => permitted && !network.offline,
+}));
+
+afterEach(() => {
+  network.offline = false;
+});
 
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
 const updateProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
@@ -73,6 +95,15 @@ const setFollow =
       following: boolean
     ) => Promise<PulseFollowRead>
   >();
+
+vi.mock('../../api/views', async () => ({
+  ...(await vi.importActual<typeof import('../../api/views')>(
+    '../../api/views'
+  )),
+  listEntityReminders: () => Promise.resolve([]),
+  setEntityReminder: vi.fn(),
+  cancelEntityReminder: vi.fn(),
+}));
 
 vi.mock('../../api/pulse', () => ({
   getFollow: () => getFollow(),
@@ -365,6 +396,10 @@ const renderPage = (entry = '/w/mine/projects/prj-1') =>
   );
 
 describe('ProjectDetail', () => {
+  beforeAll(async () => {
+    await import('../../components/editor/RichMarkdownEditor');
+  }, 60_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkspaceMock.mockReturnValue(resolved('admin'));
@@ -814,6 +849,23 @@ describe('ProjectDetail', () => {
     ).toBeNull();
   });
 
+  it('opens the reminder dialog from its actions menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Getting it out');
+    await user.click(screen.getByRole('button', { name: 'Project actions' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Remind me…' })
+    );
+
+    expect(
+      await screen.findByText(
+        'Launch comes back to your inbox at the time you pick.'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('archives the project from its actions menu', async () => {
     const user = userEvent.setup();
     archiveProject.mockResolvedValue({});
@@ -1245,5 +1297,68 @@ describe('ProjectDetail', () => {
         `${globalThis.location.origin}${projectPath('mine', launch)}`
       );
     });
+  });
+});
+
+describe('ProjectDetail offline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listTeams.mockResolvedValue([engine]);
+    getProject.mockResolvedValue(launch);
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    listIssues.mockResolvedValue({ issues: [], next_cursor: null });
+    listMilestones.mockResolvedValue([]);
+    listProjectUpdates.mockResolvedValue({ updates: [], next_cursor: null });
+    listProjectActivity.mockResolvedValue({ activity: [], next_cursor: null });
+    listTeamMembers.mockResolvedValue([ada]);
+    getFollow.mockResolvedValue({ following: true, explicit: false });
+  });
+
+  it('holds the properties back while offline', async () => {
+    network.offline = true;
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    expect(
+      within(row).getByRole('button', { name: /^Priority: / })
+    ).toBeDisabled();
+  });
+});
+
+describe('ProjectDetail on a phone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listTeams.mockResolvedValue([engine]);
+    getProject.mockResolvedValue({
+      ...launch,
+      update_due_state: 'overdue',
+    });
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    listIssues.mockResolvedValue({ issues: [], next_cursor: null });
+    listMilestones.mockResolvedValue([]);
+    listProjectUpdates.mockResolvedValue({ updates: [], next_cursor: null });
+    listProjectActivity.mockResolvedValue({ activity: [], next_cursor: null });
+    listTeamMembers.mockResolvedValue([ada]);
+    getFollow.mockResolvedValue({ following: true, explicit: false });
+  });
+
+  it('keeps the header actions to their icons below the sm breakpoint', async () => {
+    renderPage();
+
+    const follow = await screen.findByRole('button', { name: 'Following' });
+    expect(within(follow).getByText('Following')).toHaveClass('max-sm:sr-only');
+    const badge = screen
+      .getAllByText('Update overdue')
+      .find((element) => element.closest('h1') !== null);
+    expect(badge).toHaveClass('max-sm:hidden');
+  });
+
+  it('scrolls the property chips sideways in one line on a phone', async () => {
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    expect(row).toHaveClass('phone-scroll-row', 'flex-wrap');
   });
 });

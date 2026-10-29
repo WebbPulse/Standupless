@@ -189,3 +189,16 @@ def test_a_sub_team_takes_its_parents_timezone(client: TestClient) -> None:
     assert "parent team" in refused.json()["message"]
     assert repeated.status_code == 200, repeated.text
     assert _team(client, LONER)["timezone"] == "America/Los_Angeles"
+
+
+def test_a_lower_parent_count_trims_its_sub_teams_cycles(client: TestClient, repositories: Any) -> None:
+    """Lowering the parent's upcoming count removes the empty surplus cycles of each sub-team too."""
+    _join(client)
+    _configure_parent(client)
+    assert len(repositories.planning.list_for_roadmap(WORKSPACE, LONER)) == 4
+
+    response = client.patch(f"{BASE}/teams/{PARENT}/cycle-settings", json={"upcoming_count": 1})
+
+    assert response.status_code == 200, response.text
+    assert len(repositories.planning.list_for_roadmap(WORKSPACE, PARENT)) == 2
+    assert len(repositories.planning.list_for_roadmap(WORKSPACE, LONER)) == 2

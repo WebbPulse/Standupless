@@ -205,6 +205,15 @@ const readCollection = async (
   return readAll(workspaceId, query, signal);
 };
 
+/** How {@link useIssueCollection} behaves beyond its query. */
+export interface IssueCollectionOptions {
+  /**
+   * Keeps showing the last rows read while a changed query reads, rather than
+   * dropping back to loading, for a list whose query grows as it pages.
+   */
+  holdRows?: boolean;
+}
+
 /**
  * Reads the issues a query matches and writes changes to them optimistically.
  * `scope` names what the rows belong to, such as a team or a view, and is
@@ -214,7 +223,8 @@ export const useIssueCollection = (
   workspaceId: string,
   scope: string,
   query: IssueListFilters,
-  enabled = true
+  enabled = true,
+  options: IssueCollectionOptions = {}
 ): IssueCollection => {
   const auth = useQueryAuth();
   const queryJson = JSON.stringify(query);
@@ -248,7 +258,10 @@ export const useIssueCollection = (
     }
   );
 
-  const read = data?.issues;
+  const [last, setLast] = useState<CollectionRead | null | undefined>(data);
+  if (data !== undefined && data !== null && data !== last) setLast(data);
+  const shown = data ?? (options.holdRows === true ? last : undefined);
+  const read = shown?.issues;
   const {
     issues: overlaid,
     update,
@@ -389,9 +402,9 @@ export const useIssueCollection = (
 
   return {
     issues,
-    isLoading,
+    isLoading: isLoading && shown === undefined,
     error,
-    truncated: data?.truncated ?? false,
+    truncated: shown?.truncated ?? false,
     queryKey,
     update,
     remove,

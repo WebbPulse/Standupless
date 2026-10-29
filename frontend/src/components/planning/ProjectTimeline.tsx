@@ -29,22 +29,15 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  LuArrowLeft,
-  LuArrowRight,
-  LuChevronLeft,
-  LuChevronRight,
-  LuMinus,
-  LuPlus,
-} from 'react-icons/lu';
+import { LuArrowLeft, LuArrowRight, LuChevronRight } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
 import { useTimelineLinks } from '../../hooks/useTimelineLinks';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
 import {
-  NAME_WIDTH,
   TimelineDateHeader,
   TimelineGrid,
+  useNameWidth,
   useTimelineView,
   type TimelineHandle,
   type ViewWindow,
@@ -55,7 +48,6 @@ import MilestoneGlyph from './MilestoneGlyph';
 import ProjectIcon from './ProjectIcon';
 import ProjectStatusGlyph from './ProjectStatusGlyph';
 import Avatar from '../ui/avatar';
-import Button, { IconButton } from '../ui/button';
 import { PriorityGlyph } from '../ui/glyphs';
 import { ContextMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import type { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
@@ -86,15 +78,12 @@ import {
 import type { ProjectColumn, ProjectGroup } from '../../lib/projectList';
 import {
   PX_PER_DAY,
-  TIMELINE_ZOOMS,
-  TIMELINE_ZOOM_LABELS,
   barDays,
   clampLabel,
   dayValue,
   dragBar,
   milestoneMarks,
   offscreenSide,
-  stepZoom,
   timelineDate,
   timelineHeader,
   timelineRange,
@@ -153,15 +142,16 @@ type TimelineMenu =
   | { kind: 'bar'; projectId: string; x: number; y: number }
   | { kind: 'line'; line: DependencyLine; x: number; y: number };
 
-/** A point on the page as lane pixels of the lanes box it falls in. */
+/** A point on the page as lane pixels of the lanes box it falls in, past a name column `nameWidth` wide. */
 const lanePoint = (
   node: HTMLElement | null,
   clientX: number,
-  clientY: number
+  clientY: number,
+  nameWidth: number
 ): { x: number; y: number } => {
   const box = node?.getBoundingClientRect();
   return {
-    x: clientX - (box?.left ?? 0) - NAME_WIDTH,
+    x: clientX - (box?.left ?? 0) - nameWidth,
     y: clientY - (box?.top ?? 0),
   };
 };
@@ -249,6 +239,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   );
   const project = value ?? server;
   const [drag, setDrag] = useState<DragState | null>(null);
+  const nameWidth = useNameWidth();
   const { statusOf } = useProjectStatuses();
   const editable = canEditProject(workspaceRole, project, teams);
   const percent = progressPercent(project);
@@ -369,8 +360,8 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
       }}
     >
       <div
-        className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
-        style={{ width: NAME_WIDTH }}
+        className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface max-sm:px-3"
+        style={{ width: nameWidth }}
       >
         <ProjectIcon icon={project.icon} color={project.color} />
         <Link
@@ -383,7 +374,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
           <span
             data-timeline-property="priority"
             title={PRIORITY_LABELS[project.priority]}
-            className="flex shrink-0 text-text-muted"
+            className="flex shrink-0 text-text-muted max-sm:hidden"
           >
             <PriorityGlyph
               priority={project.priority}
@@ -409,16 +400,21 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
           <ProjectHealthGlyph
             health={project.health}
             name={healthLabel(project.health)}
+            className="max-sm:hidden"
           />
         )}
         {has('teams') &&
           projectTeams
             .slice(0, 2)
             .map((team) => (
-              <TeamKey key={team.id} keyPrefix={team.key_prefix} />
+              <TeamKey
+                key={team.id}
+                keyPrefix={team.key_prefix}
+                className="max-sm:hidden"
+              />
             ))}
         {has('lead') && lead !== undefined && (
-          <span title={personLabel(lead)}>
+          <span title={personLabel(lead)} className="max-sm:hidden">
             <Avatar
               name={personLabel(lead)}
               src={personAvatar(lead)}
@@ -446,7 +442,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
           editable ? (
             <span
               className="pointer-events-none sticky top-0 hidden h-full items-center pl-3 text-xs text-text-faint group-hover/row:flex"
-              style={{ left: NAME_WIDTH }}
+              style={{ left: nameWidth }}
             >
               Click to schedule
             </span>
@@ -662,6 +658,7 @@ const TimelineGroup: React.FC<TimelineGroupProps> = ({
   listLabel,
   children,
 }) => {
+  const nameWidth = useNameWidth();
   if (group.kind === 'none') {
     return <ul aria-label={listLabel}>{children}</ul>;
   }
@@ -673,8 +670,8 @@ const TimelineGroup: React.FC<TimelineGroupProps> = ({
           aria-expanded={!folded}
           onClick={onToggle}
           data-hover="parent"
-          className="sticky left-0 flex shrink-0 items-center gap-2 px-4 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
-          style={{ width: NAME_WIDTH }}
+          className="sticky left-0 flex shrink-0 items-center gap-2 px-4 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset max-sm:px-3"
+          style={{ width: nameWidth }}
         >
           <LuChevronRight
             aria-hidden="true"
@@ -743,6 +740,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
 }) => {
   const pxPerDay = PX_PER_DAY[zoom];
   const [today] = useState(() => todayNumber());
+  const nameWidth = useNameWidth();
   const range = useMemo(
     () =>
       timelineRange(
@@ -819,7 +817,8 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
       const from = lanePoint(
         lanes.current,
         dot.left + dot.width / 2,
-        dot.top + dot.height / 2
+        dot.top + dot.height / 2,
+        nameWidth
       );
       holdLink({
         sourceId: projectId,
@@ -834,7 +833,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
         targetId: null,
       });
     },
-    [holdLink]
+    [holdLink, nameWidth]
   );
 
   const overLink = useCallback(
@@ -862,7 +861,12 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
     const onMove = (event: PointerEvent): void => {
       const held = linkHeld.current;
       if (held === null) return;
-      const point = lanePoint(lanes.current, event.clientX, event.clientY);
+      const point = lanePoint(
+        lanes.current,
+        event.clientX,
+        event.clientY,
+        nameWidth
+      );
       holdLink({
         ...held,
         toX: point.x,
@@ -900,7 +904,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
       window.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('keydown', onKey);
     };
-  }, [linking, link, holdLink]);
+  }, [linking, link, holdLink, nameWidth]);
 
   const [hoverLine, setHoverLine] = useState<string | null>(null);
   const [menu, setMenu] = useState<TimelineMenu | null>(null);
@@ -1063,7 +1067,7 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
         className="relative min-h-0 flex-1 overflow-auto"
         data-testid={testId}
       >
-        <div className="relative" style={{ width: NAME_WIDTH + laneWidth }}>
+        <div className="relative" style={{ width: nameWidth + laneWidth }}>
           <TimelineDateHeader
             range={range}
             header={header}
@@ -1209,94 +1213,6 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   );
 };
 
-/** Props for TimelineControls: the zoom and what its buttons do. */
-export interface TimelineControlsProps {
-  zoom: TimelineZoom;
-  onZoomChange: (zoom: TimelineZoom) => void;
-  onToday: () => void;
-  /** Moves the view earlier or later, left out where the page offers no stepping. */
-  onStep?: (direction: -1 | 1) => void;
-}
-
-/** The earlier, Today and later buttons and the zoom scale a timeline's toolbar carries. */
-export const TimelineControls: React.FC<TimelineControlsProps> = ({
-  zoom,
-  onZoomChange,
-  onToday,
-  onStep,
-}) => (
-  <>
-    {onStep !== undefined && (
-      <IconButton
-        label="Earlier"
-        size="sm"
-        onClick={() => {
-          onStep(-1);
-        }}
-      >
-        <LuChevronLeft className="h-3.5 w-3.5" />
-      </IconButton>
-    )}
-    <Button variant="ghost" size="sm" onClick={onToday}>
-      Today
-    </Button>
-    {onStep !== undefined && (
-      <IconButton
-        label="Later"
-        size="sm"
-        onClick={() => {
-          onStep(1);
-        }}
-      >
-        <LuChevronRight className="h-3.5 w-3.5" />
-      </IconButton>
-    )}
-    <IconButton
-      label="Zoom out"
-      size="sm"
-      disabled={zoom === 'year'}
-      onClick={() => {
-        onZoomChange(stepZoom(zoom, 1));
-      }}
-    >
-      <LuMinus className="h-3.5 w-3.5" />
-    </IconButton>
-    <div
-      role="radiogroup"
-      aria-label="Zoom"
-      className="flex items-center rounded-sm border border-line p-0.5"
-    >
-      {TIMELINE_ZOOMS.map((value) => (
-        <button
-          key={value}
-          type="button"
-          role="radio"
-          aria-checked={zoom === value}
-          onClick={() => {
-            onZoomChange(value);
-          }}
-          className={cn(
-            'h-6 rounded-xs px-2 text-xs transition-colors duration-100',
-            zoom === value
-              ? 'bg-raised text-text'
-              : 'text-text-muted hover:text-text'
-          )}
-        >
-          {TIMELINE_ZOOM_LABELS[value]}
-        </button>
-      ))}
-    </div>
-    <IconButton
-      label="Zoom in"
-      size="sm"
-      disabled={zoom === 'week'}
-      onClick={() => {
-        onZoomChange(stepZoom(zoom, -1));
-      }}
-    >
-      <LuPlus className="h-3.5 w-3.5" />
-    </IconButton>
-  </>
-);
+export { TimelineControls, type TimelineControlsProps } from './TimelineFrame';
 
 export default ProjectTimeline;

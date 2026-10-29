@@ -108,12 +108,33 @@ describe('propertyValues', () => {
     expect(labels).toContain('Add label Bug');
   });
 
-  it('leaves out the values every target already has', () => {
-    const labels = labelsOf([issueOn('1', 'team-1')]);
+  it('checks the values every target already has and makes them inert', () => {
+    const update = vi.fn<IssueWrite>();
+    const applied = valuesFor([issueOn('1', 'team-1')], update).filter(
+      (value) => value.inert === true
+    );
 
-    expect(labels).not.toContain('Change status to Todo');
-    expect(labels).not.toContain('Set priority to High');
-    expect(labels).not.toContain('Unassign');
+    expect(applied.map((value) => value.label)).toEqual(
+      expect.arrayContaining([
+        'Change status to Todo',
+        'Set priority to High',
+        'Unassign',
+      ])
+    );
+    expect(applied.every((value) => value.checked === true)).toBe(true);
+    applied.forEach((value) => {
+      value.run();
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('tags each value with its property', () => {
+    const urgent = valuesFor([issueOn('1', 'team-1')]).find(
+      (value) => value.label === 'Set priority to Urgent'
+    );
+
+    expect(urgent?.property).toBe('priority');
+    expect(urgent?.checked).toBe(false);
   });
 
   it('offers removing a label every target carries', () => {
@@ -121,6 +142,11 @@ describe('propertyValues', () => {
 
     expect(labels).toContain('Remove label Bug');
     expect(labels).toContain('Add label Infra');
+    const bug = valuesFor([
+      issueOn('1', 'team-1', { label_ids: ['lb-1'] }),
+    ]).find((value) => value.label === 'Remove label Bug');
+    expect(bug?.checked).toBe(true);
+    expect(bug?.inert).toBe(false);
   });
 
   it('offers no estimates while the team has them off', () => {
@@ -168,6 +194,88 @@ describe('propertyValues', () => {
 
     expect(urgent?.name).toBe('Urgent');
     expect(urgent?.keywords).toContain('priority');
+  });
+
+  it('offers the due date presets and removing a set due date', () => {
+    const none = labelsOf([issueOn('1', 'team-1')]);
+    expect(none).toContain('Set due date to Tomorrow');
+    expect(none).not.toContain('Remove due date');
+
+    const due = valuesFor([
+      issueOn('1', 'team-1', { due_date: '2026-11-20' }),
+    ]).find((value) => value.label === 'Remove due date');
+    expect(due?.name).toBe('Remove due date');
+    expect(due?.property).toBe('dueDate');
+  });
+
+  it('leads the due dates with the day a typed term names', () => {
+    const values = propertyValues({
+      issues: [issueOn('1', 'team-1')],
+      env: envWith(vi.fn()),
+      triageTeams: new Set(),
+      today: new Date('2026-10-24T12:00:00Z'),
+      query: 'nov 3',
+    });
+    const lead = values.find((value) => value.lead === true);
+
+    expect(lead?.property).toBe('dueDate');
+    expect(lead?.id).toBe('dueDate-typed-2026-11-03');
+  });
+
+  it('keeps every id unique when two presets land on one day', () => {
+    const values = propertyValues({
+      issues: [issueOn('1', 'team-1')],
+      env: envWith(vi.fn()),
+      triageTeams: new Set(),
+      today: new Date(2026, 9, 29, 12),
+    });
+    const ids = values.map((value) => value.id);
+    const day = 'dueDate-2026-10-30';
+    const tomorrow = values.filter((value) => value.id.startsWith(day));
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(tomorrow.map((value) => value.name)).toEqual([
+      'Tomorrow',
+      'End of this week',
+    ]);
+  });
+
+  it('offers milestones only for an issue in a project the view names', () => {
+    const update = vi.fn<IssueWrite>();
+    const milestone = {
+      milestone_id: 'ms-1',
+      project_id: 'pr-1',
+      name: 'Beta',
+    };
+    const env = {
+      ...envWith(update),
+      context: { ...context, milestones: [milestone] },
+    } as unknown as IssueViewEnv;
+    const offered = (issue: OrderedIssueRead) =>
+      propertyValues({
+        issues: [issue],
+        env,
+        triageTeams: new Set(),
+        today: new Date('2026-10-24T12:00:00Z'),
+      }).map((value) => value.label);
+
+    expect(offered(issueOn('1', 'team-1'))).not.toContain(
+      'Set milestone to Beta'
+    );
+    expect(
+      labelsOf([issueOn('1', 'team-1', { project_id: 'pr-1' })])
+    ).not.toContain('Set milestone to Beta');
+    expect(offered(issueOn('1', 'team-1', { project_id: 'pr-1' }))).toContain(
+      'Set milestone to Beta'
+    );
+  });
+
+  it('marks a label as toggling', () => {
+    const bug = valuesFor([issueOn('1', 'team-1')]).find(
+      (value) => value.label === 'Add label Bug'
+    );
+
+    expect(bug?.toggles).toBe(true);
   });
 
   it('offers nothing with no issue in focus', () => {

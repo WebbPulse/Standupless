@@ -135,7 +135,7 @@ MVP tools: `search_issues`, `get_issue`, `create_issue`, `update_issue`, `add_co
 
 ### New scopes for all-scope grants
 
-When the product adds a scope, an existing grant does not carry it. A person widens a grant from Connected apps with Grant new permissions, or opts in to having it done for them.
+When the product adds a scope, an existing grant does not carry it. The client widens its grant by authorizing again for the new scope: with `IDENTITY_MCP_INCLUDE_GRANTED_SCOPES` on, the approval unions the requested scopes with the ones the grant holds and keeps its id and `granted_at`. A person can also opt in to having all-scope grants widened for them.
 
 - **All scopes.** A grant took every scope when its scopes satisfy, legacy aliases included, every scope offered at its `granted_at`. `SCOPE_INTRODUCED_AT` in `app/common/db/dynamo/api_keys.py` dates each scope by its merge into staging, and `scopes_offered_at` reads it. A test holds the ledger to `API_KEY_SCOPES`, so a new scope cannot ship undated. A grant that left any scope out is never widened.
 - **The setting.** `auto_grant_new_scopes` on the person's user row, off by default, set through `PATCH /api/users/me/preferences` and the checkbox on the Connected apps page. It is the person's own choice and applies to all their grants in every workspace.

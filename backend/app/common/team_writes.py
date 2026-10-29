@@ -361,13 +361,39 @@ def _inherit_estimates(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def _inherit_cycles(repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str) -> None:
-    """Give one sub-team its parent's cycle settings, stocking its cycles when they are on."""
+    """Give one sub-team its parent's cycle settings, stocking its cycles when they are on.
+
+    When the parent's schedule differs from the one the sub-team had, its
+    upcoming automatic cycles move onto the new schedule first, and a lower
+    upcoming count removes its empty surplus cycles.
+    """
+    before = cycle_settings(repositories, workspace_id, team_id)
     source = cycle_settings(repositories, workspace_id, parent_team_id)
     saved = repositories.team_config.put_cycle_settings(
         source.model_copy(update={"team_id": team_id, "config_key": cycle_settings_key(team_id)})
     )
-    if saved.enabled:
-        cycle_schedule.ensure_cycles(repositories.planning, saved, team_today(repositories, workspace_id, team_id))
+    _apply_cycle_settings(repositories, workspace_id, team_id, before, saved)
+
+
+def _apply_cycle_settings(
+    repositories: Repositories, workspace_id: str, team_id: str, before: CycleSettings, saved: CycleSettings
+) -> cycle_schedule.TrimResult:
+    """Create a team's missing cycles, first trimming and moving its upcoming ones as the change asks.
+
+    A lower upcoming count removes the empty surplus upcoming cycles before any
+    move, so only the cycles that stay are re-dated.
+    """
+    trimmed = cycle_schedule.TrimResult(team_id=team_id)
+    if not saved.enabled:
+        return trimmed
+    today = team_today(repositories, workspace_id, team_id)
+    if saved.upcoming_count < before.upcoming_count:
+        trimmed = cycle_schedule.trim_upcoming(repositories.planning, repositories.issues, saved, today)
+    if cycle_schedule.schedule_changed(before, saved):
+        cycle_schedule.reschedule_upcoming(repositories.planning, saved, today)
+    else:
+        cycle_schedule.ensure_cycles(repositories.planning, saved, today)
+    return trimmed
 
 
 def inherit_settings(repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str) -> None:
@@ -480,11 +506,15 @@ def cycle_settings(repositories: Repositories, workspace_id: str, team_id: str) 
 
 def update_cycle_settings(
     repositories: Repositories, workspace_id: str, team_id: str, payload: CycleSettingsUpdate
-) -> CycleSettings:
-    """Change a team's automatic cycle settings.
+) -> tuple[CycleSettings, cycle_schedule.TrimResult]:
+    """Change a team's automatic cycle settings, returning them with what trimming the upcoming cycles did.
 
     When cycles are on after the change, the missing current and upcoming cycles
-    are created at once rather than on the next hourly run. Turning cycles off
+    are created at once rather than on the next hourly run, and a new length,
+    cooldown or start day moves the upcoming automatic cycles onto the new
+    schedule while the current cycle keeps its dates. A lower upcoming count
+    removes the latest upcoming automatic cycles beyond it while they are empty
+    and untouched, and reports how many beyond it were kept. Turning cycles off
     keeps every cycle already created. A sub-team takes its parent's settings, so
     changing its own is a 409, and a parent's change reaches its sub-teams.
     """
@@ -493,11 +523,10 @@ def update_cycle_settings(
     current = cycle_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     saved = repositories.team_config.put_cycle_settings(current.model_copy(update=changes))
-    if saved.enabled:
-        cycle_schedule.ensure_cycles(repositories.planning, saved, team_today(repositories, workspace_id, team_id))
+    trimmed = _apply_cycle_settings(repositories, workspace_id, team_id, current, saved)
     for sub_team_id in sub_team_ids(repositories, workspace_id, team_id):
         _inherit_cycles(repositories, workspace_id, sub_team_id, team_id)
-    return saved
+    return saved, trimmed
 
 
 def auto_close_settings(repositories: Repositories, workspace_id: str, team_id: str) -> AutoCloseSettings:

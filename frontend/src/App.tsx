@@ -30,6 +30,11 @@
  * to sign in itself, with the desktop app's request in `returnTo`, because the
  * protected guard would drop the query that carries it.
  *
+ * `new` and `team/:keyPrefix/new` open the create issue dialog prefilled from
+ * the query, then replace themselves with the workspace home or the team's
+ * issues. A signed out visitor is sent to sign in with the whole link in
+ * `returnTo`, so the prefilled dialog survives the round trip.
+ *
  * The `p/:keyPrefix` paths were what teams lived under before they were called
  * teams. They stay as redirects rather than being removed, because they are in
  * bookmarks and in links people have already sent each other.
@@ -84,6 +89,7 @@ import Download from './pages/download/Download';
 import Pricing from './pages/pricing/Pricing';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
+import NewIssue from './pages/issues/NewIssue';
 import NotFound from './pages/NotFound';
 import DesktopHandoff from './pages/desktop/DesktopHandoff';
 import AccountDeleted from './pages/authentication/AccountDeleted';
@@ -252,6 +258,8 @@ const App: React.FC = () => (
             <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
           </Route>
 
+          <Route path="new" element={<NewIssue />} />
+          <Route path="team/:keyPrefix/new" element={<NewIssue />} />
           <Route path="team/:keyPrefix" element={<Team />} />
           <Route path="team/:keyPrefix/board" element={<Board />} />
           <Route path="team/:keyPrefix/archive" element={<TeamArchive />} />

@@ -10,10 +10,15 @@ the issue's comments from then on.
 The issue is written as the person who reacted when they are a member who can
 create issues in the team, and otherwise as the admin who turned intake on, the
 same fallback email intake uses, so a reaction from someone without a Standupless
-account still files the message. Every message is claimed once per team before
+account still files the message. The message's author is kept as the issue's
+requester, so triage shows who asked even when they hold no seat. Every message is claimed once per team before
 anything is written, so a second reaction, a second person reacting or a
-redelivered event files nothing more. Nothing here calls a model: the title is the
-message's first line.
+redelivered event files nothing more.
+
+A channel in every message mode files each new top-level message a person posts
+there the same way, written as its author when they can create issues and
+otherwise as the admin, and the bot reacts with the team's emoji to acknowledge
+it. Nothing here calls a model: the title is the message's first line.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import replace
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -31,13 +36,15 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import IssueCreate
 from app.common.change_source import SLACK
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
-from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.issues import Issue, IssueRequester
 from app.common.db.dynamo.slack import SlackInstallation
 from app.common.db.dynamo.slack_intake import SlackReactionClaim, SlackReactionIntake, reaction_key
 from app.common.issue_rules import triage_on
 from app.common.issue_writes import create_issue
 from app.common.recurring_issues import creator_context
+from app.common.requesters import slack_requester
 from app.domains.integrations.chat import issues as chat_issues
+from app.domains.integrations.chat.people import NotLinked, member_context
 from app.domains.integrations.slack import install, people, threads
 from app.domains.integrations.slack.api import SlackError
 
@@ -46,6 +53,11 @@ _log = logging.getLogger(__name__)
 FALLBACK_TITLE = "Message from Slack"
 
 REQUIRED_SCOPE = "reactions:read"
+
+ACK_SCOPE = "reactions:write"
+
+TOP_LEVEL_SUBTYPES = frozenset({"", "file_share"})
+"""Message subtypes a person writes as a new message; joins, edits, deletes and broadcasts are left alone."""
 
 _EMOJI = re.compile(r"^[a-z0-9_+\-']{1,100}$")
 
@@ -129,6 +141,26 @@ def _creator(
     return replace(context, source=SLACK) if context is not None else None
 
 
+def _requester(
+    repositories: Repositories, installation: SlackInstallation, message: Mapping[str, Any]
+) -> Optional[IssueRequester]:
+    """Who wrote the message, as the requester, linked to their member when Slack's confirmed email names one."""
+    author = str(message.get("user", "") or "")
+    if not author or author == installation.bot_user_id:
+        return None
+    try:
+        profile = install.call(installation, "users.info", {"user": author})
+    except (SlackError, install.BotUnavailable):
+        return None
+    try:
+        user_id: Optional[str] = member_context(
+            repositories, installation.workspace_id, people.email_of(profile)
+        ).user_id
+    except NotLinked:
+        user_id = None
+    return slack_requester(profile, author, user_id=user_id)
+
+
 def _body(text: str, permalink: str) -> str:
     """The issue description: the message as Markdown, then the link back, held to the body cap."""
     tail = f"\n\nFrom Slack: {permalink}" if permalink else ""
@@ -167,7 +199,7 @@ def _file(
     except ValidationError:
         _dropped("unreadable")
         return None
-    issue = create_issue(repositories, context, payload)
+    issue = create_issue(repositories, context, payload, requester=_requester(repositories, installation, message))
     _log.info("Filed a Slack message from an emoji reaction.", extra={"event": "integrations.slack.reaction_filed"})
     threads.pair(
         repositories,
@@ -208,10 +240,45 @@ def receive(repositories: Repositories, installation: SlackInstallation, event: 
     intakes = _matching(repositories, installation, emoji, channel_id)
     if not intakes:
         return 0
+    fetched: dict[str, Optional[Mapping[str, Any]]] = {}
+
+    def load() -> Optional[Mapping[str, Any]]:
+        """The reacted message, read from Slack at most once."""
+        if "message" not in fetched:
+            fetched["message"] = _message(installation, channel_id, message_ts)
+        return fetched["message"]
+
+    return len(
+        _file_all(
+            repositories,
+            installation,
+            intakes,
+            slack_user_id=slack_user_id,
+            channel_id=channel_id,
+            message_ts=message_ts,
+            load=load,
+        )
+    )
+
+
+def _file_all(
+    repositories: Repositories,
+    installation: SlackInstallation,
+    intakes: list[SlackReactionIntake],
+    *,
+    slack_user_id: str,
+    channel_id: str,
+    message_ts: str,
+    load: Callable[[], Optional[Mapping[str, Any]]],
+) -> list[SlackReactionIntake]:
+    """Claim and file one message into each team, answering the teams it was filed into.
+
+    A team that already holds the message's claim is skipped, and the claim is
+    dropped again when the issue could not be written.
+    """
     store = repositories.github.slack_intake
     workspace_id = installation.workspace_id
-    message: Optional[Mapping[str, Any]] = None
-    filed = 0
+    filed: list[SlackReactionIntake] = []
     for intake in intakes:
         claim = SlackReactionClaim(
             workspace_id=workspace_id,
@@ -223,8 +290,7 @@ def receive(repositories: Repositories, installation: SlackInstallation, event: 
         if not store.claim(claim):
             continue
         try:
-            if message is None:
-                message = _message(installation, channel_id, message_ts)
+            message = load()
             if message is None:
                 _dropped("message_unreadable")
                 store.release(workspace_id, claim.github_key)
@@ -248,12 +314,97 @@ def receive(repositories: Repositories, installation: SlackInstallation, event: 
             store.release(workspace_id, claim.github_key)
             continue
         store.mark_filed(claim, issue.issue_id)
-        filed += 1
+        filed.append(intake)
     return filed
 
 
-def needs_reinstall(installation: Optional[SlackInstallation]) -> bool:
-    """Whether an installation predates the scope reactions need, so Slack must be reconnected first."""
+def message_wanted(event: Mapping[str, Any]) -> bool:
+    """Whether a `message` event is a person's new top-level message in a channel, before any table is read.
+
+    Thread replies, edits, deletes, joins and other subtypes, bot and app posts
+    and direct messages are all left alone.
+    """
+    if event.get("type") != "message":
+        return False
+    if str(event.get("subtype") or "") not in TOP_LEVEL_SUBTYPES:
+        return False
+    if event.get("bot_id") or event.get("bot_profile") or event.get("app_id"):
+        return False
+    if event.get("hidden"):
+        return False
+    channel_id = str(event.get("channel") or "")
+    if not channel_id.startswith(("C", "G")) or event.get("channel_type") == "im":
+        return False
+    ts = str(event.get("ts") or "")
+    thread_ts = str(event.get("thread_ts") or "")
+    if not ts or (thread_ts and thread_ts != ts):
+        return False
+    return bool(event.get("user"))
+
+
+def _message_channels(
+    repositories: Repositories, installation: SlackInstallation, channel_id: str
+) -> list[SlackReactionIntake]:
+    """The teams that file every top-level message posted in this channel of this Slack workspace."""
+    return [
+        intake
+        for intake in repositories.github.slack_intake.list_workspace(installation.workspace_id)
+        if channel_id in intake.message_channel_ids
+        and channel_id in intake.channel_ids
+        and intake.slack_team_id == installation.slack_team_id
+    ]
+
+
+def _acknowledge(installation: SlackInstallation, channel_id: str, message_ts: str, emoji: str) -> None:
+    """React to a filed message with the team's emoji, so the channel sees it was taken."""
+    try:
+        install.call(installation, "reactions.add", {"channel": channel_id, "timestamp": message_ts, "name": emoji})
+    except (SlackError, install.BotUnavailable):
+        _log.info(
+            "Slack refused the acknowledgement reaction.",
+            extra={"event": "integrations.slack.message_ack_failed"},
+        )
+
+
+def receive_message(repositories: Repositories, installation: SlackInstallation, event: Mapping[str, Any]) -> int:
+    """File a new top-level message into every team whose every message mode covers its channel.
+
+    The message is claimed under the same key a reaction claims, so a redelivered
+    event or a later reaction with the emoji files nothing more. The bot then
+    reacts with the team's emoji to acknowledge it.
+    """
+    if not message_wanted(event):
+        return 0
+    slack_user_id = str(event.get("user", ""))
+    if not slack_user_id or slack_user_id == installation.bot_user_id:
+        return 0
+    channel_id = str(event.get("channel", ""))
+    message_ts = str(event.get("ts", ""))
+    intakes = _message_channels(repositories, installation, channel_id)
+    if not intakes:
+        return 0
+    message = {"type": "message", "user": slack_user_id, "text": str(event.get("text") or ""), "ts": message_ts}
+    filed = _file_all(
+        repositories,
+        installation,
+        intakes,
+        slack_user_id=slack_user_id,
+        channel_id=channel_id,
+        message_ts=message_ts,
+        load=lambda: message,
+    )
+    for emoji in dict.fromkeys(intake.emoji for intake in filed):
+        _acknowledge(installation, channel_id, message_ts, emoji)
+    return len(filed)
+
+
+def needs_reinstall(installation: Optional[SlackInstallation], *, every_message: bool = False) -> bool:
+    """Whether an installation predates the scopes intake needs, so Slack must be reconnected first.
+
+    Every message mode also needs the bot to add reactions, to acknowledge what it filed.
+    """
     if installation is None or not installation.scopes:
         return False
-    return REQUIRED_SCOPE not in installation.scopes
+    if REQUIRED_SCOPE not in installation.scopes:
+        return True
+    return every_message and ACK_SCOPE not in installation.scopes

@@ -40,11 +40,12 @@ from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
 from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
-from app.common.db.dynamo.comments import Comment
+from app.common.db.dynamo.comments import Comment, CommentAnchor
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
 from app.common.document_comments import create_document_comment, document_comment_page
+from app.common.documents import get_document
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
@@ -56,6 +57,7 @@ from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
 from app.common.issue_parents import parents_of
+from app.common.issue_privacy import can_see_issue, issue_reader
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_trash import list_trash, restore_issue
@@ -74,6 +76,7 @@ from app.common.issue_writes import (
 from app.common.similar_issues import find_similar
 from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.integrations import pr_status, thread_sync
+from app.domains.integrations.mcp.attachment_tools import embedded_attachments
 from app.domains.integrations.mcp.team_tools import boolean
 from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
@@ -91,6 +94,7 @@ from app.domains.integrations.mcp.toolkit import (
     object_schema,
     one_or_many,
     page_properties,
+    priority_hints,
     resolve_user,
     string,
     string_list,
@@ -207,6 +211,8 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "customer_status_id_not",
     "customer_tier_id",
     "customer_tier_id_not",
+    "cycle_added",
+    "cycle_added_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -222,6 +228,8 @@ SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
     "updated_before",
     "completed_after",
     "completed_before",
+    "cycle_added_after",
+    "cycle_added_before",
     "content",
     "content_not",
     "match",
@@ -332,6 +340,15 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "updated_before": string(f"Updated before this day, {_DAY_BOUND}"),
         "completed_after": string(f"Completed after this day, {_DAY_BOUND}; only completed issues match"),
         "completed_before": string(f"Completed before this day, {_DAY_BOUND}; only completed issues match"),
+        "cycle_added": one_or_many(
+            "When the issue joined its cycle: planned (before the cycle started or within its first day) "
+            "or after_start; issues in no cycle never match"
+        ),
+        "cycle_added_not": one_or_many(
+            "Not added to its cycle at this phase, planned or after_start; issues in no cycle never match"
+        ),
+        "cycle_added_after": string(f"Joined its cycle after this day, {_DAY_BOUND}; issues in no cycle never match"),
+        "cycle_added_before": string(f"Joined its cycle before this day, {_DAY_BOUND}; issues in no cycle never match"),
         "content": string("Title or description contains this text, case insensitive"),
         "content_not": string("Neither title nor description contains this text"),
         "match": enum(("all", "any"), "How the conditions combine: all of them (default) or any one"),
@@ -529,6 +546,8 @@ def _search_issues(call: ToolCall) -> Any:
             for row in call.repositories.team_config.list_statuses(call.context.workspace_id, candidate):
                 categories[row.status_id] = row.category
 
+    readable = issue_reader(call.repositories, call.context)
+
     def keep(issue: Issue) -> bool:
         """Whether one issue carries the key or holds the text, and passes the filters."""
         if (
@@ -539,7 +558,7 @@ def _search_issues(call: ToolCall) -> Any:
             and query not in (issue.body or "").lower()
         ):
             return False
-        return wanted.matches(issue, categories)
+        return readable(issue) and wanted.matches(issue, categories)
 
     workspace_id = call.context.workspace_id
     direction = "reverse" if reverse else "forward"
@@ -577,12 +596,14 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 def _get_issue(call: ToolCall) -> Any:
     """One issue by its id or its key, with its linked pull requests and the stacks they form.
 
-    A deleted issue still answers, with `deleted_at` set, so an agent can tell it
+    The files its description embeds are listed under `attachments`, so an agent
+    knows what `get_attachment` can fetch. A deleted issue still answers, with `deleted_at` set, so an agent can tell it
     sits in the trash and restore it.
     """
     issue = issue_ref(call, call.require("issue_id"), include_deleted=True)
     answer = _answer(call, issue)
     answer["pull_requests"] = _pull_requests(call, current(call.repositories.teams, issue))
+    [answer["attachments"]] = embedded_attachments(call, issue, [issue.body])
     return answer
 
 
@@ -656,6 +677,7 @@ def _create_issue(call: ToolCall) -> Any:
         **_answer(call, created),
         "sub_issues": [{"issue_id": row.issue_id, "issue_key": row.key, "title": row.title} for row in sub_issues],
         "possible_duplicates": _safe_duplicates(call, created),
+        "hints": priority_hints(created),
     }
 
 
@@ -791,17 +813,7 @@ def _add_comment(call: ToolCall) -> Any:
         return _add_document_comment(call)
     issue = issue_ref(call, call.require("issue_id"))
     parent = call.optional("parent_comment_id")
-    quote = call.optional("quote")
-    anchor = None
-    if quote is not None:
-        if parent:
-            raise ToolError("quote pins a new thread, so it cannot go on a reply")
-        text = str(quote).strip()
-        if not text or len(text) > ANCHOR_QUOTE_MAX:
-            raise ToolError(f"quote must be between 1 and {ANCHOR_QUOTE_MAX} characters")
-        anchor = anchor_from_quote(issue.body or "", text)
-        if anchor is None:
-            raise ToolError("quote must be text the issue description shows")
+    anchor = _quote_anchor(call, issue.body or "", "the issue description")
     sync = call.optional("sync_to_github") is True
     if sync and parent:
         _sync_root(call, issue, str(parent))
@@ -874,18 +886,47 @@ def _document_target(call: ToolCall) -> bool:
     return named_document
 
 
+def _quote_anchor(call: ToolCall, text: str, where: str) -> CommentAnchor | None:
+    """The anchor a call's `quote` names in `text`, `None` without one, or a refusal.
+
+    Refused on a reply, past the cap, or when `text` does not show the quote, with
+    `where` naming the text in the refusal.
+    """
+    quote = call.optional("quote")
+    if quote is None:
+        return None
+    if call.optional("parent_comment_id"):
+        raise ToolError("quote pins a new thread, so it cannot go on a reply")
+    wanted = str(quote).strip()
+    if not wanted or len(wanted) > ANCHOR_QUOTE_MAX:
+        raise ToolError(f"quote must be between 1 and {ANCHOR_QUOTE_MAX} characters")
+    anchor = anchor_from_quote(text, wanted)
+    if anchor is None:
+        raise ToolError(f"quote must be text {where} shows")
+    return anchor
+
+
 def _add_document_comment(call: ToolCall) -> Any:
-    """Add a comment, or a reply to a top level comment, to a document through the route's path."""
-    for name in ("quote", "sync_to_github", "github_target"):
+    """Add a comment, or a reply to a top level comment, to a document through the route's path.
+
+    `quote` pins a new thread to the first place the document's body shows that text.
+    """
+    for name in ("sync_to_github", "github_target"):
         if call.optional(name) is not None:
             raise ToolError(f"{name} is for issue comments only")
+    document_id = str(call.require("document_id"))
+    anchor = None
+    if call.optional("quote") is not None:
+        document = get_document(call.repositories, call.context, document_id)
+        anchor = _quote_anchor(call, document.body or "", "the document")
     parent = call.optional("parent_comment_id")
     created = create_document_comment(
         call.repositories,
         call.context,
-        str(call.require("document_id")),
+        document_id,
         str(call.require("body")),
         parent_comment_id=str(parent) if parent else None,
+        anchor=anchor,
     )
     return _comment_json(created)
 
@@ -905,7 +946,10 @@ def _list_document_comments(call: ToolCall) -> Any:
 
 
 def _list_comments(call: ToolCall) -> Any:
-    """One page of an issue's or a document's comments, oldest first, replies carrying their parent."""
+    """One page of an issue's or a document's comments, oldest first, replies carrying their parent.
+
+    Each issue comment lists the files it embeds under `attachments`.
+    """
     if _document_target(call):
         return _list_document_comments(call)
     issue = issue_ref(call, call.require("issue_id"))
@@ -916,7 +960,11 @@ def _list_comments(call: ToolCall) -> Any:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
-    return {"comments": [_comment_json(row) for row in rows], "next_cursor": next_cursor}
+    embedded = embedded_attachments(call, issue, [row.body for row in rows])
+    return {
+        "comments": [{**_comment_json(row), "attachments": files} for row, files in zip(rows, embedded, strict=True)],
+        "next_cursor": next_cursor,
+    }
 
 
 def _list_issue_activity(call: ToolCall) -> Any:
@@ -1147,14 +1195,14 @@ def _bulk_selection(call: ToolCall) -> list[str]:
 def _selection_team(call: ToolCall, issue_ids: list[str]) -> str | None:
     """The one team every visible issue of the selection sits in, or `None` when they span teams."""
     rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
-    teams = {row.team_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    teams = {row.team_id for row in rows.values() if can_see_issue(call.repositories, call.context, row)}
     return teams.pop() if len(teams) == 1 else None
 
 
 def _selection_projects(call: ToolCall, issue_ids: list[str]) -> set[str | None]:
     """The projects the visible issues of a selection sit in now, `None` for an issue in no project."""
     rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
-    return {row.project_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+    return {row.project_id for row in rows.values() if can_see_issue(call.repositories, call.context, row)}
 
 
 def _bulk_milestone(call: ToolCall, patch: dict[str, Any], issue_ids: list[str]) -> None:
@@ -1348,7 +1396,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="get_issue",
         description=(
             "Read one issue in full, by its id or its key such as ABC-123, with its linked pull requests: "
-            "each one's review and check state, and its position when it is stacked on another."
+            "each one's review and check state, and its position when it is stacked on another. attachments "
+            "lists the files its description embeds; read one with get_attachment."
         ),
         scopes=("issues:read",),
         schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
@@ -1371,7 +1420,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             "takes form_answers keyed by each field's key: required fields must be answered, a select takes one of "
             "its options, and the answers land in the body and send the issue to triage. A template's sub_issues "
             "are created under the new issue, all or none; template_sub_issue_keys keeps only those keys. "
-            "The answer lists the sub_issues created and possible_duplicates: open issues whose titles share its terms."
+            "The answer lists the sub_issues created, possible_duplicates: open issues whose titles share its terms, "
+            "and hints, naming a priority left unset so it can be set next."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -1533,7 +1583,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="list_comments",
         description=(
             "One page of an issue's or a document's comments, oldest first; name issue_id or document_id. "
-            "Replies carry parent_comment_id. A document also needs projects:read."
+            "Replies carry parent_comment_id. A document also needs projects:read. Each issue comment lists the "
+            "files it embeds under attachments; read one with get_attachment."
         ),
         scopes=("issues:read",),
         schema=object_schema(
@@ -1599,8 +1650,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "body": string("The comment body, in Markdown; @mentions notify"),
                 "parent_comment_id": string("A top level comment on the same issue or document to reply to"),
                 "quote": string(
-                    "Pin a new thread to this passage of the issue description, copied as it reads; the "
-                    "description highlights it. Not for replies"
+                    "Pin a new thread to this passage of the issue description or the document, copied as "
+                    "it reads; the page highlights it. Not for replies"
                 ),
                 "sync_to_github": boolean(
                     "Also sync the thread to a pull request or GitHub issue linked to this issue, so the App "

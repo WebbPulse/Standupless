@@ -267,12 +267,6 @@
     "auth": "authenticated",
     "domain": "identity",
     "method": "POST",
-    "path": "/api/users/me/connected-apps/{client_id}/scopes"
-  },
-  {
-    "auth": "authenticated",
-    "domain": "identity",
-    "method": "POST",
     "path": "/api/users/me/deletion"
   },
   {
@@ -906,6 +900,18 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-intake"
   },
   {
+    "auth": "team:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts"
+  },
+  {
     "auth": "team:admin",
     "domain": "integrations",
     "method": "DELETE",
@@ -1060,6 +1066,12 @@
     "domain": "issues",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/by-key/{key}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "issues",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/issues/by-keys"
   },
   {
     "auth": "workspace:read",
@@ -1456,6 +1468,12 @@
     "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/documents/{document_id}/versions"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/versions/{version_id}/restore"
   },
   {
     "auth": "workspace:read",
@@ -2468,6 +2486,24 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/documents/{document_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/documents/{document_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/documents/{document_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/drafts/new-issues"
   },
@@ -2494,6 +2530,84 @@
     "domain": "views",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates/initiatives/{initiative_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates/initiatives/{initiative_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates/initiatives/{initiative_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates/projects/{project_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates/projects/{project_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/updates/projects/{project_id}"
   },
   {
     "auth": "workspace:read",
@@ -2572,6 +2686,24 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/inbox/count"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/inbox/entity-reminders"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}"
   },
   {
     "auth": "workspace:read",
@@ -2758,6 +2890,12 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/members/{user_id}/activity"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/members/{user_id}/issues"
   },
   {
     "auth": "workspace:read",

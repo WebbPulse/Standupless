@@ -18,6 +18,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.comment_writes import create_comment, edit_comment
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.issues import IssueRequester
 from app.common.db.dynamo.team_config import default_triage_settings
 from app.common.db.dynamo.team_templates import IssueTemplate, template_key
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member, sign_in
@@ -520,3 +521,61 @@ def test_archiving_and_restoring_keeps_it_in_triage(client: TestClient, triage: 
     client.post(f"{BASE}/{waiting['id']}/unarchive")
 
     assert _waiting(client) == [waiting["id"]]
+
+
+def _ask(repositories: Any, issue_id: str, requester: "IssueRequester | None") -> None:
+    """Give one waiting issue a requester straight in the table, as an intake would."""
+    stored = repositories.issues.get(WORKSPACE, issue_id)
+    repositories.issues.replace(stored.model_copy(update={"requester": requester}))
+
+
+@pytest.fixture
+def asked(client: TestClient, repositories: Any, triage: str) -> "dict[str, str]":
+    """Four waiting issues: a linked member's Slack ask, a stranger's Slack ask, an email and one with no requester."""
+    sign_in(client, MEMBER)
+    ids = {name: create_issue(client, WORKSPACE, title=name)["id"] for name in ("member", "stranger", "email", "none")}
+    _ask(repositories, ids["member"], IssueRequester(source="slack", name="Mia", external_id="U1", user_id=OWNER))
+    _ask(repositories, ids["stranger"], IssueRequester(source="slack", name="Sam", external_id="U2"))
+    _ask(repositories, ids["email"], IssueRequester(source="email", name="Eve", masked_email="e***@example.com"))
+    sign_in(client, OWNER)
+    return ids
+
+
+def test_triage_filters_by_requester_source(client: TestClient, asked: "dict[str, str]") -> None:
+    """A source keeps only that intake's asks, and none keeps the issues nobody asked for through one."""
+    assert set(_waiting(client, requester_source="slack")) == {asked["member"], asked["stranger"]}
+    assert _waiting(client, requester_source="email") == [asked["email"]]
+    assert _waiting(client, requester_source="none") == [asked["none"]]
+    assert len(_waiting(client)) == 4
+
+
+def test_triage_filters_by_linked_member_and_slack_user(client: TestClient, asked: "dict[str, str]") -> None:
+    """A member id, `me` and a Slack user id each keep that person's asks, and the conditions combine."""
+    assert _waiting(client, requester_user_id=OWNER) == [asked["member"]]
+    assert _waiting(client, requester_user_id="me") == [asked["member"]]
+    assert _waiting(client, requester_slack_user_id="U2") == [asked["stranger"]]
+    assert _waiting(client, requester_slack_user_id="U2", requester_source="email") == []
+    assert _waiting(client, requester_user_id=OWNER, requester_source="none") == []
+
+
+def test_triage_refuses_an_unknown_requester_source(client: TestClient, asked: "dict[str, str]") -> None:
+    """A source the inbox does not know is a 422, not an empty page."""
+    response = client.get(TRIAGE, params={"team_id": TEAM, "requester_source": "fax"})
+
+    assert response.status_code == 422
+
+
+def test_the_requester_filter_pages_on_the_server(client: TestClient, asked: "dict[str, str]") -> None:
+    """Every page holds only matching issues, and a cursor from another filter starts over."""
+    first = client.get(TRIAGE, params={"team_id": TEAM, "requester_source": "slack", "limit": 1}).json()
+    second = client.get(
+        TRIAGE, params={"team_id": TEAM, "requester_source": "slack", "limit": 1, "cursor": first["next_cursor"]}
+    ).json()
+    other = client.get(
+        TRIAGE, params={"team_id": TEAM, "requester_source": "email", "limit": 1, "cursor": first["next_cursor"]}
+    ).json()
+
+    paged = [row["id"] for row in first["issues"] + second["issues"]]
+    assert set(paged) == {asked["member"], asked["stranger"]}
+    assert second["next_cursor"] is None
+    assert [row["id"] for row in other["issues"]] == [asked["email"]]

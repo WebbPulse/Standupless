@@ -5,7 +5,8 @@ it can run anywhere a filter is parsed. Some parts of a filter cannot be decided
 from the row alone: a relative cycle such as `current` names a different cycle in
 each team and on each day, a relation filter needs the workspace's links, and a
 subscriber filter needs each named person's subscriptions, and `my_teams` needs
-the viewer's team memberships. Every
+the viewer's team memberships, and an "Added to cycle" phase needs each cycle's
+start in its team's timezone. Every
 list, export, insight and share read runs the filter through here once, after it
 knows which teams it fans out over, so they all agree on what a filter selects.
 """
@@ -13,16 +14,17 @@ knows which teams it fans out over, so they all agree on what a filter selects.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Iterable, Mapping, Optional
 
 from fastapi import HTTPException, status
 
 from app.common.customer_index import CUSTOMER_SORTS, REVENUE_SORT, CustomerIndex, load_customer_index
+from app.common.cycle_added import cycle_start_instant
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.planning import Cycle
 from app.common.issue_filters import MY_TEAMS, FilterValues, IssueFilter
-from app.common.team_time import teams_today
+from app.common.team_time import team_timezone, teams_today
 
 if TYPE_CHECKING:
     from app.common.api.dependencies.repositories import Repositories
@@ -77,6 +79,20 @@ def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], days:
     return frozenset(resolved)
 
 
+def cycle_starts(
+    repositories: Repositories, workspace_id: str, by_team: Mapping[str, list[Cycle]]
+) -> dict[str, datetime]:
+    """Each cycle's start instant, midnight of its start date in its team's timezone, keyed by cycle id."""
+    starts: dict[str, datetime] = {}
+    for team, cycles in by_team.items():
+        zone = team_timezone(repositories, workspace_id, team)
+        for cycle in cycles:
+            start = cycle_start_instant(cycle.start_date, zone)
+            if start is not None:
+                starts[cycle.cycle_id] = start
+    return starts
+
+
 def _resolve_teams(values: FilterValues, mine: frozenset[str], *, keep: bool) -> FilterValues:
     """One team set with `my_teams` swapped for the viewer's teams; a kept set that empties matches nothing."""
     if MY_TEAMS not in values:
@@ -115,6 +131,9 @@ def resolve_issue_filter(
     or size reads the customers in that same query, so any number of customer
     conditions, groups included, costs one planning query.
 
+    An "Added to cycle" phase reads the same cycles and attaches each one's start,
+    so an issue is judged against the cycle it sits in.
+
     A relative cycle is read on each team's own today, in its timezone, unless
     `today` pins one day for every team.
 
@@ -128,8 +147,10 @@ def resolve_issue_filter(
     needs_customers = wanted.needs_customers or sort in CUSTOMER_SORTS
     needs_memberships = wanted.needs_memberships
     needs_releases = wanted.needs_releases
+    needs_starts = wanted.needs_cycle_starts
     if not (
         wanted.needs_cycles
+        or needs_starts
         or wanted.needs_relations
         or people
         or needs_customers
@@ -140,14 +161,19 @@ def resolve_issue_filter(
     mine = viewer_team_ids(repositories, workspace_id, wanted.viewer_id) if needs_memberships else None
     by_team: Optional[dict[str, list[Cycle]]] = None
     days: dict[str, date] = {}
-    if wanted.needs_cycles:
-        by_team = {}
+    starts: Optional[dict[str, datetime]] = None
+    if wanted.needs_cycles or needs_starts:
+        read: dict[str, list[Cycle]] = {}
         for team in dict.fromkeys(teams):
             rows, _ = repositories.planning.list_cycles(workspace_id, team, limit=TEAM_CYCLE_LIMIT)
-            by_team[team] = rows
-        days = (
-            {team: today for team in by_team} if today is not None else teams_today(repositories, workspace_id, by_team)
-        )
+            read[team] = rows
+        if wanted.needs_cycles:
+            by_team = read
+            days = (
+                {team: today for team in read} if today is not None else teams_today(repositories, workspace_id, read)
+            )
+        if needs_starts:
+            starts = cycle_starts(repositories, workspace_id, read)
     relation_ids = repositories.relations.issue_ids_by_type(workspace_id) if wanted.needs_relations else None
     subscribed: Optional[dict[str, frozenset[str]]] = None
     if people:
@@ -166,7 +192,7 @@ def resolve_issue_filter(
             with_profiles=wanted.needs_customer_profiles,
         )
     releases = repositories.releases.release_ids_by_issue(workspace_id) if needs_releases else None
-    return _attach(wanted, by_team, days, relation_ids, subscribed, customers, mine, releases)
+    return _attach(wanted, by_team, days, relation_ids, subscribed, customers, mine, releases, starts)
 
 
 def _attach(
@@ -178,6 +204,7 @@ def _attach(
     customers: Optional[CustomerIndex] = None,
     mine: Optional[frozenset[str]] = None,
     releases: Optional[Mapping[str, frozenset[str]]] = None,
+    starts: Optional[Mapping[str, datetime]] = None,
 ) -> IssueFilter:
     """One filter and each of its groups with the reads `resolve_issue_filter` took applied."""
     cycle_ids, cycle_ids_not = wanted.cycle_ids, wanted.cycle_ids_not
@@ -198,8 +225,9 @@ def _attach(
         subscribed_issue_ids=subscribed if subscribed is not None else wanted.subscribed_issue_ids,
         customer_index=customers if customers is not None else wanted.customer_index,
         release_index=releases if releases is not None else wanted.release_index,
+        cycle_starts=starts if starts is not None else wanted.cycle_starts,
         groups=tuple(
-            _attach(group, by_team, days, relation_ids, subscribed, customers, mine, releases)
+            _attach(group, by_team, days, relation_ids, subscribed, customers, mine, releases, starts)
             for group in wanted.groups
         ),
     )

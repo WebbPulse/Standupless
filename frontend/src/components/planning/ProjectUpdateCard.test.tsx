@@ -57,6 +57,19 @@ vi.mock('../../api/projectUpdateThreads', () => ({
     removeProjectUpdateReaction(...args),
 }));
 
+vi.mock('../../api/drafts', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/drafts')>(
+      '../../api/drafts'
+    );
+  return {
+    ...actual,
+    listIssueDrafts: () => Promise.resolve([]),
+    saveDraft: () => Promise.resolve({}),
+    deleteDraft: () => Promise.resolve(),
+  };
+});
+
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
     '@webbpulse/auth/react'

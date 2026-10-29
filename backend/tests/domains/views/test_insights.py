@@ -16,6 +16,8 @@ from fastapi.testclient import TestClient
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
+pytestmark = pytest.mark.usefixtures("business_plan")
+
 
 def insights(client: TestClient, workspace: str, **params: Any) -> "dict[str, Any]":
     """Read one breakdown, failing loudly on a refusal."""

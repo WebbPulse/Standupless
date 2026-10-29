@@ -11,6 +11,7 @@ import type {
   AttachmentDownloadRead,
   AttachmentListRead,
   AttachmentRead,
+  CommentAnchor,
   CommentCreate,
   CommentListRead,
   CommentRead,
@@ -221,11 +222,18 @@ export const listDocumentComments = async (
   };
 };
 
-/** Posts a comment or a reply on a document; mentions are read server side. */
+/**
+ * Posts a comment or a reply on a document; mentions are read server side. A
+ * new thread may carry an anchor pinning it to a passage of the document.
+ */
 export const createDocumentComment = async (
   workspaceId: string,
   documentId: string,
-  body: { body: string; parent_comment_id?: string | null }
+  body: {
+    body: string;
+    parent_comment_id?: string | null;
+    anchor?: CommentAnchor | null;
+  }
 ): Promise<CommentRead> => {
   const response = await apiClient.post<CommentRead>(
     documentCommentsPath(workspaceId, documentId),

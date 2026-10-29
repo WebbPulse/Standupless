@@ -20,6 +20,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.pagination import resume_key
 from app.common.db.dynamo.github import IssueLink
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.domains.integrations import pr_status
 from app.domains.integrations.schemas.integrations import IssueLinkRead
 from app.domains.integrations.service import link_reads, not_found
@@ -51,7 +52,7 @@ def list_issue_links(
     issue = repositories.issues.get(context.workspace_id, issue_id)
     if issue is None:
         raise not_found()
-    if not context.can_see_team(issue.team_id):
+    if not can_see_issue(repositories, context, issue):
         raise not_found()
 
     scope = f"github-links:{context.workspace_id}:{issue_id}"

@@ -1,15 +1,15 @@
 /**
- * "Remind me": picks the moment the caller wants this issue back in their
- * inbox. The presets are later today, tomorrow morning and next week, and a
+ * "Remind me": picks the moment the caller wants an issue, a project, an
+ * initiative or a document back in their inbox. The presets are later today, tomorrow morning and next week, and a
  * custom date and time is read on the viewer's own clock, the timezone on their
  * profile. A reminder already set shows at the top with a way to cancel it, and
- * picking a new moment replaces it. It opens from the issue menu, the command
- * palette and H.
+ * picking a new moment replaces it. It opens from the subject's menu and the
+ * command palette, and from H on an issue or a document.
  */
 
 import React, { useEffect, useState } from 'react';
 import { LuBellOff, LuClock } from 'react-icons/lu';
-import type { IssueReminder } from '../../hooks/useIssueReminder';
+import type { ReminderHandle } from '../../hooks/useEntityReminder';
 import {
   fromLocalInput,
   reminderLabel,
@@ -25,9 +25,9 @@ import Field from '../ui/field';
 /** Props for RemindMeDialog. */
 export interface RemindMeDialogProps {
   open: boolean;
-  /** The issue's key, named in the description. */
-  issueKey: string;
-  reminder: IssueReminder;
+  /** What the reminder is on, named in the description: an issue key, or a project, initiative or document title. */
+  subject: string;
+  reminder: ReminderHandle;
   onClose: () => void;
 }
 
@@ -35,9 +35,10 @@ export interface RemindMeDialogProps {
 const CUSTOM_FIELD_ID = 'remind-me-custom';
 
 /** The choices inside the dialog, mounted fresh on each open so the presets read the current time. */
-const RemindMeForm: React.FC<
-  Omit<RemindMeDialogProps, 'open' | 'issueKey'>
-> = ({ reminder, onClose }) => {
+const RemindMeForm: React.FC<Omit<RemindMeDialogProps, 'open' | 'subject'>> = ({
+  reminder,
+  onClose,
+}) => {
   const [now] = useState(() => new Date());
   const zone = viewerTimezone();
   const presets = reminderPresets(now, zone);
@@ -164,14 +165,14 @@ const RemindMeForm: React.FC<
 /** The "Remind me" modal. */
 export const RemindMeDialog: React.FC<RemindMeDialogProps> = ({
   open,
-  issueKey,
+  subject,
   ...props
 }) => (
   <Dialog
     open={open}
     onClose={props.onClose}
     title="Remind me"
-    description={`${issueKey} comes back to your inbox at the time you pick.`}
+    description={`${subject} comes back to your inbox at the time you pick.`}
     size="sm"
   >
     {open && <RemindMeForm {...props} />}

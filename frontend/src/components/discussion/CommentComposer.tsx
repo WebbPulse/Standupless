@@ -23,11 +23,12 @@
  * already written, so quoting into a reply in progress keeps the reply.
  *
  * A composer given an anchor starts a thread pinned to that passage of the
- * description. It keeps no draft, since it lives only as long as its popover.
+ * description, or of the document when it posts to one. It keeps no draft, since it lives only as long as its popover.
  *
  * A composer given a document posts to that document's thread instead, with
  * `issueId` naming the document so the thread's key is shared. A document
- * thread takes no files, keeps no draft and never syncs to GitHub.
+ * thread takes no files and never syncs to GitHub, and keeps its draft on
+ * the document, one per thread like an issue.
  */
 
 import React, {
@@ -102,7 +103,7 @@ export interface CommentComposerProps {
    * line under it. Each request is applied once.
    */
   quote?: QuoteRequest | null;
-  /** The passage of the description a new thread is pinned to. */
+  /** The passage of the description or document a new thread is pinned to. */
   anchor?: CommentAnchor;
   /** The document this posts to, in place of the issue. */
   documentId?: string;
@@ -229,10 +230,12 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   const uploads = useAttachmentUploads(workspaceId, issueId);
   const commentDraft = useCommentDraft(
     workspaceId,
-    issueId,
+    documentId !== undefined
+      ? { kind: 'document', id: documentId }
+      : { kind: 'issue', id: issueId },
     parentCommentId,
     editor,
-    anchor === undefined && !onDocument
+    anchor === undefined
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
@@ -292,6 +295,9 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
             ...(parentCommentId === undefined
               ? {}
               : { parent_comment_id: parentCommentId }),
+            ...(anchor === undefined || parentCommentId !== undefined
+              ? {}
+              : { anchor }),
           })
         : createComment(workspaceId, issueId, {
             body,

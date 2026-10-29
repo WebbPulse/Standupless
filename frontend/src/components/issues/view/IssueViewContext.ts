@@ -5,7 +5,13 @@
  * threaded through each layer between it and the view.
  */
 
-import { createContext, useContext, useSyncExternalStore } from 'react';
+import {
+  createContext,
+  useContext,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import type { QueryKey } from '@webbpulse/api-client/react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueWrite } from '../../../hooks/useOptimisticIssues';
 import type { ParentRef } from '../../../lib/issueTree';
@@ -45,6 +51,11 @@ export interface IssueViewEnv {
    */
   canEditIssue?: ((issue: OrderedIssueRead) => boolean) | undefined;
   update: IssueWrite;
+  /**
+   * The view's own read, which a drop outside the view, such as a move to a
+   * sidebar team, re-reads once it lands. Unset re-reads nothing.
+   */
+  queryKey?: QueryKey | undefined;
   /**
    * Files and withdraws customer requests for a drop between customer
    * columns. Unset where the list cannot write requests, which refuses it.
@@ -101,6 +112,11 @@ export interface IssueViewEnv {
    * parent fields. Unset reads the parent fields alone.
    */
   parentOf?: (issue: OrderedIssueRead) => ParentRef | undefined;
+  /**
+   * Muted text a list row shows after its title, such as the caller's latest
+   * action on the issue. Unset shows nothing.
+   */
+  rowNote?: (issue: OrderedIssueRead) => ReactNode;
 }
 
 /** The view's shared state. Null outside an issue view. */

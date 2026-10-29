@@ -69,6 +69,7 @@ _FIELDS = (
     "cycle_id",
     "position",
     "form_fields",
+    "in_slack",
     "sub_issues",
 )
 
@@ -263,6 +264,11 @@ def _offset(description: str) -> dict[str, Any]:
     return {"type": "integer", "minimum": 0, "maximum": OFFSET_MAX_DAYS, "description": description}
 
 
+IN_SLACK_PROPERTY: dict[str, Any] = {
+    "type": "boolean",
+    "description": "Offer this form in the Slack App's request picker, so people can file it from Slack",
+}
+
 PROJECT_TEMPLATE_PROPERTY: dict[str, Any] = {
     "type": "object",
     "description": (
@@ -419,6 +425,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 **_field_properties(patch=False),
                 "project": PROJECT_TEMPLATE_PROPERTY,
                 "form_fields": FORM_FIELDS_PROPERTY,
+                "in_slack": IN_SLACK_PROPERTY,
                 "sub_issues": SUB_ISSUES_PROPERTY,
             },
             required=("name",),
@@ -441,6 +448,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 **_field_properties(patch=True),
                 "project": PROJECT_TEMPLATE_PROPERTY,
                 "form_fields": FORM_FIELDS_PROPERTY,
+                "in_slack": IN_SLACK_PROPERTY,
                 "sub_issues": SUB_ISSUES_PROPERTY,
             },
             required=("template",),

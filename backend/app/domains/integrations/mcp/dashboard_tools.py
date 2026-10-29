@@ -28,6 +28,7 @@ from app.common.dashboards import (
     update_dashboard,
 )
 from app.common.db.dynamo.dashboards import DASHBOARD_SCOPES, WIDGET_KINDS, WIDGET_SIZES, WIDGET_SOURCES, Dashboard
+from app.common.plan_features import Feature, enforce_feature
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE, Tool, ToolCall, enum, object_schema, string, team_id_ref
 from app.domains.integrations.mcp.transport import ToolError
 from app.domains.integrations.mcp.view_tools import view_ref
@@ -70,8 +71,9 @@ WIDGETS_SCHEMA: dict[str, Any] = {
 
 
 def _member(call: ToolCall) -> None:
-    """Hold the capability every dashboard route declares."""
+    """Hold the capability every dashboard route declares, in a workspace whose plan includes Insights."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_READ)
+    enforce_feature(call.repositories, call.context.workspace_id, Feature.INSIGHTS)
 
 
 def _json(call: ToolCall, dashboard: Dashboard) -> dict[str, Any]:

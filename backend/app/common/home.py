@@ -36,6 +36,7 @@ from app.common.db.dynamo.releases import default_pipeline
 from app.common.inbox import list_notifications
 from app.common.issue_filters import ME, build_issue_filter
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.common.issue_rules import status_categories, visible_team_ids
 from app.common.issue_writes import list_issues
 from app.common.planning_rules import counts_unestimated, visible_project_teams
@@ -316,7 +317,7 @@ def _shipped(
     items: list[HomeShippedItem] = []
     for issue_id, (at, actor, _) in completed.items():
         issue = issues.get(issue_id)
-        if issue is None or not context.can_see_team(issue.team_id):
+        if issue is None or not can_see_issue(repositories, context, issue):
             continue
         if team_categories(issue.team_id).get(issue.status_id) != "completed":
             continue

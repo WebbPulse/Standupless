@@ -6,12 +6,16 @@ field and would otherwise collide with it. `_resolve_secret` resolves one at a t
 
 import os
 from functools import lru_cache
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import SettingsConfigDict
 from webbpulse.config import BaseServiceSettings
 from webbpulse.security import app_secrets
+
+if TYPE_CHECKING:  # pragma: no cover
+    from webbpulse.identity import IdentitySettings
 
 SECRET_FIELDS = (
     "SECRET_KEY",
@@ -370,6 +374,50 @@ class Settings(BaseServiceSettings):
             "private teams ship, so Standard is the only plan Checkout offers."
         ),
     )
+
+    PLAN_LIMIT_E2E_EXEMPTION: bool = Field(
+        default=False,
+        description=(
+            "Whether workspaces an e2e user created keep the free plan's preview limits "
+            "while billing is on, so the staging e2e suite can run against the launch "
+            "limits. On in staging only, and refused in production whatever it says."
+        ),
+    )
+
+    IDENTITY_E2E_USER_IDS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ids of the durable e2e users, a JSON array, read by the identity package's "
+            "`is_e2e_user` alongside the marker its ephemeral e2e route sets. Their new "
+            "workspaces count as e2e owned. Empty in production, where it is refused."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _refuse_e2e_user_ids_in_production(self) -> "Settings":
+        """Refuse durable e2e user ids in production, as the identity package's own settings do."""
+        if self.IDENTITY_E2E_USER_IDS and self.APP_ENVIRONMENT.strip().lower() in ("production", "prod"):
+            raise ValueError("IDENTITY_E2E_USER_IDS must be empty in production, which has no e2e users.")
+        return self
+
+    @property
+    def e2e_identity_settings(self) -> "IdentitySettings":
+        """The identity package settings `is_e2e_user` reads: this environment and the durable e2e ids.
+
+        Built with `model_construct` because a domain function holds no signing keys or
+        other identity configuration, and `is_e2e_user` reads only these two fields.
+        """
+        from webbpulse.identity import IdentitySettings
+
+        return IdentitySettings.model_construct(
+            environment=self.APP_ENVIRONMENT,
+            e2e_user_ids=[cleaned for entry in self.IDENTITY_E2E_USER_IDS if (cleaned := entry.strip())],
+        )
+
+    @property
+    def plan_limit_e2e_exemption_active(self) -> bool:
+        """Whether the e2e plan limit exemption applies here: the flag is on and this is not production."""
+        return self.PLAN_LIMIT_E2E_EXEMPTION and self.APP_ENVIRONMENT.strip().lower() not in ("production", "prod")
 
     ATTACHMENTS_BUCKET: str = Field(
         default="",

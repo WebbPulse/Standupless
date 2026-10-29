@@ -7,6 +7,8 @@
  * Every page of the thread is read, oldest first, so a long discussion reads
  * whole, and a `#comment-` link scrolls to its comment once it has loaded.
  * A print leaves the thread out and lists its open threads as endnotes.
+ * Open threads pinned to a passage are reported to the page's passage
+ * threads, so the body highlights what they quote.
  */
 
 import React, { useCallback, useEffect, useId, useMemo, useRef } from 'react';
@@ -15,7 +17,8 @@ import { appendComments, listDocumentComments } from '../../api/discussion';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import { commentThreads } from '../../lib/issueTimeline';
+import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
+import { anchoredThreads, commentThreads } from '../../lib/issueTimeline';
 import { commentsKey } from '../../lib/queryKeys';
 import type { CommentRead } from '../../types/Api';
 import CommentCard from '../discussion/CommentCard';
@@ -89,6 +92,11 @@ export const DocumentThread: React.FC<DocumentThreadProps> = ({
   }, [hasMore, isPaging, isLoading, loadMore]);
 
   const threads = useMemo(() => commentThreads(comments.rows), [comments.rows]);
+
+  const reportThreads = usePassageThreads()?.setThreads;
+  useEffect(() => {
+    reportThreads?.(anchoredThreads(comments.rows));
+  }, [comments.rows, reportThreads]);
 
   const { hash } = useLocation();
   const scrolledTo = useRef<string | null>(null);

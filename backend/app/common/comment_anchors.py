@@ -1,4 +1,4 @@
-"""Comment anchors: a root comment pinned to a passage of its issue's description.
+"""Comment anchors: a root comment pinned to a passage of its issue's description or its document.
 
 An anchor is the quoted passage plus up to `ANCHOR_CONTEXT_MAX` characters either
 side of it, which is what tells repeats of the same words apart. The web client

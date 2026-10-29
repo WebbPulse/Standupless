@@ -5,15 +5,15 @@
   },
   "display_information": {
     "name": "Standupless Staging",
-    "description": "Issue notifications, personal direct messages, link previews, issue creation from Slack, emoji reaction intake and synced threads.",
-    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, send each member who links their account their own notifications as direct messages, preview pasted issue links, look up an issue with a slash command and file any message as an issue whose comments stay in step with the message's thread, either from the shortcut or by reacting with a team's chosen emoji. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
+    "description": "Issue notifications, personal direct messages, link previews, issue creation and request forms from Slack, emoji reaction intake and synced threads.",
+    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, send each member who links their account their own notifications as direct messages, preview pasted issue links, look up an issue with a slash command, file any message as an issue whose comments stay in step with the message's thread, either from the shortcut or by reacting with a team's chosen emoji, and answer a team's request form from the Submit a request shortcut, with the reply thread in your direct messages kept in step with the issue. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
     "background_color": "#141518"
   },
   "features": {
     "app_home": {
       "home_tab_enabled": false,
       "messages_tab_enabled": true,
-      "messages_tab_read_only_enabled": true
+      "messages_tab_read_only_enabled": false
     },
     "bot_user": {
       "display_name": "Standupless Staging",
@@ -23,12 +23,18 @@
       {
         "command": "/standupless-staging",
         "url": "https://api.staging.standupless.dev/api/slack/commands",
-        "description": "Show an issue or create one",
-        "usage_hint": "ABC-12 | create <title> | help",
+        "description": "Show an issue, create one or submit a request",
+        "usage_hint": "ABC-12 | create <title> | ask | help",
         "should_escape": false
       }
     ],
     "shortcuts": [
+      {
+        "name": "Submit a request",
+        "type": "global",
+        "callback_id": "submit_request",
+        "description": "Answer a team's request form and file it into its triage"
+      },
       {
         "name": "Create issue",
         "type": "message",
@@ -53,10 +59,12 @@
         "channels:join",
         "groups:read",
         "groups:history",
+        "im:history",
         "commands",
         "links:read",
         "links:write",
         "reactions:read",
+        "reactions:write",
         "users:read",
         "users:read.email"
       ]
@@ -70,6 +78,7 @@
         "link_shared",
         "message.channels",
         "message.groups",
+        "message.im",
         "reaction_added",
         "tokens_revoked"
       ]

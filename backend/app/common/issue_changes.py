@@ -28,6 +28,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current_all
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import status_categories
 from app.common.issue_writes import order_issues, status_ranks
 from app.common.sub_teams import listed_teams
@@ -131,10 +132,15 @@ def list_issue_changes(
     for issue in current_all(repositories.teams, changed):
         latest[issue.issue_id] = issue
 
+    readable = issue_reader(repositories, context)
     kept: list[Issue] = []
     removed: list[str] = []
     for issue in latest.values():
-        if wanted.matches(issue, categories) and (not subscribed or is_subscribed(repositories, context, issue)):
+        if (
+            readable(issue)
+            and wanted.matches(issue, categories)
+            and (not subscribed or is_subscribed(repositories, context, issue))
+        ):
             kept.append(issue)
         else:
             removed.append(issue.issue_id)

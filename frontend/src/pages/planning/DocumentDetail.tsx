@@ -3,7 +3,7 @@
  * same rich Markdown surface issues use, and both save as they are written.
  * Every write carries the `updated_at` the page last saw, so an edit made over
  * someone else's newer one is refused and the page offers their version
- * rather than silently replacing it. Earlier versions open in a dialog, and
+ * rather than silently replacing it. Earlier versions open in a dialog that diffs and restores them, and
  * the issues the text names are listed and linked under it. The title takes
  * an icon or an emoji, an outline of the headings sits beside the text on a
  * wide screen, and Move files the document under another project, initiative
@@ -13,6 +13,11 @@
  * palette or Cmd or Ctrl+P, prints the title, the byline and the body, with
  * the comment threads as endnotes. R focuses the title to rename the
  * document and Cmd or Ctrl+Shift+Comma copies its address, as in Linear.
+ *
+ * Text selected in the body offers Comment, or takes Cmd or Ctrl+Alt+M, to
+ * start a thread pinned to that passage, as on an issue's description. Open
+ * pinned threads keep their passage highlighted, a click on one scrolls to
+ * its thread, and resolving the thread clears the highlight.
  */
 
 import React, {
@@ -33,6 +38,7 @@ import {
   LuBell,
   LuBellOff,
   LuChevronRight,
+  LuClock,
   LuEllipsis,
   LuFolderInput,
   LuHistory,
@@ -47,15 +53,21 @@ import {
 import {
   deleteDocument,
   getDocument,
-  listDocumentVersions,
   updateDocument,
 } from '../../api/documents';
+import PassageComposer from '../../components/discussion/PassageComposer';
+import SelectionQuote from '../../components/discussion/SelectionQuote';
 import type { RichMarkdownHandle } from '../../components/editor/RichMarkdownEditor';
+import DocumentHistoryDialog from '../../components/planning/DocumentHistoryDialog';
 import DocumentIcon from '../../components/planning/DocumentIcon';
 import DocumentIconPicker from '../../components/planning/DocumentIconPicker';
 import DocumentOutline from '../../components/planning/DocumentOutline';
 import DocumentThread from '../../components/planning/DocumentThread';
 import EditableText from '../../components/planning/EditableText';
+import {
+  REMIND_ME_MENU_LABEL,
+  useRemindMe,
+} from '../../components/planning/RemindMe';
 import MoveDocumentDialog, {
   type Destination,
 } from '../../components/planning/MoveDocumentDialog';
@@ -74,6 +86,8 @@ import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { DocumentLinkContext } from '../../contexts/DocumentLinkContext';
+import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
+import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
 import { useAuth } from '../../hooks/useAuth';
 import { refreshDocumentLists } from '../../hooks/useDocuments';
 import { usePrintCommand } from '../../hooks/usePrintCommand';
@@ -84,7 +98,7 @@ import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
 import { COPY_ISSUE_URL_KEYS, copyText } from '../../lib/copyIssue';
 import { CONFLICT, errorMessage, hasStatus } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import { personLabel } from '../../lib/issuePeople';
 import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import {
   documentPath,
@@ -96,7 +110,6 @@ import {
 } from '../../lib/paths';
 import {
   documentKey,
-  documentVersionsKey,
   favoritesKey,
   issueDocumentsKey,
   subscribersKey,
@@ -104,7 +117,12 @@ import {
 import { showErrorToast, showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import { PresenceAvatars } from '../../components/ui/PresenceAvatars';
-import type { DocumentPatch, DocumentRead, TeamRead } from '../../types/Api';
+import type {
+  CommentAnchor,
+  DocumentPatch,
+  DocumentRead,
+  TeamRead,
+} from '../../types/Api';
 
 const RichMarkdownEditor = lazy(
   () => import('../../components/editor/RichMarkdownEditor')
@@ -159,78 +177,11 @@ const parentLink = (
     : teamDocumentsPagePath(slug, team.key_prefix);
 };
 
-/** The dialog listing a document's earlier versions, each readable in full. */
-const VersionsDialog: React.FC<{
-  workspaceId: string;
-  documentId: string;
-  people: Assignable[];
-  onClose: () => void;
-}> = ({ workspaceId, documentId, people, onClose }) => {
-  const auth = useQueryAuth();
-  const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listDocumentVersions(workspaceId, documentId, signal),
-    {
-      intervalMs: POLL_MS,
-      queryKey: documentVersionsKey(workspaceId, documentId),
-      auth,
-    }
-  );
-  const versions = data ?? [];
-  return (
-    <Dialog open size="lg" title="Version history" onClose={onClose}>
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not load the history.')}
-        />
-      )}
-      {isLoading && data === null && <SkeletonRows label="Loading versions" />}
-      {data !== null && versions.length === 0 && (
-        <p className="text-sm text-text-muted">
-          No earlier versions yet. A version is kept when someone else edits the
-          document, or after a pause in editing.
-        </p>
-      )}
-      {versions.length > 0 && (
-        <ol
-          aria-label="Versions"
-          className="max-h-[60vh] space-y-1 overflow-y-auto"
-        >
-          {versions.map((version) => (
-            <li key={version.version_id}>
-              <details className="group rounded-md border border-line">
-                <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-text hover:bg-surface">
-                  <span className="truncate font-medium">{version.title}</span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-text-muted">
-                    {personLabel(
-                      people.find(
-                        (person) => person.user_id === version.edited_by
-                      )
-                    )}
-                    <span aria-hidden="true">·</span>
-                    <RelativeTime value={version.edited_at} />
-                  </span>
-                </summary>
-                <div className="border-t border-line px-3 py-3">
-                  {version.body === '' ? (
-                    <p className="text-sm text-text-muted">Empty.</p>
-                  ) : (
-                    <Markdown source={version.body} className={BODY_CLASS} />
-                  )}
-                </div>
-              </details>
-            </li>
-          ))}
-        </ol>
-      )}
-    </Dialog>
-  );
-};
-
 /** How many followers the actions menu names before summing up the rest. */
 const SUBSCRIBERS_SHOWN = 8;
 
-/** The page. */
-export const DocumentDetail: React.FC = () => {
+/** The page's content, under the provider of its passage threads. */
+const DocumentPage: React.FC = () => {
   const { documentId = '' } = useParams<{ documentId: string }>();
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
@@ -286,8 +237,21 @@ export const DocumentDetail: React.FC = () => {
   const conflicted = useRef(false);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passages = usePassageThreads();
+  const [passage, setPassage] = useState<CommentAnchor | null>(null);
+  const [posted, setPosted] = useState<string | null>(null);
 
   const page = newer(local, data);
+
+  const showPosted = passages?.showThread;
+  const postedListed =
+    posted !== null &&
+    (passages?.threads.some((thread) => thread.commentId === posted) ?? false);
+  useEffect(() => {
+    if (posted === null || !postedListed || showPosted === undefined) return;
+    setPosted(null);
+    showPosted(posted);
+  }, [posted, postedListed, showPosted]);
 
   useEffect(() => {
     if (data === null) return;
@@ -412,6 +376,20 @@ export const DocumentDetail: React.FC = () => {
       });
   };
 
+  const restored = (fresh: DocumentRead): void => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    pendingBody.current = null;
+    conflicted.current = false;
+    base.current = fresh.updated_at;
+    savedBody.current = fresh.body;
+    setLocal(fresh);
+    setLiveBody(null);
+    setSaveError(null);
+    setSaveState('saved');
+    editor.current?.setMarkdown(fresh.body);
+  };
+
   useShortcut({
     keys: '',
     label: 'Move document',
@@ -456,6 +434,14 @@ export const DocumentDetail: React.FC = () => {
   });
 
   usePrintCommand({ group: 'Document', enabled: page !== null });
+  const remindMe = useRemindMe({
+    workspaceId,
+    entityType: 'document',
+    entityId: page?.document_id ?? '',
+    subject: page?.title || 'This document',
+    group: 'Document',
+    keys: 'h',
+  });
 
   const crumbs =
     page === null ? null : (
@@ -537,6 +523,26 @@ export const DocumentDetail: React.FC = () => {
   const subscriberList = followers?.subscribers ?? [];
   const hiddenFollowers = subscriberList.length - SUBSCRIBERS_SHOWN;
 
+  const commentOn =
+    page.can_edit && passages !== null
+      ? (range: Range) => {
+          const anchor = editor.current?.passageAt(range) ?? null;
+          if (anchor !== null) setPassage(anchor);
+        }
+      : undefined;
+
+  const openThread =
+    passages === null
+      ? undefined
+      : (event: React.MouseEvent) => {
+          const target = event.target as HTMLElement;
+          const mark = target.closest<HTMLElement>('[data-comment-anchor]');
+          const id = mark?.getAttribute('data-comment-anchor') ?? null;
+          if (id === null) return;
+          if (document.getSelection()?.isCollapsed === false) return;
+          passages.showThread(id);
+        };
+
   const outlineSource = liveBody ?? page.body;
   const author = people.find((person) => person.user_id === page.author_id);
   const editorPerson = people.find(
@@ -598,6 +604,11 @@ export const DocumentDetail: React.FC = () => {
                 <LuBell aria-hidden="true" className="h-3.5 w-3.5" />
               )}
               {followers?.subscribed === true ? 'Unsubscribe' : 'Subscribe'}
+            </MenuItem>
+            <MenuItem onSelect={remindMe.open}>
+              <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+              {REMIND_ME_MENU_LABEL}
+              <MenuShortcut keys="h" />
             </MenuItem>
             <MenuItem onSelect={printPage}>
               <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
@@ -661,6 +672,10 @@ export const DocumentDetail: React.FC = () => {
     >
       <div className="min-h-0 flex-1 overflow-y-auto xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,48rem)_minmax(0,1fr)]">
         <article className="print-page mx-auto w-full max-w-3xl min-w-0 space-y-6 px-4 py-8 lg:px-8 xl:col-start-2">
+          {remindMe.dialog}
+          {remindMe.banner !== null && (
+            <div className="screen-only">{remindMe.banner}</div>
+          )}
           {saveState === 'conflict' && (
             <div
               role="alert"
@@ -727,35 +742,65 @@ export const DocumentDetail: React.FC = () => {
             <DocumentLinkContext.Provider
               value={{ kind: page.parent_kind, id: page.parent_id }}
             >
-              <div ref={bodyArea}>
-                <RichMarkdownEditor
-                  ref={editor}
-                  value={page.body}
-                  editable={page.can_edit}
-                  ariaLabel="Document"
-                  className={`${BODY_CLASS} min-h-48`}
-                  onCommit={saveBody}
-                  onChange={scheduleSave}
-                  onFocusChange={setEditingBody}
-                  onCancel={() => {
-                    editor.current?.focus();
-                  }}
-                  {...(page.can_edit
-                    ? { placeholder: 'Start writing...' }
-                    : {})}
-                  {...(page.can_edit
-                    ? {
-                        selectionIssue:
-                          page.parent_kind === 'team'
-                            ? { teamId: page.parent_id }
-                            : {},
-                      }
-                    : {})}
-                  {...(isMember ? { mentionPeople: people } : {})}
-                />
-              </div>
+              <SelectionQuote
+                onComment={commentOn}
+                {...(openThread === undefined ? {} : { onClick: openThread })}
+              >
+                <div ref={bodyArea}>
+                  <RichMarkdownEditor
+                    ref={editor}
+                    value={page.body}
+                    editable={page.can_edit}
+                    ariaLabel="Document"
+                    className={`${BODY_CLASS} min-h-48`}
+                    onCommit={saveBody}
+                    onChange={scheduleSave}
+                    onFocusChange={setEditingBody}
+                    onCancel={() => {
+                      editor.current?.focus();
+                    }}
+                    {...(page.can_edit
+                      ? { placeholder: 'Start writing...' }
+                      : {})}
+                    {...(page.can_edit
+                      ? {
+                          selectionIssue:
+                            page.parent_kind === 'team'
+                              ? { teamId: page.parent_id }
+                              : {},
+                        }
+                      : {})}
+                    {...(isMember ? { mentionPeople: people } : {})}
+                    {...(passages === null
+                      ? {}
+                      : {
+                          commentAnchors: {
+                            threads: passages.threads,
+                            activeId: passages.activeId,
+                            onLocated: passages.setLocated,
+                          },
+                        })}
+                  />
+                </div>
+              </SelectionQuote>
             </DocumentLinkContext.Provider>
           </Suspense>
+          {passage !== null && (
+            <PassageComposer
+              workspaceId={workspaceId}
+              issueId={page.document_id}
+              documentId={page.document_id}
+              people={isMember ? people : []}
+              anchor={passage}
+              onPosted={(comment) => {
+                setPassage(null);
+                setPosted(comment.comment_id);
+              }}
+              onCancel={() => {
+                setPassage(null);
+              }}
+            />
+          )}
           {page.mentions.length > 0 && (
             <section
               aria-labelledby="document-mentions"
@@ -800,10 +845,11 @@ export const DocumentDetail: React.FC = () => {
       </div>
 
       {showVersions && (
-        <VersionsDialog
+        <DocumentHistoryDialog
           workspaceId={workspaceId}
-          documentId={page.document_id}
+          document={page}
           people={people}
+          onRestored={restored}
           onClose={() => {
             setShowVersions(false);
           }}
@@ -848,6 +894,16 @@ export const DocumentDetail: React.FC = () => {
         </Dialog>
       )}
     </WorkspaceShell>
+  );
+};
+
+/** The page, with the threads pinned to passages of the document shared. */
+export const DocumentDetail: React.FC = () => {
+  const { documentId = '' } = useParams<{ documentId: string }>();
+  return (
+    <PassageThreadsProvider key={documentId}>
+      <DocumentPage />
+    </PassageThreadsProvider>
   );
 };
 

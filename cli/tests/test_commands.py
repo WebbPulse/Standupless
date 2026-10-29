@@ -912,6 +912,43 @@ def test_project_update_cadence(runner: CliRunner, api: respx.MockRouter) -> Non
     assert refused.exit_code != 0
 
 
+def test_project_edit_sends_the_base_body_version_and_reports_a_stale_save(
+    runner: CliRunner, api: respx.MockRouter
+) -> None:
+    """`project edit` passes the version through, and a stale save prints the current description."""
+    project = {"project_id": "pr-1", "name": "Launch", "status": "in_progress", "team_ids": ["team-1"], "counts": {}}
+    api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    patched = api.patch(f"/api/workspaces/{WS}/projects/pr-1").mock(
+        side_effect=[
+            httpx.Response(200, json={**project, "description": "Mine", "body_version": "v2"}),
+            httpx.Response(
+                409,
+                json={
+                    "success": False,
+                    "status": 409,
+                    "message": "The description changed since you loaded it",
+                    "error_code": "BODY_CHANGED",
+                    "details": {"body": "Theirs", "body_version": "v3"},
+                },
+            ),
+        ]
+    )
+
+    saved = invoke(runner, "project", "edit", "launch", "-d", "Mine", "--base-body-version", "v1")
+    stale = invoke(runner, "project", "edit", "launch", "-d", "Mine again", "--base-body-version", "v1")
+    empty = invoke(runner, "project", "edit", "launch", "--base-body-version", "v1")
+
+    assert saved.exit_code == 0, saved.output
+    assert json.loads(patched.calls[0].request.content) == {"description": "Mine", "base_body_version": "v1"}
+    assert "Updated Launch." in saved.stderr
+    assert stale.exit_code == 1
+    assert "BODY_CHANGED" in stale.stderr
+    assert "--base-body-version v3" in stale.stderr
+    assert "Theirs" in stale.stderr
+    assert empty.exit_code == 1
+    assert patched.call_count == 2
+
+
 def test_extra_headers_are_sent(runner: CliRunner, api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch) -> None:
     """Gate headers from `STANDUPLESS_EXTRA_HEADERS` go on every request."""
     monkeypatch.setenv("STANDUPLESS_EXTRA_HEADERS", '{"x-origin-verify": "gate"}')
@@ -1344,6 +1381,28 @@ def test_triage_accept_resolves_the_status(runner: CliRunner, api: respx.MockRou
     assert result.exit_code == 0, result.output
     assert _json(route) == {"status_id": "st-todo"}
     assert "Accepted ENG-12 into Todo" in result.output
+
+
+def test_triage_accept_sends_a_priority_and_hints_when_none(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--priority rides on the accept, and an issue left with no priority gets a hint beside the answer."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue(priority="none"))
+    route = api.post(f"/api/workspaces/{WS}/issues/is-12/triage/accept")
+    route.side_effect = [
+        httpx.Response(200, json=make_issue(priority="low")),
+        httpx.Response(200, json=make_issue(priority="none")),
+        httpx.Response(200, json=make_issue(priority="none")),
+    ]
+    ranked = invoke(runner, "triage", "accept", "ENG-12", "--priority", "low")
+    assert ranked.exit_code == 0, ranked.output
+    assert _json(route) == {"priority": "low"}
+    assert "hint:" not in ranked.output
+    bare = invoke(runner, "triage", "accept", "ENG-12")
+    assert bare.exit_code == 0, bare.output
+    assert "hint:" in bare.output and "ENG-12 has no priority" in bare.output
+    scripted = invoke(runner, "triage", "accept", "ENG-12", "--json")
+    assert scripted.exit_code == 0, scripted.output
+    assert json.loads(scripted.stdout)["priority"] == "none"
+    assert "hint:" in scripted.stderr
 
 
 def test_triage_decline_and_duplicate(runner: CliRunner, api: respx.MockRouter) -> None:

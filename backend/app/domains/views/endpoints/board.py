@@ -25,6 +25,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.pagination import resume_key
 from app.common.db.dynamo.issues import Issue, as_issue, ws_team_status
 from app.common.issue_keys import current
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import require_team_reader
 from app.domains.views.schemas.view import (
     BOARD_DEFAULT_COLUMN_LIMIT,
@@ -105,6 +106,7 @@ def read_board(
     wanted_assignee = resolve_assignee(context, assignee_id)
 
     statuses = sorted(repositories.team_config.list_statuses(workspace_id, team_id), key=status_sort_key)
+    readable = issue_reader(repositories, context)
     columns: list[BoardColumn] = []
     for status_row in statuses:
         page = repositories.issues.list_for_status(
@@ -119,7 +121,7 @@ def read_board(
         kept = [
             row
             for row in rows
-            if matches_filters(row, assignee_id=wanted_assignee, label_id=label_id, priority=priority)
+            if readable(row) and matches_filters(row, assignee_id=wanted_assignee, label_id=label_id, priority=priority)
         ]
         window = kept[:column_limit]
         more = bool(window) and (len(kept) > column_limit or page.has_more)
@@ -175,8 +177,11 @@ def read_board_column(
         start_key=resume_key(cursor, scope),
     )
     rows = [as_issue(item) for item in page.items]
+    readable = issue_reader(repositories, context)
     kept = [
-        row for row in rows if matches_filters(row, assignee_id=wanted_assignee, label_id=label_id, priority=priority)
+        row
+        for row in rows
+        if readable(row) and matches_filters(row, assignee_id=wanted_assignee, label_id=label_id, priority=priority)
     ]
     window = kept[:limit]
     more = bool(window) and (len(kept) > limit or page.has_more)

@@ -109,6 +109,8 @@ export type FilterField =
   | 'project'
   | 'milestone'
   | 'cycle'
+  | 'cycle_added'
+  | 'cycle_added_at'
   | 'parent'
   | 'sub_issues'
   | 'content'
@@ -176,11 +178,27 @@ export const MY_TEAMS = 'my_teams';
 export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
 
 /**
+ * When an issue joined its cycle: planned, before the cycle began or within
+ * its first day, or after the start, later than that.
+ */
+export const CYCLE_ADDED_PHASES = ['planned', 'after_start'] as const;
+
+/** One value of the "Added to cycle" filter. */
+export type CycleAddedPhase = (typeof CYCLE_ADDED_PHASES)[number];
+
+/** How each "Added to cycle" value reads in the interface. */
+export const CYCLE_ADDED_LABELS: Record<CycleAddedPhase, string> = {
+  planned: 'Planned',
+  after_start: 'After start',
+};
+
+/**
  * The fields only the server can decide, because the row a client holds does
  * not carry the links they read.
  */
 const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'subscriber',
+  'cycle_added',
   'blocking',
   'relation',
   'customer',
@@ -235,6 +253,7 @@ export const DATE_FIELDS: ReadonlySet<FilterField> = new Set([
   'updated',
   'completed',
   'due',
+  'cycle_added_at',
 ]);
 
 /** Whether a field takes a day bound rather than a set of values. */
@@ -727,6 +746,8 @@ export const FILTER_FIELDS: FilterField[] = [
   'project',
   'milestone',
   'cycle',
+  'cycle_added',
+  'cycle_added_at',
   'parent',
   'sub_issues',
   'content',
@@ -761,6 +782,8 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   project: 'Project',
   milestone: 'Milestone',
   cycle: 'Cycle',
+  cycle_added: 'Added to cycle',
+  cycle_added_at: 'Date added to cycle',
   parent: 'Parent issue',
   sub_issues: 'Has sub-issues',
   content: 'Content',
@@ -812,6 +835,8 @@ const FILTER_KEYS: Record<FilterField, string> = {
   project: 'project_id',
   milestone: 'project_milestone_id',
   cycle: 'cycle_id',
+  cycle_added: 'cycle_added',
+  cycle_added_at: 'cycle_added',
   parent: 'parent_id',
   sub_issues: 'has_sub_issues',
   content: 'content',
@@ -1338,11 +1363,18 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [issue.project_milestone_id ?? NONE];
     case 'cycle':
       return [issue.cycle_id ?? NONE];
+    case 'cycle_added_at':
+      return issue.cycle_id === null ||
+        issue.cycle_added_at === null ||
+        issue.cycle_added_at === undefined
+        ? []
+        : [issue.cycle_added_at.slice(0, 10)];
     case 'sla':
       return [liveSlaStatus(issue)];
     case 'blocked':
       return [String((issue.blocked_by_open_count ?? 0) > 0)];
     case 'subscriber':
+    case 'cycle_added':
     case 'content':
     case 'blocking':
     case 'relation':
@@ -1697,13 +1729,14 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
 
 /**
  * The stored filter keys a view carries that the filter bar does not edit:
- * its team and a status category. They are the fixed scope the view runs
+ * its team, a status category and the issues a one-off key list saved. They are the fixed scope the view runs
  * under, kept as they are when the view is updated.
  */
 const SCOPE_KEYS = [
   'team_id',
   'status_category',
   'status_category_not',
+  'issue_id',
 ] as const;
 
 /** The fixed scope of a stored filter, as the list query it adds. */
@@ -2662,11 +2695,14 @@ const statusRank = (
 /** Whether an issue lacks the value an ordering reads, so it sorts last either way. */
 const lacksValue = (
   issue: OrderedIssueRead,
-  ordering: IssueListSort
+  ordering: IssueListSort,
+  rank?: ReadonlyMap<string, number>
 ): boolean => {
   switch (ordering) {
     case 'manual':
-      return (issue.sort_order ?? null) === null;
+      return rank === undefined
+        ? (issue.sort_order ?? null) === null
+        : !rank.has(issue.id);
     case 'due_asc':
       return issue.due_date === null;
     case 'sla_asc':
@@ -2688,6 +2724,11 @@ export interface SortOptions {
   reverse?: boolean;
   /** The statuses the status ordering ranks rows by. */
   context?: IssueContext;
+  /**
+   * Positions by issue id that the manual ordering follows in place of each
+   * issue's sort order, such as the order a one-off key list names them in.
+   */
+  rank?: ReadonlyMap<string, number> | undefined;
 }
 
 /**
@@ -2707,6 +2748,10 @@ export const sortIssues = (
   const compare = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
     switch (ordering) {
       case 'manual': {
+        if (options.rank !== undefined)
+          return (
+            (options.rank.get(left.id) ?? 0) - (options.rank.get(right.id) ?? 0)
+          );
         const a = left.sort_order ?? '';
         const b = right.sort_order ?? '';
         return a < b ? -1 : a > b ? 1 : 0;
@@ -2769,8 +2814,8 @@ export const sortIssues = (
     }
   };
   const ranked = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
-    const leftMissing = lacksValue(left, ordering);
-    const rightMissing = lacksValue(right, ordering);
+    const leftMissing = lacksValue(left, ordering, options.rank);
+    const rightMissing = lacksValue(right, ordering, options.rank);
     if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
     if (leftMissing) return 0;
     return direction * compare(left, right);

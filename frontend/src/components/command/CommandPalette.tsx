@@ -71,7 +71,9 @@ import {
   LuArrowRight,
   LuBot,
   LuBuilding2,
+  LuCheck,
   LuChevronLeft,
+  LuChevronRight,
   LuCircleDot,
   LuDoorOpen,
   LuFileText,
@@ -111,6 +113,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { listWorkspaceDocuments } from '../../api/documents';
+import { getIssueByKey } from '../../api/issues';
 import { listFavorites } from '../../api/favorites';
 import { listCycles } from '../../api/planning';
 import { listStatuses } from '../../api/teams';
@@ -134,7 +137,16 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { isFeatureOn } from '../../lib/features';
 import { LOG_OUT_KEYS } from '../../lib/logOut';
-import { useIssueSubject } from '../../hooks/useIssueSubject';
+import {
+  useIssueSubject,
+  type SubjectValue,
+} from '../../hooks/useIssueSubject';
+import {
+  PROPERTY_SHORTCUT_LABELS,
+  VALUE_PROPERTIES,
+  type ValueProperty,
+} from '../issues/view/propertyValues';
+import { Kbd } from '../ui/badge';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
@@ -180,6 +192,12 @@ import {
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
+import {
+  absoluteUrl,
+  newIssuePath,
+  prefilledFieldsOf,
+} from '../../lib/newIssueUrl';
+import { showErrorToast, showToast } from '../../lib/toast';
 import { favoriteHref } from '../../lib/favorites';
 import { homeViewPath } from '../../lib/preferences';
 import { isFormTemplate } from '../../lib/issueTemplates';
@@ -278,10 +296,23 @@ interface Command {
   keywords?: string;
   /** A key, a shortcut or a team prefix shown at the end of the row. */
   hint?: string;
+  /** The shortcut the hint spells, drawn as key caps. */
+  keys?: string;
+  /** A verb shown before the label that ranking skips, such as "Go to". */
+  prefix?: string;
+  /** Draws a check at the end of the row, for a value the subject has. */
+  checked?: boolean;
   icon: React.ReactNode;
   to?: string;
   run?: () => void;
   page?: Page;
+  /** Opens the values of this property on the subject as a nested list. */
+  property?: ValueProperty;
+  /**
+   * Runs in place and keeps the list open, as a label toggles on the subject
+   * while more are picked.
+   */
+  toggles?: boolean;
   /** Draws the row one step in, as a sub-team under its parent. */
   indent?: boolean;
   /** The label characters the typed term matched, for highlighting. */
@@ -298,11 +329,11 @@ interface CommandGroup {
  * The palette's lists: the top level, or the favorite, project, cycle, team,
  * view, sub-team parent or issue template picker inside it.
  */
-type Page = 'root' | PalettePicker | 'sub-team';
+type Page = 'root' | PalettePicker | 'sub-team' | 'property';
 
 /** What the back button and the input say on each nested list. */
 const PAGE_COPY: Record<
-  Exclude<Page, 'root'>,
+  Exclude<Page, 'root' | 'property'>,
   { back: string; placeholder: string }
 > = {
   teams: { back: 'Switch team', placeholder: 'Switch to a team' },
@@ -326,6 +357,66 @@ const PAGE_COPY: Record<
     placeholder: 'Pick a template',
   },
 };
+
+/** How each property's nested list is named, as a row and in its breadcrumb. */
+const PROPERTY_COPY: Record<
+  ValueProperty,
+  { row: string; name: string; placeholder: string }
+> = {
+  status: {
+    row: 'Change status\u2026',
+    name: 'Change status',
+    placeholder: 'Change status to\u2026',
+  },
+  priority: {
+    row: 'Change priority\u2026',
+    name: 'Change priority',
+    placeholder: 'Set priority to\u2026',
+  },
+  assignee: {
+    row: 'Assign to\u2026',
+    name: 'Assign to',
+    placeholder: 'Assign to\u2026',
+  },
+  labels: {
+    row: 'Change labels\u2026',
+    name: 'Change labels',
+    placeholder: 'Add or remove a label\u2026',
+  },
+  project: {
+    row: 'Move to project\u2026',
+    name: 'Move to project',
+    placeholder: 'Move to project\u2026',
+  },
+  cycle: {
+    row: 'Move to cycle\u2026',
+    name: 'Move to cycle',
+    placeholder: 'Move to cycle\u2026',
+  },
+  estimate: {
+    row: 'Set estimate\u2026',
+    name: 'Set estimate',
+    placeholder: 'Set estimate to\u2026',
+  },
+  milestone: {
+    row: 'Set milestone\u2026',
+    name: 'Set milestone',
+    placeholder: 'Set milestone to\u2026',
+  },
+  dueDate: {
+    row: 'Set due date\u2026',
+    name: 'Set due date',
+    placeholder: 'Try: tomorrow, next friday, nov 3\u2026',
+  },
+};
+
+/** The property a registered issue shortcut's label changes, if any. */
+const PROPERTY_BY_LABEL = new Map<string, ValueProperty>(
+  VALUE_PROPERTIES.map((property) => [
+    PROPERTY_SHORTCUT_LABELS[property],
+    property,
+  ])
+);
 
 /**
  * How a member reads in the palette: their handle, then their written name.
@@ -419,6 +510,33 @@ const RecentIssueIcon: React.FC<{
 const shortcutHint = (keys: string): string =>
   displayKeys(keys).join(keys.includes(' ') ? ' then ' : ' ');
 
+/** A row's hint and key caps for a shortcut. */
+const keyed = (keys: string): { hint?: string; keys?: string } =>
+  keys.trim() === '' ? {} : { hint: shortcutHint(keys), keys };
+
+/** A shortcut drawn as key caps, with "then" between the steps of a sequence. */
+const KeyHint: React.FC<{ keys: string }> = ({ keys }) => {
+  const parts: React.ReactNode[] = [];
+  let step = 0;
+  for (const caps of displayKeys(keys)) {
+    if (step > 0) {
+      parts.push(<span key={`then-${String(step)}`}>{' then '}</span>);
+    }
+    let cap = 0;
+    for (const name of caps.split(' ')) {
+      if (cap > 0) parts.push(' ');
+      parts.push(<Kbd key={`cap-${String(step)}-${String(cap)}`}>{name}</Kbd>);
+      cap += 1;
+    }
+    step += 1;
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-2xs text-text-faint">
+      {parts}
+    </span>
+  );
+};
+
 /**
  * Ranks commands against the typed term, best first, dropping those that do
  * not match. The label is scored first, then the hint and keywords, and each
@@ -429,7 +547,11 @@ const rank = (commands: readonly Command[], term: string): Command[] =>
     commands,
     term,
     (command) => command.label,
-    (command) => [command.hint ?? '', command.keywords ?? '']
+    (command) => [
+      command.hint ?? '',
+      command.keywords ?? '',
+      command.prefix ?? '',
+    ]
   ).map(({ row, match }) =>
     match.ranges.length === 0 ? row : { ...row, ranges: match.ranges }
   );
@@ -502,6 +624,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const subject = useIssueSubject();
   const [term, setTerm] = useState('');
   const [page, setPage] = useState<Page>(picker ?? 'root');
+  const [property, setProperty] = useState<ValueProperty>('status');
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -631,7 +754,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       rows.push({
         id: `page-action-${shortcut.id}`,
         label: shortcut.label,
-        hint: shortcutHint(shortcut.keys),
+        ...keyed(shortcut.keys),
         icon: <LuZap className={ICON} />,
         run: () => {
           shortcut.run();
@@ -646,17 +769,33 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   }, [registered]);
 
   const issueActions = useMemo<Command[]>(() => {
+    const valued = new Set(
+      (subject?.values?.() ?? []).map((value) => value.property)
+    );
     const actions: Command[] = registered
       .filter((shortcut) => shortcut.scope === 'issue')
-      .map((shortcut) => ({
-        id: `issue-action-${shortcut.id}`,
-        label: shortcut.label,
-        hint: shortcutHint(shortcut.keys),
-        icon: <LuZap className={ICON} />,
-        run: () => {
-          shortcut.run();
-        },
-      }));
+      .map((shortcut): Command => {
+        const property = PROPERTY_BY_LABEL.get(shortcut.label);
+        if (property !== undefined && valued.has(property)) {
+          return {
+            id: `issue-action-${shortcut.id}`,
+            label: PROPERTY_COPY[property].row,
+            keywords: shortcut.label,
+            ...keyed(shortcut.keys),
+            icon: <LuZap className={ICON} />,
+            property,
+          };
+        }
+        return {
+          id: `issue-action-${shortcut.id}`,
+          label: shortcut.label,
+          ...keyed(shortcut.keys),
+          icon: <LuZap className={ICON} />,
+          run: () => {
+            shortcut.run();
+          },
+        };
+      });
     const copiesUrl = registered.some(
       (shortcut) =>
         shortcut.scope === 'issue' && shortcut.keys === COPY_ISSUE_URL_KEYS
@@ -677,8 +816,36 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         },
       });
     }
+    const prefillKey = subject?.key ?? issueKey;
+    if (prefillKey !== null && createIssue.canCreate) {
+      actions.push({
+        id: 'issue-copy-prefilled-create-url',
+        label: 'Copy prefilled create issue URL',
+        keywords: 'url link new issue template prefill share',
+        hint: prefillKey,
+        icon: <LuLink className={ICON} />,
+        run: () => {
+          void getIssueByKey(workspaceId, prefillKey)
+            .then((issue) =>
+              globalThis.navigator.clipboard.writeText(
+                absoluteUrl(newIssuePath(slug, prefilledFieldsOf(issue)))
+              )
+            )
+            .then(
+              () => {
+                showToast('Copied prefilled create issue URL');
+              },
+              () => {
+                showErrorToast(
+                  'Could not copy the prefilled create issue URL.'
+                );
+              }
+            );
+        },
+      });
+    }
     return actions;
-  }, [registered, issueKey, slug]);
+  }, [registered, issueKey, slug, subject, createIssue.canCreate, workspaceId]);
 
   const actions = useMemo<Command[]>(() => {
     const built: Command[] = [];
@@ -687,7 +854,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-undo',
         label: UNDO_LABEL,
         keywords: 'revert undo restore',
-        hint: shortcutHint(UNDO_KEYS),
+        ...keyed(UNDO_KEYS),
         icon: <LuUndo2 className={ICON} />,
         run: undo,
       });
@@ -695,9 +862,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     if (createIssue.canCreate) {
       built.push({
         id: 'action-create-issue',
-        label: 'Create issue',
-        keywords: 'new',
-        hint: 'C',
+        label: 'Create new issue',
+        keywords: 'new add',
+        ...keyed('c'),
         icon: <LuSquarePen className={ICON} />,
         run: () => {
           createIssue.open();
@@ -707,7 +874,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-create-issue-fullscreen',
         label: 'Create issue in fullscreen',
         keywords: 'new expanded maximize',
-        hint: shortcutHint(CREATE_FULLSCREEN_KEYS),
+        ...keyed(CREATE_FULLSCREEN_KEYS),
         icon: <LuMaximize2 className={ICON} />,
         run: () => {
           createIssue.open({ expanded: true });
@@ -726,7 +893,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-create-issue-template',
         label: 'Create issue from template',
         keywords: 'new template prefill',
-        hint: shortcutHint(CREATE_FROM_TEMPLATE_KEYS),
+        ...keyed(CREATE_FROM_TEMPLATE_KEYS),
         icon: <LuFileText className={ICON} />,
         page: 'template',
       });
@@ -772,7 +939,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-switch-team',
         label: 'Switch team',
         keywords: 'change open',
-        hint: 'O then T',
+        ...keyed('o t'),
         icon: <LuArrowLeftRight className={ICON} />,
         page: 'teams',
       });
@@ -782,7 +949,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-switch-workspace',
         label: 'Switch workspace',
         keywords: 'change open organization',
-        hint: 'O then W',
+        ...keyed('o w'),
         icon: <LuBuilding2 className={ICON} />,
         page: 'workspaces',
       });
@@ -792,7 +959,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-log-out',
         label: 'Log out',
         keywords: 'sign out signout logout leave',
-        hint: shortcutHint(LOG_OUT_KEYS),
+        ...keyed(LOG_OUT_KEYS),
         icon: <LuLogOut className={ICON} />,
         run: onLogOut,
       });
@@ -830,7 +997,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-shortcuts',
         label: 'Keyboard shortcuts',
         keywords: 'help keys',
-        hint: '?',
+        ...keyed('?'),
         icon: <LuKeyboard className={ICON} />,
         run: onShowShortcuts,
       });
@@ -847,7 +1014,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-view',
         label: 'Open view',
         keywords: 'saved filter go',
-        hint: 'O then V',
+        ...keyed('o v'),
         icon: <LuLayoutList className={ICON} />,
         page: 'views',
       },
@@ -855,7 +1022,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-favorite',
         label: 'Open favorite',
         keywords: 'starred go',
-        hint: 'O then F',
+        ...keyed('o f'),
         icon: <LuStar className={ICON} />,
         page: 'favorites',
       },
@@ -863,7 +1030,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-project',
         label: 'Open project',
         keywords: 'go',
-        hint: 'O then P',
+        ...keyed('o p'),
         icon: <LuTarget className={ICON} />,
         page: 'projects',
       },
@@ -893,7 +1060,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-member',
         label: 'Open member',
         keywords: 'go people person user teammate profile',
-        hint: 'O then U',
+        ...keyed('o u'),
         icon: <LuUsers className={ICON} />,
         page: 'members',
       }
@@ -903,7 +1070,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-my-profile',
         label: 'Open my profile',
         keywords: 'go me member page assigned',
-        hint: 'O then M',
+        ...keyed('o m'),
         icon: <LuUserRound className={ICON} />,
         to: memberPath(slug, currentUserId),
       });
@@ -913,7 +1080,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-cycle',
         label: 'Open cycle',
         keywords: 'go sprint',
-        hint: 'O then C',
+        ...keyed('o c'),
         icon: <LuRefreshCcw className={ICON} />,
         page: 'cycles',
       });
@@ -946,13 +1113,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-my-issues',
         label: 'My issues',
-        hint: 'G then M',
+        prefix: 'Go to',
+        ...keyed('g m'),
         icon: <LuUserRound className={ICON} />,
         to: myIssuesPath(slug),
       },
       {
         id: 'nav-my-activity',
         label: 'My activity',
+        prefix: 'Go to',
         keywords: 'recent changes comments history touched',
         icon: <LuActivity className={ICON} />,
         to: `${myIssuesPath(slug)}?tab=activity`,
@@ -960,13 +1129,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-inbox',
         label: 'Inbox',
-        hint: 'G then I',
+        prefix: 'Go to',
+        ...keyed('g i'),
         icon: <LuInbox className={ICON} />,
         to: inboxPath(slug),
       },
       {
         id: 'nav-reviews',
         label: 'Reviews',
+        prefix: 'Go to',
         keywords: 'pull requests review requested github',
         icon: <LuGitPullRequest className={ICON} />,
         to: reviewsPath(slug),
@@ -976,6 +1147,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             {
               id: 'nav-pulse',
               label: 'Pulse',
+              prefix: 'Go to',
               keywords:
                 'project updates initiative updates health milestones feed',
               icon: <LuActivity className={ICON} />,
@@ -986,7 +1158,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-projects',
         label: 'Projects',
-        hint: 'G then P',
+        prefix: 'Go to',
+        ...keyed('g p'),
         icon: <LuTarget className={ICON} />,
         to: projectsPath(slug),
       },
@@ -995,6 +1168,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       built.push({
         id: 'nav-initiatives',
         label: 'Initiatives',
+        prefix: 'Go to',
         keywords: 'goals strategy portfolio',
         icon: <LuGoal className={ICON} />,
         to: initiativesPath(slug),
@@ -1004,6 +1178,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       built.push({
         id: 'nav-customers',
         label: 'Customers',
+        prefix: 'Go to',
         keywords: 'accounts companies requests feedback',
         icon: <LuBuilding2 className={ICON} />,
         to: customersPath(slug),
@@ -1014,7 +1189,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-triage',
         label: `${team.name} triage`,
         keywords: 'triage inbox waiting incoming',
-        hint: 'G then T',
+        ...keyed('g t'),
         icon: <LuInbox className={ICON} />,
         to: teamTriagePath(slug, team.key_prefix),
       });
@@ -1022,7 +1197,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-issues',
         label: `${team.name} issues`,
         keywords: 'team issues all',
-        hint: 'G then E',
+        ...keyed('g e'),
         icon: <LuList className={ICON} />,
         to: teamPath(slug, team.key_prefix),
       });
@@ -1030,7 +1205,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-active',
         label: 'Go to active issues',
         keywords: `${team.name} ${team.key_prefix} active started unstarted in progress todo`,
-        hint: 'G then A',
+        ...keyed('g a'),
         icon: <LuList className={ICON} />,
         to: teamScopePath(slug, team.key_prefix, 'active'),
       });
@@ -1038,7 +1213,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-backlog',
         label: 'Go to backlog',
         keywords: `${team.name} ${team.key_prefix} backlog`,
-        hint: 'G then B',
+        ...keyed('g b'),
         icon: <LuList className={ICON} />,
         to: teamScopePath(slug, team.key_prefix, 'backlog'),
       });
@@ -1046,7 +1221,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-board',
         label: `${team.name} board`,
         keywords: 'board kanban columns go to board',
-        hint: 'G then D',
+        ...keyed('g d'),
         icon: <LuSquareKanban className={ICON} />,
         to: teamBoardPath(slug, team.key_prefix),
       });
@@ -1054,7 +1229,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-cycles',
         label: `${team.name} cycles`,
         keywords: 'cycles',
-        hint: 'G then C',
+        ...keyed('g c'),
         icon: <LuRefreshCcw className={ICON} />,
         to: teamCyclesPath(slug, team.key_prefix),
       });
@@ -1062,7 +1237,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-upcoming-cycle',
         label: 'Go to upcoming cycle',
         keywords: `${team.name} ${team.key_prefix} next cycle sprint`,
-        hint: 'G then W',
+        ...keyed('g w'),
         icon: <LuRefreshCcw className={ICON} />,
         run: () => {
           void openUpcomingCycle({
@@ -1088,7 +1263,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-views',
         label: `${team.name} views`,
         keywords: 'views saved filters go to views',
-        ...(insideTeam ? { hint: shortcutHint('g shift+v') } : {}),
+        ...(insideTeam ? keyed('g shift+v') : {}),
         icon: <LuLayers className={ICON} />,
         to: teamViewsPath(slug, team.key_prefix),
       });
@@ -1096,7 +1271,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-archive',
         label: `${team.name} archived issues`,
         keywords: 'archive archived restore',
-        hint: 'G then X',
+        ...keyed('g x'),
         icon: <LuArchive className={ICON} />,
         to: teamArchivePath(slug, team.key_prefix),
       });
@@ -1112,28 +1287,31 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-roadmap',
         label: 'Roadmap',
-        hint: 'G then R',
+        prefix: 'Go to',
+        ...keyed('g r'),
         icon: <LuMap className={ICON} />,
         to: roadmapPath(slug),
       },
       {
         id: 'nav-views',
         label: 'Views',
-        ...(insideTeam ? {} : { hint: shortcutHint('g shift+v') }),
+        prefix: 'Go to',
+        ...(insideTeam ? {} : keyed('g shift+v')),
         icon: <LuLayers className={ICON} />,
         to: viewsPath(slug),
       },
       {
         id: 'nav-search',
         label: 'Search',
-        hint: '/',
+        ...keyed('/'),
         icon: <LuSearch className={ICON} />,
         to: searchPath(slug),
       },
       {
         id: 'nav-settings',
         label: 'Settings',
-        hint: 'G then S',
+        prefix: 'Go to',
+        ...keyed('g s'),
         icon: <LuSettings className={ICON} />,
         to: settingsLanding(workspace),
       },
@@ -1522,6 +1700,36 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       return rows.length === 0 ? [] : [{ heading: 'Views', commands: rows }];
     }
 
+    if (page === 'property') {
+      const own = (subject?.values?.(deferred) ?? []).filter(
+        (value) => value.property === property
+      );
+      const toRow = (value: SubjectValue): Command => ({
+        id: `value-${value.id}`,
+        label: value.name,
+        keywords: value.keywords,
+        ...(value.detail === undefined ? {} : { hint: value.detail }),
+        icon: (
+          <span className="inline-flex h-4 w-4 items-center justify-center">
+            {value.icon}
+          </span>
+        ),
+        checked: value.checked === true,
+        ...(value.toggles === true ? { toggles: true } : {}),
+        run: value.run,
+      });
+      const rows = [
+        ...own.filter((value) => value.lead === true).map(toRow),
+        ...rank(
+          own.filter((value) => value.lead !== true).map(toRow),
+          deferred
+        ),
+      ];
+      return rows.length === 0
+        ? []
+        : [{ heading: PROPERTY_COPY[property].name, commands: rows }];
+    }
+
     const built: CommandGroup[] = [];
 
     if (isKey) {
@@ -1578,7 +1786,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     if (!isKey && deferred !== '' && offered !== undefined) {
       const lowered = deferred.toLowerCase();
       const values = rankRows(
-        offered(),
+        offered().filter((value) => value.inert !== true),
         deferred,
         (value) => value.label,
         (value) => [value.keywords]
@@ -1746,6 +1954,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     pageActions,
     issueKey,
     subject,
+    property,
     data,
     documents,
     members,
@@ -1766,6 +1975,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const index = flat.length === 0 ? 0 : Math.min(active, flat.length - 1);
   const current = flat[index];
 
+  const [toggled, setToggled] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (toggled === null || deferred !== '') return;
+    const at = flat.findIndex((command) => command.id === toggled);
+    if (at >= 0) setActive(at);
+    setToggled(null);
+  }, [toggled, flat, deferred]);
+
   const enterPage = useCallback((next: Page) => {
     setPage(next);
     setTerm('');
@@ -1775,8 +1993,20 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const activate = useCallback(
     (command: Command) => {
+      if (command.property !== undefined) {
+        setProperty(command.property);
+        enterPage('property');
+        return;
+      }
       if (command.page !== undefined) {
         enterPage(command.page);
+        return;
+      }
+      if (command.toggles === true) {
+        command.run?.();
+        setTerm('');
+        setToggled(command.id);
+        input.current?.focus();
         return;
       }
       onClose();
@@ -1866,7 +2096,11 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             : 'Nothing matched that.';
 
   const placeholder =
-    page === 'root' ? 'Type a command or search' : PAGE_COPY[page].placeholder;
+    page === 'root'
+      ? 'Type a command or search'
+      : page === 'property'
+        ? PROPERTY_COPY[property].placeholder
+        : PAGE_COPY[page].placeholder;
 
   let cursor = -1;
 
@@ -1897,7 +2131,34 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
               className="inline-flex h-5 items-center gap-1 rounded-xs bg-raised px-1.5 text-2xs text-text-muted pointer-coarse:h-8 pointer-coarse:px-2.5 pointer-coarse:text-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
             >
               <LuChevronLeft aria-hidden="true" className="h-3 w-3" />
-              {PAGE_COPY[page].back}
+              {page === 'property' ? (
+                <span
+                  data-testid="palette-breadcrumb"
+                  className="inline-flex min-w-0 items-center gap-1"
+                >
+                  {subject !== null && (
+                    <>
+                      <span
+                        className={cn(
+                          'truncate text-text',
+                          subject.key !== null && 'font-mono'
+                        )}
+                      >
+                        {subject.key ?? subject.title}
+                      </span>
+                      <LuChevronRight
+                        aria-hidden="true"
+                        className="h-3 w-3 shrink-0"
+                      />
+                    </>
+                  )}
+                  <span className="shrink-0">
+                    {PROPERTY_COPY[property].name}
+                  </span>
+                </span>
+              ) : (
+                PAGE_COPY[page].back
+              )}
             </button>
           </div>
         )}
@@ -1978,6 +2239,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                           id={`${listId}-${command.id}`}
                           role="option"
                           aria-selected={selected}
+                          aria-checked={command.checked}
                           data-active={selected}
                           className={cn(
                             'mx-1.5 flex h-9 cursor-pointer pointer-coarse:h-11 items-center gap-2.5 rounded-sm text-sm hover:bg-raised hover:text-text active:bg-line',
@@ -1997,15 +2259,28 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                             {command.icon}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
+                            {command.prefix !== undefined &&
+                              `${command.prefix} `}
                             <HighlightedLabel
                               label={command.label}
                               ranges={command.ranges}
                             />
                           </span>
-                          {command.hint !== undefined && (
-                            <span className="shrink-0 font-mono text-xs text-text-faint">
-                              {command.hint}
-                            </span>
+                          {command.keys !== undefined ? (
+                            <KeyHint keys={command.keys} />
+                          ) : (
+                            command.hint !== undefined && (
+                              <span className="shrink-0 font-mono text-xs text-text-faint">
+                                {command.hint}
+                              </span>
+                            )
+                          )}
+                          {command.checked === true && (
+                            <LuCheck
+                              aria-hidden="true"
+                              data-testid="palette-row-check"
+                              className="h-3.5 w-3.5 shrink-0 text-text"
+                            />
                           )}
                         </li>
                       );

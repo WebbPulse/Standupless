@@ -36,6 +36,18 @@ def success(message: str) -> None:
     err_console.print(message, highlight=False, soft_wrap=True)
 
 
+def hint(message: str) -> None:
+    """Nudge on stderr, apart from the result, so `--json` output stays the API's own shape."""
+    err_console.print(f"[yellow]hint:[/yellow] {message}", highlight=False, soft_wrap=True)
+
+
+def priority_hints(issue: Mapping[str, Any]) -> list[str]:
+    """The nudges for an issue left with no priority, empty when it has one."""
+    if (issue.get("priority") or "none") != "none":
+        return []
+    return [f"{issue['key']} has no priority. Set one with `standupless issue edit {issue['key']} --priority`."]
+
+
 def table(columns: Sequence[str], rows: Sequence[Sequence[Any]], empty: str) -> None:
     """Print rows as a borderless table, or a quiet note when there are none."""
     if not rows:

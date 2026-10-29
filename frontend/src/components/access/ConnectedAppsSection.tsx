@@ -13,9 +13,8 @@
  * says exactly that.
  *
  * When the product adds scopes after an app was authorized, the app's row
- * offers to grant them. Granting adds only the listed scopes to the existing
- * grant, so the app picks them up at its next token refresh without being
- * authorized again.
+ * lists them. The app gains them by being authorized again for them: one
+ * approval adds them to the existing grant and keeps what it already holds.
  *
  * A person can opt in to having that happen on its own: an app that took
  * every scope when it was authorized then gets later scopes at its next
@@ -32,7 +31,6 @@ import {
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import {
-  grantMyConnectedAppScopes,
   listMyConnectedApps,
   listWorkspaceConnectedApps,
   revokeMyConnectedApp,
@@ -154,68 +152,6 @@ const RevokeDialog: React.FC<RevokeDialogProps> = ({
   </Dialog>
 );
 
-/** The workspaces where an app's grant lacks some of the new permissions. */
-const grantedWorkspaces = (app: ConnectedAppRead | null): string =>
-  (app?.workspaces ?? [])
-    .filter((workspace) => (workspace.new_scopes ?? []).length > 0)
-    .map((workspace) => workspace.name || workspace.id)
-    .join(', ') || 'your workspaces';
-
-/** Props for GrantDialog: the app whose new permissions are offered and the call that grants them. */
-interface GrantDialogProps {
-  app: ConnectedAppRead | null;
-  busy: boolean;
-  error: unknown;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-/** The confirmation that lists exactly which new permissions an app gains, and where. */
-const GrantDialog: React.FC<GrantDialogProps> = ({
-  app,
-  busy,
-  error,
-  onCancel,
-  onConfirm,
-}) => (
-  <Dialog
-    open={app !== null}
-    onClose={() => {
-      if (!busy) onCancel();
-    }}
-    title={`Grant new permissions to ${app?.client_name ?? 'this app'}?`}
-    size="sm"
-  >
-    <div className="space-y-4">
-      <p className="text-sm text-text-muted">
-        {`${app?.client_name ?? 'This app'} gains these permissions in ${grantedWorkspaces(app)}. It picks them up at its next token refresh, with no need to authorize it again.`}
-      </p>
-      <ul className="flex flex-wrap gap-1.5">
-        {(app?.new_scopes ?? []).map((scope) => (
-          <li
-            key={scope}
-            className="rounded-sm border border-line bg-raised px-1.5 py-0.5 font-mono text-xs text-text"
-          >
-            {scope}
-          </li>
-        ))}
-      </ul>
-      {app !== null && error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not grant the new permissions.')}
-        />
-      )}
-      <div className="flex justify-end gap-2">
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" disabled={busy} onClick={onConfirm}>
-          {busy ? 'Granting' : 'Grant permissions'}
-        </Button>
-      </div>
-    </div>
-  </Dialog>
-);
-
-/** Lists the caller's own connected apps, with a revoke on each and a grant where new permissions exist. */
 /** The caller's opt-in to new scopes reaching apps that took every scope. */
 const AutoGrantSetting: React.FC = () => {
   const { user, login } = useAuth();
@@ -265,6 +201,7 @@ const AutoGrantSetting: React.FC = () => {
   );
 };
 
+/** Lists the caller's own connected apps, with a revoke on each and any new permissions named. */
 export const MyConnectedAppsSection: React.FC = () => {
   const auth = useQueryAuth();
   const [pending, setPending] = useState<PendingRevoke | null>(null);
@@ -280,35 +217,11 @@ export const MyConnectedAppsSection: React.FC = () => {
     MY_CONNECTED_APPS_KEY
   );
 
-  const [granting, setGranting] = useState<ConnectedAppRead | null>(null);
-  const [grantError, setGrantError] = useState<unknown>(null);
-  const { mutate: grant, isMutating: isGranting } = useMutationWithRefetch(
-    (target: ConnectedAppRead) =>
-      grantMyConnectedAppScopes(target.client_id, target.new_scopes ?? []),
-    MY_CONNECTED_APPS_KEY
-  );
-
   const apps: ConnectedAppRead[] = data ?? [];
 
   const close = (): void => {
     setPending(null);
     setRevokeError(null);
-  };
-
-  const closeGrant = (): void => {
-    setGranting(null);
-    setGrantError(null);
-  };
-
-  const onConfirmGrant = (): void => {
-    if (granting === null) return;
-    void grant(granting)
-      .then(() => {
-        setGranting(null);
-      })
-      .catch((failure: unknown) => {
-        setGrantError(failure);
-      });
   };
 
   const onConfirm = (): void => {
@@ -375,7 +288,8 @@ export const MyConnectedAppsSection: React.FC = () => {
                 {(app.new_scopes ?? []).length > 0 && (
                   <p className="truncate text-xs text-text-muted">
                     New permissions available:{' '}
-                    {(app.new_scopes ?? []).join(', ')}
+                    {(app.new_scopes ?? []).join(', ')}. Authorize the app again
+                    to add them.
                   </p>
                 )}
                 <Timeline
@@ -383,32 +297,19 @@ export const MyConnectedAppsSection: React.FC = () => {
                   lastUsedAt={app.last_used_at}
                 />
               </div>
-              <div className="flex items-center gap-1">
-                {(app.new_scopes ?? []).length > 0 && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setGrantError(null);
-                      setGranting(app);
-                    }}
-                  >
-                    Grant new permissions
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setRevokeError(null);
-                    setPending({
-                      clientId: app.client_id,
-                      clientName: app.client_name,
-                    });
-                  }}
-                >
-                  Revoke
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setRevokeError(null);
+                  setPending({
+                    clientId: app.client_id,
+                    clientName: app.client_name,
+                  });
+                }}
+              >
+                Revoke
+              </Button>
             </li>
           ))}
         </ul>
@@ -421,14 +322,6 @@ export const MyConnectedAppsSection: React.FC = () => {
         scopeNote="in any workspace"
         onCancel={close}
         onConfirm={onConfirm}
-      />
-
-      <GrantDialog
-        app={granting}
-        busy={isGranting}
-        error={grantError}
-        onCancel={closeGrant}
-        onConfirm={onConfirmGrant}
       />
     </section>
   );

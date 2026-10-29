@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { LuCalendar, LuCalendarCheck } from 'react-icons/lu';
 import { createInitiative } from '../../api/initiatives';
+import { useOffline } from '../../hooks/useOffline';
 import { isCoarse } from '../../lib/dateResolution';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
@@ -69,8 +70,9 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
     useState<DateResolution | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const offline = useOffline();
 
-  const canCreate = name.trim() !== '';
+  const canCreate = name.trim() !== '' && !offline;
 
   const submit = (): void => {
     if (!canCreate || isSaving) return;

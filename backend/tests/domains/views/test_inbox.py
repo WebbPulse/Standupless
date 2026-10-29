@@ -841,3 +841,68 @@ def test_clearing_completed_leaves_snoozed_rows_unless_asked(
 
     assert second.json()["deleted"] == 1
     assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000B000") is None
+
+
+def _sparse_priority_inbox(repositories: Any, mentions: "tuple[int, ...]", total: int = 160) -> "list[str]":
+    """`total` comment rows, newest last, with mentions at the given positions, returned newest first."""
+    for index in range(total):
+        put_notification(
+            repositories,
+            MEMBER,
+            f"01N{index:023d}",
+            kind="mentioned" if index in mentions else "commented",
+            minutes=index,
+        )
+    return [f"01N{index:023d}" for index in sorted(mentions, reverse=True)]
+
+
+def test_a_sparse_priority_tab_fills_its_page_past_a_run_of_other_rows(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A mention behind more comments than one read covers still lands on the first page, with no cursor after it."""
+    expected = _sparse_priority_inbox(repositories, (0,))
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox"
+
+    for params in ({"bucket": "priority", "limit": 50}, {"bucket": "priority", "limit": 50, "unread": True}):
+        page = client.get(url, params=params).json()
+        assert [row["notification_id"] for row in page["notifications"]] == expected
+        assert page["next_cursor"] is None
+
+
+def test_an_empty_priority_tab_answers_no_rows_and_no_cursor(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """With nothing in Priority the page is empty and says there is nothing more, so no Load more shows."""
+    _sparse_priority_inbox(repositories, ())
+
+    sign_in(client, MEMBER)
+    page = client.get(f"/api/workspaces/{workspace}/inbox", params={"bucket": "priority", "limit": 50}).json()
+
+    assert page["notifications"] == []
+    assert page["next_cursor"] is None
+
+
+def test_a_filled_page_cut_mid_read_resumes_after_its_last_row(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A page that fills partway through a read hands back a cursor that neither repeats nor skips a row."""
+    expected = _sparse_priority_inbox(repositories, (3, 70, 120, 150))
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox"
+
+    for unread in (False, True):
+        seen: list[str] = []
+        cursor: Any = None
+        for _ in range(5):
+            params: "dict[str, Any]" = {"bucket": "priority", "limit": 3, "unread": unread}
+            if cursor:
+                params["cursor"] = cursor
+            page = client.get(url, params=params).json()
+            seen.extend(row["notification_id"] for row in page["notifications"])
+            cursor = page["next_cursor"]
+            if not cursor:
+                break
+        assert seen == expected

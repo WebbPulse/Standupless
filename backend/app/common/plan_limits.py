@@ -17,17 +17,24 @@ true count means reading every issue row.
 
 Until `BILLING_ENABLED` is on there is no way to upgrade, so the free plan keeps
 the generous `PREVIEW_FREE_LIMITS` and the launch numbers wait in `PLAN_LIMITS`.
+
+A free workspace an e2e user created keeps the preview limits with billing on too,
+where `PLAN_LIMIT_E2E_EXEMPTION` allows it, so the staging e2e suite runs against
+the launch limits without a comp grant changing the plan it reads.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from fastapi import HTTPException, status
 
 from app.common.core.config import settings
 from app.common.db.dynamo.workspaces import DEFAULT_PLAN, Plan, Workspace
+
+if TYPE_CHECKING:  # pragma: no cover
+    from app.common.db.dynamo.users import User
 
 PLAN_LIMIT_REACHED = "PLAN_LIMIT_REACHED"
 
@@ -149,12 +156,32 @@ def plan_of(workspace: Workspace | str | None) -> str:
     return plan if plan in PLAN_LIMITS else DEFAULT_PLAN
 
 
+def creates_e2e_workspaces(user: User) -> bool:
+    """Whether a workspace this person creates is stamped `e2e_owned`.
+
+    Decided by the identity package's `is_e2e_user`: the marker its admin-only
+    ephemeral e2e route sets, or a durable id in `IDENTITY_E2E_USER_IDS`. Neither is
+    something the person can write, and it is always false in production.
+    """
+    from webbpulse.identity import is_e2e_user
+
+    return is_e2e_user(user, settings.e2e_identity_settings)
+
+
+def e2e_exempt(workspace: Workspace | str | None) -> bool:
+    """Whether this workspace is e2e owned and the e2e exemption applies in this environment.
+
+    A bare plan name is never exempt, so only a caller holding the workspace itself
+    can lift a limit.
+    """
+    return isinstance(workspace, Workspace) and workspace.e2e_owned and settings.plan_limit_e2e_exemption_active
+
+
 def limits_of(workspace: Workspace | str | None) -> Mapping[LimitedResource, int]:
     """Every ceiling this workspace's plan enforces right now."""
-    plan = plan_of(workspace)
-    if _previewing(plan):
+    if _previewing(workspace):
         return PREVIEW_FREE_LIMITS
-    return PLAN_LIMITS[plan]
+    return PLAN_LIMITS[plan_of(workspace)]
 
 
 def limit_for(workspace: Workspace | str | None, resource: LimitedResource) -> int:
@@ -162,21 +189,21 @@ def limit_for(workspace: Workspace | str | None, resource: LimitedResource) -> i
     return limits_of(workspace)[resource]
 
 
-def _previewing(plan: str) -> bool:
-    """Whether the free plan's preview ceilings apply, because nobody can upgrade yet."""
-    return plan == DEFAULT_PLAN and not settings.BILLING_ENABLED
+def _previewing(workspace: Workspace | str | None) -> bool:
+    """Whether the free plan's preview ceilings apply: nobody can upgrade yet, or the workspace is e2e exempt."""
+    if plan_of(workspace) != DEFAULT_PLAN:
+        return False
+    return not settings.BILLING_ENABLED or e2e_exempt(workspace)
 
 
 def storage_limit_of(workspace: Workspace | str | None) -> int:
     """The pooled attachment storage, in bytes, this workspace's plan allows right now."""
-    plan = plan_of(workspace)
-    return PREVIEW_FREE_STORAGE_BYTES if _previewing(plan) else PLAN_STORAGE_BYTES[plan]
+    return PREVIEW_FREE_STORAGE_BYTES if _previewing(workspace) else PLAN_STORAGE_BYTES[plan_of(workspace)]
 
 
 def guests_per_seat_of(workspace: Workspace | str | None) -> int:
     """How many guests each seat of this workspace's plan admits right now."""
-    plan = plan_of(workspace)
-    return PREVIEW_FREE_GUESTS_PER_SEAT if _previewing(plan) else PLAN_GUESTS_PER_SEAT[plan]
+    return PREVIEW_FREE_GUESTS_PER_SEAT if _previewing(workspace) else PLAN_GUESTS_PER_SEAT[plan_of(workspace)]
 
 
 def plan_limit_reached(plan: str, resource: str, limit: int, message: str) -> HTTPException:
@@ -198,7 +225,7 @@ def check_limit(workspace: Workspace | str | None, resource: LimitedResource, cu
     the envelope's `details`, so a client can render it without parsing the sentence.
     """
     plan = plan_of(workspace)
-    limit = limit_for(plan, resource)
+    limit = limit_for(workspace, resource)
     if current_count < limit:
         return
     raise plan_limit_reached(
@@ -213,7 +240,7 @@ def check_limit(workspace: Workspace | str | None, resource: LimitedResource, cu
 def check_storage(workspace: Workspace | str | None, used_bytes: int, adding_bytes: int) -> None:
     """Refuse an upload that would take the workspace past its plan's pooled storage."""
     plan = plan_of(workspace)
-    limit = storage_limit_of(plan)
+    limit = storage_limit_of(workspace)
     if used_bytes + adding_bytes <= limit:
         return
     raise plan_limit_reached(
@@ -233,7 +260,7 @@ def guest_allowance(workspace: Workspace | str | None, seats: int) -> int:
 def check_guests(workspace: Workspace | str | None, guests: int, seats: int) -> None:
     """Refuse one more guest when `guests` already fill the allowance `seats` earn."""
     plan = plan_of(workspace)
-    allowance = guest_allowance(plan, seats)
+    allowance = guest_allowance(workspace, seats)
     if guests < allowance:
         return
     if allowance == 0:
@@ -241,7 +268,7 @@ def check_guests(workspace: Workspace | str | None, guests: int, seats: int) -> 
     else:
         message = (
             f"This workspace has reached its {plan} plan limit of {allowance} guests, "
-            f"{guests_per_seat_of(plan)} for each member. Add a member or upgrade to make room."
+            f"{guests_per_seat_of(workspace)} for each member. Add a member or upgrade to make room."
         )
     raise plan_limit_reached(plan, GUESTS_RESOURCE, allowance, message)
 

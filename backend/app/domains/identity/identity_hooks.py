@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from webbpulse.identity import AuthenticationRefused
+from webbpulse.identity import E2E_USER_ATTRIBUTE, AuthenticationRefused
 
 from app.common.db.dynamo.users import User, UserRepository
 
@@ -107,8 +107,14 @@ class StanduplessIdentityHooks:
         through: copying it whole would let anyone registering set `is_admin`, which
         is the platform admin flag, or `disabled`. The display name falls back to the
         address's local part when none is given.
+
+        `E2E_USER_ATTRIBUTE` is kept when it is exactly `True`. The package reserves it:
+        only its admin-only ephemeral e2e route passes it, and registration drops it
+        from client input, so the row is marked from its first write.
         """
         record = {key: attributes[key] for key in REGISTRATION_ATTRIBUTES if key in attributes}
+        if attributes.get(E2E_USER_ATTRIBUTE) is True:
+            record[E2E_USER_ATTRIBUTE] = True
         record["email"] = email
         record["display_name"] = str(record.get("display_name") or _display_name_from(email))
         return _as_mapping(self._users.create(User(**record)))
@@ -150,8 +156,9 @@ class StanduplessIdentityHooks:
     def on_user_created(self, user: Mapping[str, Any], via: str) -> None:
         """No side effects to run.
 
-        The verification email is sent by the package's own register flow, and a new
-        Standupless account owns no default rows.
+        The verification email is sent by the package's own register flow, the
+        ephemeral e2e marker arrives through `create_user`, and a new Standupless
+        account owns no default rows.
         """
         del user, via
 

@@ -15,7 +15,7 @@ import {
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { activityKey, descriptionVersionsKey } from '../../lib/queryKeys';
-import { diffLines, hasChanges, type DiffLine } from '../../lib/textDiff';
+import { diffLines, hasChanges } from '../../lib/textDiff';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { IssueDescriptionVersionRead, IssueRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -25,6 +25,7 @@ import EmptyState from '../ui/empty-state';
 import Markdown from '../ui/markdown';
 import RelativeTime from '../ui/relative-time';
 import { SkeletonRows } from '../ui/skeleton';
+import TextDiff from '../ui/text-diff';
 
 /** The name the issue menu and the command palette give this dialog. */
 export const DESCRIPTION_HISTORY_LABEL = 'Description history';
@@ -47,56 +48,6 @@ export interface DescriptionHistoryDialogProps {
   onRestored: (issue: IssueRead) => void;
   onClose: () => void;
 }
-
-/** The class one diff line is drawn with. */
-const lineClass = (kind: DiffLine['kind']): string => {
-  if (kind === 'added') return 'bg-success-soft text-text';
-  if (kind === 'removed') return 'bg-danger-soft text-text';
-  return 'text-text-muted';
-};
-
-/** The marker in front of one diff line. */
-const lineMarker = (kind: DiffLine['kind']): string => {
-  if (kind === 'added') return '+';
-  if (kind === 'removed') return '-';
-  return ' ';
-};
-
-/** The selected version against the current text, line by line. */
-const DiffView: React.FC<{ lines: DiffLine[] }> = ({ lines }) => {
-  if (!hasChanges(lines)) {
-    return (
-      <p className="text-sm text-text-muted">
-        This version matches the current description.
-      </p>
-    );
-  }
-  return (
-    <pre
-      aria-label="Changes against the current description"
-      className="overflow-x-auto rounded-md border border-line font-mono text-xs leading-5"
-    >
-      {lines.map((line, index) => (
-        <div
-          key={index}
-          className={`flex gap-2 px-2 whitespace-pre-wrap ${lineClass(line.kind)}`}
-        >
-          <span aria-hidden="true" className="w-3 shrink-0 select-none">
-            {lineMarker(line.kind)}
-          </span>
-          <span className="sr-only">
-            {line.kind === 'same'
-              ? ''
-              : line.kind === 'added'
-                ? 'In this version: '
-                : 'In the current description: '}
-          </span>
-          <span className="min-w-0 break-words">{line.text || ' '}</span>
-        </div>
-      ))}
-    </pre>
-  );
-};
 
 /** One row of the version list. */
 const VersionRow: React.FC<{
@@ -271,7 +222,7 @@ export const DescriptionHistoryDialog: React.FC<
             </div>
             <div className="max-h-[55vh] overflow-y-auto">
               {mode === 'changes' ? (
-                <DiffView lines={lines} />
+                <TextDiff lines={lines} subject="description" />
               ) : selected.body === '' ? (
                 <p className="text-sm text-text-muted">Empty.</p>
               ) : (

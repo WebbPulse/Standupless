@@ -149,6 +149,10 @@ vi.mock('@webbpulse/auth/react', async () => {
   };
 });
 
+vi.mock('../../hooks/useWorkspaceMembers', () => ({
+  useWorkspaceMembers: () => [],
+}));
+
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 
 vi.mock('../../hooks/useWorkspace', () => ({

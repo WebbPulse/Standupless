@@ -632,7 +632,7 @@ def _unretire_team(call: ToolCall) -> Any:
 
 
 def _update_cycle_settings(call: ToolCall) -> Any:
-    """Change a team's automatic cycle settings, creating due cycles when they are on."""
+    """Change a team's automatic cycle settings, creating due cycles and trimming surplus empty ones."""
     team = admin_team(call)
     fields = (
         "enabled",
@@ -645,8 +645,15 @@ def _update_cycle_settings(call: ToolCall) -> Any:
         "move_unfinished",
     )
     payload = CycleSettingsUpdate.model_validate(given_arguments(call, fields))
-    saved = team_writes.update_cycle_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
-    return {"team_id": team.team_id, **_cycle_settings_json(saved)}
+    saved, trimmed = team_writes.update_cycle_settings(
+        call.repositories, call.context.workspace_id, team.team_id, payload
+    )
+    return {
+        "team_id": team.team_id,
+        **_cycle_settings_json(saved),
+        "removed_cycles": len(trimmed.removed),
+        "kept_cycles": trimmed.kept,
+    }
 
 
 def _update_auto_close_settings(call: ToolCall) -> Any:
@@ -1352,7 +1359,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="list_team_members",
-        description="Everyone explicitly added to a team, with team roles. team_id: id, key such as ENG, or name.",
+        description="Everyone explicitly added to a team, with team roles and any user_status in force. "
+        "team_id: id, key such as ENG, or name.",
         scopes=("members:read",),
         schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
         handler=_list_team_members,
@@ -1602,8 +1610,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_users",
         description=(
-            "Workspace members with id, display name, email and workspace role, "
-            "or one team's members and team roles with team_id. Use the user_id as an assignee."
+            "Workspace members with id, display name, email, workspace role and user_status (emoji, text, away "
+            "and until) while one is in force, or one team's members and team roles with team_id. Use the user_id "
+            "as an assignee."
         ),
         scopes=("members:read",),
         schema=object_schema({"team_id": string("Narrow to one team's members: id, key such as ENG, or name")}),

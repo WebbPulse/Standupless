@@ -60,12 +60,34 @@ def test_a_comment_names_one_target(client: TestClient, workspace: str, reposito
 
 
 def test_issue_only_arguments_are_refused_on_a_document(client: TestClient, workspace: str, repositories: Any) -> None:
-    """A document has no description to quote and no GitHub thread to sync."""
+    """A document has no GitHub thread to sync."""
     secret = mint_for(repositories, MEMBER, SCOPES)
     document_id = _document(client, secret)
 
-    arguments = {"document_id": document_id, "body": "Hm", "quote": "Runbook"}
+    arguments = {"document_id": document_id, "body": "Hm", "sync_to_github": True}
     assert "issue comments only" in refusal(tool(client, secret, "add_comment", arguments))
+
+
+def test_an_agent_pins_a_document_thread_to_a_quote(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A quote the body shows becomes the anchor with its context, and one it does not show is refused."""
+    secret = mint_for(repositories, MEMBER, SCOPES)
+    created = tool(
+        client,
+        secret,
+        "create_document",
+        {"team_id": TEAM, "title": "Runbook", "body": "Restart the **worker** before the deploy."},
+    )
+    document_id = answer(created)["document_id"]
+
+    pinned = answer(
+        tool(client, secret, "add_comment", {"document_id": document_id, "body": "Why?", "quote": "worker"})
+    )
+    missing = {"document_id": document_id, "body": "Hm", "quote": "scheduler"}
+    on_reply = {"document_id": document_id, "body": "Hm", "quote": "worker", "parent_comment_id": pinned["comment_id"]}
+
+    assert pinned["anchor"] == {"quote": "worker", "prefix": "Restart the ", "suffix": " before the deploy."}
+    assert "the document shows" in refusal(tool(client, secret, "add_comment", missing))
+    assert "reply" in refusal(tool(client, secret, "add_comment", on_reply))
 
 
 def test_reading_a_documents_thread_needs_projects_read(client: TestClient, workspace: str, repositories: Any) -> None:

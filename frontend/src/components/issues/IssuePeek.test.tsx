@@ -9,7 +9,8 @@
  * with a comment box that posts and offers to sync to a linked pull request.
  * Also covers the sub-issues section under the description, which files a
  * child inline and peeks a child in place, and the parent line above the
- * title, which peeks the parent.
+ * title, which peeks the parent, and that an image embedded in the
+ * description loads through the issue's media tokens.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -52,6 +53,12 @@ const listComments = vi.fn<() => Promise<CommentListRead>>();
 const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
 const listThreadTargets = vi.fn<() => Promise<GithubThreadTargetRead[]>>();
 const createIssue = vi.fn<(body: unknown) => Promise<IssueRead>>();
+const getMediaTokens = vi.fn<
+  (issueId: string) => Promise<{
+    tokens: Record<string, string>;
+    expires_at: string;
+  }>
+>();
 const listChildren =
   vi.fn<
     (id: string) => Promise<{ issues: OrderedIssueRead[]; next_cursor: null }>
@@ -86,6 +93,7 @@ vi.mock('../../api/discussion', async () => {
     listAttachments: () =>
       Promise.resolve({ attachments: [], next_cursor: null }),
     listReactions: () => Promise.resolve([]),
+    getMediaTokens: (_w: string, issueId: string) => getMediaTokens(issueId),
   };
 });
 
@@ -279,9 +287,11 @@ beforeEach(() => {
     listThreadTargets,
     listChildren,
     createIssue,
+    getMediaTokens,
     onClose,
   ])
     spy.mockReset();
+  getMediaTokens.mockResolvedValue({ tokens: {}, expires_at: '' });
   listActivity.mockResolvedValue({ activity: [], next_cursor: null });
   listComments.mockResolvedValue({ comments: [], next_cursor: null });
   listThreadTargets.mockResolvedValue([]);
@@ -409,6 +419,27 @@ describe('IssuePeek', () => {
       await screen.findByRole('list', { name: 'Timeline' })
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Comment' })).toBeNull();
+  });
+});
+
+describe('media in the peek', () => {
+  it('loads an image in the description through the issue media tokens', async () => {
+    getMediaTokens.mockResolvedValue({
+      tokens: { 'att-1': 'tok-1' },
+      expires_at: '2026-09-17T01:00:00Z',
+    });
+    getIssue.mockResolvedValue({
+      ...issue,
+      body: '![shot.png](/api/workspaces/ws-1/attachments/att-1/content?issue_id=iss-1)',
+    });
+    renderPeek();
+
+    const image = await screen.findByRole('img', { name: 'shot.png' });
+    expect(image.tagName).toBe('IMG');
+    expect(image.getAttribute('src')).toContain(
+      '/api/workspaces/ws-1/attachments/att-1/content?issue_id=iss-1&token=tok-1'
+    );
+    expect(getMediaTokens).toHaveBeenCalledWith('iss-1');
   });
 });
 

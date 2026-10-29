@@ -257,8 +257,52 @@ variable "billing_enabled" {
   default     = false
 }
 
+variable "plan_limit_e2e_exemption_enabled" {
+  description = "Keep the free plan's preview limits on workspaces an e2e user created, so the e2e suite runs with billing on. Sets PLAN_LIMIT_E2E_EXEMPTION on every function. Staging only: the backend ignores it in production, and production must leave it off."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.plan_limit_e2e_exemption_enabled || var.environment != "production"
+    error_message = "plan_limit_e2e_exemption_enabled must stay off in production."
+  }
+}
+
+variable "identity_e2e_user_ids" {
+  description = "Ids of the durable e2e users, which the identity package's is_e2e_user counts as e2e users alongside the ephemeral ones its e2e route marks. Their new workspaces count as e2e owned for plan_limit_e2e_exemption_enabled. Sets IDENTITY_E2E_USER_IDS as a JSON array on the identity and workspaces functions. Staging only: production must leave it empty, and the backend refuses it there at startup."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.identity_e2e_user_ids) == 0 || var.environment != "production"
+    error_message = "identity_e2e_user_ids must stay empty in production."
+  }
+}
+
 variable "billing_business_enabled" {
   description = "Whether the Business plan is on sale. Needs billing_enabled too, and stays off until private teams ship."
   type        = bool
   default     = false
+}
+
+variable "slack_config_role_arn" {
+  description = "ARN of the slack-config role in the production account, which this environment's deploy role may assume to apply its Slack App manifest. Production builds its own ARN and ignores this; staging sets it in env/staging.tfvars. Null grants no assume permission."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.slack_config_role_arn == null || can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", var.slack_config_role_arn))
+    error_message = "slack_config_role_arn must be an IAM role ARN."
+  }
+}
+
+variable "slack_config_trusted_role_arns" {
+  description = "Role ARNs, besides production's own deploy role, that the slack-config role trusts. Read only in production, where env/production.tfvars names the staging deploy role. Every ARN must name a role that already exists, or IAM rejects the trust policy."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.slack_config_trusted_role_arns : can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", arn))])
+    error_message = "Every slack_config_trusted_role_arns entry must be an IAM role ARN."
+  }
 }

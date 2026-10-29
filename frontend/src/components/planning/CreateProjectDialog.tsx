@@ -17,6 +17,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { createProject, updateProject } from '../../api/planning';
 import { listTeamTemplates } from '../../api/templates';
+import { useOffline } from '../../hooks/useOffline';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { isCoarse } from '../../lib/dateResolution';
@@ -170,6 +171,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [targetResolution, setTargetResolution] =
     useState<DateResolution | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const offline = useOffline();
   const [error, setError] = useState<unknown>(null);
   const [applied, setApplied] = useState<AppliedTemplate | null>(null);
   const [pendingDefault, setPendingDefault] = useState(true);
@@ -233,7 +235,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       ? 'The target date cannot fall before the start date.'
       : null;
   const canCreate =
-    name.trim() !== '' && teamIds.length > 0 && dateError === null;
+    name.trim() !== '' && teamIds.length > 0 && dateError === null && !offline;
 
   const submit = (): void => {
     if (!canCreate || isSaving) return;

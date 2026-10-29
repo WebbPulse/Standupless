@@ -1,8 +1,12 @@
-"""Issue reminders a member set for themselves, held in the `inbox` table until they are due.
+"""Reminders a member set for themselves, held in the `inbox` table until they are due.
 
-A member asks to be reminded about one issue at one moment. The reminder is one
-pending row in that member's own reminder partition, keyed by the issue, so a
-member holds at most one reminder per issue and setting another replaces it. Each
+A member asks to be reminded about one issue, project, initiative or document at
+one moment. The reminder is one pending row in that member's own reminder
+partition, keyed by its subject, so a member holds at most one reminder per
+subject and setting another replaces it. An issue's subject key is its bare id,
+as it always was, and every other kind is `<entity_type>#<id>`, so the two can
+never collide and rows written before other kinds existed read unchanged. The
+subject key is also written as `issue_id`, the attribute those older rows carry. Each
 pending row also writes a due marker into one shared partition, keyed by the
 moment it is due, so the scheduled tick reads only what is due rather than every
 member's reminders.
@@ -15,10 +19,10 @@ consumer already hold. The table's TTL drops a reminder nothing ever delivered.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from webbpulse.dynamodb import ConditionFailed, Repository
 
 from app.common.db.dynamo.base import as_item, utc_now
@@ -29,6 +33,33 @@ _PENDING_PREFIX = "issue_reminder#"
 
 REMINDER_GRACE = timedelta(days=7)
 """How long a reminder survives past its moment before the table TTL drops it unsent."""
+
+
+ReminderEntity = Literal["issue", "project", "initiative", "document"]
+"""The kinds of subject a reminder may be set on."""
+
+REMINDER_ENTITIES: tuple[str, ...] = ("issue", "project", "initiative", "document")
+
+
+def subject_key(entity_type: str, entity_id: str) -> str:
+    """The sort key one subject's pending reminder is filed under: a bare id for an issue, typed for the rest."""
+    return entity_id if entity_type == "issue" else f"{entity_type}#{entity_id}"
+
+
+def _split_subject(key: str) -> tuple[str, str]:
+    """The entity type and id a subject key names, an untyped key being an issue."""
+    head, _, tail = key.partition("#")
+    if tail and head in REMINDER_ENTITIES:
+        return head, tail
+    return "issue", key
+
+
+def _legacy_fields(data: Any) -> Any:
+    """Fill the entity type and id of a stored row from its `issue_id`, for rows written before they existed."""
+    if not isinstance(data, dict) or data.get("entity_id"):
+        return data
+    entity_type, entity_id = _split_subject(str(data.get("issue_id") or ""))
+    return {**data, "entity_type": entity_type, "entity_id": entity_id}
 
 
 def reminder_partition(workspace_id: str, user_id: str) -> str:
@@ -43,7 +74,7 @@ def _stamp(moment: datetime) -> str:
 
 def _marker(reminder: "IssueReminder") -> str:
     """The due partition sort key one reminder is filed under."""
-    return f"{_stamp(reminder.remind_at)}#{reminder.workspace_id}#{reminder.user_id}#{reminder.issue_id}"
+    return f"{_stamp(reminder.remind_at)}#{reminder.workspace_id}#{reminder.user_id}#{reminder.subject}"
 
 
 def _expiry(remind_at: datetime) -> int:
@@ -52,13 +83,30 @@ def _expiry(remind_at: datetime) -> int:
 
 
 class IssueReminder(BaseModel):
-    """One pending reminder: who asked, about which issue, and when it is due."""
+    """One pending reminder: who asked, about which subject, and when it is due."""
 
     workspace_id: str
     user_id: str
-    issue_id: str
+    entity_type: ReminderEntity = "issue"
+    entity_id: str
     remind_at: datetime
     created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_legacy(cls, data: Any) -> Any:
+        """Read a row written before reminders named their entity type and id."""
+        return _legacy_fields(data)
+
+    @property
+    def subject(self) -> str:
+        """The sort key this reminder's pending row is filed under."""
+        return subject_key(self.entity_type, self.entity_id)
+
+    @property
+    def issue_id(self) -> str:
+        """The issue this reminder is about, or empty for any other kind of subject."""
+        return self.entity_id if self.entity_type == "issue" else ""
 
 
 class DueReminder(BaseModel):
@@ -66,24 +114,44 @@ class DueReminder(BaseModel):
 
     workspace_id: str
     user_id: str
-    issue_id: str
+    entity_type: ReminderEntity = "issue"
+    entity_id: str
     remind_at: datetime
     marker: str
 
+    @model_validator(mode="before")
+    @classmethod
+    def fill_legacy(cls, data: Any) -> Any:
+        """Read a row written before reminders named their entity type and id."""
+        return _legacy_fields(data)
+
+    @property
+    def subject(self) -> str:
+        """The sort key the pending row this marker stands for is filed under."""
+        return subject_key(self.entity_type, self.entity_id)
+
+    @property
+    def issue_id(self) -> str:
+        """The issue this marker is about, or empty for any other kind of subject."""
+        return self.entity_id if self.entity_type == "issue" else ""
+
 
 class IssueReminderStore:
-    """Writes, lists and cancels issue reminders, and hands due ones to the tick."""
+    """Writes, lists and cancels reminders, and hands due ones to the tick."""
 
     def __init__(self, repository: Repository) -> None:
         """Share the `inbox` table's package repository."""
         self._repository = repository
 
-    def get(self, workspace_id: str, user_id: str, issue_id: str) -> IssueReminder | None:
-        """One member's pending reminder on one issue, or `None`."""
-        if not workspace_id or not user_id or not issue_id:
+    def get(self, workspace_id: str, user_id: str, entity_id: str, entity_type: str = "issue") -> IssueReminder | None:
+        """One member's pending reminder on one subject, an issue unless `entity_type` says otherwise, or `None`."""
+        if not workspace_id or not user_id or not entity_id:
             return None
         item = self._repository.get(
-            {"ws_user": reminder_partition(workspace_id, user_id), "notification_id": issue_id},
+            {
+                "ws_user": reminder_partition(workspace_id, user_id),
+                "notification_id": subject_key(entity_type, entity_id),
+            },
             consistent=True,
         )
         return IssueReminder.model_validate(dict(item)) if item is not None else None
@@ -94,28 +162,30 @@ class IssueReminderStore:
             Key("ws_user").eq(reminder_partition(workspace_id, user_id)), consistent=True
         )
         reminders = [IssueReminder.model_validate(dict(item)) for item in items]
-        return sorted(reminders, key=lambda reminder: (reminder.remind_at, reminder.issue_id))
+        return sorted(reminders, key=lambda reminder: (reminder.remind_at, reminder.subject))
 
     def set(
         self,
         workspace_id: str,
         user_id: str,
-        issue_id: str,
+        entity_id: str,
         remind_at: datetime,
         now: datetime | None = None,
+        entity_type: ReminderEntity = "issue",
     ) -> IssueReminder:
-        """Set one member's reminder on one issue, replacing any reminder already there.
+        """Set one member's reminder on one subject, replacing any reminder already there.
 
         The due marker is written before the pending row, so a reminder that is
         listed always has a marker to be delivered by. A replaced reminder's old
         marker is deleted after, and a marker left behind by a failure part way is
         dropped at delivery because its moment no longer matches the pending row.
         """
-        previous = self.get(workspace_id, user_id, issue_id)
+        previous = self.get(workspace_id, user_id, entity_id, entity_type)
         reminder = IssueReminder(
             workspace_id=workspace_id,
             user_id=user_id,
-            issue_id=issue_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
             remind_at=remind_at,
             created_at=now or utc_now(),
         )
@@ -127,7 +197,9 @@ class IssueReminderStore:
                 "notification_id": marker,
                 "workspace_id": workspace_id,
                 "user_id": user_id,
-                "issue_id": issue_id,
+                "issue_id": reminder.subject,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
                 "remind_at": _stamp(remind_at),
                 "expires_at": expiry,
             }
@@ -136,7 +208,8 @@ class IssueReminderStore:
             as_item(
                 reminder,
                 ws_user=reminder_partition(workspace_id, user_id),
-                notification_id=issue_id,
+                notification_id=reminder.subject,
+                issue_id=reminder.subject,
                 remind_at=_stamp(remind_at),
                 expires_at=expiry,
             )
@@ -145,13 +218,15 @@ class IssueReminderStore:
             self._repository.delete({"ws_user": DUE_PARTITION, "notification_id": _marker(previous)})
         return reminder
 
-    def cancel(self, workspace_id: str, user_id: str, issue_id: str) -> bool:
-        """Cancel one member's reminder on one issue, reporting whether one was pending."""
-        reminder = self.get(workspace_id, user_id, issue_id)
+    def cancel(self, workspace_id: str, user_id: str, entity_id: str, entity_type: str = "issue") -> bool:
+        """Cancel one member's reminder on one subject, reporting whether one was pending."""
+        reminder = self.get(workspace_id, user_id, entity_id, entity_type)
         if reminder is None:
             return False
         self._repository.delete({"ws_user": DUE_PARTITION, "notification_id": _marker(reminder)})
-        self._repository.delete({"ws_user": reminder_partition(workspace_id, user_id), "notification_id": issue_id})
+        self._repository.delete(
+            {"ws_user": reminder_partition(workspace_id, user_id), "notification_id": reminder.subject}
+        )
         return True
 
     def due(self, cutoff: datetime, *, limit: int) -> list[DueReminder]:
@@ -162,12 +237,16 @@ class IssueReminderStore:
             consistent=True,
         )
         return [
-            DueReminder(
-                workspace_id=str(item["workspace_id"]),
-                user_id=str(item["user_id"]),
-                issue_id=str(item["issue_id"]),
-                remind_at=datetime.fromisoformat(str(item["remind_at"])),
-                marker=str(item["notification_id"]),
+            DueReminder.model_validate(
+                {
+                    "workspace_id": str(item["workspace_id"]),
+                    "user_id": str(item["user_id"]),
+                    "issue_id": str(item.get("issue_id") or ""),
+                    "entity_type": str(item.get("entity_type") or "issue"),
+                    "entity_id": str(item.get("entity_id") or ""),
+                    "remind_at": datetime.fromisoformat(str(item["remind_at"])),
+                    "marker": str(item["notification_id"]),
+                }
             )
             for item in page.items
         ]
@@ -195,7 +274,9 @@ class IssueReminderStore:
                 "notification_id": due.marker,
                 "workspace_id": due.workspace_id,
                 "user_id": due.user_id,
-                "issue_id": due.issue_id,
+                "issue_id": due.subject,
+                "entity_type": due.entity_type,
+                "entity_id": due.entity_id,
                 "remind_at": _stamp(due.remind_at),
                 "expires_at": _expiry(due.remind_at),
             }
@@ -210,7 +291,7 @@ class IssueReminderStore:
         """
         try:
             self._repository.delete(
-                {"ws_user": reminder_partition(due.workspace_id, due.user_id), "notification_id": due.issue_id},
+                {"ws_user": reminder_partition(due.workspace_id, due.user_id), "notification_id": due.subject},
                 condition=Attr("remind_at").eq(_stamp(due.remind_at)),
             )
         except ConditionFailed:
@@ -227,7 +308,7 @@ class IssueReminderStore:
         )
         return self._repository.delete_many(
             [
-                {"ws_user": reminder_partition(workspace_id, user_id), "notification_id": reminder.issue_id}
+                {"ws_user": reminder_partition(workspace_id, user_id), "notification_id": reminder.subject}
                 for reminder in reminders
             ]
         )

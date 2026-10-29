@@ -704,6 +704,81 @@ class TestDiscussionDomain:
         gone = api.get(path)
         assert gone.status_code == 404, gone.text[:400]
 
+    @WRITES
+    def test_document_and_update_reply_drafts_are_saved_restored_and_discarded(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A draft on a document thread and on project and initiative update threads reads back, lists and goes.
+
+        Each parent kind has its own route under the drafts prefix, and the
+        listing filters by the parent's id, so all three are driven here.
+        """
+        base = f"/api/workspaces/{workspace['id']}"
+        drafts = f"{base}/drafts"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("draft-project")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        initiative = _created(
+            api.post(f"{base}/initiatives", json={"name": run_scope.name("draft-init")}), "initiative"
+        )
+        initiative_path = f"{base}/initiatives/{initiative['id']}"
+        try:
+            document = _created(
+                api.post(f"{project_path}/documents", json={"title": run_scope.name("draft-doc")}), "document"
+            )
+            project_update = _created(
+                api.post(
+                    f"{project_path}/updates", json={"body": run_scope.name("draft-update"), "health": "on_track"}
+                ),
+                "update",
+            )
+            initiative_update = _created(
+                api.post(
+                    f"{initiative_path}/updates",
+                    json={"body": run_scope.name("draft-init-update"), "health": "on_track"},
+                ),
+                "update",
+            )
+            threads = (
+                (f"{drafts}/documents/{document['id']}", {"document_id": document["id"]}, "document"),
+                (
+                    f"{drafts}/update-replies/projects/{project['id']}/{project_update['id']}",
+                    {"update_id": project_update["id"]},
+                    "project_update",
+                ),
+                (
+                    f"{drafts}/update-replies/initiatives/{initiative['id']}/{initiative_update['id']}",
+                    {"update_id": initiative_update["id"]},
+                    "initiative_update",
+                ),
+            )
+            for path, scope, kind in threads:
+                body = run_scope.name(f"{kind} draft")
+
+                saved = api.put(path, json={"body": body})
+                assert saved.status_code == 200, saved.text[:400]
+                assert saved.json()["parent_kind"] == kind
+
+                readback = api.get(path)
+                assert readback.status_code == 200, readback.text[:400]
+                assert readback.json()["body"] == body
+
+                listed = api.get(drafts, params=scope)
+                assert listed.status_code == 200, listed.text[:400]
+                assert [row["body"] for row in listed.json()["drafts"]] == [body]
+
+                for _ in range(2):
+                    discarded = api.delete(path)
+                    assert discarded.status_code == 204, discarded.text[:400]
+
+                gone = api.get(path)
+                assert gone.status_code == 404, gone.text[:400]
+        finally:
+            api.delete(initiative_path)
+            api.delete(project_path, params={"team_id": team["id"]})
+
 
 class TestViewsDomain:
     """The read surfaces a signed in user lands on: the board, the inbox and search."""
@@ -2241,17 +2316,19 @@ class TestShareLinks:
         assert anon.get(f"/api/shared/{token}").status_code == 404
 
     @WRITES
-    def test_a_view_share_lists_its_issues_anonymously(
+    def test_a_view_share_needs_the_standard_plan(
         self,
         api: Any,
-        anon: Any,
         run_scope: RunScope,
         workspace: "dict[str, Any]",
         share_team: "dict[str, Any]",
-        share_issue: "dict[str, Any]",
         track: Any,
     ) -> None:
-        """A team view link lists the view's issues as summaries and refuses the issue route."""
+        """On the run's Free workspace a team view link answers the public roadmap plan refusal.
+
+        The anonymous view read itself runs in `e2e/test_view_share.py`, on the local
+        stack alone, where the comp grant script can lift a workspace to Standard.
+        """
         views = f"/api/workspaces/{workspace['id']}/views"
         body = {
             "name": run_scope.name("shared-view"),
@@ -2263,23 +2340,12 @@ class TestShareLinks:
         view = _created(api.post(views, json=body), "team view")
         track(f"{views}/{view['id']}")
 
-        path = f"/api/workspaces/{workspace['id']}/share-links"
-        link = _created(api.post(path, json={"target_type": "view", "target_id": view["id"]}), "share token")
-        track(f"{path}/{link['token_hash']}")
-        token = link["token"]
-
-        heading = anon.get(f"/api/shared/{token}")
-        assert heading.status_code == 200, heading.text[:400]
-        assert heading.json()["target_type"] == "view"
-        assert heading.json()["team_name"] == share_team["name"]
-
-        page = anon.get(f"/api/shared/{token}/view")
-        assert page.status_code == 200, page.text[:400]
-        rows = _items(page.json(), "issues")
-        assert share_issue["title"] in [row["title"] for row in rows]
-        assert all(not {"id", "issue_id", "team_id"} & set(row) for row in rows)
-
-        assert anon.get(f"/api/shared/{token}/issue").status_code == 404
+        refused = api.post(
+            f"/api/workspaces/{workspace['id']}/share-links", json={"target_type": "view", "target_id": view["id"]}
+        )
+        assert refused.status_code == 403, refused.text[:400]
+        assert refused.json()["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
+        assert refused.json()["details"]["required_plan"] == "standard"
 
 
 IMPORT_TIMEOUT_SECONDS = 180.0
@@ -2733,7 +2799,7 @@ class TestSlackApp:
         assert "slack=invalid_state" in response.headers.get("location", ""), response.headers.get("location")
 
     def test_signed_requests_are_answered_on_a_local_stack(self) -> None:
-        """A signed challenge is echoed and a signed command from an unknown Slack team is turned away politely."""
+        """A signed challenge is echoed, and signed commands and request forms from an unknown team are turned away."""
         secret = os.environ.get(SLACK_SIGNING_ENV, "")
         base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
         if not secret or not base_url:
@@ -2757,6 +2823,22 @@ class TestSlackApp:
             assert replied.status_code == 200, replied.text[:400]
             assert replied.json()["response_type"] == "ephemeral", replied.json()
             assert "not connected" in replied.json()["text"], replied.json()
+
+            for interaction in (
+                {"type": "shortcut", "callback_id": "submit_request", "team": {"id": "TE2EUNKNOWN"}},
+                {
+                    "type": "view_submission",
+                    "team": {"id": "TE2EUNKNOWN"},
+                    "view": {"callback_id": "standupless_request_form", "state": {"values": {}}},
+                },
+            ):
+                signed = urlencode({"payload": json.dumps(interaction)}).encode()
+                ignored = client.post(
+                    "/api/slack/interactions",
+                    content=signed,
+                    headers={"content-type": "application/x-www-form-urlencoded", **_slack_signed(secret, signed)},
+                )
+                assert ignored.status_code == 200, ignored.text[:400]
 
             stale = client.post(
                 "/api/slack/events",

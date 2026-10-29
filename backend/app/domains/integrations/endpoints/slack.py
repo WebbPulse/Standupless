@@ -304,7 +304,7 @@ def _installation(repositories: Repositories, slack_team_id: str) -> SlackInstal
 
 
 def _handle_event(repositories: Repositories, envelope: Mapping[str, Any]) -> None:
-    """Act on one `event_callback`: an unfurl, a reply in a synced thread, an intake reaction, or the App leaving."""
+    """Act on one `event_callback`: an unfurl, a thread reply, an intake reaction or message, or the App leaving."""
     event = envelope.get("event") or {}
     if not isinstance(event, Mapping):
         return
@@ -327,6 +327,7 @@ def _handle_event(repositories: Repositories, envelope: Mapping[str, Any]) -> No
         installation = _installation(repositories, slack_team_id)
         if installation is not None:
             threads.receive(repositories, installation, event)
+            reactions.receive_message(repositories, installation, event)
         return
     if kind == "reaction_added":
         installation = _installation(repositories, slack_team_id)
@@ -352,7 +353,12 @@ async def receive_slack_event(request: Request, repositories: Bundle) -> Respons
     if envelope.get("type") != "event_callback":
         return JSONResponse({"ok": True})
     event = envelope.get("event") or {}
-    if isinstance(event, Mapping) and event.get("type") == "message" and not threads.wanted(event):
+    if (
+        isinstance(event, Mapping)
+        and event.get("type") == "message"
+        and not threads.wanted(event)
+        and not reactions.message_wanted(event)
+    ):
         return JSONResponse({"ok": True})
     if isinstance(event, Mapping) and event.get("type") == "reaction_added" and not reactions.wanted(event):
         return JSONResponse({"ok": True})
@@ -384,7 +390,7 @@ async def receive_slack_command(request: Request, repositories: Bundle) -> Respo
 
 @public_router.post("/slack/interactions", responses=SIGNED_RESPONSES)
 async def receive_slack_interaction(request: Request, repositories: Bundle) -> Response:
-    """Verify one interactivity request: the message shortcut, or the create issue form being submitted."""
+    """Verify one interactivity request: a shortcut, or the create issue or request form being submitted."""
     _require_configured()
     body = await _verified_body(request)
     if body is None:

@@ -166,7 +166,7 @@ def issue_candidates(
     repositories: Repositories, event_name: str, new: Mapping[str, Any], old: Mapping[str, Any]
 ) -> list[Candidate]:
     """What one issue write could announce, most specific first."""
-    if event_name not in ("INSERT", "MODIFY") or not new or new.get("archived_at"):
+    if event_name not in ("INSERT", "MODIFY") or not new or new.get("archived_at") or new.get("private"):
         return []
     workspace_id = str(new.get("workspace_id", ""))
     team_id = str(new.get("team_id", ""))
@@ -211,7 +211,7 @@ def comment_candidates(repositories: Repositories, event_name: str, new: Mapping
         return []
     workspace_id = str(new.get("workspace_id", ""))
     issue = repositories.issues.get(workspace_id, str(new.get("issue_id", "")))
-    if issue is None or issue.archived_at is not None:
+    if issue is None or issue.archived_at is not None or issue.private:
         return []
     key = _key(repositories, workspace_id, issue.team_id, issue.key)
     actor = _actor(repositories, new.get("author_id"))

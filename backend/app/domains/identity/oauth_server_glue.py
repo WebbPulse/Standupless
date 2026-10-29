@@ -79,15 +79,23 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
     clients = DynamoOAuthClientStore(repository(OAUTH_CLIENTS_TABLE))
 
     class AuditedConsentStore(DynamoConsentStore):
-        """The package's consent store, recording each first grant in the workspace audit log."""
+        """The package's consent store, recording each first grant in the workspace audit log.
+
+        A re-authorization, a step-up that unions new scopes into the grant among them,
+        replaces the stored consent under the same id and keeps its `granted_at`, so it
+        is not audited as a new authorization. Whether a grant is new is read from the
+        store before the write rather than from its timestamps, which share a second
+        when a client authorizes twice in quick succession.
+        """
 
         def put(self, record: ConsentRecord) -> None:
             """Hold an app the workspace must approve, write the grant, then audit it when it is new."""
             from app.domains.identity.app_approval_gate import gate_consent
 
             gate_consent(clients, self, record)
+            first_grant = self.get(record.consent_id) is None
             super().put(record)
-            if record.tenant_id and (not record.granted_at or record.granted_at == record.updated_at):
+            if record.tenant_id and first_grant:
                 client = clients.get(record.client_id)
                 audit_connected_app(
                     record.tenant_id,

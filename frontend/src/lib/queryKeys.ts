@@ -197,6 +197,13 @@ export const issueKey = (workspaceId: string, issueId: string): QueryKey => [
   issueId,
 ];
 
+/** The issue a key mentioned in a body names, read through the batch lookup. */
+export const issueMentionKey = (workspaceId: string, key: string): QueryKey => [
+  'issue-mention',
+  workspaceId,
+  key.toUpperCase(),
+];
+
 /** One team's recently deleted issues, the trash a restore takes them out of. */
 export const trashKey = (workspaceId: string, teamId: string): QueryKey => [
   'issue-trash',
@@ -356,6 +363,13 @@ export const issueReminderKey = (
   issueId: string
 ): QueryKey => ['issue-reminder', workspaceId, issueId];
 
+/** The caller's pending reminder on one project, initiative or document. */
+export const entityReminderKey = (
+  workspaceId: string,
+  entityType: string,
+  entityId: string
+): QueryKey => ['entity-reminder', workspaceId, entityType, entityId];
+
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
@@ -407,12 +421,16 @@ export const pulseFollowKey = (
   subjectId: string
 ): QueryKey => ['pulse-follow', workspaceId, subject, subjectId];
 
-/** One team's triage inbox, waiting or snoozed. */
+/** One team's triage inbox, waiting or snoozed, under one requester filter when it has one. */
 export const triageKey = (
   workspaceId: string,
   teamId: string,
-  snoozed: boolean
-): QueryKey => ['triage', workspaceId, teamId, snoozed];
+  snoozed: boolean,
+  requester = ''
+): QueryKey =>
+  requester === ''
+    ? ['triage', workspaceId, teamId, snoozed]
+    : ['triage', workspaceId, teamId, snoozed, requester];
 
 /** The per-team triage counts, polled by the sidebar on every page. */
 export const triageSummaryKey = (workspaceId: string): QueryKey => [
@@ -905,6 +923,12 @@ export const memberActivityKey = (
   workspaceId: string,
   userId: string
 ): QueryKey => ['member', workspaceId, userId, 'activity'];
+
+/** The issues one member recently touched, one row per issue. */
+export const memberIssuesKey = (
+  workspaceId: string,
+  userId: string
+): QueryKey => ['member', workspaceId, userId, 'issues'];
 
 /** One cycle's detail as the cycle page reads it. */
 export const cycleKey = (

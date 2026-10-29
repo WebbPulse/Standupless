@@ -24,6 +24,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.search_index import parse_query
 from app.common.issue_keys import current
+from app.common.issue_privacy import can_see_issue
 from app.domains.integrations.schemas.pull_requests import PullRequestHitRead
 
 PR_REFERENCE = re.compile(r"^(?:([A-Za-z0-9_.-]+)/)?([A-Za-z0-9_.-]+)#(\d+)$")
@@ -140,7 +141,9 @@ def search_pull_requests(
         )
         for rows in chunk:
             visible = [
-                row for row in rows if row.issue_id in issues and context.can_see_team(issues[row.issue_id].team_id)
+                row
+                for row in rows
+                if row.issue_id in issues and can_see_issue(repositories, context, issues[row.issue_id])
             ]
             if not visible:
                 continue

@@ -89,6 +89,10 @@ import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
 import { useSidebarPreference } from '../../hooks/useSidebarPreference';
 import { useCyclesOn } from '../../hooks/useCyclesOn';
+import {
+  useSidebarIssueDrop,
+  type IssueDropHandlers,
+} from '../../hooks/useSidebarIssueDrop';
 import { cn } from '../../lib/cn';
 import { useTriageSummary } from '../../hooks/useSidebarData';
 import {
@@ -331,6 +335,8 @@ interface TeamSectionProps {
   onDragEnter: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
+  /** Takes issues dragged out of a list or board, moving them into the team. */
+  issueDrop: IssueDropHandlers;
   /** Opens the create team dialog with this team as the parent, or undefined when it cannot take one. */
   onCreateSubTeam?: (() => void) | undefined;
 }
@@ -365,6 +371,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onDragEnter,
   onDragEnd,
   onDrop,
+  issueDrop,
   onCreateSubTeam,
 }) => {
   const panelId = `team-nav-${team.id}`;
@@ -394,11 +401,17 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         event.dataTransfer.setData('text/plain', team.id);
         onDragStart();
       }}
-      onDragEnter={onDragEnter}
+      onDragEnter={(event) => {
+        if (issueDrop.onDragOver(event)) return;
+        onDragEnter();
+      }}
       onDragOver={(event) => {
+        if (issueDrop.onDragOver(event)) return;
         if (canReorder) event.preventDefault();
       }}
+      onDragLeave={issueDrop.onDragLeave}
       onDrop={(event) => {
+        if (issueDrop.onDrop(event)) return;
         event.preventDefault();
         onDrop();
       }}
@@ -432,11 +445,13 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         aria-expanded={isOpen}
         aria-controls={panelId}
         aria-keyshortcuts={canReorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
+        data-issue-drop={issueDrop.over ? 'over' : undefined}
         className={cn(
           'flex h-7 w-full items-center gap-1.5 rounded-sm pr-8 pl-2 text-sm transition-colors duration-100 pointer-coarse:h-11 pointer-coarse:pr-12',
           'text-text-muted',
           HOVER,
-          FOCUS
+          FOCUS,
+          issueDrop.over && 'bg-raised text-text ring-1 ring-accent'
         )}
       >
         <Avatar
@@ -659,6 +674,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const createIssue = useCreateIssue();
   const createTeam = useCreateTeam();
+  const issueDrop = useSidebarIssueDrop(workspace.id, workspace.role);
   const memberships = useContext(WorkspaceContext)?.workspaces;
   const switchable =
     memberships === undefined || memberships.length === 0
@@ -1110,6 +1126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           workspaceId={workspace.id}
           slug={slug}
           teams={teams}
+          issueDrop={issueDrop}
           rowClass={itemClass}
           onNavigate={onNavigate}
           heading={
@@ -1231,6 +1248,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       if (dragFrom !== null) setDragOver(index);
                     }}
                     onDragEnd={endDrag}
+                    issueDrop={issueDrop.handlersFor({ kind: 'team', team })}
                     onCreateSubTeam={
                       createTeam.canCreate &&
                       (team.parent_team_id === null ||
@@ -1366,6 +1384,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           setStatusOpen(false);
         }}
       />
+      {issueDrop.dialog}
       <PauseNotificationsDialog
         open={pauseOpen}
         control={notificationPause}

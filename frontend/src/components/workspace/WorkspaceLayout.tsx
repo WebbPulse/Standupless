@@ -139,6 +139,7 @@ const presetOf = (request: Request): CreateIssuePreset => {
     title: request.title,
     description: request.description,
     relatedIssueId: request.relatedIssueId,
+    links: request.links,
     keepAsDraft: request.keepAsDraft,
   };
   return Object.fromEntries(

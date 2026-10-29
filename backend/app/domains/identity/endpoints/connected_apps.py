@@ -6,9 +6,9 @@ and shows the caller their own grants across workspaces. The workspace router si
 under `/api/workspaces/{workspace_id}/connected-apps` and shows an admin every
 member's grant in that workspace.
 
-Granting new permissions adds scopes the product introduced after a client was
-authorized to the person's existing grant, only the ones they approved, so the
-client's next refresh carries them without a new authorization.
+A client gains scopes the product introduced after it was authorized by asking
+for them at `/authorize` again. The authorization server keeps the scopes the grant
+already held and adds the newly approved ones under the same consent.
 
 Revoking goes through the package's `revoke_authorization`, which deletes the
 consent and revokes the refresh families behind it, so the client has to authorize
@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from app.common import audit
 from app.common.api.dependencies.authz import (
@@ -43,13 +43,11 @@ from app.domains.identity.connected_apps import (
     AuthorizationServer,
     ConnectedApp,
     Grant,
-    add_scopes,
     build_authorization_server,
     grants_for_user,
     grants_for_workspace,
     group_by_client,
 )
-from app.domains.identity.oauth_server_glue import MCP_SCOPES
 
 account_router = APIRouter()
 
@@ -89,22 +87,6 @@ class ConnectedAppListRead(BaseModel):
     """The caller's connected apps, most recently used first."""
 
     apps: list[ConnectedAppRead]
-
-
-class ConnectedAppScopesGrant(BaseModel):
-    """The new permissions the caller approved for one client, and optionally where."""
-
-    scopes: list[str] = Field(..., min_length=1, max_length=len(MCP_SCOPES))
-    workspace_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
-
-    @field_validator("scopes")
-    @classmethod
-    def _known(cls, value: list[str]) -> list[str]:
-        """Refuse a scope the authorization server does not offer, rather than dropping it."""
-        unknown = sorted(set(value) - set(MCP_SCOPES))
-        if unknown:
-            raise ValueError(f"Unknown scope: {', '.join(unknown)}")
-        return value
 
 
 class ConnectedAppMemberRead(BaseModel):
@@ -158,54 +140,6 @@ def list_my_connected_apps(
     workspaces = repositories.workspaces.get_many(workspace_ids) if workspace_ids else {}
     names = {workspace_id: workspace.name for workspace_id, workspace in workspaces.items()}
     return ConnectedAppListRead(apps=[_app_read(app, names) for app in apps])
-
-
-@account_router.post(
-    "/me/connected-apps/{client_id}/scopes",
-    response_model=ConnectedAppRead,
-    dependencies=[Depends(require_person)],
-)
-def grant_my_connected_app_scopes(
-    payload: ConnectedAppScopesGrant,
-    request: Request,
-    subject: Annotated[str, Depends(caller_subject)],
-    repositories: Annotated[Repositories, Depends(get_repositories)],
-    server: Annotated[AuthorizationServer, Depends(get_authorization_server)],
-    client_id: str = Path(..., min_length=1, max_length=256),
-) -> ConnectedAppRead:
-    """Add the approved scopes to the caller's existing grants to one client.
-
-    The client keeps its refresh tokens, and its next refresh carries the new scopes,
-    so it gains them without a new authorization. Every request still intersects them
-    with the caller's live role, so a scope the role cannot hold stays inert. A client
-    the caller never authorized, or never in the named workspace, is a 404.
-    """
-    grants = [
-        grant
-        for grant in grants_for_user(server.stores, subject)
-        if grant.client_id == client_id and (payload.workspace_id is None or grant.tenant_id == payload.workspace_id)
-    ]
-    if not grants:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
-    changes = add_scopes(server.stores, subject, client_id, payload.scopes, workspace_id=payload.workspace_id or "")
-    label = _client_label(server, client_id)
-    for before, after in changes:
-        if after.tenant_id:
-            audit.record(
-                repositories,
-                request_context(request, after.tenant_id, subject, ""),
-                "connected_app.scopes_granted",
-                target_type="connected_app",
-                target_id=client_id,
-                target_label=label,
-                before={"scopes": list(before.scopes)},
-                after={"scopes": list(after.scopes)},
-            )
-    apps = [app for app in group_by_client(grants_for_user(server.stores, subject)) if app.client_id == client_id]
-    workspace_ids = sorted({grant.tenant_id for app in apps for grant in app.grants})
-    workspaces = repositories.workspaces.get_many(workspace_ids) if workspace_ids else {}
-    names = {workspace_id: workspace.name for workspace_id, workspace in workspaces.items()}
-    return _app_read(apps[0], names)
 
 
 @account_router.delete(

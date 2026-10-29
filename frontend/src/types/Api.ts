@@ -1107,6 +1107,22 @@ export interface PullRequestSummaryRead {
 }
 
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
+/** Who asked for an issue that came in through Slack or email intake. */
+export interface IssueRequester {
+  source: 'slack' | 'email';
+  /** The person's name as Slack or the mail sender gave it, empty when only an address was known. */
+  name: string;
+  /** The Slack handle, without the at sign. */
+  handle?: string | null;
+  /** The sender's address masked to its first character and domain. */
+  masked_email?: string | null;
+  avatar_url?: string | null;
+  /** The Slack user id. */
+  external_id?: string | null;
+  /** The member the requester is, when their verified address names one. */
+  user_id?: string | null;
+}
+
 export interface IssueRead {
   id: string;
   workspace_id: string;
@@ -1201,6 +1217,17 @@ export interface IssueRead {
    */
   external_ref?: string | null;
   /**
+   * Who asked for the issue through Slack or email intake, kept even when they
+   * hold no seat. Null for issues created in Standupless. The address is
+   * already masked, so no response carries a full one.
+   */
+  requester?: IssueRequester | null;
+  /**
+   * A private ask from a Slack DM or private channel, read only by its
+   * requester, its creator and assignee, and the team's explicit members.
+   */
+  private?: boolean;
+  /**
    * When the issue first landed in a started status, kept after it moves on.
    * Optional so a row read before it was stamped reads as none.
    */
@@ -1215,6 +1242,12 @@ export interface IssueRead {
    * else. Optional so a row read before it was stamped reads as none.
    */
   cancelled_at?: string | null;
+  /**
+   * When the issue joined the cycle it sits in, null outside a cycle.
+   * Optional so a row read before it was stamped reads as none, which the
+   * "Added to cycle" filter treats as planned.
+   */
+  cycle_added_at?: string | null;
   /**
    * When the issue entered its current status, for time in status. Optional
    * so a row built on the client before the server stamps it reads its
@@ -1246,6 +1279,13 @@ export interface DeletedIssueListRead {
   issues: IssueRead[];
   /** How many days a deleted issue stays restorable before it is purged. */
   retention_days: number;
+}
+
+/** The issues a batch of keys names, for the issue chips a body draws. */
+export interface IssueLookupRead {
+  issues: IssueRead[];
+  /** Each requested key, uppercased, to the id of the issue it names. */
+  resolved: Record<string, string>;
 }
 
 /** The body the issue list and children routes answer with. */
@@ -1413,6 +1453,8 @@ export interface TemplateCreate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** The questions that make an issue template a form. */
   form_fields?: FormField[];
+  /** Offers the form in the Slack App's request picker. */
+  in_slack?: boolean;
   /** The sub-issues an issue template creates under each issue made from it. */
   sub_issues?: TemplateSubIssue[];
 }
@@ -1425,6 +1467,8 @@ export interface TemplateUpdate extends TemplateFields {
   project?: ProjectTemplateFields | null;
   /** Replaces a form's questions; null or an empty list turns the form off. */
   form_fields?: FormField[] | null;
+  /** Offers the form in the Slack App's request picker, or stops offering it. */
+  in_slack?: boolean;
   /** Replaces an issue template's sub-issues; null or an empty list removes them. */
   sub_issues?: TemplateSubIssue[] | null;
 }
@@ -1454,6 +1498,8 @@ export interface TemplateRead {
   project?: ProjectBlueprint | null;
   /** A form template's questions; empty, or absent on an older answer, on any other template. */
   form_fields?: FormFieldRead[];
+  /** Whether the Slack App's request picker offers this form; absent on an older answer. */
+  in_slack?: boolean;
   /** An issue template's sub-issues, in order; empty, or absent on an older answer, on any other template. */
   sub_issues?: TemplateSubIssueRead[];
   position: number;
@@ -1740,9 +1786,9 @@ export interface ReactionGroup {
 }
 
 /**
- * The passage of the issue description a root comment is pinned to: the
- * quoted text and a little of the text either side, which finds it again
- * among repeats. The description itself is never rewritten.
+ * The passage of the issue description or the document a root comment is
+ * pinned to: the quoted text and a little of the text either side, which finds it again
+ * among repeats. The text itself is never rewritten.
  */
 export interface CommentAnchor {
   quote: string;
@@ -1777,7 +1823,7 @@ export interface CommentRead {
   slack_thread?: SlackThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
-  /** The description passage a root comment is pinned to, when it is. */
+  /** The passage of the description or document a root comment is pinned to, when it is. */
   anchor?: CommentAnchor | null;
   /** The document the comment was written on; null on an issue's comment. */
   document_id?: string | null;
@@ -2422,6 +2468,30 @@ export interface IssueReminderListRead {
   reminders: IssueReminderRead[];
 }
 
+/** What a reminder can be set on. */
+export type ReminderEntityType =
+  'issue' | 'project' | 'initiative' | 'document';
+
+/**
+ * One pending reminder the caller set on an issue, a project, an initiative or
+ * a document, with the subject's title as it reads now. `issue_key` is set for
+ * an issue only, and `team_id` is empty for a subject with no single team.
+ */
+export interface ReminderRead {
+  entity_type: ReminderEntityType;
+  entity_id: string;
+  title: string;
+  issue_key?: string | null;
+  team_id: string;
+  remind_at: string;
+  created_at: string;
+}
+
+/** The caller's pending reminders on every kind of subject, soonest first. */
+export interface ReminderListRead {
+  reminders: ReminderRead[];
+}
+
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {
   updated: number;
@@ -2694,6 +2764,17 @@ export interface CycleSettingsRead {
   auto_add_completed?: boolean;
   move_unfinished: boolean;
   updated_at: string | null;
+}
+
+/**
+ * A team's cycle schedule as a save answers it. `removed_cycles` counts the
+ * empty upcoming cycles a lower upcoming count deleted, and `kept_cycles` the
+ * ones beyond the new count that stayed because they hold issues or were
+ * changed by hand.
+ */
+export interface CycleSettingsSaved extends CycleSettingsRead {
+  removed_cycles?: number;
+  kept_cycles?: number;
 }
 
 /** The editable fields of a team's cycle schedule, each optional. */
@@ -5049,6 +5130,8 @@ export interface SlackIntakeRead {
   reinstall: boolean;
   emoji: string | null;
   channel_ids: string[];
+  /** The channels, among `channel_ids`, where every top-level message is filed. */
+  message_channel_ids: string[];
   updated_at: string | null;
 }
 
@@ -5056,6 +5139,27 @@ export interface SlackIntakeRead {
 export interface SlackIntakeWrite {
   emoji: string;
   channel_ids: string[];
+  /** The picked channels that file every top-level message, not only reacted ones. */
+  message_channel_ids?: string[];
+}
+
+/**
+ * Whether a team posts status changes into the Slack threads its issues came
+ * from. `enabled` is on until a team admin turns it off.
+ */
+export interface SlackStatusPostsRead {
+  configured: boolean;
+  installed: boolean;
+  enabled: boolean;
+  /** Whether the team's Slack request forms offer a private ask. */
+  private_asks: boolean;
+  updated_at: string | null;
+}
+
+/** A team admin's change to the team's Slack settings; a field left out keeps its value. */
+export interface SlackStatusPostsWrite {
+  enabled?: boolean | null;
+  private_asks?: boolean | null;
 }
 
 /** Whether this environment has a Discord App and whether this workspace added it to a server. */
@@ -5981,6 +6085,8 @@ export interface DocumentMentionRead {
 /** One document with its Markdown and the visible issues it mentions. */
 export interface DocumentRead extends DocumentSummaryRead {
   body: string;
+  /** The body's version, sent back as `base_body_version` when editing or restoring it. */
+  body_version?: string;
   mentions: DocumentMentionRead[];
 }
 
@@ -6006,6 +6112,14 @@ export interface DocumentPatch {
   parent_kind?: DocumentParentKind;
   parent_id?: string;
   base_updated_at?: string;
+  /** The `body_version` the body edit started from; a stale one is a `BODY_CHANGED` 409. */
+  base_body_version?: string;
+}
+
+/** The body a document version restore takes. */
+export interface DocumentVersionRestore {
+  /** The `body_version` the restore was chosen against; a stale one is a `BODY_CHANGED` 409. */
+  base_body_version?: string;
 }
 
 /** A list of documents, most recently edited first. */
@@ -6086,15 +6200,25 @@ export interface FavoriteListRead {
   folders?: FavoriteFolderRead[];
 }
 
-/** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
+/** What a comment draft sits on. */
+export type CommentDraftParentKind =
+  'issue' | 'document' | 'project_update' | 'initiative_update';
+
+/** One of the caller's unposted comment drafts, on an issue, a document or an update thread, or one reply thread of them. */
 export interface DraftRead {
-  issue_id: string;
-  /** The root comment a reply draft answers, or null for a draft on the issue itself. */
+  parent_kind?: CommentDraftParentKind;
+  issue_id?: string | null;
+  document_id?: string | null;
+  update_id?: string | null;
+  project_id?: string | null;
+  initiative_id?: string | null;
+  /** The root comment a reply draft answers, or null for a draft on the parent itself. */
   parent_comment_id?: string | null;
-  team_id: string;
+  team_id?: string | null;
   body: string;
   issue_key?: string | null;
   issue_title?: string | null;
+  document_title?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -6107,6 +6231,33 @@ export interface DraftListRead {
 /** The body a draft save takes, replacing what the thread's draft held. */
 export interface DraftWrite {
   body: string;
+}
+
+/** What a status update draft sits on: a project or an initiative. */
+export type UpdateDraftTargetKind = 'project' | 'initiative';
+
+/** The caller's unposted status update on one project or initiative. */
+export interface UpdateDraftRead {
+  target_kind: UpdateDraftTargetKind;
+  project_id?: string | null;
+  initiative_id?: string | null;
+  target_name?: string | null;
+  body: string;
+  /** The health picked so far, or null while none is. */
+  health?: ProjectHealth | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's status update drafts, newest saved first. */
+export interface UpdateDraftListRead {
+  drafts: UpdateDraftRead[];
+}
+
+/** What a status update draft save takes, replacing what the draft held. */
+export interface UpdateDraftWrite {
+  body: string;
+  health?: ProjectHealth | null;
 }
 
 /** Everything a new issue draft save takes, replacing what the draft held. */

@@ -76,6 +76,7 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { canWriteIssues } from '../../lib/capabilities';
+import { useWritable } from '../../hooks/useOffline';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { personAvatar, personLabel } from '../../lib/issuePeople';
@@ -682,7 +683,7 @@ export const Releases: React.FC = () => {
     enabled: !isCreating,
   });
 
-  const canEdit = canWriteIssues(workspace?.role, team?.role);
+  const canEdit = useWritable(canWriteIssues(workspace?.role, team?.role));
 
   const closeDialog = useCallback((): void => {
     setIsCreating(false);

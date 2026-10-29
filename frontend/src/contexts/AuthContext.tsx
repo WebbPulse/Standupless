@@ -204,7 +204,9 @@ const useSignedOutCacheClear = (
 /**
  * Supplies the session calls `@webbpulse/auth` does not own. Mounted inside the
  * package provider so `useAuth` resolves, and holding no user of its own: the
- * package store is the single source of truth.
+ * package store is the single source of truth. A refresh that failed because
+ * the network was down keeps the person signed in, and the package retries it
+ * while the shared reachability signal decides whether the app reads offline.
  */
 const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -224,13 +226,6 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   useTimezoneCapture(isAuthenticated ? user : null, setUser);
   usePreferenceSync(isAuthenticated ? user : null);
   useThemeSync(isAuthenticated ? user : null, setUser);
-
-  const login = useCallback(
-    (userData: UserRead) => {
-      setUser(userData);
-    },
-    [setUser]
-  );
 
   const checkAuthStatus = useCallback(async () => {
     try {
@@ -256,8 +251,8 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   const value = useMemo<AuthExtrasContextType>(
-    () => ({ login, logout, checkAuthStatus }),
-    [login, logout, checkAuthStatus]
+    () => ({ login: setUser, logout, checkAuthStatus }),
+    [setUser, logout, checkAuthStatus]
   );
 
   return (

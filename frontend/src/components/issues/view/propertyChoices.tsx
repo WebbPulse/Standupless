@@ -14,7 +14,10 @@ import { NONE } from '../../../api/issues';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import { isAway, statusSummary } from '../../../lib/userStatus';
-import { CYCLE_STATUS_LABELS } from '../../../lib/planningDisplay';
+import {
+  cycleOptionDetail,
+  pickerCycleOrder,
+} from '../../../lib/planningDisplay';
 import {
   DEFAULT_PROJECT_STATUSES,
   projectStatusOf,
@@ -389,22 +392,20 @@ export const propertyChoices = ({
       break;
     }
     case 'cycle': {
-      const cycles = context.cycles
-        .filter(
-          (cycle) =>
-            teamIds.includes(cycle.team_id) &&
-            (issues.some((issue) => issue.cycle_id === cycle.cycle_id) ||
-              (cycle.status !== 'completed' && cycle.status !== 'cancelled'))
-        )
-        .sort((left, right) => left.start_date.localeCompare(right.start_date));
+      const cycles = context.cycles.filter(
+        (cycle) =>
+          teamIds.includes(cycle.team_id) &&
+          (issues.some((issue) => issue.cycle_id === cycle.cycle_id) ||
+            (cycle.status !== 'completed' && cycle.status !== 'cancelled'))
+      );
       empty = 'No cycles in this team yet.';
       options = [
         { value: CLEAR, label: 'No cycle', icon: <NoneMark /> },
-        ...cycles.map((cycle) => ({
+        ...pickerCycleOrder(cycles).map((cycle) => ({
           value: cycle.cycle_id,
           label: cycle.name,
           icon: <LuIterationCw className="h-3.5 w-3.5 text-text-muted" />,
-          detail: CYCLE_STATUS_LABELS[cycle.status],
+          detail: cycleOptionDetail(cycle, context.cycles),
         })),
       ];
       selected = shared(issues.map((issue) => [issue.cycle_id ?? CLEAR]));

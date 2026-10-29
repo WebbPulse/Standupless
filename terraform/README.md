@@ -167,10 +167,21 @@ Each value lives in exactly one of five places.
 | `VITE_API_URL` | `frontend_api_base_url` |
 | `E2E_API_ID` | `api_id` |
 | `E2E_ACCESS_LOG_GROUP` | `api_access_log_group` |
+| `SLACK_CONFIG_ROLE_ARN`, optional | `slack_config_role_arn`, the same value on both environments; the deploy workflow defaults to it |
 
 `CI_AWS_ROLE_ARN` is repository-scoped rather than environment-scoped, because a `pull_request` job
 cannot read an Environment whose deployment branch policy admits only `main` and `staging`. Take the
 staging workspace's `github_actions_ci_role_arn`.
+
+## Slack App configuration token
+
+Production owns `standupless-production/slack-config`, the only copy of the Slack App configuration
+refresh token for both environments, and the `standupless-production-slack-config` role, limited to
+reading and writing that one secret. The deploy roles of both environments may assume it: production
+trusts its own deploy role plus `slack_config_trusted_role_arns`, and staging's deploy role is granted
+`sts:AssumeRole` on `slack_config_role_arn`. The secret's resource policy denies the value to every
+other principal except AdministratorAccess. It uses the AWS managed key, so no KMS grant is needed:
+the staging job reaches it through a production-account session.
 
 ## Gotchas
 
@@ -179,8 +190,12 @@ staging workspace's `github_actions_ci_role_arn`.
 - **A new image function is seeded from the newest image in its repository.**
   `data.aws_ecr_image.domain_seed` resolves it by digest at plan time, because the lifecycle policy
   keeps only three tagged images and a pinned tag expires out from under a later create. The seed
-  can predate the commit being applied, so every image function, consumers included, must be in the
-  deploy workflow's function image map: the deploy that follows moves it onto the commit's image.
+  can predate the commit being applied: the plane plans on the merge, before Deploy Backend has
+  pushed that commit's images. So every image function, consumers included, must be in the deploy
+  workflow's function image map. A mapped function that does not exist yet makes the deploy's
+  `new-functions` job wait for the `webbpulse-terraform/<workspace>` check on the commit (20 minutes
+  on staging, 45 on production for the manual confirm), then move whatever the apply created onto
+  the commit's image. The e2e suite runs after Deploy Backend completes, so it sees the new image.
 - **`aws/spans` is a reserved log group name.** `CreateLogGroup` rejects names beginning with
   `aws/`, so X-Ray creates it on the first span export and `transaction_search.tf` imports it. An
   import block whose target does not exist is a plan time error, so a brand new account applies with

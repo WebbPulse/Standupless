@@ -23,6 +23,11 @@
  *
  * Print, on the overview from the menu, the palette or Cmd or Ctrl+P, prints
  * the name, the property chips, the description and the sections under it.
+ *
+ * Below the `sm` breakpoint the header is compact: the action buttons keep
+ * only their icons, the update due badge leaves the title to the overview's
+ * nudge, and the property chips scroll sideways in one line under a smaller
+ * name. Desktop layouts are unchanged.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -35,6 +40,7 @@ import {
   LuCalendar,
   LuCalendarCheck,
   LuChevronRight,
+  LuClock,
   LuEllipsis,
   LuPencilLine,
   LuPlus,
@@ -108,6 +114,7 @@ import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { usePrintCommand } from '../../hooks/usePrintCommand';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
+import { useOffline } from '../../hooks/useOffline';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { RENAME_ISSUE_KEYS } from '../../components/issues/view/propertyKeys';
@@ -145,6 +152,10 @@ import {
 import { showErrorToast, showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FollowButton from '../../components/planning/FollowButton';
+import {
+  REMIND_ME_MENU_LABEL,
+  useRemindMe,
+} from '../../components/planning/RemindMe';
 import type {
   MilestoneRead,
   ProjectRead,
@@ -223,6 +234,7 @@ export const ProjectDetail: React.FC = () => {
   const projectId = useRouteEntityId();
   const [params, setParams] = useSearchParams();
   const { workspace } = useWorkspace();
+  const offline = useOffline();
   const slug = workspace?.slug ?? '';
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -350,6 +362,13 @@ export const ProjectDetail: React.FC = () => {
 
   const mayCreate = canCreate && createTeam !== undefined;
   const propertiesRow = useRef<HTMLDivElement>(null);
+  const remindMe = useRemindMe({
+    workspaceId,
+    entityType: 'project',
+    entityId: project?.project_id ?? '',
+    subject: project?.name ?? 'This project',
+    group: 'Project',
+  });
   useShortcut({
     keys: 'c',
     label: 'New issue in this project',
@@ -381,7 +400,9 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const mayPost =
-    project !== null && canEditProject(workspace?.role, project, teams);
+    project !== null &&
+    canEditProject(workspace?.role, project, teams) &&
+    !offline;
   const writeUpdate = useCallback((): void => {
     setTab('updates');
     setComposing(true);
@@ -577,10 +598,11 @@ export const ProjectDetail: React.FC = () => {
     );
   }
 
-  const canEdit = canEditProject(workspace?.role, project, teams);
+  const canEdit = canEditProject(workspace?.role, project, teams) && !offline;
   const canDelete =
-    isTeamAdmin(workspace?.role, undefined) ||
-    projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role));
+    (isTeamAdmin(workspace?.role, undefined) ||
+      projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role))) &&
+    !offline;
   const percent = progressPercent(project);
   const nudge = updateNudge(project);
   const workspaceCadence = workspace?.project_update_interval_days ?? 7;
@@ -650,7 +672,7 @@ export const ProjectDetail: React.FC = () => {
       ref={propertiesRow}
       role="group"
       aria-label="Properties"
-      className="flex flex-wrap items-center gap-1.5"
+      className="phone-scroll-row flex flex-wrap items-center gap-1.5"
     >
       <ProjectStatusPicker
         variant="chip"
@@ -808,7 +830,10 @@ export const ProjectDetail: React.FC = () => {
         <span className="flex min-w-0 items-center gap-2">
           <ProjectIcon icon={project.icon} color={project.color} />
           <span className="truncate">{project.name}</span>
-          <UpdateDueBadge project={project} className="shrink-0" />
+          <UpdateDueBadge
+            project={project}
+            className="shrink-0 max-sm:hidden"
+          />
         </span>
       }
       titleAccessory={
@@ -834,55 +859,61 @@ export const ProjectDetail: React.FC = () => {
           {mayCreate && (
             <Button variant="secondary" size="sm" onClick={createIssue}>
               <LuPlus aria-hidden="true" />
-              New issue
+              <span className="max-sm:sr-only">New issue</span>
             </Button>
           )}
-          {(tab === 'overview' || canEdit || canDelete) && (
-            <Menu
-              label="Project actions"
-              align="end"
-              trigger={(trigger) => (
-                <IconButton label="Project actions" size="sm" {...trigger}>
-                  <LuEllipsis className="h-3.5 w-3.5" />
-                </IconButton>
-              )}
-            >
-              {tab === 'overview' && (
-                <MenuItem onSelect={printPage}>
-                  <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
-                  {PRINT_LABEL}
-                  <MenuShortcut keys={PRINT_KEYS} />
-                </MenuItem>
-              )}
-              {canEdit && (
-                <MenuItem onSelect={toggleArchived}>
-                  {archived ? (
-                    <LuArchiveRestore
-                      aria-hidden="true"
-                      className="h-3.5 w-3.5"
-                    />
-                  ) : (
-                    <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
-                  )}
-                  {archived ? 'Restore project' : 'Archive project'}
-                </MenuItem>
-              )}
-              {canDelete && (
-                <MenuItem
-                  danger
-                  onSelect={() => {
-                    setIsConfirmingDelete(true);
-                  }}
-                >
-                  <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                  Delete project
-                </MenuItem>
-              )}
-            </Menu>
-          )}
+          <Menu
+            label="Project actions"
+            align="end"
+            trigger={(trigger) => (
+              <IconButton label="Project actions" size="sm" {...trigger}>
+                <LuEllipsis className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
+          >
+            <MenuItem onSelect={remindMe.open}>
+              <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+              {REMIND_ME_MENU_LABEL}
+            </MenuItem>
+            {tab === 'overview' && (
+              <MenuItem onSelect={printPage}>
+                <LuPrinter aria-hidden="true" className="h-3.5 w-3.5" />
+                {PRINT_LABEL}
+                <MenuShortcut keys={PRINT_KEYS} />
+              </MenuItem>
+            )}
+            {canEdit && (
+              <MenuItem onSelect={toggleArchived}>
+                {archived ? (
+                  <LuArchiveRestore
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                ) : (
+                  <LuArchive aria-hidden="true" className="h-3.5 w-3.5" />
+                )}
+                {archived ? 'Restore project' : 'Archive project'}
+              </MenuItem>
+            )}
+            {canDelete && (
+              <MenuItem
+                danger
+                onSelect={() => {
+                  setIsConfirmingDelete(true);
+                }}
+              >
+                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                Delete project
+              </MenuItem>
+            )}
+          </Menu>
         </div>
       }
     >
+      {remindMe.dialog}
+      {remindMe.banner !== null && (
+        <div className="px-4 pt-3 lg:px-6">{remindMe.banner}</div>
+      )}
       {error !== null && (
         <div className="px-4 pt-3 lg:px-6">
           <ErrorAlert
@@ -937,7 +968,7 @@ export const ProjectDetail: React.FC = () => {
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
+          <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 max-sm:gap-6 max-sm:py-5 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
               <div ref={heading} className="space-y-3">
                 <ProjectLookPicker
@@ -954,7 +985,7 @@ export const ProjectDetail: React.FC = () => {
                   placeholder="Project name"
                   value={project.name}
                   disabled={!canEdit}
-                  className="text-2xl font-semibold"
+                  className="text-2xl font-semibold max-sm:text-xl"
                   onSave={(name) => {
                     if (name !== '') void update({ name });
                   }}

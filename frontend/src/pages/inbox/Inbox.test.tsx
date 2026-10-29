@@ -19,6 +19,10 @@
  * without a new read, and Shift Backspace offers to delete every read row.
  * With the split inbox on, the Priority and Other tabs each read their own
  * bucket and show their unread counts, and Mark all read keeps to the open tab.
+ * An empty Priority tab shows what lands there with a way to Other instead of
+ * a lone Load more, empty pages are paged past on their own, and Load more
+ * shows that it is loading and either adds rows or goes away.
+ * On a phone the list and the pane stack, with a back arrow to the list.
  * On a touch screen a long swipe left removes a row and a long swipe right
  * marks it read, each with Undo, and a short swipe holds the row open on the
  * action's button.
@@ -1139,6 +1143,40 @@ describe('inbox', () => {
     );
   });
 
+  it('shows a reminder on a project and opens the project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-r1',
+          kind: 'reminder',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-1',
+          project_name: 'Public beta',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Public beta/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Reminder' })
+    ).toHaveTextContent('You asked to be reminded about Public beta');
+
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-1'
+    );
+  });
+
   it('says who made you a project lead and opens the project', async () => {
     const user = userEvent.setup();
     listInbox.mockResolvedValue({
@@ -1719,6 +1757,115 @@ describe('split inbox', () => {
     expect(query).not.toHaveProperty('bucket');
     expect(getInboxCounts).not.toHaveBeenCalled();
   });
+
+  /** Answers each listInbox call from its bucket and cursor, empty when nothing is set. */
+  const pagesBy = (
+    pages: Record<string, NotificationListRead>
+  ): ((query: unknown) => Promise<NotificationListRead>) => {
+    return (query: unknown) => {
+      const { bucket, cursor } = query as { bucket?: string; cursor?: string };
+      const page = pages[`${bucket ?? 'all'}|${cursor ?? ''}`];
+      return Promise.resolve(page ?? { notifications: [], next_cursor: null });
+    };
+  };
+
+  it('shows the Priority empty state, not a lone Load more, while Other has more pages', async () => {
+    const user = userEvent.setup();
+    getInboxCounts.mockResolvedValue({
+      unread: 120,
+      priority_unread: 0,
+      other_unread: 100,
+      priority_inbox: true,
+      badge: 0,
+    });
+    listInbox.mockImplementation(
+      pagesBy({
+        'priority|': { notifications: [], next_cursor: 'p-1' },
+        'priority|p-1': { notifications: [], next_cursor: null },
+        'other|': {
+          notifications: [notification({ kind: 'commented' })],
+          next_cursor: 'o-1',
+        },
+      })
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText(/^Nothing in Priority\./)
+    ).toBeInTheDocument();
+    expect(listInbox).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: 'priority', cursor: 'p-1' })
+    );
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+    expect(
+      screen.getByRole('tab', { name: /^Priority/ })
+    ).not.toHaveTextContent(/\d/);
+
+    await user.click(screen.getByRole('button', { name: 'Go to Other' }));
+
+    expect(await screen.findByText('Cache the token')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^Other/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Load more' })
+    ).toBeInTheDocument();
+  });
+
+  it('pages on by itself past empty Priority pages until a row lands', async () => {
+    listInbox.mockImplementation(
+      pagesBy({
+        'priority|': { notifications: [], next_cursor: 'p-1' },
+        'priority|p-1': { notifications: [], next_cursor: 'p-2' },
+        'priority|p-2': { notifications: [notification()], next_cursor: null },
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('Cache the token')).toBeInTheDocument();
+    expect(screen.queryByText(/^Nothing in Priority\./)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('drops Load more once the pages after the list come back empty', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    listInbox.mockImplementation((query: unknown) => {
+      const { cursor } = query as { cursor?: string };
+      if (cursor === undefined)
+        return Promise.resolve({
+          notifications: [notification()],
+          next_cursor: 'p-1',
+        });
+      if (cursor === 'p-1')
+        return held.then(() => ({ notifications: [], next_cursor: 'p-2' }));
+      return Promise.resolve({ notifications: [], next_cursor: null });
+    });
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+
+    const busy = screen.getByRole('button', { name: 'Loading' });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+
+    release();
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /Load more|Loading/ })
+      ).toBeNull();
+    });
+    expect(listInbox).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: 'p-2' })
+    );
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
+  });
 });
 
 describe('inbox touch gestures', () => {
@@ -1762,5 +1909,37 @@ describe('inbox touch gestures', () => {
 
     expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
     expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
+  });
+});
+
+describe('the inbox on a phone', () => {
+  it('stacks the list and the pane, showing one at a time below lg', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    const pane = await screen.findByLabelText('Peek iss-1');
+    const list = screen.getByRole('region', { name: 'Notifications' });
+    expect(list).toHaveClass('hidden', 'lg:flex');
+    expect(pane.parentElement).toHaveClass('flex');
+    expect(pane.parentElement).not.toHaveClass('hidden');
+  });
+
+  it('offers a phone-only back arrow to the list while a row is open', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/inbox?n=n-1');
+
+    const back = await screen.findByRole('button', {
+      name: 'Back to notifications',
+    });
+    expect(back).toHaveClass('sm:hidden');
+
+    await user.click(back);
+
+    expect(screen.queryByLabelText('Peek iss-1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      /^\/w\/mine\/inbox$/
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Back to notifications' })
+    ).not.toBeInTheDocument();
   });
 });

@@ -35,7 +35,9 @@ from app.common.api.schemas.views import (
     ViewUpdate,
     grouping_pattern,
 )
+from app.common.db.dynamo.issue_reminders import REMINDER_ENTITIES
 from app.common.db.dynamo.views import TEAM_SUBSCRIPTION_EVENTS, SavedView
+from app.common.documents import load_readable_document
 from app.common.inbox import (
     INBOX_BUCKETS,
     INBOX_KINDS,
@@ -48,7 +50,14 @@ from app.common.inbox import (
     priority_kinds,
     snooze,
 )
-from app.common.issue_reminders import cancel_reminder, list_reminders, set_reminder
+from app.common.issue_reminders import (
+    cancel_entity_reminder,
+    cancel_reminder,
+    list_entity_reminders,
+    list_reminders,
+    set_entity_reminder,
+    set_reminder,
+)
 from app.common.saved_views import (
     create_saved_view,
     delete_saved_view,
@@ -65,14 +74,17 @@ from app.domains.integrations.mcp.toolkit import (
     ToolCall,
     enum,
     filter_values,
+    initiative_id_ref,
     issue_ref,
     limit,
     object_schema,
     one_or_many,
     page_properties,
+    project_id_ref,
     projects_display_schema,
     string,
     team_id_ref,
+    user_ref,
 )
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -152,6 +164,7 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
                 "assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, parent_id, cycle_id, "
                 "project_id, project_milestone_id, estimate, sla_status, has_relation, due_before, due_after, "
                 "created_after, created_before, updated_after, updated_before, completed_after, completed_before, "
+                "cycle_added (planned or after_start), cycle_added_after, cycle_added_before, "
                 "customer_id, customer_status_id, customer_tier_id, release_id, content, q and their _not forms, "
                 "customer_revenue_min, customer_revenue_max, customer_size_min, customer_size_max, "
                 "customer_request_count_min and customer_request_count_max as whole numbers, plus is_blocked, "
@@ -279,6 +292,8 @@ def _update_view(call: ToolCall) -> Any:
             raise ToolError(f"{name} cannot be null")
     if call.present("shared"):
         fields["shared"] = _flag(call, "shared")
+    if call.present("owner_id"):
+        fields["owner_id"] = user_ref(call, call.arguments["owner_id"])
     payload = ViewUpdate.model_validate(fields)
     return _view_json(update_saved_view(call.repositories, call.context, view.view_id, payload))
 
@@ -430,7 +445,66 @@ def _cancel_issue_reminder(call: ToolCall) -> Any:
     return {"cancelled": True, "issue_id": issue.issue_id}
 
 
+def _reminder_kind(call: ToolCall) -> str:
+    """The entity type a reminder tool names, or a tool error."""
+    kind = str(call.require("entity_type")).strip()
+    if kind not in REMINDER_ENTITIES:
+        raise ToolError(f"entity_type must be one of {', '.join(REMINDER_ENTITIES)}")
+    return kind
+
+
+def _reminder_subject(call: ToolCall, kind: str, value: Any) -> str:
+    """The id of a subject the caller can read, resolving an issue key or a project or initiative name."""
+    if kind == "issue":
+        return issue_ref(call, value).issue_id
+    if kind == "project":
+        return project_id_ref(call, value)
+    if kind == "initiative":
+        return initiative_id_ref(call, value)
+    reference = str(value).strip()
+    if not reference:
+        raise ToolError("entity_id is required")
+    _, document = load_readable_document(call.repositories, call.context, reference)
+    return document.document_id
+
+
+def _set_reminder(call: ToolCall) -> Any:
+    """Remind the caller about one issue, project, initiative or document, replacing any reminder set on it."""
+    _workspace_member(call)
+    kind = _reminder_kind(call)
+    entity_id = _reminder_subject(call, kind, call.require("entity_id"))
+    payload = IssueReminderWrite.model_validate({"remind_at": call.require("remind_at")})
+    return set_entity_reminder(call.repositories, call.context, kind, entity_id, payload).model_dump(mode="json")
+
+
+def _list_reminders(call: ToolCall) -> Any:
+    """The caller's pending reminders on every kind of subject, soonest first, optionally narrowed."""
+    _workspace_member(call)
+    kind = _reminder_kind(call) if call.optional("entity_type") else None
+    reference = call.optional("entity_id")
+    if reference and kind is None:
+        raise ToolError("entity_id needs entity_type")
+    entity_id = _reminder_subject(call, kind, reference) if kind and reference else None
+    items = list_entity_reminders(call.repositories, call.context, kind, entity_id)
+    return {"reminders": [item.model_dump(mode="json") for item in items]}
+
+
+def _cancel_reminder(call: ToolCall) -> Any:
+    """Cancel the caller's pending reminder on one issue, project, initiative or document."""
+    _workspace_member(call)
+    kind = _reminder_kind(call)
+    entity_id = _reminder_subject(call, kind, call.require("entity_id"))
+    cancel_entity_reminder(call.repositories, call.context, kind, entity_id)
+    return {"cancelled": True, "entity_type": kind, "entity_id": entity_id}
+
+
 ISSUE_REF = string("The issue: its issue_id, or its key such as ENG-12")
+
+REMINDER_ENTITY = enum(REMINDER_ENTITIES, "What the reminder is on: project, initiative, document or issue")
+
+REMINDER_SUBJECT = string(
+    "The subject's id; a project or initiative may also be named, and an issue given by its key such as ENG-12"
+)
 
 TEAM_REF = string("The team: its team_id, its key such as ENG, or its exact name")
 
@@ -480,7 +554,9 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         description=(
             "Change a saved view's name, filter, sort, layout, grouping or display settings. Only named fields "
             "change. shared=true moves a view without a team to the whole workspace, shared=false back to you. "
-            "Your own views, any view on a team you administer, or any workspace view if you are an admin."
+            "owner_id hands a team or workspace view to another member, yours to give or any if you are a "
+            "workspace admin. Your own views, any view on a team you administer, or any workspace view if you "
+            "are an admin."
         ),
         scopes=("views:write",),
         schema=object_schema(
@@ -488,6 +564,7 @@ VIEW_TOOLS: tuple[Tool, ...] = (
                 "view_id": VIEW_REF,
                 **_view_properties(clearable=True),
                 "shared": _boolean("Share a view without a team with the whole workspace, or false to make it yours"),
+                "owner_id": string("The new owner: a member's user id, email address, or 'me'"),
             },
             required=("view_id",),
         ),
@@ -650,6 +727,48 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         scopes=("notifications:write",),
         schema=object_schema({"issue_id": ISSUE_REF}, required=("issue_id",)),
         handler=_cancel_issue_reminder,
+    ),
+    Tool(
+        name="set_reminder",
+        description=(
+            "Remind yourself about a project, initiative, document or issue: at remind_at a reminder notification "
+            "for it lands in your inbox. entity_type is project, initiative, document or issue; entity_id is its "
+            "id, or a project or initiative name, or an issue key such as ENG-12. remind_at is an ISO 8601 time "
+            "with a timezone, at least a minute out and within 365 days. One reminder per subject; setting another "
+            "replaces it. Only you see it."
+        ),
+        scopes=("notifications:write",),
+        schema=object_schema(
+            {
+                "entity_type": REMINDER_ENTITY,
+                "entity_id": REMINDER_SUBJECT,
+                "remind_at": string("When to be reminded, ISO 8601 with a timezone"),
+            },
+            required=("entity_type", "entity_id", "remind_at"),
+        ),
+        handler=_set_reminder,
+    ),
+    Tool(
+        name="list_reminders",
+        description=(
+            "Your pending reminders on projects, initiatives, documents and issues, soonest first. entity_type "
+            "narrows to one kind, and with entity_id to one subject."
+        ),
+        scopes=("notifications:read",),
+        schema=object_schema({"entity_type": REMINDER_ENTITY, "entity_id": REMINDER_SUBJECT}),
+        handler=_list_reminders,
+    ),
+    Tool(
+        name="cancel_reminder",
+        description=(
+            "Cancel your pending reminder on a project, initiative, document or issue. Errors when no reminder "
+            "is pending on it."
+        ),
+        scopes=("notifications:write",),
+        schema=object_schema(
+            {"entity_type": REMINDER_ENTITY, "entity_id": REMINDER_SUBJECT}, required=("entity_type", "entity_id")
+        ),
+        handler=_cancel_reminder,
     ),
     Tool(
         name="get_team_notification_subscription",

@@ -42,6 +42,7 @@ from standupless_cli._generated.models import (
     OverrideUpdate,
     PipelineStageRead,
     PipelineStageWrite,
+    ProjectUpdate,
     ReleaseBackfill,
     ReleaseCreate,
     ReleaseDetailRead,
@@ -75,6 +76,9 @@ from standupless_cli.config import (
 from standupless_cli.resolve import OPEN_CATEGORIES, Context, ResolveError, compact, shown_status_id
 
 KEY_PREFIX = "wpk_"
+
+BODY_CHANGED = "BODY_CHANGED"
+"""The error code of a description save made against a version that has since changed."""
 
 
 class HandledErrors(TyperGroup):
@@ -782,6 +786,8 @@ def issue_create(
     else:
         output.success(f"Created {created['key']}: {created['title']}")
         typer.echo(context.issue_url(created["key"]))
+    for message in output.priority_hints(created):
+        output.hint(message)
     if web:
         _open(context.issue_url(created["key"]))
 
@@ -1558,18 +1564,25 @@ def triage_accept(
     status: Annotated[
         str | None, typer.Option("--status", "-s", help="Status name or id; defaults to the first unstarted one.")
     ] = None,
+    priority: Annotated[
+        Priority | None, typer.Option("--priority", "-p", help="The priority the issue takes as it is accepted.")
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Accept a waiting issue into its team."""
+    """Accept a waiting issue into its team, hinting when it is left with no priority."""
     context = _state(ctx).context()
     issue = context.issue(key)
     body: TriageAccept = {"status_id": context.status_id(issue["team_id"], status)} if status else {}
+    if priority is not None:
+        body["priority"] = priority.value
     accepted = context.client.triage_accept(context.workspace_id, issue["id"], body)
     if as_json:
         output.print_json(accepted)
-        return
-    name = context.status_names(accepted["team_id"]).get(accepted["status_id"], accepted["status_id"])
-    output.success(f"Accepted {accepted['key']} into {name}.")
+    else:
+        name = context.status_names(accepted["team_id"]).get(accepted["status_id"], accepted["status_id"])
+        output.success(f"Accepted {accepted['key']} into {name}.")
+    for message in output.priority_hints(accepted):
+        output.hint(message)
 
 
 @triage_app.command("decline")
@@ -2410,6 +2423,65 @@ def project_cadence(
     due = _update_due(updated)
     suffix = f", next due {due}" if due else ""
     output.console.print(f"{updated['name']}: updates {_cadence(updated)}{suffix}", highlight=False)
+
+
+@project_app.command("edit")
+def project_edit(
+    ctx: typer.Context,
+    project: Annotated[str, typer.Argument(help="Project name or id.")],
+    name: Annotated[str | None, typer.Option("--name", help="New name.")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d", help="New description in Markdown.")] = None,
+    description_file: Annotated[
+        Path | None,
+        typer.Option("--description-file", "-F", help="Read the description from a file, or - for stdin."),
+    ] = None,
+    base_body_version: Annotated[
+        str | None,
+        typer.Option(
+            "--base-body-version",
+            help="The body_version the new description was written against, from `project view --json`; "
+            "a description changed since is refused instead of overwritten.",
+        ),
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change a project's name or description; only the options given are changed.
+
+    A save against a stale `--base-body-version` is refused with the description
+    that is there now and its version, so it can be merged and sent again.
+    """
+    if description is not None and description_file is not None:
+        raise ConfigError("Pass --description or --description-file, not both.")
+    body: ProjectUpdate = {}
+    if name is not None:
+        body["name"] = name
+    text = _read_body(description, description_file)
+    if text is not None:
+        body["description"] = text
+    if not body:
+        raise ConfigError("Nothing to change; pass at least one option. See `standupless project edit --help`.")
+    if base_body_version is not None:
+        body["base_body_version"] = base_body_version
+    context = _state(ctx).context()
+    project_id = context.project(project)["project_id"]
+    try:
+        updated = context.client.update_project(context.workspace_id, project_id, body)
+    except ApiError as exc:
+        if exc.error_code != BODY_CHANGED:
+            raise
+        output.error(str(exc))
+        output.err_console.print(
+            f"Merge with the current description and retry with --base-body-version "
+            f"{exc.details.get('body_version', '')}. The current description:",
+            highlight=False,
+            soft_wrap=True,
+        )
+        output.err_console.print(exc.details.get("body") or "", markup=False, highlight=False, soft_wrap=True)
+        raise typer.Exit(1) from exc
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['name']}.")
 
 
 def _health_mix(initiative: Any) -> str:

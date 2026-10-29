@@ -22,7 +22,7 @@ from app.common.db.dynamo.team_config import default_triage_settings
 from app.common.db.dynamo.team_templates import FormFieldBlueprint, IssueTemplate, template_key
 from app.domains.integrations.consumers import email_intake as consumer
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
-from tests.domains.helpers import ADMIN, MEMBER, sign_in
+from tests.domains.helpers import ADMIN, MEMBER, OWNER, sign_in
 from tests.domains.integrations.conftest import TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
@@ -302,6 +302,40 @@ def test_a_mail_files_one_issue_as_the_admin_via_email(workspace: str, repositor
     [created] = [row for row in rows if row["kind"] == "created"]
     assert created["source"] == "email"
     assert created["to_value"] == "m1@mail.example.com"
+
+
+def test_a_mail_keeps_its_sender_as_the_masked_requester(workspace: str, repositories: Any) -> None:
+    """A sender with no seat is kept as the requester by name and masked address, and so is the response shape."""
+    from app.common.api.schemas.issues import IssueRead
+
+    token = _enable(repositories)
+
+    issue = consumer.handle_mail(repositories, _mail(_address(token)), s3=FakeS3())
+
+    assert issue is not None
+    stored = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert stored is not None and stored.requester is not None
+    assert stored.requester.source == "email"
+    assert stored.requester.name == "Alice Example"
+    assert stored.requester.masked_email == "a***@example.com"
+    assert stored.requester.user_id is None
+    read = IssueRead.from_row(stored).model_dump_json()
+    assert "a***@example.com" in read and "alice@example.com" not in read
+
+
+def test_a_mail_from_a_member_links_the_requester_to_that_member(workspace: str, repositories: Any) -> None:
+    """A sender whose verified address is a member's is kept as that member."""
+    token = _enable(repositories)
+
+    issue = consumer.handle_mail(
+        repositories, _mail(_address(token), sender="Olive Owner <owner@example.com>"), s3=FakeS3()
+    )
+
+    assert issue is not None
+    stored = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert stored is not None and stored.requester is not None
+    assert stored.requester.user_id == OWNER
+    assert stored.requester.masked_email == "o***@example.com"
 
 
 def test_a_mail_lands_in_triage_when_the_team_has_it_on(workspace: str, repositories: Any) -> None:

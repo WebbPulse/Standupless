@@ -318,6 +318,15 @@ class DocumentRepository:
             )
         return body.model_copy(update={"version_ids": kept[:VERSIONS_KEPT]})
 
+    def get_version(self, workspace_id: str, document_id: str, version_id: str) -> DocumentVersion | None:
+        """One kept version of one document, or `None`."""
+        if not workspace_id or not document_id or not version_id:
+            return None
+        item = self._repository.get(_key(workspace_id, document_version_key(document_id, version_id)))
+        if item is None or item.get("kind") != DOCUMENT_VERSION:
+            return None
+        return DocumentVersion.model_validate(dict(item))
+
     def list_versions(
         self, workspace_id: str, document_id: str, *, limit: int = VERSIONS_KEPT
     ) -> list[DocumentVersion]:

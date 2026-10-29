@@ -3,7 +3,9 @@
  * K, opening the highlighted view with Enter and clearing it with Escape, the
  * highlight following the pointer, F starring the highlighted view, and
  * Cmd/Ctrl+Backspace asking to delete it only when the caller may delete it,
- * the same rule that decides whether the row's menu offers Delete.
+ * the same rule that decides whether the row's menu offers Delete, and the
+ * row menu's Copy link and Change owner, which is off with its reason unless
+ * the caller owns a shared view or runs the workspace.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -219,5 +221,51 @@ describe('moving through the views list', () => {
       screen.getByRole('button', { name: 'Actions for Shared by Sam' })
     );
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+  });
+});
+
+describe('the view row menu', () => {
+  it('offers Copy link and keeps Change owner off with its reason', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('Shared by Sam');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Actions for Shared by Sam' })
+    );
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy link' })
+    ).toBeInTheDocument();
+    const theirsOwner = screen.getByRole('menuitem', { name: /Change owner/ });
+    expect(theirsOwner).toHaveAttribute('aria-disabled', 'true');
+    expect(theirsOwner).toHaveTextContent(
+      'Only the owner or a workspace admin can change it'
+    );
+    await user.keyboard('{Escape}');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Actions for Mine first' })
+    );
+    const mineOwner = screen.getByRole('menuitem', { name: /Change owner/ });
+    expect(mineOwner).toHaveAttribute('aria-disabled', 'true');
+    expect(mineOwner).toHaveTextContent('Share the view first');
+  });
+
+  it('opens the owner dialog for a shared view the caller owns', async () => {
+    listViews.mockResolvedValue([
+      viewOf('view-3', 'Shared by me', { scope: 'workspace' }),
+    ]);
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('Shared by me');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Actions for Shared by me' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: /Change owner/ }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Change owner' })
+    ).toBeInTheDocument();
   });
 });

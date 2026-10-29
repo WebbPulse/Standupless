@@ -21,9 +21,9 @@ const deleteDraft =
 
 vi.mock('../api/drafts', () => ({
   listIssueDrafts: () => listIssueDrafts(),
-  saveDraft: (_w: string, _i: string, parent: string | null, body: string) =>
+  saveDraft: (_w: string, _i: unknown, parent: string | null, body: string) =>
     saveDraft(parent, body),
-  deleteDraft: (_w: string, _i: string, parent: string | null) =>
+  deleteDraft: (_w: string, _i: unknown, parent: string | null) =>
     deleteDraft(parent),
 }));
 
@@ -56,7 +56,9 @@ const handle = (initial = ''): RichMarkdownHandle & { text: string } => {
 /** Renders the hook for one thread with a fresh editor ref. */
 const mount = (parent?: string) => {
   const editorRef: { current: RichMarkdownHandle | null } = { current: null };
-  return renderHook(() => useCommentDraft('ws-1', 'iss-1', parent, editorRef));
+  return renderHook(() =>
+    useCommentDraft('ws-1', { kind: 'issue', id: 'iss-1' }, parent, editorRef)
+  );
 };
 
 describe('useCommentDraft', () => {

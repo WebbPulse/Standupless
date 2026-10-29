@@ -18,8 +18,8 @@ from app.common.api.schemas.issues import SubscriberRead, SubscribersRead
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.issues import Issue
 from app.common.icons import icon_url
+from app.common.issue_privacy import person_can_see_issue
 from app.common.issue_rules import load_visible_issue, unprocessable
-from app.common.team_privacy import person_can_see_team
 
 ME = "me"
 
@@ -76,7 +76,7 @@ def check_target(repositories: Repositories, context: AuthzContext, issue: Issue
         return
     if repositories.memberships.get(context.workspace_id, user_id) is None:
         raise unprocessable("The subscriber is not a member of this workspace")
-    if not person_can_see_team(repositories, context.workspace_id, issue.team_id, user_id):
+    if not person_can_see_issue(repositories, issue, user_id):
         raise unprocessable("The subscriber cannot see this issue")
 
 

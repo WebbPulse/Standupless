@@ -9,6 +9,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { AuthProvider, type AnyAuthClient } from '@webbpulse/auth/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -178,12 +179,28 @@ const resolved = (
   };
 };
 
+const authState = { sessionEnded: null };
+
+/** The client the shared step-up reads from context. */
+const fakeClient = {
+  subscribe: () => () => undefined,
+  getState: () => authState,
+  initialize: () => Promise.resolve(),
+  stepUpWithPasskey: () => stepUpWithPasskey(),
+  stepUp: (input: { code: string }) => stepUp(input),
+};
+
 /** Mounts the page inside a router, which the shell's links require. */
 const renderPage = () =>
   render(
-    <MemoryRouter>
-      <WorkspaceSettings />
-    </MemoryRouter>
+    <AuthProvider
+      client={fakeClient as unknown as AnyAuthClient}
+      initializeOnMount={false}
+    >
+      <MemoryRouter>
+        <WorkspaceSettings />
+      </MemoryRouter>
+    </AuthProvider>
   );
 
 beforeEach(() => {

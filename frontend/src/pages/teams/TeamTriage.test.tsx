@@ -1,10 +1,12 @@
 /**
  * The triage inbox keys: with an issue selected, 3 and M then M both open the
  * duplicate picker, as Linear binds them, and the help sheet lists both on one
- * row.
+ * row. The requester filter reaches the server-paged list, and grouping
+ * puts each requester's rows under a heading with no requester last.
  */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +15,7 @@ import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefini
 import type { IssueRead, TeamRead } from '../../types/Api';
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
+import { listTriage } from '../../api/triage';
 import TeamTriage from './TeamTriage';
 
 const team: TeamRead = {
@@ -93,7 +96,9 @@ vi.mock('../../hooks/useWorkspace', () => ({
 }));
 
 vi.mock('../../api/triage', () => ({
-  listTriage: () => Promise.resolve({ issues: [waiting], next_cursor: null }),
+  listTriage: vi.fn(() =>
+    Promise.resolve({ issues: [waiting], next_cursor: null })
+  ),
   getTriageSettings: () =>
     Promise.resolve({
       team_id: 'team-1',
@@ -110,6 +115,7 @@ vi.mock('../../api/triage', () => ({
 }));
 
 vi.mock('../../api/teams', () => ({
+  listTeamMembers: () => Promise.resolve([]),
   listStatuses: () =>
     Promise.resolve([
       { id: 'st-todo', name: 'Todo', category: 'unstarted', position: 0 },
@@ -183,6 +189,9 @@ const press = (key: string) => {
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
+  vi.mocked(listTriage).mockImplementation(() =>
+    Promise.resolve({ issues: [waiting], next_cursor: null })
+  );
 });
 
 describe('TeamTriage duplicate keys', () => {
@@ -209,5 +218,68 @@ describe('TeamTriage duplicate keys', () => {
     expect(
       await screen.findByRole('dialog', { name: 'Mark as duplicate' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('TeamTriage requesters', () => {
+  it('sends the requester filter to the server-paged list', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByLabelText('Peek iss-1');
+
+    await user.click(screen.getByRole('button', { name: 'Requester filter' }));
+    await user.click(await screen.findByRole('option', { name: /From Slack/ }));
+
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(listTriage)
+          .mock.calls.some(
+            ([workspaceId, query]) =>
+              workspaceId === 'ws-1' &&
+              query.team_id === 'team-1' &&
+              query.requester_source === 'slack'
+          )
+      ).toBe(true);
+    });
+    expect(
+      screen.getByRole('button', { name: 'Requester filter: From Slack' })
+    ).toBeInTheDocument();
+  });
+
+  it('groups rows by requester with no requester last', async () => {
+    vi.mocked(listTriage).mockImplementation(() =>
+      Promise.resolve({
+        issues: [
+          waiting,
+          {
+            ...waiting,
+            id: 'iss-2',
+            key: 'ENG-2',
+            title: 'Export is slow',
+            requester: { source: 'slack', name: 'Sam', external_id: 'U2' },
+          },
+        ],
+        next_cursor: null,
+      })
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('Export is slow');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Group by requester' })
+    );
+
+    const headings = screen.getAllByTestId('triage-requester-group');
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      'Sam1',
+      'No requester1',
+    ]);
+    const list = screen.getByRole('region', { name: 'Triage' });
+    const keys = within(list)
+      .getAllByText(/^ENG-\d$/)
+      .map((node) => node.textContent);
+    expect(keys).toEqual(['ENG-2', 'ENG-1']);
   });
 });

@@ -184,6 +184,9 @@ EXPECTED_TOOLS = frozenset(
         "get_comment_draft",
         "list_comment_drafts",
         "delete_comment_draft",
+        "set_update_draft",
+        "get_update_draft",
+        "delete_update_draft",
         "save_issue_draft",
         "get_issue_draft",
         "list_issue_drafts",
@@ -219,6 +222,9 @@ EXPECTED_TOOLS = frozenset(
         "set_issue_reminder",
         "list_issue_reminders",
         "cancel_issue_reminder",
+        "set_reminder",
+        "list_reminders",
+        "cancel_reminder",
         "get_team_notification_subscription",
         "set_team_notification_subscription",
         "snooze_notification",
@@ -293,6 +299,8 @@ EXPECTED_TOOLS = frozenset(
         "create_document",
         "update_document",
         "delete_document",
+        "list_document_versions",
+        "restore_document_version",
         "list_customers",
         "list_customer_statuses",
         "list_customer_tiers",
@@ -330,6 +338,7 @@ EXPECTED_TOOLS = frozenset(
         "create_issue_link",
         "update_issue_link",
         "delete_issue_link",
+        "get_attachment",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.

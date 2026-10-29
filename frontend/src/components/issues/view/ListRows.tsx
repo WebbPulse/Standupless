@@ -61,6 +61,7 @@ import {
   isNoOpDrop,
   setCountDragImage,
 } from '../../../lib/boardDrop';
+import { endIssueDrag, startIssueDrag } from '../../../lib/issueDrag';
 import { groupFigure } from '../../../lib/groupHeader';
 import { FOCUS_FIELD } from '../../../lib/focusGrouping';
 import {
@@ -101,6 +102,7 @@ import { ParentPrefix, SubIssueProgressChip, TreeGuides } from './SubIssueCues';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 import { useCoarsePointer } from '../../../hooks/useCoarsePointer';
 import { useSwipeActions } from '../../../hooks/useSwipeActions';
+import { useLatestCallback } from '../../../hooks/useLatestCallback';
 
 /** One group with its sub-groups, when the view is sub-grouped. */
 export interface IssueSection {
@@ -614,7 +616,12 @@ export interface IssueListRowProps {
   drag?: RowDrag | undefined;
 }
 
-/** What a row reads to take part in a drag. */
+/**
+ * What a row reads to take part in a drag. A memoized row renders again only
+ * when `draggable` or `dimmed` changes, so the handlers it holds may be from an
+ * earlier render: the list hands rows handlers that read its latest state when
+ * they run, never state captured when the row last rendered.
+ */
 export interface RowDrag {
   draggable: boolean;
   /** True while the row rides along in a drag. */
@@ -645,6 +652,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
   const parent =
     depth === 0 ? (env.parentOf?.(issue) ?? parentRefOf(issue)) : undefined;
   const showsProgress = shows('sub_issues') && issue.progress.total > 0;
+  const note = env.rowNote?.(issue);
   const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
   const coarse = useCoarsePointer();
   const own = React.useRef<HTMLLIElement | null>(null);
@@ -824,6 +832,14 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
       </Link>
       {titleTip.tip}
       {showsProgress && <SubIssueProgressChip progress={issue.progress} />}
+      {note !== undefined && note !== null && (
+        <span
+          data-slot="note"
+          className="min-w-0 shrink-[2] truncate text-xs text-text-faint max-sm:hidden"
+        >
+          {note}
+        </span>
+      )}
       <span aria-hidden="true" className="flex-1" />
       {archived && <ArchivedMarker />}
       <RelationMarkers issue={issue} />
@@ -834,6 +850,63 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({
     </li>
   );
 };
+
+/** Whether two connector guides draw the same. */
+const sameGuide = (
+  a: TreeGuide | undefined,
+  b: TreeGuide | undefined
+): boolean =>
+  a === b ||
+  (a !== undefined &&
+    b !== undefined &&
+    a.last === b.last &&
+    a.continues.length === b.continues.length &&
+    a.continues.every((on, index) => on === b.continues[index]));
+
+/**
+ * Whether two tree places draw the same row. The toggle is left out: the list
+ * hands every render a toggle that does the same thing for the same row.
+ */
+const sameTree = (
+  a: IssueTreePlace | undefined,
+  b: IssueTreePlace | undefined
+): boolean =>
+  a === b ||
+  (a !== undefined &&
+    b !== undefined &&
+    a.depth === b.depth &&
+    a.childCount === b.childCount &&
+    a.expanded === b.expanded &&
+    sameGuide(a.guide, b.guide));
+
+/** Whether two drag parts draw the same row, handlers aside (see RowDrag). */
+const sameDrag = (a: RowDrag | undefined, b: RowDrag | undefined): boolean =>
+  a === b ||
+  (a !== undefined &&
+    b !== undefined &&
+    a.draggable === b.draggable &&
+    a.dimmed === b.dimmed);
+
+/**
+ * Whether a row would render the same for the new props. The issue is held
+ * steady across polls by the view, so an unchanged issue is the same object.
+ */
+const sameRowProps = (
+  prev: IssueListRowProps,
+  next: IssueListRowProps
+): boolean =>
+  prev.issue === next.issue &&
+  prev.rowRef === next.rowRef &&
+  sameTree(prev.tree, next.tree) &&
+  sameDrag(prev.drag, next.drag);
+
+/**
+ * A row that renders again only when its own issue, place or drag state
+ * changes, so a poll that returns unchanged rows, or changes one, leaves the
+ * other rows alone. Focus, peek and the view environment still reach it
+ * through context.
+ */
+export const MemoIssueListRow = React.memo(IssueListRow, sameRowProps);
 
 /** Props for ListRows. */
 export interface ListRowsProps {
@@ -920,7 +993,7 @@ const Rows: React.FC<{
       {rows.map((row, index) => (
         <React.Fragment key={row.issue.id}>
           {line === index && <DropLine />}
-          <IssueListRow
+          <MemoIssueListRow
             issue={row.issue}
             drag={rowDrag?.(row.issue, index)}
             tree={
@@ -963,6 +1036,7 @@ export const ListRows: React.FC<ListRowsProps> = ({
   const [slot, setSlot] = React.useState<ListSlot | null>(null);
   const [headerTarget, setHeaderTarget] = React.useState<string | null>(null);
   const grabbed = React.useRef(false);
+  const toggle = useLatestCallback(onToggle);
   const { shown, hidden } = splitHiddenSections(sections, collapsed);
   const drags = onStateChange !== undefined && env.canEdit;
   const foldMany = (keys: readonly string[], folded: boolean): void => {
@@ -1023,6 +1097,7 @@ export const ListRows: React.FC<ListRowsProps> = ({
       takesDrop(laneField, env));
 
   const endDrag = (): void => {
+    endIssueDrag();
     setDrag(null);
     setSlot(null);
     setHeaderTarget(null);
@@ -1062,7 +1137,7 @@ export const ListRows: React.FC<ListRowsProps> = ({
     if (headerTarget !== null) setHeaderTarget(null);
   };
 
-  const rowDrag =
+  const liveRowDrag =
     (cell: DropCell) =>
     (issue: OrderedIssueRead, index: number): RowDrag => ({
       draggable: canDragIssue(env, issue),
@@ -1080,10 +1155,15 @@ export const ListRows: React.FC<ListRowsProps> = ({
         const row = event.currentTarget as HTMLElement;
         const ids = draggedIds(issue.id, env.selected, order);
         event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData(
-          'text/plain',
-          ids.map((id) => byId.get(id)?.key ?? id).join('\n')
-        );
+        startIssueDrag(event.dataTransfer, {
+          issues: ids.flatMap((id) => {
+            const held = byId.get(id);
+            return held === undefined ? [] : [held];
+          }),
+          canEdit: (held) => canDragIssue(env, held),
+          update: env.update,
+          queryKey: env.queryKey,
+        });
         setCountDragImage(
           event.dataTransfer,
           row,
@@ -1116,6 +1196,48 @@ export const ListRows: React.FC<ListRowsProps> = ({
         }
       },
     });
+
+  const latest = React.useRef({ liveRowDrag, rowsIn });
+  React.useLayoutEffect(() => {
+    latest.current = { liveRowDrag, rowsIn };
+  });
+
+  /**
+   * The drag part a row is handed: its looks from this render, its handlers
+   * reading the list's latest state and the row's latest place in its cell
+   * when they run, so a memoized row that has not rendered since still drags
+   * and drops where it now sits.
+   */
+  const rowDrag =
+    (cell: DropCell) =>
+    (issue: OrderedIssueRead, index: number): RowDrag => {
+      const now = (): RowDrag => {
+        const live = latest.current;
+        const rows = live.rowsIn(cell.lane, cell.column);
+        const at = rows.findIndex((row) => row.issue.id === issue.id);
+        const held = at < 0 ? undefined : rows[at];
+        return live.liveRowDrag(cell)(
+          held?.issue ?? issue,
+          at < 0 ? index : at
+        );
+      };
+      return {
+        draggable: canDragIssue(env, issue),
+        dimmed: drag?.ids.includes(issue.id) ?? false,
+        onPointerDown: (event) => {
+          now().onPointerDown(event);
+        },
+        onDragStart: (event) => {
+          now().onDragStart(event);
+        },
+        onDragEnd: () => {
+          now().onDragEnd();
+        },
+        onDragOver: (event) => {
+          now().onDragOver(event);
+        },
+      };
+    };
 
   const cellDrops = (cell: DropCell) => ({
     rowDrag: rowDrag(cell),
@@ -1256,7 +1378,7 @@ export const ListRows: React.FC<ListRowsProps> = ({
                   label={group.label}
                   nest={nest}
                   collapsed={collapsed}
-                  onToggle={onToggle}
+                  onToggle={toggle}
                   line={lineIn(cell)}
                   rowDrag={drops?.rowDrag}
                   onDragOver={drops?.onDragOver}
@@ -1295,7 +1417,7 @@ export const ListRows: React.FC<ListRowsProps> = ({
                           label={`${group.label}, ${sub.label}`}
                           nest={nest}
                           collapsed={collapsed}
-                          onToggle={onToggle}
+                          onToggle={toggle}
                           line={lineIn(subCell)}
                           rowDrag={subDrops?.rowDrag}
                           onDragOver={subDrops?.onDragOver}

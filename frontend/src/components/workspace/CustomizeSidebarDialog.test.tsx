@@ -31,6 +31,7 @@ vi.mock('../../api/notifications', () => ({
 
 vi.mock('@webbpulse/api-client/react', () => ({
   invalidateQueries: vi.fn(),
+  useOnline: () => true,
 }));
 
 vi.mock('../../lib/toast', () => ({ showErrorToast: vi.fn() }));

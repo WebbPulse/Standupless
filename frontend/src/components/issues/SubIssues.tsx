@@ -22,6 +22,11 @@
  * and project, as in Linear, and the row starts on the parent's assignee when
  * the person holds the parent or every loaded sibling shares it. The server
  * decides the cycle from the status a child starts in.
+ *
+ * On a phone a row keeps to its status, its title and the properties that are
+ * set, as Linear's mobile web does: the key and the empty priority and
+ * assignee pickers drop out, and on touch every control grows to a tappable
+ * height.
  */
 
 import React, { useMemo, useRef, useState } from 'react';
@@ -74,6 +79,7 @@ import { Select } from '../ui/select';
 import Skeleton from '../ui/skeleton';
 import Button, { IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
+import ProgressRing from '../planning/ProgressRing';
 import {
   AssigneePicker,
   PriorityPicker,
@@ -288,7 +294,7 @@ const AddSubIssueRow: React.FC<{
     <>
       <form
         ref={formRef}
-        className="-mx-1 flex h-7 items-center gap-1.5 px-1"
+        className="-mx-1 flex h-7 items-center gap-1.5 px-1 pointer-coarse:h-11"
         onSubmit={(event) => {
           event.preventDefault();
           submit(false);
@@ -302,7 +308,7 @@ const AddSubIssueRow: React.FC<{
           onChange={(statusId) => {
             set({ statusId });
           }}
-          className="shrink-0"
+          className="shrink-0 pointer-coarse:h-11 pointer-coarse:w-9"
         />
         <input
           ref={inputRef}
@@ -346,7 +352,7 @@ const AddSubIssueRow: React.FC<{
               submit(true);
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-xs text-text placeholder:text-text-faint focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-xs text-text placeholder:text-text-faint focus:outline-none max-sm:text-sm"
         />
         <PriorityPicker
           variant="icon"
@@ -355,7 +361,7 @@ const AddSubIssueRow: React.FC<{
           onChange={(priority) => {
             set({ priority });
           }}
-          className="shrink-0"
+          className="shrink-0 pointer-coarse:h-11 pointer-coarse:w-9"
         />
         <AssigneePicker
           variant="icon"
@@ -370,7 +376,7 @@ const AddSubIssueRow: React.FC<{
             set({ assigneeId });
           }}
           {...(currentUserId === undefined ? {} : { currentUserId })}
-          className="shrink-0"
+          className="shrink-0 pointer-coarse:h-11 pointer-coarse:w-9"
         />
       </form>
       {pasted !== null && (
@@ -416,7 +422,7 @@ const SubIssuesDisplayMenu: React.FC<{
         {...props}
         label="Sub-issue display options"
         size="sm"
-        className="h-5 w-5 shrink-0"
+        className="h-5 w-5 shrink-0 pointer-coarse:h-9 pointer-coarse:w-9"
       >
         <LuSlidersHorizontal className="h-3.5 w-3.5" />
       </IconButton>
@@ -686,7 +692,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
     <li
       key="drop-placeholder"
       aria-hidden="true"
-      className="-mx-1 h-7 rounded-sm border border-dashed border-accent bg-accent-soft/40"
+      className="-mx-1 h-7 rounded-sm border border-dashed pointer-coarse:h-11 border-accent bg-accent-soft/40"
     />
   );
   const hiddenCount = hidingDone ? doneCount : 0;
@@ -695,7 +701,15 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
     <RailSection
       title="Sub-issues"
       {...(count.total > 0
-        ? { count: `${String(count.completed)}/${String(count.total)}` }
+        ? {
+            count: `${String(count.completed)}/${String(count.total)}`,
+            countIcon: (
+              <ProgressRing
+                percent={Math.round((count.completed / count.total) * 100)}
+                size={12}
+              />
+            ),
+          }
         : {})}
       actions={
         shown.length > 0 ? (
@@ -770,7 +784,8 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
               const noPriority = child.priority === 'none';
               const noAssignee = child.assignee_id === null;
               const faded =
-                'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100';
+                'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 max-sm:hidden';
+              const touch = 'pointer-coarse:h-11 pointer-coarse:w-9';
               return (
                 <React.Fragment key={child.id}>
                   {marker === child.id && placeholder}
@@ -784,7 +799,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                     }}
                     onDragEnd={endDrag}
                     className={cn(
-                      'group/row -mx-1 flex h-7 items-center gap-0.5 rounded-sm px-0.5 transition-colors duration-100 hover:bg-raised focus-within:bg-raised',
+                      'group/row -mx-1 flex h-7 min-w-0 items-center gap-0.5 rounded-sm px-0.5 transition-colors duration-100 hover:bg-raised focus-within:bg-raised pointer-coarse:h-11',
                       dragId === child.id && 'opacity-40'
                     )}
                   >
@@ -797,7 +812,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                       onChange={(statusId) => {
                         update([child.id], { status_id: statusId });
                       }}
-                      className="shrink-0"
+                      className={cn('shrink-0', touch)}
                     />
                     <IssueHoverTrigger issueKey={child.key}>
                       {(hover) => (
@@ -806,7 +821,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                           {...hover}
                           draggable={false}
                           data-hover="parent"
-                          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm pr-1 text-xs focus-visible:outline-none"
+                          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm pr-1 text-xs focus-visible:outline-none pointer-coarse:h-11 max-sm:text-sm"
                           onClick={(event) => {
                             if (
                               onOpenRow === undefined ||
@@ -827,7 +842,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                             openRow({ id: child.id, key: child.key });
                           }}
                         >
-                          <span className="shrink-0 font-mono text-text-faint">
+                          <span className="shrink-0 font-mono text-text-faint max-sm:hidden">
                             {child.key}
                           </span>
                           <span className="min-w-0 flex-1 truncate text-text">
@@ -845,7 +860,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                         onChange={(priority) => {
                           update([child.id], { priority });
                         }}
-                        className={cn('shrink-0', noPriority && faded)}
+                        className={cn('shrink-0', touch, noPriority && faded)}
                       />
                     )}
                     {(canEdit || !noAssignee) && (
@@ -861,7 +876,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                         {...(currentUserId === undefined
                           ? {}
                           : { currentUserId })}
-                        className={cn('shrink-0', noAssignee && faded)}
+                        className={cn('shrink-0', touch, noAssignee && faded)}
                       />
                     )}
                   </li>
@@ -877,7 +892,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
               onClick={() => {
                 setCompletedOpen((open) => !open);
               }}
-              className="-mx-1 mt-0.5 flex h-6 items-center rounded-sm px-1 text-xs text-text-faint transition-colors duration-100 hover:bg-raised hover:text-text"
+              className="-mx-1 mt-0.5 flex h-6 items-center rounded-sm px-1 text-xs text-text-faint transition-colors duration-100 hover:bg-raised hover:text-text pointer-coarse:h-10 max-sm:text-sm"
             >
               {completedOpen
                 ? 'Hide completed'

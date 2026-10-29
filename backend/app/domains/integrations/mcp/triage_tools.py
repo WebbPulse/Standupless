@@ -26,6 +26,7 @@ from app.domains.integrations.mcp.toolkit import (
     nullable,
     object_schema,
     page_properties,
+    priority_hints,
     project_id_ref,
     string,
     string_list,
@@ -85,17 +86,32 @@ def _answer(call: ToolCall, issue: Any) -> dict[str, Any]:
     return issue_json(call.repositories.teams, issue, status_name=row.name if row is not None else "")
 
 
+def _text_argument(call: ToolCall, name: str) -> Any:
+    """One optional text argument, or the `ToolError` when it is not text."""
+    value = call.optional(name)
+    if value is not None and not isinstance(value, str):
+        raise ToolError(f"{name} must be a string")
+    return value
+
+
 def _list_triage(call: ToolCall) -> Any:
     """One page of a team's triage inbox, newest filed first."""
     team = team_ref(call, call.require("team_id"))
     snoozed = call.optional("snoozed", False)
     if not isinstance(snoozed, bool):
         raise ToolError("snoozed must be true or false")
+    requester = issue_triage.requester_filter(
+        call.context,
+        user_id=_text_argument(call, "requester_user_id"),
+        slack_user_id=_text_argument(call, "requester_slack_user_id"),
+        source=_text_argument(call, "requester_source"),
+    )
     rows, next_cursor = issue_triage.list_triage(
         call.repositories,
         call.context,
         team.team_id,
         snoozed=snoozed,
+        requester=requester,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
@@ -137,7 +153,8 @@ def _triage_issue(call: ToolCall) -> Any:
         if arguments.get("status_id") is not None:
             arguments["status_id"] = _accept_status(call, issue.team_id, str(arguments["status_id"]))
         payload = TriageAccept.model_validate(arguments)
-        return _answer(call, issue_triage.accept(repositories, context, issue.issue_id, payload))
+        accepted = issue_triage.accept(repositories, context, issue.issue_id, payload)
+        return {**_answer(call, accepted), "hints": priority_hints(accepted)}
     if action == "decline":
         payload_decline = TriageDecline.model_validate(given_arguments(call, ("reason",)))
         return _answer(call, issue_triage.decline(repositories, context, issue.issue_id, payload_decline))
@@ -179,13 +196,18 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
             "Issues waiting in a team's triage inbox, newest filed first: new issues filed with no status while "
             "the team has triage on, and every one from a guest, someone outside the team or a workspace key. "
             "Snoozed issues are left out "
-            "until their time passes; snoozed=true lists only them."
+            "until their time passes; snoozed=true lists only them. The requester arguments narrow it to who "
+            "asked: a linked member id or 'me', a Slack user id, or a source (slack, email, or none for issues "
+            "no intake filed for anyone)."
         ),
         scopes=("issues:read",),
         schema=object_schema(
             {
                 "team_id": string(TEAM_ARGUMENT),
                 "snoozed": boolean("List only snoozed issues"),
+                "requester_user_id": string("Only issues requested by this member, or 'me'"),
+                "requester_slack_user_id": string("Only issues requested by this Slack user id"),
+                "requester_source": string("Only issues from this requester source: slack, email or none"),
                 **page_properties(),
             },
             required=("team_id",),
@@ -204,7 +226,8 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Work one issue in triage. accept moves it into the team, in status_id or the first unstarted "
             "status, setting an optional priority and posting an optional comment as the caller; a team that "
-            "requires a priority refuses an accept that leaves the issue with none. decline moves it to the "
+            "requires a priority refuses an accept that leaves the issue with none, and an accept answer "
+            "carries hints, naming a priority still unset so it can be set next. decline moves it to the "
             "cancelled status, keeping an optional reason in its history. "
             "duplicate closes it as a duplicate of duplicate_of_id. snooze hides it until `until` (ISO 8601, "
             "1 minute to 90 days out), or null to bring it back. Needs team membership."

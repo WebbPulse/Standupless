@@ -36,6 +36,7 @@ import { listViews, listsProjects } from '../../api/views';
 import DashboardDialog from '../../components/dashboards/DashboardDialog';
 import DashboardWidgetCard from '../../components/dashboards/DashboardWidgetCard';
 import WidgetDialog from '../../components/dashboards/WidgetDialog';
+import ChangeOwnerDialog from '../../components/views/ChangeOwnerDialog';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge from '../../components/ui/badge';
 import Button, { IconButton } from '../../components/ui/button';
@@ -138,7 +139,6 @@ export const DashboardDetail: React.FC = () => {
   const [filtersHidden, setFiltersHidden] = useState(readFiltersHidden);
   const [order, setOrder] = useState<string[] | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
-  const [owner, setOwner] = useState('');
 
   const { data, error, isLoading, refetch } = usePolledQuery(
     ({ signal }) => getDashboard(workspaceId, dashboardId, signal),
@@ -406,7 +406,6 @@ export const DashboardDetail: React.FC = () => {
               </MenuItem>
               <MenuItem
                 onSelect={() => {
-                  setOwner(dashboard.owner_id);
                   setPending({ kind: 'owner' });
                 }}
               >
@@ -666,73 +665,29 @@ export const DashboardDetail: React.FC = () => {
         />
       )}
       {pending?.kind === 'owner' && (
-        <Dialog
-          open
-          onClose={() => {
-            setPending(null);
-          }}
-          title="Change owner"
+        <ChangeOwnerDialog
+          ownerId={dashboard.owner_id}
+          members={members}
+          locked={dashboard.scope === 'personal'}
           description={
             dashboard.scope === 'personal'
               ? 'A personal dashboard belongs to the person who made it. Move it to a team or the workspace first, then hand it over.'
               : 'The owner can always edit and delete this dashboard.'
           }
-          size="sm"
-        >
-          <div className="flex flex-col gap-3">
-            <Select
-              aria-label="Owner"
-              value={owner}
-              disabled={dashboard.scope === 'personal'}
-              onChange={(event) => {
-                setOwner(event.target.value);
-              }}
-            >
-              {members.map((member) => (
-                <option key={member.user_id} value={member.user_id}>
-                  {member.display_name ?? member.email}
-                </option>
-              ))}
-            </Select>
-            <div className="flex justify-end gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setPending(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={
-                  busy ||
-                  dashboard.scope === 'personal' ||
-                  owner === '' ||
-                  owner === dashboard.owner_id
-                }
-                onClick={() => {
-                  void run(
-                    () =>
-                      updateDashboard(workspaceId, dashboard.id, {
-                        owner_id: owner,
-                      }),
-                    'Could not change the owner.'
-                  ).then((done) => {
-                    if (done) {
-                      setPending(null);
-                      showToast('Owner changed.');
-                    }
-                  });
-                }}
-              >
-                Change owner
-              </Button>
-            </div>
-          </div>
-        </Dialog>
+          onClose={() => {
+            setPending(null);
+          }}
+          onSubmit={(owner) =>
+            run(
+              () =>
+                updateDashboard(workspaceId, dashboard.id, { owner_id: owner }),
+              'Could not change the owner.'
+            ).then((done) => {
+              if (done) showToast('Owner changed.');
+              return done;
+            })
+          }
+        />
       )}
       {pending?.kind === 'delete' && (
         <Dialog

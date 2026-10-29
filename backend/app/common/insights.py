@@ -38,8 +38,10 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
+from app.common.issue_privacy import issue_reader
 from app.common.issue_rules import unprocessable
 from app.common.issue_writes import archived_rows
+from app.common.plan_features import Feature, enforce_feature
 from app.common.saved_views import load_visible_view, require_issue_view
 from app.common.sub_teams import listed_teams
 
@@ -213,7 +215,10 @@ def insight_rows(repositories: Repositories, context: AuthzContext, scope: Insig
             categories.update(
                 {row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team)}
             )
-    matched = [issue for issue in candidates if all(item.matches(issue, categories) for item in filters)]
+    readable = issue_reader(repositories, context)
+    matched = [
+        issue for issue in candidates if readable(issue) and all(item.matches(issue, categories) for item in filters)
+    ]
     return matched, truncated
 
 
@@ -521,6 +526,20 @@ def build_insights(
     )
 
 
+def is_plain_count(group_by: str, segment_by: Optional[str], measure: str) -> bool:
+    """Whether a breakdown is only the issue count by status category, the tally every plan's view list shows."""
+    return group_by == "status_category" and segment_by is None and measure == "count"
+
+
+def require_insights(
+    repositories: Repositories, context: AuthzContext, group_by: str, segment_by: Optional[str], measure: str
+) -> None:
+    """Refuse a breakdown beyond the plain count unless the workspace's plan includes Insights."""
+    if is_plain_count(group_by, segment_by, measure):
+        return
+    enforce_feature(repositories, context.workspace_id, Feature.INSIGHTS)
+
+
 def insights_for(
     repositories: Repositories,
     context: AuthzContext,
@@ -545,6 +564,7 @@ def insights_for(
         raise unprocessable(f"segment_by must be one of: {', '.join(INSIGHT_DIMENSIONS)}")
     if measure not in INSIGHT_MEASURES:
         raise unprocessable(f"measure must be one of: {', '.join(INSIGHT_MEASURES)}")
+    require_insights(repositories, context, group_by, segment_by, measure)
     subscribed = subscribed_by_caller(subscriber_id, filters.get("match"), context.user_id)
     if subscriber_id is not None and not subscribed:
         filters = {**filters, "subscriber_id": subscriber_id}

@@ -2763,7 +2763,7 @@
         "type": "object"
       },
       "CommentAnchor": {
-        "description": "The passage of the issue description a root comment is pinned to.\n\nThe quoted text plus a little of the text either side, which is what finds the\npassage again among repeats of it. Never written into the description, so an\nedit that removes the passage leaves the quote here and the reader shows it as\nchanged.",
+        "description": "The passage of the issue description, or of the document, a root comment is pinned to.\n\nThe quoted text plus a little of the text either side, which is what finds the\npassage again among repeats of it. Never written into the text, so an\nedit that removes the passage leaves the quote here and the reader shows it as\nchanged.",
         "properties": {
           "prefix": {
             "default": "",
@@ -3150,38 +3150,6 @@
           "workspaces"
         ],
         "title": "ConnectedAppRead",
-        "type": "object"
-      },
-      "ConnectedAppScopesGrant": {
-        "description": "The new permissions the caller approved for one client, and optionally where.",
-        "properties": {
-          "scopes": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 26,
-            "minItems": 1,
-            "title": "Scopes",
-            "type": "array"
-          },
-          "workspace_id": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Workspace Id"
-          }
-        },
-        "required": [
-          "scopes"
-        ],
-        "title": "ConnectedAppScopesGrant",
         "type": "object"
       },
       "ConnectedAppWorkspaceRead": {
@@ -4751,6 +4719,82 @@
         "title": "CycleSettingsRead",
         "type": "object"
       },
+      "CycleSettingsSaved": {
+        "description": "A team's cycle settings as a save returns them, with what a lower upcoming count removed.\n\n`removed_cycles` counts the empty upcoming cycles the save deleted, and\n`kept_cycles` the upcoming cycles beyond the new count that stayed because\nthey hold issues or a planner changed them.",
+        "properties": {
+          "auto_add_completed": {
+            "title": "Auto Add Completed",
+            "type": "boolean"
+          },
+          "auto_add_started": {
+            "title": "Auto Add Started",
+            "type": "boolean"
+          },
+          "cooldown_weeks": {
+            "title": "Cooldown Weeks",
+            "type": "integer"
+          },
+          "duration_weeks": {
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "kept_cycles": {
+            "default": 0,
+            "title": "Kept Cycles",
+            "type": "integer"
+          },
+          "move_unfinished": {
+            "title": "Move Unfinished",
+            "type": "boolean"
+          },
+          "removed_cycles": {
+            "default": 0,
+            "title": "Removed Cycles",
+            "type": "integer"
+          },
+          "start_weekday": {
+            "title": "Start Weekday",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "upcoming_count": {
+            "title": "Upcoming Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "team_id",
+          "enabled",
+          "duration_weeks",
+          "cooldown_weeks",
+          "start_weekday",
+          "upcoming_count",
+          "auto_add_started",
+          "auto_add_completed",
+          "move_unfinished"
+        ],
+        "title": "CycleSettingsSaved",
+        "type": "object"
+      },
       "CycleSettingsUpdate": {
         "description": "The body a team's cycle settings patch takes, every field optional.\n\n`start_weekday` counts from Monday as 0 to Sunday as 6.",
         "properties": {
@@ -5747,8 +5791,18 @@
         "type": "object"
       },
       "DocumentCommentCreate": {
-        "description": "The body a comment on a document takes: text, and the root it replies to if any.",
+        "description": "The body a comment on a document takes: text, the root it replies to if any, and its passage.\n\n`anchor` pins a new thread to a passage of the document's body, held to the\nsame caps as an issue comment's, so a reply cannot carry one.",
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "body": {
             "minLength": 1,
             "title": "Body",
@@ -6322,6 +6376,27 @@
         "title": "DocumentVersionRead",
         "type": "object"
       },
+      "DocumentVersionRestore": {
+        "description": "The body a version restore takes, all of it optional.\n\n`base_body_version` is the `body_version` the restorer was looking at. When\nthe body changed since, the restore is a `BODY_CHANGED` 409 carrying the\ncurrent body, the same guard a body save is held to.",
+        "properties": {
+          "base_body_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body_version the restore was chosen against; a stale one is a 409.",
+            "title": "Base Body Version"
+          }
+        },
+        "title": "DocumentVersionRestore",
+        "type": "object"
+      },
       "DownloadRead": {
         "description": "A presigned GET and when it stops working.\n\nMinted per request and never stored or logged, so the window is the whole\nguard on a URL that is a bearer credential until it expires.",
         "properties": {
@@ -6360,7 +6435,7 @@
         "type": "object"
       },
       "DraftRead": {
-        "description": "One of the caller's drafts, with the issue it sits on as a listing names it.\n\n`parent_comment_id` is the root comment a reply draft answers, or null for a\ndraft on the issue itself. `issue_key` and `issue_title` are read at answer\ntime, so a moved or renamed issue never shows a stale one.",
+        "description": "One of the caller's comment drafts, with what it sits on as a listing names it.\n\n`parent_kind` says which parent is set: `issue_id` for an issue,\n`document_id` for a document, or `update_id` with its `project_id` or\n`initiative_id` for an update thread. `parent_comment_id` is the root\ncomment a reply draft answers, or null for a draft on the parent itself.\n`issue_key`, `issue_title` and `document_title` are read at answer time, so\na moved or renamed parent never shows a stale one.",
         "properties": {
           "body": {
             "title": "Body",
@@ -6371,9 +6446,49 @@
             "title": "Created At",
             "type": "string"
           },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Title"
+          },
+          "initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Id"
+          },
           "issue_id": {
-            "title": "Issue Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Id"
           },
           "issue_key": {
             "anyOf": [
@@ -6408,9 +6523,49 @@
             ],
             "title": "Parent Comment Id"
           },
-          "team_id": {
-            "title": "Team Id",
+          "parent_kind": {
+            "default": "issue",
+            "enum": [
+              "issue",
+              "document",
+              "project_update",
+              "initiative_update"
+            ],
+            "title": "Parent Kind",
             "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "update_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -6419,8 +6574,6 @@
           }
         },
         "required": [
-          "issue_id",
-          "team_id",
           "body",
           "created_at",
           "updated_at"
@@ -11955,6 +12108,28 @@
         "title": "IssueListRead",
         "type": "object"
       },
+      "IssueLookupRead": {
+        "description": "The issues a batch of keys names, each once, leaving out any the caller cannot see.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "resolved": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Each requested key, uppercased, to the id of the issue it names, even under a retired prefix.",
+            "title": "Resolved",
+            "type": "object"
+          }
+        },
+        "title": "IssueLookupRead",
+        "type": "object"
+      },
       "IssueMove": {
         "description": "The body a move to another team takes: the team the issue lands in.",
         "properties": {
@@ -12117,6 +12292,91 @@
           "remind_at"
         ],
         "title": "IssueReminderWrite",
+        "type": "object"
+      },
+      "IssueRequesterRead": {
+        "description": "Who asked for an issue Slack or email intake filed, shown even when they hold no seat.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requester's Slack avatar.",
+            "title": "Avatar Url"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requester's Slack user id.",
+            "title": "External Id"
+          },
+          "handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requester's Slack display name.",
+            "title": "Handle"
+          },
+          "masked_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sender's address, masked as `j***@example.com`; the full address is never kept.",
+            "title": "Masked Email"
+          },
+          "name": {
+            "default": "",
+            "description": "The requester's name, empty when the intake knew none.",
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "description": "The intake the request came through.",
+            "enum": [
+              "slack",
+              "email"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace member behind the requester, when one matched.",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "IssueRequesterRead",
         "type": "object"
       },
       "IssueSyncListRead": {
@@ -20480,6 +20740,78 @@
         "title": "ReleaseUpdate",
         "type": "object"
       },
+      "ReminderListRead": {
+        "description": "The caller's pending reminders on every kind of subject, soonest first.",
+        "properties": {
+          "reminders": {
+            "items": {
+              "$ref": "#/components/schemas/ReminderRead"
+            },
+            "title": "Reminders",
+            "type": "array"
+          }
+        },
+        "title": "ReminderListRead",
+        "type": "object"
+      },
+      "ReminderRead": {
+        "description": "One pending reminder of the caller's on any kind of subject, with the subject as it reads now.\n\n`issue_key` is set for an issue alone, and `team_id` is empty for a subject that\nbelongs to the workspace rather than one team, such as an initiative or a\nworkspace document.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "entity_type": {
+            "enum": [
+              "issue",
+              "project",
+              "initiative",
+              "document"
+            ],
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Key"
+          },
+          "remind_at": {
+            "format": "date-time",
+            "title": "Remind At",
+            "type": "string"
+          },
+          "team_id": {
+            "default": "",
+            "title": "Team Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id",
+          "title",
+          "remind_at",
+          "created_at"
+        ],
+        "title": "ReminderRead",
+        "type": "object"
+      },
       "RepositoryLinkWrite": {
         "description": "Point one repository at one team, or clear it, and choose what records its releases.\n\nA body naming only `release_source` keeps the team; any other body sets the\nteam, so an empty one clears it as it always has.",
         "properties": {
@@ -22901,7 +23233,7 @@
         "type": "object"
       },
       "SlackIntakeRead": {
-        "description": "A team's emoji reaction intake: whether Slack is ready for it and what files a message.\n\n`enabled` is false until a team admin picks an emoji and channels. `reinstall`\nsays the workspace's Slack App was added before it could read reactions, so it\nhas to be connected again before a reaction files anything.",
+        "description": "A team's emoji reaction intake: whether Slack is ready for it and what files a message.\n\n`enabled` is false until a team admin picks an emoji and channels. `reinstall`\nsays the workspace's Slack App was added before it could read reactions, so it\nhas to be connected again before a reaction files anything.\n`message_channel_ids` are the channels in every message mode, where each\ntop-level message is filed without the emoji.",
         "properties": {
           "channel_ids": {
             "items": {
@@ -22934,6 +23266,13 @@
             "title": "Installed",
             "type": "boolean"
           },
+          "message_channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Message Channel Ids",
+            "type": "array"
+          },
           "reinstall": {
             "default": false,
             "title": "Reinstall",
@@ -22960,7 +23299,7 @@
         "type": "object"
       },
       "SlackIntakeWrite": {
-        "description": "The emoji a team files messages with and the channels it listens in.\n\nThe emoji is taken with or without its colons and any skin tone, and is stored\nthe way Slack names it in a reaction.",
+        "description": "The emoji a team files messages with and the channels it listens in.\n\nThe emoji is taken with or without its colons and any skin tone, and is stored\nthe way Slack names it in a reaction. `message_channel_ids` puts some of the\nchannels in every message mode; each has to be one of `channel_ids`.",
         "properties": {
           "channel_ids": {
             "items": {
@@ -22977,6 +23316,15 @@
             "minLength": 1,
             "title": "Emoji",
             "type": "string"
+          },
+          "message_channel_ids": {
+            "items": {
+              "pattern": "^[CG][A-Z0-9]{2,30}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Message Channel Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -23053,6 +23401,76 @@
           "available"
         ],
         "title": "SlackLinkRead",
+        "type": "object"
+      },
+      "SlackStatusPostsRead": {
+        "description": "Whether a team posts status changes into the Slack threads its issues came from.\n\n`enabled` is the team's switch, on until an admin turns it off, and reads true\neven before Slack is connected, so the setting is ready once it is.\n`private_asks` is whether the team's Slack request form offers a private ask,\noff until an admin turns it on.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "private_asks": {
+            "default": false,
+            "title": "Private Asks",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "SlackStatusPostsRead",
+        "type": "object"
+      },
+      "SlackStatusPostsWrite": {
+        "description": "A team admin's change to the team's Slack settings; a field left out keeps its value.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "private_asks": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Asks"
+          }
+        },
+        "title": "SlackStatusPostsWrite",
         "type": "object"
       },
       "SlackThread": {
@@ -25456,7 +25874,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`. `form_fields` makes an issue template a form.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`. `form_fields` makes an issue template a form,\nand `in_slack` offers that form in the Slack App's request picker.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -25510,6 +25928,11 @@
             "maxItems": 20,
             "title": "Form Fields",
             "type": "array"
+          },
+          "in_slack": {
+            "default": false,
+            "title": "In Slack",
+            "type": "boolean"
           },
           "kind": {
             "default": "issue",
@@ -25675,7 +26098,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.\n`sub_issues` are the issues an issue template creates under each issue made\nfrom it.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage,\nand `in_slack` says the Slack App's request picker offers it. `sub_issues`\nare the issues an issue template creates under each issue made from it.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -25747,6 +26170,11 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "in_slack": {
+            "default": false,
+            "title": "In Slack",
+            "type": "boolean"
           },
           "kind": {
             "default": "issue",
@@ -26137,6 +26565,17 @@
               }
             ],
             "title": "Form Fields"
+          },
+          "in_slack": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Slack"
           },
           "label_ids": {
             "anyOf": [
@@ -26974,6 +27413,138 @@
           "count"
         ],
         "title": "TriageTeamCount",
+        "type": "object"
+      },
+      "UpdateDraftListRead": {
+        "description": "The caller's status update drafts, newest saved first.",
+        "properties": {
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/UpdateDraftRead"
+            },
+            "title": "Drafts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "drafts"
+        ],
+        "title": "UpdateDraftListRead",
+        "type": "object"
+      },
+      "UpdateDraftRead": {
+        "description": "One of the caller's status update drafts, with the project or initiative it sits on.\n\n`target_kind` says which of `project_id` and `initiative_id` is set.\n`target_name` is read at answer time, so a renamed target never shows a\nstale one.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "target_kind": {
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Name"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_kind",
+          "body",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UpdateDraftRead",
+        "type": "object"
+      },
+      "UpdateDraftWrite": {
+        "description": "The body a status update draft save takes, replacing whatever the target's draft held.\n\n`health` is the health the author has picked so far, or null while they\nhave not picked one, so a draft can be saved before the update is complete.",
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "UpdateDraftWrite",
         "type": "object"
       },
       "UploadCommit": {
@@ -28684,7 +29255,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view. `owner_id` hands a shared view to another\nmember, the owner's or a workspace admin's call.",
         "properties": {
           "collapsed_groups": {
             "anyOf": [
@@ -28890,6 +29461,18 @@
               }
             ],
             "title": "Ordering Reversed"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
           },
           "projects_display": {
             "anyOf": [
@@ -30991,6 +31574,19 @@
             "title": "Created By",
             "type": "string"
           },
+          "cycle_added_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the issue joined its current cycle, null with no cycle or when the moment is unknown.",
+            "title": "Cycle Added At"
+          },
           "cycle_id": {
             "anyOf": [
               {
@@ -31128,6 +31724,12 @@
             "title": "Priority",
             "type": "string"
           },
+          "private": {
+            "default": false,
+            "description": "A private ask from a Slack DM or private channel, read only by its requester, its creator and assignee, and the team's explicit members.",
+            "title": "Private",
+            "type": "boolean"
+          },
           "progress": {
             "$ref": "#/components/schemas/ProgressRead"
           },
@@ -31167,6 +31769,17 @@
             "default": 0,
             "title": "Relation Count",
             "type": "integer"
+          },
+          "requester": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IssueRequesterRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who asked, for an issue Slack or email intake filed on someone's behalf, seat or no seat."
           },
           "sla_breaches_at": {
             "anyOf": [
@@ -33471,7 +34084,7 @@
     },
     "/api/slack/interactions": {
       "post": {
-        "description": "Verify one interactivity request: the message shortcut, or the create issue form being submitted.",
+        "description": "Verify one interactivity request: a shortcut, or the create issue or request form being submitted.",
         "operationId": "receive_slack_interaction_api_slack_interactions_post",
         "responses": {
           "200": {
@@ -34079,66 +34692,6 @@
         ]
       }
     },
-    "/api/users/me/connected-apps/{client_id}/scopes": {
-      "post": {
-        "description": "Add the approved scopes to the caller's existing grants to one client.\n\nThe client keeps its refresh tokens, and its next refresh carries the new scopes,\nso it gains them without a new authorization. Every request still intersects them\nwith the caller's live role, so a scope the role cannot hold stays inert. A client\nthe caller never authorized, or never in the named workspace, is a 404.",
-        "operationId": "grant_my_connected_app_scopes_api_users_me_connected_apps__client_id__scopes_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "client_id",
-            "required": true,
-            "schema": {
-              "maxLength": 256,
-              "minLength": 1,
-              "title": "Client Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConnectedAppScopesGrant"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectedAppRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          }
-        },
-        "security": [
-          {
-            "IdentityBearer": []
-          }
-        ],
-        "summary": "Grant My Connected App Scopes",
-        "tags": [
-          "identity"
-        ]
-      }
-    },
     "/api/users/me/deletion": {
       "post": {
         "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked, the person's private agent profiles are removed, and the purge of\nits data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
@@ -34347,7 +34900,7 @@
         ]
       },
       "post": {
-        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not. The\ncreation opens the new workspace's audit log with its creator as the actor,\nsince there is no earlier admin to act for.",
+        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not. The\ncreation opens the new workspace's audit log with its creator as the actor,\nsince there is no earlier admin to act for. A workspace an e2e user creates is\nstamped `e2e_owned`, which is what the e2e plan limit exemption reads.",
         "operationId": "create_workspace_api_workspaces_post",
         "requestBody": {
           "content": {
@@ -39835,7 +40388,7 @@
         ]
       },
       "post": {
-        "description": "Add a comment or a reply to a document, subscribing the author and everyone it mentions.",
+        "description": "Add a comment or a reply to a document, subscribing the author and everyone it mentions.\n\nA new thread may be pinned to a passage of the document through `anchor`.",
         "operationId": "post_document_comment_api_workspaces__workspace_id__documents__document_id__comments_post",
         "parameters": [
           {
@@ -40430,9 +40983,94 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "Make one earlier version's body the document's current body; a stale `base_body_version` is a 409.",
+        "operationId": "restore_version_api_workspaces__workspace_id__documents__document_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DocumentVersionRestore"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Restore Version",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/drafts": {
       "get": {
-        "description": "The caller's drafts, newest saved first, across the workspace or on one issue.",
+        "description": "The caller's comment drafts, newest saved first, across the workspace or on one issue, document or update.",
         "operationId": "read_drafts_api_workspaces__workspace_id__drafts_get",
         "parameters": [
           {
@@ -40461,6 +41099,42 @@
                 }
               ],
               "title": "Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "document_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "update_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Update Id"
             }
           }
         ],
@@ -40492,6 +41166,236 @@
           }
         ],
         "summary": "Read Drafts",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/documents/{document_id}": {
+      "delete": {
+        "description": "Discard the caller's comment draft in one document thread, a no-op when there is none.",
+        "operationId": "discard_document_draft_api_workspaces__workspace_id__drafts_documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Document Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's comment draft on a document or one of its reply threads, or a 404 when there is none.",
+        "operationId": "read_document_draft_api_workspaces__workspace_id__drafts_documents__document_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Document Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's comment draft on a document they may comment on, or on one of its reply threads.",
+        "operationId": "write_document_draft_api_workspaces__workspace_id__drafts_documents__document_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Document Draft",
         "tags": [
           "views"
         ]
@@ -40774,6 +41678,837 @@
           }
         ],
         "summary": "Write Issue Draft",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/update-replies/initiatives/{initiative_id}/{update_id}": {
+      "delete": {
+        "description": "Discard the caller's reply draft on an initiative update's thread, a no-op when there is none.",
+        "operationId": "discard_initiative_update_reply_draft_api_workspaces__workspace_id__drafts_update_replies_initiatives__initiative_id___update_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Initiative Update Reply Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's reply draft on an initiative update's thread, or a 404 when there is none.",
+        "operationId": "read_initiative_update_reply_draft_api_workspaces__workspace_id__drafts_update_replies_initiatives__initiative_id___update_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Initiative Update Reply Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's reply draft on a readable initiative update's thread.",
+        "operationId": "write_initiative_update_reply_draft_api_workspaces__workspace_id__drafts_update_replies_initiatives__initiative_id___update_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Initiative Update Reply Draft",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/update-replies/projects/{project_id}/{update_id}": {
+      "delete": {
+        "description": "Discard the caller's reply draft on a project update's thread, a no-op when there is none.",
+        "operationId": "discard_project_update_reply_draft_api_workspaces__workspace_id__drafts_update_replies_projects__project_id___update_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Project Update Reply Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's reply draft on a project update's thread, or a 404 when there is none.",
+        "operationId": "read_project_update_reply_draft_api_workspaces__workspace_id__drafts_update_replies_projects__project_id___update_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Project Update Reply Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's reply draft on a readable project update's thread.",
+        "operationId": "write_project_update_reply_draft_api_workspaces__workspace_id__drafts_update_replies_projects__project_id___update_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "update_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Update Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Project Update Reply Draft",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/updates": {
+      "get": {
+        "description": "The caller's status update drafts on projects and initiatives, newest saved first.",
+        "operationId": "read_update_drafts_api_workspaces__workspace_id__drafts_updates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDraftListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Update Drafts",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/updates/initiatives/{initiative_id}": {
+      "delete": {
+        "description": "Discard the caller's status update draft on an initiative, a no-op when there is none.",
+        "operationId": "discard_initiative_update_draft_api_workspaces__workspace_id__drafts_updates_initiatives__initiative_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Initiative Update Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's status update draft on an initiative, or a 404 when there is none.",
+        "operationId": "read_initiative_update_draft_api_workspaces__workspace_id__drafts_updates_initiatives__initiative_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Initiative Update Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's status update draft on an initiative they may post updates on.",
+        "operationId": "write_initiative_update_draft_api_workspaces__workspace_id__drafts_updates_initiatives__initiative_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Initiative Update Draft",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/updates/projects/{project_id}": {
+      "delete": {
+        "description": "Discard the caller's status update draft on a project, a no-op when there is none.",
+        "operationId": "discard_project_update_draft_api_workspaces__workspace_id__drafts_updates_projects__project_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Project Update Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's status update draft on a project, or a 404 when there is none.",
+        "operationId": "read_project_update_draft_api_workspaces__workspace_id__drafts_updates_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Project Update Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's status update draft on a project they may post updates on.",
+        "operationId": "write_project_update_draft_api_workspaces__workspace_id__drafts_updates_projects__project_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Project Update Draft",
         "tags": [
           "views"
         ]
@@ -43935,6 +45670,243 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/inbox/entity-reminders": {
+      "get": {
+        "description": "The caller's pending reminders on issues, projects, initiatives and documents, soonest first.\n\n`entity_type` narrows to one kind, and with `entity_id` to one subject. A\nreminder on a subject that is gone or no longer readable is left out.",
+        "operationId": "list_reminders_on_entities_api_workspaces__workspace_id__inbox_entity_reminders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "issue",
+                    "project",
+                    "initiative",
+                    "document"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Reminders On Entities",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}": {
+      "delete": {
+        "description": "Cancel the caller's pending reminder on one subject, or 404 when none is pending.",
+        "operationId": "cancel_reminder_on_entity_api_workspaces__workspace_id__inbox_entity_reminders__entity_type___entity_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "issue",
+                "project",
+                "initiative",
+                "document"
+              ],
+              "title": "Entity Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Cancel Reminder On Entity",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Remind the caller about one issue, project, initiative or document at `remind_at`, replacing any set.\n\nThe moment must carry a timezone and be between a minute and 365 days out. A\nsubject the caller cannot read is a 404.",
+        "operationId": "set_reminder_on_entity_api_workspaces__workspace_id__inbox_entity_reminders__entity_type___entity_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "issue",
+                "project",
+                "initiative",
+                "document"
+              ],
+              "title": "Entity Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueReminderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Reminder On Entity",
+        "tags": [
+          "views"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/inbox/read": {
       "post": {
         "description": "Mark some or all of the caller's notifications read.\n\nIds that are already read, or that belong to someone else, count as nothing\nchanged rather than as an error: the write is conditional on the row being\nunread in this caller's own partition, so a foreign id cannot be reached.",
@@ -46273,7 +48245,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one, and the `customer_requests_desc`,\n`customer_important_desc` and `customer_revenue_desc` sorts put the most\nrequested, most importantly requested or highest revenue issues first.\n`customer_status_id` and `customer_tier_id` keep the issues an asking\ncustomer holds one of the named statuses or tiers, their `_not` forms drop\nthem, and `none` stands for no customer request. `customer_revenue_min` and\n`_max`, and `customer_size_min` and `_max`, keep the issues one asking\ncustomer falls within, inclusive. `customer_request_count_min` and `_max`\nbound the request count, and `customer_important` keeps the issues with an\nimportant request, or with `false` the rest.\n`release_id` keeps the issues that shipped in one of the named releases and\n`release_id_not` drops them, `none` standing for an issue in no release.\nGuests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\n`cycle_added` keeps the issues added to their cycle at `planned`, before it\nstarted or within its first day, or `after_start`, and `cycle_added_not` drops\nthem, while `cycle_added_after` and `cycle_added_before` bound the day an issue\njoined its cycle; an issue in no cycle meets none of them.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one, and the `customer_requests_desc`,\n`customer_important_desc` and `customer_revenue_desc` sorts put the most\nrequested, most importantly requested or highest revenue issues first.\n`customer_status_id` and `customer_tier_id` keep the issues an asking\ncustomer holds one of the named statuses or tiers, their `_not` forms drop\nthem, and `none` stands for no customer request. `customer_revenue_min` and\n`_max`, and `customer_size_min` and `_max`, keep the issues one asking\ncustomer falls within, inclusive. `customer_request_count_min` and `_max`\nbound the request count, and `customer_important` keeps the issues with an\nimportant request, or with `false` the rest.\n`release_id` keeps the issues that shipped in one of the named releases and\n`release_id_not` drops them, `none` standing for an issue in no release.\nGuests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`issue_id` keeps only the named issues, and `key` names them by key instead,\nup to 100 in one read, each resolved as the by-key read resolves it, so a\none-off list of keys costs one request; a key naming nothing is skipped.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -46894,6 +48866,44 @@
           },
           {
             "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
             "name": "created_after",
             "required": false,
             "schema": {
@@ -46986,6 +48996,76 @@
                 }
               ],
               "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added Before"
             }
           },
           {
@@ -47721,6 +49801,69 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/by-keys": {
+      "get": {
+        "description": "The issues several human keys name, in one read, for the issue chips a body draws.\n\nEach `key` resolves the way `/issues/by-key/{key}` does, case insensitive and\nfollowing a key change or a move. A key that is malformed, names no team, names\na deleted issue or one in a team the caller cannot see is left out rather than\nfailing the batch, and two keys naming one issue answer it once. Declared before\n`/issues/{issue_id}` so `by-keys` is not swallowed as an id.",
+        "operationId": "lookup_issues_by_key_api_workspaces__workspace_id__issues_by_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "title": "Key",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueLookupRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Lookup Issues By Key",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/deleted": {
       "get": {
         "description": "One team's recently deleted issues, newest first, each restorable until it is purged.\n\nDeclared before `/issues/{issue_id}` so `deleted` is not swallowed as an id.",
@@ -48403,6 +50546,44 @@
           },
           {
             "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
             "name": "created_after",
             "required": false,
             "schema": {
@@ -48495,6 +50676,76 @@
                 }
               ],
               "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added Before"
             }
           },
           {
@@ -49034,7 +51285,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/triage": {
       "get": {
-        "description": "One page of a team's triage inbox, newest filed first.\n\nSnoozed issues stay out until their time passes; `snoozed=true` lists only them.",
+        "description": "One page of a team's triage inbox, newest filed first.\n\nSnoozed issues stay out until their time passes; `snoozed=true` lists only them.\n`requester_user_id` (a member id or `me`), `requester_slack_user_id` and\n`requester_source` (`slack`, `email`, or `none` for issues with no requester)\nnarrow it to who asked, every one given having to hold.",
         "operationId": "list_triage_api_workspaces__workspace_id__issues_triage_get",
         "parameters": [
           {
@@ -49065,6 +51316,63 @@
               "default": false,
               "title": "Snoozed",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requester User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_slack_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requester Slack User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "slack",
+                    "email",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requester Source"
             }
           },
           {
@@ -58822,7 +61130,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's automatic cycle settings.\n\nWhen cycles are on after the change, the team's missing current and upcoming\ncycles are created before the response, so the cycles page shows them at\nonce rather than after the next hourly run. Turning cycles off keeps every\ncycle already created.",
+        "description": "Change a team's automatic cycle settings.\n\nWhen cycles are on after the change, the team's missing current and upcoming\ncycles are created before the response, so the cycles page shows them at\nonce rather than after the next hourly run. A lower upcoming count removes\nthe empty surplus upcoming cycles and says how many it removed and kept.\nTurning cycles off keeps every cycle already created.",
         "operationId": "update_cycle_settings_api_workspaces__workspace_id__teams__team_id__cycle_settings_patch",
         "parameters": [
           {
@@ -58851,7 +61159,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CycleSettingsRead"
+                  "$ref": "#/components/schemas/CycleSettingsSaved"
                 }
               }
             },
@@ -64128,7 +66436,7 @@
         ]
       },
       "put": {
-        "description": "Turn emoji reaction intake on, or change its emoji or channels.\n\nThe same emoji in the same channel can file into only one team, so a reaction\nnever splits one message across teams by accident.",
+        "description": "Turn Slack intake on, or change its emoji, channels or which channels file every message.\n\nThe same emoji in the same channel can file into only one team, and so can a\nchannel in every message mode, so one message never splits across teams by\naccident.",
         "operationId": "put_slack_intake_api_workspaces__workspace_id__teams__team_id__webhooks_slack_intake_put",
         "parameters": [
           {
@@ -64190,6 +66498,132 @@
           }
         ],
         "summary": "Put Slack Intake",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/slack-status-posts": {
+      "get": {
+        "description": "Whether this team posts status changes into the Slack threads its issues came from.",
+        "operationId": "get_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusPostsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Slack Status Posts",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Turn status posts into paired Slack threads, or private asks from Slack, on or off for this team.",
+        "operationId": "put_slack_status_posts_api_workspaces__workspace_id__teams__team_id__webhooks_slack_status_posts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackStatusPostsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusPostsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Slack Status Posts",
         "tags": [
           "integrations"
         ]
@@ -66625,6 +69059,44 @@
           },
           {
             "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
             "name": "created_after",
             "required": false,
             "schema": {
@@ -66717,6 +69189,76 @@
                 }
               ],
               "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cycle_added_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cycle Added Before"
             }
           },
           {
@@ -67320,6 +69862,94 @@
           }
         ],
         "summary": "List Member Activity",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/members/{user_id}/issues": {
+      "get": {
+        "description": "The issues a member recently changed or commented on, one row per issue with their latest action.\n\nNewest first, only issues the caller can read. `next_cursor` resumes the feed,\nso a later page can repeat an issue an earlier one listed, which the caller drops.",
+        "operationId": "list_member_touched_issues_api_workspaces__workspace_id__views_members__user_id__issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberActivityListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Member Touched Issues",
         "tags": [
           "views"
         ]

@@ -22,6 +22,7 @@ from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    MAX_LOOKUP_KEYS,
     DeletedIssueListRead,
     IssueBulkRead,
     IssueBulkUpdate,
@@ -29,6 +30,7 @@ from app.common.api.schemas.issues import (
     IssueCreate,
     IssueDuplicate,
     IssueListRead,
+    IssueLookupRead,
     IssueMove,
     IssueRead,
     IssueSyncListRead,
@@ -42,10 +44,12 @@ from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
 from app.common.issue_conversion import convert_to_project, duplicate_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
+from app.common.issue_key_lists import issue_ids_for_keys
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_move import move_issue as move_issue_row
 from app.common.issue_parents import parents_of
+from app.common.issue_privacy import can_see_issue, issue_reader
 from app.common.issue_rules import (
     load_visible_issue,
     not_found,
@@ -103,12 +107,18 @@ def list_issues(
     due_after: Annotated[Optional[str], Query()] = None,
     team_id_in: Values = None,
     team_id_not: Values = None,
+    issue_id: Values = None,
+    key: Values = None,
     created_after: Annotated[Optional[str], Query()] = None,
     created_before: Annotated[Optional[str], Query()] = None,
     updated_after: Annotated[Optional[str], Query()] = None,
     updated_before: Annotated[Optional[str], Query()] = None,
     completed_after: Annotated[Optional[str], Query()] = None,
     completed_before: Annotated[Optional[str], Query()] = None,
+    cycle_added: Values = None,
+    cycle_added_not: Values = None,
+    cycle_added_after: Annotated[Optional[str], Query()] = None,
+    cycle_added_before: Annotated[Optional[str], Query()] = None,
     content: Annotated[Optional[str], Query(max_length=200)] = None,
     content_not: Annotated[Optional[str], Query(max_length=200)] = None,
     q: Annotated[Optional[str], Query()] = None,
@@ -163,6 +173,10 @@ def list_issues(
     conditions in one group under the list's fixed scope. `content`
     matches title and description text, `label_id_all` wants every label named,
     and `completed_after` and `completed_before` bound the day an issue was done.
+    `cycle_added` keeps the issues added to their cycle at `planned`, before it
+    started or within its first day, or `after_start`, and `cycle_added_not` drops
+    them, while `cycle_added_after` and `cycle_added_before` bound the day an issue
+    joined its cycle; an issue in no cycle meets none of them.
     The `completed_desc` sort puts the latest `completed_at` first and issues not
     completed last.
     `customer_id` keeps the issues one of the named customers asked for and
@@ -187,6 +201,10 @@ def list_issues(
     reading every issue of the team and dropping the live ones. Issues awaiting
     triage are left out the same way unless `include_triage` is set, and
     `triage_only` lists nothing but them.
+
+    `issue_id` keeps only the named issues, and `key` names them by key instead,
+    up to 100 in one read, each resolved as the by-key read resolves it, so a
+    one-off list of keys costs one request; a key naming nothing is skipped.
 
     `include_sub_teams` with a `team_id` rolls that team's sub-teams the caller
     may see into the list, so a parent team's views show its sub-teams' issues.
@@ -242,12 +260,17 @@ def list_issues(
             due_after=due_after,
             team_id_in=team_id_in,
             team_id_not=team_id_not,
+            issue_id=issue_ids_for_keys(repositories, context, issue_id, key),
             created_after=created_after,
             created_before=created_before,
             updated_after=updated_after,
             updated_before=updated_before,
             completed_after=completed_after,
             completed_before=completed_before,
+            cycle_added=cycle_added,
+            cycle_added_not=cycle_added_not,
+            cycle_added_after=cycle_added_after,
+            cycle_added_before=cycle_added_before,
             content=content,
             content_not=content_not,
             q=q,
@@ -381,9 +404,46 @@ def read_issue_by_key(
         raise not_found()
 
     issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number, include_deleted=True)
-    if issue is None or not context.can_see_team(issue.team_id):
+    if issue is None or not can_see_issue(repositories, context, issue):
         raise not_found()
     return conditional_response(request, IssueRead.from_row(current(repositories.teams, issue)))
+
+
+@router.get("/{workspace_id}/issues/by-keys", response_model=IssueLookupRead)
+def lookup_issues_by_key(
+    key: Annotated[list[str], Query(min_length=1, max_length=MAX_LOOKUP_KEYS)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueLookupRead:
+    """The issues several human keys name, in one read, for the issue chips a body draws.
+
+    Each `key` resolves the way `/issues/by-key/{key}` does, case insensitive and
+    following a key change or a move. A key that is malformed, names no team, names
+    a deleted issue or one in a team the caller cannot see is left out rather than
+    failing the batch, and two keys naming one issue answer it once. Declared before
+    `/issues/{issue_id}` so `by-keys` is not swallowed as an id.
+    """
+    found: dict[str, IssueRead] = {}
+    resolved: dict[str, str] = {}
+    teams: dict[str, str | None] = {}
+    for raw in dict.fromkeys(item.strip().upper() for item in key):
+        parsed = parse_issue_key(raw)
+        if parsed is None:
+            continue
+        prefix, number = parsed
+        if prefix not in teams:
+            team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
+            teams[prefix] = None if team is None else team.team_id
+        team_id = teams[prefix]
+        if team_id is None:
+            continue
+        issue = find_issue_by_number(repositories, context.workspace_id, team_id, number)
+        if issue is None or not can_see_issue(repositories, context, issue):
+            continue
+        resolved[raw] = issue.issue_id
+        if issue.issue_id not in found:
+            found[issue.issue_id] = IssueRead.from_row(current(repositories.teams, issue))
+    return IssueLookupRead(issues=list(found.values()), resolved=resolved)
 
 
 @router.get("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
@@ -597,7 +657,8 @@ def list_children(
         limit=limit,
         start_key=resume_key(cursor, scope),
     )
-    rows = [as_issue(item) for item in page.items]
+    readable = issue_reader(repositories, context)
+    rows = [issue for issue in (as_issue(item) for item in page.items) if readable(issue)]
     return IssueListRead(
         items=[IssueRead.from_row(current(repositories.teams, issue)) for issue in rows],
         next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),

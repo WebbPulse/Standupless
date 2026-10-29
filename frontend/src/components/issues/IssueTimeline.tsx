@@ -4,6 +4,8 @@
  * the newest entry. Changes read as one short line with a glyph, the actor and
  * a relative time; runs of the same kind by the same actor, such as a push that
  * names the issue in several commits, collapse into one line that expands.
+ * Rapid repeated changes to one property read as a single change, and a long
+ * stretch of history between comments folds behind a "Show N more" row.
  *
  * Both lists are cursor paged newest first on the server. Comments are read to
  * the end, because a thread missing its root reads wrong; activity loads older
@@ -31,6 +33,7 @@ import {
   LuCheck,
   LuChevronDown,
   LuChevronRight,
+  LuChevronsUpDown,
   LuCircleDot,
   LuCirclePlus,
   LuFileText,
@@ -72,7 +75,9 @@ import {
   anchoredThreads,
   buildTimeline,
   commentAttachmentIds,
+  foldLongRuns,
   type TimelineEvent,
+  type TimelineFold,
   type TimelineGroup,
 } from '../../lib/issueTimeline';
 import { cyclePath, issuePath, projectPath } from '../../lib/paths';
@@ -440,6 +445,35 @@ const GroupRow: React.FC<{
   );
 };
 
+/** The row standing in for the folded middle of a long stretch of history. */
+const FoldRow: React.FC<{ fold: TimelineFold; onOpen: () => void }> = ({
+  fold,
+  onOpen,
+}) => {
+  const count = fold.items.reduce(
+    (total, item) => total + (item.type === 'group' ? item.events.length : 1),
+    0
+  );
+  return (
+    <li className="relative flex min-h-7 items-center gap-3">
+      <span className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg">
+        <LuChevronsUpDown
+          aria-hidden="true"
+          className="h-3.5 w-3.5 text-text-faint"
+        />
+      </span>
+      <button
+        type="button"
+        aria-expanded={false}
+        className="rounded-xs text-xs text-text-faint hover:text-text"
+        onClick={onOpen}
+      >
+        {`Show ${String(count)} more ${count === 1 ? 'event' : 'events'}`}
+      </button>
+    </li>
+  );
+};
+
 /** Reads both lists and renders them as one timeline. */
 export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   workspaceId,
@@ -536,10 +570,34 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   const [filter, setFilter] = useActivityFilter();
   const commentsOnly = filter === 'comments';
 
+  const [opened, setOpened] = useState<{ issueId: string; ids: Set<string> }>(
+    () => ({ issueId, ids: new Set() })
+  );
+  const expanded = useMemo(
+    () => (opened.issueId === issueId ? opened.ids : new Set<string>()),
+    [opened, issueId]
+  );
+  const openFold = useCallback(
+    (id: string): void => {
+      setOpened((current) => ({
+        issueId,
+        ids: new Set([...(current.issueId === issueId ? current.ids : []), id]),
+      }));
+    },
+    [issueId]
+  );
+
   const items = useMemo(
     () =>
-      buildTimeline(commentsOnly ? [] : activity.rows, comments.rows, context),
-    [commentsOnly, activity.rows, comments.rows, context]
+      foldLongRuns(
+        buildTimeline(
+          commentsOnly ? [] : activity.rows,
+          comments.rows,
+          context
+        ),
+        expanded
+      ),
+    [commentsOnly, activity.rows, comments.rows, context, expanded]
   );
 
   const older = commentsOnly
@@ -655,6 +713,17 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
                     event={item}
                     people={context.people}
                     linker={linker}
+                  />
+                );
+              }
+              if (item.type === 'fold') {
+                return (
+                  <FoldRow
+                    key={item.id}
+                    fold={item}
+                    onOpen={() => {
+                      openFold(item.id);
+                    }}
                   />
                 );
               }

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Sequence, Tuple
 
+from webbpulse.composition import DomainRegistry
+
 from app.common.composition.wiring import Domain
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -385,6 +387,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         reviews,
         slack,
         slack_intake,
+        slack_status_posts,
         standup,
         sync,
         threads,
@@ -399,6 +402,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (gitlab.router, "/workspaces", ("integrations",)),
         (channels.router, "/workspaces", ("integrations",)),
         (slack_intake.router, "/workspaces", ("integrations",)),
+        (slack_status_posts.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),
@@ -604,81 +608,84 @@ _ADMIN_REPOSITORIES = ("idempotency",)
 _ADMIN_READ_REPOSITORIES = ("users",)
 
 
-DOMAINS: Dict[str, Domain] = {
-    "identity": Domain(
-        name="identity",
-        title="Standupless identity",
-        load_routers=_identity_routers,
-        load_unprefixed_routers=_identity_unprefixed_routers,
-        requires_secrets=("SECRET_KEY",),
-        repositories=_IDENTITY_REPOSITORIES,
-        read_repositories=_IDENTITY_READ_REPOSITORIES,
-    ),
-    "workspaces": Domain(
-        name="workspaces",
-        title="Standupless workspaces",
-        load_routers=_workspaces_routers,
-        repositories=_WORKSPACES_REPOSITORIES,
-        read_repositories=_WORKSPACES_READ_REPOSITORIES,
-    ),
-    "teams": Domain(
-        name="teams",
-        title="Standupless teams",
-        load_routers=_teams_routers,
-        repositories=_TEAMS_REPOSITORIES,
-        read_repositories=_TEAMS_READ_REPOSITORIES,
-    ),
-    "issues": Domain(
-        name="issues",
-        title="Standupless issues",
-        load_routers=_issues_routers,
-        load_unprefixed_routers=_issues_unprefixed_routers,
-        repositories=_ISSUES_REPOSITORIES,
-        read_repositories=_ISSUES_READ_REPOSITORIES,
-    ),
-    "views": Domain(
-        name="views",
-        title="Standupless views",
-        load_routers=_views_routers,
-        load_unprefixed_routers=_views_unprefixed_routers,
-        repositories=_VIEWS_REPOSITORIES,
-        read_repositories=_VIEWS_READ_REPOSITORIES,
-    ),
-    "discussion": Domain(
-        name="discussion",
-        title="Standupless discussion",
-        load_routers=_discussion_routers,
-        requires_secrets=("SECRET_KEY",),
-        repositories=_DISCUSSION_REPOSITORIES,
-        read_repositories=_DISCUSSION_READ_REPOSITORIES,
-    ),
-    "planning": Domain(
-        name="planning",
-        title="Standupless planning",
-        load_routers=_planning_routers,
-        load_unprefixed_routers=_planning_unprefixed_routers,
-        repositories=_PLANNING_REPOSITORIES,
-        read_repositories=_PLANNING_READ_REPOSITORIES,
-    ),
-    "integrations": Domain(
-        name="integrations",
-        title="Standupless integrations",
-        load_routers=_integrations_routers,
-        load_unprefixed_routers=_integrations_unprefixed_routers,
-        requires_secrets=("SECRET_KEY",),
-        repositories=_INTEGRATIONS_REPOSITORIES,
-        read_repositories=_INTEGRATIONS_READ_REPOSITORIES,
-    ),
-    "admin": Domain(
-        name="admin",
-        title="Standupless admin",
-        load_routers=_admin_routers,
-        requires_secrets=("SECRET_KEY",),
-        repositories=_ADMIN_REPOSITORIES,
-        read_repositories=_ADMIN_READ_REPOSITORIES,
-    ),
-}
+DOMAINS = DomainRegistry(
+    [
+        Domain(
+            name="identity",
+            title="Standupless identity",
+            load_routers=_identity_routers,
+            load_unprefixed_routers=_identity_unprefixed_routers,
+            requires_secrets=("SECRET_KEY",),
+            repositories=_IDENTITY_REPOSITORIES,
+            read_repositories=_IDENTITY_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="workspaces",
+            title="Standupless workspaces",
+            load_routers=_workspaces_routers,
+            repositories=_WORKSPACES_REPOSITORIES,
+            read_repositories=_WORKSPACES_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="teams",
+            title="Standupless teams",
+            load_routers=_teams_routers,
+            repositories=_TEAMS_REPOSITORIES,
+            read_repositories=_TEAMS_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="issues",
+            title="Standupless issues",
+            load_routers=_issues_routers,
+            load_unprefixed_routers=_issues_unprefixed_routers,
+            repositories=_ISSUES_REPOSITORIES,
+            read_repositories=_ISSUES_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="views",
+            title="Standupless views",
+            load_routers=_views_routers,
+            load_unprefixed_routers=_views_unprefixed_routers,
+            repositories=_VIEWS_REPOSITORIES,
+            read_repositories=_VIEWS_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="discussion",
+            title="Standupless discussion",
+            load_routers=_discussion_routers,
+            requires_secrets=("SECRET_KEY",),
+            repositories=_DISCUSSION_REPOSITORIES,
+            read_repositories=_DISCUSSION_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="planning",
+            title="Standupless planning",
+            load_routers=_planning_routers,
+            load_unprefixed_routers=_planning_unprefixed_routers,
+            repositories=_PLANNING_REPOSITORIES,
+            read_repositories=_PLANNING_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="integrations",
+            title="Standupless integrations",
+            load_routers=_integrations_routers,
+            load_unprefixed_routers=_integrations_unprefixed_routers,
+            requires_secrets=("SECRET_KEY",),
+            repositories=_INTEGRATIONS_REPOSITORIES,
+            read_repositories=_INTEGRATIONS_READ_REPOSITORIES,
+        ),
+        Domain(
+            name="admin",
+            title="Standupless admin",
+            load_routers=_admin_routers,
+            requires_secrets=("SECRET_KEY",),
+            repositories=_ADMIN_REPOSITORIES,
+            read_repositories=_ADMIN_READ_REPOSITORIES,
+        ),
+    ]
+)
+"""Every deployable domain, in registration order, as the package's immutable registry."""
 
-DOMAIN_NAMES: Tuple[str, ...] = tuple(DOMAINS)
+DOMAIN_NAMES: Tuple[str, ...] = DOMAINS.names
 
-ENTRYPOINT_MODULES: Dict[str, str] = {name: name.replace("-", "_") for name in DOMAIN_NAMES}
+ENTRYPOINT_MODULES: Dict[str, str] = DOMAINS.entrypoint_modules

@@ -14,6 +14,8 @@ export interface RailSectionProps {
   title: string;
   /** Shown after the title, such as "2/5" or "3". */
   count?: string;
+  /** A small decorative mark drawn before the count, such as a progress ring. */
+  countIcon?: React.ReactNode;
   /** The add button's name and action. Unset hides the button. */
   add?: { label: string; onClick: () => void };
   /** Extra controls placed before the add button. */
@@ -27,6 +29,7 @@ export interface RailSectionProps {
 export const RailSection: React.FC<RailSectionProps> = ({
   title,
   count,
+  countIcon,
   add,
   actions,
   defaultOpen = true,
@@ -41,7 +44,7 @@ export const RailSection: React.FC<RailSectionProps> = ({
       aria-label={title}
       className={cn('border-b border-line pb-2', className)}
     >
-      <div className="flex h-7 items-center gap-1">
+      <div className="flex h-7 items-center gap-1 pointer-coarse:h-10">
         <button
           type="button"
           aria-expanded={open}
@@ -54,7 +57,8 @@ export const RailSection: React.FC<RailSectionProps> = ({
           <Chevron aria-hidden="true" className="h-3 w-3 shrink-0" />
           <span className="truncate">{title}</span>
           {count !== undefined && (
-            <span className="shrink-0 font-normal tabular-nums text-text-faint">
+            <span className="flex shrink-0 items-center gap-1 font-normal tabular-nums text-text-faint">
+              {countIcon}
               {count}
             </span>
           )}
@@ -64,7 +68,7 @@ export const RailSection: React.FC<RailSectionProps> = ({
           <IconButton
             label={add.label}
             size="sm"
-            className="h-5 w-5 shrink-0"
+            className="h-5 w-5 shrink-0 pointer-coarse:h-9 pointer-coarse:w-9"
             onClick={add.onClick}
           >
             <LuPlus className="h-3.5 w-3.5" />

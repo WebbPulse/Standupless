@@ -73,8 +73,10 @@ import {
   type SavedViewFilter,
 } from '../../api/views';
 import {
+  SAVE_VIEW_KEYS,
   SaveViewDialog,
   refreshViewLists,
+  saveViewTitle,
   type ViewDetails,
 } from '../../components/issues/view/IssueViewPage';
 import BulkBar, {
@@ -121,6 +123,7 @@ import type { ComboboxOption } from '../../components/ui/combobox';
 import EmptyState, { EmptyStateButton } from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FilterButton from '../../components/ui/filter-button';
+import { FilterRow } from '../../components/ui/page-header';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
@@ -1583,7 +1586,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   });
 
   useShortcut({
-    keys: 'shift+v',
+    keys: SAVE_VIEW_KEYS,
     label: 'Save as view',
     scope: 'page',
     group: 'Projects',
@@ -1771,12 +1774,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               size="sm"
               variant="ghost"
               className="gap-1.5"
+              title={saveViewTitle()}
               onClick={() => {
                 setSaving('new');
               }}
             >
               <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
-              Save as view
+              <span className="max-sm:sr-only">Save as view</span>
             </Button>
           ) : (
             <>
@@ -1801,7 +1805,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               }}
             >
               <LuPlus aria-hidden="true" />
-              New project
+              <span className="max-sm:sr-only">New project</span>
             </Button>
           )}
         </div>
@@ -1816,84 +1820,86 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
               current="projects"
             />
           )}
-          <LuListFilter
-            aria-hidden="true"
-            className="mr-0.5 h-3.5 w-3.5 text-text-faint"
-          />
-          <FilterButton
-            field="Status"
-            multiple
-            options={statusOptions}
-            selected={statusFilter}
-            onSelect={toggleStatus}
-          />
-          <FilterButton
-            field="Lead"
-            options={leadOptions}
-            selected={leadFilter === '' ? [] : [leadFilter]}
-            onSelect={(value) => {
-              setParam('lead', value === leadFilter ? '' : value);
-            }}
-          />
-          <FilterButton
-            field="Labels"
-            options={labelOptions}
-            selected={labelFilter === '' ? [] : [labelFilter]}
-            onSelect={(value) => {
-              setParam('label', value === labelFilter ? '' : value);
-            }}
-          />
-          {customersShown && (
+          <FilterRow>
+            <LuListFilter
+              aria-hidden="true"
+              className="mr-0.5 h-3.5 w-3.5 text-text-faint"
+            />
             <FilterButton
-              field="Customer"
-              options={customerOptions}
-              selected={customerFilter === '' ? [] : [customerFilter]}
+              field="Status"
+              multiple
+              options={statusOptions}
+              selected={statusFilter}
+              onSelect={toggleStatus}
+            />
+            <FilterButton
+              field="Lead"
+              options={leadOptions}
+              selected={leadFilter === '' ? [] : [leadFilter]}
               onSelect={(value) => {
-                setParam('customer', value === customerFilter ? '' : value);
+                setParam('lead', value === leadFilter ? '' : value);
               }}
             />
-          )}
-          <FilterButton
-            field="Team"
-            options={teamOptions}
-            selected={teamFilter === '' ? [] : [teamFilter]}
-            onSelect={(value) => {
-              const next = new URLSearchParams(params);
-              writeParam(next, 'team', value === teamFilter ? '' : value);
-              next.delete(ROLL_UP_PARAM);
-              setParams(next, { replace: true });
-            }}
-          />
-          <FilterButton
-            field="Blocked"
-            options={FLAG_OPTIONS}
-            selected={blockedFilter === '' ? [] : [blockedFilter]}
-            onSelect={(value) => {
-              setParam('blocked', value === blockedFilter ? '' : value);
-            }}
-          />
-          <FilterButton
-            field="Blocking"
-            options={FLAG_OPTIONS}
-            selected={blockingFilter === '' ? [] : [blockingFilter]}
-            onSelect={(value) => {
-              setParam('blocking', value === blockingFilter ? '' : value);
-            }}
-          />
-          <ProjectPropertyFilterBar
-            filters={properties}
-            people={people}
-            onChange={setProperties}
-          />
-          {filteredTeam !== undefined && subTeams.length > 0 && (
-            <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
-          )}
-          {hasFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              <LuX aria-hidden="true" />
-              Clear
-            </Button>
-          )}
+            <FilterButton
+              field="Labels"
+              options={labelOptions}
+              selected={labelFilter === '' ? [] : [labelFilter]}
+              onSelect={(value) => {
+                setParam('label', value === labelFilter ? '' : value);
+              }}
+            />
+            {customersShown && (
+              <FilterButton
+                field="Customer"
+                options={customerOptions}
+                selected={customerFilter === '' ? [] : [customerFilter]}
+                onSelect={(value) => {
+                  setParam('customer', value === customerFilter ? '' : value);
+                }}
+              />
+            )}
+            <FilterButton
+              field="Team"
+              options={teamOptions}
+              selected={teamFilter === '' ? [] : [teamFilter]}
+              onSelect={(value) => {
+                const next = new URLSearchParams(params);
+                writeParam(next, 'team', value === teamFilter ? '' : value);
+                next.delete(ROLL_UP_PARAM);
+                setParams(next, { replace: true });
+              }}
+            />
+            <FilterButton
+              field="Blocked"
+              options={FLAG_OPTIONS}
+              selected={blockedFilter === '' ? [] : [blockedFilter]}
+              onSelect={(value) => {
+                setParam('blocked', value === blockedFilter ? '' : value);
+              }}
+            />
+            <FilterButton
+              field="Blocking"
+              options={FLAG_OPTIONS}
+              selected={blockingFilter === '' ? [] : [blockingFilter]}
+              onSelect={(value) => {
+                setParam('blocking', value === blockingFilter ? '' : value);
+              }}
+            />
+            <ProjectPropertyFilterBar
+              filters={properties}
+              people={people}
+              onChange={setProperties}
+            />
+            {filteredTeam !== undefined && subTeams.length > 0 && (
+              <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
+            )}
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <LuX aria-hidden="true" />
+                Clear
+              </Button>
+            )}
+          </FilterRow>
           <div className="ml-auto flex items-center gap-1">
             <ProjectsDisplayMenu
               layout={layout}

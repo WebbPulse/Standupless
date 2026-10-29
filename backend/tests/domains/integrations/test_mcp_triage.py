@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.issues import IssueRequester
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member
 from tests.domains.integrations.conftest import TEAM, WORKSPACE
@@ -318,3 +319,55 @@ def test_an_agent_saves_triage_rules_and_they_run(client: TestClient, repositori
 
     cleared = answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "rules": []}))
     assert cleared["rules"] == []
+
+
+def test_triage_accept_and_create_hint_at_an_unset_priority(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An accept or a create that leaves priority none carries a hint, and one with a priority carries none."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    member = mint_for(repositories, MEMBER, SCOPES)
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+    bare = _file(client, member, "No priority")
+    ranked = _file(client, member, "Ranked", priority="medium")
+    later = _file(client, member, "Ranked on accept")
+
+    bare_accept = answer(tool(client, owner, "triage_issue", {"issue_id": bare["issue_key"], "action": "accept"}))
+    ranked_accept = answer(tool(client, owner, "triage_issue", {"issue_id": ranked["issue_key"], "action": "accept"}))
+    later_accept = answer(
+        tool(client, owner, "triage_issue", {"issue_id": later["issue_key"], "action": "accept", "priority": "low"})
+    )
+    nope = _file(client, member, "Nope")
+    declined = answer(tool(client, owner, "triage_issue", {"issue_id": nope["issue_key"], "action": "decline"}))
+
+    assert bare["hints"] and "Priority is unset" in bare["hints"][0]
+    assert ranked["hints"] == []
+    assert bare_accept["priority"] == "none" and bare_accept["hints"] == bare["hints"]
+    assert "update_issue" in bare_accept["hints"][0]
+    assert ranked_accept["hints"] == [] and later_accept["hints"] == []
+    assert "hints" not in declined
+    assert "hints" in TOOLS_BY_NAME["triage_issue"].descriptor()["description"]
+    assert "hints" in TOOLS_BY_NAME["create_issue"].descriptor()["description"]
+
+
+def test_list_triage_issues_filters_by_requester(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The requester arguments narrow the inbox as the route does, and a non-text one is refused."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    member = mint_for(repositories, MEMBER, SCOPES)
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+    slack, plain = _file(client, member, "From Slack"), _file(client, member, "Plain")
+    stored = repositories.issues.get(WORKSPACE, slack["issue_id"])
+    repositories.issues.replace(
+        stored.model_copy(update={"requester": IssueRequester(source="slack", name="Sam", external_id="U9")})
+    )
+
+    by_user = answer(tool(client, owner, "list_triage_issues", {"team_id": "ABC", "requester_slack_user_id": "U9"}))
+    by_none = answer(tool(client, owner, "list_triage_issues", {"team_id": "ABC", "requester_source": "none"}))
+
+    assert [row["issue_id"] for row in by_user["issues"]] == [slack["issue_id"]]
+    assert [row["issue_id"] for row in by_none["issues"]] == [plain["issue_id"]]
+    assert "must be a string" in refusal(
+        tool(client, owner, "list_triage_issues", {"team_id": "ABC", "requester_source": 3})
+    )

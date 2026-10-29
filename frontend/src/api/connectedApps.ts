@@ -2,9 +2,8 @@
  * Connected apps: the OAuth clients, such as an MCP client, that a person has
  * authorized to act for them, and a workspace admin's view of every member's
  * grant. Revoking deletes the grant and ends the client's refresh tokens, so it
- * has to ask again before it can act. Granting new permissions adds scopes the
- * product introduced since to the existing grant, so the client picks them up at
- * its next token refresh without being authorized again.
+ * has to ask again before it can act. A client gains scopes the product
+ * introduced since by authorizing again, which keeps the scopes it already holds.
  */
 
 import apiClient from './client';
@@ -16,10 +15,6 @@ export const MY_CONNECTED_APPS_ROUTE = '/users/me/connected-apps';
 /** The route one of the caller's connected apps is revoked through. */
 export const myConnectedAppPath = (clientId: string): string =>
   `${MY_CONNECTED_APPS_ROUTE}/${encodeURIComponent(clientId)}`;
-
-/** The route new permissions for one of the caller's connected apps are granted through. */
-export const myConnectedAppScopesPath = (clientId: string): string =>
-  `${myConnectedAppPath(clientId)}/scopes`;
 
 /** The route a workspace's member grants are listed on. */
 export const workspaceConnectedAppsPath = (workspaceId: string): string =>
@@ -54,18 +49,6 @@ export const listMyConnectedApps = async (
 /** Revokes the caller's grant to one client in every workspace. */
 export const revokeMyConnectedApp = async (clientId: string): Promise<void> => {
   await apiClient.delete(myConnectedAppPath(clientId));
-};
-
-/** Adds the approved scopes to the caller's grants to one client, answering the updated app. */
-export const grantMyConnectedAppScopes = async (
-  clientId: string,
-  scopes: string[]
-): Promise<ConnectedAppRead> => {
-  const response = await apiClient.post<ConnectedAppRead>(
-    myConnectedAppScopesPath(clientId),
-    { scopes }
-  );
-  return response.data;
 };
 
 /** Lists every member's grant in a workspace. Refused to anyone but an admin. */
