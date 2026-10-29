@@ -177,6 +177,18 @@ export const propertyValues = ({
       query === undefined || query.trim() === ''
         ? null
         : (choices.leadOption?.(query.trim()) ?? null);
+    const taken = new Set<string>();
+    const idOf = (option: ComboboxOption, lead: boolean): string => {
+      const base = `${property}-${lead ? 'typed-' : ''}${encodeURIComponent(option.value)}`;
+      let id = base;
+      let copy = 1;
+      while (taken.has(id)) {
+        copy += 1;
+        id = `${base}-${String(copy)}`;
+      }
+      taken.add(id);
+      return id;
+    };
     const toValue = (option: ComboboxOption, lead: boolean): SubjectValue[] => {
       if (option.disabled === true) return [];
       const applied = choices.selected.includes(option.value);
@@ -184,7 +196,7 @@ export const propertyValues = ({
       const inert = applied && !choices.multiple;
       return [
         {
-          id: `${property}-${lead ? 'typed-' : ''}${encodeURIComponent(option.value)}`,
+          id: idOf(option, lead),
           label: phrase(property, option, applied),
           name: nameOf(property, option),
           keywords: [KEYWORDS[property], ...(option.keywords ?? [])].join(' '),

@@ -222,6 +222,24 @@ describe('propertyValues', () => {
     expect(lead?.id).toBe('dueDate-typed-2026-11-03');
   });
 
+  it('keeps every id unique when two presets land on one day', () => {
+    const values = propertyValues({
+      issues: [issueOn('1', 'team-1')],
+      env: envWith(vi.fn()),
+      triageTeams: new Set(),
+      today: new Date(2026, 9, 29, 12),
+    });
+    const ids = values.map((value) => value.id);
+    const day = 'dueDate-2026-10-30';
+    const tomorrow = values.filter((value) => value.id.startsWith(day));
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(tomorrow.map((value) => value.name)).toEqual([
+      'Tomorrow',
+      'End of this week',
+    ]);
+  });
+
   it('offers milestones only for an issue in a project the view names', () => {
     const update = vi.fn<IssueWrite>();
     const milestone = {

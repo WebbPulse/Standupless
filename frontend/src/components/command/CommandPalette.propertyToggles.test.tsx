@@ -302,38 +302,11 @@ describe('the due date list in the command palette', () => {
     await openSubPage(user, /Set due date…/);
     await user.type(input(), 'nov 3');
 
-    expect(input()).toHaveValue('nov 3');
     await waitFor(() => {
-      const seen = screen.getAllByRole('option');
-      const names = seen.map((item) => item.textContent);
-      console.log('DIAG A', JSON.stringify(names));
-      expect(
-        screen.getAllByRole('option').map((item) => item.textContent)
-      ).toContain(typed?.label);
-    });
-    const dump = (tag: string): void => {
-      const boxes = screen.getAllByRole('listbox');
-      const rows = screen.getAllByRole('option');
-      console.log(
-        'DIAG',
-        tag,
-        JSON.stringify({
-          value: (input() as HTMLInputElement).value,
-          active: document.activeElement?.tagName,
-          comboboxes: screen.getAllByRole('combobox').length,
-          listboxes: boxes.map((box) => box.getAttribute('aria-label')),
-          options: rows.map((item) => item.textContent),
-          typed,
-          now: new Date().toString(),
-        })
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent(
+        typed?.label ?? ''
       );
-    };
-    dump('B');
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    dump('C');
-    expect(screen.getAllByRole('option')[0]).toHaveTextContent(
-      typed?.label ?? ''
-    );
+    });
     await user.keyboard('{Enter}');
 
     await waitFor(() => {
