@@ -18,7 +18,15 @@ import { ApiError } from '@webbpulse/api-client';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   MilestoneRead,
@@ -388,6 +396,10 @@ const renderPage = (entry = '/w/mine/projects/prj-1') =>
   );
 
 describe('ProjectDetail', () => {
+  beforeAll(async () => {
+    await import('../../components/editor/RichMarkdownEditor');
+  }, 60_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkspaceMock.mockReturnValue(resolved('admin'));
