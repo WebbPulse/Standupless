@@ -1712,6 +1712,133 @@ def test_a_refs_merge_holds_the_issue_where_only_a_rule_for_any_branch_applies(
     assert status_of(repositories, issue.issue_id) == preset["In Review"]
 
 
+def test_a_refs_merge_holds_the_issue_when_a_commit_says_fixes(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The webbpulse-python #222 case: a commit's `Fixes` does not outvote the body's `Refs` on a merge."""
+    place(repositories, issue, preset["In Review"])
+    pr_commits.messages = ["ABC-1 a change\n\nFixes ABC-1", "ABC-1 a follow up"]
+
+    events.handle_record(
+        repositories,
+        sqs_record(merged_event("ABC-1 a change", base="main", body="Refs ABC-1")),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+    link = stored_link(repositories, issue)
+    assert link["holds_on_merge"] is True
+    assert link.get("magic_word") is None
+    assert link.get("applied_status_id") is None
+
+
+def test_a_refs_merge_stays_held_when_the_edit_arrives_after_the_merge(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The merge decides from the body it carries, and the edit delivered behind it changes nothing."""
+    place(repositories, issue, preset["In Review"])
+    pr_commits.messages = ["ABC-1 a change\n\nFixes ABC-1"]
+
+    merge = pull_request_event(
+        action="closed",
+        merged=True,
+        state="closed",
+        title="ABC-1 a change",
+        body="Refs ABC-1",
+        updated_at=github_time(-1),
+    )
+    events.handle_record(repositories, sqs_record(merge))
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(action="edited", title="ABC-1 a change", body="Refs ABC-1", updated_at=github_time(-2))
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+    link = stored_link(repositories, issue)
+    assert link["pr_state"] == "merged"
+    assert link["holds_on_merge"] is True
+
+
+def test_a_fixes_merge_still_closes_when_a_stale_edit_arrives_after_it(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A merge carrying `Fixes` closes, and an older edit saying `Refs` neither reopens it nor rewrites the link."""
+    place(repositories, issue, preset["In Review"])
+
+    merge = pull_request_event(
+        action="closed",
+        merged=True,
+        state="closed",
+        title="ABC-1 a change",
+        body="Fixes ABC-1",
+        updated_at=github_time(-1),
+    )
+    events.handle_record(repositories, sqs_record(merge))
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(action="edited", title="ABC-1 a change", body="Refs ABC-1", updated_at=github_time(-2))
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+    link = stored_link(repositories, issue)
+    assert link["magic_word"] == "fixes"
+    assert link["holds_on_merge"] is False
+
+
+def test_a_refs_merge_holds_when_the_edit_arrives_before_the_merge(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The in-order delivery of the same edit lands on the same answer as the edit arriving late."""
+    place(repositories, issue, preset["In Review"])
+    pr_commits.messages = ["ABC-1 a change\n\nFixes ABC-1"]
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(action="edited", title="ABC-1 a change", body="Refs ABC-1", updated_at=github_time(-2))
+        ),
+    )
+    merge = pull_request_event(
+        action="closed",
+        merged=True,
+        state="closed",
+        title="ABC-1 a change",
+        body="Refs ABC-1",
+        updated_at=github_time(-1),
+    )
+    events.handle_record(repositories, sqs_record(merge))
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+    assert stored_link(repositories, issue)["holds_on_merge"] is True
+
+
 def test_an_opened_refs_pull_request_still_starts_the_issue(
     repositories: Any,
     installed: str,
