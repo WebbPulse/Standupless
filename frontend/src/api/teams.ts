@@ -92,6 +92,7 @@ export interface TeamDisplayOptions {
   sub_group_by?: ViewGroupBy | 'none' | null;
   ordering?: IssueListSort | null;
   ordering_reversed?: boolean | null;
+  order_completed_by_recency?: boolean | null;
   visible_properties?: ViewVisibleProperty[] | null;
   show_sub_issues?: boolean | null;
   completed_window?: CompletedWindow | null;

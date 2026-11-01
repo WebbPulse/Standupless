@@ -153,6 +153,19 @@ def test_a_view_saves_a_project_grouping_and_a_reversed_status_order(
     assert "ordering_reversed" in cleared
 
 
+def test_a_view_saves_order_completed_by_recency(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The switch defaults off and passes through create and update."""
+    secret = mint_for(repositories, MEMBER, VIEWS)
+
+    created = answer(tool(client, secret, "create_view", {"name": "Recent done"}))
+    turned = answer(
+        tool(client, secret, "update_view", {"view_id": created["view_id"], "order_completed_by_recency": True})
+    )
+
+    assert created["order_completed_by_recency"] is False
+    assert turned["order_completed_by_recency"] is True
+
+
 def test_update_view_is_the_owners_or_a_team_admins(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member may not change another's team view; a workspace admin and a team admin may."""
     view_id = owners_team_view(client, repositories)

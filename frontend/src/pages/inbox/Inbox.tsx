@@ -16,17 +16,20 @@
  *
  * Triage runs from the keyboard the way Linear's does: U toggles read and
  * unread, H snoozes until a chosen moment, Backspace removes, Shift R marks
- * everything read and Shift Backspace offers to delete every read row. A
- * snoozed row leaves the list and the badge and comes back unread on its own
+ * everything read, Shift Backspace offers to delete every read row and Cmd
+ * or Ctrl Backspace every row under the filter. A snoozed row leaves the list and the badge and comes back unread on its own
  * when its time comes; Show snoozed lists what is still waiting, and H on a
  * snoozed row offers to unsnooze it now.
+ * Those triage actions register at page scope, so the command palette lists
+ * them under Inbox while the page is open, the way Linear's does.
  *
  * Every row also offers its actions to the mouse: hover or select it for
  * quick buttons, or right click it, or press its "more" button, for the full
  * menu, which adds unsubscribing from the issue, copying its link and opening
  * the row in a new tab. Cmd or Ctrl, Shift and S toggles the subscription
  * on the selected row's issue, the same key as in the issue view, so the pane
- * beside it gives that key up while the inbox shows it.
+ * beside it gives that key up while the inbox shows it, as it does Cmd or
+ * Ctrl Backspace, which would otherwise delete the issue.
  *
  * Removing, snoozing or unsubscribing raises a notice with Undo, and Ctrl Z
  * puts it back too. There is no route that restores a deleted notification,
@@ -112,7 +115,10 @@ import {
   BlockedIcon,
   BlockingIcon,
 } from '../../components/issues/RelationGlyphs';
-import { TOGGLE_SUBSCRIPTION_KEYS } from '../../components/issues/view/propertyKeys';
+import {
+  DeleteIssueKeyContext,
+  TOGGLE_SUBSCRIPTION_KEYS,
+} from '../../components/issues/view/propertyKeys';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import { IssueHoverTrigger } from '../../components/ui/IssueHoverCard';
@@ -1376,6 +1382,9 @@ const SEARCH_KEYS = 'mod+f';
 /** The keys that offer to delete every read notification, as Linear binds them. */
 const DELETE_READ_KEYS = 'shift+backspace';
 
+/** The keys that offer to delete every notification, as Linear binds them. */
+const DELETE_ALL_KEYS = 'mod+backspace';
+
 /** The keys that mark every notification read, as Linear binds them. */
 const MARK_ALL_READ_KEYS = 'alt+u';
 
@@ -1948,17 +1957,30 @@ export const Inbox: React.FC = () => {
   const current = selected?.latest ?? null;
   useShortcut({
     keys: SEARCH_KEYS,
+    scope: 'page',
     label: 'Search notifications',
     group: 'Inbox',
     handler: openSearch,
   });
   useShortcut({
     keys: DELETE_READ_KEYS,
+    scope: 'page',
     label: 'Delete all read notifications',
     group: 'Inbox',
     enabled: !isClearing,
     handler: () => {
       setClearing('read');
+    },
+  });
+  useShortcut({
+    keys: DELETE_ALL_KEYS,
+    scope: 'page',
+    label: 'Delete all notifications',
+    group: 'Inbox',
+    enabled: !isClearing,
+    handler: (event) => {
+      event?.preventDefault();
+      setClearing('all');
     },
   });
   useShortcut({
@@ -2020,6 +2042,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: REMOVE_KEYS,
+    scope: 'page',
     label: 'Remove notification',
     group: 'Inbox',
     enabled: selected !== null,
@@ -2030,6 +2053,7 @@ export const Inbox: React.FC = () => {
 
   useShortcut({
     keys: TOGGLE_READ_KEYS,
+    scope: 'page',
     label: 'Toggle read or unread',
     group: 'Inbox',
     enabled: selected !== null,
@@ -2039,6 +2063,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: SNOOZE_KEYS,
+    scope: 'page',
     label: 'Snooze notification',
     group: 'Inbox',
     enabled: selected !== null,
@@ -2048,6 +2073,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: TOGGLE_SUBSCRIPTION_KEYS,
+    scope: 'page',
     label: 'Toggle subscription to issue',
     group: 'Inbox',
     enabled: selected !== null && isIssueRow(selected.latest),
@@ -2057,6 +2083,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: MARK_ALL_READ_KEYS,
+    scope: 'page',
     label: readAllLabel,
     group: 'Inbox',
     enabled: allGroups.length > 0 && !isReadingAll,
@@ -2255,6 +2282,7 @@ export const Inbox: React.FC = () => {
             >
               <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
               {CLEAR_TITLES.all}
+              <MenuShortcut keys={DELETE_ALL_KEYS} />
             </MenuItem>
           </Menu>
         </div>
@@ -2437,11 +2465,13 @@ export const Inbox: React.FC = () => {
             />
           ) : (
             <SubscriptionKeyContext.Provider value={false}>
-              <IssuePane
-                key={current.issue_id}
-                issueId={current.issue_id}
-                onClose={closePane}
-              />
+              <DeleteIssueKeyContext.Provider value={false}>
+                <IssuePane
+                  key={current.issue_id}
+                  issueId={current.issue_id}
+                  onClose={closePane}
+                />
+              </DeleteIssueKeyContext.Provider>
             </SubscriptionKeyContext.Provider>
           )}
         </div>

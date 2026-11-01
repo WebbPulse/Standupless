@@ -33,6 +33,8 @@ export const teamDefaultState = (
     subGroupBy: groupBy === 'none' || sub === groupBy ? 'none' : sub,
     ordering: options.ordering ?? base.ordering,
     reverse: options.ordering_reversed ?? base.reverse,
+    completedByRecency:
+      options.order_completed_by_recency ?? base.completedByRecency,
     visible: options.visible_properties ?? base.visible,
     showEmpty: options.show_empty_groups ?? base.showEmpty,
     showSubIssues: options.show_sub_issues ?? base.showSubIssues,
@@ -52,6 +54,7 @@ export const stateToTeamDisplay = (state: ViewState): TeamDisplayOptions => ({
       : (storedGrouping(state.subGroupBy) ?? 'none'),
   ordering: state.ordering,
   ordering_reversed: state.reverse,
+  order_completed_by_recency: state.completedByRecency,
   visible_properties: state.visible,
   show_sub_issues: state.showSubIssues,
   completed_window: state.completed,
