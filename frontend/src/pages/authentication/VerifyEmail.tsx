@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { LINK_TOKEN_PARAM } from '@webbpulse/auth';
+import { useEmailVerificationResend } from '@webbpulse/auth/react';
 import { useSearchParams } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
@@ -15,7 +16,6 @@ import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
 import { useAuth } from '../../hooks/useAuth';
-import { useCooldown } from '../../hooks/useCooldown';
 import VerifyEmailToken from './VerifyEmailToken';
 
 /** Routes `/verify-email` to the token confirmation or the request form. */
@@ -23,10 +23,9 @@ const VerifyEmail: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [sentMessage, setSentMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, isLoading } = useAuth();
-  const cooldown = useCooldown();
   const client = getIdentityClient();
+  const { send, sending, remaining } = useEmailVerificationResend({ client });
   const linkToken = searchParams.get(LINK_TOKEN_PARAM);
 
   const handleSend = async () => {
@@ -36,24 +35,18 @@ const VerifyEmail: React.FC = () => {
       return;
     }
 
-    if (cooldown.remaining > 0) return;
-    setIsSubmitting(true);
     try {
-      const outcome = await client.requestEmailVerification({
-        email: user.email,
-      });
+      const outcome = await send(user.email);
+      if (outcome === null) return;
       if (outcome.ok) {
         setSentMessage(
           outcome.detail ?? 'Verification email sent. Check your inbox.'
         );
-        cooldown.start();
         return;
       }
       setError(outcome.message);
     } catch {
       setError('Could not reach the server. Check your connection.');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -100,12 +93,12 @@ const VerifyEmail: React.FC = () => {
       <ErrorAlert message={error} />
       <AuthSubmitButton
         onClick={() => void handleSend()}
-        disabled={isSubmitting || cooldown.remaining > 0}
+        disabled={sending || remaining > 0}
       >
-        {isSubmitting
+        {sending
           ? 'Sending'
-          : cooldown.remaining > 0
-            ? `Resend in ${cooldown.remaining}s`
+          : remaining > 0
+            ? `Resend in ${remaining}s`
             : sentMessage === null
               ? 'Send verification email'
               : 'Resend verification email'}

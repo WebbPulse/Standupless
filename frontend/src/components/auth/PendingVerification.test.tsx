@@ -5,22 +5,32 @@
  */
 
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserRead } from '../../types/Api';
 import PendingVerification from './PendingVerification';
 
 const requestEmailVerification = vi.fn<(body: unknown) => Promise<unknown>>();
-const refresh = vi.fn<() => Promise<string | null>>();
+const refreshSession = vi.fn<() => Promise<UserRead | null>>();
 const getProfile = vi.fn<(path: string) => Promise<{ data: UserRead }>>();
 const logout = vi.fn<(to?: string) => Promise<void>>(() => Promise.resolve());
-const checkAuthStatus = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const user: UserRead = {
   id: 'user-1',
   email: 'new@example.com',
   display_name: 'New',
   email_verified: false,
+};
+
+const identityClient = {
+  requestEmailVerification: (body: unknown) => requestEmailVerification(body),
+  refreshSession: () => refreshSession(),
 };
 
 vi.mock('../../api/client', () => ({
@@ -29,10 +39,7 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../api/identityClient', () => ({
   CURRENT_USER_PATH: '/api/users/me',
-  getIdentityClient: () => ({
-    requestEmailVerification: (body: unknown) => requestEmailVerification(body),
-    refresh: () => refresh(),
-  }),
+  getIdentityClient: () => identityClient,
   identityOrigin: () => 'https://api.standupless.dev',
 }));
 
@@ -44,7 +51,7 @@ vi.mock('../../hooks/useAuth', () => ({
     user,
     login: vi.fn(),
     logout,
-    checkAuthStatus,
+    checkAuthStatus: () => Promise.resolve(),
   }),
 }));
 
@@ -65,10 +72,9 @@ const renderScreen = () =>
 
 beforeEach(() => {
   requestEmailVerification.mockReset();
-  refresh.mockReset();
+  refreshSession.mockReset();
   getProfile.mockReset();
   logout.mockClear();
-  checkAuthStatus.mockClear();
 });
 
 afterEach(() => {
@@ -152,9 +158,9 @@ describe('PendingVerification', () => {
     expect(logout).toHaveBeenCalled();
   });
 
-  it('rotates the token once the profile says verified', async () => {
+  it('refreshes the session once the profile says verified', async () => {
     getProfile.mockResolvedValue({ data: { ...user, email_verified: true } });
-    refresh.mockResolvedValue('token');
+    refreshSession.mockResolvedValue({ ...user, email_verified: true });
     renderScreen();
 
     await act(async () => {
@@ -163,8 +169,7 @@ describe('PendingVerification', () => {
     });
 
     expect(getProfile).toHaveBeenCalledWith('/api/users/me');
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(checkAuthStatus).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
   });
 
   it('leaves the session alone while the profile says unverified', async () => {
@@ -177,8 +182,7 @@ describe('PendingVerification', () => {
     });
 
     expect(getProfile).toHaveBeenCalledTimes(1);
-    expect(refresh).not.toHaveBeenCalled();
-    expect(checkAuthStatus).not.toHaveBeenCalled();
+    expect(refreshSession).not.toHaveBeenCalled();
   });
 
   it('checks again on the half minute poll and survives a failed read', async () => {
@@ -191,21 +195,7 @@ describe('PendingVerification', () => {
     });
 
     expect(getProfile).toHaveBeenCalledTimes(1);
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refreshSession).not.toHaveBeenCalled();
     expect(screen.getByTestId('pending-verification')).toBeInTheDocument();
-  });
-
-  it('leaves the profile alone when the session could not be refreshed', async () => {
-    getProfile.mockResolvedValue({ data: { ...user, email_verified: true } });
-    refresh.mockResolvedValue(null);
-    renderScreen();
-
-    await act(async () => {
-      window.dispatchEvent(new Event('focus'));
-      await Promise.resolve();
-    });
-
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(checkAuthStatus).not.toHaveBeenCalled();
   });
 });

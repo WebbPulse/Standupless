@@ -11,7 +11,6 @@ import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
-import { recheckVerification } from '../../lib/verification';
 import { useAuth } from '../../hooks/useAuth';
 
 /** The sentence for each refusal, used when the server sent none of its own. */
@@ -37,7 +36,7 @@ const CONTINUE_PATH = '/workspaces';
  * is, the page says so plainly and asks for a sign in.
  */
 const VerifyEmailToken: React.FC = () => {
-  const { isAuthenticated, isLoading, user, checkAuthStatus } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const navigate = useNavigate();
   const state = useEmailVerificationLink({ client: getIdentityClient() });
   const continued = useRef(false);
@@ -49,10 +48,10 @@ const VerifyEmailToken: React.FC = () => {
   useEffect(() => {
     if (!settled || !signedIn || continued.current) return;
     continued.current = true;
-    void recheckVerification(checkAuthStatus).then(() => {
+    void Promise.resolve(getIdentityClient()?.refreshSession()).then(() => {
       void navigate(CONTINUE_PATH, { replace: true });
     });
-  }, [settled, signedIn, checkAuthStatus, navigate]);
+  }, [settled, signedIn, navigate]);
 
   if (state.kind === 'confirming' || ((settled || spentLink) && isLoading)) {
     return (

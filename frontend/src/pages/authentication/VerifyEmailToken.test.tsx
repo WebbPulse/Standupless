@@ -14,7 +14,7 @@ import VerifyEmailToken from './VerifyEmailToken';
 
 const linkState = vi.fn<() => unknown>();
 const useAuthMock = vi.fn<() => AuthContextType>();
-const refresh = vi.fn<() => Promise<string | null>>();
+const refreshSession = vi.fn<() => Promise<unknown>>();
 
 vi.mock('@webbpulse/auth/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@webbpulse/auth/react')>()),
@@ -26,7 +26,7 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/identityClient', () => ({
-  getIdentityClient: () => ({ refresh: () => refresh() }),
+  getIdentityClient: () => ({ refreshSession: () => refreshSession() }),
   identityOrigin: () => 'https://api.standupless.dev',
 }));
 
@@ -66,12 +66,12 @@ const renderLink = () =>
 beforeEach(() => {
   linkState.mockReset();
   useAuthMock.mockReset();
-  refresh.mockReset();
-  refresh.mockResolvedValue('token');
+  refreshSession.mockReset();
+  refreshSession.mockResolvedValue(null);
 });
 
 describe('VerifyEmailToken', () => {
-  it('rotates the token, rereads the profile and opens the workspaces', async () => {
+  it('refreshes the session and opens the workspaces', async () => {
     const value = session();
     useAuthMock.mockReturnValue(value);
     linkState.mockReturnValue({ kind: 'confirmed' });
@@ -81,8 +81,7 @@ describe('VerifyEmailToken', () => {
       await Promise.resolve();
     });
 
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(value.checkAuthStatus).toHaveBeenCalledTimes(1);
+    expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(screen.getByText('workspaces page')).toBeInTheDocument();
   });
 
@@ -104,7 +103,7 @@ describe('VerifyEmailToken', () => {
       'href',
       '/login'
     );
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refreshSession).not.toHaveBeenCalled();
   });
 
   it('carries a verified account on past a link that was already spent', async () => {
@@ -196,6 +195,6 @@ describe('VerifyEmailToken', () => {
         'This link is no longer valid. Verification links expire and can only be used once.'
       )
     ).toBeInTheDocument();
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refreshSession).not.toHaveBeenCalled();
   });
 });

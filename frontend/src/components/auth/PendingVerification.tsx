@@ -8,74 +8,49 @@
  * the link in another tab carries this one on without churning refresh tokens.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
+import {
+  useEmailVerificationResend,
+  useEmailVerificationWatch,
+} from '@webbpulse/auth/react';
 import AuthLayout from '../../pages/authentication/AuthLayout';
 import AuthSubmitButton from '../../pages/authentication/AuthSubmitButton';
 import { apiClient } from '../../api/client';
 import { CURRENT_USER_PATH, getIdentityClient } from '../../api/identityClient';
-import { recheckVerification } from '../../lib/verification';
 import { useAuth } from '../../hooks/useAuth';
-import { useCooldown } from '../../hooks/useCooldown';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import EmailSection from '../account/EmailSection';
 import type { UserRead } from '../../types/Api';
 
-/** How often the profile is read while the screen is open. */
-const VERIFICATION_POLL_MS = 30_000;
-
 /** Says what to do next for an account whose email is not yet verified. */
 const PendingVerification: React.FC = () => {
-  const { user, logout, checkAuthStatus } = useAuth();
-  const cooldown = useCooldown();
-  const [sending, setSending] = useState(false);
+  const { user, logout } = useAuth();
+  const client = getIdentityClient();
+  const { send, sending, remaining } = useEmailVerificationResend({ client });
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
-  const checking = useRef(false);
 
-  const recheck = useCallback(async () => {
-    if (checking.current) return;
-    checking.current = true;
-    try {
+  useEmailVerificationWatch({
+    client,
+    enabled: user?.email_verified === false,
+    isVerified: async () => {
       const { data } = await apiClient.get<UserRead>(CURRENT_USER_PATH);
-      if (data.email_verified) await recheckVerification(checkAuthStatus);
-    } catch {
-      return;
-    } finally {
-      checking.current = false;
-    }
-  }, [checkAuthStatus]);
-
-  useEffect(() => {
-    const onFocus = (): void => {
-      if (document.visibilityState === 'visible') void recheck();
-    };
-    const timer = window.setInterval(onFocus, VERIFICATION_POLL_MS);
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onFocus);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onFocus);
-    };
-  }, [recheck]);
+      return data.email_verified;
+    },
+  });
 
   if (user === null) return null;
 
   const resend = async (): Promise<void> => {
-    const client = getIdentityClient();
-    if (client === null || sending || cooldown.remaining > 0) return;
-    setSending(true);
     setError(null);
     setSent(null);
     try {
-      const outcome = await client.requestEmailVerification({
-        email: user.email,
-      });
+      const outcome = await send(user.email);
+      if (outcome === null) return;
       if (outcome.ok) {
         setSent(`We sent a new link to ${user.email}.`);
-        cooldown.start();
         return;
       }
       setError(
@@ -85,15 +60,13 @@ const PendingVerification: React.FC = () => {
       );
     } catch {
       setError('Could not reach the server. Check your connection.');
-    } finally {
-      setSending(false);
     }
   };
 
   const resendLabel = sending
     ? 'Sending'
-    : cooldown.remaining > 0
-      ? `Resend in ${cooldown.remaining}s`
+    : remaining > 0
+      ? `Resend in ${remaining}s`
       : 'Resend verification email';
 
   return (
@@ -112,7 +85,7 @@ const PendingVerification: React.FC = () => {
         <ErrorAlert message={error} />
         <AuthSubmitButton
           onClick={() => void resend()}
-          disabled={sending || cooldown.remaining > 0}
+          disabled={sending || remaining > 0}
         >
           {resendLabel}
         </AuthSubmitButton>

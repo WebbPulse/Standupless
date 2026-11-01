@@ -88,9 +88,19 @@ def test_an_unverified_session_reads_its_own_account(identity: TestClient, unver
 )
 def test_the_unverified_allowance_covers_only_the_account_and_identity_routes(path: str, allowed: bool) -> None:
     """The account and identity trees are open and nothing that merely starts the same."""
-    from app.common.api.dependencies.authz import _unverified_may_reach
+    from fastapi import HTTPException, Request
+    from webbpulse.identity.claims import require_verified_email
 
-    assert _unverified_may_reach(path) is allowed
+    from app.common.api.dependencies.authz import UNVERIFIED_ALLOWED_ROUTES
+
+    request = Request({"type": "http", "method": "GET", "path": path, "headers": []})
+    claims = {"sub": OWNER, "email_verified": False}
+    if allowed:
+        require_verified_email(request, claims, allowed_routes=UNVERIFIED_ALLOWED_ROUTES)
+        return
+    with pytest.raises(HTTPException) as refused:
+        require_verified_email(request, claims, allowed_routes=UNVERIFIED_ALLOWED_ROUTES)
+    assert refused.value.status_code == 403
 
 
 def test_an_unverified_mcp_token_resolves_to_no_caller(monkeypatch: pytest.MonkeyPatch) -> None:

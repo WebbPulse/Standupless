@@ -15,7 +15,6 @@ import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
-import { recheckVerification } from '../../lib/verification';
 import { useAuth } from '../../hooks/useAuth';
 
 /** The sentence for each refusal, used when the server sent none of its own. */
@@ -83,8 +82,8 @@ const VerifyEmailChange: React.FC = () => {
     if (state.kind !== 'confirmed' || isLoading || !isAuthenticated) return;
     if (rotated.current) return;
     rotated.current = true;
-    void recheckVerification(checkAuthStatus);
-  }, [state.kind, isLoading, isAuthenticated, checkAuthStatus]);
+    void getIdentityClient()?.refreshSession();
+  }, [state.kind, isLoading, isAuthenticated]);
 
   return (
     <AuthLayout title="Confirm your new email">
