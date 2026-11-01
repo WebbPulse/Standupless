@@ -168,7 +168,9 @@ describe('ShellGuestGate', () => {
   it('shows only the browser sign-in in a desktop app with the handoff', () => {
     enterDesktopApp();
     (
-      window as unknown as { standuplessDesktop: Record<string, unknown> }
+      window as unknown as {
+        standuplessDesktop: { signInWithBrowser?: () => void };
+      }
     ).standuplessDesktop.signInWithBrowser = vi.fn();
     renderGate();
     expect(screen.getByText('browser sign-in screen')).toBeInTheDocument();

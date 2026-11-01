@@ -17,17 +17,32 @@ import DesktopHandoff from './DesktopHandoff';
 const CALLBACK = 'standupless://auth/handoff?code=abc';
 const PATH = `${DESKTOP_HANDOFF_PATH}?challenge=abc&scheme=standupless`;
 
-const auth = vi.hoisted(() => ({
+/** What each test can change about the signed in visitor and their browser. */
+interface AuthFixture {
   value: {
-    isAuthenticated: true,
-    isLoading: false,
-    user: { email: 'person@example.com' } as { email: string } | null,
-    logout: vi.fn(),
-  },
-  handOffToDesktop: vi.fn(),
-  copy: vi.fn(),
-  platform: 'linux' as string | null,
-}));
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    user: { email: string } | null;
+    logout: ReturnType<typeof vi.fn>;
+  };
+  handOffToDesktop: ReturnType<typeof vi.fn>;
+  copy: ReturnType<typeof vi.fn>;
+  platform: string | null;
+}
+
+const auth = vi.hoisted(
+  (): AuthFixture => ({
+    value: {
+      isAuthenticated: true,
+      isLoading: false,
+      user: { email: 'person@example.com' },
+      logout: vi.fn(),
+    },
+    handOffToDesktop: vi.fn(),
+    copy: vi.fn(),
+    platform: 'linux',
+  })
+);
 
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => auth.value }));
 
