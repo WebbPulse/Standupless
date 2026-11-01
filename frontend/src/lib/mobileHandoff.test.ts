@@ -53,7 +53,6 @@ vi.mock('@webbpulse/auth', async (importOriginal) => {
 
 const LAUNCH_URL = 'https://app.example/desktop/handoff?challenge=challenge';
 const CALLBACK = 'standupless://auth/handoff?code=abc';
-const SCHEMES = ['standupless', 'standupless-staging'];
 
 /** What the page passes the client to redeem a code. */
 interface HandoffInput {
