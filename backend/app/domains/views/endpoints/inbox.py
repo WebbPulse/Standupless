@@ -29,6 +29,8 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.views import InboxBucket, ReminderEntityType
+from app.common.db.dynamo.api_keys import is_service_subject
+from app.common.db.dynamo.push_devices import device_id_for
 from app.common.inbox import INBOX_KINDS, inbox_counts, list_notifications
 from app.common.inbox import clear_notifications as clear_rows
 from app.common.inbox import delete_notification as delete_row
@@ -43,6 +45,7 @@ from app.common.issue_reminders import (
     set_entity_reminder,
     set_reminder,
 )
+from app.common.push import drop_push_device, sync_push_badge
 from app.domains.views.schemas.view import (
     INBOX_DEFAULT_LIMIT,
     INBOX_MAX_LIMIT,
@@ -58,9 +61,12 @@ from app.domains.views.schemas.view import (
     IssueReminderRead,
     IssueReminderWrite,
     NotificationRead,
+    PushDeviceRemove,
+    PushDeviceWrite,
     ReminderListRead,
     ReminderRead,
 )
+from app.domains.views.service import forbidden
 
 router = APIRouter()
 
@@ -134,7 +140,10 @@ def mark_read(
     changed rather than as an error: the write is conditional on the row being
     unread in this caller's own partition, so a foreign id cannot be reached.
     """
-    return InboxReadResult(updated=mark_rows_read(repositories, context, payload))
+    updated = mark_rows_read(repositories, context, payload)
+    if updated:
+        sync_push_badge(repositories, context.user_id)
+    return InboxReadResult(updated=updated)
 
 
 @router.post("/{workspace_id}/inbox/unread", response_model=InboxReadResult)
@@ -150,7 +159,10 @@ def mark_unread(
     nothing changed: the write is conditional on the row existing in this caller's
     own partition, so a foreign id cannot be created or reached.
     """
-    return InboxReadResult(updated=mark_rows_unread(repositories, context, payload))
+    updated = mark_rows_unread(repositories, context, payload)
+    if updated:
+        sync_push_badge(repositories, context.user_id)
+    return InboxReadResult(updated=updated)
 
 
 @router.post("/{workspace_id}/inbox/snooze", response_model=InboxReadResult)
@@ -165,7 +177,10 @@ def snooze(
     The moment must be at least a minute out and within the 90 day retention, so a
     snooze can neither return before the request lands nor outlive the row.
     """
-    return InboxReadResult(updated=snooze_rows(repositories, context, payload))
+    updated = snooze_rows(repositories, context, payload)
+    if updated:
+        sync_push_badge(repositories, context.user_id)
+    return InboxReadResult(updated=updated)
 
 
 @router.post("/{workspace_id}/inbox/clear", response_model=InboxClearResult)
@@ -182,7 +197,46 @@ def clear_inbox(
     rows whose issue is completed or cancelled, and a row still snoozed goes only
     when the clear sends `include_snoozed`.
     """
-    return InboxClearResult(deleted=clear_rows(repositories, context, payload))
+    deleted = clear_rows(repositories, context, payload)
+    if deleted:
+        sync_push_badge(repositories, context.user_id)
+    return InboxClearResult(deleted=deleted)
+
+
+@router.post("/{workspace_id}/inbox/devices", status_code=status.HTTP_204_NO_CONTENT)
+def register_push_device(
+    payload: PushDeviceWrite,
+    workspace_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Register the caller's phone for push, and set its badge.
+
+    The app calls this each time it opens a workspace, which keeps the device from
+    aging out and adds the workspace to what its badge counts. A device belongs to a
+    person, so a key acting for no one is refused.
+    """
+    if is_service_subject(context.user_id):
+        raise forbidden()
+    repositories.inbox.push_devices.register(context.user_id, payload.platform, payload.token, workspace_id)
+    sync_push_badge(repositories, context.user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{workspace_id}/inbox/devices/unregister", status_code=status.HTTP_204_NO_CONTENT)
+def unregister_push_device(
+    payload: PushDeviceRemove,
+    workspace_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Stop push to the caller's phone and zero its badge, on the way to signing out.
+
+    Only the caller's own partition is touched, so naming someone else's token removes
+    nothing, and the token travels in the body so no access log holds it.
+    """
+    drop_push_device(repositories, context.user_id, device_id_for(payload.token))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{workspace_id}/inbox/reminders", response_model=IssueReminderListRead)
@@ -284,4 +338,5 @@ def delete_notification(
 ) -> Response:
     """Remove one of the caller's own notifications, or 404."""
     delete_row(repositories, context, notification_id)
+    sync_push_badge(repositories, context.user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -3,8 +3,8 @@
  * renders nothing either way. It marks the document so the mobile stylesheet
  * can keep content clear of the notch and the home indicator, keeps the status
  * bar readable on the person's theme, hides the launch splash once the app has
- * painted, and routes deep links client side so the open page and its state
- * survive. A sign-in handoff link closes the browser, is redeemed against
+ * painted, and routes deep links and tapped notifications client side so the
+ * open page and its state survive. A sign-in handoff link closes the browser, is redeemed against
  * the pending verifier and is never routed. In a browser it does nothing at
  * all.
  */
@@ -14,7 +14,12 @@ import { isDesktopHandoffCallback } from '@webbpulse/auth';
 import { useAuthClient } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
 import { desktopHandoffSchemes } from '../../config/app';
-import { isMobileShell, mobileLinkPath } from '../../lib/mobile';
+import {
+  canUseMobilePush,
+  isMobileShell,
+  mobileLinkPath,
+  pushTapPath,
+} from '../../lib/mobile';
 import {
   closeMobileAuthSession,
   completeMobileBrowserSignIn,
@@ -110,6 +115,27 @@ const MobileShellBridge = (): null => {
         cleanups.push(() => {
           void handle.remove();
         });
+      }
+
+      if (canUseMobilePush()) {
+        const tap = await import('@capacitor/push-notifications')
+          .then(({ PushNotifications }) =>
+            PushNotifications.addListener(
+              'pushNotificationActionPerformed',
+              (event) => {
+                const path = pushTapPath(event.notification.data);
+                if (path !== null) void navigate(path);
+              }
+            )
+          )
+          .catch(() => undefined);
+        if (disposed) {
+          void tap?.remove();
+        } else if (tap !== undefined) {
+          cleanups.push(() => {
+            void tap.remove();
+          });
+        }
       }
 
       const launch = await App.getLaunchUrl().catch(() => undefined);

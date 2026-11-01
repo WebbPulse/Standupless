@@ -89,10 +89,10 @@ HANDLE_RULE = "Use 1 to 39 letters, digits, hyphens or underscores, starting wit
 
 
 class NotificationChannels(BaseModel):
-    """Where one kind of notification is delivered: the inbox, email and chat direct messages.
+    """Where one kind of notification is delivered: the inbox, email, chat direct messages and push.
 
     `chat` covers every chat account the person linked, Slack or Discord, and only
-    reaches them once one is linked.
+    reaches them once one is linked. `push` reaches the mobile apps they signed in to.
     """
 
     in_app: bool
@@ -193,6 +193,7 @@ class NotificationChannelsUpdate(BaseModel):
     in_app: Optional[bool] = None
     email: Optional[bool] = None
     chat: Optional[bool] = None
+    push: Optional[bool] = None
 
 
 class UserPreferencesUpdate(BaseModel):
@@ -338,6 +339,7 @@ def _as_read(user: "Any") -> UserRead:
                 in_app=bool(user.notification_preferences.get(kind, {}).get("in_app", channel_default(kind, "in_app"))),
                 email=bool(user.notification_preferences.get(kind, {}).get("email", channel_default(kind, "email"))),
                 chat=bool(user.notification_preferences.get(kind, {}).get("chat", channel_default(kind, "chat"))),
+                push=bool(user.notification_preferences.get(kind, {}).get("push", channel_default(kind, "push"))),
             )
             for kind in NOTIFICATION_KINDS
         },

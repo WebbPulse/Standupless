@@ -95,6 +95,7 @@ from app.common.issue_privacy import person_can_see_issue
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.notification_pause import bypasses_hold, held_until
 from app.common.project_update_report import report_for_item
+from app.common.push import deliver_push, wants_push
 from app.common.team_privacy import person_can_see_initiative, person_can_see_team
 from app.common.trash_stream import touches_trash
 from app.common.triage_duty import duty_notified
@@ -356,7 +357,8 @@ def write_notification(
     in_app = recipient.wants_notification(kind, "in_app") if recipient is not None else True
     email = recipient is not None and recipient.wants_notification(kind, "email")
     chat = wants_chat(repositories, recipient, kind, workspace_id)
-    if not in_app and not email and not chat:
+    push = wants_push(repositories, recipient, kind)
+    if not in_app and not email and not chat and not push:
         return False
 
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
@@ -395,6 +397,7 @@ def write_notification(
         )
     if chat:
         hold_for_chat(repositories, row, headline_key=headline_key, excerpt=excerpt(comment_excerpt))
+    deliver_push(repositories, row, recipient=recipient, urgent=is_urgent(issue))
     return True
 
 
@@ -862,7 +865,8 @@ def write_project_update_notification(
         is not False
     )
     chat = wants_chat(repositories, recipient, PROJECT_UPDATED, project.workspace_id)
-    if not in_app and not email and not chat:
+    push = wants_push(repositories, recipient, PROJECT_UPDATED)
+    if not in_app and not email and not chat and not push:
         return False
 
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
@@ -892,6 +896,7 @@ def write_project_update_notification(
         )
     if chat:
         hold_for_chat(repositories, row, health=health, excerpt=excerpt(body))
+    deliver_push(repositories, row, recipient=recipient)
     return True
 
 
@@ -940,7 +945,10 @@ def write_update_reply_notification(
         unread_at=stamped.isoformat(),
         expires_at=expires_at(stamped),
     )
-    return repositories.inbox.create(row)
+    created = repositories.inbox.create(row)
+    if created:
+        deliver_push(repositories, row)
+    return created
 
 
 def handle_update_reply(repositories: Repositories, new_image: Mapping[str, Any]) -> int:
@@ -1009,7 +1017,8 @@ def write_view_project_notification(
     in_app = recipient.wants_notification(VIEW_PROJECT_ADDED, "in_app") if recipient is not None else True
     email = recipient is not None and recipient.wants_notification(VIEW_PROJECT_ADDED, "email")
     chat = wants_chat(repositories, recipient, VIEW_PROJECT_ADDED, project.workspace_id)
-    if not in_app and not email and not chat:
+    push = wants_push(repositories, recipient, VIEW_PROJECT_ADDED)
+    if not in_app and not email and not chat and not push:
         return False
 
     stamped = (
@@ -1038,6 +1047,7 @@ def write_view_project_notification(
         hold_for_digest(repositories, row, recipient=recipient)
     if chat:
         hold_for_chat(repositories, row)
+    deliver_push(repositories, row, recipient=recipient)
     return True
 
 
@@ -1126,7 +1136,8 @@ def write_role_notification(
     in_app = recipient.wants_notification(grant.kind, "in_app")
     email = recipient.wants_notification(grant.kind, "email")
     chat = wants_chat(repositories, recipient, grant.kind, workspace_id)
-    if not in_app and not email and not chat:
+    push = wants_push(repositories, recipient, grant.kind)
+    if not in_app and not email and not chat and not push:
         return False
 
     moment = stamped if stamped.tzinfo is not None else stamped.replace(tzinfo=timezone.utc)
@@ -1154,6 +1165,7 @@ def write_role_notification(
         hold_for_digest(repositories, row, recipient=recipient)
     if chat:
         hold_for_chat(repositories, row)
+    deliver_push(repositories, row, recipient=recipient)
     return True
 
 

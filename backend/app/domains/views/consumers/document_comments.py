@@ -18,6 +18,7 @@ from webbpulse.events import deserialize_image
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.documents import Document
 from app.common.db.dynamo.inbox import DOCUMENT_COMMENTED, Notification, expires_at, inbox_partition, notification_id
+from app.common.push import deliver_push
 from app.common.team_privacy import person_can_see_initiative, person_can_see_team
 
 
@@ -99,7 +100,10 @@ def _write(
         unread_at=stamped.isoformat(),
         expires_at=expires_at(stamped),
     )
-    return repositories.inbox.create(row)
+    created = repositories.inbox.create(row)
+    if created:
+        deliver_push(repositories, row)
+    return created
 
 
 def _actor_name(repositories: Repositories, actor_id: str) -> str:

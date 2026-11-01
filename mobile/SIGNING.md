@@ -26,7 +26,7 @@ Needs the Apple Developer Program membership, team `PFHGG295DL`, the same one
 the desktop macOS signing uses (STUP-229). It is an individual enrolment today.
 
 1. Register both app ids in the developer portal with the **Associated
-   Domains** capability.
+   Domains** and **Push Notifications** capabilities.
 2. Create an **Apple Distribution** certificate and export it with its private
    key as a `.p12` file.
 3. Create an **App Store** provisioning profile for each app id.
@@ -68,6 +68,28 @@ encryption.
    `applinks` for `/w/*/issues/*` and `webcredentials` for managing passkeys
    and confirming sensitive actions while signed in. Sign-in itself happens in
    an `ASWebAuthenticationSession`.
+
+### Push
+
+The entitlement is `aps-environment`, set from the `STANDUPLESS_APS_ENVIRONMENT`
+build setting: `development` for a Debug device build, `production` for Release
+and for staging. Both App Store profiles carry `production`, so a signed build
+registers production tokens, and the backend only ever calls Apple's production
+host. A Debug build on a device registers a sandbox token that Apple refuses, and
+the backend removes it. A profile regenerated for an app id without the Push
+Notifications capability would fail the archive step.
+
+The sending key lives in each environment's app secret, not in GitHub:
+
+| App secret key | Value |
+| --- | --- |
+| `apns_key` | the APNs `.p8` key, as PEM or base64 |
+| `apns_key_id` | the key id |
+| `apns_team_id` | the ten-character team id |
+
+Set them with `webbpulse-config --prefix standupless-<env> secret set <KEY>`. Any
+of them missing or a key that does not parse turns push off, with a log line that
+says so, and nothing else changes.
 
 ### When a profile goes Invalid
 

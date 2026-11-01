@@ -33,6 +33,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, source_millis
 from app.common.issue_key_search import find_keys
 from app.common.issue_move import find_issue_by_number
+from app.common.push import deliver_push
 from app.common.sla import apply_sla
 from app.common.team_retirement import is_retired
 from app.domains.integrations import linking, pr_labels, pr_resync, pr_status
@@ -763,26 +764,26 @@ def _notify_review_requested(
     full_name = str(repository.get("full_name", "") or "")
     number = int(pull_request.get("number", 0) or 0)
     moment = datetime.fromtimestamp(pr_updated_ms / 1000, tz=timezone.utc) if pr_updated_ms else utc_now()
-    repositories.inbox.create(
-        Notification(
-            ws_user=inbox_partition(workspace_id, recipient),
-            notification_id=notification_id(
-                moment, REVIEW_REQUESTED, recipient, f"{repository.get('id', '')}#{number}#{pr_updated_ms}"
-            ),
-            workspace_id=workspace_id,
-            kind=REVIEW_REQUESTED,
-            issue_key=f"{full_name}#{number}",
-            issue_title=str(pull_request.get("title", "") or ""),
-            team_id="",
-            url=str(pull_request.get("html_url", "") or "") or None,
-            actor_id=actor or "",
-            actor_name=(actor_user.display_name if actor_user is not None else "") or sender_login,
-            source=GITHUB,
-            recipient_id=recipient,
-            created_at=moment,
-            unread_at=instant(moment),
-        )
+    row = Notification(
+        ws_user=inbox_partition(workspace_id, recipient),
+        notification_id=notification_id(
+            moment, REVIEW_REQUESTED, recipient, f"{repository.get('id', '')}#{number}#{pr_updated_ms}"
+        ),
+        workspace_id=workspace_id,
+        kind=REVIEW_REQUESTED,
+        issue_key=f"{full_name}#{number}",
+        issue_title=str(pull_request.get("title", "") or ""),
+        team_id="",
+        url=str(pull_request.get("html_url", "") or "") or None,
+        actor_id=actor or "",
+        actor_name=(actor_user.display_name if actor_user is not None else "") or sender_login,
+        source=GITHUB,
+        recipient_id=recipient,
+        created_at=moment,
+        unread_at=instant(moment),
     )
+    if repositories.inbox.create(row):
+        deliver_push(repositories, row, recipient=user)
 
 
 def _has_merge_rules(repositories: Repositories, workspace_id: str, prefixes: Mapping[str, Any]) -> bool:
