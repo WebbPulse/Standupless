@@ -6,9 +6,8 @@
  * same batch lookup and shared cache the rendered chips use, by an invisible
  * probe that also draws the glyph the decorations clone, so a body costs one
  * request however many issues it mentions. A key that does not resolve stays
- * plain text. Clicking the glyph or title opens the issue, as does clicking
- * the key with Cmd or Ctrl held, or anywhere on the chip when the surface is
- * read-only.
+ * plain text. Clicking the chip opens the issue, in a new tab with Cmd or
+ * Ctrl held.
  */
 
 import type { Editor } from '@tiptap/core';
