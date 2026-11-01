@@ -1,9 +1,10 @@
 # Signing the desktop builds
 
-The desktop builds ship unsigned. `electron-builder.config.cjs` turns signing on
-per platform only when that platform's variables are all set, and
-`release-desktop.yml` passes none of them today, so every release is unsigned
-until the steps below are done.
+macOS builds are signed with a Developer ID, notarized and stapled.
+Windows and Linux builds are unsigned. `electron-builder.config.cjs` turns
+signing on per platform only when that platform's variables are all set, and
+`release-desktop.yml` passes them only to the macOS packaging step. A build
+still succeeds without them.
 
 Without a Developer ID the macOS builds are ad-hoc signed (`identity: '-'`),
 never left unsigned. Apple Silicon kills a binary whose code signature does not
@@ -16,43 +17,48 @@ app and launches each slice, in `release-desktop.yml` and in the CI
 
 ## What unsigned costs
 
-- **macOS:** Gatekeeper blocks the first launch. Users right-click the app and
-  choose Open, or allow it under System Settings, Privacy and Security.
-  Auto-update does not work on macOS for unsigned apps, because Squirrel.Mac
-  checks the signature of the update against the running app. Users update by
-  downloading the new dmg.
+- **macOS, ad-hoc signed:** only builds without the secrets, such as CI.
+  Gatekeeper blocks the first launch, and Squirrel.Mac cannot update the app, so
+  the app links to the download instead (`standupless.signed` in the packaged
+  package.json, read by `src/updater.ts`).
 - **Windows:** SmartScreen shows "Windows protected your PC" until users choose
   More info, then Run anyway. Auto-update works.
 - **Linux:** nothing. AppImage and deb are not signed by convention, and
   auto-update works for the AppImage.
 - Signed builds are also what OS-level https link capture needs (macOS
-  associated domains, Windows app URI handlers). Until then only the
-  `standupless://` scheme opens the app.
+  associated domains, Windows app URI handlers). Today only the `standupless://`
+  scheme opens the app.
 
 ## macOS
 
-Needs an Apple Developer Program membership, at $99 a year, for the WebbPulse
-organisation. Enrolling as an organisation needs a D-U-N-S number.
-
-1. Create a **Developer ID Application** certificate in the Apple developer
-   portal and export it with its private key as a `.p12` file.
-2. Create an app-specific password for the Apple ID that will notarise.
-3. Add these GitHub Actions secrets on the repository:
+The Apple Developer Program enrolment is individual, not a WebbPulse
+organisation, so the publisher users see is Tyler Webb (team `V6RBVPC989`).
+Notarization uses an App Store Connect API key, not an Apple ID. These GitHub
+Actions secrets are set on the repository:
 
 | Secret | Value |
 | --- | --- |
-| `CSC_LINK` | the `.p12` file, base64 encoded |
+| `CSC_LINK` | the Developer ID Application `.p12`, base64 encoded |
 | `CSC_KEY_PASSWORD` | the `.p12` export password |
-| `APPLE_ID` | the Apple ID that notarises |
-| `APPLE_APP_SPECIFIC_PASSWORD` | the app-specific password |
 | `APPLE_TEAM_ID` | the ten-character team id |
+| `APPLE_API_KEY` | the `.p8` key contents, raw or base64 encoded |
+| `APPLE_API_KEY_ID` | the key id |
+| `APPLE_API_ISSUER` | the issuer id |
 
-`CSC_LINK` and `CSC_KEY_PASSWORD` turn on signing, and the three `APPLE_`
-values also turn on notarisation. The config already sets the hardened runtime.
+electron-builder reads `APPLE_API_KEY` as a file path, so the workflow writes the
+contents to a temporary file and points the variable at it. It also unsets empty
+variables, because electron-builder treats an empty `CSC_LINK` as a certificate.
+
+`CSC_LINK` and `CSC_KEY_PASSWORD` turn on signing and the hardened runtime, and
+the three API key values also turn on notarization. The `.app` is notarized and
+stapled, and the zip and dmg are built from it. The dmg itself is not notarized.
+`scripts/verify-mac.sh` fails a signed build that has no ticket, so setting the
+signing secrets without the API key fails the release.
 
 ## Windows
 
-Two options. Either one turns on signing.
+Unsigned by owner decision, 2026-10-15. Two options if that is revisited. Either
+one turns on signing.
 
 **Azure Trusted Signing** (recommended): about $9.99 a month on the Basic tier.
 It needs an Azure subscription, a Trusted Signing account, identity validation
@@ -80,16 +86,14 @@ a plain `.pfx` in CI is only possible with a CA's cloud signing service. With a
 
 Nothing to buy or set.
 
-## Turning it on in CI
+## Trying a build
 
-Once the secrets exist, add them to the `env` of the "Package the installers"
-step in `.github/workflows/release-desktop.yml`, each read from
-`secrets.`, and drop `CSC_IDENTITY_AUTO_DISCOVERY: "false"` from the macOS job.
-Pass the macOS values only to the macOS job, because electron-builder falls back
-to `CSC_LINK` on Windows when `WIN_CSC_LINK` is absent.
-Then tag a new `desktop-v*` release. No builder config change is needed, but
-once macOS builds are signed, set `ANNOUNCE_ONLY` in `src/updater.ts` to false
-so Macs install updates themselves instead of linking to the download.
+Dispatching `release-desktop.yml` builds and verifies every platform and uploads
+the installers as workflow artifacts without publishing anything. Set `unsigned`
+to build as if the secrets were absent. Dispatch from `staging` or `main`,
+because the CodeArtifact role trusts only those branches and `desktop-v*` tags.
+Windows signing secrets must go only to a Windows step, because electron-builder
+falls back to `CSC_LINK` on Windows when `WIN_CSC_LINK` is absent.
 
 ## Where releases go
 
