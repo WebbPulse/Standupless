@@ -486,6 +486,76 @@ describe('attachments', () => {
     });
   });
 
+  const attachmentOf = (id: string, name: string): AttachmentRead => ({
+    attachment_id: id,
+    issue_id: 'id-ENG-1',
+    workspace_id: 'ws-1',
+    team_id: 't-1',
+    kind: 'file',
+    title: name,
+    content_type: 'image/png',
+    uploaded_by: 'user-1',
+    created_at: '2026-09-18T00:00:00Z',
+  });
+
+  /** Fills the title and holds these image files in the description. */
+  const holdImages = async (
+    user: ReturnType<typeof userEvent.setup>,
+    files: File[]
+  ): Promise<HTMLElement> => {
+    renderDialog();
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Bug');
+    const description = await findDescription();
+    pasteFiles(description, files);
+    await waitFor(() => {
+      expect(editorOf(description).getMarkdown()).toMatch(PENDING);
+    });
+    return description;
+  };
+
+  it('embeds a file still shown as attached when the description lost its placeholder', async () => {
+    const user = userEvent.setup();
+    uploadAttachment.mockResolvedValue(attachmentOf('att-1', 'shot.png'));
+    const file = new File(['png'], 'shot.png', { type: 'image/png' });
+    const description = await holdImages(user, [file]);
+    act(() => {
+      editorOf(description).commands.clearContent(true);
+    });
+    expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent(
+      'shot.png'
+    );
+
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledWith('id-ENG-1', {
+        body: '![shot.png](/api/workspaces/ws-1/attachments/att-1/content?issue_id=id-ENG-1)',
+      });
+    });
+  });
+
+  it('tries the upload and the description again when the connection drops', async () => {
+    const user = userEvent.setup();
+    uploadAttachment.mockRejectedValueOnce(new TypeError('Load failed'));
+    uploadAttachment.mockResolvedValue(attachmentOf('att-1', 'shot.png'));
+    updateIssue.mockRejectedValueOnce(new TypeError('Load failed'));
+    const file = new File(['png'], 'shot.png', { type: 'image/png' });
+    await holdImages(user, [file]);
+
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(
+      () => {
+        expect(updateIssue).toHaveBeenCalledTimes(2);
+      },
+      { timeout: 8_000 }
+    );
+    expect(uploadAttachment).toHaveBeenCalledTimes(2);
+    expect(updateIssue).toHaveBeenLastCalledWith('id-ENG-1', {
+      body: '![shot.png](/api/workspaces/ws-1/attachments/att-1/content?issue_id=id-ENG-1)',
+    });
+  }, 15_000);
+
   it('takes the placeholder out when the file is removed', async () => {
     renderDialog();
 

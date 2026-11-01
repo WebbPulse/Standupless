@@ -372,6 +372,33 @@ describe('resolving the issue', () => {
     expect(screen.queryByText(/Imported from/)).not.toBeInTheDocument();
   });
 
+  it('keeps showing a held issue without an error when a refresh fails', async () => {
+    renderPage();
+    expect(
+      await screen.findByRole('textbox', { name: 'Issue title' })
+    ).toBeInTheDocument();
+    getIssueByKey.mockClear();
+    getIssueByKey.mockRejectedValue(new Error('Load failed'));
+
+    await waitFor(
+      () => {
+        fireEvent.focus(window);
+        expect(getIssueByKey).toHaveBeenCalled();
+      },
+      { timeout: 5_000 }
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(
+      screen.queryByText('Could not load this issue.')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: 'Issue title' })
+    ).toBeInTheDocument();
+  });
+
   it('surfaces a failed read', async () => {
     getIssueByKey.mockRejectedValue(new Error('boom'));
     renderPage();

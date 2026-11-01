@@ -29,6 +29,9 @@ export const isChunkLoadError = (error: unknown): boolean => {
   return CHUNK_ERROR_PATTERNS.some((pattern) => pattern.test(error.message));
 };
 
+/** Whether this page has already started a chunk reload. */
+let reloadStarted = false;
+
 /** Reads when this tab last reloaded for a chunk, or null. */
 const lastReloadAt = (): number | null => {
   try {
@@ -64,6 +67,27 @@ export const reloadOnceForChunkError = (
   const last = lastReloadAt();
   if (last !== null && now - last < CHUNK_RELOAD_WINDOW_MS) return false;
   if (!recordReload(now)) return false;
+  reloadStarted = true;
   reload();
   return true;
+};
+
+/**
+ * Starts a chunk reload, or joins the one this page already started, which on
+ * a weak connection can take seconds to replace the page. Returns whether a
+ * reload is on its way.
+ */
+export const joinChunkReload = (): boolean =>
+  reloadStarted || reloadOnceForChunkError();
+
+/**
+ * Reloads when Vite reports a chunk that failed to load. The event is left
+ * uncancelled: cancelling it makes the import resolve to undefined, which a
+ * lazy component then throws as an unrelated TypeError instead of the chunk
+ * failure it is.
+ */
+export const installChunkRecovery = (reload?: () => void): void => {
+  window.addEventListener('vite:preloadError', () => {
+    reloadOnceForChunkError(reload);
+  });
 };

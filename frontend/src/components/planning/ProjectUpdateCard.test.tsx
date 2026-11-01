@@ -8,8 +8,8 @@
  * The menu copies either kind of update as Markdown, with the author, date
  * and health over its text, and confirms it with a toast.
  *
- * The emoji dataset is loaded once before the tests, so its cold import is not
- * paid inside a wait.
+ * The emoji dataset and the lazy editor are loaded once before the tests, so
+ * their cold imports are not paid inside a wait.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -137,8 +137,11 @@ const renderCard = (
 };
 
 beforeAll(async () => {
-  await loadEmojiCatalog();
-});
+  await Promise.all([
+    loadEmojiCatalog(),
+    import('../editor/RichMarkdownEditor'),
+  ]);
+}, 60_000);
 
 beforeEach(() => {
   showToast.mockReset();
