@@ -645,10 +645,14 @@ def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient
     sign_in(client, OWNER)
 
     listed = client.patch("/api/users/me/preferences", json={"projects_display": {"columns": ["progress", "lead"]}})
+    initiative = client.patch(
+        "/api/users/me/preferences", json={"projects_display": {"columns": ["progress", "initiative", "teams"]}}
+    )
     emptied = client.patch("/api/users/me/preferences", json={"projects_display": {"columns": ""}})
 
     assert listed.status_code == 200, listed.text
     assert listed.json()["projects_display"]["columns"] == "lead,progress"
+    assert initiative.json()["projects_display"]["columns"] == "teams,initiative,progress"
     assert emptied.json()["projects_display"]["columns"] == ""
     assert repositories.users.get(OWNER).projects_display["columns"] == ""
 

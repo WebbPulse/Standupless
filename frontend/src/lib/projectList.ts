@@ -168,6 +168,7 @@ export type ProjectColumn =
   | 'start'
   | 'target'
   | 'teams'
+  | 'initiative'
   | 'issues'
   | 'important'
   | 'created'
@@ -191,6 +192,7 @@ export const PROJECT_COLUMNS: ProjectColumn[] = [
   'start',
   'target',
   'teams',
+  'initiative',
   'issues',
   'important',
   'created',
@@ -209,6 +211,7 @@ export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
   'status',
   'health',
   'labels',
+  'initiative',
   'teams',
   'lead',
   'members',
@@ -254,6 +257,7 @@ export const PROJECT_COLUMN_LABELS: Record<ProjectColumn, string> = {
   start: 'Start date',
   target: 'Target date',
   teams: 'Teams',
+  initiative: 'Initiative',
   issues: 'Issues',
   important: 'Important requests',
   created: 'Created',

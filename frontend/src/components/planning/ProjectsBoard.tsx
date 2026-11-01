@@ -50,6 +50,7 @@ import ProjectCardMenu from './ProjectCardMenu';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
 import ProjectDependencyMarkers from './ProjectDependencyMarkers';
 import ProjectIcon from './ProjectIcon';
+import ProjectInitiativeChips from './ProjectInitiativeChips';
 import {
   HealthPicker,
   LeadPicker,
@@ -77,10 +78,11 @@ import { slotIndex } from '../../lib/dropSlot';
 import type { Assignable } from '../../lib/issuePeople';
 import { projectPath } from '../../lib/paths';
 import { progressPercent } from '../../lib/planningDisplay';
-import { canEditProject } from '../../lib/planningModel';
+import { canEditProject, projectInitiativeIds } from '../../lib/planningModel';
 import {
   cellChange,
   manualPlacements,
+  type InitiativeName,
   type ProjectColumn,
   type ProjectGroup,
   type ProjectGrouping,
@@ -133,6 +135,9 @@ const ON_CARD = 'relative z-10 flex shrink-0 items-center';
 /** The labels a board drawn without any are given, one array so memoised cards keep it. */
 const NO_PROJECT_LABELS: ProjectLabelRead[] = [];
 
+/** The initiatives a board drawn without any is given, one map so memoised cards keep it. */
+const NO_INITIATIVES: ReadonlyMap<string, InitiativeName> = new Map();
+
 /** The stored key that hides a column. */
 const hiddenKey = (column: string): string => `hidden/${column}`;
 
@@ -158,6 +163,8 @@ interface BoardCardProps {
   teams: TeamRead[];
   people: Assignable[];
   projectLabels: ProjectLabelRead[];
+  /** The workspace's initiatives by id, for the initiative chips. */
+  initiatives: ReadonlyMap<string, InitiativeName>;
   editable: boolean;
   dimmed: boolean;
   /** The picker the card menu asked for, drawn even when the card hides it. */
@@ -186,6 +193,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
   teams,
   people,
   projectLabels,
+  initiatives,
   editable,
   dimmed,
   forced,
@@ -337,6 +345,16 @@ const BoardCard: React.FC<BoardCardProps> = ({
           />
         </div>
       )}
+      {shown.includes('initiative') &&
+        projectInitiativeIds(project).some((id) => initiatives.has(id)) && (
+          <div className="relative z-10 flex min-w-0 flex-wrap items-center gap-1 self-start">
+            <ProjectInitiativeChips
+              project={project}
+              initiatives={initiatives}
+              slug={slug}
+            />
+          </div>
+        )}
       <div className="-ml-1 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-xs text-text-muted">
         {has('status') && (
           <span className={ON_CARD}>
@@ -525,6 +543,8 @@ export interface ProjectsBoardProps {
   people: Assignable[];
   /** The workspace's project labels, for the label chips and picker. */
   projectLabels?: ProjectLabelRead[];
+  /** The workspace's initiatives by id, for the initiative chips. */
+  initiatives?: ReadonlyMap<string, InitiativeName>;
   workspaceRole: WorkspaceRole | undefined;
   onMove: (
     project: ProjectRead,
@@ -584,6 +604,7 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   teams,
   people,
   projectLabels = NO_PROJECT_LABELS,
+  initiatives = NO_INITIATIVES,
   workspaceRole,
   onMove,
   createIn,
@@ -853,6 +874,7 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
               teams={teams}
               people={people}
               projectLabels={projectLabels}
+              initiatives={initiatives}
               editable={canEditProject(workspaceRole, project, teams)}
               dimmed={drag?.projectId === project.project_id}
               forced={forced?.projectId === project.project_id ? forced : null}

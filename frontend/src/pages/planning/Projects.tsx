@@ -3,7 +3,7 @@
  * timeline. The list shows icon and name, then the properties the Display
  * menu keeps on: the summary, next milestone and dependency flags beside the
  * name, and columns for health, priority, status, lead, members, start and
- * target dates, teams, issues, created, updated and completed dates, and
+ * target dates, teams, initiatives, issues, created, updated and completed dates, and
  * progress. Hidden columns leave the grid, and health, priority, status, lead
  * and both dates edit from the row without opening it. The board puts
  * projects in columns by the grouping and moves them between columns by
@@ -109,6 +109,7 @@ import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
+import ProjectInitiativeChips from '../../components/planning/ProjectInitiativeChips';
 import ProjectsBoard from '../../components/planning/ProjectsBoard';
 import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
 import ProjectTimeline, {
@@ -198,6 +199,7 @@ import {
   withinLeadTeams,
   type DependencyLinesChoice,
   type EmptyColumnsChoice,
+  type InitiativeName,
   type LeadTeamChoice,
   type ProjectColumn,
   type ProjectGroup,
@@ -265,6 +267,7 @@ const HEADER_CLASSES: Record<GridColumn, string> = {
   status: cn(TIER_BLOCK[COLUMN_TIERS.status], 'px-2'),
   lead: cn(TIER_BLOCK[COLUMN_TIERS.lead], 'text-center'),
   members: TIER_BLOCK[COLUMN_TIERS.members],
+  initiative: TIER_BLOCK[COLUMN_TIERS.initiative],
   start: cn(TIER_BLOCK[COLUMN_TIERS.start], 'px-2'),
   target: cn(TIER_BLOCK[COLUMN_TIERS.target], 'px-2'),
   teams: TIER_BLOCK[COLUMN_TIERS.teams],
@@ -368,6 +371,8 @@ interface ProjectRowProps {
   people: Assignable[];
   /** The workspace's project labels, for the label chips and picker. */
   projectLabels: ProjectLabelRead[];
+  /** The workspace's initiatives by id, for the initiative chips. */
+  initiatives: ReadonlyMap<string, InitiativeName>;
   /** Every loaded project by id, so the dependency flags can name their projects. */
   byId: ReadonlyMap<string, ProjectRead>;
   /** The columns shown beside the name, in drawing order. */
@@ -402,6 +407,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   teams,
   people,
   projectLabels,
+  initiatives,
   byId,
   shown,
   workspaceRole,
@@ -689,6 +695,21 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           </span>
         </span>
       )}
+      {has('initiative') && (
+        <div
+          className={cn(
+            'pointer-events-none relative z-10 min-w-0 items-center gap-1',
+            TIER_FLEX[COLUMN_TIERS.initiative]
+          )}
+        >
+          <ProjectInitiativeChips
+            project={project}
+            initiatives={initiatives}
+            slug={slug}
+            limit={2}
+          />
+        </div>
+      )}
       {has('issues') && (
         <span
           className={cn(
@@ -930,8 +951,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
   const subGrouping =
     layout === 'timeline' ? 'none' : effectiveRows(grouping, display.rows);
   const shownColumns = useMemo(
-    () => columnList(display.columns),
-    [display.columns]
+    () =>
+      columnList(display.columns).filter(
+        (column) => initiativesOn || column !== 'initiative'
+      ),
+    [display.columns, initiativesOn]
   );
   const baseRollUp = base?.rollUp ?? true;
   const {
@@ -1009,7 +1033,19 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
 
   const { initiatives: allInitiatives } = useInitiatives(
     workspaceId,
-    grouping === 'initiative' || subGrouping === 'initiative'
+    grouping === 'initiative' ||
+      subGrouping === 'initiative' ||
+      shownColumns.includes('initiative')
+  );
+  const initiativesById = useMemo(
+    () =>
+      new Map(
+        allInitiatives.map((initiative) => [
+          initiative.initiative_id,
+          initiative,
+        ])
+      ),
+    [allInitiatives]
   );
   const scopedInitiatives = scope?.initiativeIds;
   const initiatives = useMemo(
@@ -2138,6 +2174,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
                             teams={teams}
                             people={people}
                             projectLabels={projectLabels}
+                            initiatives={initiativesById}
                             byId={projectsById}
                             shown={shownColumns}
                             workspaceRole={workspace?.role}
@@ -2268,6 +2305,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
           teams={teams}
           people={people}
           projectLabels={projectLabels}
+          initiatives={initiativesById}
           workspaceRole={workspace?.role}
           onMove={moveProject}
           ordering={ordering}
