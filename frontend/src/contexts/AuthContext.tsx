@@ -13,6 +13,7 @@ import {
 import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
+import { isMobileShell } from '../lib/mobile';
 import { preferencesOf, setPreferences } from '../lib/preferences';
 import { clearQueryPersistence } from '../lib/queryPersistence';
 import { isAppShell, SHELL_SIGN_IN_PATH } from '../lib/shell';
@@ -237,6 +238,11 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
 
   const logout = useCallback(
     async (to: string = isAppShell() ? SHELL_SIGN_IN_PATH : '/') => {
+      if (isMobileShell()) {
+        await import('../lib/mobilePush')
+          .then(({ stopMobilePush }) => stopMobilePush())
+          .catch(() => undefined);
+      }
       try {
         await packageLogout();
       } catch {

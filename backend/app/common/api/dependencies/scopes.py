@@ -532,6 +532,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/inbox/unread"): NOTIFICATIONS_WRITE,
     ("POST", "/{workspace_id}/inbox/snooze"): NOTIFICATIONS_WRITE,
     ("POST", "/{workspace_id}/inbox/clear"): NOTIFICATIONS_WRITE,
+    ("POST", "/{workspace_id}/inbox/devices"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/inbox/devices/unregister"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/inbox/reminders"): NOTIFICATIONS_READ,
     ("PUT", "/{workspace_id}/inbox/reminders/{issue_id}"): NOTIFICATIONS_WRITE,
     ("DELETE", "/{workspace_id}/inbox/reminders/{issue_id}"): NOTIFICATIONS_WRITE,

@@ -32,6 +32,7 @@ from app.common.db.dynamo.notify_digests import (
     CHAT_ENTRY_PREFIX,
     DigestStore,
 )
+from app.common.db.dynamo.push_devices import PushDeviceStore
 from app.common.db.dynamo.tables import INBOX
 
 NotificationKind = Literal[
@@ -342,8 +343,9 @@ class InboxRepository:
 
     `digests` holds the pending notification emails, `chat_digests` the pending
     chat direct messages, `chat_routes` the chat accounts members linked and
-    `reminders` the issue reminders members set for themselves and
-    `email_replies` the reply addresses notification emails carry, all sharing
+    `reminders` the issue reminders members set for themselves,
+    `email_replies` the reply addresses notification emails carry and
+    `push_devices` the phones people registered, all sharing
     this table under partitions no inbox can name.
     """
 
@@ -360,11 +362,13 @@ class InboxRepository:
         )
         self.chat_routes = ChatRouteStore(self._repository)
         self.email_replies = EmailReplyStore(self._repository)
+        self.push_devices = PushDeviceStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
         """Delete one person's whole inbox in one workspace, reminders and chat routes included, for the purges."""
         self.reminders.delete_all(workspace_id, user_id)
         self.chat_routes.delete_all(workspace_id, user_id)
+        self.push_devices.forget_workspace(workspace_id, user_id)
         return delete_partition(self._repository, INBOX, inbox_partition(workspace_id, user_id))
 
     def get(self, workspace_id: str, user_id: str, notification_id: str) -> Notification | None:

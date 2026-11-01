@@ -21,6 +21,7 @@ from app.common.api.schemas.projects_display import ProjectsDisplay, stored_proj
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.planning import PROJECT_STATUSES
+from app.common.db.dynamo.push_devices import PushPlatform
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox_summary import notification_summary
 from app.common.project_filters import DATE_BOUND_FIELDS, UPDATE_AGE_FIELDS, property_entry_well_formed
@@ -915,6 +916,10 @@ InboxListRead = cursor_page(NotificationRead, "notifications", model_name="Inbox
 """The body the inbox list answers with, items under `notifications`."""
 
 
+PUSH_TOKEN_PATTERN = r"^[0-9a-fA-F]{32,512}$"
+"""What an Apple device token looks like: hex, with a length Apple keeps the right to change."""
+
+
 InboxBucket = Literal["all", "priority", "other"]
 """Which tab of the split inbox a read or bulk action covers: both, Priority or Other."""
 
@@ -1000,6 +1005,19 @@ class InboxClearResult(BaseModel):
     """How many notifications a bulk delete removed."""
 
     deleted: int = 0
+
+
+class PushDeviceWrite(BaseModel):
+    """The body registering a phone for push: its platform and the provider's token for it."""
+
+    platform: PushPlatform
+    token: str = Field(pattern=PUSH_TOKEN_PATTERN)
+
+
+class PushDeviceRemove(BaseModel):
+    """The body unregistering a phone, carrying the token so no access log holds it."""
+
+    token: str = Field(pattern=PUSH_TOKEN_PATTERN)
 
 
 class IssueReminderWrite(BaseModel):

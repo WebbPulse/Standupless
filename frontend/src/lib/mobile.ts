@@ -18,6 +18,32 @@ export const isMobileShell = (): boolean => {
   }
 };
 
+/**
+ * Whether this app can register for native push. Only iOS sends so far, and a
+ * binary released before push has no plugin, while the hosted page it loads does.
+ */
+export const canUseMobilePush = (): boolean => {
+  if (!isMobileShell()) return false;
+  try {
+    return (
+      Capacitor.getPlatform() === 'ios' &&
+      Capacitor.isPluginAvailable('PushNotifications')
+    );
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The page a tapped notification opens, or null when its payload names none.
+ * Only workspace pages qualify, so a payload can never send the app elsewhere.
+ */
+export const pushTapPath = (data: unknown): string | null => {
+  if (typeof data !== 'object' || data === null) return null;
+  const path = (data as { path?: unknown }).path;
+  return typeof path === 'string' && path.startsWith('/w/') ? path : null;
+};
+
 /** The custom scheme host the sign-in handoff owns. */
 const HANDOFF_HOST = 'auth';
 

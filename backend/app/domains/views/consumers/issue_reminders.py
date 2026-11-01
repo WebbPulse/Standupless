@@ -34,6 +34,7 @@ from app.common.db.dynamo.inbox import (
     notification_id,
 )
 from app.common.db.dynamo.issue_reminders import DueReminder
+from app.common.push import deliver_push
 from app.common.team_privacy import person_can_see_initiative
 from app.domains.views.consumers.document_comments import can_read_document
 from app.domains.views.consumers.notify import receiving_team, write_notification
@@ -92,7 +93,10 @@ def _deliver_entity(repositories: Repositories, due: DueReminder) -> bool:
         expires_at=expires_at(stamped),
         **fields,
     )
-    return repositories.inbox.create(row)
+    created = repositories.inbox.create(row)
+    if created:
+        deliver_push(repositories, row)
+    return created
 
 
 def _deliver(repositories: Repositories, due: DueReminder) -> bool:

@@ -24,15 +24,15 @@ from app.common.notification_pause import WorkingHours
 
 EMAIL_INDEX = "email_lower-index"
 
-NotificationChannel = Literal["in_app", "email", "chat"]
+NotificationChannel = Literal["in_app", "email", "chat", "push"]
 
-NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email", "chat")
+NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email", "chat", "push")
 
-DEFAULT_OFF_CHANNELS: Mapping[str, frozenset[str]] = {"reaction": frozenset({"email", "chat"})}
+DEFAULT_OFF_CHANNELS: Mapping[str, frozenset[str]] = {"reaction": frozenset({"email", "chat", "push"})}
 """The channels a kind starts switched off on, which a person turns on rather than off.
 
 Reactions are frequent and light, so they reach the inbox by default but are
-neither mailed nor sent to chat until someone asks for them, as in Linear.
+neither mailed, sent to chat nor pushed until someone asks for them, as in Linear.
 """
 
 

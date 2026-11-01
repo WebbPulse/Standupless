@@ -243,6 +243,8 @@ export interface NotificationChannels {
   email: boolean;
   /** Whether the kind also reaches a linked Slack or Discord account as a direct message. */
   chat?: boolean;
+  /** Whether the kind also shows as a push notification in the mobile app. */
+  push?: boolean;
 }
 
 /** A partial preferences change: only the switches sent are applied. */

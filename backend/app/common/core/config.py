@@ -35,6 +35,9 @@ SECRET_FIELDS = (
     "DISCORD_PUBLIC_KEY",
     "DISCORD_CLIENT_SECRET",
     "DISCORD_BOT_TOKEN",
+    "apns_key",
+    "apns_key_id",
+    "apns_team_id",
 )
 """Every key of the one JSON app secret.
 
@@ -54,6 +57,12 @@ routes answer as not configured.
 PRODUCTION_HOST = "standupless.dev"
 
 STAGING_HOST = "staging.standupless.dev"
+
+PRODUCTION_APP_ID = "dev.standupless.app"
+"""The production mobile app, which is also the topic its pushes address."""
+
+STAGING_APP_ID = "dev.standupless.app.staging"
+"""The staging mobile app, which installs beside production under its own id."""
 
 
 class Settings(BaseServiceSettings):
@@ -205,6 +214,14 @@ class Settings(BaseServiceSettings):
     def is_production(self) -> bool:
         """True outside debug mode and the development environment."""
         return not self.DEBUG and self.APP_ENVIRONMENT.lower() != "development"
+
+    APNS_HOST: str = Field(
+        default="https://api.push.apple.com",
+        description=(
+            "The Apple push endpoint. Both signed builds carry the production aps-environment, "
+            "so every token they register belongs to this host."
+        ),
+    )
 
     EMAIL_ENABLED: bool = Field(
         default=False,
@@ -513,6 +530,26 @@ class Settings(BaseServiceSettings):
         if not arn:
             return ""
         return app_secrets(arn).get(name, "")
+
+    @property
+    def apns_key(self) -> str:
+        """The Apple `.p8` signing key for push, resolved on access. Empty turns iOS push off."""
+        return self._resolve_secret("apns_key")
+
+    @property
+    def apns_key_id(self) -> str:
+        """The id of the Apple signing key, resolved on access."""
+        return self._resolve_secret("apns_key_id")
+
+    @property
+    def apns_team_id(self) -> str:
+        """The Apple team that owns the signing key, resolved on access."""
+        return self._resolve_secret("apns_team_id")
+
+    @property
+    def apns_topic(self) -> str:
+        """The bundle id this environment's pushes address, since each app installs apart."""
+        return STAGING_APP_ID if self.APP_ENVIRONMENT.lower() == "staging" else PRODUCTION_APP_ID
 
     @property
     def SECRET_KEY(self) -> str:

@@ -89,6 +89,7 @@ import CreatePlanningHost, {
   type PlanningDialog,
 } from '../planning/CreatePlanningHost';
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
+import MobilePushRegistrar from '../mobile/MobilePushRegistrar';
 import OfflineBanner from '../ui/offline-banner';
 import { Toaster } from '../ui/toast';
 import CustomizeSidebarDialog from './CustomizeSidebarDialog';
@@ -423,6 +424,7 @@ const WorkspaceOverlays: React.FC = () => {
                           workspaceId={workspace.id}
                           slug={workspace.slug}
                         />
+                        <MobilePushRegistrar workspaceId={workspace.id} />
                         <GlobalShortcuts
                           workspace={workspace}
                           teams={teams}

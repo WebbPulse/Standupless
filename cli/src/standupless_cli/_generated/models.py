@@ -1869,12 +1869,14 @@ class NotificationChannels(TypedDict):
     chat: NotRequired[bool]
     email: bool
     in_app: bool
+    push: NotRequired[bool]
 
 
 class NotificationChannelsUpdate(TypedDict):
     chat: NotRequired[bool | None]
     email: NotRequired[bool | None]
     in_app: NotRequired[bool | None]
+    push: NotRequired[bool | None]
 
 
 class NotificationRead(TypedDict):
@@ -2387,6 +2389,15 @@ class PulseListRead(TypedDict):
 
 class PulseReadMarker(TypedDict):
     read_at: str
+
+
+class PushDeviceRemove(TypedDict):
+    token: str
+
+
+class PushDeviceWrite(TypedDict):
+    platform: Literal["ios"]
+    token: str
 
 
 class ReactionGroupRead(TypedDict):

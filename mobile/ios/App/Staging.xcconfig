@@ -1,4 +1,5 @@
 PRODUCT_BUNDLE_IDENTIFIER = dev.standupless.app.staging
 STANDUPLESS_APP_HOST = staging.standupless.dev
+STANDUPLESS_APS_ENVIRONMENT = production
 STANDUPLESS_DISPLAY_NAME = Standupless Staging
 STANDUPLESS_SCHEME = standupless-staging

@@ -423,6 +423,10 @@ export const inboxPath = (workspaceId: string): string =>
 export const inboxCountPath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/count`;
 
+/** The route the mobile app registers its device for push on. */
+export const pushDevicesPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/devices`;
+
 /** The route rows are marked read on. */
 export const inboxReadPath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/read`;
@@ -851,6 +855,25 @@ export const markAllRead = async (
  * Deletes the caller's rows in bulk, read ones only or all of them, and
  * reports how many went.
  */
+/** Registers this phone for push, which also adds the workspace to its badge. */
+export const registerPushDevice = async (
+  workspaceId: string,
+  token: string
+): Promise<void> => {
+  await apiClient.post(pushDevicesPath(workspaceId), {
+    platform: 'ios',
+    token,
+  });
+};
+
+/** Stops push to this phone, carrying the token in the body so no access log holds it. */
+export const unregisterPushDevice = async (
+  workspaceId: string,
+  token: string
+): Promise<void> => {
+  await apiClient.post(`${pushDevicesPath(workspaceId)}/unregister`, { token });
+};
+
 export const clearInbox = async (
   workspaceId: string,
   body: InboxClearWrite
