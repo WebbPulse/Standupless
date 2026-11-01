@@ -110,6 +110,9 @@ def handle(repositories: Repositories, payload: Mapping[str, Any], event_at: dat
 
     Answers whether anything was written. A delivery for a removed connection,
     a project outside the connection, or a merge request from a fork does nothing.
+    An update to an already merged merge request cannot change what the merge
+    decided, as on GitHub: a merged link keeps its closing word, move and hold, and
+    a link the merge has not folded yet is left for it.
     """
     from app.domains.integrations.consumers.events import (
         _apply_transition,
@@ -186,7 +189,15 @@ def handle(repositories: Repositories, payload: Mapping[str, Any], event_at: dat
         match = next(row for row in found if row.key == key)
         link_id = f"{node}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
-        moves = match.moves_status
+        after_merge = state == "merged" and trigger != "pr_merged"
+        if after_merge and previous is not None and previous.pr_state != "merged":
+            _log.info(
+                "Skipped a GitLab delivery that overtook its merge.",
+                extra={"event": "integrations.gitlab.link_merge_pending"},
+            )
+            continue
+        settled = previous if after_merge else None
+        moves = match.moves_status if settled is None else settled.moves_status
         issue_trigger = trigger if moves else None
         newly_moving = previous is None or not previous.moves_status
         if moves and newly_moving and issue_trigger is None and action == "update":
@@ -210,9 +221,9 @@ def handle(repositories: Repositories, payload: Mapping[str, Any], event_at: dat
                 pr_url=str(attributes.get("url", "") or ""),
                 pr_state=state,
                 author_login=author,
-                magic_word=match.magic_word,
+                magic_word=match.magic_word if settled is None else settled.magic_word,
                 moves_status=moves,
-                holds_on_merge=match.holds_on_merge,
+                holds_on_merge=match.holds_on_merge if settled is None else settled.holds_on_merge,
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 pr_updated_ms=pr_updated_ms,
                 provider=PROVIDER,
