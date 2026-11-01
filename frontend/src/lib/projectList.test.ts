@@ -1,7 +1,8 @@
 /**
  * The projects list's ordering, grouping and display. Covers that dates run
  * soonest first with undated rows last, that ties fall back to the name, that
- * priority runs urgent first, that lead groups put "No lead" last, that a
+ * priority runs urgent first, that lead groups put "No lead" last, that label
+ * groups follow the label order with "No label" last, that a
  * project on two teams shows under both, that health, priority and initiative
  * groups run in their own order, that the board keeps empty columns and moves
  * a card by the column's value, that the completed window keeps recent closes
@@ -744,8 +745,59 @@ describe('member and date groups', () => {
     expect(groupPatch(december)).toBeNull();
   });
 
+  it('shows a project under each of its labels with no label last', () => {
+    const labels = [
+      { id: 'l2', name: 'Bet', color: '#f00' },
+      { id: 'l1', name: 'Alpha', color: '#0f0' },
+      { id: 'l3', name: 'Unused', color: '#00f' },
+    ];
+    const groups = groupProjects(
+      [
+        project({ project_id: 'a', name: 'Both', label_ids: ['l1', 'l2'] }),
+        project({ project_id: 'b', name: 'Gone', label_ids: ['lx'] }),
+        project({ project_id: 'c', name: 'Bare' }),
+      ],
+      'label',
+      [],
+      [],
+      { labels }
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      'Bet',
+      'Alpha',
+      'Unknown label',
+      'No label',
+    ]);
+    expect(groups.map((group) => names(group.rows))).toEqual([
+      ['Both'],
+      ['Both'],
+      ['Gone'],
+      ['Bare'],
+    ]);
+    expect(groups[0]?.color).toBe('#f00');
+    expect(groups[3]?.key).toBe('label:none');
+  });
+
+  it('refuses board drops between label columns', () => {
+    const row = project({ label_ids: ['l1'] });
+    const [alpha, bare] = groupProjects(
+      [row, project({ project_id: 'p2' })],
+      'label',
+      [],
+      [],
+      { labels: [{ id: 'l1', name: 'Alpha', color: '#0f0' }] }
+    );
+    if (alpha === undefined || bare === undefined)
+      throw new Error('no label columns');
+    expect(inGroup(row, alpha)).toBe(true);
+    expect(inGroup(row, bare)).toBe(false);
+    expect(groupPatch(alpha)).toBeNull();
+    expect(cellChange(row, [bare])).toBeNull();
+  });
+
   it('reads the new groupings from the URL and the saved display', () => {
     expect(parseGrouping('member')).toBe('member');
+    expect(parseGrouping('label')).toBe('label');
     expect(parseGrouping('start_date')).toBe('start_date');
     expect(parseDisplayField('rows', 'target_date')).toBe('target_date');
     expect(parseDisplayField('group', 'members')).toBeUndefined();

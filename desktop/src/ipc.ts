@@ -13,6 +13,7 @@ export const CHANNELS = {
   navigate: 'standupless:navigate',
   navigateReady: 'standupless:navigate-ready',
   signInWithBrowser: 'standupless:sign-in-with-browser',
+  completeSignInLink: 'standupless:complete-sign-in-link',
   openExternal: 'standupless:open-external',
   openInNewTab: 'standupless:open-in-new-tab',
   tabsState: 'standupless:tabs-state',

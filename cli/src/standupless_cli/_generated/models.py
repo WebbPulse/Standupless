@@ -2238,7 +2238,17 @@ class ProjectsDisplay(TypedDict):
     empty: NotRequired[Literal["show", "hide"]]
     group: NotRequired[
         Literal[
-            "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+            "status",
+            "health",
+            "priority",
+            "initiative",
+            "lead",
+            "member",
+            "label",
+            "team",
+            "start_date",
+            "target_date",
+            "none",
         ]
     ]
     layout: NotRequired[Literal["list", "board", "timeline"]]
@@ -2250,7 +2260,17 @@ class ProjectsDisplay(TypedDict):
     ]
     rows: NotRequired[
         Literal[
-            "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+            "status",
+            "health",
+            "priority",
+            "initiative",
+            "lead",
+            "member",
+            "label",
+            "team",
+            "start_date",
+            "target_date",
+            "none",
         ]
     ]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
@@ -4672,6 +4692,7 @@ class InsightsRead(TypedDict):
         ]
         | None
     ]
+    segment_totals: NotRequired[list[InsightBucket]]
     team_ids: list[str]
     total: int
     truncated: NotRequired[bool]

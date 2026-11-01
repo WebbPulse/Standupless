@@ -15,6 +15,7 @@ const THEME = 'standupless:theme';
 const NAVIGATE = 'standupless:navigate';
 const NAVIGATE_READY = 'standupless:navigate-ready';
 const SIGN_IN_WITH_BROWSER = 'standupless:sign-in-with-browser';
+const COMPLETE_SIGN_IN_LINK = 'standupless:complete-sign-in-link';
 const OPEN_EXTERNAL = 'standupless:open-external';
 const OPEN_IN_NEW_TAB = 'standupless:open-in-new-tab';
 
@@ -55,7 +56,6 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     platform: process.platform,
     version,
-    passkeys: process.platform === 'win32',
     tabs: true,
     setBadgeCount(count: number): void {
       ipcRenderer.send(BADGE, {
@@ -82,6 +82,9 @@ contextBridge.exposeInMainWorld(
     },
     signInWithBrowser(): void {
       ipcRenderer.send(SIGN_IN_WITH_BROWSER);
+    },
+    completeSignInLink(link: string): void {
+      ipcRenderer.send(COMPLETE_SIGN_IN_LINK, link);
     },
     openExternal(url: string): void {
       ipcRenderer.send(OPEN_EXTERNAL, url);
