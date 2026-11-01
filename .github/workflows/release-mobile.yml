@@ -202,7 +202,8 @@ jobs:
             --apiKey "$API_KEY_ID" \
             --apiIssuer "$API_ISSUER"
 
-      - name: Upload the build
+      - name: Upload the unsigned build
+        if: env.SIGNING_ENABLED != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mobile-ios-${{ matrix.environment }}
@@ -317,5 +318,5 @@ jobs:
             gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" \
               --verify-tag --latest=false \
               --title "Standupless mobile ${VERSION}" \
-              --notes "Standupless mobile ${VERSION}. Store builds are signed .ipa and .aab files; until signing is set up these are an iOS simulator app and an Android debug APK. See mobile/SIGNING.md."
+              --notes "Standupless mobile ${VERSION}. Signed iOS builds go to TestFlight and are not attached here. Until its signing is set up, Android is a debug APK. See mobile/SIGNING.md."
           fi

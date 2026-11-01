@@ -43,12 +43,16 @@ the desktop macOS signing uses (STUP-229). It is an individual enrolment today.
 | `APPLE_API_KEY_ID` | the key id |
 | `APPLE_API_ISSUER` | the issuer id |
 
-`IOS_DISTRIBUTION_CERT_P12` turns on the signed archive step, which attaches an
-`.ipa` per environment to the GitHub release. The production `.ipa` then goes to
-TestFlight through the API key, whose App Manager role is enough for this. Only
-`dev.standupless.app` has an App Store Connect record, so the staging `.ipa` is
-not uploaded. The build number is the workflow run number and the version is the
-tag.
+`IOS_DISTRIBUTION_CERT_P12` turns on the signed archive step, which builds an
+`.ipa` per environment. The production `.ipa` goes to TestFlight through the API
+key, whose App Manager role is enough for this. Only `dev.standupless.app` has an
+App Store Connect record, so the staging `.ipa` only proves that its signing
+works and is then discarded. The build number is the workflow run number and the
+version is the tag.
+
+The repository is public, and so are its releases and workflow artifacts, so a
+signed `.ipa` is neither attached to the GitHub release nor kept as an artifact.
+The same goes for anything else that embeds a provisioning profile.
 
 Builds are exported with `testFlightInternalTestingOnly`, so App Store Connect
 accepts them for internal testers only and they cannot be submitted for public
