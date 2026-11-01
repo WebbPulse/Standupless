@@ -286,7 +286,7 @@ const issueChip = (key: string, look: IssueLook): HTMLElement => {
   const chip = chipPart('rich-issue-ref rich-issue-chip');
   chip.setAttribute('data-issue-key', key);
   chip.setAttribute('data-issue-open', '');
-  chip.contentEditable = 'false';
+  chip.setAttribute('contenteditable', 'false');
   if (look.icon !== null) {
     const icon = chipPart('rich-issue-icon');
     icon.setAttribute('aria-hidden', 'true');
