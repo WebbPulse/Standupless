@@ -69,6 +69,17 @@ describe('RouteErrorBoundary', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('names what failed, so a screenshot of the error can be traced', () => {
+    failure = new TypeError(
+      "Cannot read properties of undefined (reading 'name')"
+    );
+    renderBoundary();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Cannot read properties of undefined (reading 'name')"
+    );
+  });
+
   it('reloads once for a chunk that failed to load', () => {
     const reload = vi.fn(() => true);
     failure = chunkError();

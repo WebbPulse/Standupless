@@ -118,6 +118,19 @@ describe('a read handed a polled context', () => {
     );
   });
 
+  it('answers a 304 for an issue read by key without shaping the empty body', async () => {
+    get.mockResolvedValue({
+      status: 304,
+      headers: headersWith(TAG),
+      data: undefined,
+    });
+
+    const answer = await getIssueByKey(WS, 'ENG-1', contextHolding(TAG));
+
+    expect(answer.notModified).toBe(true);
+    expect(answer.data).toBeUndefined();
+  });
+
   it('keeps the list options alongside the conditional header', async () => {
     get.mockResolvedValue({
       status: 200,
