@@ -65,7 +65,6 @@ from app.common.project_filters import parse_property_filter
 from app.common.project_link_writes import create_link, delete_link, project_links, update_link
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_update_report import report_lines
-from app.common.recent_updates import recent_update_hints
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -80,6 +79,7 @@ from app.common.project_writes import (
     update_project,
 )
 from app.common.readable_ids import project_web_url
+from app.common.recent_updates import recent_update_hints
 from app.common.team_time import team_today
 from app.common.update_drafts import clear_posted_update_draft
 from app.domains.integrations.mcp.project_label_tools import project_label_ids

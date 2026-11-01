@@ -55,7 +55,6 @@ from app.common.db.dynamo.planning import (
 )
 from app.common.initiative_tree import InitiativeTree
 from app.common.initiative_update_report import take_snapshot, update_report
-from app.common.recent_updates import RECENT_UPDATE_SCAN, recent_updates
 from app.common.order_keys import order_key_first
 from app.common.planning_rules import (
     can_see_initiative,
@@ -70,6 +69,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.recent_updates import RECENT_UPDATE_SCAN, recent_updates
 from app.common.update_thread_rules import summarise_threads
 
 NOT_NULLABLE = ("name", "status")

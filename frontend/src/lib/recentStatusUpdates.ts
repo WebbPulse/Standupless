@@ -8,7 +8,7 @@
  */
 
 import type { ProjectHealth } from '../types/Api';
-import { PROJECT_HEALTH_LABELS } from './planningDisplay';
+import { PROJECT_HEALTH_LABELS } from './projectLook';
 import { relativeTime } from './relativeTime';
 
 /** How close to now an update counts as just posted. */
