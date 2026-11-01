@@ -1,13 +1,11 @@
 # Signing the mobile builds
 
-The mobile builds ship unsigned. CI builds an iOS simulator app and an Android
-debug APK for production and staging on every pull request that changes
-`mobile/`. A `mobile-v<version>` tag runs `.github/workflows/release-mobile.yml`,
-which builds the same unsigned files today and switches to a signed `.ipa` and
-`.aab` per environment once the secrets below exist. Until then nothing can be
-installed on a phone from CI, and the `standupless.dev` link and passkey
-associations stay off because the frontend publishes them only when their
-identifiers are set.
+CI builds an iOS simulator app and an Android debug APK for production and
+staging on every pull request that changes `mobile/`. A `mobile-v<version>` tag
+runs `.github/workflows/release-mobile.yml`, which builds a signed `.ipa` per
+environment and uploads the production one to TestFlight. Android stays an
+unsigned debug APK until its secrets below exist, and the `standupless.dev` link
+and passkey associations stay off until the frontend has their identifiers.
 
 ## What each environment is
 
@@ -24,8 +22,8 @@ sync is all it takes.
 
 ## iOS
 
-Needs the Apple Developer Program membership for the WebbPulse organisation,
-the same one the desktop macOS signing uses (STUP-229).
+Needs the Apple Developer Program membership, team `PFHGG295DL`, the same one
+the desktop macOS signing uses (STUP-229). It is an individual enrolment today.
 
 1. Register both app ids in the developer portal with the **Associated
    Domains** capability.
@@ -41,16 +39,42 @@ the same one the desktop macOS signing uses (STUP-229).
 | `IOS_PROFILE_PRODUCTION` | the `dev.standupless.app` profile, base64 encoded |
 | `IOS_PROFILE_STAGING` | the `dev.standupless.app.staging` profile, base64 encoded |
 | `APPLE_TEAM_ID` | the ten-character team id |
+| `APPLE_API_KEY` | the App Store Connect team key `.p8`, raw or base64 encoded |
+| `APPLE_API_KEY_ID` | the key id |
+| `APPLE_API_ISSUER` | the issuer id |
 
 `IOS_DISTRIBUTION_CERT_P12` turns on the signed archive step, which attaches an
-`.ipa` per environment to the GitHub release. Uploading to App Store Connect is
-a later step.
+`.ipa` per environment to the GitHub release. The production `.ipa` then goes to
+TestFlight through the API key, whose App Manager role is enough for this. Only
+`dev.standupless.app` has an App Store Connect record, so the staging `.ipa` is
+not uploaded. The build number is the workflow run number and the version is the
+tag.
+
+Builds are exported with `testFlightInternalTestingOnly`, so App Store Connect
+accepts them for internal testers only and they cannot be submitted for public
+review. Remove that key from the export options once STUP-736 is done and a
+public submission is due.
+
+The Info.plist sets `ITSAppUsesNonExemptEncryption` to false because the app
+only uses the system's HTTPS. Revisit that if native code adds its own
+encryption.
 
 5. Set the repository variable `APPLE_TEAM_ID` too. The frontend build reads it
    and only then publishes `/.well-known/apple-app-site-association`, with
    `applinks` for `/w/*/issues/*` and `webcredentials` for managing passkeys
    and confirming sensitive actions while signed in. Sign-in itself happens in
    an `ASWebAuthenticationSession`.
+
+### When a profile goes Invalid
+
+Changing a capability on an app id invalidates its profiles, and a signed build
+fails until they are regenerated. The `.p8` exists only in the GitHub secret, so
+the API calls have to run in CI. The API has no regenerate call and refuses a
+name in use, so delete the invalid profile (`DELETE /v1/profiles/{id}`), create
+it again with the same name, bundle id and certificate (`POST /v1/profiles`),
+and update `IOS_PROFILE_PRODUCTION` or `IOS_PROFILE_STAGING`. The repository is
+public, so encrypt the profile before it leaves the runner as an artifact. The
+developer portal's Edit, Save and Download does the same by hand.
 
 ## Android
 
