@@ -34,13 +34,11 @@ vi.mock('../../pages/authentication/AuthLayout', () => ({
 }));
 
 vi.mock('../../lib/mobileHandoff', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('../../lib/mobileHandoff')
-  >();
+  const actual =
+    await importOriginal<typeof import('../../lib/mobileHandoff')>();
   return {
     ...actual,
-    isMobileHandoffLink: (url: string) =>
-      url.startsWith('standupless://auth/'),
+    isMobileHandoffLink: (url: string) => url.startsWith('standupless://auth/'),
     completeMobileBrowserSignIn: () => Promise.resolve('/workspaces'),
   };
 });
@@ -90,7 +88,9 @@ describe('ShellSignIn', () => {
   it('waits with a way to reopen the browser', async () => {
     renderScreen();
     fireEvent.click(openBrowserButton());
-    expect(await screen.findByText('Finish in your browser')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Finish in your browser')
+    ).toBeInTheDocument();
     expect(openBrowserButton()).toHaveTextContent('Open the browser again');
     expect(openBrowserButton()).toBeEnabled();
     expect(start).toHaveBeenCalledTimes(1);

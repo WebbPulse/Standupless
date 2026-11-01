@@ -164,7 +164,9 @@ describe('DesktopHandoff', () => {
   it('opens the app and says the tab can be closed', async () => {
     renderPage();
     fireEvent.click(screen.getByTestId('desktop-handoff-confirm'));
-    expect(await screen.findByText('You can close this tab')).toBeInTheDocument();
+    expect(
+      await screen.findByText('You can close this tab')
+    ).toBeInTheDocument();
     expect(auth.handOffToDesktop).toHaveBeenCalledWith({ url: PATH });
     expect(assign).toHaveBeenCalledWith(CALLBACK);
     expect(pendingAppHandoffPath()).toBeNull();
