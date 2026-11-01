@@ -36,6 +36,7 @@ from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
 from app.common.team_retirement import is_retired
 from app.domains.integrations import linking, pr_labels, pr_resync, pr_status
+from app.domains.integrations.deployments import DEPLOYMENT_RECHECK_EVENT
 from app.domains.integrations.pr_summary import refresh_for_pr
 from app.domains.integrations.service import effective_transitions
 
@@ -254,6 +255,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.deployments import handle_deployment_status
 
         handle_deployment_status(repositories, workspace_id, body)
+    elif event == DEPLOYMENT_RECHECK_EVENT:
+        from app.domains.integrations.deployments import handle_deployment_recheck
+
+        handle_deployment_recheck(repositories, workspace_id, body)
     elif event == "create":
         from app.domains.integrations.tag_releases import handle_create
 

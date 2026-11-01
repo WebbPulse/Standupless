@@ -13,11 +13,14 @@ through the
 github-events consumer, under that function's own grant, a deployment records its
 release, moves its issues, publishes, and is listed. Consecutive staging deploys
 release only their own issues, an end-to-end job reporting the default branch
-against staging moves nothing, and an issue lists one release per stage.
+against staging moves nothing, and an issue lists one release per stage. Nothing
+is recorded until the workflow runs behind a commit's deployments have finished,
+and a deploy whose later job fails never moves its issues.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -27,7 +30,16 @@ import pytest
 from app.common.api.schemas.releases import ReleaseBackfill
 from app.common.db.dynamo.github import IssueLink, link_key
 from app.common.db.dynamo.releases import PipelineStage, ReleasePipeline, pipeline_key
-from app.domains.integrations.deployments import backfill, handle_deployment_status
+from app.domains.integrations import github_deployments as real_github_deployments
+from app.domains.integrations import github_issues as real_github_issues
+from app.domains.integrations.deployments import (
+    HOLD_SCOPE,
+    RECHECK_ATTEMPTS_MAX,
+    RECHECK_DELAY_MAX_SECONDS,
+    backfill,
+    handle_deployment_recheck,
+    handle_deployment_status,
+)
 from app.domains.integrations.github_deployments import DeploymentPage, DeploymentRef, PullRef, TagRef
 from tests.domains.integrations.conftest import (
     OTHER_TEAM,
@@ -43,6 +55,8 @@ FIRST = "1" * 40
 SECOND = "2" * 40
 
 THIRD = "3" * 40
+
+REAL_DEPLOY_VERDICT = real_github_deployments.deploy_verdict
 
 
 @dataclass
@@ -61,6 +75,8 @@ class FakeGitHub:
     tag_reads: int = 0
     ranges: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     statuses: dict[tuple[str, str], str] = field(default_factory=dict)
+    verdict: str = "settled"
+    verdict_reads: int = 0
 
 
 @pytest.fixture
@@ -122,6 +138,13 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     monkeypatch.setattr(github_deployments, "successful_deployments", deployments)
     monkeypatch.setattr(github_deployments, "successful_deployment", one_deployment)
     monkeypatch.setattr(github_deployments, "publish_release", publish)
+
+    def verdict(token: str, repository_id: Any, sha: str, environment: str) -> str:
+        """The stood-in deploy verdict, counting the reads."""
+        state.verdict_reads += 1
+        return state.verdict
+
+    monkeypatch.setattr(github_deployments, "deploy_verdict", verdict)
     return state
 
 
@@ -1296,3 +1319,338 @@ def test_a_body_mention_still_reads_the_pull_request_title(
 
     [release] = _releases(repositories)
     assert release.issue_ids == [issue.issue_id]
+
+
+@dataclass
+class FakeRun:
+    """What GitHub answers about a commit's deployments, the jobs behind them and their check suites."""
+
+    deployments: list[tuple[int, str | None, int | None]] = field(default_factory=list)
+    jobs: dict[int, tuple[str, int]] = field(default_factory=dict)
+    suites: dict[int, tuple[str, str | None]] = field(default_factory=dict)
+    forbidden: bool = False
+
+
+@pytest.fixture
+def run(monkeypatch: pytest.MonkeyPatch, github: FakeGitHub) -> FakeRun:
+    """Judge deploys with the real verdict, over stood-in GitHub answers."""
+    state = FakeRun()
+
+    def answer(method: str, path: str, *, token: str, client: Any = None) -> Any:
+        """Answer one deployment, check run or check suite read."""
+        if state.forbidden and "check-" in path:
+            raise real_github_issues.GitHubForbidden("GET answered 403")
+        if match := re.search(r"/deployments/(\d+)/statuses", path):
+            row = next(row for row in state.deployments if row[0] == int(match.group(1)))
+            if row[1] is None:
+                return []
+            job = f"https://github.com/acme/app/actions/runs/9/job/{row[2]}" if row[2] else "https://cd.example.test/1"
+            return [{"state": row[1], "log_url": job, "target_url": job}]
+        if "/deployments?" in path:
+            return [{"id": row[0]} for row in state.deployments]
+        if match := re.search(r"/check-runs/(\d+)", path):
+            if int(match.group(1)) not in state.jobs:
+                raise real_github_issues.GitHubNotFound("GET answered 404")
+            name, suite_id = state.jobs[int(match.group(1))]
+            return {"name": name, "check_suite": {"id": suite_id}}
+        if match := re.search(r"/check-suites/(\d+)", path):
+            status, conclusion = state.suites[int(match.group(1))]
+            return {"status": status, "conclusion": conclusion}
+        raise AssertionError(f"unexpected read {path}")
+
+    monkeypatch.setattr(real_github_deployments, "deploy_verdict", REAL_DEPLOY_VERDICT)
+    monkeypatch.setattr(real_github_deployments, "_request", answer)
+    return state
+
+
+@pytest.fixture
+def rechecks(monkeypatch: pytest.MonkeyPatch, github_env: None) -> list[dict[str, Any]]:
+    """Every recheck queued, with its delay."""
+    sent: list[dict[str, Any]] = []
+
+    def record(queue_url: str, envelope: Any, **options: Any) -> str:
+        """Capture one recheck."""
+        sent.append({"payload": envelope.payload, "delay": options.get("delay_seconds")})
+        return "test-message-id"
+
+    monkeypatch.setattr("webbpulse.events.enqueue", record)
+    return sent
+
+
+def _early_job_succeeded(run: FakeRun) -> None:
+    """A deploy run whose first job has succeeded, with its later jobs yet to open deployments."""
+    run.deployments = [(100, "success", 1000)]
+    run.jobs = {1000: ("deploy / Resolve", 7)}
+    run.suites = {7: ("in_progress", None)}
+
+
+def _later_job_ended(run: FakeRun, conclusion: str) -> None:
+    """The same deploy run, finished, its later job having opened a deployment and ended."""
+    state = "success" if conclusion == "success" else "failure"
+    run.deployments = [(101, state, 1001), (100, "success", 1000)]
+    run.jobs = {1000: ("deploy / Resolve", 7), 1001: ("deploy / Push", 7)}
+    run.suites = {7: ("completed", conclusion)}
+
+
+def _held_issue(repositories: Any, github: FakeGitHub) -> tuple[Any, Any]:
+    """Give the team a Production stage that moves and publishes and an issue a promotion ships; answer both."""
+    _pin(repositories)
+    done = _publishing_production(repositories)
+    issue = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {THIRD: "Merge pull request #230 from acme/promote/2026-10-07-b\n\nABC-1"}
+    github.merges = {THIRD: PROMOTION}
+    return issue, done
+
+
+def test_an_early_job_succeeding_holds_the_stage_until_the_run_finishes(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """The first job's success records nothing, moves nothing, leaves the head alone, and queues one recheck."""
+    issue, done = _held_issue(repositories, github)
+    _early_job_succeeded(run)
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert _releases(repositories) == []
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id != done.status_id
+    assert github.published == []
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "production") is None
+    [recheck] = rechecks
+    assert recheck["delay"] == 30
+    assert recheck["payload"]["event"] == "standupless.recheck_deployment"
+    assert recheck["payload"]["body"]["attempt"] == 1
+
+
+def test_an_early_job_succeeding_and_a_later_deploy_job_failing_leaves_issues_unmoved(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """A deploy whose later job fails never records a release, moves its issues or publishes, and its hold ends."""
+    issue, done = _held_issue(repositories, github)
+    _early_job_succeeded(run)
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    _later_job_ended(run, "failure")
+
+    handle_deployment_recheck(repositories, WORKSPACE, rechecks[0]["payload"]["body"])
+
+    assert _releases(repositories) == []
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id != done.status_id
+    assert github.published == []
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "production") is None
+    assert len(rechecks) == 1
+    assert not repositories.idempotency.held(WORKSPACE, HOLD_SCOPE, f"{REPOSITORY_ID}:{THIRD}:production")
+
+
+def test_a_held_deployment_records_through_the_consumer_once_the_run_passes(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """Under the consumer's own grant, the recheck after a passing run records, moves, publishes and ends the hold."""
+    issue, done = _held_issue(repositories, github)
+    _early_job_succeeded(run)
+    _consume(repositories, _delivery(THIRD))
+    _later_job_ended(run, "success")
+
+    from app.domains.integrations.consumers import events
+    from tests.domains.integrations.conftest import sqs_record
+
+    events.handle_record(repositories, sqs_record(rechecks[0]["payload"]))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [issue.issue_id]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == done.status_id
+    assert [call["tag"] for call in github.published] == ["2026-10-07-b"]
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "production") == THIRD
+    assert not repositories.idempotency.held(WORKSPACE, HOLD_SCOPE, f"{REPOSITORY_ID}:{THIRD}:production")
+
+
+def test_every_job_of_a_running_deploy_shares_one_chain_of_rechecks(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """More jobs succeeding queue nothing more, and a recheck of a running deploy waits longer and queues the next."""
+    _held_issue(repositories, github)
+    _early_job_succeeded(run)
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    assert len(rechecks) == 1
+
+    handle_deployment_recheck(repositories, WORKSPACE, rechecks[0]["payload"]["body"])
+    assert [row["delay"] for row in rechecks] == [30, 60]
+    assert rechecks[1]["payload"]["body"]["attempt"] == 2
+    assert _releases(repositories) == []
+
+
+def test_a_hold_gives_up_after_its_last_recheck_and_a_later_success_holds_afresh(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """A run still going after the last recheck records nothing and ends the hold, so the next success starts one."""
+    _held_issue(repositories, github)
+    _early_job_succeeded(run)
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    body = {**rechecks[0]["payload"]["body"], "attempt": RECHECK_ATTEMPTS_MAX}
+
+    handle_deployment_recheck(repositories, WORKSPACE, body)
+
+    assert len(rechecks) == 1
+    assert _releases(repositories) == []
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    assert len(rechecks) == 2
+
+
+def test_a_long_hold_waits_no_longer_than_sqs_allows(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """The delay stops growing at the longest one a message can carry."""
+    _held_issue(repositories, github)
+    _early_job_succeeded(run)
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    handle_deployment_recheck(
+        repositories, WORKSPACE, {**rechecks[0]["payload"]["body"], "attempt": RECHECK_ATTEMPTS_MAX - 1}
+    )
+
+    assert rechecks[-1]["delay"] == RECHECK_DELAY_MAX_SECONDS
+
+
+def test_a_failed_enqueue_frees_the_hold_so_the_retry_can_take_it(
+    repositories: Any,
+    installed: str,
+    github: FakeGitHub,
+    run: FakeRun,
+    monkeypatch: pytest.MonkeyPatch,
+    github_env: None,
+) -> None:
+    """A recheck that cannot be queued raises for the queue's retry, leaving no claim behind to swallow it."""
+    _held_issue(repositories, github)
+    _early_job_succeeded(run)
+
+    def refuse(queue_url: str, envelope: Any, **options: Any) -> str:
+        """Fail like an unreachable queue."""
+        raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr("webbpulse.events.enqueue", refuse)
+
+    with pytest.raises(RuntimeError):
+        handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert not repositories.idempotency.held(WORKSPACE, HOLD_SCOPE, f"{REPOSITORY_ID}:{THIRD}:production")
+
+
+def test_a_re_run_that_passes_records_the_release_a_failed_attempt_did_not(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """A re-run keeps its check suite, whose conclusion follows the latest attempt, so its success records."""
+    issue, done = _held_issue(repositories, github)
+    _later_job_ended(run, "failure")
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    assert _releases(repositories) == []
+
+    run.deployments = [(102, "success", 1002), *run.deployments]
+    run.jobs[1002] = ("deploy / Push", 7)
+    run.suites[7] = ("completed", "success")
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert [row.issue_ids for row in _releases(repositories)] == [[issue.issue_id]]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == done.status_id
+
+
+def test_a_newer_run_of_the_same_jobs_forgives_a_failed_run(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """The same deploy dispatched again, passing in its own check suite, records."""
+    _held_issue(repositories, github)
+    run.deployments = [(201, "success", 2001), (200, "success", 2000), (101, "failure", 1001), (100, "success", 1000)]
+    run.jobs = {
+        1000: ("deploy / Resolve", 7),
+        1001: ("deploy / Push", 7),
+        2000: ("deploy / Resolve", 8),
+        2001: ("deploy / Push", 8),
+    }
+    run.suites = {7: ("completed", "failure"), 8: ("completed", "success")}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert len(_releases(repositories)) == 1
+
+
+def test_a_newer_run_of_other_jobs_does_not_forgive_a_failed_run(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """A later end-to-end run passing is not the failed deploy done again, so nothing records."""
+    _held_issue(repositories, github)
+    run.deployments = [(200, "success", 2000), (101, "failure", 1001), (100, "success", 1000)]
+    run.jobs = {1000: ("deploy / Resolve", 7), 1001: ("deploy / Push", 7), 2000: ("e2e / Smoke", 8)}
+    run.suites = {7: ("completed", "failure"), 8: ("completed", "success")}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert _releases(repositories) == []
+
+
+def test_a_job_with_no_check_run_yet_holds(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """A deployment whose job GitHub does not show yet counts as still starting, never as unjudgeable."""
+    _held_issue(repositories, github)
+    run.deployments = [(100, "success", 1000)]
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert _releases(repositories) == []
+    assert len(rechecks) == 1
+
+
+@pytest.mark.parametrize(
+    ("deployments", "recorded", "queued"),
+    [
+        ([(100, "success", None)], 1, 0),
+        ([(101, "success", None), (100, "failure", None)], 1, 0),
+        ([(101, "failure", None), (100, "success", None)], 0, 0),
+        ([(101, "in_progress", None), (100, "success", None)], 0, 1),
+        ([(101, None, None), (100, "success", None)], 0, 1),
+        ([], 0, 1),
+    ],
+)
+def test_a_deployment_with_no_actions_job_is_judged_by_its_statuses(
+    repositories: Any,
+    installed: str,
+    github: FakeGitHub,
+    run: FakeRun,
+    rechecks: list[dict[str, Any]],
+    deployments: list[tuple[int, str | None, int | None]],
+    recorded: int,
+    queued: int,
+) -> None:
+    """Outside Actions there is no run to read: anything unfinished holds, and then the newest deployment decides."""
+    _held_issue(repositories, github)
+    run.deployments = deployments
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert len(_releases(repositories)) == recorded
+    assert len(rechecks) == queued
+
+
+def test_an_app_that_cannot_read_checks_records_as_before(
+    repositories: Any, installed: str, github: FakeGitHub, run: FakeRun, rechecks: list[dict[str, Any]]
+) -> None:
+    """A deploy GitHub will not let the App judge records on the success, so releases do not stop."""
+    _held_issue(repositories, github)
+    _early_job_succeeded(run)
+    run.forbidden = True
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert len(_releases(repositories)) == 1
+    assert rechecks == []
+
+
+def test_a_deployment_already_at_its_stage_reads_no_verdict(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """Later jobs of a recorded deploy, such as an end-to-end run's, stop at the head without judging anything."""
+    _held_issue(repositories, github)
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    assert github.verdict_reads == 1

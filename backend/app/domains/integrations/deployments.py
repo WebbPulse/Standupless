@@ -21,6 +21,14 @@ head where it was: a commit the head already contains, one whose release already
 reached a later stage, or one from another ref that diverged from the head, such
 as the default branch's commit an end-to-end job reports against staging.
 
+A success does not mean the deploy has finished, because a workflow reports one
+for each job that names the environment, starting with its first. So nothing is
+recorded until the workflow runs behind the commit's deployments have finished:
+while one runs, the delivery waits on delayed rechecks on the events queue, one
+chain per repository, commit and environment, and a failed deploy records nothing.
+A later success for that commit, such as a re-run's, judges it afresh. Backfills
+read deployments long finished and are not held.
+
 A repository pinned to a team always records, so a deploy with no keys is still
 on the record; an unpinned one records only for teams whose keys it names. A
 stage set to publish makes the deployment's release a GitHub Release.
@@ -42,6 +50,7 @@ from typing import Any, Callable, Mapping, Sequence, TypeVar
 from app.common import issue_keys, releases
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.releases import ReleaseBackfill, ReleaseBackfillRead
+from app.common.core.config import settings
 from app.common.db.dynamo.github import RELEASE_SOURCE_DEPLOYMENTS, IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import PipelineStage, Release
@@ -53,6 +62,23 @@ _log = logging.getLogger(__name__)
 SOURCE = releases.GITHUB_DEPLOYMENT
 
 SUCCESS = "success"
+
+DEPLOYMENT_RECHECK_EVENT = "standupless.recheck_deployment"
+"""The events queue message that judges a held deployment again."""
+
+HOLD_SCOPE = "deployment-hold"
+
+RECHECK_DELAY_STEP_SECONDS = 30
+"""Each recheck waits this much longer than the last, so a short deploy is recorded soon after it ends."""
+
+RECHECK_DELAY_MAX_SECONDS = 900
+"""The longest delay SQS allows on one message."""
+
+RECHECK_ATTEMPTS_MAX = 38
+"""How many rechecks one hold makes, about six hours; a success after that, say past an approval, holds afresh."""
+
+HOLD_CLAIM_TTL_SECONDS = 7 * 3600
+"""How long a hold's claim outlives a lost recheck, a little past the longest hold."""
 
 PULL_READS_MAX = 30
 """How many pull requests one deployment reads for the keys its commits do not name."""
@@ -229,6 +255,16 @@ class _GitHub:
         found = self._version_tags.get(sha.lower(), [])
         return max(found, key=tag_releases.version_key) if found else None
 
+    def deploy_verdict(self, sha: str, environment: str) -> str:
+        """Whether a commit's deploy to an environment has finished, reading as settled when it cannot be judged."""
+        from app.domains.integrations import github_deployments
+
+        return _readable(
+            lambda: github_deployments.deploy_verdict(self.token(), self.repository_id, sha, environment),
+            github_deployments.DEPLOY_SETTLED,
+            "deploy verdict",
+        )
+
     def previous_success(
         self, environment: str, sha: str, deployment_id: int | None, *, start_page: int = 1
     ) -> str | None:
@@ -281,8 +317,82 @@ def _environment_url(status: Mapping[str, Any]) -> str | None:
     return None
 
 
-def handle_deployment_status(repositories: Repositories, workspace_id: str, body: Mapping[str, Any]) -> None:
-    """Record a successful deployment as releases of every team whose pipeline maps its environment."""
+def _enqueue_recheck(installation_id: str, body: Mapping[str, Any], attempt: int) -> None:
+    """Queue a held deployment's next judgement, carrying the delivery it came from."""
+    from webbpulse.events import EventEnvelope, enqueue
+
+    delivery = {name: body.get(name) for name in ("deployment_status", "deployment", "repository", "installation")}
+    enqueue(
+        settings.GITHUB_EVENTS_QUEUE_URL,
+        EventEnvelope(
+            name=DEPLOYMENT_RECHECK_EVENT,
+            payload={"event": DEPLOYMENT_RECHECK_EVENT, "body": {**delivery, "attempt": attempt}},
+            scope=installation_id,
+        ),
+        delay_seconds=min(RECHECK_DELAY_STEP_SECONDS * attempt, RECHECK_DELAY_MAX_SECONDS),
+    )
+
+
+def _hold(
+    repositories: Repositories, workspace_id: str, installation_id: str, body: Mapping[str, Any], key: str, attempt: int
+) -> None:
+    """Keep a running deploy waiting on a recheck, only one chain of them per deploy however many jobs report."""
+    if attempt:
+        _enqueue_recheck(installation_id, body, attempt + 1)
+        return
+    if not repositories.idempotency.claim(workspace_id, HOLD_SCOPE, key, ttl_seconds=HOLD_CLAIM_TTL_SECONDS):
+        return
+    try:
+        _enqueue_recheck(installation_id, body, 1)
+    except Exception:
+        repositories.idempotency.release(workspace_id, HOLD_SCOPE, key)
+        raise
+
+
+def _deploy_finished(
+    repositories: Repositories,
+    workspace_id: str,
+    github: _GitHub,
+    body: Mapping[str, Any],
+    *,
+    sha: str,
+    environment: str,
+    attempt: int,
+) -> bool:
+    """Whether a deployment may record now; a running deploy is held, a failed or overdue one ends its hold."""
+    from app.domains.integrations import github_deployments
+
+    verdict = github.deploy_verdict(sha, environment)
+    if verdict == github_deployments.DEPLOY_SETTLED:
+        return True
+    key = f"{github.repository_id}:{sha}:{environment}"
+    if verdict == github_deployments.DEPLOY_RUNNING and attempt < RECHECK_ATTEMPTS_MAX:
+        _hold(repositories, workspace_id, github.installation_id, body, key, attempt)
+        return False
+    _log.warning(
+        "A deployment's deploy did not finish cleanly, so it recorded no release.",
+        extra={"event": "integrations.deployment_not_recorded", "verdict": verdict, "environment": environment},
+    )
+    if attempt:
+        repositories.idempotency.release(workspace_id, HOLD_SCOPE, key)
+    return False
+
+
+def handle_deployment_recheck(repositories: Repositories, workspace_id: str, body: Mapping[str, Any]) -> None:
+    """Judge a held deployment again, as the delivery it came from."""
+    attempt = body.get("attempt")
+    if isinstance(attempt, int) and attempt > 0:
+        handle_deployment_status(repositories, workspace_id, body, attempt=attempt)
+
+
+def handle_deployment_status(
+    repositories: Repositories, workspace_id: str, body: Mapping[str, Any], *, attempt: int = 0
+) -> None:
+    """Record a finished deploy as releases of every team whose pipeline maps its environment.
+
+    `attempt` counts the rechecks of a held deployment, and is zero for GitHub's
+    own delivery.
+    """
     status = body.get("deployment_status")
     deployment = body.get("deployment")
     repository = body.get("repository")
@@ -307,6 +417,7 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
     github = _GitHub(installation_id, repository_id)
     ranges: dict[str | None, list[tuple[str, str]]] = {}
     seeded: list[str | None] = []
+    finished: bool | None = None
     for team_id in _candidate_teams(repositories, workspace_id, stored.team_id):
         pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
         stage = releases.stage_for_environment(pipeline, environment)
@@ -329,6 +440,12 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
             ref=ref,
         ):
             continue
+        if finished is None:
+            finished = _deploy_finished(
+                repositories, workspace_id, github, body, sha=sha, environment=environment, attempt=attempt
+            )
+        if not finished:
+            return
         if previous is None:
             if not seeded:
                 seeded.append(github.previous_success(environment, sha, deployment_id))
@@ -363,6 +480,8 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
             sha,
             ref=head_ref or ref,
         )
+    if attempt:
+        repositories.idempotency.release(workspace_id, HOLD_SCOPE, f"{repository_id}:{sha}:{environment}")
 
 
 def _later_stage_ids(stages: Sequence[PipelineStage], stage: PipelineStage) -> set[str]:
