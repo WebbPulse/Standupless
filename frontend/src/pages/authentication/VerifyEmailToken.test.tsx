@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
 import VerifyEmailToken from './VerifyEmailToken';
 
-const linkState = vi.fn();
+const linkState = vi.fn<() => unknown>();
 const useAuthMock = vi.fn<() => AuthContextType>();
 const refresh = vi.fn<() => Promise<string | null>>();
 
@@ -78,6 +78,7 @@ describe('VerifyEmailToken', () => {
 
     await act(async () => {
       renderLink();
+      await Promise.resolve();
     });
 
     expect(refresh).toHaveBeenCalledTimes(1);
@@ -93,6 +94,7 @@ describe('VerifyEmailToken', () => {
 
     await act(async () => {
       renderLink();
+      await Promise.resolve();
     });
 
     expect(
@@ -124,6 +126,7 @@ describe('VerifyEmailToken', () => {
 
     await act(async () => {
       renderLink();
+      await Promise.resolve();
     });
 
     expect(screen.getByText('workspaces page')).toBeInTheDocument();
@@ -141,6 +144,7 @@ describe('VerifyEmailToken', () => {
 
     await act(async () => {
       renderLink();
+      await Promise.resolve();
     });
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -165,6 +169,7 @@ describe('VerifyEmailToken', () => {
 
     await act(async () => {
       renderLink();
+      await Promise.resolve();
     });
 
     expect(screen.queryByText(/no longer valid/)).not.toBeInTheDocument();
@@ -183,6 +188,7 @@ describe('VerifyEmailToken', () => {
 
     await act(async () => {
       renderLink();
+      await Promise.resolve();
     });
 
     expect(

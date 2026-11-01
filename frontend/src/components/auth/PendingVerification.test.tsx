@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserRead } from '../../types/Api';
 import PendingVerification from './PendingVerification';
 
-const requestEmailVerification = vi.fn();
+const requestEmailVerification = vi.fn<(body: unknown) => Promise<unknown>>();
 const refresh = vi.fn<() => Promise<string | null>>();
 const getProfile = vi.fn<(path: string) => Promise<{ data: UserRead }>>();
 const logout = vi.fn<(to?: string) => Promise<void>>(() => Promise.resolve());
@@ -96,6 +96,7 @@ describe('PendingVerification', () => {
       fireEvent.click(
         screen.getByRole('button', { name: 'Resend verification email' })
       );
+      await Promise.resolve();
     });
 
     expect(requestEmailVerification).toHaveBeenCalledWith({
@@ -129,6 +130,7 @@ describe('PendingVerification', () => {
       fireEvent.click(
         screen.getByRole('button', { name: 'Resend verification email' })
       );
+      await Promise.resolve();
     });
 
     expect(
@@ -155,6 +157,7 @@ describe('PendingVerification', () => {
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
     });
 
     expect(getProfile).toHaveBeenCalledWith('/api/users/me');
@@ -168,6 +171,7 @@ describe('PendingVerification', () => {
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
     });
 
     expect(getProfile).toHaveBeenCalledTimes(1);
@@ -196,6 +200,7 @@ describe('PendingVerification', () => {
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
     });
 
     expect(refresh).toHaveBeenCalledTimes(1);

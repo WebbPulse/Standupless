@@ -62,6 +62,7 @@ const submit = async (): Promise<void> => {
   });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    await Promise.resolve();
   });
 };
 
