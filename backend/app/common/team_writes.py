@@ -585,7 +585,9 @@ def update_display_defaults(
 
     Only the pages the payload named move: options replace that page's saved
     default whole and null clears it, so the page opens on its built-in default,
-    or for the projects page on the workspace default.
+    or for the projects page on the workspace default. The insights panel
+    configuration moves the same way and is one for the list and the board, since
+    a viewer's panel follows them between the two.
     """
     current = display_defaults(repositories, workspace_id, team_id)
     changes: dict[str, Any] = {"updated_by": actor_id}
@@ -596,6 +598,9 @@ def update_display_defaults(
     if "projects_display" in payload.model_fields_set:
         arrangement = payload.projects_display
         changes["projects_display"] = arrangement.model_dump() if arrangement is not None else None
+    if "insights_display" in payload.model_fields_set:
+        insights = payload.insights_display
+        changes["insights_display"] = insights.as_row() if insights is not None else None
     return repositories.team_config.put_display_defaults(current.model_copy(update=changes))
 
 

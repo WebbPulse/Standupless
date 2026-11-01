@@ -118,6 +118,12 @@ describe('describeProjectActivity', () => {
     expect(sentence({ field: 'initiative_id', to: 'ini-1' })).toBe(
       'moved the project to Grow'
     );
+    expect(sentence({ field: 'initiative_ids', from: [], to: ['ini-1'] })).toBe(
+      'added Grow as initiatives'
+    );
+    expect(sentence({ field: 'initiative_ids', from: ['ini-1'], to: [] })).toBe(
+      'removed Grow as initiatives'
+    );
     expect(sentence({ field: 'name', to: 'Launch' })).toBe(
       'renamed the project to Launch'
     );

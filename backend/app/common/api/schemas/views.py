@@ -16,10 +16,12 @@ from typing import Annotated, Any, Literal, Mapping, Optional, Sequence, Union, 
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.insights import InsightsDisplay, stored_insights_display
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.planning import PROJECT_STATUSES
+from app.common.db.dynamo.push_devices import PushPlatform
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox_summary import notification_summary
 from app.common.project_filters import DATE_BOUND_FIELDS, UPDATE_AGE_FIELDS, property_entry_well_formed
@@ -602,6 +604,7 @@ class ViewCreate(BaseModel):
     group_header: GroupHeaderField = "count"
     collapsed_groups: list[CollapsedGroupKey] = Field(default_factory=list, max_length=COLLAPSED_GROUPS_MAX)
     projects_display: Optional[ProjectsDisplay] = None
+    insights_display: Optional[InsightsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
@@ -634,9 +637,10 @@ class ViewUpdate(BaseModel):
     row is filed under, so moving it would be a delete and a create wearing the name
     of an update. `shared` is the one exception, for a view without a team: it
     moves a personal view to the whole workspace or back, which refiles the row
-    under the same view id. `entity` is fixed at create, and `projects_display`
-    applies only to a project view. `owner_id` hands a shared view to another
-    member, the owner's or a workspace admin's call.
+    under the same view id. `entity` is fixed at create, `projects_display`
+    applies only to a project view and `insights_display` only to an issue view,
+    null clearing it. `owner_id` hands a shared view to another member, the
+    owner's or a workspace admin's call.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_NAME_MAX)
@@ -656,6 +660,7 @@ class ViewUpdate(BaseModel):
     group_header: Optional[GroupHeaderField] = None
     collapsed_groups: Optional[list[CollapsedGroupKey]] = Field(default=None, max_length=COLLAPSED_GROUPS_MAX)
     projects_display: Optional[ProjectsDisplay] = None
+    insights_display: Optional[InsightsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
@@ -700,8 +705,10 @@ class ViewRead(BaseModel):
     view reads differently to two members, and so is `subscribed`, whether the
     caller follows the view to hear about issues entering it. `subscriber_count`
     is how many members follow it. `projects_display` is the arrangement of
-    a project view and null on an issue view. `collapsed_groups` names the
-    groups folded and the board columns and swimlanes hidden, empty when none is.
+    a project view and null on an issue view. `insights_display` is the insights
+    panel the view opens with for a viewer without picks of their own, null when
+    none was set and on a project view. `collapsed_groups` names the groups folded
+    and the board columns and swimlanes hidden, empty when none is.
     """
 
     view_id: str
@@ -727,6 +734,7 @@ class ViewRead(BaseModel):
     group_header: GroupHeaderField = "count"
     collapsed_groups: list[str] = Field(default_factory=list)
     projects_display: Optional[ProjectsDisplay] = None
+    insights_display: Optional[InsightsDisplay] = None
     icon: Optional[str] = None
     color: Optional[str] = None
     description: Optional[str] = None
@@ -766,6 +774,7 @@ class ViewRead(BaseModel):
             group_header=group_header_of(view.group_header),
             collapsed_groups=list(view.collapsed_groups or []),
             projects_display=stored_projects_display(view.projects_display) if view.lists_projects else None,
+            insights_display=None if view.lists_projects else stored_insights_display(view.insights_display),
             icon=view.icon,
             color=view.color,
             description=view.description,
@@ -907,6 +916,10 @@ InboxListRead = cursor_page(NotificationRead, "notifications", model_name="Inbox
 """The body the inbox list answers with, items under `notifications`."""
 
 
+PUSH_TOKEN_PATTERN = r"^[0-9a-fA-F]{32,512}$"
+"""What an Apple device token looks like: hex, with a length Apple keeps the right to change."""
+
+
 InboxBucket = Literal["all", "priority", "other"]
 """Which tab of the split inbox a read or bulk action covers: both, Priority or Other."""
 
@@ -992,6 +1005,19 @@ class InboxClearResult(BaseModel):
     """How many notifications a bulk delete removed."""
 
     deleted: int = 0
+
+
+class PushDeviceWrite(BaseModel):
+    """The body registering a phone for push: its platform and the provider's token for it."""
+
+    platform: PushPlatform
+    token: str = Field(pattern=PUSH_TOKEN_PATTERN)
+
+
+class PushDeviceRemove(BaseModel):
+    """The body unregistering a phone, carrying the token so no access log holds it."""
+
+    token: str = Field(pattern=PUSH_TOKEN_PATTERN)
 
 
 class IssueReminderWrite(BaseModel):

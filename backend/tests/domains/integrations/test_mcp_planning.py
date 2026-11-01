@@ -566,6 +566,22 @@ def test_update_project_update_by_its_author(client: TestClient, repositories: A
     assert repositories.planning.get_project(WORKSPACE, planning["project_id"]).health == "at_risk"
 
 
+def test_create_project_update_hints_at_the_one_just_posted(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A post answers with a hint naming an update posted moments before, and none without one."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    base = {"project_id": "Home project", "body": "Note"}
+
+    first = answer(tool(client, secret, "create_project_update", {**base, "health": "at_risk"}))
+    second = answer(tool(client, secret, "create_project_update", {**base, "health": "off_track"}))
+
+    assert first["hints"] == []
+    assert len(second["hints"]) == 1
+    assert first["update_id"] in second["hints"][0]
+    assert "At risk" in second["hints"][0]
+
+
 def test_update_project_update_refuses_another_member(
     client: TestClient, repositories: Any, planning: dict[str, str]
 ) -> None:

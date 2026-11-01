@@ -54,22 +54,47 @@ class FakeSecrets:
             self._append(self.values[self.versions[-1]])
         return {"VersionIdsToStages": {self.versions[-1]: ["AWSCURRENT"]}}
 
-    def get_secret_value(self, SecretId: str, VersionId: str) -> dict[str, Any]:
-        """Return one pinned version's string."""
-        return {"SecretString": self.values[VersionId]}
+    def get_secret_value(
+        self, SecretId: str, VersionId: str | None = None, VersionStage: str | None = None
+    ) -> dict[str, Any]:
+        """Return one pinned version's string, or AWSCURRENT's when asked by stage."""
+        version = VersionId or self.versions[-1]
+        return {"SecretString": self.values[version], "VersionId": version}
 
-    def put_secret_value(self, SecretId: str, SecretString: str, ClientRequestToken: str) -> dict[str, Any]:
-        """Store a new current version, or fail when told to."""
+    def put_secret_value(
+        self, SecretId: str, SecretString: str, ClientRequestToken: str, VersionStages: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Store a new version, current unless staged elsewhere, or fail when told to."""
         if self.fail_put:
             raise RuntimeError("AccessDenied")
         self.puts += 1
-        return {"VersionId": self._append(SecretString)}
+        if VersionStages is None:
+            return {"VersionId": self._append(SecretString), "VersionStages": ["AWSCURRENT"]}
+        version = self._store(SecretString)
+        return {"VersionId": version, "VersionStages": VersionStages}
+
+    def update_secret_version_stage(
+        self,
+        SecretId: str,
+        VersionStage: str,
+        MoveToVersionId: str | None = None,
+        RemoveFromVersionId: str | None = None,
+    ) -> dict[str, Any]:
+        """Move AWSCURRENT onto a stored version; other stages have no effect here."""
+        if VersionStage == "AWSCURRENT" and MoveToVersionId:
+            self.versions.append(MoveToVersionId)
+        return {}
+
+    def _store(self, raw: str) -> str:
+        """Keep a value under a new version id without making it current."""
+        version = f"v{len(self.values)}"
+        self.values[version] = raw
+        return version
 
     def _append(self, raw: str) -> str:
-        """Add a version and return its id."""
-        version = f"v{len(self.versions)}"
+        """Add a version, make it current and return its id."""
+        version = self._store(raw)
         self.versions.append(version)
-        self.values[version] = raw
         return version
 
 

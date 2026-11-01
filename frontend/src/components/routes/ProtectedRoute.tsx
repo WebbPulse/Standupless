@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePinnedViewport } from '../../hooks/usePinnedViewport';
 import { isNewIssuePath } from '../../lib/newIssueUrl';
 import BootSplash from '../layout/BootSplash';
+import PendingVerification from '../auth/PendingVerification';
 
 /**
  * Shows the cold start screen while the session has never settled, redirects to login when
@@ -29,11 +30,15 @@ import BootSplash from '../layout/BootSplash';
  * returns the document to its origin if script or the on screen keyboard
  * moves it anyway, so the top bar is never left above the screen on a phone.
  *
+ * An account whose email is not yet verified sees the pending verification
+ * screen in place of the route, so none of the workspace calls the API would
+ * refuse it are made.
+ *
  * A prefilled new issue link sends the visitor to sign in with the link in
  * `returnTo`, so they land back on the dialog with its fields set.
  */
 const ProtectedRoute: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
   usePinnedViewport();
 
@@ -53,6 +58,10 @@ const ProtectedRoute: React.FC = () => {
       );
     }
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (user?.email_verified === false) {
+    return <PendingVerification />;
   }
 
   return (

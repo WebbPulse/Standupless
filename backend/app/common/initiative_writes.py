@@ -9,8 +9,8 @@ lead team is private, when only that team's members see it at all and everyone
 else gets the 404 an absent one gets. The projects it rolls up are narrowed to
 the ones the caller can see, so an initiative never reveals work on a hidden
 team, and a hidden sub-initiative or parent is left out of its tree. A
-project joins an initiative through its own `initiative_id`, which is why it
-belongs to at most one, and joining or leaving is an edit of that project. Only
+project joins initiatives through its own `initiative_ids`, so it may belong to
+several, and joining or leaving one is an edit of that project alone. Only
 the initiative's creator, its owner or a workspace admin deletes it.
 
 An initiative may sit under a parent as a sub-initiative. The parent's rollup
@@ -32,6 +32,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
 from app.common.api.schemas.planning import (
     MAX_LIMIT,
+    PROJECT_INITIATIVES_MAX,
     UPDATES_DEFAULT_LIMIT,
     InitiativeCreate,
     InitiativeRead,
@@ -69,6 +70,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.recent_updates import RECENT_UPDATE_SCAN, recent_updates
 from app.common.update_thread_rules import summarise_threads
 
 NOT_NULLABLE = ("name", "status")
@@ -115,12 +117,13 @@ def visible_initiatives(repositories: Repositories, context: AuthzContext) -> li
 
 
 def visible_projects_by_initiative(repositories: Repositories, context: AuthzContext) -> dict[str, list[Project]]:
-    """The projects the caller can see, grouped under the initiative each belongs to."""
+    """The projects the caller can see, grouped under every initiative each belongs to."""
     visible = set(visible_team_ids(repositories, context))
     grouped: dict[str, list[Project]] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
-        if project.initiative_id and visible_project_teams(project, visible):
-            grouped.setdefault(project.initiative_id, []).append(project)
+        if project.initiative_ids and visible_project_teams(project, visible):
+            for member_of in project.initiative_ids:
+                grouped.setdefault(member_of, []).append(project)
     return grouped
 
 
@@ -128,8 +131,9 @@ def shared_projects_by_initiative(repositories: Repositories, context: AuthzCont
     """The projects every workspace member can see, on at least one team that is not private, by initiative."""
     grouped: dict[str, list[Project]] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
-        if project.initiative_id and any(not context.is_private_team(team) for team in project.team_ids):
-            grouped.setdefault(project.initiative_id, []).append(project)
+        if project.initiative_ids and any(not context.is_private_team(team) for team in project.team_ids):
+            for member_of in project.initiative_ids:
+                grouped.setdefault(member_of, []).append(project)
     return grouped
 
 
@@ -142,8 +146,15 @@ def initiative_tree(repositories: Repositories, workspace_id: str, *rows: Initia
 
 
 def rollup_projects(tree: InitiativeTree, grouped: Mapping[str, list[Project]], initiative_id: str) -> list[Project]:
-    """The visible projects of an initiative and of every sub-initiative below it, its own first."""
-    return [project for node in tree.subtree(initiative_id) for project in grouped.get(node, [])]
+    """The visible projects of an initiative and of every sub-initiative below it, its own first, each once.
+
+    A project in both an initiative and one of its sub-initiatives counts once.
+    """
+    seen: dict[str, Project] = {}
+    for node in tree.subtree(initiative_id):
+        for project in grouped.get(node, []):
+            seen.setdefault(project.project_id, project)
+    return list(seen.values())
 
 
 def _initiative_read(
@@ -373,8 +384,9 @@ def delete_initiative(repositories: Repositories, context: AuthzContext, initiat
     if not can_delete_initiative(context, initiative):
         raise forbidden()
     for project in repositories.planning.list_projects(context.workspace_id):
-        if project.initiative_id == initiative.initiative_id:
-            repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
+        if initiative.initiative_id in project.initiative_ids:
+            kept = [other for other in project.initiative_ids if other != initiative.initiative_id]
+            repositories.planning.set_project_initiatives(context.workspace_id, project.project_id, kept)
     for child in repositories.planning.list_initiatives(context.workspace_id):
         if child.parent_initiative_id == initiative.initiative_id:
             lifted = child.model_copy(
@@ -413,11 +425,13 @@ def _project_read(repositories: Repositories, context: AuthzContext, project: Pr
 def add_project_to_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, project_id: str
 ) -> ProjectRead:
-    """Put a project in an initiative, moving it out of any other it was in."""
+    """Add an initiative to a project's set, keeping every other initiative it was in."""
     initiative, project, teams = _membership_project(repositories, context, initiative_id, project_id)
-    if project.initiative_id != initiative.initiative_id:
-        written = repositories.planning.set_project_initiative(
-            context.workspace_id, project.project_id, initiative.initiative_id
+    if initiative.initiative_id not in project.initiative_ids:
+        if len(project.initiative_ids) >= PROJECT_INITIATIVES_MAX:
+            raise unprocessable(f"A project may belong to at most {PROJECT_INITIATIVES_MAX} initiatives")
+        written = repositories.planning.set_project_initiatives(
+            context.workspace_id, project.project_id, [*project.initiative_ids, initiative.initiative_id]
         )
         if written is None:
             raise not_found()
@@ -428,11 +442,12 @@ def add_project_to_initiative(
 def remove_project_from_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, project_id: str
 ) -> ProjectRead:
-    """Take a project out of an initiative, or 404 when it is not in that one."""
+    """Take a project out of one initiative, leaving the others it is in, or 404 when it is not in that one."""
     initiative, project, teams = _membership_project(repositories, context, initiative_id, project_id)
-    if project.initiative_id != initiative.initiative_id:
+    if initiative.initiative_id not in project.initiative_ids:
         raise not_found()
-    written = repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
+    kept = [other for other in project.initiative_ids if other != initiative.initiative_id]
+    written = repositories.planning.set_project_initiatives(context.workspace_id, project.project_id, kept)
     if written is None:
         raise not_found()
     return _project_read(repositories, context, written, teams)
@@ -513,7 +528,9 @@ def create_initiative_update(
     """Post an update on an initiative, from a workspace document template when one is named, and mirror its health.
 
     The update records where the initiative stands now beside the snapshot the
-    update before it recorded, which is what its progress report diffs.
+    update before it recorded, which is what its progress report diffs. The
+    answer names any other update posted around the same time, read after the
+    write so two authors racing each other both find out.
     """
     initiative = load_initiative(repositories, context, initiative_id)
     body = document_templates.fill_update_body(repositories, context, [], payload.body, payload.template_id)
@@ -548,7 +565,12 @@ def create_initiative_update(
         context.workspace_id, initiative.initiative_id, health=created.health, last_update_at=created.created_at
     )
     pulse.record_initiative_update(repositories, created, initiative.health)
-    return _update_read(context, initiative, created)
+    newest, _ = repositories.planning.list_initiative_updates(
+        context.workspace_id, initiative.initiative_id, limit=RECENT_UPDATE_SCAN
+    )
+    return _update_read(context, initiative, created).model_copy(
+        update={"recent_updates": recent_updates(repositories, created, newest)}
+    )
 
 
 def initiative_template_offer(
@@ -578,6 +600,22 @@ def _is_latest(repositories: Repositories, update: InitiativeUpdateRow) -> bool:
     return latest is not None and latest.update_id == update.update_id
 
 
+def _carry_health_forward(
+    repositories: Repositories, stored: InitiativeUpdateRow, following: InitiativeUpdateRow
+) -> None:
+    """Hold the next update's report to an edited health, since it diffs against this update's.
+
+    The next update's own edit state is left alone: nobody rewrote what it says.
+    """
+    if following.previous_snapshot is None:
+        return
+    previous = following.previous_snapshot.model_copy(update={"health": stored.health})
+    try:
+        repositories.planning.replace_initiative_update(following.model_copy(update={"previous_snapshot": previous}))
+    except ConditionFailed:
+        return
+
+
 def update_initiative_update(
     repositories: Repositories,
     context: AuthzContext,
@@ -585,7 +623,11 @@ def update_initiative_update(
     update_id: str,
     payload: InitiativeUpdatePatch,
 ) -> InitiativeUpdateRead:
-    """Edit an update's body, health or report visibility; a health change on the newest one moves the initiative."""
+    """Edit an update's body, health or report visibility; a health change on the newest one moves the initiative.
+
+    The snapshot records the health the update called, so a health edit rewrites
+    it too, and the report's health line never contradicts the update's pill.
+    """
     initiative, existing = _load_editable_update(repositories, context, initiative_id, update_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
     for name in ("body", "health", "hide_details"):
@@ -596,15 +638,21 @@ def update_initiative_update(
     now = utc_now()
     rewritten = bool(fields.keys() - {"hide_details"})
     stamps = {"updated_at": now, "edited_at": now} if rewritten else {"updated_at": now}
+    if "health" in fields and existing.snapshot is not None:
+        fields["snapshot"] = existing.snapshot.model_copy(update={"health": fields["health"]})
     edited = existing.model_copy(update={**fields, **stamps})
     try:
         stored = repositories.planning.replace_initiative_update(edited)
     except ConditionFailed as exc:
         raise not_found() from exc
-    if stored.health != existing.health and _is_latest(repositories, stored):
-        repositories.planning.record_initiative_health(
-            context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
-        )
+    if stored.health != existing.health:
+        following = repositories.planning.next_initiative_update(stored)
+        if following is None:
+            repositories.planning.record_initiative_health(
+                context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
+            )
+        else:
+            _carry_health_forward(repositories, stored, following)
     if rewritten:
         pulse.revise_update(
             repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now

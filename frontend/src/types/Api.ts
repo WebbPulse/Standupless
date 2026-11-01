@@ -243,6 +243,8 @@ export interface NotificationChannels {
   email: boolean;
   /** Whether the kind also reaches a linked Slack or Discord account as a direct message. */
   chat?: boolean;
+  /** Whether the kind also shows as a push notification in the mobile app. */
+  push?: boolean;
 }
 
 /** A partial preferences change: only the switches sent are applied. */
@@ -1071,7 +1073,8 @@ export type ActivityKind =
   | 'subscriber_removed'
   | 'mentioned'
   | 'thread_resolved'
-  | 'thread_unresolved';
+  | 'thread_unresolved'
+  | 'attachment_added';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -3086,8 +3089,10 @@ export interface ProjectRead {
   /** When the next update is due, or null when the project never comes due. */
   next_update_due_at?: string | null;
   update_due_state?: ProjectUpdateDueState | null;
-  /** The initiative the project belongs to, or null outside any. */
+  /** The first of the project's initiatives, or null outside any; kept for older clients. */
   initiative_id?: string | null;
+  /** Every initiative the project belongs to, the first one first. */
+  initiative_ids?: string[];
   /** The manual position, a base 62 fractional key; null on a project never placed. */
   sort_order?: string | null;
   /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
@@ -3329,8 +3334,10 @@ export interface ProjectUpdate {
   label_ids?: string[];
   /** A null returns the project to the workspace's cadence. */
   update_interval_days?: ProjectUpdateInterval | null;
-  /** Moves the project into an initiative; a null takes it out of one. */
+  /** Puts the project in this one initiative alone; a null takes it out of every one. */
   initiative_id?: string | null;
+  /** Replaces the project's initiatives; an empty list takes it out of every one. Wins over `initiative_id`. */
+  initiative_ids?: string[];
   /** The manual position, a base 62 fractional key shared by every viewer. */
   sort_order?: string;
   /** What to do with the open issues, taken only by a patch that completes or cancels the project. */
@@ -3428,6 +3435,16 @@ export interface ProjectLinkUpdate {
   sort_order?: string;
 }
 
+/** Another update posted on the same project or initiative close to a new one. */
+export interface RecentStatusUpdate {
+  update_id: string;
+  author_id: string;
+  author_name?: string | null;
+  health: ProjectHealth;
+  source?: ChangeSource | null;
+  created_at: string;
+}
+
 /**
  * One written status update on a project or an initiative: a Markdown body and
  * the health it judged the subject at. Posting one sets the subject's health.
@@ -3451,6 +3468,8 @@ export interface StatusUpdateRead {
   reactions?: ReactionGroup[];
   /** How many replies the update's thread holds. */
   comment_count?: number;
+  /** Other updates posted around this one; only the answer to a create fills it. */
+  recent_updates?: RecentStatusUpdate[];
 }
 
 /**
@@ -4752,6 +4771,18 @@ export type InsightDimension =
  */
 export type InsightMeasure =
   'count' | 'points' | 'cycle_time' | 'lead_time' | 'triage_time' | 'issue_age';
+
+/**
+ * The insights panel a view or a team saves for every viewer without picks of
+ * their own. A null measure, slice or layout keeps the panel's built-in choice,
+ * and a null segment draws none.
+ */
+export interface InsightsDisplay {
+  measure?: InsightMeasure | null;
+  group_by?: InsightDimension | null;
+  segment_by?: InsightDimension | null;
+  layout?: 'both' | 'chart' | 'table' | null;
+}
 
 /** The time measures, which answer durations and points rather than sums. */
 export type InsightTimeMeasure = Exclude<InsightMeasure, 'count' | 'points'>;

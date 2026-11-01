@@ -1,23 +1,20 @@
 /**
- * The mobile browser sign-in: the verifier kept on the device, which app links
- * count as a handoff, and the path the page goes to once a handoff settles.
+ * The mobile browser sign-in: the verifier kept on the device, and the path the
+ * page goes to once a handoff settles. The store's own rules are tested with
+ * the shared package.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   closeMobileAuthSession,
   completeMobileBrowserSignIn,
-  hasPendingMobileHandoff,
-  isMobileHandoffLink,
   isMobileSignInCancelled,
   MOBILE_HANDOFF_STORAGE_KEY,
-  MOBILE_HANDOFF_TTL_MS,
   mobileBrowserSignIn,
   mobileHandoffFailedPath,
   mobileHandoffScheme,
+  mobileHandoffVerifier,
   startMobileBrowserSignIn,
-  storeMobileHandoffVerifier,
-  takeMobileHandoffVerifier,
 } from './mobileHandoff';
 
 const native = vi.hoisted(() => ({
@@ -56,7 +53,6 @@ vi.mock('@webbpulse/auth', async (importOriginal) => {
 
 const LAUNCH_URL = 'https://app.example/desktop/handoff?challenge=challenge';
 const CALLBACK = 'standupless://auth/handoff?code=abc';
-const SCHEMES = ['standupless', 'standupless-staging'];
 
 /** What the page passes the client to redeem a code. */
 interface HandoffInput {
@@ -70,59 +66,26 @@ afterEach(() => {
 });
 
 describe('the pending verifier', () => {
-  it('is taken once', () => {
-    storeMobileHandoffVerifier(VERIFIER, 1000);
-    expect(hasPendingMobileHandoff()).toBe(true);
-    expect(takeMobileHandoffVerifier(2000)).toBe(VERIFIER);
-    expect(hasPendingMobileHandoff()).toBe(false);
-    expect(takeMobileHandoffVerifier(2000)).toBeNull();
+  it('is kept in local storage, so a stopped app can still finish', () => {
+    mobileHandoffVerifier.keep(VERIFIER, 1000);
+    expect(localStorage.getItem(MOBILE_HANDOFF_STORAGE_KEY)).not.toBeNull();
+    expect(mobileHandoffVerifier.take(2000)).toBe(VERIFIER);
+    expect(localStorage.getItem(MOBILE_HANDOFF_STORAGE_KEY)).toBeNull();
   });
 
-  it('expires after the time limit', () => {
-    storeMobileHandoffVerifier(VERIFIER, 0);
-    expect(takeMobileHandoffVerifier(MOBILE_HANDOFF_TTL_MS + 1)).toBeNull();
-    expect(hasPendingMobileHandoff()).toBe(false);
-  });
-
-  it('is replaced by a newer sign-in', () => {
-    storeMobileHandoffVerifier(VERIFIER, 0);
-    storeMobileHandoffVerifier('w'.repeat(43), 0);
-    expect(takeMobileHandoffVerifier(1)).toBe('w'.repeat(43));
-  });
-
-  it('ignores an unreadable stored value', () => {
-    localStorage.setItem(MOBILE_HANDOFF_STORAGE_KEY, '{not json');
-    expect(takeMobileHandoffVerifier()).toBeNull();
-    localStorage.setItem(MOBILE_HANDOFF_STORAGE_KEY, '{"verifier":1}');
-    expect(takeMobileHandoffVerifier()).toBeNull();
-  });
-
-  it('answers nothing without storage', () => {
-    storeMobileHandoffVerifier(VERIFIER, 0, null);
-    expect(takeMobileHandoffVerifier(0, null)).toBeNull();
-    expect(hasPendingMobileHandoff(null)).toBe(false);
-  });
-});
-
-describe('isMobileHandoffLink', () => {
-  it('matches the handoff callback on an allowed scheme', () => {
-    expect(
-      isMobileHandoffLink('standupless://auth/handoff?code=abc', SCHEMES)
-    ).toBe(true);
-    expect(
-      isMobileHandoffLink('standupless-staging://auth/handoff', SCHEMES)
-    ).toBe(true);
-  });
-
-  it('ignores other links and schemes', () => {
-    expect(isMobileHandoffLink('standupless://w/acme', SCHEMES)).toBe(false);
-    expect(isMobileHandoffLink('other://auth/handoff?code=abc', SCHEMES)).toBe(
-      false
+  it('offers a retry for an entry of the old shape', async () => {
+    localStorage.setItem(
+      MOBILE_HANDOFF_STORAGE_KEY,
+      JSON.stringify({ verifier: VERIFIER, startedAt: Date.now() })
     );
-    expect(
-      isMobileHandoffLink('https://standupless.dev/auth/handoff', SCHEMES)
-    ).toBe(false);
-    expect(isMobileHandoffLink('not a url', SCHEMES)).toBe(false);
+    expect(mobileHandoffVerifier.hasPending()).toBe(true);
+    const client = {
+      completeDesktopHandoff: () => Promise.reject(new Error('unreachable')),
+    };
+    await expect(completeMobileBrowserSignIn(CALLBACK, client)).resolves.toBe(
+      '/login?desktop_handoff=expired'
+    );
+    expect(mobileHandoffVerifier.hasPending()).toBe(false);
   });
 });
 
@@ -208,7 +171,7 @@ describe('startMobileBrowserSignIn', () => {
     await expect(startMobileBrowserSignIn('standupless')).resolves.toBeNull();
     expect(native.browserOpen).toHaveBeenCalledWith({ url: LAUNCH_URL });
     expect(native.start).not.toHaveBeenCalled();
-    expect(hasPendingMobileHandoff()).toBe(true);
+    expect(mobileHandoffVerifier.hasPending()).toBe(true);
   });
 
   it('answers the callback the iOS session returns', async () => {

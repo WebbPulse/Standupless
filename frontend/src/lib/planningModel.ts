@@ -21,6 +21,18 @@ import type {
 } from '../types/Api';
 import { estimatePoints } from './issueView';
 
+/**
+ * The initiatives a project belongs to, the primary one first. A row without
+ * the list, from a server older than it, reads its single `initiative_id`.
+ */
+export const projectInitiativeIds = (
+  project: Pick<ProjectRead, 'initiative_id' | 'initiative_ids'>
+): string[] =>
+  project.initiative_ids ??
+  (project.initiative_id === null || project.initiative_id === undefined
+    ? []
+    : [project.initiative_id]);
+
 /** The order project status groups run in on the projects list. */
 export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
   'in_progress',

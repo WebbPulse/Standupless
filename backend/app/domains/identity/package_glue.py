@@ -49,6 +49,9 @@ def build_identity_settings(settings: "Settings") -> Any:
     server may grant only what a route will honour, and an environment that could set
     the two apart would mint tokens carrying scopes no route has ever heard of.
 
+    `unverified_sessions` signs a new account in at registration, so the person lands
+    on the pending verification screen rather than a sign in form they cannot pass.
+
     The email logo, accents and theme come from `app.common.email.brand`, so the sign
     in and password emails the package sends share the product emails' brand. The logo URL is
     built from the frontend origin of this environment rather than another variable.
@@ -61,6 +64,8 @@ def build_identity_settings(settings: "Settings") -> Any:
     del settings
     return IdentitySettings(  # pyright: ignore[reportCallIssue]
         mcp_scopes_supported=list(MCP_SCOPES),
+        unverified_sessions=True,
+        registration_attributes=["display_name"],
         logo_url=logo_url(),
         email_accent_color=BRAND_ACCENT,
         email_dark_accent_color=BRAND_ACCENT_DARK,

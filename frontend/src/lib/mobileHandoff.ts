@@ -16,9 +16,8 @@
 
 import {
   createDesktopHandoffPkce,
-  DESKTOP_HANDOFF_CALLBACK_HOST,
+  createDesktopHandoffVerifierStore,
   desktopHandoffLaunchUrl,
-  isHandoffSchemeAllowed,
   type AuthClient,
 } from '@webbpulse/auth';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -26,26 +25,13 @@ import { desktopHandoffSchemes } from '../config/app';
 import { isMobileShell } from './mobile';
 import { DESKTOP_HANDOFF_FAILED_PARAM, WORKSPACES_PATH } from './paths';
 
-/** How long a browser sign-in may take before its verifier is discarded. */
-export const MOBILE_HANDOFF_TTL_MS = 10 * 60 * 1000;
-
 /** Where the pending verifier is kept on the device. */
 export const MOBILE_HANDOFF_STORAGE_KEY = 'standupless.mobileHandoff';
 
 /** The verifier of the one browser sign-in in flight. */
-interface PendingHandoff {
-  verifier: string;
-  startedAt: number;
-}
-
-/** The storage the verifier is kept in, or null where none is usable. */
-const deviceStorage = (): Storage | null => {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return null;
-  }
-};
+export const mobileHandoffVerifier = createDesktopHandoffVerifierStore({
+  storageKey: MOBILE_HANDOFF_STORAGE_KEY,
+});
 
 /**
  * The scheme this deployment hands sign-ins to, which is the one the app for
@@ -54,87 +40,6 @@ const deviceStorage = (): Storage | null => {
 export const mobileHandoffScheme = (
   schemes: readonly string[] = desktopHandoffSchemes
 ): string | null => schemes[0] ?? null;
-
-/** Keeps a verifier as the one pending sign-in, replacing any earlier one. */
-export const storeMobileHandoffVerifier = (
-  verifier: string,
-  now: number = Date.now(),
-  storage: Storage | null = deviceStorage()
-): void => {
-  const pending: PendingHandoff = { verifier, startedAt: now };
-  try {
-    storage?.setItem(MOBILE_HANDOFF_STORAGE_KEY, JSON.stringify(pending));
-  } catch {
-    return;
-  }
-};
-
-/**
- * Takes the pending verifier, once, or null when none is pending, it expired,
- * or the stored value is unreadable.
- */
-export const takeMobileHandoffVerifier = (
-  now: number = Date.now(),
-  storage: Storage | null = deviceStorage()
-): string | null => {
-  let raw: string | null;
-  try {
-    raw = storage?.getItem(MOBILE_HANDOFF_STORAGE_KEY) ?? null;
-    storage?.removeItem(MOBILE_HANDOFF_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-  if (raw === null) return null;
-  try {
-    const pending = JSON.parse(raw) as Partial<PendingHandoff>;
-    if (
-      typeof pending.verifier !== 'string' ||
-      typeof pending.startedAt !== 'number'
-    ) {
-      return null;
-    }
-    return now - pending.startedAt <= MOBILE_HANDOFF_TTL_MS
-      ? pending.verifier
-      : null;
-  } catch {
-    return null;
-  }
-};
-
-/**
- * Whether a browser sign-in is pending, without spending it. The launch URL
- * the app answers stays the same for the life of the process, so a reload
- * only redeems it while its verifier is still waiting.
- */
-export const hasPendingMobileHandoff = (
-  storage: Storage | null = deviceStorage()
-): boolean => {
-  try {
-    return (storage?.getItem(MOBILE_HANDOFF_STORAGE_KEY) ?? null) !== null;
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Whether an app URL is a sign-in handoff callback, `<scheme>://auth/...` on an
- * allowed scheme, with or without a code.
- */
-export const isMobileHandoffLink = (
-  url: string,
-  schemes: readonly string[] = desktopHandoffSchemes
-): boolean => {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  return (
-    parsed.host === DESKTOP_HANDOFF_CALLBACK_HOST &&
-    isHandoffSchemeAllowed(parsed.protocol.replace(/:$/, ''), schemes)
-  );
-};
 
 /** The sign-in page path, saying why a handoff did not finish. */
 export const mobileHandoffFailedPath = (reason: string): string => {
@@ -191,7 +96,7 @@ export const startMobileBrowserSignIn = async (
     scheme,
     allowedSchemes: desktopHandoffSchemes,
   });
-  storeMobileHandoffVerifier(pkce.verifier);
+  mobileHandoffVerifier.keep(pkce.verifier);
   if (Capacitor.getPlatform() !== 'ios') return openInBrowserTab(url);
   try {
     const session = await webAuthSession().start({
@@ -262,7 +167,7 @@ export const mobileBrowserSignIn = (): MobileBrowserSignIn | null => {
 export const completeMobileBrowserSignIn = async (
   url: string,
   client: Pick<AuthClient, 'completeDesktopHandoff'>,
-  verifier: string | null = takeMobileHandoffVerifier()
+  verifier: string | null = mobileHandoffVerifier.take()
 ): Promise<string> => {
   if (verifier === null) return mobileHandoffFailedPath('expired');
   try {

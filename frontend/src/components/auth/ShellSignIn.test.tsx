@@ -33,12 +33,16 @@ vi.mock('../../pages/authentication/AuthLayout', () => ({
   ),
 }));
 
+vi.mock('../../config/app', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../config/app')>()),
+  desktopHandoffSchemes: ['standupless'],
+}));
+
 vi.mock('../../lib/mobileHandoff', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../../lib/mobileHandoff')>();
   return {
     ...actual,
-    isMobileHandoffLink: (url: string) => url.startsWith('standupless://auth/'),
     completeMobileBrowserSignIn: () => Promise.resolve('/workspaces'),
   };
 });
@@ -183,6 +187,14 @@ describe('ShellSignIn', () => {
         'not a Standupless sign-in link'
       );
       expect(screen.getByTestId('shell-sign-in-link')).toBeInTheDocument();
+    });
+
+    it('refuses another path on the handoff host', async () => {
+      await paste('standupless://auth/other?code=abc');
+      expect(completeSignInLink).not.toHaveBeenCalled();
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'not a Standupless sign-in link'
+      );
     });
   });
 });

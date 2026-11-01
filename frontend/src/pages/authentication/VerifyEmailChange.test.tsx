@@ -1,6 +1,7 @@
 /**
  * The email change confirmation page: it spends the token once, reports the
- * change, shows the server's sentence for a refused link, and needs a token.
+ * change, shows the server's sentence for a refused link, needs a token, and
+ * moves a session here onto a token that carries the confirmed address.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -11,16 +12,19 @@ import VerifyEmailChange from './VerifyEmailChange';
 const confirmEmailChange =
   vi.fn<(body: { token: string }) => Promise<unknown>>();
 const checkAuthStatus = vi.fn(() => Promise.resolve());
+const refreshSession = vi.fn<() => Promise<unknown>>();
+let isAuthenticated = false;
 
 vi.mock('../../api/identityClient', () => ({
   getIdentityClient: () => ({
     confirmEmailChange: (body: { token: string }) => confirmEmailChange(body),
+    refreshSession: () => refreshSession(),
   }),
 }));
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
-    isAuthenticated: false,
+    isAuthenticated,
     user: null,
     isLoading: false,
     isBusy: false,
@@ -41,6 +45,8 @@ const renderAt = (url: string) =>
 beforeEach(() => {
   confirmEmailChange.mockReset();
   checkAuthStatus.mockClear();
+  refreshSession.mockReset();
+  isAuthenticated = false;
 });
 
 describe('VerifyEmailChange', () => {
@@ -81,6 +87,15 @@ describe('VerifyEmailChange', () => {
     expect(
       await screen.findByText(/This link is no longer valid/)
     ).toBeInTheDocument();
+  });
+
+  it('rotates the token of a session open in this browser', async () => {
+    isAuthenticated = true;
+    confirmEmailChange.mockResolvedValue({ ok: true });
+    refreshSession.mockResolvedValue(null);
+    renderAt('/verify-email-change?token=abc');
+
+    await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
   });
 
   it('asks for a new link when the token is missing', () => {

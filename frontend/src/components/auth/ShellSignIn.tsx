@@ -10,15 +10,16 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { isDesktopHandoffCallback } from '@webbpulse/auth';
 import { useAuthClient } from '@webbpulse/auth/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { desktopHandoffSchemes } from '../../config/app';
 import {
   describeDesktopHandoffFailure,
   desktopBridge,
 } from '../../lib/desktop';
 import {
   completeMobileBrowserSignIn,
-  isMobileHandoffLink,
   isMobileSignInCancelled,
   watchMobileBrowserClosed,
 } from '../../lib/mobileHandoff';
@@ -94,7 +95,7 @@ const ShellSignIn: React.FC<ShellSignInProps> = ({ start }) => {
   const submitLink = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const pasted = link.trim();
-    if (!isMobileHandoffLink(pasted)) {
+    if (!isDesktopHandoffCallback(pasted, desktopHandoffSchemes)) {
       setLocalError(INVALID_LINK_MESSAGE);
       return;
     }

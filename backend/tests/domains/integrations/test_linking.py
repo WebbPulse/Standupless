@@ -279,6 +279,47 @@ def test_a_commit_that_says_refs_holds_its_key_on_a_promotion() -> None:
     assert found["XYZ-2"].holds_on_merge is False
 
 
+def test_refs_in_the_body_holds_a_key_a_commit_says_fixes() -> None:
+    """The body is what the pull request says now, and a commit keeps what it said before an edit."""
+    found = linking.extract(
+        PREFIXES,
+        title="ABC-1 a change",
+        body="Refs ABC-1",
+        branch="abc-1-a-change",
+        commit_messages=["ABC-1 a change\n\nFixes ABC-1"],
+    )
+
+    assert found[0].holds_on_merge is True
+    assert found[0].moves_status is True
+    assert found[0].magic_word is None
+
+
+def test_refs_in_the_title_holds_a_key_a_commit_says_fixes() -> None:
+    """The title counts as the pull request's own word, the same as the body."""
+    found = linking.extract(PREFIXES, title="Refs ABC-1", commit_messages=["A change\n\nFixes ABC-1"])
+
+    assert found[0].holds_on_merge is True
+
+
+def test_fixes_in_the_body_is_not_held_by_a_commit_that_says_refs() -> None:
+    """A closing word in the pull request's own text still beats a `Refs` in a commit."""
+    found = linking.extract(PREFIXES, body="Fixes ABC-1", commit_messages=["A change\n\nRefs ABC-1"])
+
+    assert found[0].holds_on_merge is False
+    assert found[0].magic_word == "fixes"
+
+
+def test_a_closing_commit_beats_a_referencing_commit_when_the_pull_request_says_neither() -> None:
+    """A promotion carrying both slices of a piece of work closes it, as its last slice said."""
+    found = linking.extract(
+        PREFIXES,
+        title="Promote staging",
+        commit_messages=["ABC-1 First slice (#4)\n\nRefs ABC-1", "ABC-1 Last slice (#5)\n\nFixes ABC-1"],
+    )
+
+    assert found[0].holds_on_merge is False
+
+
 def test_a_bare_key_in_the_title_does_not_hold_on_merge() -> None:
     """A key with no `Refs` word keeps moving on merge under a team's branch rules."""
     found = linking.extract(PREFIXES, title="ABC-1 a change")

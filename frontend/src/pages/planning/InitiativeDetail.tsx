@@ -92,7 +92,11 @@ import {
   progressOf,
   progressPercent,
 } from '../../lib/planningDisplay';
-import { canEditProject, daysBetween } from '../../lib/planningModel';
+import {
+  canEditProject,
+  daysBetween,
+  projectInitiativeIds,
+} from '../../lib/planningModel';
 import { isCoarse, planningDateLabel } from '../../lib/dateResolution';
 import {
   initiativeDetailKey,
@@ -414,25 +418,26 @@ export const InitiativeDetail: React.FC = () => {
   }, [allInitiatives, initiativeId, initiativeNames]);
 
   const members = useMemo(
-    () => projects.filter((project) => project.initiative_id === initiativeId),
+    () =>
+      projects.filter((project) =>
+        projectInitiativeIds(project).includes(initiativeId)
+      ),
     [projects, initiativeId]
   );
   const rolledUp = useMemo(
     () =>
-      projects.filter(
-        (project) =>
-          project.initiative_id !== null &&
-          project.initiative_id !== undefined &&
-          below.has(project.initiative_id)
-      ),
-    [projects, below]
+      projects.filter((project) => {
+        const held = projectInitiativeIds(project);
+        return !held.includes(initiativeId) && held.some((id) => below.has(id));
+      }),
+    [projects, below, initiativeId]
   );
   const candidates: ComboboxOption[] = useMemo(
     () =>
       projects
         .filter(
           (project) =>
-            project.initiative_id !== initiativeId &&
+            !projectInitiativeIds(project).includes(initiativeId) &&
             canEditProject(workspace?.role, project, teams)
         )
         .map((project) => ({
@@ -696,9 +701,7 @@ export const InitiativeDetail: React.FC = () => {
 
   const projectsScope: ProjectsScope = {
     includes: (project) =>
-      project.initiative_id !== null &&
-      project.initiative_id !== undefined &&
-      scopedInitiatives.has(project.initiative_id),
+      projectInitiativeIds(project).some((id) => scopedInitiatives.has(id)),
     initiativeIds: scopedInitiatives,
     preset: { initiative_id: initiativeId },
     emptyMessage: withSubInitiatives
@@ -1176,11 +1179,13 @@ export const InitiativeDetail: React.FC = () => {
                     })}
                     {rolledUp.map((project) => {
                       const percent = progressPercent(project);
+                      const viaId = projectInitiativeIds(project).find((id) =>
+                        below.has(id)
+                      );
                       const via =
-                        project.initiative_id === null ||
-                        project.initiative_id === undefined
+                        viaId === undefined
                           ? ''
-                          : (initiativeNames.get(project.initiative_id) ?? '');
+                          : (initiativeNames.get(viaId) ?? '');
                       return (
                         <li
                           key={project.project_id}

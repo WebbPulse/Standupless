@@ -1,8 +1,7 @@
 /**
  * The caller's subscription to one issue, read once per issue view and shared
  * by every control that shows it: the bell in the issue bar, the Subscribers
- * section of the rail, the Cmd or Ctrl, Shift and S shortcut and the command
- * palette. One read keeps them in step, so subscribing from any of them flips
+ * section of the rail, the Shift+S shortcut and the command palette. One read keeps them in step, so subscribing from any of them flips
  * all of them together. It also adds and removes teammates, for the
  * Subscribers picker and its Manage subscribers palette entry.
  */

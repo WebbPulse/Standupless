@@ -18,6 +18,11 @@ locals {
     "secretsmanager:GetSecretValue",
     "secretsmanager:PutSecretValue",
   ]
+
+  slack_config_role_actions = concat(local.slack_config_value_actions, [
+    "secretsmanager:DescribeSecret",
+    "secretsmanager:UpdateSecretVersionStage",
+  ])
 }
 
 resource "aws_secretsmanager_secret" "slack_config" {
@@ -89,7 +94,7 @@ data "aws_iam_policy_document" "slack_config_access" {
 
   statement {
     sid       = "SlackConfigSecretValue"
-    actions   = local.slack_config_value_actions
+    actions   = local.slack_config_role_actions
     resources = [aws_secretsmanager_secret.slack_config[0].arn]
   }
 }

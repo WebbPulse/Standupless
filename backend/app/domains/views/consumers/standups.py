@@ -30,6 +30,7 @@ from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.team_config import StandupSettings
 from app.common.email import deliver
 from app.common.email_unsubscribe import unsubscribe_links
+from app.common.push import deliver_push, wants_push
 from app.common.standup import (
     StandupDigest,
     StandupWindowError,
@@ -119,7 +120,8 @@ def write_standup(
         return False
     in_app = recipient.wants_notification(STANDUP_DIGEST, "in_app")
     email = recipient.wants_notification(STANDUP_DIGEST, "email")
-    if not in_app and not email:
+    push = wants_push(repositories, recipient, STANDUP_DIGEST)
+    if not in_app and not email and not push:
         return False
 
     row = Notification(
@@ -140,6 +142,7 @@ def write_standup(
     )
     if not repositories.inbox.create(row):
         return False
+    deliver_push(repositories, row, recipient=recipient)
     if email and recipient.email:
         deliver(
             render_standup_digest(

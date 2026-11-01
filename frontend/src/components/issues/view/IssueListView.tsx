@@ -1,27 +1,34 @@
 /**
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
- * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
+ * Space peeks, s, p, a, l, Shift+E, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
  * or removes their parent issue, Cmd or Ctrl+Shift+M moves them to another
- * team, r renames the focused issue, i assigns them to the
+ * team, r or e renames the focused issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
  * or convert it into a project, M then B, X, R or M marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
  * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
- * them, Cmd or Ctrl+Shift+C, D and L add them to the active cycle, clear
- * their due date and clear their labels without a picker, and Cmd or
+ * them, Cmd or Ctrl+Shift+C and D add them to the active cycle and clear
+ * their due date, Shift+L clears their labels without a picker, Shift+0, 1, 2
+ * or 4 set their priority, and Cmd or
  * Ctrl+Delete deletes them after a confirmation. On a
- * board j and k stay in the focused column, h and l or the side arrows cross to the next column
- * holding a card, and labels move to Shift+L. In a list that nests
+ * board j and k stay in the focused column and the side arrows cross to the next column
+ * holding a card, and t folds the focused card's swimlane, moving the focus off
+ * the hidden card so no key acts on it, and a second t unfolds the lane and
+ * brings the focus back. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
  * sub-issue and the left arrow folds it or steps back out to the parent. A right
  * click on a row or a card opens the same commands as a menu, and the bulk
  * bar under a selection, on a list or a board, offers them as buttons and a
  * More menu, subscribing and unsubscribing included. Opening an
  * issue remembers the view's order, so the issue page can step through it.
- * In a manually ordered view, Alt+Up and Alt+Down move the focused issue a
- * place within its group, or its board column, and save the order a drag would.
+ * In a manually ordered view, Alt+Up and Alt+Down move the selection, or the
+ * focused issue with nothing selected, a place within its group, or its board
+ * column, and save the order a drag would. Shift+X or Shift+click selects the
+ * range from the anchor, and the Shift arrows grow and shrink a range around
+ * where it started, leaving alone what was selected before it. A tap of Space
+ * toggles the peek, and holding it keeps the peek open only until release.
  * The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
@@ -79,7 +86,8 @@ import {
   hiddenColumnKey,
   splitHiddenSections,
   manualEdgeKeys,
-  manualMoveKeys,
+  type ManualPlacement,
+  manualStepKeys,
   narrowFilters,
   parentsIn,
   shownIssues,
@@ -178,9 +186,12 @@ import { RELATION_COMMANDS } from '../RelationGlyphs';
 import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
+  TOGGLE_SWIMLANE_KEYS,
   DELETE_ISSUE_KEYS,
+  EDIT_ISSUE_KEYS,
+  EDIT_ISSUE_LABEL,
   RENAME_ISSUE_KEYS,
-  propertyKeysFor,
+  PROPERTY_KEYS,
   type CommandProperty,
 } from './propertyKeys';
 
@@ -253,6 +264,9 @@ export interface ListFoldControl {
    */
   onSet?: ((keys: readonly string[], folded: boolean) => void) | undefined;
 }
+
+/** How long Space must be down for its release to close the peek it opened. */
+const PEEK_HOLD_MS = 300;
 
 /** The palette label of each property command. */
 const PROPERTIES: { property: CommandProperty; label: string }[] = [
@@ -371,7 +385,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const location = useLocation();
   const workspace = useContext(WorkspaceContext)?.workspace;
   const workspaceId = workspace?.id ?? '';
-  const { peekIssue, peekedKey } = usePeekIssue();
+  const { peekIssue, peekedKey, closePeek } = usePeekIssue();
   const creator = useCreateIssue();
   const { forTeam, createLabel } = lists;
   const listContext = useSharedValue(lists.context);
@@ -405,6 +419,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const onToggle = folds?.onToggle ?? toggleOwnFold;
   const onFoldMany = folds?.onSet;
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [foldedLane, setFoldedLane] = useState<{
+    key: string;
+    issueId: string;
+  } | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -428,6 +446,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   } | null>(null);
   const [moving, setMoving] = useState<string[] | null>(null);
   const scrollOnFocus = useRef(false);
+  const rangeLive = useRef(false);
+  const rangeAdded = useRef<ReadonlySet<string>>(new Set());
+  const peekHold = useRef<number | null>(null);
 
   const { showSubIssues, completed } = state;
   const sorted = useMemo(
@@ -495,6 +516,14 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.layout,
   ]);
 
+  const swimlanes = useMemo(
+    () =>
+      state.layout === 'board' && state.subGroupBy !== 'none'
+        ? groupIssues(sorted, state.subGroupBy, context, false)
+        : null,
+    [sorted, context, state.layout, state.subGroupBy]
+  );
+
   const board = useMemo<string[][][] | null>(() => {
     if (state.layout !== 'board') return null;
     const seen = new Set<string>();
@@ -504,9 +533,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         seen.add(issue.id);
         return [issue.id];
       });
-    if (state.subGroupBy !== 'none') {
+    if (swimlanes !== null) {
       const field = state.groupBy === 'none' ? 'status' : state.groupBy;
-      return groupIssues(sorted, state.subGroupBy, context, false)
+      return swimlanes
         .filter((lane) => !collapsed.has(`lane/${lane.key}`))
         .map((lane) =>
           groupIssues(lane.issues, field, context, false)
@@ -519,15 +548,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         .filter(({ group }) => !collapsed.has(hiddenColumnKey(group.key)))
         .map(({ group }) => take(group.issues)),
     ];
-  }, [
-    sections,
-    sorted,
-    context,
-    collapsed,
-    state.layout,
-    state.groupBy,
-    state.subGroupBy,
-  ]);
+  }, [sections, swimlanes, context, collapsed, state.layout, state.groupBy]);
 
   const listSections = useMemo(
     () => splitHiddenSections(sections, collapsed).shown,
@@ -633,14 +654,29 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [peekIssue, rememberOrder]
   );
 
+  const endRange = useCallback((): void => {
+    rangeLive.current = false;
+    rangeAdded.current = new Set();
+  }, []);
+
+  const extendRange = (from: string, to: string): void => {
+    const start = order.indexOf(from);
+    const end = order.indexOf(to);
+    const span = order.slice(Math.min(start, end), Math.max(start, end) + 1);
+    const kept = new Set(
+      [...selected].filter((id) => !rangeAdded.current.has(id))
+    );
+    rangeAdded.current = new Set(span.filter((id) => !kept.has(id)));
+    rangeLive.current = true;
+    setSelected(new Set([...kept, ...span]));
+  };
+
   const toggleSelected = useLatestCallback(
     (id: string, range: boolean): void => {
       if (range && anchor !== null && order.includes(anchor)) {
-        const from = order.indexOf(anchor);
-        const to = order.indexOf(id);
-        const span = order.slice(Math.min(from, to), Math.max(from, to) + 1);
-        setSelected((held) => new Set([...held, ...span]));
+        extendRange(anchor, id);
       } else {
+        endRange();
         setSelected((held) => {
           const next = new Set(held);
           if (next.has(id)) next.delete(id);
@@ -653,22 +689,36 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     }
   );
 
-  const selectMany = useCallback((ids: readonly string[], on: boolean) => {
-    setSelected((held) => {
-      const next = new Set(held);
-      for (const id of ids) {
-        if (on) next.add(id);
-        else next.delete(id);
-      }
-      return next;
-    });
-  }, []);
+  const selectMany = useCallback(
+    (ids: readonly string[], on: boolean) => {
+      endRange();
+      setSelected((held) => {
+        const next = new Set(held);
+        for (const id of ids) {
+          if (on) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      });
+    },
+    [endRange]
+  );
 
   const focusOn = (next: string, extend: boolean): void => {
     if (extend) {
-      const start = focused ?? next;
-      setSelected((held) => new Set([...held, start, next]));
-      if (anchor === null) setAnchor(start);
+      const held =
+        rangeLive.current &&
+        anchor !== null &&
+        order.includes(anchor) &&
+        selected.has(anchor)
+          ? anchor
+          : null;
+      if (held === null) endRange();
+      const start = held ?? focused ?? next;
+      if (held === null) setAnchor(start);
+      extendRange(start, next);
+    } else {
+      endRange();
     }
     scrollOnFocus.current = true;
     setFocusedId(next);
@@ -699,6 +749,34 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     if (board === null) return;
     const next = boardStep(board, focused, direction);
     if (next !== undefined) focusOn(next, false);
+  };
+
+  const toggleFocusedLane = (): void => {
+    if (swimlanes === null) return;
+    const holding =
+      focused === null
+        ? []
+        : swimlanes.filter((lane) =>
+            lane.issues.some((issue) => issue.id === focused)
+          );
+    const openLane = holding.find((lane) => !collapsed.has(`lane/${lane.key}`));
+    if (openLane !== undefined && focused !== null) {
+      const key = `lane/${openLane.key}`;
+      onToggle(key);
+      setFoldedLane({ key, issueId: focused });
+      setFocusedId(null);
+      return;
+    }
+    const [closedLane] = holding;
+    if (closedLane !== undefined) {
+      onToggle(`lane/${closedLane.key}`);
+      return;
+    }
+    if (foldedLane !== null && collapsed.has(foldedLane.key)) {
+      onToggle(foldedLane.key);
+      focusOn(foldedLane.issueId, false);
+      setFoldedLane(null);
+    }
   };
 
   const siblingsOf = (id: string): OrderedIssueRead[] => {
@@ -732,23 +810,12 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     return [];
   };
 
-  const reorder = (step: 1 | -1): void => {
-    if (focused === null) return;
-    if (state.ordering !== 'manual') {
-      showToast('Switch ordering to Manual to move issues', 'info');
-      return;
-    }
-    const placements = manualMoveKeys(
-      siblingsOf(focused),
-      focused,
-      step,
-      state.reverse
-    );
-    if (placements === null) return;
-    for (const { id, sort_order } of placements) update([id], { sort_order });
-  };
-
-  const reorderToEdge = (edge: 'top' | 'bottom'): void => {
+  const placeMovers = (
+    place: (
+      siblings: readonly OrderedIssueRead[],
+      movers: readonly string[]
+    ) => ManualPlacement[] | null
+  ): void => {
     if (focused === null) return;
     if (state.ordering !== 'manual') {
       showToast('Switch ordering to Manual to move issues', 'info');
@@ -764,11 +831,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       const movers = siblings.filter((issue) => ids.includes(issue.id));
       for (const issue of movers) handled.add(issue.id);
       handled.add(id);
-      const placements = manualEdgeKeys(
+      const placements = place(
         siblings,
-        movers.map((issue) => issue.id),
-        edge,
-        state.reverse
+        movers.map((issue) => issue.id)
       );
       for (const { id: placed, sort_order } of placements ?? [])
         keys.set(placed, sort_order);
@@ -778,6 +843,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       const sort_order = keys.get(issue.id);
       return sort_order === undefined ? null : { sort_order };
     });
+  };
+
+  const reorder = (step: 1 | -1): void => {
+    placeMovers((siblings, movers) =>
+      manualStepKeys(siblings, movers, step, state.reverse)
+    );
+  };
+
+  const reorderToEdge = (edge: 'top' | 'bottom'): void => {
+    placeMovers((siblings, movers) =>
+      manualEdgeKeys(siblings, movers, edge, state.reverse)
+    );
   };
 
   const focusedNode = focused === null ? undefined : tree.get(focused);
@@ -900,26 +977,6 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   });
   const onBoard = board !== null && hasRows;
   useShortcut({
-    keys: 'h',
-    label: 'Previous column',
-    scope: 'page',
-    group: 'Board',
-    enabled: onBoard,
-    handler: () => {
-      moveAcross('left');
-    },
-  });
-  useShortcut({
-    keys: 'l',
-    label: 'Next column',
-    scope: 'page',
-    group: 'Board',
-    enabled: onBoard,
-    handler: () => {
-      moveAcross('right');
-    },
-  });
-  useShortcut({
     keys: 'arrowleft',
     label: onBoard ? 'Previous column' : 'Collapse sub-issues',
     group: onBoard ? 'Board' : 'List',
@@ -950,11 +1007,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   useShortcut({
+    keys: 'shift+x',
+    label: 'Select range',
+    scope: 'issue',
+    group: 'List',
+    enabled: focused !== null,
+    handler: () => {
+      if (focused !== null) toggleSelected(focused, true);
+    },
+  });
+  useShortcut({
     keys: 'mod+a',
     label: 'Select all',
     group: 'List',
     enabled: hasRows,
     handler: () => {
+      endRange();
       setSelected(new Set(order));
     },
   });
@@ -974,12 +1042,12 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     group: 'List',
     enabled: liveSelected.size > 0,
     handler: () => {
+      endRange();
       setSelected(new Set());
       setAnchor(null);
     },
   });
   const canCommand = canEdit && targets.length > 0;
-  const propertyKeys = propertyKeysFor(state.layout);
   const me = context.people.find(
     (person) => person.user_id === context.currentUserId
   );
@@ -1151,6 +1219,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       if (single !== undefined) setRenaming(single.id);
     },
   });
+  useShortcut({
+    keys: EDIT_ISSUE_KEYS,
+    label: EDIT_ISSUE_LABEL,
+    scope: 'issue',
+    enabled: canEdit && single !== undefined,
+    handler: (event) => {
+      event?.preventDefault();
+      if (single !== undefined) setRenaming(single.id);
+    },
+  });
   const canMove = canCommand && workspaceId !== '';
   const openMove = (issues: readonly OrderedIssueRead[]): void => {
     setMoving(issues.map((issue) => issue.id));
@@ -1248,15 +1326,39 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   });
 
   useShortcut({
+    keys: TOGGLE_SWIMLANE_KEYS,
+    label: 'Fold or unfold swimlane',
+    scope: 'page',
+    group: 'List',
+    enabled: swimlanes !== null,
+    handler: toggleFocusedLane,
+  });
+
+  useShortcut({
     keys: 'space',
     label: 'Peek issue',
     group: 'List',
     enabled: focused !== null,
-    handler: () => {
+    handler: (event) => {
+      if (event?.repeat === true) return;
       const issue = focused === null ? undefined : byId.get(focused);
-      if (issue !== undefined) peek(issue);
+      if (issue === undefined) return;
+      peekHold.current = issue.key === peekedKey ? null : Date.now();
+      peek(issue);
     },
   });
+
+  useEffect(() => {
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key !== ' ' || peekHold.current === null) return;
+      if (Date.now() - peekHold.current >= PEEK_HOLD_MS) closePeek();
+      peekHold.current = null;
+    };
+    document.addEventListener('keyup', onKeyUp);
+    return () => {
+      document.removeEventListener('keyup', onKeyUp);
+    };
+  }, [closePeek]);
 
   const presetFor = useCallback(
     (group: IssueGroup): Partial<CreateIssueOptions> => {
@@ -1536,7 +1638,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             id: 'cycle',
             label: 'Cycle',
             icon: <LuRefreshCw className={iconClass} />,
-            keys: propertyKeys.cycle,
+            keys: PROPERTY_KEYS.cycle,
             onSelect: () => {
               openCommand('cycle', targets);
             },
@@ -1545,7 +1647,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             id: 'project',
             label: 'Project',
             icon: <LuHexagon className={iconClass} />,
-            keys: propertyKeys.project,
+            keys: PROPERTY_KEYS.project,
             onSelect: () => {
               openCommand('project', targets);
             },
@@ -1554,7 +1656,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             id: 'dueDate',
             label: 'Due date',
             icon: <LuCalendar className={iconClass} />,
-            keys: propertyKeys.dueDate,
+            keys: PROPERTY_KEYS.dueDate,
             onSelect: () => {
               openCommand('dueDate', targets);
             },
@@ -1794,7 +1896,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       {PROPERTIES.map(({ property, label }) => (
         <PropertyShortcut
           key={property}
-          keys={propertyKeys[property]}
+          keys={PROPERTY_KEYS[property]}
           label={label}
           enabled={
             canCommand &&
@@ -2077,7 +2179,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
                 }
           }
           onClose={closeMenu}
-          keys={propertyKeys}
+          keys={PROPERTY_KEYS}
         />
       )}
       <BulkBar
@@ -2085,7 +2187,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         estimates={estimates}
         milestones={context.milestones !== undefined}
         archived={allArchived(targets)}
-        keys={propertyKeys}
+        keys={PROPERTY_KEYS}
         more={bulkMenu}
         onProperty={(property) => {
           openCommand(property, targets);
@@ -2105,6 +2207,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             : undefined
         }
         onClear={() => {
+          endRange();
           setSelected(new Set());
           setAnchor(null);
         }}

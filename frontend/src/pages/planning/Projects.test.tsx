@@ -38,7 +38,11 @@ import {
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
+import {
+  WorkspaceContext,
+  type WorkspaceContextType,
+} from '../../contexts/WorkspaceContextDefinition';
+import { initiativePath } from '../../lib/paths';
 import type {
   ProjectCreate,
   ProjectListRead,
@@ -99,8 +103,7 @@ vi.mock('../../api/initiatives', async () => {
   );
   return {
     ...actual,
-    listInitiatives: () =>
-      Promise.resolve({ initiatives: [], next_cursor: null }),
+    listInitiatives: () => listInitiatives(),
   };
 });
 
@@ -176,6 +179,14 @@ vi.mock('@webbpulse/auth/react', async () => {
 });
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
+
+/** The page of initiatives the mocked list route answers. */
+interface InitiativePage {
+  initiatives: { initiative_id: string; name: string }[];
+  next_cursor: string | null;
+}
+
+const listInitiatives = vi.fn<() => Promise<InitiativePage>>();
 
 vi.mock('../../api/notifications', () => ({
   updatePreferences: vi.fn(() => Promise.resolve({})),
@@ -312,6 +323,7 @@ describe('Projects', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listInitiatives.mockResolvedValue({ initiatives: [], next_cursor: null });
     listTeams.mockResolvedValue([engine, design]);
     listProjects.mockResolvedValue({
       projects: [launch, rebrand],
@@ -541,6 +553,143 @@ describe('Projects', () => {
       screen.queryByRole('button', { name: 'Health: No updates' })
     ).toBeNull();
     expect(screen.queryByRole('button', { name: 'Lead: No lead' })).toBeNull();
+  });
+
+  describe('the initiative property', () => {
+    const three = [
+      { initiative_id: 'ini-1', name: 'North star' },
+      { initiative_id: 'ini-2', name: 'Growth' },
+      { initiative_id: 'ini-3', name: 'Retention' },
+    ];
+
+    beforeEach(() => {
+      listInitiatives.mockResolvedValue({
+        initiatives: three,
+        next_cursor: null,
+      });
+    });
+
+    it('is offered off by default and turns on from the menu', async () => {
+      const user = userEvent.setup();
+      listProjects.mockResolvedValue({
+        projects: [{ ...launch, initiative_ids: ['ini-1'] }],
+        next_cursor: null,
+      });
+      renderPage();
+
+      await screen.findByRole('link', { name: 'Launch' });
+      expect(screen.queryByRole('link', { name: 'North star' })).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Display' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Initiative', pressed: false })
+      );
+
+      expect(
+        await screen.findByRole('link', { name: 'North star' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Initiative', pressed: true })
+      ).toBeInTheDocument();
+    });
+
+    it('links each chip to its initiative and leaves a bare row empty', async () => {
+      listProjects.mockResolvedValue({
+        projects: [
+          { ...launch, initiative_ids: ['ini-1', 'ini-2'] },
+          { ...rebrand, initiative_ids: [] },
+        ],
+        next_cursor: null,
+      });
+      renderPage('/w/mine/projects?columns=initiative');
+
+      const chip = await screen.findByRole('link', { name: 'North star' });
+      expect(chip).toHaveAttribute(
+        'href',
+        initiativePath('mine', {
+          initiative_id: 'ini-1',
+          name: 'North star',
+        })
+      );
+      expect(screen.getByRole('link', { name: 'Growth' })).toBeInTheDocument();
+      const bare = screen
+        .getByRole('link', { name: 'Rebrand' })
+        .closest('li') as HTMLElement;
+      expect(within(bare).getAllByRole('link')).toHaveLength(1);
+    });
+
+    it('reads a project held by one initiative through initiative_id', async () => {
+      listProjects.mockResolvedValue({
+        projects: [{ ...launch, initiative_id: 'ini-2' }],
+        next_cursor: null,
+      });
+      renderPage('/w/mine/projects?columns=initiative');
+
+      expect(
+        await screen.findByRole('link', { name: 'Growth' })
+      ).toBeInTheDocument();
+    });
+
+    it('counts the initiatives past the two chips a row fits', async () => {
+      listProjects.mockResolvedValue({
+        projects: [{ ...launch, initiative_ids: ['ini-1', 'ini-2', 'ini-3'] }],
+        next_cursor: null,
+      });
+      renderPage('/w/mine/projects?columns=initiative');
+
+      await screen.findByRole('link', { name: 'Growth' });
+      expect(screen.queryByRole('link', { name: 'Retention' })).toBeNull();
+      expect(screen.getByText('+1')).toBeInTheDocument();
+      expect(screen.getByText('Also in Retention')).toBeInTheDocument();
+    });
+
+    it('shows chips on the board too', async () => {
+      listProjects.mockResolvedValue({
+        projects: [{ ...launch, initiative_ids: ['ini-3'] }],
+        next_cursor: null,
+      });
+      renderPage('/w/mine/projects?layout=board&columns=initiative');
+
+      expect(
+        await screen.findByRole('link', { name: 'Retention' })
+      ).toBeInTheDocument();
+    });
+
+    it('is left out while initiatives are turned off', async () => {
+      const user = userEvent.setup();
+      const context = resolved('admin');
+      const off: WorkspaceContextType = {
+        ...context,
+        workspace: {
+          ...(context.workspace as WorkspaceRead),
+          features: { initiatives: false },
+        },
+      };
+      useWorkspaceMock.mockReturnValue(off);
+      listProjects.mockResolvedValue({
+        projects: [{ ...launch, initiative_ids: ['ini-1'] }],
+        next_cursor: null,
+      });
+      render(
+        <WorkspaceContext.Provider value={off}>
+          <MemoryRouter
+            initialEntries={['/w/mine/projects?columns=initiative,status']}
+          >
+            <Routes>
+              <Route path="/w/:slug/projects" element={<Projects />} />
+            </Routes>
+          </MemoryRouter>
+        </WorkspaceContext.Provider>
+      );
+
+      await screen.findByRole('link', { name: 'Launch' });
+      expect(screen.queryByRole('link', { name: 'North star' })).toBeNull();
+      const header = screen.getByText('Name').parentElement as HTMLElement;
+      expect(within(header).queryByText('Initiative')).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Display' }));
+      expect(
+        screen.queryByRole('button', { name: 'Initiative', pressed: false })
+      ).toBeNull();
+    });
   });
 
   it('narrows to blocked and blocking projects from the URL', async () => {

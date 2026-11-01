@@ -59,19 +59,21 @@ class StanduplessIdentityHooks:
         return _as_mapping(user) if user is not None else None
 
     def may_authenticate(self, user: Mapping[str, Any]) -> None:
-        """Permit an enabled, verified account that has not been deleted, and refuse everything else.
+        """Permit an enabled account that has not been deleted, and refuse everything else.
 
         Returns `None` to permit and raises to refuse, which is the protocol's
         shape and the one where forgetting to return lands on the refusing side. A
         deleted account is refused from the moment it is marked, before its purge
         has removed the row, on every sign-in method and on every refresh.
+
+        An unconfirmed address signs in: its token carries `email_verified` false,
+        and `authz` refuses every route but the caller's own account with
+        `EMAIL_NOT_VERIFIED` until the link is opened.
         """
         if any(user.get(field) for field in DELETION_MARKS):
             raise AuthenticationRefused(REFUSAL_MESSAGE, error_code="ACCOUNT_DELETED")
         if user.get("disabled"):
             raise AuthenticationRefused(REFUSAL_MESSAGE, error_code="ACCOUNT_DISABLED")
-        if not user.get("email_verified"):
-            raise AuthenticationRefused(REFUSAL_MESSAGE, error_code="EMAIL_NOT_VERIFIED")
 
     def claims_for(self, user: Mapping[str, Any]) -> Mapping[str, Any]:
         """This product's claims: the roles list, the display name and `two_factor`.

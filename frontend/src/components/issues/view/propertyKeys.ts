@@ -23,7 +23,7 @@ export const PROPERTY_KEYS: Record<CommandProperty, string> = {
   priority: 'p',
   assignee: 'a',
   labels: 'l',
-  estimate: 'e',
+  estimate: 'shift+e',
   milestone: 'shift+m',
   cycle: 'shift+c',
   project: 'shift+p',
@@ -46,18 +46,34 @@ export const DeleteIssueKeyContext = createContext(true);
 /** The key that renames the issue in focus. */
 export const RENAME_ISSUE_KEYS = 'r';
 
+/** The key that edits the issue in focus, doing what the rename key does. */
+export const EDIT_ISSUE_KEYS = 'e';
+
+/** The palette and help label of the edit key. */
+export const EDIT_ISSUE_LABEL = 'Edit issue';
+
 /** The keys that put the issues in focus into their team's active cycle. */
 export const ADD_TO_ACTIVE_CYCLE_KEYS = 'mod+shift+c';
 
 /** The keys that clear the due date of the issues in focus. */
 export const REMOVE_DUE_DATE_KEYS = 'mod+shift+d';
 
+/** The keys that clear every label from the issues in focus. */
+export const REMOVE_LABELS_KEYS = 'shift+l';
+
 /**
- * The keys that clear every label from the issues in focus. Shift+L is the
- * board's label picker, so this takes the Cmd or Ctrl+Shift form the cycle
- * and due date actions use.
+ * The keys that set the priority of the issues in focus without a picker.
+ * Medium has none: Shift+3 types `#` on a US layout, which is the archive key.
  */
-export const REMOVE_LABELS_KEYS = 'mod+shift+l';
+export const SET_PRIORITY_KEYS = {
+  none: 'shift+0',
+  urgent: 'shift+1',
+  high: 'shift+2',
+  low: 'shift+4',
+} as const;
+
+/** The key that folds or unfolds the board swimlane of the focused card. */
+export const TOGGLE_SWIMLANE_KEYS = 't';
 
 /** The keys that move to the comment box of the issue in view. */
 export const COMMENT_ISSUE_KEYS = 'mod+m';
@@ -66,14 +82,4 @@ export const COMMENT_ISSUE_KEYS = 'mod+m';
  * The keys that subscribe to or unsubscribe from an issue, the same in the
  * issue view and the inbox, as in Linear.
  */
-export const TOGGLE_SUBSCRIPTION_KEYS = 'mod+shift+s';
-
-/**
- * The key each property opens on in a layout. The board gives `l` to moving
- * to the next column, as `h` moves to the previous one, so labels move to
- * Shift+L there.
- */
-export const propertyKeysFor = (
-  layout: 'list' | 'board'
-): Record<CommandProperty, string> =>
-  layout === 'board' ? { ...PROPERTY_KEYS, labels: 'shift+l' } : PROPERTY_KEYS;
+export const TOGGLE_SUBSCRIPTION_KEYS = 'shift+s';

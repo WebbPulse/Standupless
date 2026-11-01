@@ -43,4 +43,17 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "update_issue_link": {"issue_id": issue, "link_id": link, "title": "Should not land"},
         "delete_issue_link": {"issue_id": issue, "link_id": link},
         "get_attachment": {"issue_id": issue, "attachment_id": link},
+        "upload_attachment": {
+            "issue_id": issue,
+            "filename": "should-not-land.png",
+            "content_type": "image/png",
+            "content_base64": "aGVsbG8=",
+        },
+        "create_attachment_upload": {
+            "issue_id": issue,
+            "filename": "should-not-land.png",
+            "content_type": "image/png",
+            "size_bytes": 5,
+        },
+        "commit_attachment_upload": {"issue_id": issue, "upload_id": "should-not-land", "ticket": "should-not-land"},
     }

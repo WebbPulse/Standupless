@@ -422,6 +422,49 @@ def test_a_merge_that_fixes_the_issue_completes_it(
     assert _status(repositories, issue.issue_id) == status_ids["completed"]
 
 
+def test_an_update_after_a_merge_keeps_what_the_merge_decided(
+    repositories: Any, connection: GitlabConnection, issue: Any, github_env: None
+) -> None:
+    """A description changed on a merged merge request leaves its closing word, but the title still follows."""
+    _handle(
+        repositories,
+        merge_request(action="merge", state="merged", description="Fixes ABC-1", updated_at="2026-10-25 12:00:00 UTC"),
+    )
+    _handle(
+        repositories,
+        merge_request(
+            action="update",
+            state="merged",
+            title="ABC-1 retitled",
+            description="Refs ABC-1",
+            updated_at="2026-10-25 13:00:00 UTC",
+        ),
+    )
+    [link] = _links(repositories, issue.issue_id)
+    assert link["pr_title"] == "ABC-1 retitled"
+    assert link["magic_word"] == "fixes"
+    assert not link["holds_on_merge"]
+
+
+def test_an_update_that_overtakes_its_merge_leaves_the_merge_to_decide(
+    repositories: Any, connection: GitlabConnection, issue: Any, github_env: None
+) -> None:
+    """The later update arriving first does not refuse the older merge delivery as stale."""
+    _handle(repositories, merge_request(description="Refs ABC-1", updated_at="2026-10-25 09:00:00 UTC"))
+    _handle(
+        repositories,
+        merge_request(action="update", state="merged", description="Fixes ABC-1", updated_at="2026-10-25 13:00:00 UTC"),
+    )
+    _handle(
+        repositories,
+        merge_request(action="merge", state="merged", description="Refs ABC-1", updated_at="2026-10-25 12:00:00 UTC"),
+    )
+    [link] = _links(repositories, issue.issue_id)
+    assert link["pr_state"] == "merged"
+    assert link["magic_word"] is None
+    assert link["holds_on_merge"] is True
+
+
 def test_a_merge_without_a_magic_word_does_not_complete(
     repositories: Any, connection: GitlabConnection, issue: Any, status_ids: dict[str, str], github_env: None
 ) -> None:

@@ -15,7 +15,11 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
 import { validateTitle } from '../../lib/validation';
 import { ErrorAlert } from '../ui/alert';
-import { RENAME_ISSUE_KEYS } from './view/propertyKeys';
+import {
+  EDIT_ISSUE_KEYS,
+  EDIT_ISSUE_LABEL,
+  RENAME_ISSUE_KEYS,
+} from './view/propertyKeys';
 
 /** What a parent can do to the title from outside. */
 export interface IssueTitleHandle {
@@ -71,17 +75,26 @@ export const IssueTitle: React.FC<IssueTitleProps> = ({
     []
   );
 
+  const editTitle = (event?: KeyboardEvent): void => {
+    event?.preventDefault();
+    field.current?.focus();
+    field.current?.select();
+  };
   useShortcut({
     keys: RENAME_ISSUE_KEYS,
     label: 'Rename issue',
     scope: 'issue',
     group: 'Issue',
     enabled: canEdit,
-    handler: (event) => {
-      event?.preventDefault();
-      field.current?.focus();
-      field.current?.select();
-    },
+    handler: editTitle,
+  });
+  useShortcut({
+    keys: EDIT_ISSUE_KEYS,
+    label: EDIT_ISSUE_LABEL,
+    scope: 'issue',
+    group: 'Issue',
+    enabled: canEdit,
+    handler: editTitle,
   });
 
   const [seen, setSeen] = useState(title);

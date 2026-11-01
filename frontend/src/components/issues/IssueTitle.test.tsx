@@ -130,7 +130,7 @@ describe('the rename key', () => {
     const { user, onSave } = renderWithKeys();
     const field = screen.getByRole('textbox', { name: 'Issue title' });
 
-    await user.keyboard('r');
+    await user.keyboard('e');
     await user.keyboard('Rotate the token{Escape}');
     expect(field).toHaveValue('Cache the token');
     expect(onSave).not.toHaveBeenCalled();

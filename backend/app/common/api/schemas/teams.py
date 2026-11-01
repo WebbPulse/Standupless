@@ -13,6 +13,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
+from app.common.api.schemas.insights import InsightsDisplay, stored_insights_display
 from app.common.api.schemas.member_status import UserStatusRead
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.api.schemas.views import (
@@ -1060,6 +1061,7 @@ class TeamDisplayDefaultsUpdate(BaseModel):
     list_display: Optional[DisplayOptionsBody] = None
     board_display: Optional[DisplayOptionsBody] = None
     projects_display: Optional[ProjectsDisplay] = None
+    insights_display: Optional[InsightsDisplay] = None
 
 
 def _stored_or_none(stored: Optional[dict[str, str]]) -> Optional[ProjectsDisplay]:
@@ -1080,6 +1082,7 @@ class TeamDisplayDefaultsRead(BaseModel):
     list_display: Optional[DisplayOptionsBody] = None
     board_display: Optional[DisplayOptionsBody] = None
     projects_display: Optional[ProjectsDisplay] = None
+    insights_display: Optional[InsightsDisplay] = None
     effective_projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     updated_by: Optional[str] = None
     updated_at: Optional[datetime] = None
@@ -1096,6 +1099,7 @@ class TeamDisplayDefaultsRead(BaseModel):
             list_display=DisplayOptionsBody.from_row(defaults.list_display),
             board_display=DisplayOptionsBody.from_row(defaults.board_display),
             projects_display=own,
+            insights_display=stored_insights_display(defaults.insights_display),
             effective_projects_display=own or inherited or ProjectsDisplay(),
             updated_by=defaults.updated_by,
             updated_at=defaults.updated_at,

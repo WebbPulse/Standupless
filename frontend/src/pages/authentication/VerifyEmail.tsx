@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { LINK_TOKEN_PARAM } from '@webbpulse/auth';
+import { useEmailVerificationResend } from '@webbpulse/auth/react';
 import { useSearchParams } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
@@ -22,9 +23,9 @@ const VerifyEmail: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [sentMessage, setSentMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, isLoading } = useAuth();
   const client = getIdentityClient();
+  const { send, sending, remaining } = useEmailVerificationResend({ client });
   const linkToken = searchParams.get(LINK_TOKEN_PARAM);
 
   const handleSend = async () => {
@@ -34,11 +35,9 @@ const VerifyEmail: React.FC = () => {
       return;
     }
 
-    setIsSubmitting(true);
     try {
-      const outcome = await client.requestEmailVerification({
-        email: user.email,
-      });
+      const outcome = await send(user.email);
+      if (outcome === null) return;
       if (outcome.ok) {
         setSentMessage(
           outcome.detail ?? 'Verification email sent. Check your inbox.'
@@ -48,8 +47,6 @@ const VerifyEmail: React.FC = () => {
       setError(outcome.message);
     } catch {
       setError('Could not reach the server. Check your connection.');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -94,14 +91,18 @@ const VerifyEmail: React.FC = () => {
       </p>
       <ConfirmationAlert message={sentMessage} />
       <ErrorAlert message={error} />
-      {sentMessage === null && (
-        <AuthSubmitButton
-          onClick={() => void handleSend()}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? 'Sending' : 'Send verification email'}
-        </AuthSubmitButton>
-      )}
+      <AuthSubmitButton
+        onClick={() => void handleSend()}
+        disabled={sending || remaining > 0}
+      >
+        {sending
+          ? 'Sending'
+          : remaining > 0
+            ? `Resend in ${remaining}s`
+            : sentMessage === null
+              ? 'Send verification email'
+              : 'Resend verification email'}
+      </AuthSubmitButton>
       <AuthRedirectLink
         text="Go to"
         linkText="your workspaces"

@@ -66,6 +66,9 @@ const config: CapacitorConfig = {
       splashFullScreen: false,
       splashImmersive: false,
     },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
     Keyboard: {
       resize: 'native',
       resizeOnFullScreen: true,

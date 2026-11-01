@@ -75,6 +75,7 @@ from app.domains.integrations.mcp.toolkit import (
     enum,
     filter_values,
     initiative_id_ref,
+    insights_display_schema,
     issue_ref,
     limit,
     object_schema,
@@ -113,6 +114,7 @@ VIEW_FIELDS: tuple[str, ...] = (
     "show_archived",
     "group_header",
     "projects_display",
+    "insights_display",
     "icon",
     "color",
     "description",
@@ -123,6 +125,7 @@ CLEARABLE_VIEW_FIELDS: tuple[str, ...] = (
     "sub_group_by",
     "ordering",
     "visible_properties",
+    "insights_display",
     "icon",
     "color",
     "description",
@@ -208,6 +211,12 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
             "lead_team (lead keeps only projects the filtered team leads), empty (show or hide empty board "
             "columns), the timeline zoom, dependencies (show or hide the timeline lines between blocking and "
             "blocked projects) and the shown properties; a missing field takes the default"
+        ),
+        "insights_display": insights_display_schema(
+            "Issue views only: the insights panel the view opens with for viewers without picks of their own: "
+            "measure, group_by, segment_by and layout, a missing field taking the panel's built-in choice"
+            + ("; null clears it" if clearable else ""),
+            clearable=clearable,
         ),
         "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
         "color": {

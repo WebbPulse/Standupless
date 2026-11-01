@@ -23,6 +23,7 @@ from app.common.db.dynamo.inbox import (
     notification_id,
 )
 from app.common.db.dynamo.planning import Initiative
+from app.common.push import deliver_push
 from app.common.team_privacy import person_can_see_initiative
 
 
@@ -91,7 +92,10 @@ def write_initiative_reply_notification(
         unread_at=stamped.isoformat(),
         expires_at=expires_at(stamped),
     )
-    return repositories.inbox.create(row)
+    created = repositories.inbox.create(row)
+    if created:
+        deliver_push(repositories, row)
+    return created
 
 
 def handle_initiative_update_reply(repositories: Repositories, new_image: Mapping[str, Any], *, limit: int) -> int:

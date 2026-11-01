@@ -13,7 +13,9 @@
  * The list and the board open over the team's default display when its
  * admins have set one, and over the built-in display otherwise. A team admin
  * keeps or clears that default from the display menu; the archive always
- * opens over the built-in list.
+ * opens over the built-in list. The insights panel beside the list and the
+ * board has a default for everyone of its own, one for both, kept from the
+ * panel's settings menu.
  *
  * The list and the board open on one of three presets named in the URL's
  * `scope`: every issue, the active ones or the backlog. The filters and
@@ -58,6 +60,8 @@ import TeamIssueScopeTabs from '../../workspace/TeamIssueScopeTabs';
 import TeamTabs from '../../workspace/TeamTabs';
 import TeamTitle from '../../workspace/TeamTitle';
 import WorkspaceShell from '../../workspace/WorkspaceShell';
+import type { InsightsDisplay } from '../../../types/Api';
+import type { InsightsDefaultControl } from './InsightsPanel';
 import IssueViewPage, { type TeamDefaultControl } from './IssueViewPage';
 
 /** The built-in display the archive opens over. */
@@ -143,6 +147,23 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
           }
         : undefined,
     [admin, stored, writeDefault]
+  );
+  const insightsStored = defaults.data?.insights_display ?? null;
+  const writeInsightsDefault = useCallback(
+    async (display: InsightsDisplay | null) => {
+      await updateDisplayDefaults(workspaceId, teamId, {
+        insights_display: display,
+      });
+      await refetchDefaults();
+    },
+    [workspaceId, teamId, refetchDefaults]
+  );
+  const insightsDefault = useMemo<InsightsDefaultControl>(
+    () => ({
+      display: insightsStored,
+      save: admin ? writeInsightsDefault : undefined,
+    }),
+    [insightsStored, admin, writeInsightsDefault]
   );
   const defaultsReady = !(defaults.isLoading && defaults.data === null);
   useScopeDisplayMemory(
@@ -253,6 +274,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
       teams={teams}
       base={base}
       teamDefault={teamDefault}
+      insightsDefault={insightsDefault}
       canEdit={writable}
       homeTeam={team}
       emptyMessage={teamScopeEmptyMessage(preset, team.name)}

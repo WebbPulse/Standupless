@@ -79,6 +79,7 @@ from app.common.project_writes import (
     update_project,
 )
 from app.common.readable_ids import project_web_url
+from app.common.recent_updates import recent_update_hints
 from app.common.team_time import team_today
 from app.common.update_drafts import clear_posted_update_draft
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
@@ -283,6 +284,7 @@ def _project_json(project: ProjectRead, names: dict[str, str]) -> dict[str, Any]
         "member_ids": project.member_ids,
         "label_ids": project.label_ids,
         "initiative_id": project.initiative_id,
+        "initiative_ids": project.initiative_ids,
         "start_date": project.start_date,
         "target_date": project.target_date,
         "start_date_resolution": project.start_date_resolution,
@@ -613,6 +615,11 @@ def _project_payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]
         payload["initiative_id"] = initiative_id_ref(call, call.arguments["initiative_id"])
     elif nullable_fields and call.present("initiative_id"):
         payload["initiative_id"] = None
+    if call.optional("initiative_ids") is not None:
+        initiatives = call.arguments["initiative_ids"]
+        if not isinstance(initiatives, list):
+            raise ToolError("initiative_ids must be a list of initiatives")
+        payload["initiative_ids"] = [initiative_id_ref(call, initiative) for initiative in initiatives]
     if call.optional("update_interval_days") is not None:
         payload["update_interval_days"] = _interval(call.arguments["update_interval_days"])
     elif nullable_fields and call.present("update_interval_days"):
@@ -901,7 +908,7 @@ def _create_project_update(call: ToolCall) -> Any:
         created.project_id,
         created.created_at,
     )
-    return _project_update_json(created)
+    return {**_project_update_json(created), "hints": recent_update_hints("project", created.recent_updates)}
 
 
 def _update_project_update(call: ToolCall) -> Any:
@@ -961,7 +968,11 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "color": nullable("The project colour as #rrggbb, or null"),
     "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
     "label_ids": string_list("Every project label on the project, each an id or a name; replaces the list"),
-    "initiative_id": nullable(f"{INITIATIVE_HELP} the project belongs to, or null for none"),
+    "initiative_id": nullable(f"{INITIATIVE_HELP} to put the project in alone, replacing any others, or null for none"),
+    "initiative_ids": string_list(
+        "Every initiative the project belongs to, each an id or a name, the first its primary one; "
+        "replaces the set, an empty list takes it out of all, and wins over initiative_id"
+    ),
     "update_interval_days": {
         "type": ["integer", "null"],
         "enum": [*INTERVAL_OPTIONS, None],
@@ -1469,7 +1480,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             "Post a status update on a project, in Markdown, with its health. "
             "Posting sets the project's health and notifies its lead and members. "
             "Give template_id instead of body to post a document template's body. "
-            "The update records a report of what changed since the last one."
+            "The update records a report of what changed since the last one. "
+            "hints names any other update posted on the project in the last few minutes."
         ),
         scopes=("projects:write",),
         schema=object_schema(

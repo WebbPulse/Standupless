@@ -15,7 +15,7 @@ from app.common.db.dynamo.users import DEFAULT_PRIORITY_KINDS, SIDEBAR_ITEMS, ch
 from app.common.inbox import INBOX_KINDS
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
-ALL_ON = {"in_app": True, "email": True, "chat": True}
+ALL_ON = {"in_app": True, "email": True, "chat": True, "push": True}
 
 
 @pytest.fixture
@@ -645,10 +645,14 @@ def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient
     sign_in(client, OWNER)
 
     listed = client.patch("/api/users/me/preferences", json={"projects_display": {"columns": ["progress", "lead"]}})
+    initiative = client.patch(
+        "/api/users/me/preferences", json={"projects_display": {"columns": ["progress", "initiative", "teams"]}}
+    )
     emptied = client.patch("/api/users/me/preferences", json={"projects_display": {"columns": ""}})
 
     assert listed.status_code == 200, listed.text
     assert listed.json()["projects_display"]["columns"] == "lead,progress"
+    assert initiative.json()["projects_display"]["columns"] == "teams,initiative,progress"
     assert emptied.json()["projects_display"]["columns"] == ""
     assert repositories.users.get(OWNER).projects_display["columns"] == ""
 
@@ -692,7 +696,7 @@ def test_one_kind_can_be_turned_off_per_channel(client: TestClient, repositories
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["notification_preferences"]["commented"] == {"in_app": True, "email": False, "chat": True}
+    assert body["notification_preferences"]["commented"] == {"in_app": True, "email": False, "chat": True, "push": True}
     assert body["notification_preferences"]["mentioned"] == ALL_ON
     assert body["email_notifications"] is True
 
@@ -723,7 +727,12 @@ def test_reactions_default_to_the_inbox_only(client: TestClient, repositories: A
     sign_in(client, OWNER)
 
     body = client.get("/api/users/me").json()
-    assert body["notification_preferences"]["reaction"] == {"in_app": True, "email": False, "chat": False}
+    assert body["notification_preferences"]["reaction"] == {
+        "in_app": True,
+        "email": False,
+        "chat": False,
+        "push": False,
+    }
     assert repositories.users.get(OWNER).wants_notification("reaction", "email") is False
 
     client.patch("/api/users/me/preferences", json={"notification_preferences": {"reaction": {"email": True}}})

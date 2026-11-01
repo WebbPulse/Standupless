@@ -19,7 +19,7 @@ from datetime import date, datetime
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, model_validator
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.bulk_import import IMPORT_BATCH_ATTRIBUTE
@@ -618,6 +618,9 @@ class Project(BaseModel):
     day; None is an exact day. `updated_by` is the person whose edit last changed
     the project, None on a row only its creator or a background rollup wrote, so
     the notify consumer can leave that person out of what the change announces.
+    `initiative_ids` are the initiatives the project belongs to, in the order
+    they were joined, and `initiative_id` is always the first of them or None,
+    the single value a row held before a project could sit in several.
     """
 
     workspace_id: str
@@ -647,6 +650,7 @@ class Project(BaseModel):
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
     initiative_id: str | None = None
+    initiative_ids: list[str] = Field(default_factory=list)
     completed_at: datetime | None = None
     sort_order: str | None = None
     archived_at: datetime | None = None
@@ -655,6 +659,26 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _initiative_set(cls, data: Any) -> Any:
+        """Read a lone `initiative_id` as a set of one, so a row from before the set keeps its initiative."""
+        if isinstance(data, Mapping) and not data.get("initiative_ids") and data.get("initiative_id"):
+            return {**data, "initiative_ids": [data["initiative_id"]]}
+        return data
+
+    @model_validator(mode="after")
+    def _primary_initiative(self) -> "Project":
+        """Drop repeated initiatives and hold `initiative_id` to the first one left."""
+        self.initiative_ids = list(dict.fromkeys(self.initiative_ids))
+        self.initiative_id = self.initiative_ids[0] if self.initiative_ids else None
+        return self
+
+    def with_initiatives(self, initiative_ids: list[str]) -> "Project":
+        """A copy of the project in exactly these initiatives, the first becoming its primary one."""
+        ids = list(dict.fromkeys(initiative_ids))
+        return self.model_copy(update={"initiative_ids": ids, "initiative_id": ids[0] if ids else None})
 
     @property
     def measure(self) -> ProgressMeasure:
@@ -675,9 +699,9 @@ class Project(BaseModel):
 class Initiative(BaseModel):
     """One workspace level goal that groups projects across teams, as in Linear.
 
-    Membership is stored on each project's `initiative_id` rather than here, so a
-    project belongs to at most one initiative and removing a project needs no
-    second write. `health` and `last_update_at` mirror the newest update, as a
+    Membership is stored on each project's `initiative_ids` rather than here, so a
+    project may belong to several initiatives and joining or leaving one is a
+    write of that project alone. `health` and `last_update_at` mirror the newest update, as a
     project's do, and `update_interval_days` follows the same cadence rules.
     `parent_initiative_id` nests it under another initiative as a sub-initiative,
     held on the child so a parent keeps no list of children to hold in step.
@@ -1071,12 +1095,13 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "last_update_at",
     "update_interval_days",
     "initiative_id",
+    "initiative_ids",
     "sort_order",
     "archived_at",
     "import_batch_id",
     "updated_by",
 )
-"""The project attributes a null value removes from the row rather than storing."""
+"""The project attributes a null or empty value removes from the row rather than storing."""
 
 INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "description",
@@ -1124,10 +1149,28 @@ def as_project_item(project: Project) -> dict[str, Any]:
     attribute behind.
     """
     item = _with_points_in_counts(project.model_dump(mode="json"))
+    ids = list(dict.fromkeys(item.get("initiative_ids") or []))
+    item["initiative_ids"] = ids or None
+    item["initiative_id"] = ids[0] if ids else None
     for name in PROJECT_OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
     return item
+
+
+def stored_initiative_ids(item: Mapping[str, Any]) -> list[str]:
+    """The initiatives one stored project row belongs to, read so no row is stranded.
+
+    A row written before the set holds only `initiative_id`, which reads as a set
+    of one. Every write keeps `initiative_id` the first of `initiative_ids`, so a
+    row where they disagree was last written by code that knew only the single
+    value, and that value wins.
+    """
+    primary = item.get("initiative_id") or None
+    ids = [str(value) for value in item.get("initiative_ids") or [] if value]
+    if ids and ids[0] == primary:
+        return list(dict.fromkeys(ids))
+    return [str(primary)] if primary else []
 
 
 def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
@@ -1283,6 +1326,8 @@ def as_project(item: Mapping[str, Any]) -> Project:
     fields[ESTIMATING_TEAMS] = estimating_teams_of(item)
     fields["status_counts"] = status_counts_of(item)
     fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
+    fields["initiative_ids"] = stored_initiative_ids(item)
+    fields.pop("initiative_id", None)
     return Project.model_validate(fields)
 
 
@@ -1887,23 +1932,32 @@ class PlanningRepository:
         stored = self._replace_fields(item, INITIATIVE_OPTIONAL_FIELDS)
         return as_initiative(stored)
 
-    def set_project_initiative(self, workspace_id: str, project_id: str, initiative_id: str | None) -> Project | None:
-        """Put one project in an initiative, or take it out with `None`, returning the row as written or `None`.
+    def set_project_initiatives(self, workspace_id: str, project_id: str, initiative_ids: list[str]) -> Project | None:
+        """Put one project in exactly these initiatives, none taking it out of all, returning the row or `None`.
 
         A targeted `SET` or `REMOVE`, so the rollup counters the stream consumer
-        moves concurrently are never written back stale. The row comes back from
-        the write itself, because a read straight after it may not see the change.
+        moves concurrently are never written back stale. `initiative_id` is kept
+        the first of the set, so a reader that knows only the single value still
+        finds the project in its primary initiative. The row comes back from the
+        write itself, because a read straight after it may not see the change.
         It is a person's change, so it clears the bulk import marker.
         """
         if not workspace_id or not project_id:
             return None
-        names = {"#initiative": "initiative_id", "#updated": "updated_at", "#batch": IMPORT_BATCH_ATTRIBUTE}
+        ids = list(dict.fromkeys(initiative_ids))
+        names = {
+            "#initiative": "initiative_id",
+            "#initiatives": "initiative_ids",
+            "#updated": "updated_at",
+            "#batch": IMPORT_BATCH_ATTRIBUTE,
+        }
         values: dict[str, Any] = {":updated": _stored_time(utc_now())}
-        if initiative_id is None:
-            expression = "SET #updated = :updated REMOVE #initiative, #batch"
+        if not ids:
+            expression = "SET #updated = :updated REMOVE #initiative, #initiatives, #batch"
         else:
-            values[":initiative"] = initiative_id
-            expression = "SET #initiative = :initiative, #updated = :updated REMOVE #batch"
+            values[":initiative"] = ids[0]
+            values[":initiatives"] = ids
+            expression = "SET #initiative = :initiative, #initiatives = :initiatives, #updated = :updated REMOVE #batch"
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "planning_key": project_key(project_id)},
@@ -1952,6 +2006,22 @@ class PlanningRepository:
     def latest_initiative_update(self, workspace_id: str, initiative_id: str) -> InitiativeUpdateRow | None:
         """The newest update of one initiative, or `None` when it has none."""
         rows, _ = self.list_initiative_updates(workspace_id, initiative_id, limit=1)
+        return rows[0] if rows else None
+
+    def next_initiative_update(self, update: InitiativeUpdateRow) -> InitiativeUpdateRow | None:
+        """The update posted right after one, or `None` when it is the newest.
+
+        The ULID in the sort key orders updates by when they were posted, so an
+        ascending query resumed from this update's key reads the one after it.
+        """
+        page = self._repository.query(
+            Key("workspace_id").eq(update.workspace_id)
+            & Key("planning_key").begins_with(initiative_update_prefix(update.initiative_id)),
+            limit=1,
+            start_key={"workspace_id": update.workspace_id, "planning_key": update.planning_key},
+            ascending=True,
+        )
+        rows = [as_initiative_update(item) for item in page.items if is_initiative_update(item)]
         return rows[0] if rows else None
 
     def create_initiative_update(self, update: InitiativeUpdateRow) -> InitiativeUpdateRow:

@@ -1,7 +1,8 @@
 /**
  * The quick actions in a list: Cmd or Ctrl+Shift+C puts the focused issue
  * into its team's active cycle, Cmd or Ctrl+Shift+D clears the due date, Cmd
- * or Ctrl+Shift+L clears the labels of a whole selection in one write, and
+ * Shift+L clears the labels of a whole selection in one write, Shift and a
+ * digit set the priority while Shift+3 stays the archive key, and
  * the actions are listed for the palette and the shortcuts panel.
  */
 
@@ -169,7 +170,7 @@ describe('IssueListView quick actions', () => {
     expect(update).toHaveBeenCalledWith(['iss-1'], { due_date: null });
   });
 
-  it('clears the labels of the selection in one write on Cmd or Ctrl+Shift+L', () => {
+  it('clears the labels of the selection in one write on Shift+L', () => {
     renderView([
       makeIssue(1, { label_ids: ['lb-1'] }),
       makeIssue(2, { label_ids: ['lb-1', 'lb-2'] }),
@@ -179,12 +180,51 @@ describe('IssueListView quick actions', () => {
     press('x');
     press('j');
     press('x');
-    press('L', modShift);
+    press('L', { shiftKey: true });
 
     expect(update).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenCalledWith(['iss-1', 'iss-2'], {
       remove_label_ids: ['lb-1', 'lb-2'],
     });
+  });
+
+  it.each([
+    ['!', 'Digit1', 'urgent'],
+    ['$', 'Digit4', 'low'],
+    [')', 'Digit0', 'none'],
+  ])(
+    'sets the priority on Shift and the digit that types %s',
+    (key, code, priority) => {
+      renderView([makeIssue(1)]);
+
+      press('j');
+      press(key, { shiftKey: true, code });
+
+      expect(update).toHaveBeenCalledWith(['iss-1'], { priority });
+    }
+  );
+
+  it('sets the priority of the selection in one write', () => {
+    renderView([makeIssue(1, { priority: 'low' }), makeIssue(2)]);
+
+    press('j');
+    press('x');
+    press('j');
+    press('x');
+    press('@', { shiftKey: true, code: 'Digit2' });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(['iss-1'], { priority: 'high' });
+  });
+
+  it('leaves Shift+3 to the archive key', () => {
+    renderView([makeIssue(1)]);
+
+    press('j');
+    press('#', { shiftKey: true, code: 'Digit3' });
+
+    expect(update).not.toHaveBeenCalledWith(['iss-1'], { priority: 'medium' });
+    expect(registry.list().some((one) => one.keys === 'shift+3')).toBe(false);
   });
 
   it('lists the quick actions for the palette while they apply', () => {
@@ -203,14 +243,5 @@ describe('IssueListView quick actions', () => {
         REMOVE_LABELS_LABEL,
       ])
     );
-  });
-
-  it('keeps Shift+L off the quick label removal', () => {
-    renderView([makeIssue(1, { label_ids: ['lb-1'] })]);
-
-    press('j');
-    press('L', { shiftKey: true });
-
-    expect(update).not.toHaveBeenCalled();
   });
 });

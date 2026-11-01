@@ -25,7 +25,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from webbpulse.identity.api_keys import ACTOR_CLAIM as API_KEY_ACTOR_CLAIM
 from webbpulse.identity.api_keys import TENANT_CLAIM as API_KEY_TENANT_CLAIM
 from webbpulse.identity.api_keys import effective_scopes
-from webbpulse.identity.claims import identity_claims
+from webbpulse.identity.claims import email_unverified, identity_claims, require_verified_email
 
 from app.common.api.dependencies.repositories import (
     RepositoryBundle,
@@ -88,6 +88,14 @@ FORBIDDEN_DETAIL = {"error_code": "FORBIDDEN", "message": "Not allowed"}
 
 
 UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in first."}
+
+UNVERIFIED_ALLOWED_ROUTES = ("/api/auth", "/api/users/me")
+"""The route trees a session whose address is still unconfirmed may reach.
+
+The frontend boots from `GET /api/users/me` and the pending verification screen touches
+only the caller's own account and the identity routes, so both stay open. Every other
+route answers 403 `EMAIL_NOT_VERIFIED` until the link is opened and the session refreshed.
+"""
 
 AUTH_POLICY_REQUIRED_DETAIL = {
     "error_code": "AUTH_POLICY_REQUIRED",
@@ -344,6 +352,7 @@ def _claims(request: Request, repositories: RepositoryBundle | None = None) -> A
     """
     claims = identity_claims(request)
     if claims is not None:
+        require_verified_email(request, claims, allowed_routes=UNVERIFIED_ALLOWED_ROUTES)
         return claims
 
     key_claims = _api_key_claims(request, repositories)
@@ -476,15 +485,18 @@ def _bearer_claims(request: Request, repositories: RepositoryBundle | None = Non
     Three credentials in the order that costs least: the authorizer's own claims when one
     ran, then a presented API key against the stored hash, then an MCP access token
     against the issuer's published keys. The token is last because it is the only one that
-    can reach the network, and the first two answer without one.
+    can reach the network, and the first two answer without one. An MCP token whose address
+    is unconfirmed resolves to `None`, because every caller here treats that as a refusal.
     """
     claims = identity_claims(request)
     if claims is not None:
+        require_verified_email(request, claims, allowed_routes=UNVERIFIED_ALLOWED_ROUTES)
         return claims
     key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims
-    return _mcp_token_claims(request)
+    mcp_claims = _mcp_token_claims(request)
+    return None if mcp_claims is None or email_unverified(mcp_claims) else mcp_claims
 
 
 def _subject(claims: Any) -> str:

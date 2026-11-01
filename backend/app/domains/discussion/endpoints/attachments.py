@@ -18,15 +18,17 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from fastapi.responses import RedirectResponse
-from webbpulse.dynamodb import ConditionFailed, encode_start_key
+from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage
-from webbpulse.storage import disposition_for, presigned_get, presigned_put
+from webbpulse.storage import disposition_for, presigned_get
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.pagination import resume_key
+from app.common.attachment_uploads import commit_upload as commit_stored_upload
+from app.common.attachment_uploads import start_upload
 from app.common.core.config import settings
-from app.common.db.dynamo.attachments import as_attachment, build_attachment, new_upload_id, object_key, stored_bytes
+from app.common.db.dynamo.attachments import as_attachment
 from app.common.db.dynamo.base import utc_now
 from app.common.media_tokens import (
     MAX_MEDIA_TOKENS,
@@ -35,8 +37,7 @@ from app.common.media_tokens import (
     mint_media_token,
     read_media_token,
 )
-from app.common.plan_limits import check_storage, plan_of, storage_limit_of
-from app.common.upload_rules import ATTACHMENT_CONTENT_TYPES, normalized_content_type, upload_ceiling
+from app.common.plan_limits import plan_of, storage_limit_of
 from app.common.url_attachments import attach_url as attach_url_row
 from app.common.url_attachments import delete_attachment as delete_attachment_row
 from app.domains.discussion.schemas.discussion import (
@@ -45,7 +46,6 @@ from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
     DOWNLOAD_EXPIRES_IN,
     MAX_LIMIT,
-    TITLE_MAX,
     AttachmentListRead,
     AttachmentRead,
     DownloadRead,
@@ -59,15 +59,10 @@ from app.domains.discussion.schemas.discussion import (
 )
 from app.domains.discussion.service import (
     attachments_bucket,
-    conflict,
     load_visible_issue,
     not_found,
-    object_exists,
-    require_team_member,
-    unknown_upload,
     unprocessable,
 )
-from app.domains.discussion.upload_ticket import TICKET_TTL_SECONDS, TicketError, mint_ticket, read_ticket
 
 router = APIRouter()
 
@@ -141,56 +136,22 @@ def create_upload(
     goes into the signature, so refusing it here is what keeps the object from
     existing at all.
     """
-    issue = load_visible_issue(repositories, context, payload.issue_id)
-    require_team_member(repositories, context, issue.team_id)
-
-    content_type = payload.content_type.strip()
-    if normalized_content_type(content_type) not in ATTACHMENT_CONTENT_TYPES:
-        raise unprocessable(
-            "That file type cannot be uploaded",
-            error_code="UNSUPPORTED_MEDIA_TYPE",
-        )
-    ceiling = upload_ceiling(content_type)
-    if payload.size_bytes > ceiling:
-        raise unprocessable(
-            f"Files of this type are limited to {ceiling} bytes",
-            error_code="UPLOAD_TOO_LARGE",
-        )
-    check_storage(
-        repositories.workspaces.get(context.workspace_id),
-        repositories.attachments.storage_used(context.workspace_id),
-        payload.size_bytes,
-    )
-
-    bucket = attachments_bucket()
-    upload_id = new_upload_id()
-    key = object_key(context.workspace_id, payload.issue_id, upload_id, payload.filename)
-    upload = presigned_put(
-        bucket,
-        key,
-        content_type,
-        payload.size_bytes,
-        expires_in=TICKET_TTL_SECONDS,
-        region_name=settings.AWS_REGION,
-    )
-    ticket = mint_ticket(
-        context.workspace_id,
+    started = start_upload(
+        repositories,
+        context,
         payload.issue_id,
-        context.user_id,
-        upload_id,
-        key,
         payload.filename,
-        content_type,
+        payload.content_type,
         payload.size_bytes,
     )
     return UploadTicketRead(
-        upload_id=upload_id,
-        ticket=ticket,
-        url=upload.url,
-        headers=upload.headers,
-        s3_key=key,
-        max_bytes=upload.max_bytes,
-        expires_at=utc_now() + timedelta(seconds=upload.expires_in),
+        upload_id=started.upload_id,
+        ticket=started.ticket,
+        url=started.url,
+        headers=dict(started.headers),
+        s3_key=started.key,
+        max_bytes=started.max_bytes,
+        expires_at=started.expires_at,
     )
 
 
@@ -216,48 +177,14 @@ def commit_upload(
     the bytes are then reserved by one conditional write on the workspace's counter,
     so two commits racing for the last bytes cannot both land.
     """
-    issue = load_visible_issue(repositories, context, payload.issue_id)
-    require_team_member(repositories, context, issue.team_id)
-
-    try:
-        claims = read_ticket(payload.ticket, context.workspace_id, payload.issue_id, context.user_id)
-    except TicketError as exc:
-        raise unknown_upload() from exc
-    if claims.get("upload_id") != payload.upload_id:
-        raise unknown_upload()
-
-    key = str(claims["key"])
-    filename = str(claims.get("filename", ""))
-    bucket = attachments_bucket()
-    if not object_exists(bucket, key):
-        raise conflict("That upload is not in the bucket yet")
-    size_bytes = int(claims.get("size_bytes", 0))
-    workspace = repositories.workspaces.get(context.workspace_id)
-    check_storage(workspace, repositories.attachments.storage_used(context.workspace_id), size_bytes)
-
-    attachment = build_attachment(
-        context.workspace_id,
+    created = commit_stored_upload(
+        repositories,
+        context,
         payload.issue_id,
-        issue.team_id,
-        "file",
-        (payload.title.strip()[:TITLE_MAX] if payload.title and payload.title.strip() else filename),
-        context.user_id,
-        s3_key=key,
-        content_type=str(claims.get("content_type", "")),
-        size_bytes=size_bytes,
+        payload.upload_id,
+        payload.ticket,
+        payload.title,
     )
-    reserved = stored_bytes([attachment])
-    limit = storage_limit_of(workspace)
-    if not repositories.attachments.reserve_storage(context.workspace_id, reserved, limit):
-        check_storage(workspace, max(limit, repositories.attachments.storage_used(context.workspace_id)), reserved)
-    try:
-        created = repositories.attachments.create(attachment)
-    except ConditionFailed as exc:
-        repositories.attachments.add_storage(context.workspace_id, -reserved)
-        raise conflict("That attachment already exists") from exc
-    except Exception:
-        repositories.attachments.add_storage(context.workspace_id, -reserved)
-        raise
     return AttachmentRead.from_row(created)
 
 

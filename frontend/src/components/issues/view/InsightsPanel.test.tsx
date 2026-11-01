@@ -1,16 +1,22 @@
 /**
  * The view insights panel: that it asks for the breakdown the pickers name over
- * the list's filters, keeps those picks for the next time it opens, draws the
+ * the list's filters, keeps those picks for the next time it opens, opens on the
+ * default for everyone with the viewer's picks winning over it, draws the
  * chart and the table with the headline and the truncated note, closes on its
  * keys from inside a picker, and narrows the list when a filterable bar is
  * clicked.
  */
 
+import type { ReactElement } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InsightsQuery } from '../../../api/insights';
 import type { InsightsRead } from '../../../types/Api';
-import { InsightsChart, InsightsPanel } from './InsightsPanel';
+import {
+  InsightsChart,
+  InsightsPanel,
+  type InsightsDefaultControl,
+} from './InsightsPanel';
 import InsightsBars from './InsightsBars';
 import InsightsTable from './InsightsTable';
 
@@ -31,6 +37,8 @@ vi.mock('@webbpulse/auth/react', async () => {
     useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
   };
 });
+
+type InsightsSave = NonNullable<InsightsDefaultControl['save']>;
 
 const read = (overrides: Partial<InsightsRead> = {}): InsightsRead => ({
   team_ids: ['team-1'],
@@ -176,6 +184,150 @@ describe('InsightsPanel', () => {
     expect(screen.getByLabelText<HTMLSelectElement>('Slice').value).toBe(
       'assignee'
     );
+  });
+
+  describe('default for everyone', () => {
+    const shared = {
+      measure: 'points',
+      group_by: 'assignee',
+      segment_by: 'priority',
+      layout: 'table',
+    } as const;
+    const value = (label: string): string =>
+      screen.getByLabelText<HTMLSelectElement>(label).value;
+    const openSettings = (): void => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Insights settings' })
+      );
+    };
+    const panel = (control: InsightsDefaultControl): ReactElement => (
+      <InsightsPanel
+        workspaceId="ws-1"
+        scopeKey="team-1"
+        filters={{ team_id: 'team-1' }}
+        sharedDefault={control}
+        onClose={vi.fn()}
+      />
+    );
+
+    it('opens on the default and asks for its breakdown', async () => {
+      getInsights.mockResolvedValue(read());
+      render(panel({ display: shared }));
+      expect(value('Measure')).toBe('points');
+      expect(value('Slice')).toBe('assignee');
+      expect(value('Segment')).toBe('priority');
+      await waitFor(() => {
+        expect(getInsights).toHaveBeenLastCalledWith(
+          'ws-1',
+          expect.objectContaining({
+            measure: 'points',
+            group_by: 'assignee',
+            segment_by: 'priority',
+          })
+        );
+      });
+    });
+
+    it('lets a pick win field by field and resets back to the default', () => {
+      getInsights.mockResolvedValue(read());
+      render(panel({ display: shared }));
+      fireEvent.change(screen.getByLabelText('Measure'), {
+        target: { value: 'count' },
+      });
+      expect(value('Measure')).toBe('count');
+      expect(value('Slice')).toBe('assignee');
+
+      openSettings();
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: 'Reset to defaults' })
+      );
+      expect(value('Measure')).toBe('points');
+      expect(
+        globalThis.localStorage.getItem('standupless.insights.ws-1.team-1')
+      ).toBeNull();
+    });
+
+    it('offers no default controls to a viewer who may not change it', () => {
+      getInsights.mockResolvedValue(read());
+      render(panel({ display: shared }));
+      openSettings();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Set default for everyone' })
+      ).toBeNull();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Clear default for everyone' })
+      ).toBeNull();
+    });
+
+    it('saves what is drawn and then follows it with no picks left', async () => {
+      getInsights.mockResolvedValue(read());
+      const save = vi.fn<InsightsSave>().mockResolvedValue(undefined);
+      render(panel({ display: null, save }));
+      fireEvent.change(screen.getByLabelText('Slice'), {
+        target: { value: 'label' },
+      });
+
+      openSettings();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Clear default for everyone' })
+      ).toBeNull();
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: 'Set default for everyone' })
+      );
+
+      await waitFor(() => {
+        expect(save).toHaveBeenCalledWith({
+          measure: 'count',
+          group_by: 'label',
+          segment_by: null,
+          layout: 'both',
+        });
+      });
+      await waitFor(() => {
+        expect(
+          globalThis.localStorage.getItem('standupless.insights.ws-1.team-1')
+        ).toBeNull();
+      });
+    });
+
+    it('puts the picks back when the save is refused', async () => {
+      getInsights.mockResolvedValue(read());
+      const save = vi.fn<InsightsSave>().mockRejectedValue(new Error('no'));
+      render(panel({ display: null, save }));
+      fireEvent.change(screen.getByLabelText('Slice'), {
+        target: { value: 'label' },
+      });
+
+      openSettings();
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: 'Set default for everyone' })
+      );
+
+      await waitFor(() => {
+        expect(
+          globalThis.localStorage.getItem('standupless.insights.ws-1.team-1')
+        ).toBe(JSON.stringify({ groupBy: 'label' }));
+      });
+      expect(value('Slice')).toBe('label');
+    });
+
+    it('turns setting off when the panel already draws the default and clears it', async () => {
+      getInsights.mockResolvedValue(read());
+      const save = vi.fn<InsightsSave>().mockResolvedValue(undefined);
+      render(panel({ display: shared, save }));
+
+      openSettings();
+      expect(
+        screen.getByRole('menuitem', { name: 'Set default for everyone' })
+      ).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: 'Clear default for everyone' })
+      );
+
+      await waitFor(() => {
+        expect(save).toHaveBeenCalledWith(null);
+      });
+    });
   });
 
   it('closes on its keys while a picker holds focus', () => {

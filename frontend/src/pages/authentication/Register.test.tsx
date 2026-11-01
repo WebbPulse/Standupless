@@ -1,12 +1,21 @@
 /**
  * The sign up form says what an account is made under, linking the terms and
  * the privacy policy above the submit button, and offers the OAuth providers.
+ * A new account is signed straight in, and an address that is already taken
+ * gets the same neutral "check your email" answer without a session.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { ApiError } from '@webbpulse/api-client';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Register from './Register';
+
+const identity = vi.hoisted(() => ({
+  client: null as null | {
+    signUp: (body: unknown) => Promise<unknown>;
+  },
+}));
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -21,7 +30,7 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/identityClient', () => ({
-  getIdentityClient: () => null,
+  getIdentityClient: () => identity.client,
   identityOrigin: () => 'https://api.standupless.dev',
 }));
 
@@ -36,7 +45,95 @@ vi.mock('../../components/auth/OAuthProviderButtons', () => ({
   ),
 }));
 
+/** Fills the form with a valid new account and submits it. */
+const submit = async (): Promise<void> => {
+  fireEvent.change(screen.getByLabelText('Email address'), {
+    target: { value: 'new@example.com' },
+  });
+  fireEvent.change(screen.getByLabelText('Display name'), {
+    target: { value: 'New' },
+  });
+  fireEvent.change(screen.getByLabelText('Password'), {
+    target: { value: 'a long password' },
+  });
+  fireEvent.change(screen.getByLabelText('Confirm password'), {
+    target: { value: 'a long password' },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    await Promise.resolve();
+  });
+};
+
+const renderRegister = () =>
+  render(
+    <MemoryRouter>
+      <Register />
+    </MemoryRouter>
+  );
+
+beforeEach(() => {
+  identity.client = null;
+});
+
 describe('Register', () => {
+  it('signs up and stays out of the check email page when signed in', async () => {
+    const signUp = vi.fn(() =>
+      Promise.resolve({ signedIn: true, user: null, expiresIn: 900 })
+    );
+    identity.client = { signUp };
+    renderRegister();
+
+    await submit();
+
+    expect(signUp).toHaveBeenCalledWith({
+      email: 'new@example.com',
+      password: 'a long password',
+      attributes: { display_name: 'New' },
+    });
+    expect(
+      screen.queryByTestId('register-check-email')
+    ).not.toBeInTheDocument();
+  });
+
+  it('answers a taken address with a neutral check your email page', async () => {
+    identity.client = {
+      signUp: () => Promise.resolve({ signedIn: false }),
+    };
+    renderRegister();
+
+    await submit();
+
+    expect(screen.getByTestId('register-check-email')).toHaveTextContent(
+      'If new@example.com can be used for a new account'
+    );
+  });
+
+  it('shows the reason the server refused the account', async () => {
+    identity.client = {
+      signUp: () =>
+        Promise.reject(
+          new ApiError({
+            status: 400,
+            statusText: 'Bad Request',
+            body: {
+              error_code: 'PASSWORD_BREACHED',
+              message: 'That password has appeared in a data breach.',
+            },
+            url: '',
+            method: 'POST',
+          })
+        ),
+    };
+    renderRegister();
+
+    await submit();
+
+    expect(
+      screen.getByText('That password has appeared in a data breach.')
+    ).toBeInTheDocument();
+  });
+
   it('links the terms and the privacy policy the account is made under', () => {
     render(
       <MemoryRouter>

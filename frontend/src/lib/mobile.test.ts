@@ -3,10 +3,27 @@
  * the sign-in handoff's one-time code never does.
  */
 
+import { isDesktopHandoffCallback } from '@webbpulse/auth';
 import { describe, expect, it } from 'vitest';
-import { isMobileShell, mobileLinkPath } from './mobile';
+import { isMobileShell, mobileLinkPath, pushTapPath } from './mobile';
 
 const ORIGIN = 'https://standupless.dev';
+
+describe('pushTapPath', () => {
+  it('opens a workspace page the payload names', () => {
+    expect(pushTapPath({ path: '/w/acme/issues/STUP-1', aps: {} })).toBe(
+      '/w/acme/issues/STUP-1'
+    );
+  });
+
+  it('ignores a payload with no workspace page', () => {
+    expect(pushTapPath({ path: 'https://example.com/w/acme' })).toBeNull();
+    expect(pushTapPath({ path: '//example.com' })).toBeNull();
+    expect(pushTapPath({ path: 7 })).toBeNull();
+    expect(pushTapPath({})).toBeNull();
+    expect(pushTapPath(null)).toBeNull();
+  });
+});
 
 describe('mobileLinkPath', () => {
   it('routes a universal link on the app origin', () => {
@@ -42,6 +59,12 @@ describe('mobileLinkPath', () => {
     expect(
       mobileLinkPath('standupless://auth/handoff?code=secret', ORIGIN)
     ).toBeNull();
+  });
+
+  it('never routes another path on the handoff host', () => {
+    const link = 'standupless://auth/other?code=secret';
+    expect(isDesktopHandoffCallback(link, ['standupless'])).toBe(false);
+    expect(mobileLinkPath(link, ORIGIN)).toBeNull();
   });
 
   it('rejects values that are not URLs', () => {

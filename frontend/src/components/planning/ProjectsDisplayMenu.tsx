@@ -484,7 +484,8 @@ const DisplayMenuBody: React.FC<
 
 /**
  * The Display menu, leaving the Initiative grouping out while an admin has
- * initiatives turned off, unless it is the grouping already showing.
+ * initiatives turned off, unless it is the grouping already showing, and the
+ * Initiative property out with it.
  */
 export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = (
   props
@@ -494,7 +495,10 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = (
     (choice) =>
       initiativesOn || choice !== 'initiative' || choice === props.grouping
   );
-  return <DisplayMenuBody {...props} groupings={groupings} />;
+  const chips = (props.chips ?? PROJECT_COLUMN_CHIPS).filter(
+    (column) => initiativesOn || column !== 'initiative'
+  );
+  return <DisplayMenuBody {...props} chips={chips} groupings={groupings} />;
 };
 
 export default ProjectsDisplayMenu;

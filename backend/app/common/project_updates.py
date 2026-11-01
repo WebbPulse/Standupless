@@ -45,6 +45,7 @@ from app.common.planning_rules import (
 )
 from app.common.project_update_report import take_snapshot
 from app.common.project_update_threads import summarise_updates
+from app.common.recent_updates import RECENT_UPDATE_SCAN, recent_updates
 
 
 def cursor_scope(workspace_id: str, project_id: str) -> str:
@@ -117,7 +118,9 @@ def create_project_update(
     """Post an update on a project the caller may edit, from a document template when one is named.
 
     The update records where the project stands now beside the snapshot the
-    update before it recorded, which is what its progress report diffs.
+    update before it recorded, which is what its progress report diffs. The
+    answer names any other update posted around the same time, read after the
+    write so two authors racing each other both find out.
     """
     project, teams = load_readable_project(repositories, context, project_id)
     require_project_editor(repositories, context, teams)
@@ -148,7 +151,12 @@ def create_project_update(
         context.workspace_id, project.project_id, health=created.health, last_update_at=created.created_at
     )
     pulse.record_project_update(repositories, created, project.health)
-    return _read(repositories, context, teams, created)
+    newest, _ = repositories.planning.list_project_updates(
+        context.workspace_id, project.project_id, limit=RECENT_UPDATE_SCAN
+    )
+    return _read(repositories, context, teams, created).model_copy(
+        update={"recent_updates": recent_updates(repositories, created, newest)}
+    )
 
 
 def _load_editable(

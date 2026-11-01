@@ -6,7 +6,9 @@
  * is not crowded by an empty editor. The page opens it from outside too, for
  * the due nudge and the command palette. Once the project's update is due by
  * its cadence, a banner above the composer says so and asks for a health call
- * with the write up.
+ * with the write up. When someone posted in the last few minutes, a notice in
+ * the composer names them, since the newest update is what sets the health, and
+ * a post that raced another one says so once it lands.
  *
  * Document templates the parent offers show in the composer's template menu,
  * and the composer opens on the default update template's body when one is set.
@@ -15,12 +17,16 @@
  * once it has loaded, which is where email, webhook and inbox links land.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LuPencilLine } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
 import type { StatusUpdateFeed } from '../../hooks/useProjectUpdates';
 import { errorMessage } from '../../lib/errors';
-import type { Assignable } from '../../lib/issuePeople';
+import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  recentUpdateLine,
+  recentUpdatesOf,
+} from '../../lib/recentStatusUpdates';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { updateDueLabel } from '../../lib/planningDisplay';
 import type {
@@ -39,11 +45,20 @@ import ProjectUpdateEditor from './ProjectUpdateEditor';
 const articled = (subject: UpdateSubject): string =>
   subject === 'initiative' ? 'an initiative' : 'a project';
 
+/** The name an update's author reads as, or a neutral word for someone not on the list. */
+const personLabelOf = (people: Assignable[], userId: string): string => {
+  const person = people.find((each) => each.user_id === userId);
+  return person === undefined ? 'Someone' : personLabel(person);
+};
+
 /** How the update list is named for assistive technology. */
 const SUBJECT_LIST_LABELS: Record<UpdateSubject, string> = {
   project: 'Project updates',
   initiative: 'Initiative updates',
 };
+
+/** How often the composer's notice re-reads the clock, as often as the feed polls. */
+const RECENT_NOTICE_TICK_MS = 30000;
 
 /** Props for ProjectUpdatesFeed. */
 export interface ProjectUpdatesFeedProps {
@@ -84,6 +99,16 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
   const { hash } = useLocation();
   const scrolledTo = useRef<string | null>(null);
   const { updates, create } = feed;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, RECENT_NOTICE_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!hash.startsWith('#update-') || scrolledTo.current === hash) return;
@@ -101,8 +126,15 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
     hideDetails: boolean
   ): Promise<boolean> =>
     create({ body, health, hide_details: hideDetails }).then(
-      () => {
-        showToast('Update posted');
+      (made) => {
+        const others = (made.recent_updates ?? []).map((other) =>
+          recentUpdateLine(other.author_name ?? 'Someone', other, Date.now())
+        );
+        showToast(
+          others.length === 0
+            ? 'Update posted'
+            : `Update posted. ${others.join(' ')} Check the two do not repeat each other.`
+        );
         onComposingChange(false);
         return true;
       },
@@ -113,6 +145,9 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
     );
 
   const dueLabel = updateDueLabel(dueState);
+  const recentLines = recentUpdatesOf(updates, now).map((update) =>
+    recentUpdateLine(personLabelOf(people, update.author_id), update, now)
+  );
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-8 lg:px-8">
@@ -130,6 +165,15 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
           {canPost
             ? `. Pick a health, on track, at risk or off track, and say how the ${subject} is going.`
             : '.'}
+        </div>
+      )}
+      {canPost && composing && recentLines.length > 0 && (
+        <div
+          role="status"
+          className="rounded-md border border-line bg-warning-soft px-3 py-2 text-xs text-warning"
+        >
+          {recentLines.join(' ')} Read it before posting, because the newest
+          update sets the {subject}&apos;s health.
         </div>
       )}
       {canPost &&

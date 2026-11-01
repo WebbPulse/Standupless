@@ -28,10 +28,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useCopy } from '../../hooks/useCopy';
 import { currentDesktopPlatform } from '../../lib/desktop';
 import { WORKSPACES_PATH } from '../../lib/paths';
-import {
-  clearAppHandoff,
-  rememberAppHandoff,
-} from '../../lib/pendingAppHandoff';
+import { appHandoffReturn } from '../../lib/pendingAppHandoff';
 
 /** The sign-in page, returning here with the app's request kept in the query. */
 const loginReturningTo = (pathAndQuery: string): string =>
@@ -55,7 +52,7 @@ const DesktopHandoff: React.FC = () => {
   const validRequest = request !== null;
 
   useEffect(() => {
-    if (validRequest) rememberAppHandoff(path);
+    if (validRequest) appHandoffReturn.remember(path);
   }, [validRequest, path]);
 
   if (isLoading) {
@@ -134,7 +131,7 @@ const DesktopHandoff: React.FC = () => {
       );
       return;
     }
-    clearAppHandoff();
+    appHandoffReturn.clear();
     setCallbackUrl(outcome.callbackUrl);
     window.location.assign(outcome.callbackUrl);
   };
@@ -179,7 +176,7 @@ const DesktopHandoff: React.FC = () => {
       <p className="text-sm text-text-muted">
         <TextLink
           to={WORKSPACES_PATH}
-          onClick={() => clearAppHandoff()}
+          onClick={() => appHandoffReturn.clear()}
           data-testid="desktop-handoff-stay"
         >
           Stay in the browser

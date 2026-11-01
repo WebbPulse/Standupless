@@ -2,8 +2,9 @@
 
 The properties worth holding are that a guest is refused every initiative route,
 that an initiative rolls up the progress and health of the projects in it, that a
-project sits in at most one initiative and moves when added to another, that
-deleting an initiative leaves its projects in place outside it, and that its
+project may sit in several initiatives and counts under each, that a row from
+before the set still reads in its one initiative, that deleting an initiative
+leaves its projects in place outside it and in their other initiatives, and that its
 update feed mirrors health the way a project's does.
 """
 
@@ -170,19 +171,84 @@ def test_an_initiative_rolls_up_the_health_of_its_projects(client: TestClient, w
     assert sorted(row["project_id"] for row in filtered["projects"]) == sorted([first, second])
 
 
-def test_a_project_moves_when_added_to_another_initiative(client: TestClient, workspace: str) -> None:
-    """A project belongs to at most one initiative."""
+def test_a_project_joins_another_initiative_and_stays_in_the_first(client: TestClient, workspace: str) -> None:
+    """A project belongs to every initiative it is added to, the first one staying its primary one."""
     sign_in(client, MEMBER)
     one = _create(client, workspace, name="One")["initiative_id"]
     two = _create(client, workspace, name="Two")["initiative_id"]
     project_id = seed_project(client, workspace)["project_id"]
 
     _add(client, workspace, one, project_id)
-    moved = _add(client, workspace, two, project_id)
+    joined = _add(client, workspace, two, project_id)
+    again = _add(client, workspace, two, project_id)
 
-    assert moved["initiative_id"] == two
-    assert _get(client, workspace, one)["project_ids"] == []
+    assert joined["initiative_id"] == one
+    assert joined["initiative_ids"] == [one, two]
+    assert again["initiative_ids"] == [one, two]
+    assert _get(client, workspace, one)["project_ids"] == [project_id]
     assert _get(client, workspace, two)["project_ids"] == [project_id]
+    for initiative_id in (one, two):
+        listed = client.get(f"/api/workspaces/{workspace}/projects", params={"initiative_id": initiative_id}).json()
+        assert [row["project_id"] for row in listed["projects"]] == [project_id]
+
+    left = client.delete(f"{_base(workspace)}/{one}/projects/{project_id}").json()
+    assert (left["initiative_id"], left["initiative_ids"]) == (two, [two])
+    assert _get(client, workspace, one)["project_ids"] == []
+
+
+def test_a_project_in_a_parent_and_its_sub_initiative_counts_once(client: TestClient, workspace: str) -> None:
+    """The parent's rollup takes the project in once although it sits on two levels of the tree."""
+    sign_in(client, MEMBER)
+    parent = _create(client, workspace, name="Parent")["initiative_id"]
+    child = _create(client, workspace, name="Child", parent_initiative_id=parent)["initiative_id"]
+    project_id = seed_project(client, workspace)["project_id"]
+    _add(client, workspace, parent, project_id)
+    _add(client, workspace, child, project_id)
+
+    body = _get(client, workspace, parent)
+    assert body["project_ids"] == [project_id]
+    assert body["project_count"] == 1
+
+
+def test_a_row_from_before_the_set_reads_in_its_one_initiative(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A stored project holding only `initiative_id` keeps its initiative, and joining another keeps both."""
+    sign_in(client, MEMBER)
+    one = _create(client, workspace, name="One")["initiative_id"]
+    two = _create(client, workspace, name="Two")["initiative_id"]
+    project_id = seed_project(client, workspace)["project_id"]
+    repositories.planning._repository.update(
+        {"workspace_id": WORKSPACE, "planning_key": f"project#{project_id}"},
+        update_expression="SET initiative_id = :one",
+        expression_values={":one": one},
+    )
+
+    read = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert (read["initiative_id"], read["initiative_ids"]) == (one, [one])
+    assert _get(client, workspace, one)["project_ids"] == [project_id]
+
+    joined = _add(client, workspace, two, project_id)
+    assert joined["initiative_ids"] == [one, two]
+
+
+def test_a_row_last_written_by_a_single_value_writer_trusts_that_value(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """When `initiative_id` no longer leads `initiative_ids`, older code moved it, and that value wins."""
+    sign_in(client, MEMBER)
+    one = _create(client, workspace, name="One")["initiative_id"]
+    two = _create(client, workspace, name="Two")["initiative_id"]
+    project_id = seed_project(client, workspace)["project_id"]
+    _add(client, workspace, one, project_id)
+    repositories.planning._repository.update(
+        {"workspace_id": WORKSPACE, "planning_key": f"project#{project_id}"},
+        update_expression="SET initiative_id = :two",
+        expression_values={":two": two},
+    )
+
+    read = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert read["initiative_ids"] == [two]
 
 
 def test_removing_a_project_needs_it_to_be_in_that_initiative(client: TestClient, workspace: str) -> None:
@@ -247,6 +313,31 @@ def test_a_project_patch_sets_and_clears_its_initiative(client: TestClient, work
 
     created = seed_project(client, workspace, name="Born inside", initiative_id=initiative_id)
     assert created["initiative_id"] == initiative_id
+    assert created["initiative_ids"] == [initiative_id]
+
+
+def test_a_project_patch_replaces_its_set_of_initiatives(client: TestClient, workspace: str) -> None:
+    """`initiative_ids` sets the whole set, wins over `initiative_id`, and an empty list clears it."""
+    sign_in(client, MEMBER)
+    one = _create(client, workspace, name="One")["initiative_id"]
+    two = _create(client, workspace, name="Two")["initiative_id"]
+    project_id = seed_project(client, workspace)["project_id"]
+    path = f"/api/workspaces/{workspace}/projects/{project_id}"
+
+    bad = client.patch(path, json={"initiative_ids": [one, "01JB000000000000000000NOPE"]})
+    assert bad.status_code == 422
+    both = client.patch(path, json={"initiative_ids": [two, one, two]}).json()
+    assert (both["initiative_id"], both["initiative_ids"]) == (two, [two, one])
+    assert _get(client, workspace, one)["project_ids"] == [project_id]
+    assert _get(client, workspace, two)["project_ids"] == [project_id]
+
+    single = client.patch(path, json={"initiative_id": one}).json()
+    assert single["initiative_ids"] == [one]
+    cleared = client.patch(path, json={"initiative_ids": []}).json()
+    assert (cleared["initiative_id"], cleared["initiative_ids"]) == (None, [])
+
+    created = seed_project(client, workspace, name="Born in two", initiative_ids=[one, two])
+    assert created["initiative_ids"] == [one, two]
 
 
 def test_deleting_an_initiative_leaves_its_projects_outside_it(client: TestClient, workspace: str, peer: str) -> None:
@@ -266,6 +357,23 @@ def test_deleting_an_initiative_leaves_its_projects_outside_it(client: TestClien
     assert client.get(f"{_base(workspace)}/{initiative_id}").status_code == 404
     project = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
     assert project.get("initiative_id") is None
+
+
+def test_deleting_an_initiative_keeps_its_projects_in_their_other_initiatives(
+    client: TestClient, workspace: str
+) -> None:
+    """A project in two initiatives stays in the one that survives."""
+    sign_in(client, MEMBER)
+    one = _create(client, workspace, name="One")["initiative_id"]
+    two = _create(client, workspace, name="Two")["initiative_id"]
+    project_id = seed_project(client, workspace)["project_id"]
+    _add(client, workspace, one, project_id)
+    _add(client, workspace, two, project_id)
+
+    assert client.delete(f"{_base(workspace)}/{one}").status_code == 204
+
+    project = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert (project["initiative_id"], project["initiative_ids"]) == (two, [two])
 
 
 def test_the_update_feed_mirrors_health_and_falls_back_on_delete(client: TestClient, workspace: str) -> None:
@@ -494,3 +602,58 @@ def test_the_snapshot_counts_only_projects_every_member_can_see(
     assert update.status_code == 201, update.text
     assert update.json()["snapshot"]["project_count"] == 1
     assert update.json()["snapshot"]["projects_by_health"] == {}
+
+
+def test_editing_an_updates_health_refreshes_its_report(client: TestClient, workspace: str) -> None:
+    """An update edited back to the health before it drops its health line; a new health reads in the line."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+    client.post(feed, json={"body": "Slipping", "health": "at_risk"})
+    second = client.post(feed, json={"body": "Stuck", "health": "off_track"}).json()
+    assert second["report"] == ["Health changed from At risk to Off track"]
+
+    back = client.patch(f"{feed}/{second['update_id']}", json={"health": "at_risk"}).json()
+    assert back["snapshot"]["health"] == "at_risk"
+    assert back["report"] == []
+
+    onward = client.patch(f"{feed}/{second['update_id']}", json={"health": "on_track"}).json()
+    assert onward["report"] == ["Health changed from At risk to On track"]
+    assert client.get(feed).json()["updates"][0]["report"] == onward["report"]
+    assert _get(client, workspace, initiative_id)["health"] == "on_track"
+
+
+def test_editing_an_older_updates_health_refreshes_the_next_report(client: TestClient, workspace: str) -> None:
+    """The next update diffs against the edited health, stays unedited, and the initiative keeps the newest health."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+    first = client.post(feed, json={"body": "Fine", "health": "on_track"}).json()
+    second = client.post(feed, json={"body": "Stuck", "health": "off_track"}).json()
+    client.post(feed, json={"body": "Stuck still", "health": "off_track"})
+
+    edited = client.patch(f"{feed}/{first['update_id']}", json={"health": "at_risk"})
+    assert edited.status_code == 200, edited.text
+
+    newest, middle, oldest = client.get(feed).json()["updates"]
+    assert oldest["health"] == "at_risk"
+    assert middle["update_id"] == second["update_id"]
+    assert middle["report"] == ["Health changed from At risk to Off track"]
+    assert middle["edited_at"] is None
+    assert newest["report"] == []
+    assert _get(client, workspace, initiative_id)["health"] == "off_track"
+
+
+def test_a_post_names_the_other_updates_of_the_last_few_minutes(client: TestClient, workspace: str) -> None:
+    """A create answers with the updates around it, and a read of the feed names none."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+
+    first = client.post(feed, json={"body": "Fine", "health": "on_track"}).json()
+    assert first["recent_updates"] == []
+    second = client.post(feed, json={"body": "Stuck", "health": "off_track"}).json()
+
+    assert [other["update_id"] for other in second["recent_updates"]] == [first["update_id"]]
+    assert second["recent_updates"][0]["author_name"] == "Mo Member"
+    assert all(row["recent_updates"] == [] for row in client.get(feed).json()["updates"])

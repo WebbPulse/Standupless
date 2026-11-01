@@ -9,7 +9,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   APP_HANDOFF_STORAGE_KEY,
-  pendingAppHandoffPath,
+  appHandoffReturn,
 } from '../../lib/pendingAppHandoff';
 import { DESKTOP_HANDOFF_PATH } from '../../lib/paths';
 import DesktopHandoff from './DesktopHandoff';
@@ -147,7 +147,7 @@ describe('DesktopHandoff', () => {
     auth.value.isAuthenticated = false;
     renderPage();
     await waitFor(() => {
-      expect(pendingAppHandoffPath()).toBe(PATH);
+      expect(appHandoffReturn.read()).toBe(PATH);
     });
   });
 
@@ -167,7 +167,7 @@ describe('DesktopHandoff', () => {
     ).toBeInTheDocument();
     expect(auth.handOffToDesktop).toHaveBeenCalledWith({ url: PATH });
     expect(assign).toHaveBeenCalledWith(CALLBACK);
-    expect(pendingAppHandoffPath()).toBeNull();
+    expect(appHandoffReturn.read()).toBeNull();
   });
 
   it('reopens the same link rather than minting another', async () => {
@@ -211,9 +211,9 @@ describe('DesktopHandoff', () => {
   it('forgets the way back when the visitor stays in the browser', async () => {
     renderPage();
     await waitFor(() => {
-      expect(pendingAppHandoffPath()).toBe(PATH);
+      expect(appHandoffReturn.read()).toBe(PATH);
     });
     fireEvent.click(screen.getByTestId('desktop-handoff-stay'));
-    expect(pendingAppHandoffPath()).toBeNull();
+    expect(appHandoffReturn.read()).toBeNull();
   });
 });

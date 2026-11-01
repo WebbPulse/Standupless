@@ -761,6 +761,81 @@ export const InitiativePicker: React.FC<InitiativePickerProps> = ({
   );
 };
 
+/** Props for InitiativesPicker: the initiatives to choose from and the chosen ones. */
+export interface InitiativesPickerProps extends ProjectPickerBaseProps {
+  value: string[];
+  initiatives: InitiativeRead[];
+  onChange: (value: string[]) => void;
+}
+
+/** Picks the initiatives a project belongs to, several at once or none. */
+export const InitiativesPicker: React.FC<InitiativesPickerProps> = ({
+  value,
+  initiatives,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const chosen = initiatives.filter((initiative) =>
+    value.includes(initiative.initiative_id)
+  );
+  const options: ComboboxOption[] = initiatives.map((initiative) => ({
+    value: initiative.initiative_id,
+    label: initiative.name,
+    icon: (
+      <ProjectStatusGlyph
+        status={INITIATIVE_STATUS_GLYPHS[initiative.status]}
+      />
+    ),
+  }));
+  const text =
+    value.length === 0
+      ? variant === 'chip'
+        ? 'Initiatives'
+        : 'No initiatives'
+      : value.length === 1
+        ? (chosen[0]?.name ?? 'Unknown')
+        : `${String(value.length)} initiatives`;
+  return (
+    <Popover
+      label="Initiatives"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Initiatives"
+          icon={<LuGoal className="h-3.5 w-3.5" />}
+          text={text}
+          empty={value.length === 0}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      <Combobox
+        label="Initiatives"
+        placeholder="Add to initiatives"
+        multiple
+        options={options}
+        selected={value}
+        emptyMessage="No initiative matches"
+        onSelect={(picked) => {
+          onChange(
+            value.includes(picked)
+              ? value.filter((id) => id !== picked)
+              : [...value, picked]
+          );
+        }}
+      />
+    </Popover>
+  );
+};
+
 /** Props for HealthPicker: the project's health, or none yet. */
 export interface HealthPickerProps extends ProjectPickerBaseProps {
   value: ProjectHealth | null;

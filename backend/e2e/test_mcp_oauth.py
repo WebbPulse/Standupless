@@ -340,6 +340,9 @@ EXPECTED_TOOLS = frozenset(
         "update_issue_link",
         "delete_issue_link",
         "get_attachment",
+        "upload_attachment",
+        "create_attachment_upload",
+        "commit_attachment_upload",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.
@@ -1186,6 +1189,114 @@ class TestMcpGetAttachment:
             assert "as_url" in message and str(MAX_INLINE_IMAGE_BYTES) in message, (
                 f"the oversize refusal does not name as_url and the cap: {message!r}"
             )
+        finally:
+            for attachment_id in uploaded:
+                api.delete(f"{base}/{attachment_id}", params={"issue_id": issue_id})
+
+
+class TestMcpUploadAttachment:
+    """The upload tools end to end: upload, embed and read back, through an OAuth minted token."""
+
+    @WRITES
+    def test_an_uploaded_image_embeds_renders_and_reads_back(
+        self,
+        anon: Any,
+        api: Any,
+        mcp_resource: str,
+        mcp_workspace: "dict[str, Any]",
+    ) -> None:
+        """Both tool paths store a file a web reader can open and `get_attachment` returns.
+
+        The inline upload proves the integrations function can write to the attachments
+        bucket, which no unit test can, and the presigned pair proves its signature is
+        one S3 accepts. The media route and the anonymous content path are what the
+        page uses to render the embed.
+        """
+        workspace_id = str(mcp_workspace["id"])
+        token = _mint_token(anon, api, mcp_resource, workspace_id)
+        issue = _tool(
+            api, token, 1, "create_issue", {"team_id": str(mcp_workspace["team"]["id"]), "title": "E2E MCP upload"}
+        )
+        issue_id = str(issue["issue_id"])
+        base = f"/api/workspaces/{workspace_id}/attachments"
+        uploaded: list[str] = []
+        try:
+            inline = _tool(
+                api,
+                token,
+                2,
+                "upload_attachment",
+                {
+                    "issue_id": issue["issue_key"],
+                    "filename": "e2e-inline.png",
+                    "content_type": "image/png",
+                    "content_base64": base64.b64encode(PIXEL_PNG).decode("ascii"),
+                },
+            )
+            uploaded.append(str(inline["attachment_id"]))
+
+            started = _tool(
+                api,
+                token,
+                3,
+                "create_attachment_upload",
+                {
+                    "issue_id": issue_id,
+                    "filename": "e2e-presigned.png",
+                    "content_type": "image/png",
+                    "size_bytes": len(PIXEL_PNG),
+                },
+            )
+            signed = {name: value for name, value in started["headers"].items() if name.lower() != "content-length"}
+            put = httpx.put(started["url"], content=PIXEL_PNG, headers=signed, timeout=60)
+            assert put.status_code in (200, 204), f"the presigned PUT answered {put.status_code}: {put.text[:400]}"
+            presigned = _tool(
+                api,
+                token,
+                4,
+                "commit_attachment_upload",
+                {"issue_id": issue_id, "upload_id": started["upload_id"], "ticket": started["ticket"]},
+            )
+            uploaded.append(str(presigned["attachment_id"]))
+
+            _tool(
+                api,
+                token,
+                5,
+                "add_comment",
+                {"issue_id": issue_id, "body": f"{inline['markdown']} and {presigned['markdown']}"},
+            )
+            comments = _tool(api, token, 6, "list_comments", {"issue_id": issue_id})
+            embedded = [row["attachment_id"] for row in comments["comments"][0]["attachments"]]
+            assert embedded == uploaded, f"the comment embeds {embedded}, not the uploads {uploaded}."
+
+            media = api.get(f"{base}/media", params={"issue_id": issue_id})
+            assert media.status_code == 200, media.text[:400]
+            for request_id, attachment_id in enumerate(uploaded, start=7):
+                answered = _rpc(
+                    api,
+                    token,
+                    "tools/call",
+                    request_id,
+                    {"name": "get_attachment", "arguments": {"issue_id": issue_id, "attachment_id": attachment_id}},
+                )
+                assert "error" not in answered, f"get_attachment returned a protocol error: {answered['error']}"
+                image = answered["result"]["content"][1]
+                assert base64.b64decode(image["data"]) == PIXEL_PNG, "the image block is not the bytes uploaded."
+
+                media_token = media.json()["tokens"].get(attachment_id)
+                assert media_token, "the media route minted no token for the upload."
+                content = f"{base}/{attachment_id}/content"
+                opened = anon.get(content, params={"issue_id": issue_id, "token": media_token})
+                assert opened.status_code == 302, opened.text[:400]
+                fetched = httpx.get(opened.headers["location"], timeout=30)
+                assert fetched.status_code == 200 and fetched.content == PIXEL_PNG, (
+                    f"the embed opened {fetched.status_code} or other bytes."
+                )
+
+            activity = _tool(api, token, 9, "list_issue_activity", {"issue_id": issue_id, "source": "mcp"})
+            added = [row for row in activity["activity"] if row["kind"] == "attachment_added"]
+            assert len(added) == 2, f"the feed shows {added} for two MCP uploads."
         finally:
             for attachment_id in uploaded:
                 api.delete(f"{base}/{attachment_id}", params={"issue_id": issue_id})

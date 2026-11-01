@@ -36,6 +36,7 @@ ActivityRead = TypedDict(
             "mentioned",
             "thread_resolved",
             "thread_unresolved",
+            "attachment_added",
         ],
         "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None],
@@ -1333,6 +1334,41 @@ class InsightPoint(TypedDict):
     title: str
 
 
+class InsightsDisplay(TypedDict, closed=True):
+    group_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    layout: NotRequired[Literal["both", "chart", "table"] | None]
+    measure: NotRequired[Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"] | None]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+
+
 class InstallUrlRead(TypedDict):
     expires_at: str
     url: str
@@ -1833,12 +1869,14 @@ class NotificationChannels(TypedDict):
     chat: NotRequired[bool]
     email: bool
     in_app: bool
+    push: NotRequired[bool]
 
 
 class NotificationChannelsUpdate(TypedDict):
     chat: NotRequired[bool | None]
     email: NotRequired[bool | None]
     in_app: NotRequired[bool | None]
+    push: NotRequired[bool | None]
 
 
 class NotificationRead(TypedDict):
@@ -1980,6 +2018,7 @@ class ProjectCreate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    initiative_ids: NotRequired[list[str] | None]
     label_ids: NotRequired[list[str]]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
@@ -2171,6 +2210,7 @@ class ProjectUpdate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    initiative_ids: NotRequired[list[str] | None]
     label_ids: NotRequired[list[str] | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str] | None]
@@ -2351,6 +2391,15 @@ class PulseReadMarker(TypedDict):
     read_at: str
 
 
+class PushDeviceRemove(TypedDict):
+    token: str
+
+
+class PushDeviceWrite(TypedDict):
+    platform: Literal["ios"]
+    token: str
+
+
 class ReactionGroupRead(TypedDict):
     count: int
     emoji: str
@@ -2368,6 +2417,15 @@ class ReactionWrite(TypedDict):
     issue_id: NotRequired[str | None]
     target_id: str
     target_kind: Literal["issue", "comment"]
+
+
+class RecentUpdateRead(TypedDict):
+    author_id: str
+    author_name: NotRequired[str | None]
+    created_at: str
+    health: Literal["on_track", "at_risk", "off_track"]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
+    update_id: str
 
 
 class RecurringCreate(TypedDict):
@@ -3241,6 +3299,7 @@ class TeamCreate(TypedDict):
 class TeamDisplayDefaultsRead(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
     effective_projects_display: NotRequired[ProjectsDisplay]
+    insights_display: NotRequired[InsightsDisplay | None]
     list_display: NotRequired[DisplayOptionsBody | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     team_id: str
@@ -3250,6 +3309,7 @@ class TeamDisplayDefaultsRead(TypedDict):
 
 class TeamDisplayDefaultsUpdate(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     list_display: NotRequired[DisplayOptionsBody | None]
     projects_display: NotRequired[ProjectsDisplay | None]
 
@@ -3580,6 +3640,7 @@ class ViewCreate(TypedDict):
     ]
     group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
@@ -3691,6 +3752,7 @@ class ViewRead(TypedDict):
     group_by: NotRequired[str | None]
     group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     kind: str
     layout: str
     name: str
@@ -3742,6 +3804,7 @@ class ViewUpdate(TypedDict):
     ]
     group_header: NotRequired[Literal["count", "estimate"] | None]
     icon: NotRequired[str | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     order_completed_by_recency: NotRequired[bool | None]
@@ -4640,6 +4703,7 @@ class InitiativeUpdateRead(TypedDict):
     initiative_id: str
     previous_snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
     reactions: NotRequired[list[ReactionGroupRead]]
+    recent_updates: NotRequired[list[RecentUpdateRead]]
     report: NotRequired[list[str]]
     snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
@@ -4991,6 +5055,7 @@ class ProjectRead(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]
     initiative_id: NotRequired[str | None]
+    initiative_ids: NotRequired[list[str]]
     label_ids: NotRequired[list[str]]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
@@ -5062,6 +5127,7 @@ class ProjectUpdateRead(TypedDict):
     previous_snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
+    recent_updates: NotRequired[list[RecentUpdateRead]]
     snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     update_id: str

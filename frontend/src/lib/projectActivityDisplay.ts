@@ -259,6 +259,18 @@ const describeField = (
           'as teams'
         ),
       };
+    case 'initiative_ids':
+      return {
+        icon: 'initiative',
+        parts: listChange(
+          asList(row.from),
+          asList(row.to),
+          (id) =>
+            lookups.initiatives.find((item) => item.initiative_id === id)
+              ?.name ?? 'an initiative',
+          'as initiatives'
+        ),
+      };
     case 'initiative_id': {
       if (to === null) {
         return { icon: 'initiative', parts: [text('removed the initiative')] };

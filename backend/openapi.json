@@ -136,7 +136,8 @@
               "subscriber_removed",
               "mentioned",
               "thread_resolved",
-              "thread_unresolved"
+              "thread_unresolved",
+              "attachment_added"
             ],
             "title": "Kind",
             "type": "string"
@@ -9390,7 +9391,7 @@
         "type": "object"
       },
       "InitiativeUpdateRead": {
-        "description": "One initiative update as the API returns it, with this caller's edit right.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\ninitiative when this update was posted, and when the one before it was.\n`report` is that diff as plain lines, empty on a first update, on one\nposted before reports existed, and when `hide_details` says its author hid it.\n`reactions` and `comment_count` summarise the update's thread, as on a\nproject update.",
+        "description": "One initiative update as the API returns it, with this caller's edit right.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\ninitiative when this update was posted, and when the one before it was.\n`report` is that diff as plain lines, empty on a first update, on one\nposted before reports existed, and when `hide_details` says its author hid it.\n`reactions` and `comment_count` summarise the update's thread, as on a\nproject update. `recent_updates` is filled only on the answer to a create.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -9460,6 +9461,13 @@
               "$ref": "#/components/schemas/ReactionGroupRead"
             },
             "title": "Reactions",
+            "type": "array"
+          },
+          "recent_updates": {
+            "items": {
+              "$ref": "#/components/schemas/RecentUpdateRead"
+            },
+            "title": "Recent Updates",
             "type": "array"
           },
           "report": {
@@ -9959,6 +9967,95 @@
           "hours"
         ],
         "title": "InsightPoint",
+        "type": "object"
+      },
+      "InsightsDisplay": {
+        "additionalProperties": false,
+        "description": "The view insights panel a list opens with for every viewer without picks of their own.\n\nSaved on a view or as a team's display default. A null `measure`, `group_by`\nor `layout` keeps the panel's built-in choice, and a null `segment_by` draws\nno segments.",
+        "properties": {
+          "group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group By"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "both",
+                  "chart",
+                  "table"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
+          "measure": {
+            "anyOf": [
+              {
+                "enum": [
+                  "count",
+                  "points",
+                  "cycle_time",
+                  "lead_time",
+                  "triage_time",
+                  "issue_age"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measure"
+          },
+          "segment_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment By"
+          }
+        },
+        "title": "InsightsDisplay",
         "type": "object"
       },
       "InsightsRead": {
@@ -14983,7 +15080,7 @@
         "type": "object"
       },
       "NotificationChannels": {
-        "description": "Where one kind of notification is delivered: the inbox, email and chat direct messages.\n\n`chat` covers every chat account the person linked, Slack or Discord, and only\nreaches them once one is linked.",
+        "description": "Where one kind of notification is delivered: the inbox, email, chat direct messages and push.\n\n`chat` covers every chat account the person linked, Slack or Discord, and only\nreaches them once one is linked. `push` reaches the mobile apps they signed in to.",
         "properties": {
           "chat": {
             "default": true,
@@ -14996,6 +15093,11 @@
           },
           "in_app": {
             "title": "In App",
+            "type": "boolean"
+          },
+          "push": {
+            "default": true,
+            "title": "Push",
             "type": "boolean"
           }
         },
@@ -15041,6 +15143,17 @@
               }
             ],
             "title": "In App"
+          },
+          "push": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push"
           }
         },
         "title": "NotificationChannelsUpdate",
@@ -15831,7 +15944,24 @@
                 "type": "null"
               }
             ],
+            "description": "One initiative to put the project in, the older single spelling",
             "title": "Initiative Id"
+          },
+          "initiative_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every initiative the project belongs to, the first its primary one; wins over `initiative_id`",
+            "title": "Initiative Ids"
           },
           "label_ids": {
             "items": {
@@ -16759,7 +16889,16 @@
                 "type": "null"
               }
             ],
+            "description": "The first of `initiative_ids`, kept for clients that read a single initiative",
             "title": "Initiative Id"
+          },
+          "initiative_ids": {
+            "description": "Every initiative the project belongs to, the primary one first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Initiative Ids",
+            "type": "array"
           },
           "label_ids": {
             "description": "The workspace project labels the project carries",
@@ -17566,7 +17705,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.\n`base_body_version` is the description's `body_version` the editor loaded.\nSent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the\ncurrent description and its version when someone else changed it since.\nLeft out, or sent with a patch that leaves the description alone, it holds\nnothing back.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of every initiative.\n`initiative_ids` replaces the whole set of initiatives, an empty list taking\nthe project out of all of them, and wins over `initiative_id`, which sets\nthe project to that one initiative alone.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.\n`base_body_version` is the description's `body_version` the editor loaded.\nSent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the\ncurrent description and its version when someone else changed it since.\nLeft out, or sent with a patch that leaves the description alone, it holds\nnothing back.",
         "properties": {
           "base_body_version": {
             "anyOf": [
@@ -17659,7 +17798,24 @@
                 "type": "null"
               }
             ],
+            "description": "One initiative to leave the project in alone, or null for none",
             "title": "Initiative Id"
+          },
+          "initiative_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The whole new set of initiatives, the first its primary one; wins over `initiative_id`",
+            "title": "Initiative Ids"
           },
           "label_ids": {
             "anyOf": [
@@ -18201,7 +18357,7 @@
         "type": "object"
       },
       "ProjectUpdateRead": {
-        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\nproject when this update was posted, and when the one before it was. A null\n`snapshot` is an update posted before reports existed, which shows none,\nand a null `previous_snapshot` beside a snapshot is a first update, whose\nreport is a baseline. `hide_details` is the author's choice to hide it.",
+        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\nproject when this update was posted, and when the one before it was. A null\n`snapshot` is an update posted before reports existed, which shows none,\nand a null `previous_snapshot` beside a snapshot is a first update, whose\nreport is a baseline. `hide_details` is the author's choice to hide it.\n`recent_updates` is filled only on the answer to a create.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -18271,6 +18427,13 @@
               "$ref": "#/components/schemas/ReactionGroupRead"
             },
             "title": "Reactions",
+            "type": "array"
+          },
+          "recent_updates": {
+            "items": {
+              "$ref": "#/components/schemas/RecentUpdateRead"
+            },
+            "title": "Recent Updates",
             "type": "array"
           },
           "snapshot": {
@@ -19067,6 +19230,42 @@
         "title": "PulseReadMarker",
         "type": "object"
       },
+      "PushDeviceRemove": {
+        "description": "The body unregistering a phone, carrying the token so no access log holds it.",
+        "properties": {
+          "token": {
+            "pattern": "^[0-9a-fA-F]{32,512}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "PushDeviceRemove",
+        "type": "object"
+      },
+      "PushDeviceWrite": {
+        "description": "The body registering a phone for push: its platform and the provider's token for it.",
+        "properties": {
+          "platform": {
+            "const": "ios",
+            "title": "Platform",
+            "type": "string"
+          },
+          "token": {
+            "pattern": "^[0-9a-fA-F]{32,512}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "token"
+        ],
+        "title": "PushDeviceWrite",
+        "type": "object"
+      },
       "ReactionGroupRead": {
         "description": "One emoji's reactions on one target.\n\n`reacted` is resolved against the calling user, which is what lets the frontend\nrender the caller's own reaction as pressed without a second read.",
         "properties": {
@@ -19165,6 +19364,73 @@
           "emoji"
         ],
         "title": "ReactionWrite",
+        "type": "object"
+      },
+      "RecentUpdateRead": {
+        "description": "Another update posted on the same project or initiative close to the one just created.\n\nA create answers with these so its author learns that someone else just\nreported, since the newest update is the one that sets the health.",
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "health": {
+            "enum": [
+              "on_track",
+              "at_risk",
+              "off_track"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system",
+                  "email",
+                  "slack"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "update_id": {
+            "title": "Update Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "update_id",
+          "author_id",
+          "health",
+          "created_at"
+        ],
+        "title": "RecentUpdateRead",
         "type": "object"
       },
       "RecurringCreate": {
@@ -25152,6 +25418,16 @@
           "effective_projects_display": {
             "$ref": "#/components/schemas/ProjectsDisplay"
           },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "list_display": {
             "anyOf": [
               {
@@ -25213,6 +25489,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
               },
               {
                 "type": "null"
@@ -28821,6 +29107,16 @@
             ],
             "title": "Icon"
           },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "default": "list",
             "enum": [
@@ -29042,7 +29338,7 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view. `collapsed_groups` names the\ngroups folded and the board columns and swimlanes hidden, empty when none is.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view. `insights_display` is the insights\npanel the view opens with for a viewer without picks of their own, null when\nnone was set and on a project view. `collapsed_groups` names the groups folded\nand the board columns and swimlanes hidden, empty when none is.",
         "properties": {
           "collapsed_groups": {
             "items": {
@@ -29138,6 +29434,16 @@
               }
             ],
             "title": "Icon"
+          },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "kind": {
             "title": "Kind",
@@ -29285,7 +29591,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view. `owner_id` hands a shared view to another\nmember, the owner's or a workspace admin's call.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, `projects_display`\napplies only to a project view and `insights_display` only to an issue view,\nnull clearing it. `owner_id` hands a shared view to another member, the\nowner's or a workspace admin's call.",
         "properties": {
           "collapsed_groups": {
             "anyOf": [
@@ -29424,6 +29730,16 @@
               }
             ],
             "title": "Icon"
+          },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "layout": {
             "anyOf": [
@@ -45706,6 +46022,110 @@
           }
         ],
         "summary": "Unread Count",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/devices": {
+      "post": {
+        "description": "Register the caller's phone for push, and set its badge.\n\nThe app calls this each time it opens a workspace, which keeps the device from\naging out and adds the workspace to what its badge counts. A device belongs to a\nperson, so a key acting for no one is refused.",
+        "operationId": "register_push_device_api_workspaces__workspace_id__inbox_devices_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushDeviceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Register Push Device",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/devices/unregister": {
+      "post": {
+        "description": "Stop push to the caller's phone and zero its badge, on the way to signing out.\n\nOnly the caller's own partition is touched, so naming someone else's token removes\nnothing, and the token travels in the body so no access log holds it.",
+        "operationId": "unregister_push_device_api_workspaces__workspace_id__inbox_devices_unregister_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushDeviceRemove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unregister Push Device",
         "tags": [
           "views"
         ]

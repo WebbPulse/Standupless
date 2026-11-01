@@ -529,17 +529,48 @@ describe('ProjectDetail', () => {
 
   it('puts the project in an initiative from the properties row', async () => {
     const user = userEvent.setup();
-    updateProject.mockResolvedValue({ ...launch, initiative_id: 'ini-1' });
+    updateProject.mockResolvedValue({
+      ...launch,
+      initiative_id: 'ini-1',
+      initiative_ids: ['ini-1'],
+    });
     renderPage();
 
     const row = await screen.findByRole('group', { name: 'Properties' });
     await user.click(
-      within(row).getByRole('button', { name: 'Initiative: Initiative' })
+      within(row).getByRole('button', { name: 'Initiatives: Initiatives' })
     );
     await user.click(await screen.findByRole('option', { name: /Grow/ }));
 
     await waitFor(() => {
-      expect(updateProject).toHaveBeenCalledWith({ initiative_id: 'ini-1' });
+      expect(updateProject).toHaveBeenCalledWith({ initiative_ids: ['ini-1'] });
+    });
+  });
+
+  it('keeps an initiative it cannot name when taking the project out of another', async () => {
+    const user = userEvent.setup();
+    getProject.mockResolvedValue({
+      ...launch,
+      initiative_id: 'ini-1',
+      initiative_ids: ['ini-1', 'ini-hidden'],
+    });
+    updateProject.mockResolvedValue({
+      ...launch,
+      initiative_id: 'ini-hidden',
+      initiative_ids: ['ini-hidden'],
+    });
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    await user.click(
+      within(row).getByRole('button', { name: 'Initiatives: 2 initiatives' })
+    );
+    await user.click(await screen.findByRole('option', { name: /Grow/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({
+        initiative_ids: ['ini-hidden'],
+      });
     });
   });
 

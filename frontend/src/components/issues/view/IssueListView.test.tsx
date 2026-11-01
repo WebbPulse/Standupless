@@ -224,6 +224,17 @@ describe('IssueListView keys', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('opens the same rename on E', () => {
+    renderView();
+
+    press('j');
+    press('e');
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Cache the token'
+    );
+  });
+
   it('writes nothing when the rename keeps the title or is cancelled', () => {
     renderView();
 

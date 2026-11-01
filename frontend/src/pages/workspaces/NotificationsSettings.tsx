@@ -281,11 +281,16 @@ const NOT_IN_CHAT: ReadonlySet<NotificationKind> = new Set([
 ]);
 
 /** The switches a kind shows when the profile has no entry for it. */
-const ALL_ON: NotificationChannels = { in_app: true, email: true, chat: true };
+const ALL_ON: NotificationChannels = {
+  in_app: true,
+  email: true,
+  chat: true,
+  push: true,
+};
 
 /** Kinds that start with only the inbox on, matching the server's defaults. */
 const INBOX_DEFAULT: Partial<Record<NotificationKind, NotificationChannels>> = {
-  reaction: { in_app: true, email: false, chat: false },
+  reaction: { in_app: true, email: false, chat: false, push: false },
 };
 
 /** Every timezone the browser knows, with `current` kept even when it is not among them. */
@@ -328,8 +333,8 @@ const EMAIL_FORMAT_CHOICES: {
 /** The column layout the header and every row share, with a Priority column while the split inbox is on. */
 const columnsFor = (split: boolean): string =>
   split
-    ? 'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem_4rem] items-center gap-3 px-3'
-    : 'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem] items-center gap-3 px-3';
+    ? 'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem_4rem_4rem] items-center gap-3 px-3'
+    : 'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem_4rem] items-center gap-3 px-3';
 
 /** Renders the caller's notification preferences and saves each change. */
 const NotificationsSettings: React.FC = () => {
@@ -638,6 +643,7 @@ const NotificationsSettings: React.FC = () => {
                 <span className="text-center">Inbox</span>
                 <span className="text-center">Email</span>
                 <span className="text-center">Chat</span>
+                <span className="text-center">Push</span>
                 {split && <span className="text-center">Priority</span>}
               </div>
               {sectionsFor(NOTIFICATION_KINDS).map((section) => (
@@ -721,6 +727,22 @@ const NotificationsSettings: React.FC = () => {
                                 save({
                                   notification_preferences: {
                                     [kind]: { chat: event.target.checked },
+                                  },
+                                });
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`${copy.title} as a push notification`}
+                              className="h-3.5 w-3.5 rounded-xs border-line-strong"
+                              checked={channels.push !== false}
+                              disabled={saving}
+                              onChange={(event) => {
+                                save({
+                                  notification_preferences: {
+                                    [kind]: { push: event.target.checked },
                                   },
                                 });
                               }}

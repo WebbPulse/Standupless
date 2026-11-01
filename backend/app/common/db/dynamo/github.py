@@ -391,6 +391,8 @@ class IssueLink(BaseModel):
     `holds_on_merge` is true when the pull request named the key only after a
     `Refs` style word, so its merge did not finish the issue; a promotion reads it
     to leave such an issue open. A row written before it existed reads as `None`.
+    `magic_word`, `moves_status` and `holds_on_merge` are settled by the merge: a
+    release reads them later, so a pull request edited after its merge keeps them.
 
     The branch, review and check fields are copied from the pull request's
     `PullRequestState` row whenever it changes, so a read of an issue's links

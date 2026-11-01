@@ -48,7 +48,7 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
             "order": "name",
             "closed": "month",
             "zoom": "quarter",
-            "columns": ["status", "health"],
+            "columns": ["initiative", "status", "health"],
         },
     )
 
@@ -75,7 +75,7 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
         "empty": "show",
         "zoom": "quarter",
         "dependencies": "show",
-        "columns": "health,status",
+        "columns": "health,status,initiative",
     }
     read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}")
     assert read.json()["projects_display"] == view["projects_display"]
