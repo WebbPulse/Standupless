@@ -37,6 +37,9 @@ export const normalizeInsights = (
   total: body?.total ?? 0,
   issue_count: body?.issue_count ?? 0,
   groups: Array.isArray(body?.groups) ? body.groups : [],
+  segment_totals: Array.isArray(body?.segment_totals)
+    ? body.segment_totals
+    : [],
   truncated: body?.truncated === true,
   row_cap: body?.row_cap ?? 0,
   durations: body?.durations ?? null,

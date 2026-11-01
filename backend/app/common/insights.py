@@ -452,6 +452,7 @@ def build_insights(
         return estimate_points(issue.estimate) if measure == "points" else 1
 
     tallies: dict[Optional[str], _Tally] = defaultdict(_Tally)
+    segment_tallies: dict[Optional[str], _Tally] = defaultdict(_Tally)
     segment_keys: set[str] = set()
     points: list[InsightPoint] = []
     total = 0
@@ -460,6 +461,8 @@ def build_insights(
         hours = durations.get(issue.issue_id)
         total += amount
         segments = _values_of(issue, segment_by, categories) if segment_by else []
+        for segment in segments:
+            segment_tallies[segment].add(amount, hours)
         for key in _values_of(issue, group_by, categories):
             tally = tallies[key]
             tally.add(amount, hours)
@@ -484,6 +487,20 @@ def build_insights(
         _names(repositories, workspace_id, scope.team_ids, segment_by, segment_keys) if segment_by else Names()
     )
 
+    def segment_buckets(segment_rows: Mapping[Optional[str], _Tally]) -> list[InsightBucket]:
+        """The segment dimension's buckets over a set of tallies, in its display order."""
+        return [
+            InsightBucket(
+                key=segment_key,
+                label=_bucket_label(segment_by, segment_key, segment_names),
+                color=segment_names.colors.get(segment_key) if segment_key else None,
+                value=segment.value,
+                issue_count=segment.issue_count,
+                durations=summarize_hours(segment.hours) if timed else None,
+            )
+            for segment_key, segment in _ordered(segment_by, segment_rows, segment_names)
+        ]
+
     groups: list[InsightGroup] = []
     for key, tally in _ordered(group_by, tallies, group_names):
         groups.append(
@@ -494,19 +511,7 @@ def build_insights(
                 value=tally.value,
                 issue_count=tally.issue_count,
                 durations=summarize_hours(tally.hours) if timed else None,
-                segments=[
-                    InsightBucket(
-                        key=segment_key,
-                        label=_bucket_label(segment_by, segment_key, segment_names),
-                        color=segment_names.colors.get(segment_key) if segment_key else None,
-                        value=segment.value,
-                        issue_count=segment.issue_count,
-                        durations=summarize_hours(segment.hours) if timed else None,
-                    )
-                    for segment_key, segment in _ordered(segment_by, tally.segments, segment_names)
-                ]
-                if segment_by
-                else [],
+                segments=segment_buckets(tally.segments) if segment_by else [],
             )
         )
 
@@ -519,6 +524,7 @@ def build_insights(
         total=total,
         issue_count=len(issues),
         groups=groups,
+        segment_totals=segment_buckets(segment_tallies) if segment_by else [],
         truncated=truncated,
         row_cap=INSIGHTS_ROW_CAP,
         durations=summarize_hours(durations.values()) if timed else None,

@@ -112,6 +112,9 @@ class InsightsRead(BaseModel):
     figures then cover only the issues read. Under a time measure `value` is the
     number of issues measured, each bucket carries `durations`, and `durations`
     and `points` cover the whole set; both are null and empty otherwise.
+    `segment_totals` measures each segment across every issue, counting an issue
+    once per segment value however many groups it falls in, so an across all row
+    need not add up bars that can double count.
     """
 
     team_ids: list[str]
@@ -122,6 +125,7 @@ class InsightsRead(BaseModel):
     total: int
     issue_count: int
     groups: list[InsightGroup]
+    segment_totals: list[InsightBucket] = Field(default_factory=list)
     truncated: bool = False
     row_cap: int = INSIGHTS_ROW_CAP
     durations: Optional[InsightDurations] = None
