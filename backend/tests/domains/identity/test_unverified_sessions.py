@@ -136,8 +136,13 @@ def test_an_unverified_account_may_sign_in(repositories: Any, unverified: str) -
     assert refused.value.error_code == "ACCOUNT_DISABLED"
 
 
-def test_registration_signs_the_new_account_in() -> None:
+def test_registration_signs_the_new_account_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """The product turns on `unverified_sessions`, so register issues a session."""
+    monkeypatch.setenv("IDENTITY_ISSUER", "http://identity.test/api/auth")
+    monkeypatch.setenv("IDENTITY_AUDIENCE", "standupless")
+    monkeypatch.setenv("IDENTITY_ENVIRONMENT", "test")
+    monkeypatch.setenv("IDENTITY_SIGNER", "local")
+    monkeypatch.setenv("IDENTITY_SIGNING_KEY_ARNS", '["arn:aws:kms:us-west-2:000000000000:key/test-signing-key"]')
     from app.common.core.config import settings
     from app.domains.identity.package_glue import build_identity_settings
 
