@@ -51,6 +51,7 @@ ActivityKindField = Literal[
     "mentioned",
     "thread_resolved",
     "thread_unresolved",
+    "attachment_added",
 ]
 
 SortField = Literal[

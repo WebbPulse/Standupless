@@ -7,13 +7,13 @@ outside are all indistinguishable from ones that never existed.
 
 The visibility and authorship rules live in `app.common.discussion_rules`, so
 the MCP tools meet the same rule as these routes, and are re-exported here for
-the routes that already import them from this module.
+the routes that already import them from this module. The upload helpers live in
+`app.common.attachment_uploads` for the same reason.
 """
 
 from __future__ import annotations
 
-from fastapi import HTTPException, status
-
+from app.common.attachment_uploads import attachments_bucket, object_exists, unknown_upload, unprocessable
 from app.common.core.config import settings
 from app.common.discussion_rules import (
     FORBIDDEN,
@@ -47,67 +47,6 @@ __all__ = [
     "unknown_upload",
     "unprocessable",
 ]
-
-
-def unprocessable(message: str, error_code: str = "VALIDATION_ERROR") -> HTTPException:
-    """A 422 carrying one of the contract's own error codes.
-
-    The code is a parameter because M3 adds `UNSUPPORTED_MEDIA_TYPE` and
-    `UPLOAD_TOO_LARGE` beside the platform envelope's own, and a client
-    distinguishes them by code rather than by message.
-    """
-    return HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail={"error_code": error_code, "message": message},
-    )
-
-
-def unknown_upload() -> HTTPException:
-    """The 404 a commit naming a ticket this caller did not mint gets.
-
-    One answer for an absent ticket, an expired one and one minted for another
-    caller or another issue, so a commit cannot be used to probe for tickets.
-    """
-    return HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail={"error_code": "UNKNOWN_UPLOAD", "message": "No such upload"},
-    )
-
-
-def attachments_bucket() -> str:
-    """The bucket attachments are presigned against, or a 422 when none is set.
-
-    Fails closed rather than guessing a name: a function deployed without the
-    bucket or without its IAM grant refuses to sign, instead of handing out a URL
-    that S3 rejects after the client has read the whole file.
-    """
-    bucket = settings.ATTACHMENTS_BUCKET.strip()
-    if not bucket:
-        raise unprocessable("File uploads are not configured for this environment")
-    return bucket
-
-
-def object_exists(bucket: str, key: str) -> bool:
-    """Whether one object is really in the bucket.
-
-    The commit route's guard, so recording an attachment for an upload that never
-    happened is a 409 rather than a row pointing at nothing. `webbpulse.storage`
-    presigns but does not read, and a `HeadObject` is the one S3 call this service
-    makes itself; anything beyond it belongs upstream rather than here.
-
-    Any error that is not a plain absence is treated as absence too, because the
-    only use of this answer is whether to record a row, and recording one on an
-    inconclusive read is the worse failure.
-    """
-    import boto3
-    from botocore.exceptions import ClientError
-
-    client = boto3.client("s3", region_name=settings.AWS_REGION or None)
-    try:
-        client.head_object(Bucket=bucket, Key=key)
-    except ClientError:
-        return False
-    return True
 
 
 def delete_objects(bucket: str, keys: list[str]) -> None:

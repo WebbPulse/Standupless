@@ -378,6 +378,13 @@ describe('describeActivity', () => {
     );
   });
 
+  it('reads an attached file by its name', () => {
+    expect(text({ kind: 'attachment_added', to: 'screenshot.png' })).toBe(
+      'attached screenshot.png'
+    );
+    expect(text({ kind: 'attachment_added' })).toBe('attached a file');
+  });
+
   it('falls back to plain words for a field it does not know', () => {
     expect(text({ field: 'story_points' })).toBe('changed the story points');
   });

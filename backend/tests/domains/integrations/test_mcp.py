@@ -397,8 +397,11 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_issue_link",
         "delete_issue_link",
         "get_attachment",
+        "upload_attachment",
+        "create_attachment_upload",
+        "commit_attachment_upload",
     }
-    assert len(TOOLS) == 284
+    assert len(TOOLS) == 287
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
