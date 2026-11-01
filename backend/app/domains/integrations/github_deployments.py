@@ -7,8 +7,8 @@ deployment is recorded inside one queue message.
 
 Reading deployments and their statuses needs the App's Deployments read
 permission, reading a commit's pull requests needs Pull requests read, reading
-tags and Releases needs Contents read, and publishing a Release needs Contents
-write.
+a deploy's check runs and check suites needs Checks read, reading tags and
+Releases needs Contents read, and publishing a Release needs Contents write.
 """
 
 from __future__ import annotations
@@ -242,6 +242,137 @@ def successful_deployment(
     if not _succeeded(token, repository_id, deployment_id, client=client):
         return None
     return DeploymentRef(deployment_id, sha, _timestamp(body.get("created_at")), _ref(body.get("ref")))
+
+
+DEPLOY_SETTLED = "settled"
+"""Everything that deployed the commit to the environment has finished, and passed."""
+
+DEPLOY_RUNNING = "running"
+"""Something that deploys the commit to the environment has yet to finish."""
+
+DEPLOY_FAILED = "failed"
+"""What deployed the commit to the environment finished, and did not pass."""
+
+_JOB_LINK = re.compile(r"/actions/runs/\d+/job/(\d+)")
+
+_FINISHED_STATES = frozenset({SUCCESS, "inactive", "failure", "error"})
+
+_FAILED_STATES = frozenset({"failure", "error"})
+
+_PASSED_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
+
+
+@dataclass(frozen=True)
+class DeploymentRun:
+    """One deployment of a commit: its id, its newest status, and the Actions job behind it, if any."""
+
+    deployment_id: int
+    state: str | None
+    job_id: int | None
+
+
+def _job_id(status: Mapping[str, Any]) -> int | None:
+    """The Actions job a deployment status links to, or `None` when something else deployed it."""
+    for name in ("log_url", "target_url"):
+        value = status.get(name)
+        match = _JOB_LINK.search(value) if isinstance(value, str) else None
+        if match is not None:
+            return int(match.group(1))
+    return None
+
+
+def _deployment_runs(
+    token: str, repository_id: int | str, sha: str, environment: str, *, client: httpx.Client | None
+) -> list[DeploymentRun]:
+    """The commit's newest deployments of one environment with their newest statuses, newest first."""
+    base = repository_path(repository_id)
+    path = f"{base}/deployments?sha={sha}&environment={quote(environment, safe='')}&per_page={DEPLOYMENT_PAGE_SIZE}"
+    body = _request("GET", path, token=token, client=client)
+    if not isinstance(body, list):
+        raise GitHubError("the deployments call answered no list")
+    runs: list[DeploymentRun] = []
+    for entry in body:
+        deployment_id = entry.get("id") if isinstance(entry, Mapping) else None
+        if not isinstance(deployment_id, int):
+            continue
+        statuses_path = f"{base}/deployments/{deployment_id}/statuses?per_page=1"
+        statuses = _request("GET", statuses_path, token=token, client=client)
+        newest = statuses[0] if isinstance(statuses, list) and statuses and isinstance(statuses[0], Mapping) else {}
+        state = newest.get("state")
+        runs.append(DeploymentRun(deployment_id, state if isinstance(state, str) else None, _job_id(newest)))
+    return sorted(runs, key=lambda run: run.deployment_id, reverse=True)
+
+
+def _external_verdict(runs: list[DeploymentRun]) -> str:
+    """How deployments with no Actions job stand: any unfinished one holds, then the newest decides."""
+    if any(run.state not in _FINISHED_STATES for run in runs):
+        return DEPLOY_RUNNING
+    return DEPLOY_FAILED if runs and runs[0].state in _FAILED_STATES else DEPLOY_SETTLED
+
+
+def _actions_verdict(
+    token: str, repository_id: int | str, runs: list[DeploymentRun], *, client: httpx.Client | None
+) -> str:
+    """How deployments from Actions jobs stand, judged by the check suites their jobs belong to.
+
+    A job's id is its check run's id and a workflow run is one check suite, whose
+    conclusion follows the run's latest attempt, so a re-run needs nothing more. A
+    failed suite is forgiven only by a newer passing one that ran every deployment
+    job it did, which is the same deploy dispatched again. A job with no check run
+    yet is still starting.
+    """
+    base = repository_path(repository_id)
+    jobs_by_suite: dict[int, set[str]] = {}
+    for run in runs:
+        try:
+            check = _object(_request("GET", f"{base}/check-runs/{run.job_id}", token=token, client=client), "check run")
+        except GitHubNotFound:
+            return DEPLOY_RUNNING
+        suite = check.get("check_suite")
+        suite_id = suite.get("id") if isinstance(suite, Mapping) else None
+        if not isinstance(suite_id, int):
+            raise GitHubError("the check run call answered no check suite")
+        jobs_by_suite.setdefault(suite_id, set()).add(str(check.get("name") or ""))
+    failed: set[int] = set()
+    for suite_id in jobs_by_suite:
+        suite = _object(_request("GET", f"{base}/check-suites/{suite_id}", token=token, client=client), "check suite")
+        if suite.get("status") != "completed":
+            return DEPLOY_RUNNING
+        if suite.get("conclusion") not in _PASSED_CONCLUSIONS:
+            failed.add(suite_id)
+    for suite_id in failed:
+        if not any(
+            newer > suite_id and newer not in failed and jobs_by_suite[suite_id] <= jobs
+            for newer, jobs in jobs_by_suite.items()
+        ):
+            return DEPLOY_FAILED
+    return DEPLOY_SETTLED
+
+
+def deploy_verdict(
+    token: str, repository_id: int | str, sha: str, environment: str, *, client: httpx.Client | None = None
+) -> str:
+    """Whether the deploy of a commit to an environment has finished, and whether it passed.
+
+    Counting the commit's deployments cannot answer this, because Actions opens a
+    job's deployment only when the job starts: the first job's success can arrive
+    while it is the only deployment there is. So the workflow run behind each
+    deployment is judged whole. Anything unfinished answers running, before any
+    failure, since a re-run in progress may yet pass.
+    """
+    if not _is_sha(sha):
+        raise ValueError("a deploy verdict needs a commit sha")
+    runs = _deployment_runs(token, repository_id, sha, environment, client=client)
+    if not runs:
+        return DEPLOY_RUNNING
+    verdicts = {
+        _external_verdict([run for run in runs if run.job_id is None]),
+        _actions_verdict(token, repository_id, [run for run in runs if run.job_id is not None], client=client),
+    }
+    for verdict in (DEPLOY_RUNNING, DEPLOY_FAILED):
+        if verdict in verdicts:
+            return verdict
+    return DEPLOY_SETTLED
 
 
 SEED_SCANNED = 20
