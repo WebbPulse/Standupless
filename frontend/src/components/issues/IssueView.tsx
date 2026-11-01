@@ -131,7 +131,10 @@ import {
   OPEN_IN_CODING_TOOL_LABEL,
 } from '../../lib/codingTools';
 import { errorMessage } from '../../lib/errors';
-import { useRecordRecentIssue } from '../../lib/recentIssues';
+import {
+  isUnreadableIssue,
+  useRecordRecentIssue,
+} from '../../lib/recentIssues';
 import {
   parentOfIssue,
   subIssueDialogPresets,
@@ -1049,7 +1052,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
         />
       )}
 
-      {error !== null && (
+      {error !== null && (issue === null || isUnreadableIssue(error)) && (
         <div className="px-4 pt-4 lg:px-6">
           <ErrorAlert
             message={errorMessage(error, 'Could not load this issue.')}

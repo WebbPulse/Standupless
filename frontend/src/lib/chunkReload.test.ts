@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CHUNK_RELOAD_STORAGE_KEY,
   CHUNK_RELOAD_WINDOW_MS,
+  installChunkRecovery,
   isChunkLoadError,
+  joinChunkReload,
   reloadOnceForChunkError,
 } from './chunkReload';
 
@@ -80,5 +82,26 @@ describe('reloadOnceForChunkError', () => {
     const reload = vi.fn();
     expect(reloadOnceForChunkError(reload, 1_000)).toBe(false);
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe('a chunk Vite failed to load', () => {
+  it('reloads without cancelling the event, so the import still rejects', () => {
+    const reload = vi.fn();
+    installChunkRecovery(reload);
+    const event = new Event('vite:preloadError', { cancelable: true });
+
+    window.dispatchEvent(event);
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('joins a reload already on its way instead of refusing it', () => {
+    const reload = vi.fn();
+    reloadOnceForChunkError(reload, Date.now());
+
+    expect(joinChunkReload()).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });
