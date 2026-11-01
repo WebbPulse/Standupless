@@ -61,7 +61,11 @@ import {
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { FOCUS_SAVE_REFUSED } from '../../../lib/focusGrouping';
-import { insightsFilters, narrowTo } from '../../../lib/insights';
+import {
+  INSIGHTS_PANEL_KEYS,
+  insightsFilters,
+  narrowTo,
+} from '../../../lib/insights';
 import { widgetSourceFor } from '../../../lib/dashboards';
 import {
   groupFieldsFor,
@@ -501,6 +505,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const [saving, setSaving] = useState<Saving>(null);
   const [updating, setUpdating] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [insightsExpanded, setInsightsExpanded] = useState(false);
   const [defaultBusy, setDefaultBusy] = useState(false);
 
   const state = useMemo(() => parseViewState(params, base), [params, base]);
@@ -839,6 +844,21 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     reset();
   };
 
+  const toggleInsights = (): void => {
+    setInsightsOpen((open) => !open);
+    setInsightsExpanded(false);
+  };
+
+  useShortcut({
+    keys: INSIGHTS_PANEL_KEYS,
+    label: 'Toggle view insights',
+    scope: 'page',
+    group: 'View',
+    handler: (event) => {
+      event?.preventDefault();
+      toggleInsights();
+    },
+  });
   useShortcut({
     keys: SAVE_VIEW_KEYS,
     label: 'Save as view',
@@ -951,18 +971,15 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         <span className="flex-1" />
         {viewControls}
         {viewsMenu}
-        <Button
+        <IconButton
           size="sm"
-          variant="secondary"
-          className="gap-1.5"
+          label={`${insightsOpen ? 'Close' : 'Open'} view insights (${displayKeys(INSIGHTS_PANEL_KEYS)[0] ?? ''})`}
           aria-pressed={insightsOpen}
-          onClick={() => {
-            setInsightsOpen((open) => !open);
-          }}
+          className={insightsOpen ? 'bg-raised text-text' : ''}
+          onClick={toggleInsights}
         >
           <LuChartBar aria-hidden="true" className="h-3.5 w-3.5" />
-          Insights
-        </Button>
+        </IconButton>
         <DisplayMenu
           state={state}
           onChange={setState}
@@ -1102,7 +1119,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       flush
     >
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          className={`min-h-0 min-w-0 flex-1 flex-col ${insightsOpen && insightsExpanded ? 'hidden' : 'flex'}`}
+        >
           {notice !== undefined && <div className="px-4 pt-3">{notice}</div>}
           <IssueListView
             slug={slug}
@@ -1129,6 +1148,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         </div>
         {insightsOpen && (
           <InsightsPanel
+            key={scopeKey}
             workspaceId={workspaceId}
             scopeKey={scopeKey}
             filters={panelFilters}
@@ -1139,10 +1159,16 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
                 filters: narrowTo(state.filters, field, value),
               });
             }}
-            onClose={() => {
-              setInsightsOpen(false);
+            expanded={insightsExpanded}
+            onToggleExpanded={() => {
+              setInsightsExpanded((grown) => !grown);
             }}
-            className="max-h-[45%] border-t border-line lg:max-h-none lg:w-80 lg:shrink-0 lg:border-t-0 lg:border-l xl:w-96"
+            onClose={toggleInsights}
+            className={
+              insightsExpanded
+                ? 'min-w-0 flex-1'
+                : 'max-h-[45%] border-t border-line lg:max-h-none lg:w-96 lg:shrink-0 lg:border-t-0 lg:border-l xl:w-[28rem]'
+            }
           />
         )}
       </div>
