@@ -30,19 +30,17 @@ interface AuthFixture {
   platform: string | null;
 }
 
-const auth = vi.hoisted(
-  (): AuthFixture => ({
-    value: {
-      isAuthenticated: true,
-      isLoading: false,
-      user: { email: 'person@example.com' },
-      logout: vi.fn(),
-    },
-    handOffToDesktop: vi.fn(),
-    copy: vi.fn(),
-    platform: 'linux',
-  })
-);
+const auth = vi.hoisted((): AuthFixture => ({
+  value: {
+    isAuthenticated: true,
+    isLoading: false,
+    user: { email: 'person@example.com' },
+    logout: vi.fn(),
+  },
+  handOffToDesktop: vi.fn(),
+  copy: vi.fn(),
+  platform: 'linux',
+}));
 
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => auth.value }));
 
