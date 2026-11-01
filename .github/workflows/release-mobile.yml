@@ -159,6 +159,7 @@ jobs:
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>manual</string>
+            <key>testFlightInternalTestingOnly</key><true/>
             <key>provisioningProfiles</key>
             <dict><key>${BUNDLE_ID}</key><string>${PROFILE_UUID}</string></dict>
           </dict>
@@ -171,7 +172,38 @@ jobs:
           mkdir -p dist
           cp "$RUNNER_TEMP"/export/*.ipa "dist/standupless-ios-${ENVIRONMENT}.ipa"
 
-      - name: Upload the build
+      - name: Upload to TestFlight
+        if: env.SIGNING_ENABLED == 'true' && matrix.environment == 'production'
+        working-directory: mobile/ios/App
+        env:
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          KEY_FILE="$KEY_DIR/AuthKey_${API_KEY_ID}.p8"
+          mkdir -p "$KEY_DIR"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          if grep -q 'BEGIN PRIVATE KEY' <<<"$API_KEY_CONTENT"; then
+            printf '%s\n' "$API_KEY_CONTENT" >"$KEY_FILE"
+          else
+            base64 --decode <<<"$API_KEY_CONTENT" >"$KEY_FILE" 2>/dev/null || true
+          fi
+          if ! grep -q 'BEGIN PRIVATE KEY' "$KEY_FILE"; then
+            echo "::error::APPLE_API_KEY holds neither a .p8 key nor a base64 encoded one"
+            exit 1
+          fi
+          unset API_KEY_CONTENT
+          xcrun altool --upload-app \
+            --type ios \
+            --file dist/standupless-ios-production.ipa \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$API_ISSUER"
+
+      - name: Upload the unsigned build
+        if: env.SIGNING_ENABLED != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mobile-ios-${{ matrix.environment }}
@@ -286,5 +318,5 @@ jobs:
             gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" \
               --verify-tag --latest=false \
               --title "Standupless mobile ${VERSION}" \
-              --notes "Standupless mobile ${VERSION}. Store builds are signed .ipa and .aab files; until signing is set up these are an iOS simulator app and an Android debug APK. See mobile/SIGNING.md."
+              --notes "Standupless mobile ${VERSION}. Signed iOS builds go to TestFlight and are not attached here. Until its signing is set up, Android is a debug APK. See mobile/SIGNING.md."
           fi
