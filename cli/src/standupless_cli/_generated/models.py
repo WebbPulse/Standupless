@@ -36,6 +36,7 @@ ActivityRead = TypedDict(
             "mentioned",
             "thread_resolved",
             "thread_unresolved",
+            "attachment_added",
         ],
         "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None],

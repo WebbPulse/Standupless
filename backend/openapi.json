@@ -136,7 +136,8 @@
               "subscriber_removed",
               "mentioned",
               "thread_resolved",
-              "thread_unresolved"
+              "thread_unresolved",
+              "attachment_added"
             ],
             "title": "Kind",
             "type": "string"

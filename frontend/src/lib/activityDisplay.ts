@@ -591,6 +591,11 @@ export const describeActivity = (
           ? 'reopened a comment thread by replying'
           : 'reopened a comment thread',
       ]);
+    case 'attachment_added':
+      return describe('other', [
+        'attached',
+        typeof entry.to === 'string' && entry.to !== '' ? entry.to : 'a file',
+      ]);
     default:
       return describe('other', [humanizeName(String(entry.kind))]);
   }

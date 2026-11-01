@@ -59,6 +59,7 @@ ActivityKind = Literal[
     "mentioned",
     "thread_resolved",
     "thread_unresolved",
+    "attachment_added",
 ]
 
 ACTIVITY_KINDS: tuple[str, ...] = (
@@ -77,6 +78,7 @@ ACTIVITY_KINDS: tuple[str, ...] = (
     "mentioned",
     "thread_resolved",
     "thread_unresolved",
+    "attachment_added",
 )
 
 

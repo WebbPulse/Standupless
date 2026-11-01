@@ -1071,7 +1071,8 @@ export type ActivityKind =
   | 'subscriber_removed'
   | 'mentioned'
   | 'thread_resolved'
-  | 'thread_unresolved';
+  | 'thread_unresolved'
+  | 'attachment_added';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the

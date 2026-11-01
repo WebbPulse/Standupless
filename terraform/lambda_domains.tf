@@ -826,9 +826,9 @@ resource "aws_iam_role_policy" "lambda_domain" {
       ] : [],
       each.key == "integrations" ? [
         {
-          Sid      = "ReadAttachmentObjectsForMcp"
+          Sid      = "ReadWriteAttachmentObjectsForMcp"
           Effect   = "Allow"
-          Action   = ["s3:GetObject"]
+          Action   = ["s3:GetObject", "s3:PutObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
         },
       ] : [],
