@@ -2,7 +2,7 @@
  * Moves a signed in session onto a token that carries a confirmed address.
  */
 
-import { getIdentityClient } from './identityClient';
+import { getIdentityClient } from '../api/identityClient';
 
 /**
  * Rotates the access token so it carries the confirmed address, then reads the

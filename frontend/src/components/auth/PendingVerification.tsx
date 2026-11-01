@@ -13,7 +13,7 @@ import AuthLayout from '../../pages/authentication/AuthLayout';
 import AuthSubmitButton from '../../pages/authentication/AuthSubmitButton';
 import { apiClient } from '../../api/client';
 import { CURRENT_USER_PATH, getIdentityClient } from '../../api/identityClient';
-import { recheckVerification } from '../../api/verification';
+import { recheckVerification } from '../../lib/verification';
 import { useAuth } from '../../hooks/useAuth';
 import { useCooldown } from '../../hooks/useCooldown';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';

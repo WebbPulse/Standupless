@@ -11,7 +11,7 @@ import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
-import { recheckVerification } from '../../api/verification';
+import { recheckVerification } from '../../lib/verification';
 import { useAuth } from '../../hooks/useAuth';
 
 /** The sentence for each refusal, used when the server sent none of its own. */
