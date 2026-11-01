@@ -67,6 +67,7 @@ def test_no_provider_id_is_invented(identity_environment: Any) -> None:
     environment = identity_environment()
     assert environment["IDENTITY_GOOGLE_CLIENT_ID"] == ""
     assert environment["IDENTITY_GITHUB_CLIENT_ID"] == ""
+    assert environment["IDENTITY_APPLE_CLIENT_ID"] == ""
 
 
 def test_a_configured_provider_id_is_carried(identity_environment: Any, monkeypatch: pytest.MonkeyPatch) -> None:

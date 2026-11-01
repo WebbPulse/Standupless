@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  APPLE_PROVIDER,
   GITHUB_PROVIDER,
   GOOGLE_PROVIDER,
   StepUpCancelledError,
@@ -21,7 +22,7 @@ import {
 import { useConnectedAccountsPanel } from '@webbpulse/auth/panels';
 import { useStepUp, type StepUpGate } from '@webbpulse/auth/react';
 import { useOAuthProviders } from '@webbpulse/discovery/react';
-import { FaGithub, FaGoogle } from 'react-icons/fa';
+import { FaApple, FaGithub, FaGoogle } from 'react-icons/fa';
 import { LuLink } from 'react-icons/lu';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -47,6 +48,8 @@ const ProviderMark: React.FC<{ provider: string }> = ({ provider }) => {
     return <FaGithub className={className} aria-hidden="true" />;
   if (provider === GOOGLE_PROVIDER)
     return <FaGoogle className={className} aria-hidden="true" />;
+  if (provider === APPLE_PROVIDER)
+    return <FaApple className={className} aria-hidden="true" />;
   return <LuLink className={className} aria-hidden="true" />;
 };
 

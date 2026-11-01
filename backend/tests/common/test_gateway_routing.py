@@ -326,3 +326,15 @@ def test_every_served_route_reaches_the_function_that_serves_it() -> None:
         "these routes are routed to a function that does not serve them, so every request "
         f"for them 404s inside the wrong Lambda: {sorted(misrouted)}"
     )
+
+
+@pytest.mark.parametrize("route_key", ["POST /api/auth/oauth/callback", "POST /api/auth/oauth/apple/notifications"])
+def test_the_routes_apple_posts_to_stay_outside_the_access_gate(route_key: str) -> None:
+    """Apple posts these cross-site with no gate cookie, so they must be explicit NONE keys.
+
+    A key left to the `/api/auth` prefix resolves to the staging access gate, and the
+    form post or notification would then die at the edge in staging only.
+    """
+    declaration = r'\s*=\s*\{\s*integration\s*=\s*"identity",\s*authorization_type\s*=\s*"NONE"\s*\}'
+    pattern = f'"{re.escape(route_key)}"{declaration}'
+    assert re.search(pattern, _terraform_source()), f"{route_key} is not an explicit NONE route on identity"

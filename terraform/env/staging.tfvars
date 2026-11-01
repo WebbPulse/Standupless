@@ -32,6 +32,9 @@ email_intake_enabled = true
 
 oauth_github_client_id = "Ov23li7DuxrwV5286wDv"
 oauth_google_client_id = "1001009632870-3frfpiq3sbvb60jpv7p4jaempf6uomh9.apps.googleusercontent.com"
+oauth_apple_client_id  = "dev.standupless.web.staging"
+oauth_apple_team_id    = "PFHGG295DL"
+oauth_apple_key_id     = "75F3UUTK3F"
 
 desktop_handoff_schemes = ["standupless-staging"]
 

@@ -25,7 +25,7 @@ import { getIdentityClient } from '../../api/identityClient';
  * the same neutral "check your email" answer, without a session, so the form
  * never says which addresses are taken. The line above the button links the
  * terms and privacy policy the account is made under, and the provider buttons
- * below offer sign up through GitHub or Google instead. A `returnTo`, such as an
+ * below offer sign up through a provider instead. A `returnTo`, such as an
  * invite link's join page, is carried through so the new account lands back
  * where it started.
  */

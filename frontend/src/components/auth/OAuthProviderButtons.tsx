@@ -5,9 +5,13 @@
  */
 
 import React from 'react';
-import { GITHUB_PROVIDER, GOOGLE_PROVIDER } from '@webbpulse/auth';
+import {
+  APPLE_PROVIDER,
+  GITHUB_PROVIDER,
+  GOOGLE_PROVIDER,
+} from '@webbpulse/auth';
 import { useOAuthProviders } from '@webbpulse/discovery/react';
-import { FaGithub, FaGoogle } from 'react-icons/fa';
+import { FaApple, FaGithub, FaGoogle } from 'react-icons/fa';
 import { LuLogIn } from 'react-icons/lu';
 import { getIdentityClient, identityOrigin } from '../../api/identityClient';
 import { cn } from '../../lib/cn';
@@ -26,6 +30,8 @@ const ProviderIcon: React.FC<{ provider: string }> = ({ provider }) => {
     return <FaGoogle className={className} aria-hidden="true" />;
   if (provider === GITHUB_PROVIDER)
     return <FaGithub className={className} aria-hidden="true" />;
+  if (provider === APPLE_PROVIDER)
+    return <FaApple className={className} aria-hidden="true" />;
   return <LuLogIn className={className} aria-hidden="true" />;
 };
 
@@ -52,7 +58,10 @@ const OAuthProviderButtons: React.FC<OAuthProviderButtonsProps> = ({
             href={disabled ? undefined : href}
             aria-disabled={disabled ? 'true' : undefined}
             className={cn(
-              'inline-flex h-8 w-full items-center justify-center gap-2 rounded-sm border border-line-strong bg-bg px-3 text-sm font-medium text-text transition-colors duration-100 hover:bg-raised',
+              'inline-flex h-8 w-full items-center justify-center gap-2 rounded-sm border px-3 text-sm font-medium transition-colors duration-100',
+              provider.id === APPLE_PROVIDER
+                ? 'border-black bg-black text-white hover:bg-black/85 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/85'
+                : 'border-line-strong bg-bg text-text hover:bg-raised',
               disabled ? 'pointer-events-none opacity-50' : ''
             )}
           >

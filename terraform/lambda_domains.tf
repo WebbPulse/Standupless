@@ -397,6 +397,9 @@ locals {
         IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
         IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
         IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
+        IDENTITY_APPLE_CLIENT_ID     = var.oauth_apple_client_id
+        IDENTITY_APPLE_TEAM_ID       = var.oauth_apple_team_id
+        IDENTITY_APPLE_KEY_ID        = var.oauth_apple_key_id
 
         IDENTITY_DESKTOP_HANDOFF_SCHEMES = jsonencode(var.desktop_handoff_schemes)
 
