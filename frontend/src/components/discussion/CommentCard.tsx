@@ -27,7 +27,9 @@
  * Any member may resolve a thread from its root's menu. A resolved thread
  * collapses to one line naming who resolved it, which expands on click to the
  * whole thread with a way to unresolve it. Replying reopens a thread, which the
- * server does, so the card only follows what the thread list says.
+ * server does, so the card only follows what the thread list says. A link to
+ * the thread's root or to one of its replies opens it, so the link has a
+ * comment to land on.
  *
  * On an issue, a comment's menu offers a new sub-issue of the issue described
  * by the comment with a link back to it, and a passage selected in a comment
@@ -48,7 +50,14 @@
  * list's key is shared, and GitHub sync and the activity feed play no part.
  */
 
-import React, { Suspense, lazy, useContext, useRef, useState } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   invalidateQueries,
   useMutationWithRefetch,
@@ -82,6 +91,7 @@ import {
 import { syncThread, unsyncThread } from '../../api/integrations';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
+import { useLinksIntoThread } from '../../hooks/useLinkedComment';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
 import { cn } from '../../lib/cn';
@@ -733,7 +743,14 @@ export const CommentCard: React.FC<CommentCardProps> = ({
   ...reader
 }) => {
   const [replying, setReplying] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const linked = useLinksIntoThread(
+    comment.comment_id,
+    replies.map((reply) => reply.comment_id)
+  );
+  const [expanded, setExpanded] = useState(linked);
+  useEffect(() => {
+    if (linked) setExpanded(true);
+  }, [linked]);
   const quotes = useQuoteRequest();
   const passages = usePassageThreads();
   const queryKey = commentsKey(reader.issueId);
