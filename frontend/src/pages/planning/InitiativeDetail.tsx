@@ -428,9 +428,7 @@ export const InitiativeDetail: React.FC = () => {
     () =>
       projects.filter((project) => {
         const held = projectInitiativeIds(project);
-        return (
-          !held.includes(initiativeId) && held.some((id) => below.has(id))
-        );
+        return !held.includes(initiativeId) && held.some((id) => below.has(id));
       }),
     [projects, below, initiativeId]
   );
