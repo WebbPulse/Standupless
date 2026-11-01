@@ -12,7 +12,9 @@
  * Windows and Linux builds are unsigned and macOS builds are ad-hoc signed,
  * because Apple Silicon kills any binary whose code signature does not match
  * its pages, and flipping the Electron fuses rewrites the framework binary.
- * SIGNING.md lists what turns full signing on for each platform.
+ * SIGNING.md lists what turns full signing on for each platform. The packaged
+ * `standupless.signed` field tells the updater whether a Mac build can install
+ * its own updates.
  *
  * @type {import('electron-builder').Configuration}
  */
@@ -24,7 +26,7 @@ const has = (...names) =>
 
 const macSigning = has('CSC_LINK', 'CSC_KEY_PASSWORD');
 const macNotarize =
-  macSigning && has('APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID');
+  macSigning && has('APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER');
 const azureSigning = has(
   'AZURE_TENANT_ID',
   'AZURE_CLIENT_ID',
@@ -56,7 +58,10 @@ module.exports = {
     'LICENSE',
   ],
   extraMetadata: {
-    standupless: { environment: staging ? 'staging' : 'production' },
+    standupless: {
+      environment: staging ? 'staging' : 'production',
+      signed: macSigning,
+    },
   },
   asar: true,
   electronFuses: {

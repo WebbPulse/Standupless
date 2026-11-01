@@ -21,6 +21,8 @@ export interface MilestoneGlyphProps {
   decorative?: boolean;
   /** A tooltip that replaces the progress sentence, for a host that adds to it. */
   title?: string;
+  /** Fills the undone part of the diamond with the page colour, for a host drawing it over other marks. */
+  opaque?: boolean;
 }
 
 const DIAMOND = 'M7 1.5 L12.5 7 L7 12.5 L1.5 7 Z';
@@ -34,6 +36,7 @@ export const MilestoneGlyph: React.FC<MilestoneGlyphProps> = ({
   className = '',
   decorative = false,
   title,
+  opaque = false,
 }) => {
   const clipId = useId();
   const { state, percent, label } = milestoneProgress(milestone);
@@ -55,6 +58,7 @@ export const MilestoneGlyph: React.FC<MilestoneGlyphProps> = ({
             <path d={DIAMOND} />
           </clipPath>
         </defs>
+        {opaque && <path d={DIAMOND} fill="var(--bg)" />}
         {state === 'partial' && (
           <rect
             x="0"

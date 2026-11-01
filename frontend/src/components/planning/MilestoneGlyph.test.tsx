@@ -2,7 +2,8 @@
  * The milestone glyph. Covers its four states, no issues, none done, some
  * done and all done, the sentence its tooltip and label read, the points
  * measure, a marker from a server that sends no counts, and the decorative
- * form that leaves naming to its host.
+ * form that leaves naming to its host, and the opaque form a timeline draws
+ * over a bar.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -130,5 +131,18 @@ describe('MilestoneGlyph', () => {
     const glyph = container.querySelector('[data-milestone-glyph]');
     expect(glyph).toHaveAttribute('aria-hidden', 'true');
     expect(glyph).toHaveAttribute('title', 'Beta, 0% of 1 issue complete');
+  });
+
+  it('backs the diamond with the page colour only when opaque', () => {
+    const milestone = { name: 'Beta', counts: counts({ todo: 1, total: 1 }) };
+    const { container, rerender } = render(
+      <MilestoneGlyph milestone={milestone} />
+    );
+    const backing = (): Element | null =>
+      container.querySelector('path[fill="var(--bg)"]');
+    expect(backing()).toBeNull();
+
+    rerender(<MilestoneGlyph milestone={milestone} opaque />);
+    expect(backing()).not.toBeNull();
   });
 });

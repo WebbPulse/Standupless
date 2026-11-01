@@ -4,17 +4,22 @@
  * provider in app-update.yml. Only packaged production builds check; a
  * staging or development run never replaces itself.
  *
- * macOS refuses to install an update into an unsigned app, so while the builds
- * are unsigned a Mac only announces a new version and links to the download.
- * SIGNING.md says when to turn that off.
+ * macOS refuses to install an update into an app without a Developer ID, so an
+ * ad-hoc signed Mac build only announces a new version and links to the
+ * download. Windows and Linux install updates whether signed or not.
  */
 
 import { app, dialog, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import { downloadsUrl, type Environment } from './environment';
+import {
+  downloadsUrl,
+  isDeveloperIdSigned,
+  type Environment,
+} from './environment';
 
 /** Whether this build only announces updates rather than installing them. */
-const ANNOUNCE_ONLY = process.platform === 'darwin';
+const ANNOUNCE_ONLY =
+  process.platform === 'darwin' && !isDeveloperIdSigned(app.getAppPath());
 
 /** How often a running app checks again. */
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
