@@ -4672,6 +4672,7 @@ class InsightsRead(TypedDict):
         ]
         | None
     ]
+    segment_totals: NotRequired[list[InsightBucket]]
     team_ids: list[str]
     total: int
     truncated: NotRequired[bool]

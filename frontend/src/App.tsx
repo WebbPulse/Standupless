@@ -45,7 +45,10 @@ import { Route, Routes } from 'react-router-dom';
 import GuestRoute from './components/routes/GuestRoute';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import LegacyTeamRedirect from './components/routes/LegacyTeamRedirect';
-import { ShellPublicRoute } from './components/routes/ShellRoutes';
+import {
+  ShellGuestGate,
+  ShellPublicRoute,
+} from './components/routes/ShellRoutes';
 import SettingsLayout from './components/workspace/SettingsLayout';
 import WorkspaceLayout from './components/workspace/WorkspaceLayout';
 import WorkspaceProvider from './contexts/WorkspaceContext';
@@ -162,10 +165,12 @@ const App: React.FC = () => (
     <Route path={DESKTOP_HANDOFF_PATH} element={<DesktopHandoff />} />
 
     <Route element={<GuestRoute />}>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route element={<ShellGuestGate />}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+      </Route>
     </Route>
 
     <Route path="/shared/:token" element={<SharedView />} />

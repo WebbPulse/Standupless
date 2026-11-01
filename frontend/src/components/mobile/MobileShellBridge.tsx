@@ -4,7 +4,7 @@
  * can keep content clear of the notch and the home indicator, keeps the status
  * bar readable on the person's theme, hides the launch splash once the app has
  * painted, and routes deep links client side so the open page and its state
- * survive. A sign-in handoff link closes the browser tab, is redeemed against
+ * survive. A sign-in handoff link closes the browser, is redeemed against
  * the pending verifier and is never routed. In a browser it does nothing at
  * all.
  */
@@ -14,6 +14,7 @@ import { useAuthClient } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
 import { isMobileShell, mobileLinkPath } from '../../lib/mobile';
 import {
+  closeMobileAuthSession,
   completeMobileBrowserSignIn,
   hasPendingMobileHandoff,
   isMobileHandoffLink,
@@ -61,6 +62,7 @@ const MobileShellBridge = (): null => {
       await import('@capacitor/browser')
         .then(({ Browser }) => Browser.close())
         .catch(() => undefined);
+      await closeMobileAuthSession();
       const path = await completeMobileBrowserSignIn(url, client);
       void navigate(path, { replace: true });
     };

@@ -48,8 +48,9 @@ a later step.
 
 5. Set the repository variable `APPLE_TEAM_ID` too. The frontend build reads it
    and only then publishes `/.well-known/apple-app-site-association`, with
-   `applinks` for `/w/*/issues/*` and `webcredentials` for passkeys and
-   password autofill.
+   `applinks` for `/w/*/issues/*` and `webcredentials` for managing passkeys
+   and confirming sensitive actions while signed in. Sign-in itself happens in
+   an `ASWebAuthenticationSession`.
 
 ## Android
 
@@ -77,7 +78,9 @@ local release build without it stays unsigned.
    (`keytool -list -v -keystore upload.jks`), into the repository variable
    `ANDROID_CERT_SHA256` as a comma separated list. The frontend build reads it
    and only then publishes `/.well-known/assetlinks.json`, which verifies the
-   App Links for `/w/*/issues/*` and shares saved credentials with the site.
+   App Links for `/w/*/issues/*` and lets the web view use the site's passkeys
+   for managing them and confirming sensitive actions while signed in. Sign-in
+   itself happens in a Custom Tab.
 
 ## Serving the association files
 
