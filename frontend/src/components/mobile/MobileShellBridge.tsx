@@ -10,14 +10,15 @@
  */
 
 import { useEffect } from 'react';
+import { isDesktopHandoffCallback } from '@webbpulse/auth';
 import { useAuthClient } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
+import { desktopHandoffSchemes } from '../../config/app';
 import { isMobileShell, mobileLinkPath } from '../../lib/mobile';
 import {
   closeMobileAuthSession,
   completeMobileBrowserSignIn,
-  hasPendingMobileHandoff,
-  isMobileHandoffLink,
+  mobileHandoffVerifier,
 } from '../../lib/mobileHandoff';
 import { isDarkNow, readTheme, subscribeTheme } from '../../lib/theme';
 import './mobile.css';
@@ -68,7 +69,7 @@ const MobileShellBridge = (): null => {
     };
 
     const openLink = (url: string): void => {
-      if (isMobileHandoffLink(url)) {
+      if (isDesktopHandoffCallback(url, desktopHandoffSchemes)) {
         if (claimHandoffLink(url)) void finishHandoff(url);
         return;
       }
@@ -112,8 +113,12 @@ const MobileShellBridge = (): null => {
       }
 
       const launch = await App.getLaunchUrl().catch(() => undefined);
-      if (!disposed && launch?.url && isMobileHandoffLink(launch.url)) {
-        if (hasPendingMobileHandoff()) openLink(launch.url);
+      if (
+        !disposed &&
+        launch?.url &&
+        isDesktopHandoffCallback(launch.url, desktopHandoffSchemes)
+      ) {
+        if (mobileHandoffVerifier.hasPending()) openLink(launch.url);
       } else if (!disposed && launch?.url) {
         const path = mobileLinkPath(launch.url);
         const here = `${globalThis.location.pathname}${globalThis.location.search}${globalThis.location.hash}`;

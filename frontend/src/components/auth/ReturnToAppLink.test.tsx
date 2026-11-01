@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DESKTOP_HANDOFF_PATH } from '../../lib/paths';
 import {
   APP_HANDOFF_STORAGE_KEY,
-  rememberAppHandoff,
+  appHandoffReturn,
 } from '../../lib/pendingAppHandoff';
 import ReturnToAppLink from './ReturnToAppLink';
 
@@ -36,19 +36,19 @@ describe('ReturnToAppLink', () => {
   });
 
   it('leads back to the handoff page', () => {
-    rememberAppHandoff(PATH);
+    appHandoffReturn.remember(PATH);
     renderAt('/reset-password');
     expect(screen.getByTestId('return-to-app')).toHaveAttribute('href', PATH);
   });
 
   it('hides on the handoff page itself', () => {
-    rememberAppHandoff(PATH);
+    appHandoffReturn.remember(PATH);
     renderAt(PATH);
     expect(screen.queryByTestId('return-to-app')).toBeNull();
   });
 
   it('hides inside an app', () => {
-    rememberAppHandoff(PATH);
+    appHandoffReturn.remember(PATH);
     (window as { standuplessDesktop?: unknown }).standuplessDesktop = {
       setBadgeCount: vi.fn(),
     };

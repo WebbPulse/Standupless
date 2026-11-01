@@ -3,6 +3,7 @@
  * the sign-in handoff's one-time code never does.
  */
 
+import { isDesktopHandoffCallback } from '@webbpulse/auth';
 import { describe, expect, it } from 'vitest';
 import { isMobileShell, mobileLinkPath } from './mobile';
 
@@ -42,6 +43,12 @@ describe('mobileLinkPath', () => {
     expect(
       mobileLinkPath('standupless://auth/handoff?code=secret', ORIGIN)
     ).toBeNull();
+  });
+
+  it('never routes another path on the handoff host', () => {
+    const link = 'standupless://auth/other?code=secret';
+    expect(isDesktopHandoffCallback(link, ['standupless'])).toBe(false);
+    expect(mobileLinkPath(link, ORIGIN)).toBeNull();
   });
 
   it('rejects values that are not URLs', () => {

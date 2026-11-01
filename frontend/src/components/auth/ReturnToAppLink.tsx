@@ -8,7 +8,7 @@
 import React, { useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router-dom';
 import { DESKTOP_HANDOFF_PATH } from '../../lib/paths';
-import { pendingAppHandoffPath } from '../../lib/pendingAppHandoff';
+import { appHandoffReturn } from '../../lib/pendingAppHandoff';
 import { isAppShell } from '../../lib/shell';
 import TextLink from '../ui/link';
 
@@ -19,7 +19,7 @@ const subscribeToNothing = (): (() => void) => () => undefined;
 const noPendingPath = (): null => null;
 
 /** Reads the kept request with the current time, as a stable string. */
-const readPendingPath = (): string | null => pendingAppHandoffPath();
+const readPendingPath = (): string | null => appHandoffReturn.read();
 
 /** A link back to the handoff page, or nothing without a kept request. */
 const ReturnToAppLink: React.FC = () => {
