@@ -136,9 +136,7 @@ describe('issue mention chips while editing', () => {
     expect(
       Array.from(chip.childNodes).map((node) => (node as Element).className)
     ).toEqual(['rich-issue-icon', 'rich-issue-key', 'rich-issue-title']);
-    expect(
-      chip.querySelector('.rich-issue-icon [data-glyph]')
-    ).not.toBeNull();
+    expect(chip.querySelector('.rich-issue-icon [data-glyph]')).not.toBeNull();
     expect(chips(made, '.rich-issue-source')).toEqual(['ENG-12']);
     expect(chip.nextElementSibling?.className).toBe('rich-issue-source');
     expect(chip.previousSibling?.textContent).toBe('Blocked on ');

@@ -47,11 +47,7 @@ import {
   type EditorState,
   type Transaction,
 } from '@tiptap/pm/state';
-import {
-  Decoration,
-  DecorationSet,
-  type EditorView,
-} from '@tiptap/pm/view';
+import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
@@ -352,11 +348,7 @@ const referenceDecorations = (
           ? undefined
           : issueLook?.(key);
       const start = key === null ? -1 : position + node.text.indexOf(key);
-      if (
-        key !== null &&
-        look !== undefined &&
-        start + key.length !== typing
-      ) {
+      if (key !== null && look !== undefined && start + key.length !== typing) {
         found.push(...issueChipDecorations(start, key, look));
       }
       return;
@@ -597,12 +589,7 @@ const ReferenceChips = Extension.create<ReferenceChipOptions>({
             decorations: referenceDecorations(state.doc, options),
             typing: null,
           }),
-          apply: (
-            transaction,
-            held,
-            _previous,
-            state
-          ): ReferenceChipState => {
+          apply: (transaction, held, _previous, state): ReferenceChipState => {
             const typing =
               transaction.docChanged || transaction.selectionSet
                 ? typingCaret(transaction, state)
