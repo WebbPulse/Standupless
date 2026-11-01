@@ -14,10 +14,7 @@
 import React from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import {
-  isChunkLoadError,
-  joinChunkReload,
-} from '../../lib/chunkReload';
+import { isChunkLoadError, joinChunkReload } from '../../lib/chunkReload';
 import BootSplash from '../layout/BootSplash';
 import Button from '../ui/button';
 
