@@ -44,6 +44,7 @@ from app.common.db.dynamo.comments import Comment, CommentAnchor
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import TRASH_RETENTION_DAYS, Issue
 from app.common.db.dynamo.relations import INVERSE_TYPES
+from app.common.db.dynamo.search_index import SearchQuery, parse_query
 from app.common.document_comments import create_document_comment, document_comment_page
 from app.common.documents import get_document
 from app.common.filter_resolution import resolve_issue_filter
@@ -514,22 +515,48 @@ def _list_my_issues(call: ToolCall) -> Any:
     return _page(call, assignee_id=["me"], assignee_id_not=None)
 
 
-def _search_issues(call: ToolCall) -> Any:
-    """Issues whose key is a text or whose title or body contains it, in the sort's order, in visible teams only.
+def _query_terms(query: str) -> SearchQuery:
+    """The terms a multi-word query also matches by, as the web search reads them, and none for a single word.
 
-    A key matches whole and in any case, as Linear's search finds `ABC-12`; the
-    rest is a substring over title and body, unlike `list_issues`, whose `query` is the
-    HTTP list's key or title prefix. Filtered after the team read rather than
-    through the search index, because the index is a separate table this domain
-    holds no grant on. Each team is walked through every page up to the list's
+    A single word stays a plain substring, which already finds more than its
+    prefix would. Splitting it would turn a key such as `ABC-1` into the word `abc`
+    and answer every issue that mentions that team.
+    """
+    return parse_query(query) if len(query.split()) > 1 else SearchQuery(words=frozenset())
+
+
+def _text_closeness(issue: Issue, query: str, terms: SearchQuery) -> int:
+    """How closely one match's text answers the query: the phrase in the title, its terms there, then the body."""
+    if query in issue.title.lower():
+        return 3
+    if terms.matches_text(issue.title):
+        return 2
+    return 1 if query in (issue.body or "").lower() else 0
+
+
+def _search_issues(call: ToolCall) -> Any:
+    """Issues whose key is a text or whose title and body hold it or its terms, closest first, in visible teams only.
+
+    A key matches whole and in any case, as Linear's search finds `ABC-12`. The
+    rest is a substring over title and body, and a multi-word query also matches
+    when its terms all appear, in any order and with stopwords ignored, because an
+    agent checking for a duplicate describes the work rather than quoting a title.
+    Unlike `list_issues`, whose `query` is the HTTP list's key or title prefix.
+    An explicit `sort` or `reverse` replaces the closest first order, and closeness
+    ranks within one stretch of the walk, not across a cursor's later stretches.
+    Filtered after the team read rather than through the search index, because the
+    filters read live rows and every body is matched whole, where the index covers
+    only each body's opening. Each team is walked through every page up to the list's
     scan budget, and when the budget stops the walk `next_cursor` resumes it.
     Archived issues are found too unless `include_archived` is false, as the app's
     search finds them, and so are issues awaiting triage.
     """
     query = str(call.optional("query", "") or "").strip().lower()
+    terms = _query_terms(query)
     team_id = call.optional("team_id")
     sort = _sort(call)
     reverse = _reverse(call)
+    closest_first = bool(query) and call.optional("sort") is None and not reverse
     wanted = _build_filter(call, include_archived=True, include_triage=True)
 
     if team_id:
@@ -548,22 +575,32 @@ def _search_issues(call: ToolCall) -> Any:
 
     readable = issue_reader(call.repositories, call.context)
 
+    def names_key(issue: Issue) -> bool:
+        """Whether the query is the key one issue holds or held."""
+        return query in (issue.key.lower(), current(call.repositories.teams, issue).key.lower())
+
     def keep(issue: Issue) -> bool:
-        """Whether one issue carries the key or holds the text, and passes the filters."""
+        """Whether one issue carries the key or holds the text or its terms, and passes the filters."""
         if (
             query
-            and query != issue.key.lower()
-            and query != current(call.repositories.teams, issue).key.lower()
+            and not names_key(issue)
             and query not in issue.title.lower()
             and query not in (issue.body or "").lower()
+            and not terms.matches_text(issue.title, issue.body)
         ):
             return False
         return readable(issue) and wanted.matches(issue, categories)
 
+    def closeness(issue: Issue) -> int:
+        """How closely one matching issue answers the query, a key above any text."""
+        return 4 if names_key(issue) else _text_closeness(issue, query, terms)
+
     workspace_id = call.context.workspace_id
     direction = "reverse" if reverse else "forward"
-    scope = digest_scope(f"search:{workspace_id}:{','.join(teams)}:{query}:{sort}:{direction}:{wanted.fingerprint()}")
+    order = "closest" if closest_first else sort
+    scope = digest_scope(f"search:{workspace_id}:{','.join(teams)}:{query}:{order}:{direction}:{wanted.fingerprint()}")
     ranks = status_ranks(call.repositories, workspace_id, teams) if sort == "status_asc" else None
+    sorted_by = sort_key(sort, ranks, wanted.customer_index)
     found, next_cursor = walk_page(
         call.repositories,
         workspace_id,
@@ -572,7 +609,7 @@ def _search_issues(call: ToolCall) -> Any:
         scope=scope,
         limit=limit(call.optional("limit")),
         keep=keep,
-        key=sort_key(sort, ranks, wanted.customer_index),
+        key=(lambda issue: (closeness(issue), sorted_by(issue))) if closest_first else sorted_by,
         descending=descending(sort) != reverse,
         last=unset_value(sort, wanted.customer_index) if reverse else None,
     )
@@ -1375,14 +1412,16 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="search_issues",
         description=(
             "Search issues whose key is a text, such as ABC-123, or whose title or body contains it, "
+            "or, for several words, contains all of them in any order, common words ignored, "
             "with the issue list filters. "
-            "Answers summaries in the sort's order, most recently updated first by default, "
+            "Answers summaries with the closest matches first and then the most recently updated, "
+            "or in the order of an explicit sort or reverse, "
             "and a next_cursor while more issues remain to search."
         ),
         scopes=("issues:read",),
         schema=object_schema(
             {
-                "query": string("An issue key such as ABC-123, or text to match against the title and body"),
+                "query": string("An issue key such as ABC-123, or words to match against the title and body"),
                 **_filter_properties(),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default true"},
                 "sort": enum(SORTS, SORT_HELP),

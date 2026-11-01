@@ -156,6 +156,131 @@ def test_search_finds_an_issue_by_its_key(client: TestClient, workspace: str, re
     assert [row["issue_id"] for row in lowered["issues"]] == [wanted]
 
 
+def _found_ids(client: TestClient, secret: str, **arguments: Any) -> "list[str]":
+    """The ids of one search's issues, in the order answered."""
+    return [row["issue_id"] for row in json.loads(_search(client, secret, **arguments)["content"][0]["text"])["issues"]]
+
+
+REPORTED_TITLE = (
+    "Warn on concurrent project and initiative updates, and refresh the report when an update's health is edited"
+)
+
+
+def test_a_multi_word_query_with_stop_words_finds_the_title_holding_its_terms(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """The query STUP-733 reports, not a contiguous phrase of the title, finds it and leaves out the rest."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    wanted = _create(client, secret, title=REPORTED_TITLE)
+    _create(client, secret, title="Refresh the health report weekly")
+
+    assert _found_ids(client, secret, query="refresh the report when health is edited") == [wanted]
+
+
+def test_a_multi_word_query_matches_its_words_out_of_order(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Word order does not matter, in any case, and every word still has to be there."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    wanted = _create(client, secret, title="Rotate the billing webhook secret")
+    _create(client, secret, title="Rotate the signing key")
+
+    assert _found_ids(client, secret, query="SECRET webhook rotate") == [wanted]
+    assert _found_ids(client, secret, query="rotate webhook passwords") == []
+
+
+def test_a_multi_word_query_matches_terms_across_the_title_and_the_body(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """One term in the title and another in the body match, as the web search's postings do."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    wanted = _create(client, secret, title="Quarterly zebra audit", body="Covers the penguin enclosure.")
+
+    assert _found_ids(client, secret, query="penguin zebra") == [wanted]
+
+
+def test_a_multi_word_query_matches_its_last_word_as_a_prefix(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """The last word is read as a prefix and the others whole, as the web search reads a query."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    wanted = _create(client, secret, title="Quarterly zebra auditing")
+
+    assert _found_ids(client, secret, query="zebra audit") == [wanted]
+    assert _found_ids(client, secret, query="zeb auditing") == []
+
+
+def test_a_query_of_only_stop_words_stays_a_phrase(client: TestClient, workspace: str, repositories: Any) -> None:
+    """With no term left the whole text still has to appear, so the query does not answer every issue."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    wanted = _create(client, secret, title="Say what it is to be here")
+    _create(client, secret, title="Nothing in common")
+
+    assert _found_ids(client, secret, query="it is") == [wanted]
+
+
+def test_the_closest_matches_come_first(client: TestClient, workspace: str, repositories: Any) -> None:
+    """The phrase in a title leads, then its terms in a title, then the phrase in a body, then terms spread out.
+
+    Created closest first, so the most recently updated issue is the least close
+    one and recency alone would answer the reverse.
+    """
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    phrase_in_title = _create(client, secret, title="Fix zebra audit")
+    terms_in_title = _create(client, secret, title="Audit of the zebra")
+    phrase_in_body = _create(client, secret, title="Another chore", body="Part of the zebra audit.")
+    terms_in_body = _create(client, secret, title="Yet another chore", body="An audit, for the zebra.")
+
+    assert _found_ids(client, secret, query="zebra audit") == [
+        phrase_in_title,
+        terms_in_title,
+        phrase_in_body,
+        terms_in_body,
+    ]
+
+
+def test_an_exact_key_ranks_above_text_that_mentions_it(client: TestClient, workspace: str, repositories: Any) -> None:
+    """The issue a key names comes before a newer issue quoting that key."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    named = _create(client, secret, title="Cache the token")
+    key = repositories.issues.get(workspace, named).key
+    mentions = _create(client, secret, title=f"Follow up on {key}")
+
+    assert _found_ids(client, secret, query=key) == [named, mentions]
+
+
+def test_an_explicit_order_replaces_the_closest_first_order(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A named sort or `reverse` is honoured over closeness."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    close = _create(client, secret, title="Fix zebra audit")
+    far = _create(client, secret, title="A chore", body="An audit, for the zebra.")
+
+    assert _found_ids(client, secret, query="zebra audit", sort="updated_desc") == [far, close]
+    assert _found_ids(client, secret, query="zebra audit", reverse=True) == [close, far]
+
+
+def test_a_key_shaped_query_is_not_split_into_terms(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A single token stays a substring, so a short key does not answer every issue naming its team."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    named = _create(client, secret, title="Cache the token")
+    key = repositories.issues.get(workspace, named).key
+    prefix = key.split("-")[0]
+    _create(client, secret, title="Something else", body=f"Mentions {prefix} and nothing more.")
+
+    assert _found_ids(client, secret, query=key) == [named]
+
+
+def test_a_multi_word_query_still_passes_the_filters(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Matching by terms narrows the same list the filters do."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    urgent = _create(client, secret, title="Audit of the zebra", priority="urgent")
+    _create(client, secret, title="Audit of the zebra", priority="low")
+
+    assert _found_ids(client, secret, query="zebra audit", priority="urgent") == [urgent]
+
+
 def test_summaries_carry_the_lifecycle_moments_and_sort_by_completion(
     client: TestClient, workspace: str, repositories: Any
 ) -> None:
