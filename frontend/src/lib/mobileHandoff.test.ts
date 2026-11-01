@@ -3,20 +3,59 @@
  * count as a handoff, and the path the page goes to once a handoff settles.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  closeMobileAuthSession,
   completeMobileBrowserSignIn,
   hasPendingMobileHandoff,
   isMobileHandoffLink,
+  isMobileSignInCancelled,
   MOBILE_HANDOFF_STORAGE_KEY,
   MOBILE_HANDOFF_TTL_MS,
   mobileBrowserSignIn,
   mobileHandoffFailedPath,
   mobileHandoffScheme,
+  startMobileBrowserSignIn,
   storeMobileHandoffVerifier,
   takeMobileHandoffVerifier,
 } from './mobileHandoff';
 
+const native = vi.hoisted(() => ({
+  platform: 'android',
+  start: vi.fn(),
+  close: vi.fn(),
+  browserOpen: vi.fn(),
+}));
+
+vi.mock('@capacitor/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@capacitor/core')>();
+  return {
+    ...actual,
+    Capacitor: {
+      ...actual.Capacitor,
+      getPlatform: () => native.platform,
+      isNativePlatform: () => false,
+    },
+    registerPlugin: () => ({ start: native.start, close: native.close }),
+  };
+});
+
+vi.mock('@capacitor/browser', () => ({
+  Browser: { open: native.browserOpen },
+}));
+
+vi.mock('@webbpulse/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@webbpulse/auth')>();
+  return {
+    ...actual,
+    createDesktopHandoffPkce: () =>
+      Promise.resolve({ verifier: 'v'.repeat(43), challenge: 'challenge' }),
+    desktopHandoffLaunchUrl: () => LAUNCH_URL,
+  };
+});
+
+const LAUNCH_URL = 'https://app.example/desktop/handoff?challenge=challenge';
+const CALLBACK = 'standupless://auth/handoff?code=abc';
 const SCHEMES = ['standupless', 'standupless-staging'];
 
 /** What the page passes the client to redeem a code. */
@@ -150,5 +189,87 @@ describe('completeMobileBrowserSignIn', () => {
     };
     const path = await completeMobileBrowserSignIn(link, client, VERIFIER);
     expect(path).toBe('/login?desktop_handoff=failed');
+  });
+});
+
+describe('startMobileBrowserSignIn', () => {
+  beforeEach(() => {
+    native.start.mockReset();
+    native.close.mockReset();
+    native.browserOpen.mockReset();
+    native.browserOpen.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    native.platform = 'android';
+  });
+
+  it('opens a tab on Android and leaves the callback to the app URL', async () => {
+    await expect(startMobileBrowserSignIn('standupless')).resolves.toBeNull();
+    expect(native.browserOpen).toHaveBeenCalledWith({ url: LAUNCH_URL });
+    expect(native.start).not.toHaveBeenCalled();
+    expect(hasPendingMobileHandoff()).toBe(true);
+  });
+
+  it('answers the callback the iOS session returns', async () => {
+    native.platform = 'ios';
+    native.start.mockResolvedValue({ url: CALLBACK });
+    await expect(startMobileBrowserSignIn('standupless')).resolves.toBe(
+      CALLBACK
+    );
+    expect(native.start).toHaveBeenCalledWith({
+      url: LAUNCH_URL,
+      callbackScheme: 'standupless',
+    });
+    expect(native.browserOpen).not.toHaveBeenCalled();
+  });
+
+  it('answers nothing when the iOS session was closed for another callback', async () => {
+    native.platform = 'ios';
+    native.start.mockResolvedValue({});
+    await expect(startMobileBrowserSignIn('standupless')).resolves.toBeNull();
+  });
+
+  it('falls back to a tab on an iOS build without the plugin', async () => {
+    native.platform = 'ios';
+    native.start.mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'UNIMPLEMENTED' })
+    );
+    await expect(startMobileBrowserSignIn('standupless')).resolves.toBeNull();
+    expect(native.browserOpen).toHaveBeenCalledWith({ url: LAUNCH_URL });
+  });
+
+  it('passes on the person closing the iOS sheet', async () => {
+    native.platform = 'ios';
+    const closed = Object.assign(new Error('closed'), { code: 'cancelled' });
+    native.start.mockRejectedValue(closed);
+    const outcome = await startMobileBrowserSignIn('standupless').catch(
+      (failure: unknown) => failure
+    );
+    expect(isMobileSignInCancelled(outcome)).toBe(true);
+    expect(native.browserOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe('closeMobileAuthSession', () => {
+  beforeEach(() => {
+    native.close.mockReset();
+    native.close.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    native.platform = 'android';
+  });
+
+  it('closes the session on iOS and swallows a refusal', async () => {
+    native.platform = 'ios';
+    native.close.mockRejectedValue(new Error('missing'));
+    await expect(closeMobileAuthSession()).resolves.toBeUndefined();
+    expect(native.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing on Android', async () => {
+    await closeMobileAuthSession();
+    expect(native.close).not.toHaveBeenCalled();
   });
 });

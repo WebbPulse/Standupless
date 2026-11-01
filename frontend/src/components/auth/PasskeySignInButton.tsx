@@ -2,7 +2,8 @@
  * The passkey sign-in button, hidden unless the browser supports WebAuthn and
  * the deployment enables passwordless sign in. `usePasskeySignInSupport` answers
  * both questions and reports whether the browser can also put a passkey in its
- * email autofill dropdown.
+ * email autofill dropdown. It also stays hidden in the desktop app, whose
+ * window has no dependable platform authenticator, so a ceremony could hang.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,7 +16,7 @@ import {
   identityUrl,
   passkeyLoginAvailability,
 } from '../../api/identityClient';
-import { desktopSupportsPasskeys } from '../../lib/desktop';
+import { isDesktopShell } from '../../lib/desktop';
 import Button from '../ui/button';
 
 /** Props for PasskeySignInButton: the email hint and the outcome callback. */
@@ -52,7 +53,7 @@ const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
   );
   const support = usePasskeySignInSupport({
     probe,
-    enabled: client !== null && desktopSupportsPasskeys(),
+    enabled: client !== null && !isDesktopShell(),
   });
   const armed = conditional && support.conditional && client !== null;
 
