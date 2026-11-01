@@ -23,6 +23,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdatePatch,
     InitiativeUpdateRead,
     ProjectHealthField,
+    ProjectRead,
 )
 from app.common.date_resolution import DATE_RESOLUTIONS, date_label
 from app.common.initiative_progress import initiative_progress
@@ -231,6 +232,15 @@ def _delete_initiative(call: ToolCall) -> Any:
     return {"deleted": True, "initiative_id": initiative_id}
 
 
+def _membership_json(project: ProjectRead) -> dict[str, Any]:
+    """A project's initiatives after a membership change, the primary one first."""
+    return {
+        "project_id": project.project_id,
+        "initiative_id": project.initiative_id,
+        "initiative_ids": list(project.initiative_ids),
+    }
+
+
 def _membership(call: ToolCall) -> tuple[str, str]:
     """The initiative and project ids one membership tool call names."""
     initiative_id = initiative_id_ref(call, call.require("initiative_id"))
@@ -238,17 +248,17 @@ def _membership(call: ToolCall) -> tuple[str, str]:
 
 
 def _add_project(call: ToolCall) -> Any:
-    """Put a project in an initiative, moving it out of any other."""
+    """Put a project in an initiative, keeping every other one it is in."""
     initiative_id, project_id = _membership(call)
     project = add_project_to_initiative(call.repositories, call.context, initiative_id, project_id)
-    return {"project_id": project.project_id, "initiative_id": project.initiative_id}
+    return _membership_json(project)
 
 
 def _remove_project(call: ToolCall) -> Any:
-    """Take a project out of the initiative it is in."""
+    """Take a project out of one initiative, leaving any others it is in."""
     initiative_id, project_id = _membership(call)
     project = remove_project_from_initiative(call.repositories, call.context, initiative_id, project_id)
-    return {"project_id": project.project_id, "initiative_id": project.initiative_id}
+    return _membership_json(project)
 
 
 def _list_updates(call: ToolCall) -> Any:
@@ -427,7 +437,9 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="add_project_to_initiative",
-        description="Put a project in an initiative. A project is in at most one, so this moves it from any other.",
+        description=(
+            "Put a project in an initiative. A project may be in several, so this keeps every other one it is in."
+        ),
         scopes=("projects:write",),
         schema=MEMBERSHIP_SCHEMA,
         handler=_add_project,
@@ -435,7 +447,9 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="remove_project_from_initiative",
-        description="Take a project out of an initiative. The project itself is kept.",
+        description=(
+            "Take a project out of one initiative, leaving the others it is in. The project itself is kept."
+        ),
         scopes=("projects:write",),
         schema=MEMBERSHIP_SCHEMA,
         handler=_remove_project,

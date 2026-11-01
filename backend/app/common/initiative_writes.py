@@ -9,8 +9,8 @@ lead team is private, when only that team's members see it at all and everyone
 else gets the 404 an absent one gets. The projects it rolls up are narrowed to
 the ones the caller can see, so an initiative never reveals work on a hidden
 team, and a hidden sub-initiative or parent is left out of its tree. A
-project joins an initiative through its own `initiative_id`, which is why it
-belongs to at most one, and joining or leaving is an edit of that project. Only
+project joins initiatives through its own `initiative_ids`, so it may belong to
+several, and joining or leaving one is an edit of that project alone. Only
 the initiative's creator, its owner or a workspace admin deletes it.
 
 An initiative may sit under a parent as a sub-initiative. The parent's rollup
@@ -32,6 +32,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
 from app.common.api.schemas.planning import (
     MAX_LIMIT,
+    PROJECT_INITIATIVES_MAX,
     UPDATES_DEFAULT_LIMIT,
     InitiativeCreate,
     InitiativeRead,
@@ -115,12 +116,13 @@ def visible_initiatives(repositories: Repositories, context: AuthzContext) -> li
 
 
 def visible_projects_by_initiative(repositories: Repositories, context: AuthzContext) -> dict[str, list[Project]]:
-    """The projects the caller can see, grouped under the initiative each belongs to."""
+    """The projects the caller can see, grouped under every initiative each belongs to."""
     visible = set(visible_team_ids(repositories, context))
     grouped: dict[str, list[Project]] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
-        if project.initiative_id and visible_project_teams(project, visible):
-            grouped.setdefault(project.initiative_id, []).append(project)
+        if project.initiative_ids and visible_project_teams(project, visible):
+            for member_of in project.initiative_ids:
+                grouped.setdefault(member_of, []).append(project)
     return grouped
 
 
@@ -128,8 +130,9 @@ def shared_projects_by_initiative(repositories: Repositories, context: AuthzCont
     """The projects every workspace member can see, on at least one team that is not private, by initiative."""
     grouped: dict[str, list[Project]] = {}
     for project in repositories.planning.list_projects(context.workspace_id):
-        if project.initiative_id and any(not context.is_private_team(team) for team in project.team_ids):
-            grouped.setdefault(project.initiative_id, []).append(project)
+        if project.initiative_ids and any(not context.is_private_team(team) for team in project.team_ids):
+            for member_of in project.initiative_ids:
+                grouped.setdefault(member_of, []).append(project)
     return grouped
 
 
@@ -142,8 +145,15 @@ def initiative_tree(repositories: Repositories, workspace_id: str, *rows: Initia
 
 
 def rollup_projects(tree: InitiativeTree, grouped: Mapping[str, list[Project]], initiative_id: str) -> list[Project]:
-    """The visible projects of an initiative and of every sub-initiative below it, its own first."""
-    return [project for node in tree.subtree(initiative_id) for project in grouped.get(node, [])]
+    """The visible projects of an initiative and of every sub-initiative below it, its own first, each once.
+
+    A project in both an initiative and one of its sub-initiatives counts once.
+    """
+    seen: dict[str, Project] = {}
+    for node in tree.subtree(initiative_id):
+        for project in grouped.get(node, []):
+            seen.setdefault(project.project_id, project)
+    return list(seen.values())
 
 
 def _initiative_read(
@@ -373,8 +383,9 @@ def delete_initiative(repositories: Repositories, context: AuthzContext, initiat
     if not can_delete_initiative(context, initiative):
         raise forbidden()
     for project in repositories.planning.list_projects(context.workspace_id):
-        if project.initiative_id == initiative.initiative_id:
-            repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
+        if initiative.initiative_id in project.initiative_ids:
+            kept = [other for other in project.initiative_ids if other != initiative.initiative_id]
+            repositories.planning.set_project_initiatives(context.workspace_id, project.project_id, kept)
     for child in repositories.planning.list_initiatives(context.workspace_id):
         if child.parent_initiative_id == initiative.initiative_id:
             lifted = child.model_copy(
@@ -413,11 +424,13 @@ def _project_read(repositories: Repositories, context: AuthzContext, project: Pr
 def add_project_to_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, project_id: str
 ) -> ProjectRead:
-    """Put a project in an initiative, moving it out of any other it was in."""
+    """Add an initiative to a project's set, keeping every other initiative it was in."""
     initiative, project, teams = _membership_project(repositories, context, initiative_id, project_id)
-    if project.initiative_id != initiative.initiative_id:
-        written = repositories.planning.set_project_initiative(
-            context.workspace_id, project.project_id, initiative.initiative_id
+    if initiative.initiative_id not in project.initiative_ids:
+        if len(project.initiative_ids) >= PROJECT_INITIATIVES_MAX:
+            raise unprocessable(f"A project may belong to at most {PROJECT_INITIATIVES_MAX} initiatives")
+        written = repositories.planning.set_project_initiatives(
+            context.workspace_id, project.project_id, [*project.initiative_ids, initiative.initiative_id]
         )
         if written is None:
             raise not_found()
@@ -428,11 +441,12 @@ def add_project_to_initiative(
 def remove_project_from_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, project_id: str
 ) -> ProjectRead:
-    """Take a project out of an initiative, or 404 when it is not in that one."""
+    """Take a project out of one initiative, leaving the others it is in, or 404 when it is not in that one."""
     initiative, project, teams = _membership_project(repositories, context, initiative_id, project_id)
-    if project.initiative_id != initiative.initiative_id:
+    if initiative.initiative_id not in project.initiative_ids:
         raise not_found()
-    written = repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
+    kept = [other for other in project.initiative_ids if other != initiative.initiative_id]
+    written = repositories.planning.set_project_initiatives(context.workspace_id, project.project_id, kept)
     if written is None:
         raise not_found()
     return _project_read(repositories, context, written, teams)

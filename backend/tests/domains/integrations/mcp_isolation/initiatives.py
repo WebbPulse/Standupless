@@ -16,7 +16,7 @@ def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
     initiative.planning_key = initiative_key(initiative.initiative_id)
     repositories.planning.create_initiative(initiative)
     project = repositories.planning.list_projects(workspace_id)[0]
-    repositories.planning.set_project_initiative(workspace_id, project.project_id, initiative.initiative_id)
+    repositories.planning.set_project_initiatives(workspace_id, project.project_id, [initiative.initiative_id])
     update = InitiativeUpdateRow(
         workspace_id=workspace_id,
         planning_key="",

@@ -358,6 +358,24 @@ describe('InitiativeDetail', () => {
     });
   });
 
+  it('lists a project that also belongs to another initiative', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        project('prj-1', 'Launch', {
+          initiative_id: 'ini-other',
+          initiative_ids: ['ini-other', 'ini-1'],
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const projects = await screen.findByRole('region', { name: 'Projects' });
+    expect(
+      await within(projects).findByRole('button', { name: 'Remove Launch' })
+    ).toBeInTheDocument();
+  });
+
   it('adds a project from the picker and removes one from its row', async () => {
     addInitiativeProject.mockResolvedValue(
       project('prj-2', 'Search', { initiative_id: 'ini-1' })

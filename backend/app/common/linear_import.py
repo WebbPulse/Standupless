@@ -1498,10 +1498,11 @@ def _initiatives_step(repositories: Any, job: Any, client: LinearClient) -> Step
         for project in Page.of(node.get("projects")).nodes:
             project_id = linear_row_id(job.workspace_id, "project", str(project["id"]), project.get("createdAt"))
             row = repositories.planning.get_project(job.workspace_id, project_id)
-            if row is None or row.initiative_id == initiative_id:
+            if row is None or initiative_id in row.initiative_ids:
                 continue
+            joined = row.with_initiatives([*row.initiative_ids, initiative_id])
             repositories.planning.replace_project(
-                row.model_copy(update={"initiative_id": initiative_id, "import_batch_id": job.import_id}),
+                joined.model_copy(update={"import_batch_id": job.import_id}),
                 keep_import_batch=True,
             )
     result.next_after = page.end_cursor if page.has_next else None

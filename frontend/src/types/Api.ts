@@ -3084,8 +3084,10 @@ export interface ProjectRead {
   /** When the next update is due, or null when the project never comes due. */
   next_update_due_at?: string | null;
   update_due_state?: ProjectUpdateDueState | null;
-  /** The initiative the project belongs to, or null outside any. */
+  /** The first of the project's initiatives, or null outside any; kept for older clients. */
   initiative_id?: string | null;
+  /** Every initiative the project belongs to, the first one first. */
+  initiative_ids?: string[];
   /** The manual position, a base 62 fractional key; null on a project never placed. */
   sort_order?: string | null;
   /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
@@ -3327,8 +3329,10 @@ export interface ProjectUpdate {
   label_ids?: string[];
   /** A null returns the project to the workspace's cadence. */
   update_interval_days?: ProjectUpdateInterval | null;
-  /** Moves the project into an initiative; a null takes it out of one. */
+  /** Puts the project in this one initiative alone; a null takes it out of every one. */
   initiative_id?: string | null;
+  /** Replaces the project's initiatives; an empty list takes it out of every one. Wins over `initiative_id`. */
+  initiative_ids?: string[];
   /** The manual position, a base 62 fractional key shared by every viewer. */
   sort_order?: string;
   /** What to do with the open issues, taken only by a patch that completes or cancels the project. */
