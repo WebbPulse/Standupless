@@ -76,6 +76,7 @@ def test_unsaved_defaults_read_as_built_in(client: TestClient, team: str) -> Non
         "list_display": None,
         "board_display": None,
         "projects_display": None,
+        "insights_display": None,
         "effective_projects_display": BUILT_IN,
         "updated_by": None,
         "updated_at": None,

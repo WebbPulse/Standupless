@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Mapping, Optional, get_args
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 InsightDimension = Literal[
     "status",
@@ -60,6 +60,8 @@ class InsightsDisplay(BaseModel):
     or `layout` keeps the panel's built-in choice, and a null `segment_by` draws
     no segments.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     measure: Optional[InsightMeasure] = None
     group_by: Optional[InsightDimension] = None

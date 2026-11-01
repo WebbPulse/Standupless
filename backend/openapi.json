@@ -9962,6 +9962,7 @@
         "type": "object"
       },
       "InsightsDisplay": {
+        "additionalProperties": false,
         "description": "The view insights panel a list opens with for every viewer without picks of their own.\n\nSaved on a view or as a team's display default. A null `measure`, `group_by`\nor `layout` keeps the panel's built-in choice, and a null `segment_by` draws\nno segments.",
         "properties": {
           "group_by": {

@@ -1333,7 +1333,7 @@ class InsightPoint(TypedDict):
     title: str
 
 
-class InsightsDisplay(TypedDict):
+class InsightsDisplay(TypedDict, closed=True):
     group_by: NotRequired[
         Literal[
             "status",
