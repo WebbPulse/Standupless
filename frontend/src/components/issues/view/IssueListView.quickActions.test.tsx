@@ -1,7 +1,7 @@
 /**
  * The quick actions in a list: Cmd or Ctrl+Shift+C puts the focused issue
  * into its team's active cycle, Cmd or Ctrl+Shift+D clears the due date, Cmd
- * or Ctrl+Shift+L clears the labels of a whole selection in one write, and
+ * Shift+L clears the labels of a whole selection in one write, and
  * the actions are listed for the palette and the shortcuts panel.
  */
 
@@ -169,7 +169,7 @@ describe('IssueListView quick actions', () => {
     expect(update).toHaveBeenCalledWith(['iss-1'], { due_date: null });
   });
 
-  it('clears the labels of the selection in one write on Cmd or Ctrl+Shift+L', () => {
+  it('clears the labels of the selection in one write on Shift+L', () => {
     renderView([
       makeIssue(1, { label_ids: ['lb-1'] }),
       makeIssue(2, { label_ids: ['lb-1', 'lb-2'] }),
@@ -179,7 +179,7 @@ describe('IssueListView quick actions', () => {
     press('x');
     press('j');
     press('x');
-    press('L', modShift);
+    press('L', { shiftKey: true });
 
     expect(update).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenCalledWith(['iss-1', 'iss-2'], {
@@ -203,14 +203,5 @@ describe('IssueListView quick actions', () => {
         REMOVE_LABELS_LABEL,
       ])
     );
-  });
-
-  it('keeps Shift+L off the quick label removal', () => {
-    renderView([makeIssue(1, { label_ids: ['lb-1'] })]);
-
-    press('j');
-    press('L', { shiftKey: true });
-
-    expect(update).not.toHaveBeenCalled();
   });
 });

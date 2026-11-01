@@ -1,7 +1,7 @@
 /**
  * The one-key property actions that skip a picker: Cmd or Ctrl+Shift+C puts
  * the issues in focus into their team's active cycle, Cmd or Ctrl+Shift+D
- * clears their due date and Cmd or Ctrl+Shift+L clears their labels. Each
+ * clears their due date and Shift+L clears their labels. Each
  * writes through the surface's own update, so a list batches the issues into
  * bulk requests where the bulk route takes the field, and undo records them.
  */

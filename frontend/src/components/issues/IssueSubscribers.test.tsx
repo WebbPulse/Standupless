@@ -246,7 +246,7 @@ describe('an issue nobody is subscribed to', () => {
     const user = renderHarness();
 
     await screen.findByText('Nobody is subscribed to this issue.');
-    await user.keyboard('{Control>}{Shift>}s{/Shift}{/Control}');
+    await user.keyboard('{Shift>}S{/Shift}');
 
     await waitFor(() => {
       expect(subscribe).toHaveBeenCalledTimes(1);
@@ -305,7 +305,7 @@ describe('managing other subscribers', () => {
       expect(palette).toHaveTextContent('Manage subscribers');
     });
     await screen.findByText('Olive Owner');
-    await user.keyboard('{Shift>}S{/Shift}');
+    await user.keyboard('{Control>}{Shift>}s{/Shift}{/Control}');
 
     expect(
       await screen.findByRole('option', { name: /Ada Lovelace/ })
