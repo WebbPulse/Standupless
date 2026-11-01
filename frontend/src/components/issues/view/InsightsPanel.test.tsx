@@ -319,7 +319,7 @@ describe('InsightsPanel', () => {
       openSettings();
       expect(
         screen.getByRole('menuitem', { name: 'Set default for everyone' })
-      ).toBeDisabled();
+      ).toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(
         screen.getByRole('menuitem', { name: 'Clear default for everyone' })
       );
