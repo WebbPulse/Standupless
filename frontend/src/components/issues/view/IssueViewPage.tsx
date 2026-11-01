@@ -41,6 +41,10 @@ import {
 import { useAuth } from '../../../hooks/useAuth';
 import { useCreateIssue } from '../../../hooks/useCreateIssue';
 import { useIssueCollection } from '../../../hooks/useIssueCollection';
+import {
+  useInsightsPlacement,
+  type InsightsPlacement,
+} from '../../../hooks/useInsightsPlacement';
 import { useIssueContext } from '../../../hooks/useIssueContext';
 import {
   legacyFoldsKey,
@@ -110,7 +114,7 @@ import ViewIcon, {
 import WorkspaceShell from '../../workspace/WorkspaceShell';
 import DisplayMenu from './DisplayMenu';
 import { FilterButton, FilterChips } from './FilterBar';
-import InsightsPanel from './InsightsPanel';
+import InsightsPanel, { type InsightsDefaultControl } from './InsightsPanel';
 import IssueListView from './IssueListView';
 import { LOOKUP_POLL_MS } from '../../../lib/polling';
 
@@ -449,6 +453,12 @@ export interface IssueViewPageProps {
   footer?: ReactNode;
   /** Keeps the rows shown while a changed scope reads, for a scope that grows as it pages. */
   holdRows?: boolean;
+  /** The insights panel default for everyone, for a list that can hold one. */
+  insightsDefault?: InsightsDefaultControl | undefined;
+  /** What keeps the viewer's insights picks, when `scopeKey` changes more often than the list does. */
+  insightsScopeKey?: string | undefined;
+  /** The panel's placement, when the page holds it above a remount of this one. */
+  insightsPlacement?: InsightsPlacement | undefined;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -493,6 +503,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   rowNote,
   footer,
   holdRows = false,
+  insightsDefault,
+  insightsScopeKey,
+  insightsPlacement,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -504,8 +517,13 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const [params, setParams] = useSearchParams();
   const [saving, setSaving] = useState<Saving>(null);
   const [updating, setUpdating] = useState(false);
-  const [insightsOpen, setInsightsOpen] = useState(false);
-  const [insightsExpanded, setInsightsExpanded] = useState(false);
+  const ownInsightsPlacement = useInsightsPlacement();
+  const {
+    open: insightsOpen,
+    expanded: insightsExpanded,
+    toggle: toggleInsights,
+    toggleExpanded: toggleInsightsExpanded,
+  } = insightsPlacement ?? ownInsightsPlacement;
   const [defaultBusy, setDefaultBusy] = useState(false);
 
   const state = useMemo(() => parseViewState(params, base), [params, base]);
@@ -776,9 +794,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         ? savedOver
         : { ...savedOver, team_id: teamId };
     try {
-      const created = await createView(
-        workspaceId,
-        stateToViewBody(
+      const created = await createView(workspaceId, {
+        ...stateToViewBody(
           keepsFolds
             ? state
             : { ...state, collapsed: [...viewerFolds.collapsed] },
@@ -786,8 +803,12 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           runsOver,
           details.shared ? teamId : undefined,
           { shared: details.shared, look: details.look }
-        )
-      );
+        ),
+        ...(insightsDefault?.display === null ||
+        insightsDefault?.display === undefined
+          ? {}
+          : { insights_display: insightsDefault.display }),
+      });
       refreshViewLists(workspaceId, teamId);
       setSaving(null);
       showToast(`Saved view ${created.name}.`);
@@ -844,10 +865,6 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     reset();
   };
 
-  const toggleInsights = (): void => {
-    setInsightsOpen((open) => !open);
-    setInsightsExpanded(false);
-  };
 
   useShortcut({
     keys: INSIGHTS_PANEL_KEYS,
@@ -1148,11 +1165,12 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         </div>
         {insightsOpen && (
           <InsightsPanel
-            key={scopeKey}
+            key={insightsScopeKey ?? scopeKey}
             workspaceId={workspaceId}
-            scopeKey={scopeKey}
+            scopeKey={insightsScopeKey ?? scopeKey}
             filters={panelFilters}
             widget={panelWidget}
+            sharedDefault={insightsDefault}
             onPick={(field, value) => {
               setState({
                 ...state,
@@ -1160,9 +1178,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
               });
             }}
             expanded={insightsExpanded}
-            onToggleExpanded={() => {
-              setInsightsExpanded((grown) => !grown);
-            }}
+            onToggleExpanded={toggleInsightsExpanded}
             onClose={toggleInsights}
             className={
               insightsExpanded

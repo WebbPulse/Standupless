@@ -238,6 +238,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         show_archived=payload.show_archived,
         group_header=payload.group_header,
         collapsed_groups=list(payload.collapsed_groups),
+        insights_display=payload.insights_display.as_row() if payload.insights_display is not None else None,
         icon=payload.icon,
         color=payload.color,
         description=payload.description,
@@ -306,6 +307,11 @@ def update_saved_view(
             raise unprocessable("projects_display must be an arrangement, not null")
         stored = stored_projects_display(view.projects_display).model_dump()
         changes["projects_display"] = {**stored, **changes["projects_display"]}
+    if "insights_display" in changes:
+        if view.lists_projects:
+            raise unprocessable("insights_display applies only to an issue view")
+        insights = payload.insights_display
+        changes["insights_display"] = insights.as_row() if insights is not None else None
     for name in DISPLAY_SWITCHES:
         if name in changes and changes[name] is None:
             if name == "completed_window":

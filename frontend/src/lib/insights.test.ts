@@ -15,17 +15,20 @@ import {
   bucketColor,
   bucketFigure,
   chartTicks,
+  clearInsightsPicks,
   formatHours,
   formatMeasure,
+  insightsDisplayFromPrefs,
   insightsFilters,
   insightsHeadline,
+  insightsPrefsFromDisplay,
   isTimeMeasure,
   narrowTo,
   nextInsightsSort,
-  readInsightsPrefs,
+  readInsightsPicks,
   segmentColumns,
   sortGroups,
-  writeInsightsPrefs,
+  writeInsightsPicks,
 } from './insights';
 import { defaultViewState, type ViewState } from './issueView';
 import { STATUS_COLOR_VALUES } from './statusAppearance';
@@ -263,34 +266,63 @@ describe('acrossAllLabel', () => {
   });
 });
 
-describe('insights prefs', () => {
+describe('insights picks', () => {
   beforeEach(() => {
     globalThis.localStorage.clear();
   });
 
-  it('round trips per list and starts from the defaults', () => {
-    expect(readInsightsPrefs('ws', 'team')).toEqual(DEFAULT_INSIGHTS_PREFS);
+  it('round trips per list and starts with none', () => {
+    expect(readInsightsPicks('ws', 'team')).toEqual({});
     const picked = {
       measure: 'points',
       groupBy: 'label',
       segmentBy: 'priority',
       layout: 'table',
     } as const;
-    writeInsightsPrefs('ws', 'team', picked);
-    expect(readInsightsPrefs('ws', 'team')).toEqual(picked);
-    expect(readInsightsPrefs('ws', 'other')).toEqual(DEFAULT_INSIGHTS_PREFS);
+    writeInsightsPicks('ws', 'team', picked);
+    expect(readInsightsPicks('ws', 'team')).toEqual(picked);
+    expect(readInsightsPicks('ws', 'other')).toEqual({});
+    clearInsightsPicks('ws', 'team');
+    expect(readInsightsPicks('ws', 'team')).toEqual({});
   });
 
-  it('falls back field by field on a stale or broken entry', () => {
+  it('keeps no segment as a pick of its own', () => {
+    writeInsightsPicks('ws', 'team', { segmentBy: '' });
+    expect(readInsightsPicks('ws', 'team')).toEqual({ segmentBy: '' });
+  });
+
+  it('drops only the stale fields of a stale or broken entry', () => {
     globalThis.localStorage.setItem(
       'standupless.insights.ws.team',
       JSON.stringify({ measure: 'gone', groupBy: 'label', layout: 'odd' })
     );
-    expect(readInsightsPrefs('ws', 'team')).toEqual({
-      ...DEFAULT_INSIGHTS_PREFS,
-      groupBy: 'label',
-    });
+    expect(readInsightsPicks('ws', 'team')).toEqual({ groupBy: 'label' });
     globalThis.localStorage.setItem('standupless.insights.ws.team', '{');
-    expect(readInsightsPrefs('ws', 'team')).toEqual(DEFAULT_INSIGHTS_PREFS);
+    expect(readInsightsPicks('ws', 'team')).toEqual({});
+  });
+});
+
+describe('insights display', () => {
+  it('fills what a saved configuration leaves out with the built-in choice', () => {
+    expect(insightsPrefsFromDisplay(null)).toEqual(DEFAULT_INSIGHTS_PREFS);
+    expect(
+      insightsPrefsFromDisplay({ measure: 'points', segment_by: null })
+    ).toEqual({ ...DEFAULT_INSIGHTS_PREFS, measure: 'points' });
+  });
+
+  it('saves a segment left over from an earlier slice as none', () => {
+    expect(
+      insightsDisplayFromPrefs({
+        measure: 'count',
+        groupBy: 'label',
+        segmentBy: 'label',
+        layout: 'chart',
+      })
+    ).toEqual({
+      measure: 'count',
+      group_by: 'label',
+      segment_by: null,
+      layout: 'chart',
+    });
   });
 });

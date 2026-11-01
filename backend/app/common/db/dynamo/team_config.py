@@ -614,6 +614,7 @@ class TeamDisplayDefaults(BaseModel):
     list_display: DisplayOptions | None = None
     board_display: DisplayOptions | None = None
     projects_display: dict[str, str] | None = None
+    insights_display: dict[str, str] | None = None
     updated_by: str | None = None
     updated_at: datetime | None = None
 

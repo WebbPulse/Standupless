@@ -1333,6 +1333,41 @@ class InsightPoint(TypedDict):
     title: str
 
 
+class InsightsDisplay(TypedDict):
+    group_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+    layout: NotRequired[Literal["both", "chart", "table"] | None]
+    measure: NotRequired[Literal["count", "points", "cycle_time", "lead_time", "triage_time", "issue_age"] | None]
+    segment_by: NotRequired[
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
+        | None
+    ]
+
+
 class InstallUrlRead(TypedDict):
     expires_at: str
     url: str
@@ -3241,6 +3276,7 @@ class TeamCreate(TypedDict):
 class TeamDisplayDefaultsRead(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
     effective_projects_display: NotRequired[ProjectsDisplay]
+    insights_display: NotRequired[InsightsDisplay | None]
     list_display: NotRequired[DisplayOptionsBody | None]
     projects_display: NotRequired[ProjectsDisplay | None]
     team_id: str
@@ -3250,6 +3286,7 @@ class TeamDisplayDefaultsRead(TypedDict):
 
 class TeamDisplayDefaultsUpdate(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     list_display: NotRequired[DisplayOptionsBody | None]
     projects_display: NotRequired[ProjectsDisplay | None]
 
@@ -3580,6 +3617,7 @@ class ViewCreate(TypedDict):
     ]
     group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
@@ -3691,6 +3729,7 @@ class ViewRead(TypedDict):
     group_by: NotRequired[str | None]
     group_header: NotRequired[Literal["count", "estimate"]]
     icon: NotRequired[str | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     kind: str
     layout: str
     name: str
@@ -3742,6 +3781,7 @@ class ViewUpdate(TypedDict):
     ]
     group_header: NotRequired[Literal["count", "estimate"] | None]
     icon: NotRequired[str | None]
+    insights_display: NotRequired[InsightsDisplay | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     order_completed_by_recency: NotRequired[bool | None]

@@ -772,3 +772,36 @@ def test_a_retired_team_leaves_the_list_and_refuses_writes_until_unretired(
     assert restored["retired_at"] is None
     created = answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "Back"}))
     assert repositories.issues.get(WORKSPACE, created["issue_id"]) is not None
+
+
+def test_display_defaults_set_and_clear_insights(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The panel default is one more page of the same tool, set and cleared without moving the others."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+
+    saved = answer(
+        tool(
+            client,
+            admin,
+            "update_team_display_defaults",
+            {
+                "team_id": "ABC",
+                "list_display": {"group_by": "assignee"},
+                "insights_display": {"measure": "points", "group_by": "priority", "layout": "table"},
+            },
+        )
+    )
+    invalid = refusal(
+        tool(
+            client,
+            admin,
+            "update_team_display_defaults",
+            {"team_id": "ABC", "insights_display": {"group_by": "team", "segment_by": "team"}},
+        )
+    )
+    cleared = answer(tool(client, admin, "update_team_display_defaults", {"team_id": "ABC", "insights_display": None}))
+
+    assert saved["insights_display"]["measure"] == "points"
+    assert saved["insights_display"]["layout"] == "table"
+    assert "segment_by" in invalid
+    assert cleared["insights_display"] is None
+    assert cleared["list_display"]["group_by"] == "assignee"

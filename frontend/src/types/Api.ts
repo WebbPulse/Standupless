@@ -4753,6 +4753,18 @@ export type InsightDimension =
 export type InsightMeasure =
   'count' | 'points' | 'cycle_time' | 'lead_time' | 'triage_time' | 'issue_age';
 
+/**
+ * The insights panel a view or a team saves for every viewer without picks of
+ * their own. A null measure, slice or layout keeps the panel's built-in choice,
+ * and a null segment draws none.
+ */
+export interface InsightsDisplay {
+  measure?: InsightMeasure | null;
+  group_by?: InsightDimension | null;
+  segment_by?: InsightDimension | null;
+  layout?: 'both' | 'chart' | 'table' | null;
+}
+
 /** The time measures, which answer durations and points rather than sums. */
 export type InsightTimeMeasure = Exclude<InsightMeasure, 'count' | 'points'>;
 

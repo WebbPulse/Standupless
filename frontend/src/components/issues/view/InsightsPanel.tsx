@@ -5,9 +5,10 @@
  * breakdown table show the figures, and a time measure draws a scatterplot of
  * issues instead of columns. It sends the same query the list runs, so it
  * always describes the rows on screen, and a column or row on a filterable
- * property narrows the list to it when clicked. The viewer's picks come back
- * when the panel reopens. InsightsChart is the compact sideways bars dashboards
- * draw.
+ * property narrows the list to it when clicked. The panel opens on the default
+ * a view or a team saved for everyone, and the viewer's own picks win over it
+ * field by field and come back when the panel reopens. InsightsChart is the
+ * compact sideways bars dashboards draw.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -27,7 +28,6 @@ import { eventMatches, parseKeys } from '../../../hooks/useShortcuts';
 import type { WidgetSource } from '../../../lib/dashboards';
 import { errorMessage } from '../../../lib/errors';
 import {
-  DEFAULT_INSIGHTS_PREFS,
   FILTER_FOR,
   INSIGHT_DIMENSIONS,
   INSIGHT_MEASURES,
@@ -35,22 +35,28 @@ import {
   INSIGHTS_POLL_MS,
   UNSET_COLOR,
   bucketColor,
+  clearInsightsPicks,
   formatMeasure,
+  insightsDisplayFromPrefs,
   insightsHeadline,
+  insightsPrefsFromDisplay,
   isTimeMeasure,
-  readInsightsPrefs,
+  readInsightsPicks,
   sortGroups,
-  writeInsightsPrefs,
+  writeInsightsPicks,
   type InsightsLayout,
+  type InsightsPicks,
   type InsightsPrefs,
   type InsightsSort,
 } from '../../../lib/insights';
 import type { FilterField } from '../../../lib/issueView';
+import { showErrorToast, showToast } from '../../../lib/toast';
 import type {
   InsightBucket,
   InsightDimension,
   InsightGroup,
   InsightMeasure,
+  InsightsDisplay,
   InsightsRead,
 } from '../../../types/Api';
 import AddToDashboardDialog from '../../dashboards/AddToDashboardDialog';
@@ -231,6 +237,18 @@ const PICKER_LABEL = 'flex min-w-0 flex-col gap-1 text-xs text-text-muted';
 
 const TOGGLE_TOKEN = parseKeys(INSIGHTS_PANEL_KEYS)[0];
 
+/** The panel configuration a view or a team saved for everyone, and how to change it. */
+export interface InsightsDefaultControl {
+  /** The saved configuration, null when none is set. */
+  display: InsightsDisplay | null;
+  /**
+   * Saves a configuration or clears it with null, settling once `display`
+   * reads the change. Left out for a viewer who may not change it, which hides
+   * the controls.
+   */
+  save?: ((display: InsightsDisplay | null) => Promise<void>) | undefined;
+}
+
 /** Props for InsightsPanel. */
 export interface InsightsPanelProps {
   workspaceId: string;
@@ -241,6 +259,8 @@ export interface InsightsPanelProps {
   onPick?: ((field: FilterField, value: string) => void) | undefined;
   /** What a widget added from this panel reads, which offers Add to dashboard. */
   widget?: WidgetSource | undefined;
+  /** The default for everyone this list has, for a list that can hold one. */
+  sharedDefault?: InsightsDefaultControl | undefined;
   /** Whether the panel has taken the list's room. */
   expanded?: boolean | undefined;
   /** Grows the panel over the list or gives the room back, which offers the control. */
@@ -257,6 +277,7 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
   filters,
   onPick,
   widget,
+  sharedDefault,
   expanded = false,
   onToggleExpanded,
   onClose,
@@ -265,17 +286,73 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
   const auth = useQueryAuth();
   const [adding, setAdding] = useState(false);
   const { peekIssue } = usePeekIssue();
-  const [prefs, setPrefs] = useState<InsightsPrefs>(() =>
-    readInsightsPrefs(workspaceId, scopeKey)
+  const [picks, setPicks] = useState<InsightsPicks>(() =>
+    readInsightsPicks(workspaceId, scopeKey)
   );
   const [sort, setSort] = useState<InsightsSort>(null);
+  const [savingDefault, setSavingDefault] = useState(false);
+  const shared = insightsPrefsFromDisplay(sharedDefault?.display);
+  const prefs: InsightsPrefs = { ...shared, ...picks };
   const { measure, groupBy, segmentBy, layout } = prefs;
   const segment = segmentBy === groupBy ? '' : segmentBy;
+  const display = insightsDisplayFromPrefs(prefs);
+  const matchesDefault =
+    JSON.stringify(display) ===
+    JSON.stringify(insightsDisplayFromPrefs(shared));
+  const hasDefault =
+    sharedDefault?.display !== null && sharedDefault?.display !== undefined;
+  const saveDefault = sharedDefault?.save;
 
   const change = (patch: Partial<InsightsPrefs>): void => {
-    const next = { ...prefs, ...patch };
-    setPrefs(next);
-    writeInsightsPrefs(workspaceId, scopeKey, next);
+    const next = { ...picks, ...patch };
+    setPicks(next);
+    writeInsightsPicks(workspaceId, scopeKey, next);
+  };
+
+  const reset = (): void => {
+    setPicks({});
+    clearInsightsPicks(workspaceId, scopeKey);
+    setSort(null);
+  };
+
+  /**
+   * Saves what is drawn for everyone, which leaves the viewer following it with
+   * no picks of their own. The stored picks go first, because saving a view
+   * remounts the page and the new panel reads them as it opens; a refused save
+   * puts them back, and the picks in hand keep the panel steady until then.
+   */
+  const setDefaultForEveryone = async (): Promise<void> => {
+    if (saveDefault === undefined) return;
+    setSavingDefault(true);
+    clearInsightsPicks(workspaceId, scopeKey);
+    try {
+      await saveDefault(display);
+      setPicks({});
+      showToast('Saved as the default for everyone.');
+    } catch (failure) {
+      writeInsightsPicks(workspaceId, scopeKey, picks);
+      showErrorToast(
+        errorMessage(failure, 'Could not save the default for everyone.')
+      );
+    } finally {
+      setSavingDefault(false);
+    }
+  };
+
+  /** Drops the default for everyone, which leaves the viewer's own picks alone. */
+  const clearDefaultForEveryone = async (): Promise<void> => {
+    if (saveDefault === undefined) return;
+    setSavingDefault(true);
+    try {
+      await saveDefault(null);
+      showToast('Default cleared.');
+    } catch (failure) {
+      showErrorToast(
+        errorMessage(failure, 'Could not clear the default for everyone.')
+      );
+    } finally {
+      setSavingDefault(false);
+    }
   };
 
   const query = useMemo<InsightsQuery>(
@@ -375,14 +452,27 @@ export const InsightsPanel: React.FC<InsightsPanelProps> = ({
             </MenuItem>
           ))}
           <MenuSeparator />
-          <MenuItem
-            onSelect={() => {
-              change(DEFAULT_INSIGHTS_PREFS);
-              setSort(null);
-            }}
-          >
-            Reset to defaults
-          </MenuItem>
+          <MenuItem onSelect={reset}>Reset to defaults</MenuItem>
+          {saveDefault !== undefined && (
+            <MenuItem
+              disabled={savingDefault || matchesDefault}
+              onSelect={() => {
+                void setDefaultForEveryone();
+              }}
+            >
+              Set default for everyone
+            </MenuItem>
+          )}
+          {saveDefault !== undefined && hasDefault && (
+            <MenuItem
+              disabled={savingDefault}
+              onSelect={() => {
+                void clearDefaultForEveryone();
+              }}
+            >
+              Clear default for everyone
+            </MenuItem>
+          )}
         </Menu>
         {widget !== undefined && (
           <Menu

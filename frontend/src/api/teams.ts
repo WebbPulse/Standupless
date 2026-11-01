@@ -44,6 +44,7 @@ import type {
   TeamOrderUpdate,
   TeamRead,
   TeamUpdate,
+  InsightsDisplay,
   ProjectsDisplayPreference,
   StatusCreate,
   StatusListRead,
@@ -111,6 +112,8 @@ export interface TeamDisplayDefaultsRead {
   board_display: TeamDisplayOptions | null;
   /** The team's own projects page default, null when it set none. */
   projects_display?: ProjectsDisplayPreference | null;
+  /** The insights panel the team's list and board open with, null when it set none. */
+  insights_display?: InsightsDisplay | null;
   /** What the team's projects page opens with: the team default, else the workspace's, else the built-in. */
   effective_projects_display?: ProjectsDisplayPreference;
   updated_by: string | null;
@@ -122,6 +125,7 @@ export interface TeamDisplayDefaultsUpdate {
   list_display?: TeamDisplayOptions | null;
   board_display?: TeamDisplayOptions | null;
   projects_display?: ProjectsDisplayPreference | null;
+  insights_display?: InsightsDisplay | null;
 }
 
 /** The workspace's own projects page default, as its display defaults route answers it. */

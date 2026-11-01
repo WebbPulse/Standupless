@@ -23,6 +23,7 @@ import type {
   InsightGroup,
   InsightMeasure,
   InsightTimeMeasure,
+  InsightsDisplay,
   InsightsRead,
 } from '../types/Api';
 
@@ -173,7 +174,7 @@ export const INSIGHTS_PANEL_KEYS = 'mod+shift+i';
 /** What the panel draws: both, the chart alone or the table alone. */
 export type InsightsLayout = 'both' | 'chart' | 'table';
 
-/** The panel's choices, which a viewer gets back when they reopen it. */
+/** The panel's choices, from the viewer's picks over the shared default over the built-in ones. */
 export interface InsightsPrefs {
   measure: InsightMeasure;
   groupBy: InsightDimension;
@@ -198,18 +199,25 @@ const isDimension = (value: unknown): value is InsightDimension =>
   INSIGHT_DIMENSIONS.some((option) => option.value === value);
 
 /**
- * The viewer's choices for one list, field by field, so a stale or hand edited
- * entry falls back to the default rather than asking the server for nonsense.
+ * The fields a viewer changed on one list, which win over the shared default.
+ * Kept apart from the choices they saw, so a field they never touched follows
+ * the default when an admin changes it.
  */
-export const readInsightsPrefs = (
+export type InsightsPicks = Partial<InsightsPrefs>;
+
+/**
+ * The viewer's picks for one list, field by field, so a stale or hand edited
+ * entry drops to the shared default rather than asking the server for nonsense.
+ */
+export const readInsightsPicks = (
   workspaceId: string,
   scopeKey: string
-): InsightsPrefs => {
+): InsightsPicks => {
   try {
     const raw = globalThis.localStorage.getItem(
       insightsPrefsKey(workspaceId, scopeKey)
     );
-    if (raw === null) return DEFAULT_INSIGHTS_PREFS;
+    if (raw === null) return {};
     const stored = JSON.parse(raw) as Partial<
       Record<keyof InsightsPrefs, unknown>
     >;
@@ -217,34 +225,72 @@ export const readInsightsPrefs = (
       (option) => option.value === stored.measure
     )?.value;
     const layout = INSIGHTS_LAYOUTS.find((option) => option === stored.layout);
+    const { groupBy, segmentBy } = stored;
     return {
-      measure: measure ?? DEFAULT_INSIGHTS_PREFS.measure,
-      groupBy: isDimension(stored.groupBy)
-        ? stored.groupBy
-        : DEFAULT_INSIGHTS_PREFS.groupBy,
-      segmentBy: isDimension(stored.segmentBy) ? stored.segmentBy : '',
-      layout: layout ?? DEFAULT_INSIGHTS_PREFS.layout,
+      ...(measure === undefined ? {} : { measure }),
+      ...(isDimension(groupBy) ? { groupBy } : {}),
+      ...(segmentBy === '' || isDimension(segmentBy) ? { segmentBy } : {}),
+      ...(layout === undefined ? {} : { layout }),
     };
   } catch {
-    return DEFAULT_INSIGHTS_PREFS;
+    return {};
   }
 };
 
-/** Keeps the viewer's choices for one list; a refused write only costs the memory of them. */
-export const writeInsightsPrefs = (
+/** Keeps the viewer's picks for one list; a refused write only costs the memory of them. */
+export const writeInsightsPicks = (
   workspaceId: string,
   scopeKey: string,
-  prefs: InsightsPrefs
+  picks: InsightsPicks
 ): void => {
   try {
     globalThis.localStorage.setItem(
       insightsPrefsKey(workspaceId, scopeKey),
-      JSON.stringify(prefs)
+      JSON.stringify(picks)
     );
   } catch {
     return;
   }
 };
+
+/** Forgets the viewer's picks for one list, returning them to the shared default. */
+export const clearInsightsPicks = (
+  workspaceId: string,
+  scopeKey: string
+): void => {
+  try {
+    globalThis.localStorage.removeItem(insightsPrefsKey(workspaceId, scopeKey));
+  } catch {
+    return;
+  }
+};
+
+/** What a saved configuration opens the panel with, the built-in choice filling each gap. */
+export const insightsPrefsFromDisplay = (
+  display: InsightsDisplay | null | undefined
+): InsightsPrefs => ({
+  measure: display?.measure ?? DEFAULT_INSIGHTS_PREFS.measure,
+  groupBy: display?.group_by ?? DEFAULT_INSIGHTS_PREFS.groupBy,
+  segmentBy: display?.segment_by ?? DEFAULT_INSIGHTS_PREFS.segmentBy,
+  layout: display?.layout ?? DEFAULT_INSIGHTS_PREFS.layout,
+});
+
+/**
+ * The configuration to save for the panel as it is drawn. A segment left over
+ * from an earlier slice draws nothing, so it saves as none and the stored value
+ * always passes the server's rule that the two differ.
+ */
+export const insightsDisplayFromPrefs = ({
+  measure,
+  groupBy,
+  segmentBy,
+  layout,
+}: InsightsPrefs): InsightsDisplay => ({
+  measure,
+  group_by: groupBy,
+  segment_by: segmentBy === '' || segmentBy === groupBy ? null : segmentBy,
+  layout,
+});
 
 /**
  * The gridline values for a chart whose tallest bar is `max`: whole steps of

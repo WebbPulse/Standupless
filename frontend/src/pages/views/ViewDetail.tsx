@@ -13,21 +13,30 @@ import { Link, useParams } from 'react-router-dom';
 import {
   getView,
   listsProjects,
+  updateView,
   type SavedViewDisplayRead,
 } from '../../api/views';
-import IssueViewPage from '../../components/issues/view/IssueViewPage';
+import type { InsightsDefaultControl } from '../../components/issues/view/InsightsPanel';
+import IssueViewPage, {
+  refreshViewLists,
+} from '../../components/issues/view/IssueViewPage';
 import { ErrorAlert } from '../../components/ui/alert';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useAuth } from '../../hooks/useAuth';
+import {
+  useInsightsPlacement,
+  type InsightsPlacement,
+} from '../../hooks/useInsightsPlacement';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canWriteIssues } from '../../lib/capabilities';
+import { canEditSharedView, canWriteIssues } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { viewScope, viewToState } from '../../lib/issueView';
 import { viewsPath } from '../../lib/paths';
 import { viewKey } from '../../lib/queryKeys';
 import Projects from '../planning/Projects';
-import type { TeamRead } from '../../types/Api';
+import type { InsightsDisplay, TeamRead } from '../../types/Api';
 
 /** How often the view is re-read. */
 const POLL_MS = 60000;
@@ -39,6 +48,9 @@ interface SavedViewProps {
   workspaceId: string;
   slug: string;
   leading: React.ReactNode;
+  /** Re-reads the view, settling once the page holds the saved version. */
+  refetchView: () => Promise<unknown>;
+  insightsPlacement: InsightsPlacement;
 }
 
 /** One loaded version of a view, remounted whenever the view is saved. */
@@ -48,8 +60,11 @@ const SavedView: React.FC<SavedViewProps> = ({
   workspaceId,
   slug,
   leading,
+  refetchView,
+  insightsPlacement,
 }) => {
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const [base] = useState(() => viewToState(view));
   const [scope] = useState(() => viewScope(view.filter));
   const teamId = typeof scope.team_id === 'string' ? scope.team_id : '';
@@ -62,6 +77,25 @@ const SavedView: React.FC<SavedViewProps> = ({
     canWriteIssues(workspace?.role, team.role)
   );
 
+  const mayEditDefault = canEditSharedView(
+    view,
+    user?.id,
+    workspace?.role,
+    teams.find((team) => team.id === view.team_id)?.role
+  );
+  const insightsDefault: InsightsDefaultControl = {
+    display: view.insights_display ?? null,
+    save: mayEditDefault
+      ? async (display: InsightsDisplay | null) => {
+          await updateView(workspaceId, view.view_id, {
+            insights_display: display,
+          });
+          refreshViewLists(workspaceId, view.team_id ?? undefined);
+          await refetchView();
+        }
+      : undefined,
+  };
+
   return (
     <IssueViewPage
       workspaceId={workspaceId}
@@ -69,6 +103,9 @@ const SavedView: React.FC<SavedViewProps> = ({
       title={view.name}
       leading={leading}
       scopeKey={`view:${view.view_id}:${view.updated_at}`}
+      insightsScopeKey={`view:${view.view_id}`}
+      insightsDefault={insightsDefault}
+      insightsPlacement={insightsPlacement}
       scope={scope}
       teams={viewTeams}
       base={base}
@@ -76,6 +113,23 @@ const SavedView: React.FC<SavedViewProps> = ({
       canEdit={canEdit}
       homeTeam={homeTeam}
       emptyMessage="No issues match this view."
+    />
+  );
+};
+
+/**
+ * One open view across its saved versions, holding what must outlast the remount
+ * each save brings, so setting a default from the insights panel leaves it open.
+ */
+const SavedViewHost: React.FC<Omit<SavedViewProps, 'insightsPlacement'>> = (
+  props
+) => {
+  const insightsPlacement = useInsightsPlacement();
+  return (
+    <SavedView
+      key={props.view.updated_at}
+      {...props}
+      insightsPlacement={insightsPlacement}
     />
   );
 };
@@ -89,7 +143,11 @@ export const ViewDetail: React.FC = () => {
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
 
-  const { data: view, error } = usePolledQuery(
+  const {
+    data: view,
+    error,
+    refetch: refetchView,
+  } = usePolledQuery(
     ({ signal }) => getView(workspaceId, viewId, signal),
     {
       intervalMs: POLL_MS,
@@ -135,13 +193,14 @@ export const ViewDetail: React.FC = () => {
   }
 
   return (
-    <SavedView
-      key={`${view.view_id}:${view.updated_at}`}
+    <SavedViewHost
+      key={view.view_id}
       view={view}
       teams={teams}
       workspaceId={workspaceId}
       slug={slug}
       leading={leading}
+      refetchView={refetchView}
     />
   );
 };

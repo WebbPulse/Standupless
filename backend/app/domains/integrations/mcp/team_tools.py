@@ -80,6 +80,7 @@ from app.domains.integrations.mcp.toolkit import (
     nullable,
     nullable_enum,
     object_schema,
+    insights_display_schema,
     projects_display_schema,
     string,
     team_id_ref,
@@ -686,7 +687,7 @@ def _update_display_defaults(call: ToolCall) -> Any:
     """Set or clear what a team's issue list, board and projects page open with for members who kept theirs."""
     team = admin_team(call)
     payload = TeamDisplayDefaultsUpdate.model_validate(
-        given_arguments(call, ("list_display", "board_display", "projects_display"))
+        given_arguments(call, ("list_display", "board_display", "projects_display", "insights_display"))
     )
     team_writes.update_display_defaults(
         call.repositories, call.context.workspace_id, team.team_id, call.context.user_id, payload
@@ -1265,7 +1266,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Set the default layout, grouping, ordering, row properties and switches a team's issue list "
             "(list_display), board (board_display) and projects page (projects_display) open with for members "
-            "who have not changed their own display. A page left out keeps its default and null clears it, so "
+            "who have not changed their own display, and the insights panel beside the list and board "
+            "(insights_display). A page left out keeps its default and null clears it, so "
             "the projects page falls back to the workspace default. Needs team admin."
         ),
         scopes=("teams:write",),
@@ -1278,6 +1280,12 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                     "What the team's projects page opens with: layout, group and direction, rows, order, "
                     "closed, lead_team, empty, zoom, dependencies and columns, replacing the saved default whole; "
                     "a missing field takes the built-in choice and null clears the team default",
+                    clearable=True,
+                ),
+                "insights_display": insights_display_schema(
+                    "The insights panel the team's list and board open with for members without picks of their "
+                    "own: measure, group_by, segment_by and layout, replacing the saved default whole; a missing "
+                    "field takes the panel's built-in choice and null clears the team default",
                     clearable=True,
                 ),
             },

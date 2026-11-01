@@ -9961,6 +9961,94 @@
         "title": "InsightPoint",
         "type": "object"
       },
+      "InsightsDisplay": {
+        "description": "The view insights panel a list opens with for every viewer without picks of their own.\n\nSaved on a view or as a team's display default. A null `measure`, `group_by`\nor `layout` keeps the panel's built-in choice, and a null `segment_by` draws\nno segments.",
+        "properties": {
+          "group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group By"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "both",
+                  "chart",
+                  "table"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
+          "measure": {
+            "anyOf": [
+              {
+                "enum": [
+                  "count",
+                  "points",
+                  "cycle_time",
+                  "lead_time",
+                  "triage_time",
+                  "issue_age"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measure"
+          },
+          "segment_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment By"
+          }
+        },
+        "title": "InsightsDisplay",
+        "type": "object"
+      },
       "InsightsRead": {
         "description": "A breakdown of the issues one scope and filter select, grouped by one dimension.\n\n`total` and `issue_count` count each issue once. A label breakdown counts an\nissue under every label it carries, so its bars can sum past the total.\n`truncated` is set when the scope held more than `row_cap` issues, and the\nfigures then cover only the issues read. Under a time measure `value` is the\nnumber of issues measured, each bucket carries `durations`, and `durations`\nand `points` cover the whole set; both are null and empty otherwise.\n`segment_totals` measures each segment across every issue, counting an issue\nonce per segment value however many groups it falls in, so an across all row\nneed not add up bars that can double count.",
         "properties": {
@@ -25152,6 +25240,16 @@
           "effective_projects_display": {
             "$ref": "#/components/schemas/ProjectsDisplay"
           },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "list_display": {
             "anyOf": [
               {
@@ -25213,6 +25311,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
               },
               {
                 "type": "null"
@@ -28821,6 +28929,16 @@
             ],
             "title": "Icon"
           },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "default": "list",
             "enum": [
@@ -29042,7 +29160,7 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view. `collapsed_groups` names the\ngroups folded and the board columns and swimlanes hidden, empty when none is.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members, and so is `subscribed`, whether the\ncaller follows the view to hear about issues entering it. `subscriber_count`\nis how many members follow it. `projects_display` is the arrangement of\na project view and null on an issue view. `insights_display` is the insights\npanel the view opens with for a viewer without picks of their own, null when\nnone was set and on a project view. `collapsed_groups` names the groups folded\nand the board columns and swimlanes hidden, empty when none is.",
         "properties": {
           "collapsed_groups": {
             "items": {
@@ -29138,6 +29256,16 @@
               }
             ],
             "title": "Icon"
+          },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "kind": {
             "title": "Kind",
@@ -29285,7 +29413,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view. `owner_id` hands a shared view to another\nmember, the owner's or a workspace admin's call.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, `projects_display`\napplies only to a project view and `insights_display` only to an issue view,\nnull clearing it. `owner_id` hands a shared view to another member, the\nowner's or a workspace admin's call.",
         "properties": {
           "collapsed_groups": {
             "anyOf": [
@@ -29424,6 +29552,16 @@
               }
             ],
             "title": "Icon"
+          },
+          "insights_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "layout": {
             "anyOf": [
