@@ -174,7 +174,10 @@ const readDelta = async (
       { issues: page.issues, removedIds },
       query.sort ?? 'updated_desc',
       held.truncated ? COLLECTION_LIMIT : undefined,
-      { reverse: query.reverse === true }
+      {
+        reverse: query.reverse === true,
+        completedByRecency: query.completed_by_recency === true,
+      }
     ),
   };
 };

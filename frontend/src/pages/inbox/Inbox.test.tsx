@@ -17,7 +17,8 @@
  * rows, and unsubscribing from it, or with Cmd or Ctrl Shift S, offers
  * Undo. Its triage actions show in the command palette while it is open.
  * Ctrl F opens quick search over the loaded rows, Show unread first reorders them
- * without a new read, and Shift Backspace offers to delete every read row.
+ * without a new read, Shift Backspace offers to delete every read row and Cmd
+ * or Ctrl Backspace every row.
  * With the split inbox on, the Priority and Other tabs each read their own
  * bucket and show their unread counts, and Mark all read keeps to the open tab.
  * An empty Priority tab shows what lands there with a way to Other instead of
@@ -1560,6 +1561,47 @@ describe('inbox', () => {
     ).toBeInTheDocument();
     expect(clearInbox).not.toHaveBeenCalled();
     expect(deleteNotification).not.toHaveBeenCalled();
+  });
+
+  it('offers to delete every row with Cmd or Ctrl backspace', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await keysBound('mod+backspace');
+    press('Backspace', { ctrlKey: true });
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete all notifications',
+    });
+    expect(clearInbox).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(clearInbox).toHaveBeenCalledWith(
+        expect.objectContaining({ read_only: false })
+      );
+    });
+  });
+
+  it('shows the delete all keys on its menu row and in the page actions', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await waitFor(() => {
+      expect(
+        within(screen.getByRole('region', { name: 'Page actions' })).getByRole(
+          'button',
+          { name: 'Inbox: Delete all notifications' }
+        )
+      ).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Delete all notifications' })
+    ).toHaveTextContent(/Ctrl\s*Backspace/);
   });
 });
 

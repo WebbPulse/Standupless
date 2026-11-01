@@ -717,6 +717,10 @@ def _display_options_schema(page: str) -> dict[str, Any]:
             "sub_group_by": _display_grouping("Sub group within each group, needs group_by; none for no sub grouping"),
             "ordering": enum(get_args(SortField), "Ordering within groups"),
             "ordering_reversed": {"type": "boolean", "description": "Reverse the ordering"},
+            "order_completed_by_recency": {
+                "type": "boolean",
+                "description": "Sort completed and cancelled issues by when they closed, newest first",
+            },
             "visible_properties": {
                 "type": "array",
                 "items": {"type": "string", "enum": list(VISIBLE_PROPERTIES)},

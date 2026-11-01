@@ -1,6 +1,6 @@
 /**
  * The pricing page shows every plan with both billing intervals in the markup,
- * sends the plan not yet on sale to the contact page, links the refund policy
+ * sends every plan to sign up, links the refund policy
  * and keeps to the copy rules.
  */
 
@@ -57,7 +57,7 @@ describe('Pricing', () => {
     expect(document.title).toBe(PRICING_TITLE);
   });
 
-  it('sends Free and Standard to sign up and Business to the contact page', () => {
+  it('sends every plan to sign up with no plan marked as coming soon', () => {
     renderPage();
 
     expect(
@@ -67,11 +67,9 @@ describe('Pricing', () => {
       within(card('Standard')).getByRole('link', { name: 'Get started' })
     ).toHaveAttribute('href', '/register');
     expect(
-      within(card('Business')).getByText('Coming soon')
-    ).toBeInTheDocument();
-    expect(
-      within(card('Business')).getByRole('link', { name: 'Contact us' })
-    ).toHaveAttribute('href', '/contact');
+      within(card('Business')).getByRole('link', { name: 'Get started' })
+    ).toHaveAttribute('href', '/register');
+    expect(within(card('Business')).queryByText('Coming soon')).toBeNull();
   });
 
   it('answers the cancellation question with a link to the refund policy', () => {

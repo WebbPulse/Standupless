@@ -5,7 +5,8 @@
  * reaction on a comment carries the issue it was written on. Also covers
  * syncing a thread to GitHub from its menu, the badge a synced thread wears,
  * and unsyncing it, the badge a thread synced with Slack wears, and resolving a thread: the collapsed one-line summary,
- * expanding it, and unresolving it. And quoting: a whole comment from its
+ * expanding it, and unresolving it, and a link to a comment in a resolved
+ * thread opening it. And quoting: a whole comment from its
  * menu, or a selected passage of it, into the thread's reply as a blockquote.
  * And a thread pinned to a passage of the description: the quote at its top,
  * which scrolls to the passage, and the note once the passage is edited away,
@@ -370,10 +371,11 @@ const reply = (commentId: string, body: string): CommentRead => ({
 const renderThread = (
   overrides: Partial<CommentRead> = {},
   replies: CommentRead[] = [],
-  canComment = true
+  canComment = true,
+  path = '/'
 ): void => {
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <CommentCard
         comment={{ ...comment(), ...overrides }}
         replies={replies}
@@ -487,6 +489,27 @@ describe('resolving a thread', () => {
     await waitFor(() => {
       expect(unresolveThread).toHaveBeenCalledWith('c-1');
     });
+  });
+
+  it('opens a resolved thread a link to one of its replies lands on', () => {
+    renderThread(resolved, [reply('c-2', 'Yes')], true, '/issue#comment-c-2');
+
+    expect(screen.queryByRole('button', { name: /Show thread/ })).toBeNull();
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(document.getElementById('comment-c-2')).not.toBeNull();
+  });
+
+  it('opens a resolved thread a link to its root lands on', () => {
+    renderThread(resolved, [reply('c-2', 'Yes')], true, '/issue#comment-c-1');
+
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+  });
+
+  it('keeps a resolved thread folded when the link names another comment', () => {
+    renderThread(resolved, [reply('c-2', 'Yes')], true, '/issue#comment-c-9');
+
+    expect(screen.getByRole('button', { name: /Show thread/ })).toBeVisible();
+    expect(screen.queryByRole('article')).toBeNull();
   });
 
   it('shows a reopened thread in full again', () => {

@@ -87,3 +87,27 @@ def test_the_backfill_derives_the_moments_from_status_history(
     assert filled.completed_at == moves[statuses["completed"].status_id]
     assert filled.cancelled_at is None
     assert run(repositories, [workspace], dry_run=False)[2] == 0
+
+
+def test_completed_by_recency_lists_closed_issues_last_newest_first(
+    client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """Open issues keep the main ordering and closed ones follow them, newest closed first, in either direction."""
+    sign_in(client, OWNER)
+    urgent_done = create_issue(client, workspace, title="Urgent done", priority="urgent")
+    low_open = create_issue(client, workspace, title="Low open", priority="low")
+    high_open = create_issue(client, workspace, title="High open", priority="high")
+    cancelled = create_issue(client, workspace, title="Cancelled", priority="high")
+    low_done = create_issue(client, workspace, title="Low done", priority="low")
+    _patch(client, workspace, urgent_done["id"], statuses["completed"].status_id)
+    _patch(client, workspace, cancelled["id"], statuses["cancelled"].status_id)
+    _patch(client, workspace, low_done["id"], statuses["completed"].status_id)
+
+    plain = _list(client, workspace, sort="priority_desc")
+    assert plain[0] == urgent_done["id"]
+
+    closed = [low_done["id"], cancelled["id"], urgent_done["id"]]
+    recent = _list(client, workspace, sort="priority_desc", completed_by_recency="true")
+    assert recent == [high_open["id"], low_open["id"], *closed]
+    flipped = _list(client, workspace, sort="priority_desc", reverse="true", completed_by_recency="true")
+    assert flipped == [low_open["id"], high_open["id"], *closed]

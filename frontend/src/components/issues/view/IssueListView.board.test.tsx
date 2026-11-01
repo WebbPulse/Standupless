@@ -3,10 +3,11 @@
  * ones, j and k stay in the focused column, labels move to Shift+L, and the
  * column keys are listed for the help overlay and the palette only on a board,
  * and Cmd or Ctrl+Alt and a digit set the status at that workflow position on
- * a focused card or a selection of rows.
+ * a focused card or a selection of rows. Cmd or Ctrl+click on a card toggles
+ * it in the selection without opening it.
  */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderedIssueRead } from '../../../api/issues';
@@ -246,6 +247,24 @@ describe('IssueListView board keys', () => {
     press('3', { ctrlKey: true, altKey: true, code: 'Digit3' });
 
     expect(update).toHaveBeenCalledWith(['a1'], { status_id: 'st-c' });
+  });
+
+  it('toggles a card on Cmd or Ctrl+click without opening it', () => {
+    renderView();
+    const card = (id: string): HTMLElement =>
+      screen.getByText(`Issue ${id}`).closest('li') as HTMLElement;
+    const title = (id: string): HTMLElement =>
+      screen.getByText(`Issue ${id}`).closest('a') as HTMLElement;
+
+    expect(fireEvent.click(title('a2'), { metaKey: true })).toBe(false);
+    fireEvent.click(title('c1'), { ctrlKey: true });
+    expect(card('a2')).toHaveAttribute('aria-selected', 'true');
+    expect(card('c1')).toHaveAttribute('aria-selected', 'true');
+    expect(card('a1')).toHaveAttribute('aria-selected', 'false');
+
+    fireEvent.click(title('a2'), { ctrlKey: true });
+    expect(card('a2')).toHaveAttribute('aria-selected', 'false');
+    expect(card('c1')).toHaveAttribute('aria-selected', 'true');
   });
 
   it('sets every selected row to the status at a position in one write', () => {
