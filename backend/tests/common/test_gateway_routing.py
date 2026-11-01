@@ -335,5 +335,6 @@ def test_the_routes_apple_posts_to_stay_outside_the_access_gate(route_key: str) 
     A key left to the `/api/auth` prefix resolves to the staging access gate, and the
     form post or notification would then die at the edge in staging only.
     """
-    pattern = rf'"{re.escape(route_key)}"\s*=\s*\{{\s*integration\s*=\s*"identity",\s*authorization_type\s*=\s*"NONE"\s*\}}'
+    declaration = r'\s*=\s*\{\s*integration\s*=\s*"identity",\s*authorization_type\s*=\s*"NONE"\s*\}'
+    pattern = f'"{re.escape(route_key)}"{declaration}'
     assert re.search(pattern, _terraform_source()), f"{route_key} is not an explicit NONE route on identity"

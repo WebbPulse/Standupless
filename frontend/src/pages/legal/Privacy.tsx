@@ -35,8 +35,8 @@ const Privacy: React.FC = () => (
         </li>
         <li>
           <strong className="text-text">Sign in with a provider:</strong> if you
-          sign in with Google, GitHub or Apple, we receive your email address and
-          name from that provider and store a link between the two accounts.
+          sign in with Google, GitHub or Apple, we receive your email address
+          and name from that provider and store a link between the two accounts.
         </li>
         <li>
           <strong className="text-text">Workspace content:</strong> the
