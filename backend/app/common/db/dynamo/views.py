@@ -135,6 +135,7 @@ class SavedView(BaseModel):
     group_header: str | None = None
     collapsed_groups: list[str] | None = None
     projects_display: dict[str, str] | None = None
+    insights_display: dict[str, str] | None = None
     icon: str | None = None
     color: str | None = None
     description: str | None = None

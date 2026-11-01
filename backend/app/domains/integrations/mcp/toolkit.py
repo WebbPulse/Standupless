@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.schemas.insights import INSIGHT_DIMENSIONS, INSIGHT_MEASURES, INSIGHTS_LAYOUTS
 from app.common.api.schemas.planning import project_slug_id
 from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
 from app.common.body_versions import BODY_CHANGED, body_version
@@ -169,6 +170,25 @@ def projects_display_schema(description: str, *, clearable: bool = False) -> dic
                 "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
                 "description": "The properties shown beside the name; an empty list shows the name alone",
             },
+        },
+        "additionalProperties": False,
+        "description": description,
+    }
+
+
+def insights_display_schema(description: str, *, clearable: bool = False) -> dict[str, Any]:
+    """The view insights panel configuration a saved view or a team default takes."""
+    return {
+        "type": ["object", "null"] if clearable else "object",
+        "properties": {
+            "measure": enum(INSIGHT_MEASURES, "What the panel measures"),
+            "group_by": enum(INSIGHT_DIMENSIONS, "The slice each column stands for"),
+            "segment_by": {
+                "type": ["string", "null"],
+                "enum": [*INSIGHT_DIMENSIONS, None],
+                "description": "The property segmenting each column, different from group_by; null for none",
+            },
+            "layout": enum(INSIGHTS_LAYOUTS, "What the panel draws: both, chart or table"),
         },
         "additionalProperties": False,
         "description": description,

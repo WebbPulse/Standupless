@@ -440,3 +440,54 @@ def test_order_completed_by_recency_defaults_off_and_round_trips(client: TestCli
 
     assert _create(client, workspace, order_completed_by_recency="true").status_code == 422
     assert client.patch(url, json={"order_completed_by_recency": None}).status_code == 422
+
+
+def test_the_insights_display_round_trips_and_clears(client: TestClient, workspace: str) -> None:
+    """A view stores the panel it opens with, a patch replaces it whole and null clears it."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace).json()["insights_display"] is None
+
+    view = _create(client, workspace, insights_display={"measure": "points", "layout": "chart"}).json()
+    url = f"/api/workspaces/{workspace}/views/{view['view_id']}"
+    assert client.get(url).json()["insights_display"] == {
+        "measure": "points",
+        "group_by": None,
+        "segment_by": None,
+        "layout": "chart",
+    }
+
+    patched = client.patch(url, json={"insights_display": {"group_by": "assignee", "segment_by": "priority"}})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["insights_display"] == {
+        "measure": None,
+        "group_by": "assignee",
+        "segment_by": "priority",
+        "layout": None,
+    }
+
+    unrelated = client.patch(url, json={"show_completed": False})
+    assert unrelated.json()["insights_display"]["group_by"] == "assignee"
+
+    cleared = client.patch(url, json={"insights_display": None})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["insights_display"] is None
+
+
+def test_an_insights_display_outside_the_panel_choices_is_a_422(client: TestClient, workspace: str) -> None:
+    """A view holds only a configuration the panel can draw, the segment differing from the slice."""
+    sign_in(client, MEMBER)
+    for bad in ({"measure": "velocity"}, {"layout": "grid"}, {"group_by": "team", "segment_by": "team"}):
+        assert _create(client, workspace, insights_display=bad).status_code == 422, bad
+
+
+def test_a_project_view_takes_no_insights_display(client: TestClient, workspace: str) -> None:
+    """The panel lives beside issue lists, so a project view refuses the field and reads it as null."""
+    sign_in(client, MEMBER)
+    view = _create(client, workspace, entity="projects", insights_display={"measure": "points"})
+    assert view.status_code == 201, view.text
+    assert view.json()["insights_display"] is None
+    refused = client.patch(
+        f"/api/workspaces/{workspace}/views/{view.json()['view_id']}", json={"insights_display": {"measure": "points"}}
+    )
+    assert refused.status_code == 422

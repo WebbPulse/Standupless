@@ -6,9 +6,9 @@ code, and the MCP tool must answer exactly the body the route answers.
 
 from __future__ import annotations
 
-from typing import Literal, Optional, get_args
+from typing import Any, Literal, Mapping, Optional, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 InsightDimension = Literal[
     "status",
@@ -37,6 +37,11 @@ INSIGHT_DIMENSIONS: tuple[str, ...] = get_args(InsightDimension)
 
 INSIGHT_MEASURES: tuple[str, ...] = get_args(InsightMeasure)
 
+InsightsLayout = Literal["both", "chart", "table"]
+"""What the view insights panel draws: the chart and the table, or one of them."""
+
+INSIGHTS_LAYOUTS: tuple[str, ...] = get_args(InsightsLayout)
+
 TIME_MEASURES: frozenset[str] = frozenset({"cycle_time", "lead_time", "triage_time", "issue_age"})
 """Measures that answer a duration per issue, with percentiles and points, rather than a sum."""
 
@@ -46,6 +51,52 @@ INSIGHTS_ROW_CAP = 2000
 Insights are computed in the handler from the same per-team index reads the list
 uses, so the cap is what bounds one request's read cost and memory.
 """
+
+
+class InsightsDisplay(BaseModel):
+    """The view insights panel a list opens with for every viewer without picks of their own.
+
+    Saved on a view or as a team's display default. A null `measure`, `group_by`
+    or `layout` keeps the panel's built-in choice, and a null `segment_by` draws
+    no segments.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    measure: Optional[InsightMeasure] = None
+    group_by: Optional[InsightDimension] = None
+    segment_by: Optional[InsightDimension] = None
+    layout: Optional[InsightsLayout] = None
+
+    @model_validator(mode="after")
+    def _segment_differs(self) -> "InsightsDisplay":
+        """Refuse a segment repeating the slice, which the panel could not draw."""
+        if self.segment_by is not None and self.segment_by == self.group_by:
+            raise ValueError("segment_by must differ from group_by")
+        return self
+
+    def as_row(self) -> dict[str, str]:
+        """The stored shape of this configuration, holding only the fields it sets."""
+        return self.model_dump(exclude_none=True)
+
+
+def stored_insights_display(stored: Optional[Mapping[str, Any]]) -> Optional[InsightsDisplay]:
+    """A stored panel configuration, each field dropped once its choice is retired, null when none is left.
+
+    Read leniently so retiring a measure or a dimension never breaks a view that
+    saved it, the same way a stored projects arrangement reads.
+    """
+    allowed: dict[str, tuple[str, ...]] = {
+        "measure": INSIGHT_MEASURES,
+        "group_by": INSIGHT_DIMENSIONS,
+        "segment_by": INSIGHT_DIMENSIONS,
+        "layout": INSIGHTS_LAYOUTS,
+    }
+    kept = {field: (stored or {}).get(field) for field in allowed}
+    kept = {field: value for field, value in kept.items() if value in allowed[field]}
+    if kept.get("segment_by") == kept.get("group_by"):
+        kept.pop("segment_by", None)
+    return InsightsDisplay.model_validate(kept) if kept else None
 
 
 class InsightDurations(BaseModel):

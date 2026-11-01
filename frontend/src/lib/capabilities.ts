@@ -7,6 +7,7 @@
 import type {
   PermissionLevel,
   TeamRole,
+  ViewScope,
   WorkspaceRead,
   WorkspaceRole,
 } from '../types/Api';
@@ -68,6 +69,24 @@ export const isTeamAdmin = (
   workspaceRole === 'owner' ||
   workspaceRole === 'admin' ||
   teamRole === 'admin';
+
+/**
+ * Whether the caller may change a view other people open: its owner, a workspace
+ * admin on a workspace view, or a team admin on a team view. A personal view is
+ * no one else's to open, so a change meant for everyone has nothing to reach.
+ */
+export const canEditSharedView = (
+  view: { scope: ViewScope; owner_id: string },
+  userId: string | undefined,
+  workspaceRole: WorkspaceRole | undefined,
+  teamRole: TeamRole | undefined
+): boolean => {
+  if (view.scope === 'personal') return false;
+  if (view.owner_id === userId) return true;
+  return view.scope === 'workspace'
+    ? canManageMembers(workspaceRole)
+    : isTeamAdmin(workspaceRole, teamRole);
+};
 
 /** The roles a member's role may be changed to, given the caller's own role. */
 export const assignableRoles = (

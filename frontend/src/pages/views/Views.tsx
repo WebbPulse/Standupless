@@ -161,6 +161,9 @@ const copyOf = (view: SavedViewDisplayRead): SavedViewDisplayCreate => {
     ...(view.collapsed_groups === undefined
       ? {}
       : { collapsed_groups: view.collapsed_groups }),
+    ...(view.insights_display === undefined || view.insights_display === null
+      ? {}
+      : { insights_display: view.insights_display }),
     ...look,
   };
 };

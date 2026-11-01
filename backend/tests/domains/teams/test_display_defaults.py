@@ -14,6 +14,7 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common.api.schemas.insights import stored_insights_display
 from app.common.api.schemas.projects_display import ProjectsDisplay
 from app.common.api.schemas.teams import DisplayOptionsBody
 from app.common.composition.domains import DOMAINS
@@ -75,6 +76,7 @@ def test_unsaved_defaults_read_as_built_in(client: TestClient, team: str) -> Non
         "list_display": None,
         "board_display": None,
         "projects_display": None,
+        "insights_display": None,
         "effective_projects_display": BUILT_IN,
         "updated_by": None,
         "updated_at": None,
@@ -331,3 +333,64 @@ def test_order_completed_by_recency_is_a_team_default(client: TestClient, team: 
     assert saved.json()["board_display"]["order_completed_by_recency"] is True
     assert client.get(URL).json()["board_display"]["order_completed_by_recency"] is True
     assert client.patch(URL, json={"list_display": {"order_completed_by_recency": "yes"}}).status_code == 422
+
+
+def test_a_team_admin_sets_and_clears_the_insights_default(client: TestClient, team: str) -> None:
+    """The panel configuration is saved whole beside the pages, which it leaves alone, and null clears it."""
+    sign_in(client, ADMIN)
+    client.patch(URL, json={"list_display": {"group_by": "assignee"}})
+
+    saved = client.patch(
+        URL, json={"insights_display": {"measure": "points", "group_by": "assignee", "segment_by": "priority"}}
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["insights_display"] == {
+        "measure": "points",
+        "group_by": "assignee",
+        "segment_by": "priority",
+        "layout": None,
+    }
+    assert saved.json()["list_display"]["group_by"] == "assignee"
+
+    untouched = client.patch(URL, json={"board_display": {"show_empty_groups": True}})
+    assert untouched.json()["insights_display"]["measure"] == "points"
+    assert client.get(URL).json()["insights_display"]["segment_by"] == "priority"
+
+    cleared = client.patch(URL, json={"insights_display": None})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["insights_display"] is None
+    assert cleared.json()["list_display"]["group_by"] == "assignee"
+
+
+def test_a_plain_member_cannot_set_the_insights_default(client: TestClient, team: str) -> None:
+    """Setting the panel for everyone is a team admin's call like the rest of the defaults."""
+    sign_in(client, MEMBER)
+    response = client.patch(URL, json={"insights_display": {"measure": "points"}})
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "insights",
+    [
+        {"measure": "velocity"},
+        {"group_by": "milestone"},
+        {"layout": "grid"},
+        {"group_by": "assignee", "segment_by": "assignee"},
+        {"chart": "bar"},
+    ],
+)
+def test_an_insights_default_outside_the_panel_choices_is_refused(
+    client: TestClient, team: str, insights: dict[str, str]
+) -> None:
+    """The stored configuration only ever holds what the panel can draw."""
+    sign_in(client, ADMIN)
+    assert client.patch(URL, json={"insights_display": insights}).status_code == 422
+
+
+def test_a_retired_insights_choice_reads_as_the_panel_default() -> None:
+    """A stored field outside today's choices drops on its own, so an old row never breaks the read."""
+    assert stored_insights_display(None) is None
+    assert stored_insights_display({"measure": "velocity"}) is None
+    kept = stored_insights_display({"measure": "velocity", "layout": "table", "group_by": "team", "segment_by": "team"})
+    assert kept is not None
+    assert kept.model_dump() == {"measure": None, "group_by": "team", "segment_by": None, "layout": "table"}

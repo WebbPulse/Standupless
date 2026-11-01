@@ -17,6 +17,7 @@ import type {
   BoardQuery,
   BoardRead,
   InboxClearResult,
+  InsightsDisplay,
   InboxBucket,
   InboxClearWrite,
   InboxCountRead,
@@ -181,6 +182,8 @@ export const listsProjects = (view: { entity?: ViewEntity }): boolean =>
  * absent `show_archived` reads as hiding archived issues.
  */
 export interface SavedViewDisplay {
+  /** The insights panel the view opens with, null or left out when it set none. */
+  insights_display?: InsightsDisplay | null;
   sub_group_by: ViewGroupBy | null;
   ordering: IssueListSort | null;
   /** True when the ordering reads backwards, issues lacking its value still last. */
@@ -285,6 +288,8 @@ export interface SavedViewDisplayCreate extends Omit<
   entity?: ViewEntity;
   /** A view of projects' arrangement, refused on a view of issues. */
   projects_display?: ProjectsDisplayPreference;
+  /** The insights panel a view of issues opens with. */
+  insights_display?: InsightsDisplay;
 }
 
 /** The editable fields on a saved view, including its display settings. */
@@ -315,6 +320,8 @@ export interface SavedViewDisplayUpdate extends Omit<
   owner_id?: string;
   /** A view of projects' new arrangement, merged onto the stored one. */
   projects_display?: Partial<ProjectsDisplayPreference>;
+  /** The insights panel a view of issues opens with, replaced whole; null clears it. */
+  insights_display?: InsightsDisplay | null;
 }
 
 const SCALAR_FILTER_KEYS = new Set([
