@@ -170,6 +170,24 @@ variable "oauth_github_client_id" {
   default     = ""
 }
 
+variable "oauth_apple_client_id" {
+  description = "Services ID of the Sign in with Apple application. Apple is offered only when this, oauth_apple_team_id, oauth_apple_key_id and the OAUTH_APPLE_CLIENT_SECRET app secret key are all set. Not a secret; set in env/<environment>.tfvars."
+  type        = string
+  default     = ""
+}
+
+variable "oauth_apple_team_id" {
+  description = "Apple Developer team id that signs the Sign in with Apple client secret. Not a secret; set in env/<environment>.tfvars."
+  type        = string
+  default     = ""
+}
+
+variable "oauth_apple_key_id" {
+  description = "Key id of the Sign in with Apple signing key. Not a secret; set in env/<environment>.tfvars."
+  type        = string
+  default     = ""
+}
+
 variable "desktop_handoff_schemes" {
   description = "Custom URL schemes the desktop app may receive a browser sign-in handoff on, such as standupless. Empty leaves the identity function's desktop handoff routes unmounted. Not a secret; set in env/<environment>.tfvars."
   type        = list(string)

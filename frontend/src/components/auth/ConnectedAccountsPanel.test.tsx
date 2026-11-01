@@ -141,6 +141,16 @@ describe('ConnectedAccountsPanel', () => {
     ).toBeInTheDocument();
   });
 
+  it('offers Connect for Apple when the deployment enables it', async () => {
+    providers = [{ id: 'apple', displayName: 'Apple' }];
+    renderAt();
+    const apple = await screen.findByTestId('connected-account-apple');
+    expect(within(apple).getByText('Not connected')).toBeInTheDocument();
+    expect(
+      within(apple).getByRole('button', { name: 'Connect Apple' })
+    ).toBeInTheDocument();
+  });
+
   it('renders nothing when the deployment offers no provider', () => {
     providers = [];
     const { container } = renderAt();

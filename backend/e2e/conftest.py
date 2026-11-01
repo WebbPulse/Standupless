@@ -147,6 +147,7 @@ def _identity_environment() -> dict[str, str]:
         "IDENTITY_PASSKEYS_SECOND_FACTOR": "true",
         "IDENTITY_GOOGLE_CLIENT_ID": os.environ.get("E2E_GOOGLE_CLIENT_ID", ""),
         "IDENTITY_GITHUB_CLIENT_ID": os.environ.get("E2E_GITHUB_CLIENT_ID", ""),
+        "IDENTITY_APPLE_CLIENT_ID": os.environ.get("E2E_APPLE_CLIENT_ID", ""),
         "IDENTITY_OAUTH_REDIRECT_URIS": f'["{issuer}/oauth/callback"]',
         "IDENTITY_MCP_OAUTH_ENABLED": "true",
         "IDENTITY_MCP_RESOURCE_URL": os.environ.get("E2E_MCP_RESOURCE_URL", "") or f"{api_base_url}/api/mcp",

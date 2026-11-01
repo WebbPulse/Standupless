@@ -14,6 +14,7 @@ import type { Environment } from './environment';
 export const OAUTH_HOSTS: ReadonlySet<string> = new Set([
   'accounts.google.com',
   'accounts.youtube.com',
+  'appleid.apple.com',
   'github.com',
 ]);
 
