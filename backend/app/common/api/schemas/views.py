@@ -592,6 +592,7 @@ class ViewCreate(BaseModel):
     sub_group_by: Optional[GroupByField] = None
     ordering: Optional[SortField] = None
     ordering_reversed: StrictBool = False
+    order_completed_by_recency: StrictBool = False
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     layout: Optional[LayoutField] = None
     show_sub_issues: StrictBool = True
@@ -645,6 +646,7 @@ class ViewUpdate(BaseModel):
     sub_group_by: Optional[GroupByField] = None
     ordering: Optional[SortField] = None
     ordering_reversed: Optional[StrictBool] = None
+    order_completed_by_recency: Optional[StrictBool] = None
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     layout: Optional[LayoutField] = None
     show_sub_issues: Optional[StrictBool] = None
@@ -681,6 +683,7 @@ class ViewUpdate(BaseModel):
 
 DISPLAY_SWITCHES: tuple[str, ...] = (
     "ordering_reversed",
+    "order_completed_by_recency",
     "show_sub_issues",
     "show_completed",
     "completed_window",
@@ -714,6 +717,7 @@ class ViewRead(BaseModel):
     sub_group_by: Optional[str] = None
     ordering: Optional[str] = None
     ordering_reversed: bool = False
+    order_completed_by_recency: bool = False
     visible_properties: Optional[list[str]] = None
     layout: str
     show_sub_issues: bool = True
@@ -752,6 +756,7 @@ class ViewRead(BaseModel):
             sub_group_by=view.sub_group_by,
             ordering=view.ordering,
             ordering_reversed=view.ordering_reversed is True,
+            order_completed_by_recency=view.order_completed_by_recency is True,
             visible_properties=read_visible_properties(view.visible_properties),
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,

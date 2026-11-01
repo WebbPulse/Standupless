@@ -82,6 +82,7 @@ def list_issue_changes(
     subscribed: bool = False,
     include_sub_teams: bool = False,
     reverse: bool = False,
+    completed_by_recency: bool = False,
 ) -> IssueChanges:
     """What changed in the caller's filtered issue list after `since`.
 
@@ -90,7 +91,8 @@ def list_issue_changes(
     cursor older than the tombstone retention, or a delta too large to carry,
     answers `resync_required` and nothing else, since a partial answer there would
     be silently wrong. `include_sub_teams` rolls the named team's visible
-    sub-teams in and `reverse` turns the sort around, as the full read does.
+    sub-teams in, `reverse` turns the sort around and `completed_by_recency` lists
+    closed issues last, newest closed first, as the full read does.
     """
     since = normalize(since)
     if since < utc_now() - TOMBSTONE_RETENTION + SYNC_OVERLAP:
@@ -147,7 +149,14 @@ def list_issue_changes(
     removed.extend(row.issue_id for row in tombstones if row.issue_id not in latest)
 
     ranks = status_ranks(repositories, context.workspace_id, teams) if sort == "status_asc" else None
-    ordered = order_issues(kept, sort, reverse=reverse, ranks=ranks, customers=wanted.customer_index)
+    ordered = order_issues(
+        kept,
+        sort,
+        reverse=reverse,
+        ranks=ranks,
+        customers=wanted.customer_index,
+        completed_by_recency=completed_by_recency,
+    )
     return IssueChanges(issues=ordered, removed_ids=sorted(set(removed)), synced_at=cursor)
 
 

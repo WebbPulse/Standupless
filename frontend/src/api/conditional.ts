@@ -28,7 +28,7 @@ export const isPolledContext = (
 /**
  * One GET whose body `read` shapes into what the caller holds. `options`
  * builds the request options from the signal, the way the read always has.
- * `read` tolerates the empty body of a 304, whose shaped value is ignored.
+ * `read` never sees the empty body of a 304, which answers no shaped value.
  * Given a polled query's context, the context's conditional headers are
  * merged in and the answer is a `PolledResponse`.
  */
@@ -50,6 +50,9 @@ export async function conditionalGet<Body, T>(
   return polledResponse({
     status: response.status,
     headers: response.headers,
-    data: read(response.data),
+    data:
+      response.status === 304
+        ? (response.data as unknown as T)
+        : read(response.data),
   });
 }

@@ -142,6 +142,9 @@ const copyOf = (view: SavedViewDisplayRead): SavedViewDisplayCreate => {
     sub_group_by: view.sub_group_by,
     ordering: view.ordering,
     ...(view.ordering_reversed === true ? { ordering_reversed: true } : {}),
+    ...(view.order_completed_by_recency === true
+      ? { order_completed_by_recency: true }
+      : {}),
     visible_properties: view.visible_properties,
     layout: view.layout,
     show_sub_issues: view.show_sub_issues,

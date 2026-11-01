@@ -124,7 +124,7 @@ export const installMenu = (actions: MenuActions): void => {
         },
         {
           label: 'Toggle Developer Tools',
-          accelerator: mac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+          accelerator: mac ? 'Alt+Cmd+I' : 'F12',
           click: onContents(actions, (contents) => contents.toggleDevTools()),
         },
         { type: 'separator' },

@@ -89,6 +89,24 @@ const matches = (option: ComboboxOption, query: string): boolean => {
   return haystack.includes(needle);
 };
 
+/**
+ * One React key per row: the row's value, suffixed with a count when an
+ * earlier row holds the same value, as two date presets landing on one day do.
+ */
+const uniqueKeys = (values: string[]): string[] => {
+  const taken = new Set<string>();
+  return values.map((value) => {
+    let key = value;
+    let copy = 1;
+    while (taken.has(key)) {
+      copy += 1;
+      key = `${value}-${String(copy)}`;
+    }
+    taken.add(key);
+    return key;
+  });
+};
+
 /** The filter input and the keyboard driven list under it. */
 export const Combobox: React.FC<ComboboxProps> = ({
   label,
@@ -141,6 +159,8 @@ export const Combobox: React.FC<ComboboxProps> = ({
         },
       ]
     : filtered;
+
+  const rowKeys = uniqueKeys(rows.map((row) => row.value));
 
   const firstSelected = rows.findIndex((row) => selected.includes(row.value));
   const [active, setActive] = useState(() =>
@@ -293,7 +313,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 const isActive = index === activeIndex;
                 return (
                   <div
-                    key={row.value}
+                    key={rowKeys[index]}
                     id={optionId(index)}
                     data-index={index}
                     role="option"

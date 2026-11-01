@@ -62,11 +62,28 @@ describe('describeDesktopHandoffFailure', () => {
     expect(describeDesktopHandoffFailure('')).toBeNull();
   });
 
-  it('sends every failure back to the app', () => {
-    for (const reason of ['invalid', 'expired', 'rate-limited', 'refused']) {
-      expect(describeDesktopHandoffFailure(reason)).toMatch(
-        /start again from the app/i
-      );
+  it('leads every failure to the retry on the sign-in screen', () => {
+    for (const reason of [
+      'invalid',
+      'expired',
+      'rate-limited',
+      'refused',
+      'browser-unavailable',
+    ]) {
+      expect(describeDesktopHandoffFailure(reason)).toMatch(/try again/i);
+    }
+  });
+
+  it('gives each known reason its own sentence', () => {
+    const generic = describeDesktopHandoffFailure('invalid');
+    for (const reason of [
+      'expired',
+      'rate-limited',
+      'refused',
+      'browser-unavailable',
+      'invalid-link',
+    ]) {
+      expect(describeDesktopHandoffFailure(reason)).not.toBe(generic);
     }
   });
 });

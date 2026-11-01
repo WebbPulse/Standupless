@@ -2,8 +2,9 @@
  * Tests for the Pulse page: entries newest first with their unread dot and
  * links, grouped under day headings, moved through with j/k and opened with
  * Enter, the read marker moved on view, the For me, Popular and Recent switch
- * kept in the URL, the empty states and older pages on request, and each
- * entry's menu following or unfollowing what it is about.
+ * kept in the URL, the empty states and older pages on request, each entry's
+ * menu following or unfollowing what it is about, and the side panel's health
+ * and its expanding list of sources.
  */
 
 import type { ReactNode } from 'react';
@@ -297,6 +298,101 @@ describe('the Pulse page', () => {
     ).toHaveAttribute('href', '/w/mine/initiatives/i-1');
     expect(within(rows[1]!).getByText('On track')).toBeInTheDocument();
     expect(within(rows[1]!).getByText('1 entry')).toBeInTheDocument();
+  });
+
+  it('reports the newest health beside a Popular feed ranked by engagement', async () => {
+    listPulse.mockResolvedValue(
+      pageOf([
+        entry({
+          event_id: 'ev-1',
+          health: 'at_risk',
+          created_at: '2026-10-14T09:00:00Z',
+        }),
+        initiativeEntry({ created_at: '2026-10-14T10:00:00Z' }),
+        entry({
+          event_id: 'ev-2',
+          health: 'off_track',
+          created_at: '2026-10-14T11:00:00Z',
+        }),
+      ])
+    );
+    renderPage('/w/mine/pulse?tab=popular');
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'In this feed',
+    });
+    const rows = within(panel).getAllByRole('listitem');
+    expect(within(rows[0]!).getByText('Launch')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('Off track')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('Growth')).toBeInTheDocument();
+  });
+
+  it('expands the sources past the limit and collapses them again', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(
+      pageOf(
+        Array.from({ length: 16 }, (_, index) =>
+          entry({
+            event_id: `ev-${index}`,
+            project_id: `p-${index}`,
+            project_name: `Project ${index}`,
+          })
+        )
+      )
+    );
+    renderPage();
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'In this feed',
+    });
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(12);
+    expect(within(panel).queryByText('Project 15')).not.toBeInTheDocument();
+
+    const more = within(panel).getByRole('button', { name: 'and 4 more' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await user.click(more);
+
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(16);
+    expect(within(panel).getByText('Project 15')).toBeInTheDocument();
+    const fewer = within(panel).getByRole('button', { name: 'Show fewer' });
+    expect(fewer).toHaveAttribute('aria-expanded', 'true');
+    await user.click(fewer);
+
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(12);
+    expect(
+      within(panel).getByRole('button', { name: 'and 4 more' })
+    ).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('expands the sources from the keyboard while a feed entry is highlighted', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(
+      pageOf(
+        Array.from({ length: 13 }, (_, index) =>
+          entry({
+            event_id: `ev-${index}`,
+            project_id: `p-${index}`,
+            project_name: `Project ${index}`,
+          })
+        )
+      )
+    );
+    renderPage('/w/mine/pulse', true);
+
+    const panel = await screen.findByRole('complementary', {
+      name: 'In this feed',
+    });
+    const entries = screen.getAllByRole('article');
+    await user.keyboard('j');
+    expect(entries[0]).toHaveAttribute('aria-current', 'true');
+
+    within(panel).getByRole('button', { name: 'and 1 more' }).focus();
+    await user.keyboard('{Enter}');
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(13);
+    expect(screen.queryByText('Project page')).not.toBeInTheDocument();
+
+    await user.keyboard(' ');
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(12);
   });
 
   it('marks unread entries and moves the read marker once', async () => {

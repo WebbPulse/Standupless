@@ -229,6 +229,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         sub_group_by=payload.sub_group_by,
         ordering=payload.ordering,
         ordering_reversed=payload.ordering_reversed,
+        order_completed_by_recency=payload.order_completed_by_recency,
         visible_properties=stored_visible_properties(payload.visible_properties),
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,

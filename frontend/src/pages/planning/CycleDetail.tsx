@@ -20,7 +20,10 @@
  * the same set, with the toolbar's toggle to show the team alone.
  *
  * The title is a switcher over the team's cycles, with arrows to step to the
- * previous or next one.
+ * previous or next one. The header's `...` menu copies the cycle's link,
+ * starts the next upcoming cycle today or ends the running one today behind
+ * the cycles page's confirms, cancels or restores it, and lets a team admin
+ * delete it.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -43,6 +46,7 @@ import {
 } from '../../components/issues/view/FilterBar';
 import IssueListView from '../../components/issues/view/IssueListView';
 import CapacityDial from '../../components/planning/CapacityDial';
+import CycleActionsMenu from '../../components/planning/CycleActionsMenu';
 import CycleProgressPanel from '../../components/planning/CycleProgressPanel';
 import CycleSwitcher from '../../components/planning/CycleSwitcher';
 import EditableText from '../../components/planning/EditableText';
@@ -65,7 +69,7 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canWriteIssues } from '../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cycleTitle, type BreakdownField } from '../../lib/cycleBreakdown';
 import {
   matchingCycles,
@@ -676,6 +680,15 @@ export const CycleDetail: React.FC = () => {
   const editCycle = (patch: CyclePatch): void => {
     void update(patch);
   };
+  const refreshAll = (): void => {
+    invalidateQueries(['cycle', workspaceId, teamId, id]);
+    invalidateQueries(['cycleHistory', workspaceId, teamId, id, matchKey]);
+    invalidateQueries(cyclesKey(workspaceId, teamId, ''));
+    invalidateQueries(cyclesKey(workspaceId, teamId, 'switcher'));
+    for (const key of JSON.parse(refreshKey) as string[][]) {
+      invalidateQueries(key);
+    }
+  };
 
   return (
     <WorkspaceShell
@@ -715,12 +728,26 @@ export const CycleDetail: React.FC = () => {
         </div>
       }
       actions={
-        mayCreate ? (
-          <Button variant="primary" onClick={createIssue}>
-            <LuPlus aria-hidden="true" />
-            New issue
-          </Button>
-        ) : undefined
+        <div className="flex items-center gap-1.5">
+          {own !== undefined && (
+            <CycleActionsMenu
+              workspaceId={workspaceId}
+              slug={slug}
+              teamId={team.id}
+              keyPrefix={team.key_prefix}
+              cycle={own}
+              canEdit={canEdit}
+              isAdmin={isTeamAdmin(workspace?.role, team.role)}
+              onChanged={refreshAll}
+            />
+          )}
+          {mayCreate && (
+            <Button variant="primary" onClick={createIssue}>
+              <LuPlus aria-hidden="true" />
+              New issue
+            </Button>
+          )}
+        </div>
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_minmax(0,1fr)] lg:overflow-hidden">

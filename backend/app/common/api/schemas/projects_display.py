@@ -14,7 +14,7 @@ from pydantic import BaseModel, field_validator
 ProjectsLayoutField = Literal["list", "board", "timeline"]
 
 ProjectsGroupField = Literal[
-    "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+    "status", "health", "priority", "initiative", "lead", "member", "label", "team", "start_date", "target_date", "none"
 ]
 
 ProjectsOrderField = Literal[

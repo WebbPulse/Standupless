@@ -27,9 +27,6 @@ export const PRICING_TITLE = 'Pricing | Standupless';
 export const PRICING_DESCRIPTION =
   'Standupless plans: Free at $0, Standard at $6 per seat a month billed annually or $8 monthly, and Business at $10 annually or $12 monthly.';
 
-/** Plans shown with a notice instead of a sign up, because they are not on sale yet. */
-const COMING_SOON: ReadonlySet<PricedPlan['id']> = new Set(['business']);
-
 /** The price block of one card: the annual rate large, the monthly rate under it. */
 const PlanPrice: React.FC<{ plan: PricedPlan }> = ({ plan }) => {
   if (plan.price.monthly === 0) {
@@ -62,69 +59,56 @@ const PlanPrice: React.FC<{ plan: PricedPlan }> = ({ plan }) => {
 };
 
 /** One plan's card: name, price, the call to action and what it includes. */
-const PlanCard: React.FC<{ plan: PricedPlan }> = ({ plan }) => {
-  const comingSoon = COMING_SOON.has(plan.id);
-  return (
-    <li
-      aria-labelledby={`plan-${plan.id}`}
+const PlanCard: React.FC<{ plan: PricedPlan }> = ({ plan }) => (
+  <li
+    aria-labelledby={`plan-${plan.id}`}
+    className={cn(
+      'relative flex flex-col gap-8 bg-bg p-6 sm:p-8',
+      plan.highlighted === true && 'bg-surface'
+    )}
+  >
+    {plan.highlighted === true && (
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--accent),transparent)]"
+      />
+    )}
+    <div className="space-y-3">
+      <h2 id={`plan-${plan.id}`} className="text-[15px] font-medium text-text">
+        {plan.name}
+      </h2>
+      <p className="text-sm text-text-muted">{plan.summary}</p>
+    </div>
+    <PlanPrice plan={plan} />
+    <Link
+      to="/register"
       className={cn(
-        'relative flex flex-col gap-8 bg-bg p-6 sm:p-8',
-        plan.highlighted === true && 'bg-surface'
+        plan.highlighted === true ? PILL_PRIMARY : PILL_SECONDARY,
+        'h-9 w-full px-4 text-[13px]'
       )}
     >
-      {plan.highlighted === true && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--accent),transparent)]"
-        />
-      )}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2
-            id={`plan-${plan.id}`}
-            className="text-[15px] font-medium text-text"
-          >
-            {plan.name}
-          </h2>
-          {comingSoon && (
-            <span className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] text-text-muted">
-              Coming soon
-            </span>
-          )}
-        </div>
-        <p className="text-sm text-text-muted">{plan.summary}</p>
-      </div>
-      <PlanPrice plan={plan} />
-      <Link
-        to={comingSoon ? CONTACT_PATH : '/register'}
-        className={cn(
-          plan.highlighted === true ? PILL_PRIMARY : PILL_SECONDARY,
-          'h-9 w-full px-4 text-[13px]'
-        )}
-      >
-        {comingSoon ? 'Contact us' : 'Get started'}
-      </Link>
-      <div className="space-y-3 border-t border-line pt-6">
-        <p className="text-[13px] text-text-faint">
-          {plan.includesPlan === undefined
-            ? 'Includes'
-            : `Everything in ${plan.includesPlan}, plus`}
-        </p>
-        <ul className="space-y-2.5 text-sm text-text-muted">
-          {plan.features.map((feature) => (
-            <li key={feature} className="flex gap-2.5">
-              <LuCheck
-                aria-hidden="true"
-                className="mt-0.5 h-4 w-4 shrink-0 text-accent"
-              />
-              {feature}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </li>
-  );
-};
+      Get started
+    </Link>
+    <div className="space-y-3 border-t border-line pt-6">
+      <p className="text-[13px] text-text-faint">
+        {plan.includesPlan === undefined
+          ? 'Includes'
+          : `Everything in ${plan.includesPlan}, plus`}
+      </p>
+      <ul className="space-y-2.5 text-sm text-text-muted">
+        {plan.features.map((feature) => (
+          <li key={feature} className="flex gap-2.5">
+            <LuCheck
+              aria-hidden="true"
+              className="mt-0.5 h-4 w-4 shrink-0 text-accent"
+            />
+            {feature}
+          </li>
+        ))}
+      </ul>
+    </div>
+  </li>
+);
 
 /** One billing question and its answer. */
 interface Question {

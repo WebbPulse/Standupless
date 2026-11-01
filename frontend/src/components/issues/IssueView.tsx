@@ -17,6 +17,10 @@
  * panel folds behind a Show properties button under the description, so the
  * title and the description come first.
  *
+ * As in Linear, a sub-issue names its parent on a line above the title, and
+ * an issue with no sub-issues offers an "Add sub-issues" button under the
+ * description that opens the section's inline add row.
+ *
  * Adding a link, a sub-issue, a relation or a parent opens a dialog from the issue
  * menu, the panel's "+" menu, the command palette or a shortcut. Duplicate
  * issue files a copy and opens it, and Convert to project asks first, then
@@ -37,6 +41,7 @@
 
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -62,6 +67,7 @@ import {
   LuListTree,
   LuMaximize2,
   LuPanelRight,
+  LuPlus,
   LuPrinter,
   LuSquarePen,
   LuTerminal,
@@ -125,7 +131,10 @@ import {
   OPEN_IN_CODING_TOOL_LABEL,
 } from '../../lib/codingTools';
 import { errorMessage } from '../../lib/errors';
-import { useRecordRecentIssue } from '../../lib/recentIssues';
+import {
+  isUnreadableIssue,
+  useRecordRecentIssue,
+} from '../../lib/recentIssues';
 import {
   parentOfIssue,
   subIssueDialogPresets,
@@ -198,8 +207,13 @@ import MoveIssueDialog, {
 import ConvertToProjectDialog from './ConvertToProjectDialog';
 import DuplicateIssueDialog from './DuplicateIssueDialog';
 import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
+import IssueParentLine from './IssueParentLine';
 import SubIssues from './SubIssues';
-import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
+import {
+  ARCHIVE_ISSUE_KEYS,
+  DELETE_ISSUE_KEYS,
+  DeleteIssueKeyContext,
+} from './view/propertyKeys';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
@@ -275,6 +289,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const { user } = useAuth();
   const auth = useQueryAuth();
   const createIssue = useCreateIssue();
+  const bindsDelete = useContext(DeleteIssueKeyContext);
   const navigate = useNavigate();
   const embedded = onClose !== undefined;
   const slug = params.slug ?? workspace?.slug ?? '';
@@ -372,6 +387,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [parenting, setParenting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [composingFor, setComposingFor] = useState<string | null>(null);
   const [reminding, setReminding] = useState(false);
   const [history, setHistory] = useState(false);
   const [coding, setCoding] = useState(false);
@@ -849,7 +865,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
               >
                 <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
                 Delete
-                <MenuShortcut keys={DELETE_ISSUE_KEYS} />
+                {bindsDelete && <MenuShortcut keys={DELETE_ISSUE_KEYS} />}
               </MenuItem>
             </>
           )}
@@ -872,8 +888,17 @@ export const IssueView: React.FC<IssueViewProps> = ({
       </div>
     );
 
-  const showSubIssues =
+  const hasSubIssues =
     issue !== null && (children.rows.length > 0 || issue.progress.total > 0);
+  const composingSubIssues = issue !== null && composingFor === issue.id;
+  const showSubIssues = hasSubIssues || composingSubIssues;
+  const offerSubIssues =
+    issue !== null &&
+    !showSubIssues &&
+    canAct &&
+    !deleted &&
+    !archived &&
+    !children.isLoading;
 
   const content = (
     <>
@@ -1027,7 +1052,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
         />
       )}
 
-      {error !== null && (
+      {error !== null && (issue === null || isUnreadableIssue(error)) && (
         <div className="px-4 pt-4 lg:px-6">
           <ErrorAlert
             message={errorMessage(error, 'Could not load this issue.')}
@@ -1138,6 +1163,15 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     labels={options.labels}
                     people={options.people}
                   />
+                  {issue.parent_id !== null && (
+                    <IssueParentLine
+                      workspaceId={workspaceId}
+                      slug={slug}
+                      parentId={issue.parent_id}
+                      known={options.parents}
+                      statuses={options.statuses}
+                    />
+                  )}
                   <IssueBody
                     workspaceId={workspaceId}
                     issue={issue}
@@ -1171,7 +1205,23 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       canEdit={canAct}
                       currentUserId={currentUserId}
                       onPeekRow={peekIssue}
+                      startAdding={composingSubIssues && !hasSubIssues}
+                      onAddDone={(createdAny) => {
+                        if (!createdAny) setComposingFor(null);
+                      }}
                     />
+                  )}
+                  {offerSubIssues && (
+                    <button
+                      type="button"
+                      className="-mt-3 flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-text-muted transition-colors duration-100 hover:bg-raised hover:text-text print:hidden"
+                      onClick={() => {
+                        setComposingFor(issue.id);
+                      }}
+                    >
+                      <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
+                      Add sub-issues
+                    </button>
                   )}
                 </div>
 

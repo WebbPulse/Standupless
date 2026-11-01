@@ -39,6 +39,7 @@ import secrets
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
 from webbpulse.e2e import worker_id
 from webbpulse.e2e.identity import login, refresh
@@ -346,6 +347,15 @@ EXPECTED_TOOLS = frozenset(
 An extra tool on the list is a new capability handed to every connected agent, which is
 worth failing a deploy over rather than discovering from a model calling it.
 """
+
+PIXEL_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+)
+"""A one pixel PNG, the smallest real image an upload can carry."""
+
+MAX_INLINE_IMAGE_BYTES = 3 * 1024 * 1024
+"""The largest image `get_attachment` returns inline, mirrored from the backend."""
 
 EXPECTED_SCOPES = frozenset(
     {
@@ -1084,3 +1094,98 @@ class TestMcpDeleteTeam:
         )
         again = _rpc(api, token, "tools/call", 4, {"name": "get_team", "arguments": {"team_id": created["team_id"]}})
         assert again["result"]["isError"] is True, "get_team still reads the deleted team."
+
+
+def _upload_image(api: Any, workspace_id: str, issue_id: str, filename: str, data: bytes) -> str:
+    """Upload bytes as a PNG attachment the way the editor does, returning the attachment id."""
+    base = f"/api/workspaces/{workspace_id}/attachments"
+    minted = api.post(
+        f"{base}/uploads",
+        json={"issue_id": issue_id, "filename": filename, "content_type": "image/png", "size_bytes": len(data)},
+    )
+    assert minted.status_code in (200, 201), f"minting the upload answered {minted.status_code}: {minted.text[:400]}"
+    ticket = minted.json()
+    signed = {name: value for name, value in ticket["headers"].items() if name.lower() != "content-length"}
+    put = httpx.put(ticket["url"], content=data, headers=signed, timeout=60)
+    assert put.status_code in (200, 204), f"the presigned PUT answered {put.status_code}: {put.text[:400]}"
+    committed = api.post(
+        base, json={"issue_id": issue_id, "upload_id": ticket["upload_id"], "ticket": ticket["ticket"]}
+    )
+    assert committed.status_code in (200, 201), f"committing the upload answered {committed.status_code}"
+    return str(committed.json()["attachment_id"])
+
+
+class TestMcpGetAttachment:
+    """`get_attachment` on images a member really uploaded, through an OAuth minted token."""
+
+    @WRITES
+    def test_an_uploaded_image_comes_back_as_image_content(
+        self,
+        anon: Any,
+        api: Any,
+        mcp_resource: str,
+        mcp_workspace: "dict[str, Any]",
+    ) -> None:
+        """A small PNG answers inline, as_url answers a link, and an oversize one names as_url.
+
+        The bytes go through the real upload path to the attachments bucket, so the
+        inline read proves the integrations function can read that bucket, which no
+        unit test can. The oversize image is one byte over the inline cap.
+        """
+        workspace_id = str(mcp_workspace["id"])
+        token = _mint_token(anon, api, mcp_resource, workspace_id)
+        issue = _tool(
+            api, token, 1, "create_issue", {"team_id": str(mcp_workspace["team"]["id"]), "title": "E2E attachment"}
+        )
+        issue_id = str(issue["issue_id"])
+        base = f"/api/workspaces/{workspace_id}/attachments"
+        uploaded: list[str] = []
+        try:
+            small = _upload_image(api, workspace_id, issue_id, "e2e-pixel.png", PIXEL_PNG)
+            uploaded.append(small)
+
+            answered = _rpc(
+                api,
+                token,
+                "tools/call",
+                2,
+                {"name": "get_attachment", "arguments": {"issue_id": issue["issue_key"], "attachment_id": small}},
+            )
+            assert "error" not in answered, f"get_attachment returned a protocol error: {answered['error']}"
+            result = answered["result"]
+            assert result["isError"] is False, f"get_attachment refused: {result['content']}"
+            text, image = result["content"]
+            summary = json.loads(text["text"])
+            assert summary["attachment_id"] == small and summary["content_type"] == "image/png", (
+                f"get_attachment summarised {summary}."
+            )
+            assert image["type"] == "image" and image["mimeType"] == "image/png", f"the block was {image}."
+            assert base64.b64decode(image["data"]) == PIXEL_PNG, "the image block is not the bytes uploaded."
+
+            linked = _tool(
+                api, token, 3, "get_attachment", {"issue_id": issue_id, "attachment_id": small, "as_url": True}
+            )
+            fetched = httpx.get(linked["download_url"], timeout=30)
+            assert fetched.status_code == 200 and fetched.content == PIXEL_PNG, (
+                f"the as_url download answered {fetched.status_code} or other bytes."
+            )
+
+            oversize = PIXEL_PNG + bytes(MAX_INLINE_IMAGE_BYTES + 1 - len(PIXEL_PNG))
+            large = _upload_image(api, workspace_id, issue_id, "e2e-oversize.png", oversize)
+            uploaded.append(large)
+            refused = _rpc(
+                api,
+                token,
+                "tools/call",
+                4,
+                {"name": "get_attachment", "arguments": {"issue_id": issue_id, "attachment_id": large}},
+            )
+            assert "error" not in refused, f"get_attachment returned a protocol error: {refused['error']}"
+            assert refused["result"]["isError"] is True, "an image over the inline cap came back inline."
+            message = refused["result"]["content"][0]["text"]
+            assert "as_url" in message and str(MAX_INLINE_IMAGE_BYTES) in message, (
+                f"the oversize refusal does not name as_url and the cap: {message!r}"
+            )
+        finally:
+            for attachment_id in uploaded:
+                api.delete(f"{base}/{attachment_id}", params={"issue_id": issue_id})

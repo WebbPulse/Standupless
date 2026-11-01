@@ -320,3 +320,14 @@ def test_a_team_default_saved_before_the_sla_property_reads_with_it_on() -> None
     assert body is not None
     assert body.visible_properties == ["id", "labels", "sla"]
     assert DisplayOptionsBody(visible_properties=["id"]).as_row().visible_properties == ["id", "-sla"]
+
+
+def test_order_completed_by_recency_is_a_team_default(client: TestClient, team: str) -> None:
+    """The switch saves on a page default, reads back, and takes only a boolean."""
+    sign_in(client, ADMIN)
+    saved = client.patch(URL, json={"board_display": {"order_completed_by_recency": True}})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["board_display"]["order_completed_by_recency"] is True
+    assert client.get(URL).json()["board_display"]["order_completed_by_recency"] is True
+    assert client.patch(URL, json={"list_display": {"order_completed_by_recency": "yes"}}).status_code == 422

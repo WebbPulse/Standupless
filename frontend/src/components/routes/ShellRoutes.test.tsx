@@ -1,18 +1,23 @@
 /**
  * Inside the desktop or mobile app, `/` starts on sign in or the workspace and
- * a public page goes to the system browser; in a browser both stay the web.
+ * a public page goes to the system browser; in a browser both stay the web. The
+ * guest pages give way to the browser sign-in screen in an app with a handoff.
  */
 
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
-import { ShellPublicRoute, ShellStart } from './ShellRoutes';
+import { ShellGuestGate, ShellPublicRoute, ShellStart } from './ShellRoutes';
 
 const useAuthMock = vi.fn<() => AuthContextType>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => useAuthMock(),
+}));
+
+vi.mock('../auth/ShellSignIn', () => ({
+  default: () => <p>browser sign-in screen</p>,
 }));
 
 /** Builds a session value with every flag defaulted to a settled signed-out one. */
@@ -36,7 +41,6 @@ const enterDesktopApp = (): void => {
   (window as { standuplessDesktop?: unknown }).standuplessDesktop = {
     platform: 'linux',
     version: '0.1.0',
-    passkeys: false,
     setBadgeCount: vi.fn(),
     notify: vi.fn(),
     setTheme: vi.fn(),
@@ -134,5 +138,42 @@ describe('ShellPublicRoute', () => {
     );
     expect(await screen.findByText('login page')).toBeInTheDocument();
     expect(openExternal).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ShellGuestGate', () => {
+  /** Mounts the gate over a guest page at `/login`. */
+  const renderGate = () =>
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route element={<ShellGuestGate />}>
+            <Route path="/login" element={<p>web sign in form</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+  it('keeps the web page in a browser', () => {
+    renderGate();
+    expect(screen.getByText('web sign in form')).toBeInTheDocument();
+  });
+
+  it('keeps the form on a desktop build without the handoff', () => {
+    enterDesktopApp();
+    renderGate();
+    expect(screen.getByText('web sign in form')).toBeInTheDocument();
+  });
+
+  it('shows only the browser sign-in in a desktop app with the handoff', () => {
+    enterDesktopApp();
+    (
+      window as unknown as {
+        standuplessDesktop: { signInWithBrowser?: () => void };
+      }
+    ).standuplessDesktop.signInWithBrowser = vi.fn();
+    renderGate();
+    expect(screen.getByText('browser sign-in screen')).toBeInTheDocument();
+    expect(screen.queryByText('web sign in form')).not.toBeInTheDocument();
   });
 });

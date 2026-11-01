@@ -6,10 +6,14 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import PlanningDatePicker from './PlanningDatePicker';
 
 describe('PlanningDatePicker', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('stores a quarter target at the last day of the quarter', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -106,5 +110,35 @@ describe('PlanningDatePicker', () => {
     await user.click(screen.getByRole('tab', { name: 'Day' }));
     await user.click(screen.getByRole('option', { name: /Clear date/ }));
     expect(onChange).toHaveBeenCalledWith(null, null);
+  });
+
+  it('lists two presets that share a day without a duplicate key', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 29, 12));
+    const errors = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    render(
+      <PlanningDatePicker
+        field="Target date"
+        edge="end"
+        value={null}
+        resolution={null}
+        onChange={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /Target date/ }));
+    const tomorrow = screen.getByRole('option', { name: /Tomorrow/ });
+    const weekEnd = screen.getByRole('option', { name: /End of this week/ });
+    const duplicateKey = errors.mock.calls.some((call) =>
+      call.some((part) => String(part).includes('same key'))
+    );
+    errors.mockRestore();
+
+    expect(String(tomorrow.textContent).replace('Tomorrow', '')).toBe(
+      String(weekEnd.textContent).replace('End of this week', '')
+    );
+    expect(duplicateKey).toBe(false);
   });
 });

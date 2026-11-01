@@ -87,7 +87,7 @@ const LaneName: React.FC<LaneNameProps> = ({ depth, children }) => {
   const nameWidth = useNameWidth();
   return (
     <div
-      className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
+      className="sticky left-0 z-10 -mb-px flex shrink-0 items-center gap-2 border-r border-b border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
       style={{ width: nameWidth, paddingLeft: 16 + depth * INDENT_PX }}
     >
       {children}
@@ -287,7 +287,7 @@ const InitiativeLaneRow: React.FC<InitiativeLaneRowProps> = ({
       </LaneName>
       <div
         className={cn(
-          'relative shrink-0',
+          'relative isolate shrink-0',
           bar === null && editable && 'cursor-copy',
           bar !== null && 'pointer-events-none'
         )}
@@ -468,7 +468,7 @@ const ProjectLaneRow: React.FC<ProjectLaneRowProps> = ({
         </Link>
       </LaneName>
       <div
-        className="pointer-events-none relative shrink-0"
+        className="pointer-events-none relative isolate shrink-0"
         style={{ width: (range.end - range.start) * pxPerDay }}
       >
         {bar !== null && (

@@ -19,7 +19,7 @@ import SsoReturnHandler from './components/auth/SsoReturnHandler';
 import DesktopShellBridge from './components/desktop/DesktopShellBridge';
 import MobileShellBridge from './components/mobile/MobileShellBridge';
 import { AuthProvider } from './contexts/AuthContext';
-import { reloadOnceForChunkError } from './lib/chunkReload';
+import { installChunkRecovery } from './lib/chunkReload';
 import { installPrintExpansion } from './lib/print';
 import './index.css';
 import './styles/print.css';
@@ -31,9 +31,7 @@ if (rootElement === null) {
 
 installPrintExpansion();
 
-window.addEventListener('vite:preloadError', (event) => {
-  if (reloadOnceForChunkError()) event.preventDefault();
-});
+installChunkRecovery();
 
 createRoot(rootElement).render(
   <StrictMode>
