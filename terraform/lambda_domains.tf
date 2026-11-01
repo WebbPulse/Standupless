@@ -710,6 +710,7 @@ resource "aws_iam_role_policy" "lambda_domain" {
             "secretsmanager:DescribeSecret",
             "secretsmanager:GetSecretValue",
             "secretsmanager:PutSecretValue",
+            "secretsmanager:UpdateSecretVersionStage",
           ]
           Resource = [module.app_secrets.arns["app"]]
         },
