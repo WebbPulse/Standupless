@@ -938,6 +938,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   }, [editor, editable]);
 
   useEffect(() => {
+    if (editor.isDestroyed) return;
     const dom = editor.view.dom;
     const open = (event: Event): void => {
       const { pos, anchor } = (event as CustomEvent<BlockMenuRequest>).detail;
@@ -989,7 +990,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   }, [editor, teams, workspace]);
 
   useEffect(() => {
-    if (editor.isFocused || isDirty()) return;
+    if (editor.isDestroyed || editor.isFocused || isDirty()) return;
     committed.current = value;
     if (readMarkdown(editor) !== value) adopt(editor, value);
   }, [editor, value, isDirty, adopt]);
