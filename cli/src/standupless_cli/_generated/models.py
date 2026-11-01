@@ -2372,6 +2372,15 @@ class ReactionWrite(TypedDict):
     target_kind: Literal["issue", "comment"]
 
 
+class RecentUpdateRead(TypedDict):
+    author_id: str
+    author_name: NotRequired[str | None]
+    created_at: str
+    health: Literal["on_track", "at_risk", "off_track"]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
+    update_id: str
+
+
 class RecurringCreate(TypedDict):
     day_of_month: NotRequired[int | None]
     frequency: Literal["daily", "weekly", "monthly"]
@@ -4642,6 +4651,7 @@ class InitiativeUpdateRead(TypedDict):
     initiative_id: str
     previous_snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
     reactions: NotRequired[list[ReactionGroupRead]]
+    recent_updates: NotRequired[list[RecentUpdateRead]]
     report: NotRequired[list[str]]
     snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
@@ -5065,6 +5075,7 @@ class ProjectUpdateRead(TypedDict):
     previous_snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
+    recent_updates: NotRequired[list[RecentUpdateRead]]
     snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email", "slack"] | None]
     update_id: str

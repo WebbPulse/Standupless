@@ -9390,7 +9390,7 @@
         "type": "object"
       },
       "InitiativeUpdateRead": {
-        "description": "One initiative update as the API returns it, with this caller's edit right.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\ninitiative when this update was posted, and when the one before it was.\n`report` is that diff as plain lines, empty on a first update, on one\nposted before reports existed, and when `hide_details` says its author hid it.\n`reactions` and `comment_count` summarise the update's thread, as on a\nproject update.",
+        "description": "One initiative update as the API returns it, with this caller's edit right.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\ninitiative when this update was posted, and when the one before it was.\n`report` is that diff as plain lines, empty on a first update, on one\nposted before reports existed, and when `hide_details` says its author hid it.\n`reactions` and `comment_count` summarise the update's thread, as on a\nproject update. `recent_updates` is filled only on the answer to a create.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -9460,6 +9460,13 @@
               "$ref": "#/components/schemas/ReactionGroupRead"
             },
             "title": "Reactions",
+            "type": "array"
+          },
+          "recent_updates": {
+            "items": {
+              "$ref": "#/components/schemas/RecentUpdateRead"
+            },
+            "title": "Recent Updates",
             "type": "array"
           },
           "report": {
@@ -18244,7 +18251,7 @@
         "type": "object"
       },
       "ProjectUpdateRead": {
-        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\nproject when this update was posted, and when the one before it was. A null\n`snapshot` is an update posted before reports existed, which shows none,\nand a null `previous_snapshot` beside a snapshot is a first update, whose\nreport is a baseline. `hide_details` is the author's choice to hide it.",
+        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\nproject when this update was posted, and when the one before it was. A null\n`snapshot` is an update posted before reports existed, which shows none,\nand a null `previous_snapshot` beside a snapshot is a first update, whose\nreport is a baseline. `hide_details` is the author's choice to hide it.\n`recent_updates` is filled only on the answer to a create.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -18314,6 +18321,13 @@
               "$ref": "#/components/schemas/ReactionGroupRead"
             },
             "title": "Reactions",
+            "type": "array"
+          },
+          "recent_updates": {
+            "items": {
+              "$ref": "#/components/schemas/RecentUpdateRead"
+            },
+            "title": "Recent Updates",
             "type": "array"
           },
           "snapshot": {
@@ -19208,6 +19222,73 @@
           "emoji"
         ],
         "title": "ReactionWrite",
+        "type": "object"
+      },
+      "RecentUpdateRead": {
+        "description": "Another update posted on the same project or initiative close to the one just created.\n\nA create answers with these so its author learns that someone else just\nreported, since the newest update is the one that sets the health.",
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "health": {
+            "enum": [
+              "on_track",
+              "at_risk",
+              "off_track"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system",
+                  "email",
+                  "slack"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "update_id": {
+            "title": "Update Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "update_id",
+          "author_id",
+          "health",
+          "created_at"
+        ],
+        "title": "RecentUpdateRead",
         "type": "object"
       },
       "RecurringCreate": {

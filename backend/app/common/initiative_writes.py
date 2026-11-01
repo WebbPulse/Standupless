@@ -70,6 +70,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.recent_updates import RECENT_UPDATE_SCAN, recent_updates
 from app.common.update_thread_rules import summarise_threads
 
 NOT_NULLABLE = ("name", "status")
@@ -527,7 +528,9 @@ def create_initiative_update(
     """Post an update on an initiative, from a workspace document template when one is named, and mirror its health.
 
     The update records where the initiative stands now beside the snapshot the
-    update before it recorded, which is what its progress report diffs.
+    update before it recorded, which is what its progress report diffs. The
+    answer names any other update posted around the same time, read after the
+    write so two authors racing each other both find out.
     """
     initiative = load_initiative(repositories, context, initiative_id)
     body = document_templates.fill_update_body(repositories, context, [], payload.body, payload.template_id)
@@ -562,7 +565,12 @@ def create_initiative_update(
         context.workspace_id, initiative.initiative_id, health=created.health, last_update_at=created.created_at
     )
     pulse.record_initiative_update(repositories, created, initiative.health)
-    return _update_read(context, initiative, created)
+    newest, _ = repositories.planning.list_initiative_updates(
+        context.workspace_id, initiative.initiative_id, limit=RECENT_UPDATE_SCAN
+    )
+    return _update_read(context, initiative, created).model_copy(
+        update={"recent_updates": recent_updates(repositories, created, newest)}
+    )
 
 
 def initiative_template_offer(
@@ -592,6 +600,22 @@ def _is_latest(repositories: Repositories, update: InitiativeUpdateRow) -> bool:
     return latest is not None and latest.update_id == update.update_id
 
 
+def _carry_health_forward(
+    repositories: Repositories, stored: InitiativeUpdateRow, following: InitiativeUpdateRow
+) -> None:
+    """Hold the next update's report to an edited health, since it diffs against this update's.
+
+    The next update's own edit state is left alone: nobody rewrote what it says.
+    """
+    if following.previous_snapshot is None:
+        return
+    previous = following.previous_snapshot.model_copy(update={"health": stored.health})
+    try:
+        repositories.planning.replace_initiative_update(following.model_copy(update={"previous_snapshot": previous}))
+    except ConditionFailed:
+        return
+
+
 def update_initiative_update(
     repositories: Repositories,
     context: AuthzContext,
@@ -599,7 +623,11 @@ def update_initiative_update(
     update_id: str,
     payload: InitiativeUpdatePatch,
 ) -> InitiativeUpdateRead:
-    """Edit an update's body, health or report visibility; a health change on the newest one moves the initiative."""
+    """Edit an update's body, health or report visibility; a health change on the newest one moves the initiative.
+
+    The snapshot records the health the update called, so a health edit rewrites
+    it too, and the report's health line never contradicts the update's pill.
+    """
     initiative, existing = _load_editable_update(repositories, context, initiative_id, update_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
     for name in ("body", "health", "hide_details"):
@@ -610,15 +638,21 @@ def update_initiative_update(
     now = utc_now()
     rewritten = bool(fields.keys() - {"hide_details"})
     stamps = {"updated_at": now, "edited_at": now} if rewritten else {"updated_at": now}
+    if "health" in fields and existing.snapshot is not None:
+        fields["snapshot"] = existing.snapshot.model_copy(update={"health": fields["health"]})
     edited = existing.model_copy(update={**fields, **stamps})
     try:
         stored = repositories.planning.replace_initiative_update(edited)
     except ConditionFailed as exc:
         raise not_found() from exc
-    if stored.health != existing.health and _is_latest(repositories, stored):
-        repositories.planning.record_initiative_health(
-            context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
-        )
+    if stored.health != existing.health:
+        following = repositories.planning.next_initiative_update(stored)
+        if following is None:
+            repositories.planning.record_initiative_health(
+                context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
+            )
+        else:
+            _carry_health_forward(repositories, stored, following)
     if rewritten:
         pulse.revise_update(
             repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now

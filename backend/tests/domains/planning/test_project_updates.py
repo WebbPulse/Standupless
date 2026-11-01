@@ -297,3 +297,45 @@ def test_hide_details_is_saved_on_post_and_toggles_without_marking_edited(client
     assert response.status_code == 200, response.text
     assert response.json()["hide_details"] is False
     assert response.json()["edited_at"] is None
+
+
+def test_a_post_names_the_other_updates_of_the_last_few_minutes(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A create answers with the updates around it, and an older one or a read of the feed names none."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+
+    aged = _post(client, workspace, project_id, health="on_track")
+    row = repositories.planning.get_project_update(workspace, project_id, aged["update_id"])
+    repositories.planning.replace_project_update(
+        row.model_copy(update={"created_at": datetime.now(UTC) - timedelta(minutes=6)})
+    )
+    assert _post(client, workspace, project_id, health="at_risk")["recent_updates"] == []
+    first = _post(client, workspace, project_id, health="off_track")
+    second = _post(client, workspace, project_id, health="on_track")
+
+    named = [other["update_id"] for other in second["recent_updates"]]
+    assert first["update_id"] in named
+    assert second["update_id"] not in named
+    assert aged["update_id"] not in named
+    other = next(entry for entry in second["recent_updates"] if entry["update_id"] == first["update_id"])
+    assert other["author_id"] == MEMBER
+    assert other["author_name"] == "Mo Member"
+    assert other["health"] == "off_track"
+    listed = client.get(_path(workspace, project_id)).json()["updates"]
+    assert all(row["recent_updates"] == [] for row in listed)
+
+
+def test_a_project_update_keeps_no_health_line_to_go_stale(client: TestClient, workspace: str) -> None:
+    """A project report carries no health at all, so an edit leaves only the pill to read."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    _post(client, workspace, project_id, health="at_risk")
+    second = _post(client, workspace, project_id, health="off_track")
+
+    edited = client.patch(_path(workspace, project_id, second["update_id"]), json={"health": "at_risk"}).json()
+
+    assert edited["health"] == "at_risk"
+    assert "health" not in (edited["snapshot"] or {})
+    assert _project(client, workspace, project_id)["health"] == "at_risk"

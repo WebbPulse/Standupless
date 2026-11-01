@@ -2008,6 +2008,22 @@ class PlanningRepository:
         rows, _ = self.list_initiative_updates(workspace_id, initiative_id, limit=1)
         return rows[0] if rows else None
 
+    def next_initiative_update(self, update: InitiativeUpdateRow) -> InitiativeUpdateRow | None:
+        """The update posted right after one, or `None` when it is the newest.
+
+        The ULID in the sort key orders updates by when they were posted, so an
+        ascending query resumed from this update's key reads the one after it.
+        """
+        page = self._repository.query(
+            Key("workspace_id").eq(update.workspace_id)
+            & Key("planning_key").begins_with(initiative_update_prefix(update.initiative_id)),
+            limit=1,
+            start_key={"workspace_id": update.workspace_id, "planning_key": update.planning_key},
+            ascending=True,
+        )
+        rows = [as_initiative_update(item) for item in page.items if is_initiative_update(item)]
+        return rows[0] if rows else None
+
     def create_initiative_update(self, update: InitiativeUpdateRow) -> InitiativeUpdateRow:
         """Store a new initiative update, raising `ConditionFailed` when the key is taken."""
         self._repository.put(as_initiative_update_item(update), condition=Attr("planning_key").not_exists())

@@ -3432,6 +3432,16 @@ export interface ProjectLinkUpdate {
   sort_order?: string;
 }
 
+/** Another update posted on the same project or initiative close to a new one. */
+export interface RecentStatusUpdate {
+  update_id: string;
+  author_id: string;
+  author_name?: string | null;
+  health: ProjectHealth;
+  source?: ChangeSource | null;
+  created_at: string;
+}
+
 /**
  * One written status update on a project or an initiative: a Markdown body and
  * the health it judged the subject at. Posting one sets the subject's health.
@@ -3455,6 +3465,8 @@ export interface StatusUpdateRead {
   reactions?: ReactionGroup[];
   /** How many replies the update's thread holds. */
   comment_count?: number;
+  /** Other updates posted around this one; only the answer to a create fills it. */
+  recent_updates?: RecentStatusUpdate[];
 }
 
 /**
