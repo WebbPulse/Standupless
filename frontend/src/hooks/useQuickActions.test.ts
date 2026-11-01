@@ -3,7 +3,9 @@
  * before asking the server, writes once per team, leaves out issues already
  * in it and raises a notice when a team has none; removing the due date and
  * the labels writes only the issues that carry them, the labels in one
- * change; and none of the keys collides with the pickers in either layout.
+ * change; setting the priority writes only the issues holding another one; and
+ * none of the keys collides with the pickers in either layout, while Shift+3
+ * stays free because a US layout types the archive key with it.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +14,7 @@ import {
   PROPERTY_KEYS,
   REMOVE_DUE_DATE_KEYS,
   REMOVE_LABELS_KEYS,
+  SET_PRIORITY_KEYS,
 } from '../components/issues/view/propertyKeys';
 import { clearToasts, currentToasts } from '../lib/toast';
 import type { CycleRead } from '../types/Api';
@@ -21,6 +24,7 @@ import {
   NO_ACTIVE_CYCLE_MESSAGE,
   removeDueDate,
   removeLabels,
+  setPriority,
   type QuickActionIssue,
   type QuickActionWrite,
 } from './useQuickActions';
@@ -35,6 +39,7 @@ const issue = (
   cycle_id: null,
   due_date: null,
   label_ids: [],
+  priority: 'none',
   ...overrides,
 });
 
@@ -209,15 +214,43 @@ describe('removeLabels', () => {
   });
 });
 
+describe('setPriority', () => {
+  it('writes only the issues holding another priority, in one change', () => {
+    const write = vi.fn<QuickActionWrite>();
+
+    setPriority(
+      [issue('a'), issue('b', { priority: 'urgent' }), issue('c')],
+      'urgent',
+      write
+    );
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(['a', 'c'], { priority: 'urgent' });
+  });
+
+  it('writes nothing when every issue already holds it', () => {
+    const write = vi.fn<QuickActionWrite>();
+
+    setPriority([issue('a')], 'none', write);
+
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
 describe('quick action keys', () => {
   it('collide with no property key', () => {
     const quick = [
       ADD_TO_ACTIVE_CYCLE_KEYS,
       REMOVE_DUE_DATE_KEYS,
       REMOVE_LABELS_KEYS,
+      ...Object.values(SET_PRIORITY_KEYS),
     ];
     const taken = Object.values(PROPERTY_KEYS);
     expect(quick.filter((keys) => taken.includes(keys))).toEqual([]);
+  });
+
+  it('leave Shift+3 to the archive key', () => {
+    expect(Object.values(SET_PRIORITY_KEYS)).not.toContain('shift+3');
   });
 
   it('leave estimate on Shift+E and labels on L', () => {

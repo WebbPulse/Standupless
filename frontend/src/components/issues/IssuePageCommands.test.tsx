@@ -5,7 +5,8 @@
  * Ctrl+Backspace deletes only after the confirmation, unless the surface
  * around the page takes that key, and Cmd or Ctrl+Shift+C,
  * D and L add the issue to the active cycle, clear its due date and clear its
- * labels, Cmd or Ctrl+Alt+1 to 9 set the status at that workflow position,
+ * labels, Shift and a digit set the priority, Cmd or Ctrl+Alt+1 to 9 set the
+ * status at that workflow position,
  * and the palette offers Copy issue as Markdown.
  */
 
@@ -180,6 +181,13 @@ describe('IssuePageCommands', () => {
     press('i');
 
     expect(onUpdate).toHaveBeenCalledWith({ assignee_id: 'user-1' });
+  });
+
+  it('sets the priority on Shift and a digit', () => {
+    renderCommands();
+    press('$', { shiftKey: true, code: 'Digit4' });
+
+    expect(onUpdate).toHaveBeenCalledWith({ priority: 'low' });
   });
 
   it("unassigns on I when the issue is already the viewer's", () => {

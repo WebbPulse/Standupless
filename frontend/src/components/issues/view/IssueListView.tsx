@@ -10,10 +10,13 @@
  * blocked by, blocking, related to or a duplicate of another, Cmd or
  * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
  * them, Cmd or Ctrl+Shift+C and D add them to the active cycle and clear
- * their due date, Shift+L clears their labels without a picker, and Cmd or
+ * their due date, Shift+L clears their labels without a picker, Shift+0, 1, 2
+ * or 4 set their priority, and Cmd or
  * Ctrl+Delete deletes them after a confirmation. On a
  * board j and k stay in the focused column and the side arrows cross to the next column
- * holding a card. In a list that nests
+ * holding a card, and t folds the focused card's swimlane, moving the focus off
+ * the hidden card so no key acts on it, and a second t unfolds the lane and
+ * brings the focus back. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
  * sub-issue and the left arrow folds it or steps back out to the parent. A right
  * click on a row or a card opens the same commands as a menu, and the bulk
@@ -183,6 +186,7 @@ import { RELATION_COMMANDS } from '../RelationGlyphs';
 import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
+  TOGGLE_SWIMLANE_KEYS,
   DELETE_ISSUE_KEYS,
   EDIT_ISSUE_KEYS,
   EDIT_ISSUE_LABEL,
@@ -415,6 +419,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const onToggle = folds?.onToggle ?? toggleOwnFold;
   const onFoldMany = folds?.onSet;
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [foldedLane, setFoldedLane] = useState<{
+    key: string;
+    issueId: string;
+  } | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -508,6 +516,14 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.layout,
   ]);
 
+  const swimlanes = useMemo(
+    () =>
+      state.layout === 'board' && state.subGroupBy !== 'none'
+        ? groupIssues(sorted, state.subGroupBy, context, false)
+        : null,
+    [sorted, context, state.layout, state.subGroupBy]
+  );
+
   const board = useMemo<string[][][] | null>(() => {
     if (state.layout !== 'board') return null;
     const seen = new Set<string>();
@@ -517,9 +533,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         seen.add(issue.id);
         return [issue.id];
       });
-    if (state.subGroupBy !== 'none') {
+    if (swimlanes !== null) {
       const field = state.groupBy === 'none' ? 'status' : state.groupBy;
-      return groupIssues(sorted, state.subGroupBy, context, false)
+      return swimlanes
         .filter((lane) => !collapsed.has(`lane/${lane.key}`))
         .map((lane) =>
           groupIssues(lane.issues, field, context, false)
@@ -532,15 +548,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         .filter(({ group }) => !collapsed.has(hiddenColumnKey(group.key)))
         .map(({ group }) => take(group.issues)),
     ];
-  }, [
-    sections,
-    sorted,
-    context,
-    collapsed,
-    state.layout,
-    state.groupBy,
-    state.subGroupBy,
-  ]);
+  }, [sections, swimlanes, context, collapsed, state.layout, state.groupBy]);
 
   const listSections = useMemo(
     () => splitHiddenSections(sections, collapsed).shown,
@@ -741,6 +749,34 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     if (board === null) return;
     const next = boardStep(board, focused, direction);
     if (next !== undefined) focusOn(next, false);
+  };
+
+  const toggleFocusedLane = (): void => {
+    if (swimlanes === null) return;
+    const holding =
+      focused === null
+        ? []
+        : swimlanes.filter((lane) =>
+            lane.issues.some((issue) => issue.id === focused)
+          );
+    const openLane = holding.find((lane) => !collapsed.has(`lane/${lane.key}`));
+    if (openLane !== undefined && focused !== null) {
+      const key = `lane/${openLane.key}`;
+      onToggle(key);
+      setFoldedLane({ key, issueId: focused });
+      setFocusedId(null);
+      return;
+    }
+    const [closedLane] = holding;
+    if (closedLane !== undefined) {
+      onToggle(`lane/${closedLane.key}`);
+      return;
+    }
+    if (foldedLane !== null && collapsed.has(foldedLane.key)) {
+      onToggle(foldedLane.key);
+      focusOn(foldedLane.issueId, false);
+      setFoldedLane(null);
+    }
   };
 
   const siblingsOf = (id: string): OrderedIssueRead[] => {
@@ -1287,6 +1323,15 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         ...withLayout(state, state.layout === 'board' ? 'list' : 'board'),
       });
     },
+  });
+
+  useShortcut({
+    keys: TOGGLE_SWIMLANE_KEYS,
+    label: 'Fold or unfold swimlane',
+    scope: 'page',
+    group: 'List',
+    enabled: swimlanes !== null,
+    handler: toggleFocusedLane,
   });
 
   useShortcut({

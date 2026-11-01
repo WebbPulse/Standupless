@@ -5,7 +5,9 @@
  * and Cmd or Ctrl+Alt and a digit set the status at that workflow position on
  * a focused card or a selection of rows. Cmd or Ctrl+click on a card toggles
  * it in the selection without opening it. A card draws no row for properties
- * it does not show, and sizes its dates to their text.
+ * it does not show, and sizes its dates to their text. T folds the focused
+ * card's swimlane, takes the focus off it, and unfolds the lane and restores
+ * the focus on a second press, and it is bound only on a board with swimlanes.
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -111,17 +113,14 @@ let update: ReturnType<typeof vi.fn<IssueCollection['update']>>;
 /** Mounts the view in a layout, inside a shortcut registry. */
 const renderView = (
   layout: ViewLayout = 'board',
-  visible?: ViewState['visible']
+  overrides: Partial<ViewState> = {}
 ) => {
   render(
     <MemoryRouter>
       <ShortcutRegistryContext.Provider value={registry}>
         <IssueListView
           slug="mine"
-          state={{
-            ...defaultViewState(layout),
-            ...(visible === undefined ? {} : { visible }),
-          }}
+          state={{ ...defaultViewState(layout), ...overrides }}
           onStateChange={vi.fn()}
           collection={{
             issues,
@@ -180,6 +179,65 @@ describe('IssueListView board keys', () => {
     press('ArrowLeft');
     press('ArrowLeft');
     expect(focusedId()).toBe('a1');
+  });
+
+  it('folds the focused swimlane on T and takes the focus off its card', () => {
+    renderView('board', { subGroupBy: 'priority' });
+
+    press('j');
+    expect(focusedId()).toBe('a1');
+    press('t');
+
+    expect(screen.queryByText('Issue a1')).toBeNull();
+    expect(screen.getByText('Issue a2')).toBeInTheDocument();
+    expect(focusedId()).toBeUndefined();
+  });
+
+  it('unfolds the lane and restores the focus on a second T', () => {
+    renderView('board', { subGroupBy: 'priority' });
+
+    press('j');
+    press('t');
+    press('t');
+
+    expect(screen.getByText('Issue a1')).toBeInTheDocument();
+    expect(focusedId()).toBe('a1');
+  });
+
+  it('folds the lane of the card J reaches after a fold', () => {
+    renderView('board', { subGroupBy: 'priority' });
+
+    press('j');
+    press('t');
+    press('j');
+    expect(focusedId()).toBe('a2');
+    press('t');
+
+    expect(screen.queryByText('Issue a2')).toBeNull();
+    expect(screen.queryByText('Issue c1')).toBeNull();
+  });
+
+  it('lists T for the help overlay on a board with swimlanes', () => {
+    renderView('board', { subGroupBy: 'priority' });
+
+    expect(
+      registry.list().find((shortcut) => shortcut.keys === 't')?.group
+    ).toBe('List');
+  });
+
+  it.each<[ViewLayout, Partial<ViewState>]>([
+    ['board', {}],
+    ['list', { subGroupBy: 'priority' }],
+  ])('leaves T unbound on a %s without swimlanes', (layout, overrides) => {
+    renderView(layout, overrides);
+
+    press('j');
+    press('t');
+
+    expect(registry.list().some((shortcut) => shortcut.keys === 't')).toBe(
+      false
+    );
+    expect(screen.getByText('Issue a1')).toBeInTheDocument();
   });
 
   it('keeps J and K inside the focused column', () => {
@@ -266,14 +324,14 @@ describe('IssueListView board keys', () => {
   });
 
   it('draws no identity row on a card with its key and assignee hidden', () => {
-    renderView('board', ['priority']);
+    renderView('board', { visible: ['priority'] });
     const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
 
     expect(card.querySelector('[data-card-row="identity"]')).toBeNull();
   });
 
   it('keeps the identity row while either its key or assignee shows', () => {
-    renderView('board', ['id']);
+    renderView('board', { visible: ['id'] });
     const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
 
     expect(card.querySelector('[data-card-row="identity"]')).toHaveTextContent(
@@ -282,7 +340,7 @@ describe('IssueListView board keys', () => {
   });
 
   it('collapses the chip row on a card with nothing to show in it', () => {
-    renderView('board', ['id']);
+    renderView('board', { visible: ['id'] });
     const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
     const chips = card.querySelector('[data-card-row="chips"]');
 
@@ -291,7 +349,9 @@ describe('IssueListView board keys', () => {
   });
 
   it('sizes dates and time in status on a card to their text', () => {
-    renderView('board', ['created_at', 'updated_at', 'time_in_status']);
+    renderView('board', {
+      visible: ['created_at', 'updated_at', 'time_in_status'],
+    });
     const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
 
     for (const title of ['Created', 'Updated']) {

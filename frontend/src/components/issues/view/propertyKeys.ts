@@ -61,6 +61,20 @@ export const REMOVE_DUE_DATE_KEYS = 'mod+shift+d';
 /** The keys that clear every label from the issues in focus. */
 export const REMOVE_LABELS_KEYS = 'shift+l';
 
+/**
+ * The keys that set the priority of the issues in focus without a picker.
+ * Medium has none: Shift+3 types `#` on a US layout, which is the archive key.
+ */
+export const SET_PRIORITY_KEYS = {
+  none: 'shift+0',
+  urgent: 'shift+1',
+  high: 'shift+2',
+  low: 'shift+4',
+} as const;
+
+/** The key that folds or unfolds the board swimlane of the focused card. */
+export const TOGGLE_SWIMLANE_KEYS = 't';
+
 /** The keys that move to the comment box of the issue in view. */
 export const COMMENT_ISSUE_KEYS = 'mod+m';
 
