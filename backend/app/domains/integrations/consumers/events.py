@@ -391,6 +391,11 @@ def _handle_pull_request(
     an edit names it in the title or after a magic word, it moves as a new link does.
     A key a merged pull request's commits only mention in a commit body moves nothing
     either, unless the merged pull request that commit cites closed it.
+
+    A delivery about an already merged pull request that is not the merge itself,
+    such as an edit, cannot change what the merge decided: a merged link keeps its
+    closing word, move and hold, and a link the merge has not folded yet is left for
+    it, since a write here would stamp the row newer and refuse the merge as stale.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -473,8 +478,21 @@ def _handle_pull_request(
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
-        holds = promoted_holds.get(key, match.holds_on_merge)
-        moves = (match.moves_status and key not in promoted_quiet) or promoted_holds.get(key) is False
+        after_merge = merged and trigger != "pr_merged"
+        if after_merge and previous is not None and previous.pr_state != "merged":
+            _log.info(
+                "Skipped a pull request delivery that overtook its merge.",
+                extra={"event": "integrations.link_merge_pending"},
+            )
+            stale = True
+            continue
+        settled = previous if after_merge else None
+        holds = promoted_holds.get(key, match.holds_on_merge) if settled is None else settled.holds_on_merge
+        moves = (
+            (match.moves_status and key not in promoted_quiet) or promoted_holds.get(key) is False
+            if settled is None
+            else settled.moves_status
+        )
         issue_trigger = trigger if moves else None
         newly_moving = previous is None or not previous.moves_status
         if moves and newly_moving and issue_trigger is None:
@@ -498,7 +516,7 @@ def _handle_pull_request(
                 pr_url=str(pull_request.get("html_url", "")),
                 pr_state=state,
                 author_login=author,
-                magic_word=match.magic_word,
+                magic_word=match.magic_word if settled is None else settled.magic_word,
                 moves_status=moves,
                 holds_on_merge=holds,
                 applied_status_id=previous.applied_status_id if previous is not None else None,
@@ -527,7 +545,7 @@ def _handle_pull_request(
                 issue,
                 issue_trigger,
                 closes=match.magic_word is not None,
-                holds=holds,
+                holds=bool(holds),
                 base_branch=base_branch,
                 event_at=event_at,
             )
