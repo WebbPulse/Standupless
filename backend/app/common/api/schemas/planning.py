@@ -1294,6 +1294,21 @@ class ProjectUpdateSnapshotRead(BaseModel):
         return cls.model_validate(fields)
 
 
+class RecentUpdateRead(BaseModel):
+    """Another update posted on the same project or initiative close to the one just created.
+
+    A create answers with these so its author learns that someone else just
+    reported, since the newest update is the one that sets the health.
+    """
+
+    update_id: str
+    author_id: str
+    author_name: Optional[str] = None
+    health: ProjectHealthField
+    source: Optional[ChangeSource] = None
+    created_at: datetime
+
+
 class ProjectUpdateRead(BaseModel):
     """One project update as the API returns it.
 
@@ -1308,6 +1323,7 @@ class ProjectUpdateRead(BaseModel):
     `snapshot` is an update posted before reports existed, which shows none,
     and a null `previous_snapshot` beside a snapshot is a first update, whose
     report is a baseline. `hide_details` is the author's choice to hide it.
+    `recent_updates` is filled only on the answer to a create.
     """
 
     update_id: str
@@ -1326,6 +1342,7 @@ class ProjectUpdateRead(BaseModel):
     snapshot: Optional[ProjectUpdateSnapshotRead] = None
     previous_snapshot: Optional[ProjectUpdateSnapshotRead] = None
     hide_details: bool = False
+    recent_updates: list[RecentUpdateRead] = Field(default_factory=list)
 
     @classmethod
     def from_row(
@@ -2011,7 +2028,7 @@ class InitiativeUpdateRead(BaseModel):
     `report` is that diff as plain lines, empty on a first update, on one
     posted before reports existed, and when `hide_details` says its author hid it.
     `reactions` and `comment_count` summarise the update's thread, as on a
-    project update.
+    project update. `recent_updates` is filled only on the answer to a create.
     """
 
     update_id: str
@@ -2031,6 +2048,7 @@ class InitiativeUpdateRead(BaseModel):
     report: list[str] = Field(default_factory=list)
     reactions: list[ReactionGroupRead] = Field(default_factory=list)
     comment_count: int = 0
+    recent_updates: list[RecentUpdateRead] = Field(default_factory=list)
 
     @classmethod
     def from_row(

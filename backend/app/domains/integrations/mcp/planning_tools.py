@@ -65,6 +65,7 @@ from app.common.project_filters import parse_property_filter
 from app.common.project_link_writes import create_link, delete_link, project_links, update_link
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_update_report import report_lines
+from app.common.recent_updates import recent_update_hints
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -901,7 +902,7 @@ def _create_project_update(call: ToolCall) -> Any:
         created.project_id,
         created.created_at,
     )
-    return _project_update_json(created)
+    return {**_project_update_json(created), "hints": recent_update_hints("project", created.recent_updates)}
 
 
 def _update_project_update(call: ToolCall) -> Any:
@@ -1469,7 +1470,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             "Post a status update on a project, in Markdown, with its health. "
             "Posting sets the project's health and notifies its lead and members. "
             "Give template_id instead of body to post a document template's body. "
-            "The update records a report of what changed since the last one."
+            "The update records a report of what changed since the last one. "
+            "hints names any other update posted on the project in the last few minutes."
         ),
         scopes=("projects:write",),
         schema=object_schema(

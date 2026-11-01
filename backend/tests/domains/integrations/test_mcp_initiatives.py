@@ -275,3 +275,20 @@ def test_a_private_lead_team_hides_the_initiative_from_an_outside_agent(
     assert refusal(tool(client, outside, "get_initiative", {"initiative_id": led["initiative_id"]})) == NOT_VISIBLE
     assert refusal(tool(client, outside, "get_initiative", {"initiative_id": "Secret"})) == NOT_VISIBLE
     assert answer(tool(client, outside, "list_initiatives", {}))["initiatives"] == []
+
+
+def test_posting_an_update_hints_at_the_one_just_posted(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The second of two quick posts names the first, and editing its health refreshes its report."""
+    writer = mint_for(repositories, MEMBER, PROJECTS)
+    initiative_id = answer(tool(client, writer, "create_initiative", {"name": "Grow"}))["initiative_id"]
+    base = {"initiative_id": initiative_id, "body": "Note"}
+
+    first = answer(tool(client, writer, "create_initiative_update", {**base, "health": "at_risk"}))
+    second = answer(tool(client, writer, "create_initiative_update", {**base, "health": "off_track"}))
+
+    assert first["hints"] == []
+    assert len(second["hints"]) == 1
+    assert first["update_id"] in second["hints"][0]
+    assert "At risk" in second["hints"][0]
+    ref = {"initiative_id": initiative_id, "update_id": second["update_id"]}
+    assert answer(tool(client, writer, "update_initiative_update", {**ref, "health": "at_risk"}))["report"] == []

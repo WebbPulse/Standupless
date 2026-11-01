@@ -494,3 +494,58 @@ def test_the_snapshot_counts_only_projects_every_member_can_see(
     assert update.status_code == 201, update.text
     assert update.json()["snapshot"]["project_count"] == 1
     assert update.json()["snapshot"]["projects_by_health"] == {}
+
+
+def test_editing_an_updates_health_refreshes_its_report(client: TestClient, workspace: str) -> None:
+    """An update edited back to the health before it drops its health line; a new health reads in the line."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+    client.post(feed, json={"body": "Slipping", "health": "at_risk"})
+    second = client.post(feed, json={"body": "Stuck", "health": "off_track"}).json()
+    assert second["report"] == ["Health changed from At risk to Off track"]
+
+    back = client.patch(f"{feed}/{second['update_id']}", json={"health": "at_risk"}).json()
+    assert back["snapshot"]["health"] == "at_risk"
+    assert back["report"] == []
+
+    onward = client.patch(f"{feed}/{second['update_id']}", json={"health": "on_track"}).json()
+    assert onward["report"] == ["Health changed from At risk to On track"]
+    assert client.get(feed).json()["updates"][0]["report"] == onward["report"]
+    assert _get(client, workspace, initiative_id)["health"] == "on_track"
+
+
+def test_editing_an_older_updates_health_refreshes_the_next_report(client: TestClient, workspace: str) -> None:
+    """The next update diffs against the edited health, stays unedited, and the initiative keeps the newest health."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+    first = client.post(feed, json={"body": "Fine", "health": "on_track"}).json()
+    second = client.post(feed, json={"body": "Stuck", "health": "off_track"}).json()
+    client.post(feed, json={"body": "Stuck still", "health": "off_track"})
+
+    edited = client.patch(f"{feed}/{first['update_id']}", json={"health": "at_risk"})
+    assert edited.status_code == 200, edited.text
+
+    newest, middle, oldest = client.get(feed).json()["updates"]
+    assert oldest["health"] == "at_risk"
+    assert middle["update_id"] == second["update_id"]
+    assert middle["report"] == ["Health changed from At risk to Off track"]
+    assert middle["edited_at"] is None
+    assert newest["report"] == []
+    assert _get(client, workspace, initiative_id)["health"] == "off_track"
+
+
+def test_a_post_names_the_other_updates_of_the_last_few_minutes(client: TestClient, workspace: str) -> None:
+    """A create answers with the updates around it, and a read of the feed names none."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    feed = f"{_base(workspace)}/{initiative_id}/updates"
+
+    first = client.post(feed, json={"body": "Fine", "health": "on_track"}).json()
+    assert first["recent_updates"] == []
+    second = client.post(feed, json={"body": "Stuck", "health": "off_track"}).json()
+
+    assert [other["update_id"] for other in second["recent_updates"]] == [first["update_id"]]
+    assert second["recent_updates"][0]["author_name"] == "Mo Member"
+    assert all(row["recent_updates"] == [] for row in client.get(feed).json()["updates"])

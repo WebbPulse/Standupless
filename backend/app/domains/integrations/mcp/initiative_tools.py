@@ -42,6 +42,7 @@ from app.common.initiative_writes import (
 )
 from app.common.project_cadence import INTERVAL_OPTIONS
 from app.common.readable_ids import initiative_web_url
+from app.common.recent_updates import recent_update_hints
 from app.common.update_drafts import clear_posted_update_draft
 from app.domains.integrations.mcp.toolkit import (
     Tool,
@@ -283,7 +284,7 @@ def _create_update(call: ToolCall) -> Any:
         created.initiative_id,
         created.created_at,
     )
-    return _update_json(created)
+    return {**_update_json(created), "hints": recent_update_hints("initiative", created.recent_updates)}
 
 
 def _update_update(call: ToolCall) -> Any:
@@ -458,7 +459,8 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Post a status update on an initiative, in Markdown, with its health. Posting sets its health. "
             "Give template_id instead of body to post a workspace document template's body. "
-            "The update records a report of what changed since the last one."
+            "The update records a report of what changed since the last one. "
+            "hints names any other update posted on the initiative in the last few minutes."
         ),
         scopes=("projects:write",),
         schema=object_schema(
