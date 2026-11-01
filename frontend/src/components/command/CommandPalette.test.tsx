@@ -7,7 +7,8 @@
  * under their group heading. Creating an issue from a template opens a page
  * listing the current team's templates. Once a term is typed it also offers
  * the settings pages and the current team's settings sections, found by their
- * synonyms, and the create project and create initiative dialogs.
+ * synonyms, and the create project and create initiative dialogs, and it
+ * ends on a row that opens full search for the term.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -539,6 +540,46 @@ describe('what a term resolves to', () => {
       await screen.findByRole('option', { name: /Rotate the signing keys/ })
     ).toBeInTheDocument();
     expect(search).toHaveBeenCalled();
+  });
+
+  it('ends on a row that opens full search for the term', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('signing keys');
+
+    const row = await screen.findByRole('option', {
+      name: /Search for "signing keys"/,
+    });
+    const rows = screen.getAllByRole('option');
+    expect(rows[rows.length - 1]).toBe(row);
+
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/search?q=signing+keys');
+  });
+
+  it('keeps the exact issue key ahead of the search row', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('eng-12');
+
+    await screen.findByRole('option', { name: /Search for "eng-12"/ });
+    expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(
+      /Go to ENG-12/
+    );
+  });
+
+  it('offers no search row without a term', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await screen.findByRole('option', { name: /Switch to light theme/ });
+
+    expect(
+      screen.queryByRole('option', { name: /^Search for/ })
+    ).not.toBeInTheDocument();
   });
 
   it('waits for a second character rather than searching one', async () => {
@@ -1119,9 +1160,9 @@ describe('the team go-to commands', () => {
   it.each([
     ['active issues', /Go to active issues/, 'G then A'],
     ['go to backlog', /Go to backlog/, 'G then B'],
-    ['Engine board', /Engine board/, 'G then D'],
+    ['Engine board', /^Engine board/, 'G then D'],
     ['archived issues', /Engine archived issues/, 'G then X'],
-    ['Engine views', /Engine views/, 'G then Shift V'],
+    ['Engine views', /^Engine views/, 'G then Shift V'],
   ])('shows %s with its keys', async (term, name, keys) => {
     const user = renderPalette({ path: '/w/mine/team/ENG' });
 
@@ -1138,7 +1179,7 @@ describe('the team go-to commands', () => {
     await user.keyboard('{Control>}k{/Control}');
     await user.keyboard('Engine board');
     await user.click(
-      await screen.findByRole('option', { name: /Engine board/ })
+      await screen.findByRole('option', { name: /^Engine board/ })
     );
 
     expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG/board');
