@@ -447,9 +447,7 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="remove_project_from_initiative",
-        description=(
-            "Take a project out of one initiative, leaving the others it is in. The project itself is kept."
-        ),
+        description=("Take a project out of one initiative, leaving the others it is in. The project itself is kept."),
         scopes=("projects:write",),
         schema=MEMBERSHIP_SCHEMA,
         handler=_remove_project,

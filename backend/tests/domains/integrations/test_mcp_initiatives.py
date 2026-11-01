@@ -63,7 +63,11 @@ def test_an_initiative_is_created_and_rolls_up_projects_named_by_name(
     rolled = answer(tool(client, secret, "get_initiative", {"initiative_id": created["initiative_id"]}))
     listed = answer(tool(client, secret, "list_projects", {"initiative_id": "Grow"}))
 
-    assert added == {"project_id": planning["project_id"], "initiative_id": created["initiative_id"]}
+    assert added == {
+        "project_id": planning["project_id"],
+        "initiative_id": created["initiative_id"],
+        "initiative_ids": [created["initiative_id"]],
+    }
     assert sorted(rolled["project_ids"]) == sorted([planning["project_id"], other["project_id"]])
     assert rolled["web_url"].endswith("/w/acme/initiatives/" + readable_id(created["initiative_id"], rolled["name"]))
     assert rolled["project_health"]["none"] == 2

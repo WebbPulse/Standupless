@@ -967,9 +967,7 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "color": nullable("The project colour as #rrggbb, or null"),
     "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
     "label_ids": string_list("Every project label on the project, each an id or a name; replaces the list"),
-    "initiative_id": nullable(
-        f"{INITIATIVE_HELP} to put the project in alone, replacing any others, or null for none"
-    ),
+    "initiative_id": nullable(f"{INITIATIVE_HELP} to put the project in alone, replacing any others, or null for none"),
     "initiative_ids": string_list(
         "Every initiative the project belongs to, each an id or a name, the first its primary one; "
         "replaces the set, an empty list takes it out of all, and wins over initiative_id"
