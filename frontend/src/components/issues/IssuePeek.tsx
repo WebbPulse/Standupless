@@ -42,7 +42,10 @@ import { useWritable } from '../../hooks/useOffline';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { recordPatch } from '../../lib/issueUndo';
-import { useRecordRecentIssue } from '../../lib/recentIssues';
+import {
+  isUnreadableIssue,
+  useRecordRecentIssue,
+} from '../../lib/recentIssues';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPatch } from '../../lib/milestones';
 import { issuePath, projectMilestonePath, projectPath } from '../../lib/paths';
@@ -288,7 +291,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {error !== null && (
+        {error !== null && (issue === null || isUnreadableIssue(error)) && (
           <div className="p-4">
             <ErrorAlert
               message={errorMessage(error, 'Could not load this issue.')}

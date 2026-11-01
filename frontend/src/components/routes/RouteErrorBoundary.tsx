@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   isChunkLoadError,
-  reloadOnceForChunkError,
+  joinChunkReload,
 } from '../../lib/chunkReload';
 import BootSplash from '../layout/BootSplash';
 import Button from '../ui/button';
@@ -33,7 +33,7 @@ export interface RouteErrorBoundaryProps {
   children: ReactNode;
   /** Draws the error state. Defaults to {@link RouteErrorState}. */
   fallback?: React.ComponentType<RouteErrorFallbackProps>;
-  /** Started for a chunk error. Defaults to reloading at most once a minute. */
+  /** Started for a chunk error. Defaults to joining or starting a reload. */
   reloadForChunk?: () => boolean;
 }
 
@@ -66,6 +66,11 @@ export const RouteErrorState: React.FC<RouteErrorFallbackProps> = ({
         ? 'Standupless was updated while this tab was open. Reload to get the latest version.'
         : 'Something went wrong while showing this page. Try again, or reload if it keeps happening.'}
     </p>
+    {!isChunkLoadError(error) && error instanceof Error && (
+      <p className="break-words font-mono text-xs text-text-muted">
+        {error.message}
+      </p>
+    )}
     <div className="flex items-center gap-2">
       <Button size="sm" variant="primary" onClick={retry}>
         {isChunkLoadError(error) ? 'Reload' : 'Try again'}
@@ -110,7 +115,7 @@ class Boundary extends React.Component<BoundaryProps, BoundaryState> {
   /** Reloads once for a chunk that failed to load. */
   override componentDidCatch(error: unknown): void {
     if (!isChunkLoadError(error)) return;
-    const reload = this.props.reloadForChunk ?? reloadOnceForChunkError;
+    const reload = this.props.reloadForChunk ?? joinChunkReload;
     if (reload()) this.setState({ reloading: true });
   }
 

@@ -4,7 +4,8 @@
  * out, and the check for whether a body still names a file.
  */
 
-import { describe, expect, it } from 'vitest';
+import { ApiError } from '@webbpulse/api-client';
+import { describe, expect, it, vi } from 'vitest';
 import { attachmentIdOf, isContentPath, isVideoSrc } from './media';
 import {
   hasPending,
@@ -13,7 +14,9 @@ import {
   pendingPath,
   pendingReference,
   resolvePending,
+  retryHeldRequest,
   stripPending,
+  withHeldReferences,
 } from './draftUploads';
 
 const shot = pendingPath('ws-1', 'file-1', 'image');
@@ -60,5 +63,58 @@ describe('pendingReference', () => {
     expect(pendingReference('ws-1', 'file-2', pdf)).toBe(
       `[spec v2.pdf](${spec})`
     );
+  });
+});
+
+describe('withHeldReferences', () => {
+  const held = {
+    id: 'file-1',
+    file: new File(['png'], 'shot.png', { type: 'image/png' }),
+  };
+
+  it('adds a reference for a held file the body no longer names', () => {
+    expect(withHeldReferences('Look', 'ws-1', [held])).toBe(
+      `Look\n\n![shot.png](${shot})`
+    );
+    expect(withHeldReferences('', 'ws-1', [held])).toBe(`![shot.png](${shot})`);
+  });
+
+  it('leaves a body that already names the file alone', () => {
+    const body = `![shot.png](${shot})\n\nLook`;
+    expect(withHeldReferences(body, 'ws-1', [held])).toBe(body);
+  });
+});
+
+describe('retryHeldRequest', () => {
+  it('tries again after a dropped connection', async () => {
+    const request = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new TypeError('Load failed'))
+      .mockResolvedValue('landed');
+
+    await expect(retryHeldRequest(request, [0])).resolves.toBe('landed');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after the last try', async () => {
+    const failure = new TypeError('Load failed');
+    const request = vi.fn<() => Promise<string>>().mockRejectedValue(failure);
+
+    await expect(retryHeldRequest(request, [0, 0])).rejects.toBe(failure);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not repeat a request the server refused', async () => {
+    const refusal = new ApiError({
+      status: 413,
+      statusText: 'Too Large',
+      body: null,
+      url: '/attachments',
+      method: 'POST',
+    });
+    const request = vi.fn<() => Promise<string>>().mockRejectedValue(refusal);
+
+    await expect(retryHeldRequest(request, [0])).rejects.toBe(refusal);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });
