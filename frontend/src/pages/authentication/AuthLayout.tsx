@@ -2,11 +2,13 @@
  * The frame the sign in, sign up, password and email pages render in. It sits
  * inside the same public shell as the home page, so the top bar and footer
  * carry across, and sets the form in a narrow column under a large heading
- * instead of a boxed card.
+ * instead of a boxed card. A browser that an app sent here keeps a way back to
+ * the app under every one of those pages.
  */
 
 import React from 'react';
 import { Logo } from '../../brand';
+import ReturnToAppLink from '../../components/auth/ReturnToAppLink';
 import PublicShell from '../../components/layout/PublicShell';
 
 /** Props for AuthLayout: the heading and the page body. */
@@ -34,7 +36,10 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
           <p className="text-sm text-text-muted">{subtitle}</p>
         )}
       </div>
-      <div className="space-y-5">{children}</div>
+      <div className="space-y-5">
+        {children}
+        <ReturnToAppLink />
+      </div>
     </div>
   </PublicShell>
 );

@@ -497,7 +497,19 @@ const listen = (): void => {
 
   ipcMain.on(CHANNELS.signInWithBrowser, (event) => {
     if (!fromApp(event)) return;
-    void startBrowserSignIn(env).catch(() => undefined);
+    void startBrowserSignIn(env).catch(() => {
+      tabs?.loadInActive(handoffFailedUrl(env, 'browser-unavailable'));
+    });
+  });
+
+  ipcMain.on(CHANNELS.completeSignInLink, (event, raw: unknown) => {
+    if (!fromApp(event) || typeof raw !== 'string') return;
+    const link = raw.trim();
+    if (isHandoffCallback(link, env)) {
+      finishBrowserSignIn(link);
+    } else {
+      tabs?.loadInActive(handoffFailedUrl(env, 'invalid-link'));
+    }
   });
 
   ipcMain.on(CHANNELS.openExternal, (event, raw: unknown) => {

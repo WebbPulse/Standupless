@@ -1,9 +1,7 @@
 /**
  * The sign in page: password, passkey and OAuth, with a second leg answered by
- * a TOTP code or a passkey. Inside the desktop and mobile apps it also offers
- * signing in with the system browser, for the providers and passkeys the app
- * window cannot complete, and says why when a handoff the app started came
- * back refused.
+ * a TOTP code or a passkey. The apps show their browser sign-in screen in its
+ * place, so this form only reaches an app with no handoff to use.
  *
  * "Continue with SSO" asks only for an email address and hands the browser to
  * the identity provider its domain uses, falling back to the password form
@@ -23,7 +21,7 @@ import {
   useAuth as usePackageAuth,
   useOAuthCallback,
 } from '@webbpulse/auth/react';
-import { LuGlobe, LuKeyRound, LuLock } from 'react-icons/lu';
+import { LuKeyRound, LuLock } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
@@ -38,12 +36,6 @@ import Field from '../../components/ui/field';
 import TextLink, { LINK_CLASS } from '../../components/ui/link';
 import { useAuth } from '../../hooks/useAuth';
 import { authorizeReturn, loginReturnFor } from '../../lib/authorizeReturn';
-import {
-  describeDesktopHandoffFailure,
-  desktopBrowserSignIn,
-} from '../../lib/desktop';
-import { mobileBrowserSignIn } from '../../lib/mobileHandoff';
-import { DESKTOP_HANDOFF_FAILED_PARAM } from '../../lib/paths';
 import { errorMessage } from '../../lib/errors';
 import { describePasskeyMfaFailure } from '../../lib/passkeyMfa';
 import {
@@ -78,14 +70,10 @@ const Login: React.FC = () => {
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [error, setError] = useState<string | null>(
-    () =>
-      describeDesktopHandoffFailure(
-        searchParams.get(DESKTOP_HANDOFF_FAILED_PARAM)
-      ) ?? describeSsoError(searchParams.get(SSO_ERROR_PARAM))
+  const [error, setError] = useState<string | null>(() =>
+    describeSsoError(searchParams.get(SSO_ERROR_PARAM))
   );
   const [ssoReturn] = useState(() => searchParams.get(SSO_LOGIN_PARAM) === '1');
-  const signInWithBrowser = desktopBrowserSignIn() ?? mobileBrowserSignIn();
   const authorizeTarget = authorizeReturn(
     searchParams.get('returnTo'),
     identityOrigin()
@@ -394,25 +382,6 @@ const Login: React.FC = () => {
               <span className="h-px flex-1 bg-line" />
             </div>
             <div className="space-y-2">
-              {signInWithBrowser !== null && (
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => {
-                    setError(null);
-                    void Promise.resolve(signInWithBrowser()).catch(() => {
-                      setError(
-                        'The browser could not be opened. Try again, or sign in with your password.'
-                      );
-                    });
-                  }}
-                  disabled={isSubmitting}
-                  data-testid="login-desktop-browser"
-                >
-                  <LuGlobe className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Sign in with your browser</span>
-                </Button>
-              )}
               <Button
                 variant="secondary"
                 className="w-full"

@@ -9962,7 +9962,7 @@
         "type": "object"
       },
       "InsightsRead": {
-        "description": "A breakdown of the issues one scope and filter select, grouped by one dimension.\n\n`total` and `issue_count` count each issue once. A label breakdown counts an\nissue under every label it carries, so its bars can sum past the total.\n`truncated` is set when the scope held more than `row_cap` issues, and the\nfigures then cover only the issues read. Under a time measure `value` is the\nnumber of issues measured, each bucket carries `durations`, and `durations`\nand `points` cover the whole set; both are null and empty otherwise.",
+        "description": "A breakdown of the issues one scope and filter select, grouped by one dimension.\n\n`total` and `issue_count` count each issue once. A label breakdown counts an\nissue under every label it carries, so its bars can sum past the total.\n`truncated` is set when the scope held more than `row_cap` issues, and the\nfigures then cover only the issues read. Under a time measure `value` is the\nnumber of issues measured, each bucket carries `durations`, and `durations`\nand `points` cover the whole set; both are null and empty otherwise.\n`segment_totals` measures each segment across every issue, counting an issue\nonce per segment value however many groups it falls in, so an across all row\nneed not add up bars that can double count.",
         "properties": {
           "durations": {
             "anyOf": [
@@ -10047,6 +10047,13 @@
               }
             ],
             "title": "Segment By"
+          },
+          "segment_totals": {
+            "items": {
+              "$ref": "#/components/schemas/InsightBucket"
+            },
+            "title": "Segment Totals",
+            "type": "array"
           },
           "team_ids": {
             "items": {
@@ -18552,6 +18559,7 @@
               "initiative",
               "lead",
               "member",
+              "label",
               "team",
               "start_date",
               "target_date",
@@ -18605,6 +18613,7 @@
               "initiative",
               "lead",
               "member",
+              "label",
               "team",
               "start_date",
               "target_date",

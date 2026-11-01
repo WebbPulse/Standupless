@@ -125,7 +125,6 @@ export interface DesktopNotification {
 export interface DesktopBridge {
   platform: string;
   version: string;
-  passkeys: boolean;
   setBadgeCount: (count: number) => void;
   notify: (payload: DesktopNotification) => void;
   setTheme: (theme: 'system' | 'light' | 'dark') => void;
@@ -135,6 +134,11 @@ export interface DesktopBridge {
    * through the app's URL scheme. Absent on builds that predate the handoff.
    */
   signInWithBrowser?: () => void;
+  /**
+   * Finishes a browser sign-in from a link pasted into the app, for a browser
+   * that could not open the app's URL scheme. Absent on older builds.
+   */
+  completeSignInLink?: (link: string) => void;
   /**
    * Opens a web or mail link in the system browser. Absent on builds that
    * predate it.
@@ -162,13 +166,6 @@ export const desktopBridge = (): DesktopBridge | null => {
 export const isDesktopShell = (): boolean => desktopBridge() !== null;
 
 /**
- * Whether passkey sign in can work here. The desktop app on macOS and Linux has
- * no platform authenticator, so a ceremony there would hang with no prompt.
- */
-export const desktopSupportsPasskeys = (): boolean =>
-  desktopBridge()?.passkeys ?? true;
-
-/**
  * The desktop app's browser sign-in, or null in a browser or on a desktop
  * build that predates the handoff.
  */
@@ -193,20 +190,29 @@ export const desktopOpenInNewTab = (): ((path: string) => void) | null => {
     : null;
 };
 
+/** The reasons a browser sign-in failed that have a sentence of their own. */
+const HANDOFF_FAILURE_MESSAGES: Readonly<Record<string, string>> = {
+  'rate-limited':
+    'Too many sign-in attempts from the app. Wait a few minutes, then try again.',
+  refused:
+    'That account cannot sign in to the app. Try again with another account.',
+  expired: 'The browser sign-in expired before it finished. Try again.',
+  'browser-unavailable': 'The browser could not be opened. Try again.',
+  'invalid-link':
+    'That is not a Standupless sign-in link. Copy it again from the browser.',
+};
+
 /**
- * What the sign-in page says when the desktop app could not finish a browser
- * handoff, by the reason the app put in the query. Any failure has already
- * spent the code, so every message sends the person back to the app.
+ * What the app's sign-in screen says when a browser sign-in did not finish, by
+ * the reason in the query. Any failure has already spent the code, so every
+ * message leads to the retry on that screen.
  */
 export const describeDesktopHandoffFailure = (
   reason: string | null
 ): string | null => {
   if (reason === null || reason === '') return null;
-  if (reason === 'rate-limited') {
-    return 'Too many sign-in attempts from the app. Wait a few minutes, then start again from the app.';
-  }
-  if (reason === 'refused') {
-    return 'That account cannot sign in to the desktop app. Start again from the app with another account.';
-  }
-  return 'The browser sign-in could not be completed. Start again from the app.';
+  return (
+    HANDOFF_FAILURE_MESSAGES[reason] ??
+    'The browser sign-in could not be completed. Try again.'
+  );
 };

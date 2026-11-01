@@ -93,6 +93,7 @@ export type ProjectGrouping =
   | 'initiative'
   | 'lead'
   | 'member'
+  | 'label'
   | 'team'
   | 'start_date'
   | 'target_date'
@@ -106,6 +107,7 @@ export const PROJECT_GROUPINGS: ProjectGrouping[] = [
   'initiative',
   'lead',
   'member',
+  'label',
   'team',
   'start_date',
   'target_date',
@@ -120,6 +122,7 @@ export const PROJECT_GROUPING_LABELS: Record<ProjectGrouping, string> = {
   initiative: 'Initiative',
   lead: 'Lead',
   member: 'Members',
+  label: 'Labels',
   team: 'Team',
   start_date: 'Start date',
   target_date: 'Target date',
@@ -549,6 +552,8 @@ export interface ProjectGroup {
   category?: ProjectStatus;
   /** Whether a status group is its category's default, where a bare category lands. */
   isDefaultStatus?: boolean;
+  /** A label group's colour, which its header dot takes. */
+  color?: string;
 }
 
 /** The group key projects with no lead sit under. */
@@ -562,6 +567,9 @@ export const NO_HEALTH_KEY = 'health:none';
 
 /** The group key projects with no members sit under. */
 export const NO_MEMBER_KEY = 'member:none';
+
+/** The group key projects with no labels sit under. */
+export const NO_LABEL_KEY = 'label:none';
 
 /** The groupings that file a project under the period of one of its dates. */
 export const DATE_GROUPINGS: ReadonlySet<ProjectGrouping> = new Set([
@@ -677,6 +685,13 @@ export interface InitiativeName {
   name: string;
 }
 
+/** A project label as grouping needs it: its id, name and colour. */
+export interface LabelName {
+  id: string;
+  name: string;
+  color: string;
+}
+
 /** Options for groupProjects beyond the rows and the grouping. */
 export interface GroupOptions {
   /** The workspace's initiatives, to name initiative groups. */
@@ -687,6 +702,8 @@ export interface GroupOptions {
   teamIds?: readonly string[] | null;
   /** The workspace's project statuses, which status groups run by. */
   statuses?: readonly ProjectStatusRead[];
+  /** The workspace's project labels, which label groups run by and are named after. */
+  labels?: readonly LabelName[];
 }
 
 /**
@@ -731,7 +748,9 @@ const byValue = (
  * in the teams' order; a project on several teams shows under each of them,
  * or once under the first filtered team it is on when a team filter is set.
  * Member groups run by name with "No members" last, and a project shows
- * under each of its members. Start and target dates group by calendar month,
+ * under each of its members. Label groups run in the workspace's label order
+ * with "No label" last, and a project shows under each of its labels. Start
+ * and target dates group by calendar month,
  * a coarse date under its own quarter, half or year after the months it
  * covers, with "No date" last.
  * Empty groups are left out unless asked for, and "none" is one unlabelled
@@ -884,6 +903,47 @@ export const groupProjects = (
             },
           ];
     }
+    case 'label': {
+      const labels = options.labels ?? [];
+      const held = new Set(
+        projects.flatMap((project) => project.label_ids ?? [])
+      );
+      const known = labels.filter((label) => held.has(label.id));
+      const unknown = [...held].filter(
+        (id) => !labels.some((label) => label.id === id)
+      );
+      const rowsWith = (id: string): ProjectRead[] =>
+        projects.filter((project) => (project.label_ids ?? []).includes(id));
+      const bare = projects.filter(
+        (project) => (project.label_ids ?? []).length === 0
+      );
+      const groups: ProjectGroup[] = [
+        ...known.map((label) => ({
+          key: `label:${label.id}`,
+          label: label.name,
+          kind: grouping,
+          rows: rowsWith(label.id),
+          color: label.color,
+        })),
+        ...unknown.map((id) => ({
+          key: `label:${id}`,
+          label: 'Unknown label',
+          kind: grouping,
+          rows: rowsWith(id),
+        })),
+      ];
+      return bare.length === 0
+        ? groups
+        : [
+            ...groups,
+            {
+              key: NO_LABEL_KEY,
+              label: 'No label',
+              kind: grouping,
+              rows: bare,
+            },
+          ];
+    }
     case 'start_date':
     case 'target_date':
       return byPeriod(projects, grouping);
@@ -978,6 +1038,7 @@ export const groupPatch = (
     case 'lead':
       return { lead_id: value === 'none' ? null : value };
     case 'member':
+    case 'label':
     case 'team':
     case 'start_date':
     case 'target_date':
@@ -1004,6 +1065,10 @@ export const inGroup = (project: ProjectRead, group: ProjectGroup): boolean => {
       return value === 'none'
         ? project.member_ids.length === 0
         : project.member_ids.includes(value);
+    case 'label':
+      return value === 'none'
+        ? (project.label_ids ?? []).length === 0
+        : (project.label_ids ?? []).includes(value);
     case 'team':
       return project.team_ids.includes(value);
     case 'start_date':

@@ -116,6 +116,7 @@ export interface ProjectsDisplayPreference {
     | 'initiative'
     | 'lead'
     | 'member'
+    | 'label'
     | 'team'
     | 'start_date'
     | 'target_date'
@@ -142,6 +143,7 @@ export interface ProjectsDisplayPreference {
     | 'initiative'
     | 'lead'
     | 'member'
+    | 'label'
     | 'team'
     | 'start_date'
     | 'target_date'
@@ -4817,6 +4819,8 @@ export interface InsightsRead {
   total: number;
   issue_count: number;
   groups: InsightGroup[];
+  /** Each segment across every issue, counting an issue once per segment value. */
+  segment_totals?: InsightBucket[];
   truncated: boolean;
   row_cap: number;
   /** Duration statistics over the whole set under a time measure, null otherwise. */

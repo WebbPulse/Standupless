@@ -1,12 +1,13 @@
 /**
- * Signing in through the system browser, for the providers and passkey
- * ceremonies the app window cannot finish. The main process makes a PKCE pair,
- * keeps the verifier in memory, and opens the web app's handoff page in the
- * default browser with the challenge. The signed in browser hands a single-use
- * code back on `<scheme>://auth/handoff`, and the main process redeems it with
- * the verifier through the default session, so the refresh cookie the exchange
- * sets lands in the same cookie jar the window's page refreshes from. The page
- * itself never sees the verifier or the code.
+ * Signing in through the system browser, the only way into the app. The main
+ * process makes a PKCE pair, keeps the verifier in memory, and opens the web
+ * app's handoff page in the default browser with the challenge. The signed in
+ * browser hands a single-use code back on `<scheme>://auth/handoff`, or the
+ * person pastes that link in when their browser would not open the app, and the
+ * main process redeems it with the verifier through the default session, so the
+ * refresh cookie the exchange sets lands in the same cookie jar the window's page
+ * refreshes from. The page never sees the verifier and only ever holds a pasted
+ * code long enough to pass it on.
  *
  * The exchange runs here rather than in the page because a cross-site renderer
  * fetch is refused, and because a verifier held by remote content is one a
@@ -69,7 +70,7 @@ export const startBrowserSignIn = async (env: Environment): Promise<void> => {
 /**
  * Redeems a handoff callback and answers the app URL the window should load:
  * the workspaces on success, or the sign-in page with the reason on failure.
- * Any failure spends the code, so the page tells the person to start again.
+ * Any failure spends the code, so the sign-in screen offers a fresh attempt.
  */
 export const completeBrowserSignIn = async (
   link: string,

@@ -132,6 +132,36 @@ def test_segments_split_each_bar_by_a_second_dimension(
     assert sum(segment["value"] for segment in member["segments"]) == member["value"] == 3
 
 
+def test_segment_totals_count_an_issue_once_per_segment_across_all_groups(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """An issue in two label bars adds once to its segment's total, though it adds to both bars' segments."""
+    bug = make_label(repositories, workspace, "Bug", "#ff0000")
+    ui = make_label(repositories, workspace, "UI", "#00ff00")
+    sign_in(issues_client, OWNER)
+    seed_issue(issues_client, workspace, title="Both", label_ids=[bug, ui], priority="urgent")
+    seed_issue(issues_client, workspace, title="Bug only", label_ids=[bug], priority="low")
+    seed_issue(issues_client, workspace, title="Bare", priority="low")
+
+    sign_in(client, OWNER)
+    payload = insights(client, workspace, team_id=TEAM, group_by="label", segment_by="priority")
+
+    assert sum(sum(segment["value"] for segment in group["segments"]) for group in payload["groups"]) == 4
+    assert {segment["key"]: segment["value"] for segment in payload["segment_totals"]} == {"urgent": 1, "low": 2}
+    assert [segment["key"] for segment in payload["segment_totals"]] == ["urgent", "low"]
+
+
+def test_segment_totals_are_empty_without_a_segment_dimension(
+    client: TestClient, issues_client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """A breakdown with no second dimension has no segments to total."""
+    sign_in(issues_client, OWNER)
+    seed_issue(issues_client, workspace, title="A", priority="low")
+
+    sign_in(client, OWNER)
+    assert insights(client, workspace, team_id=TEAM, group_by="priority")["segment_totals"] == []
+
+
 def test_a_label_breakdown_counts_an_issue_under_every_label_it_carries(
     client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:

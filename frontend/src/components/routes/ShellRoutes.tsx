@@ -1,20 +1,24 @@
 /**
  * The routes that keep the installable apps off the public site. Inside the
  * desktop or mobile app, `/` starts on sign in or the workspace, and a public
- * page opens in the system browser while the app stays where it was. In a
- * browser both render the web page unchanged.
+ * page opens in the system browser while the app stays where it was. The guest
+ * pages give way to the browser sign-in screen, so no app holds a credential
+ * field. In a browser all of these render the web page unchanged.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { desktopBrowserSignIn } from '../../lib/desktop';
 import { RESUME_STATE } from '../../lib/lastWorkspace';
+import { mobileBrowserSignIn } from '../../lib/mobileHandoff';
 import { WORKSPACES_PATH } from '../../lib/paths';
 import {
   isAppShell,
   openInSystemBrowser,
   SHELL_SIGN_IN_PATH,
 } from '../../lib/shell';
+import ShellSignIn from '../auth/ShellSignIn';
 import BootSplash from '../layout/BootSplash';
 
 /**
@@ -66,4 +70,29 @@ const ShellPublicHandoff: React.FC = () => {
 export const ShellPublicRoute: React.FC = () => {
   const location = useLocation();
   return isAppShell() ? <ShellPublicHandoff key={location.key} /> : <Outlet />;
+};
+
+/**
+ * This app's browser sign-in, answering a callback when the browser returned
+ * one directly, or null where there is none to use: in a browser, on a desktop
+ * build from before the handoff, and on a deployment without one. Those keep the
+ * web form, since it would be the only way in.
+ */
+const appBrowserSignIn = (): (() => Promise<string | null>) | null => {
+  const desktop = desktopBrowserSignIn();
+  if (desktop === null) return mobileBrowserSignIn();
+  return () => {
+    desktop();
+    return Promise.resolve(null);
+  };
+};
+
+/**
+ * The layout route for sign in, sign up and the password pages. An app shows
+ * its browser sign-in screen in place of all of them, and those steps happen in
+ * the browser, where the real pages still render.
+ */
+export const ShellGuestGate: React.FC = () => {
+  const start = appBrowserSignIn();
+  return start === null ? <Outlet /> : <ShellSignIn start={start} />;
 };
