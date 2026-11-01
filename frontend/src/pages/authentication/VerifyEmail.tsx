@@ -15,6 +15,7 @@ import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
 import { useAuth } from '../../hooks/useAuth';
+import { useCooldown } from '../../hooks/useCooldown';
 import VerifyEmailToken from './VerifyEmailToken';
 
 /** Routes `/verify-email` to the token confirmation or the request form. */
@@ -24,6 +25,7 @@ const VerifyEmail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, isLoading } = useAuth();
+  const cooldown = useCooldown();
   const client = getIdentityClient();
   const linkToken = searchParams.get(LINK_TOKEN_PARAM);
 
@@ -34,6 +36,7 @@ const VerifyEmail: React.FC = () => {
       return;
     }
 
+    if (cooldown.remaining > 0) return;
     setIsSubmitting(true);
     try {
       const outcome = await client.requestEmailVerification({
@@ -43,6 +46,7 @@ const VerifyEmail: React.FC = () => {
         setSentMessage(
           outcome.detail ?? 'Verification email sent. Check your inbox.'
         );
+        cooldown.start();
         return;
       }
       setError(outcome.message);
@@ -94,14 +98,18 @@ const VerifyEmail: React.FC = () => {
       </p>
       <ConfirmationAlert message={sentMessage} />
       <ErrorAlert message={error} />
-      {sentMessage === null && (
-        <AuthSubmitButton
-          onClick={() => void handleSend()}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? 'Sending' : 'Send verification email'}
-        </AuthSubmitButton>
-      )}
+      <AuthSubmitButton
+        onClick={() => void handleSend()}
+        disabled={isSubmitting || cooldown.remaining > 0}
+      >
+        {isSubmitting
+          ? 'Sending'
+          : cooldown.remaining > 0
+            ? `Resend in ${cooldown.remaining}s`
+            : sentMessage === null
+              ? 'Send verification email'
+              : 'Resend verification email'}
+      </AuthSubmitButton>
       <AuthRedirectLink
         text="Go to"
         linkText="your workspaces"

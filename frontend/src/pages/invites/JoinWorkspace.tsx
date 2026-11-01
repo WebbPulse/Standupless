@@ -14,6 +14,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import TextLink from '../../components/ui/link';
 import Spinner from '../../components/ui/spinner';
+import PendingVerification from '../../components/auth/PendingVerification';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../lib/errors';
 import type { InviteLinkPreview } from '../../types/Api';
@@ -26,7 +27,8 @@ const DEAD_LINK =
 const JoinWorkspace: React.FC = () => {
   const [params] = useSearchParams();
   const location = useLocation();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const unverified = user?.email_verified === false;
   const token = params.get('token');
   const [preview, setPreview] = useState<InviteLinkPreview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ const JoinWorkspace: React.FC = () => {
   const [joined, setJoined] = useState(false);
 
   useEffect(() => {
-    if (isLoading || !isAuthenticated || token === null) return;
+    if (isLoading || !isAuthenticated || unverified || token === null) return;
     let cancelled = false;
     previewInviteLink(token)
       .then((result) => {
@@ -47,7 +49,7 @@ const JoinWorkspace: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isLoading, isAuthenticated, token]);
+  }, [isLoading, isAuthenticated, unverified, token]);
 
   if (token === null) {
     return (
@@ -96,6 +98,10 @@ const JoinWorkspace: React.FC = () => {
         </div>
       </AccountShell>
     );
+  }
+
+  if (unverified) {
+    return <PendingVerification />;
   }
 
   const onJoin = (): void => {

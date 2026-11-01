@@ -23,6 +23,10 @@ vi.mock('../../api/identityClient', () => ({
   identityOrigin: () => 'https://api.standupless.dev',
 }));
 
+vi.mock('../auth/PendingVerification', () => ({
+  default: () => <p>pending verification</p>,
+}));
+
 /** Builds a session value with every flag defaulted to a settled signed-out one. */
 const session = (
   overrides: Partial<AuthContextType> = {}
@@ -126,6 +130,43 @@ describe('ProtectedRoute', () => {
         }
       }
     }
+  });
+
+  it('holds an unverified account on the pending screen instead of the route', () => {
+    useAuthMock.mockReturnValue(
+      session({
+        isAuthenticated: true,
+        user: {
+          id: 'user-1',
+          email: 'new@example.com',
+          display_name: 'New',
+          email_verified: false,
+        },
+      })
+    );
+    renderProtected();
+
+    expect(screen.getByText('pending verification')).toBeInTheDocument();
+    expect(screen.queryByText('workspaces page')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
+  });
+
+  it('renders the route once the account is verified', () => {
+    useAuthMock.mockReturnValue(
+      session({
+        isAuthenticated: true,
+        user: {
+          id: 'user-1',
+          email: 'new@example.com',
+          display_name: 'New',
+          email_verified: true,
+        },
+      })
+    );
+    renderProtected();
+
+    expect(screen.getByText('workspaces page')).toBeInTheDocument();
+    expect(screen.queryByText('pending verification')).not.toBeInTheDocument();
   });
 
   it('shows a spinner while the session has never settled', () => {

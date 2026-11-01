@@ -3,7 +3,8 @@
  * another browser, so it needs no session. A POST spends the token rather than
  * the page load itself, so a mail scanner that fetches the link changes
  * nothing, and a ref keeps the StrictMode double mount from spending it twice.
- * Every other session ends once the address changes.
+ * Every other session ends once the address changes. The change also confirms
+ * the address, so a session here moves onto a token that says so.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -14,6 +15,7 @@ import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { getIdentityClient } from '../../api/identityClient';
+import { recheckVerification } from '../../lib/verification';
 import { useAuth } from '../../hooks/useAuth';
 
 /** The sentence for each refusal, used when the server sent none of its own. */
@@ -47,11 +49,12 @@ const refusalMessage = (
 const VerifyEmailChange: React.FC = () => {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
-  const { checkAuthStatus } = useAuth();
+  const { checkAuthStatus, isAuthenticated, isLoading } = useAuth();
   const [state, setState] = useState<State>(
     token === '' ? { kind: 'missing-token' } : { kind: 'confirming' }
   );
   const spent = useRef(false);
+  const rotated = useRef(false);
 
   useEffect(() => {
     if (token === '' || spent.current) return;
@@ -75,6 +78,13 @@ const VerifyEmailChange: React.FC = () => {
         setState({ kind: 'failed' });
       });
   }, [token, checkAuthStatus]);
+
+  useEffect(() => {
+    if (state.kind !== 'confirmed' || isLoading || !isAuthenticated) return;
+    if (rotated.current) return;
+    rotated.current = true;
+    void recheckVerification(checkAuthStatus);
+  }, [state.kind, isLoading, isAuthenticated, checkAuthStatus]);
 
   return (
     <AuthLayout title="Confirm your new email">

@@ -12,6 +12,7 @@ import AccountShell from '../../components/layout/AccountShell';
 import { ErrorAlert } from '../../components/ui/alert';
 import TextLink from '../../components/ui/link';
 import Spinner from '../../components/ui/spinner';
+import PendingVerification from '../../components/auth/PendingVerification';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../lib/errors';
 import type { WorkspaceRead } from '../../types/Api';
@@ -26,7 +27,8 @@ type AcceptState = 'accepting' | 'accepted' | 'failed';
 const AcceptInvite: React.FC = () => {
   const [params] = useSearchParams();
   const location = useLocation();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const unverified = user?.email_verified === false;
   const token = params.get('token');
   const attempted = useRef(false);
   const [state, setState] = useState<AcceptState>('accepting');
@@ -34,7 +36,7 @@ const AcceptInvite: React.FC = () => {
   const [workspace, setWorkspace] = useState<WorkspaceRead | null>(null);
 
   useEffect(() => {
-    if (isLoading || !isAuthenticated || token === null) return;
+    if (isLoading || !isAuthenticated || unverified || token === null) return;
     if (attempted.current) return;
     attempted.current = true;
 
@@ -66,7 +68,7 @@ const AcceptInvite: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [isLoading, isAuthenticated, token]);
+  }, [isLoading, isAuthenticated, unverified, token]);
 
   if (token === null) {
     return (
@@ -94,6 +96,10 @@ const AcceptInvite: React.FC = () => {
         replace
       />
     );
+  }
+
+  if (unverified) {
+    return <PendingVerification />;
   }
 
   return (

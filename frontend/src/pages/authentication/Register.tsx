@@ -3,25 +3,37 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { safeReturnPath } from '@webbpulse/auth';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
 import AuthForm from '../../components/auth/AuthForm';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import OAuthProviderButtons from '../../components/auth/OAuthProviderButtons';
-import { ErrorAlert } from '../../components/ui/alert';
+import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Field from '../../components/ui/field';
 import TextLink from '../../components/ui/link';
+import { errorMessage } from '../../lib/errors';
 import { PRIVACY_PATH, TERMS_PATH } from '../../lib/paths';
 import { getIdentityClient } from '../../api/identityClient';
 
+/** Whether a register answer carried a session for the new account. */
+const issuedSession = (answer: unknown): boolean =>
+  typeof answer === 'object' &&
+  answer !== null &&
+  typeof (answer as { access_token?: unknown }).access_token === 'string';
+
 /**
- * Creates an account, then sends the new user to the sign in page. The line
- * above the button links the terms and privacy policy the account is made under,
- * and the provider buttons below offer sign up through GitHub or Google instead.
- * A `returnTo`, such as an invite link's join page, is carried through to sign
- * in so the new account lands back where it started.
+ * Creates an account. A new account comes back signed in, so the session is
+ * adopted from the refresh cookie and the guest guard carries the person on to
+ * `returnTo` or their workspaces, where the pending verification screen waits
+ * until the mailed link is opened. An address that already has an account gets
+ * the same neutral "check your email" answer, without a session, so the form
+ * never says which addresses are taken. The line above the button links the
+ * terms and privacy policy the account is made under, and the provider buttons
+ * below offer sign up through GitHub or Google instead. A `returnTo`, such as an
+ * invite link's join page, is carried through so the new account lands back
+ * where it started.
  */
 const Register: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -30,7 +42,7 @@ const Register: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const navigate = useNavigate();
+  const [checkEmail, setCheckEmail] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const requested = searchParams.get('returnTo');
   const returnTo =
@@ -64,18 +76,42 @@ const Register: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await client.register({
+      const name = displayName.trim();
+      const answer = await client.register({
         email: email.trim(),
         password,
-        display_name: displayName.trim() === '' ? null : displayName.trim(),
+        ...(name === '' ? {} : { attributes: { display_name: name } }),
       });
-      void navigate(loginPath);
-    } catch {
-      setError('That account could not be created. Try again.');
+      if (issuedSession(answer)) {
+        await client.initialize();
+        return;
+      }
+      setCheckEmail(email.trim());
+    } catch (failure) {
+      setError(
+        errorMessage(failure, 'That account could not be created. Try again.')
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (checkEmail !== null) {
+    return (
+      <AuthLayout title="Check your email">
+        <div data-testid="register-check-email" className="space-y-5">
+          <ConfirmationAlert
+            message={`If ${checkEmail} can be used for a new account, a verification link is on its way. If the address already has an account, sign in instead.`}
+          />
+          <AuthRedirectLink
+            text="Already verified?"
+            linkText="Sign in"
+            to={loginPath}
+          />
+        </div>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout
