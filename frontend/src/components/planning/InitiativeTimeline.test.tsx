@@ -120,6 +120,8 @@ describe('InitiativeTimeline', () => {
     expect(within(undated).getByText('Someday')).toBeInTheDocument();
     expect(screen.getByTestId('timeline-today')).toBeInTheDocument();
     expect(screen.getByText('2 initiatives')).toBeInTheDocument();
+    expect(screen.getByTestId('initiative-lane-i-2')).toHaveClass('isolate');
+    expect(screen.getByText('Someday').closest('.sticky')).toHaveClass('z-10');
 
     await userEvent.click(
       screen.getByRole('button', { name: 'Collapse Launch' })
