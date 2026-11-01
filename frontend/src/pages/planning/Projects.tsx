@@ -1126,6 +1126,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       directedGroups(
         groupProjects(sorted, grouping, people, teams, {
           initiatives,
+          labels: projectLabels,
           statuses,
           teamIds: leadTeamIds,
         }),
@@ -1137,6 +1138,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       people,
       teams,
       initiatives,
+      projectLabels,
       statuses,
       leadTeamIds,
       direction,
@@ -1150,6 +1152,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             groupProjects(sorted, grouping, people, teams, {
               initiatives,
               keepEmpty: true,
+              labels: projectLabels,
               statuses,
               teamIds: leadTeamIds,
             }),
@@ -1187,6 +1190,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
       people,
       teams,
       initiatives,
+      projectLabels,
       leadTeamIds,
       direction,
       display.empty,
@@ -1202,9 +1206,19 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
         ? undefined
         : groupProjects(sorted, subGrouping, people, teams, {
             initiatives,
+            labels: projectLabels,
             teamIds: leadTeamIds,
           }),
-    [layout, subGrouping, sorted, people, teams, initiatives, leadTeamIds]
+    [
+      layout,
+      subGrouping,
+      sorted,
+      people,
+      teams,
+      initiatives,
+      projectLabels,
+      leadTeamIds,
+    ]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
@@ -1220,10 +1234,19 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading, scope }) => {
             ? null
             : groupProjects(group.rows, subGrouping, people, teams, {
                 initiatives,
+                labels: projectLabels,
                 teamIds: leadTeamIds,
               }).map((sub) => ({ sub, fold: `${group.key}/${sub.key}` })),
       })),
-    [groups, subGrouping, people, teams, initiatives, leadTeamIds]
+    [
+      groups,
+      subGrouping,
+      people,
+      teams,
+      initiatives,
+      projectLabels,
+      leadTeamIds,
+    ]
   );
   const { visible, starts } = useMemo(() => {
     const shown: ProjectRead[] = [];
