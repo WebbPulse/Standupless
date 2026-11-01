@@ -25,7 +25,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from webbpulse.identity.api_keys import ACTOR_CLAIM as API_KEY_ACTOR_CLAIM
 from webbpulse.identity.api_keys import TENANT_CLAIM as API_KEY_TENANT_CLAIM
 from webbpulse.identity.api_keys import effective_scopes
-from webbpulse.identity.claims import EMAIL_NOT_VERIFIED_DETAIL, email_unverified, identity_claims
+from webbpulse.identity.claims import email_unverified, identity_claims, require_verified_email
 
 from app.common.api.dependencies.repositories import (
     RepositoryBundle,
@@ -352,29 +352,14 @@ def _claims(request: Request, repositories: RepositoryBundle | None = None) -> A
     """
     claims = identity_claims(request)
     if claims is not None:
-        return _verified_or_refused(request, claims)
+        require_verified_email(request, claims, allowed_routes=UNVERIFIED_ALLOWED_ROUTES)
+        return claims
 
     key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
-
-
-def _verified_or_refused(request: Request, claims: Any) -> Any:
-    """The claims unchanged, or a 403 `EMAIL_NOT_VERIFIED` for an unconfirmed session off the account routes.
-
-    Only a token saying `email_verified` false is refused, so an API key and a token minted
-    before the claim existed pass as before.
-    """
-    if email_unverified(claims) and not _unverified_may_reach(request.url.path):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=dict(EMAIL_NOT_VERIFIED_DETAIL))
-    return claims
-
-
-def _unverified_may_reach(path: str) -> bool:
-    """Whether a path is one of the allowed routes or under one, on a segment boundary."""
-    return any(path == route or path.startswith(f"{route}/") for route in UNVERIFIED_ALLOWED_ROUTES)
 
 
 def _api_key_claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
@@ -505,7 +490,8 @@ def _bearer_claims(request: Request, repositories: RepositoryBundle | None = Non
     """
     claims = identity_claims(request)
     if claims is not None:
-        return _verified_or_refused(request, claims)
+        require_verified_email(request, claims, allowed_routes=UNVERIFIED_ALLOWED_ROUTES)
+        return claims
     key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims

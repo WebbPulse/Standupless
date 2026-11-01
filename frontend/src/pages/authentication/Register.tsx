@@ -17,15 +17,9 @@ import { errorMessage } from '../../lib/errors';
 import { PRIVACY_PATH, TERMS_PATH } from '../../lib/paths';
 import { getIdentityClient } from '../../api/identityClient';
 
-/** Whether a register answer carried a session for the new account. */
-const issuedSession = (answer: unknown): boolean =>
-  typeof answer === 'object' &&
-  answer !== null &&
-  typeof (answer as { access_token?: unknown }).access_token === 'string';
-
 /**
  * Creates an account. A new account comes back signed in, so the session is
- * adopted from the refresh cookie and the guest guard carries the person on to
+ * adopted from the answer and the guest guard carries the person on to
  * `returnTo` or their workspaces, where the pending verification screen waits
  * until the mailed link is opened. An address that already has an account gets
  * the same neutral "check your email" answer, without a session, so the form
@@ -77,15 +71,12 @@ const Register: React.FC = () => {
     setIsSubmitting(true);
     try {
       const name = displayName.trim();
-      const answer = await client.register({
+      const outcome = await client.signUp({
         email: email.trim(),
         password,
         ...(name === '' ? {} : { attributes: { display_name: name } }),
       });
-      if (issuedSession(answer)) {
-        await client.initialize();
-        return;
-      }
+      if (outcome.signedIn) return;
       setCheckEmail(email.trim());
     } catch (failure) {
       setError(

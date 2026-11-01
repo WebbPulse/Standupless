@@ -12,13 +12,13 @@ import VerifyEmailChange from './VerifyEmailChange';
 const confirmEmailChange =
   vi.fn<(body: { token: string }) => Promise<unknown>>();
 const checkAuthStatus = vi.fn(() => Promise.resolve());
-const refresh = vi.fn<() => Promise<string | null>>();
+const refreshSession = vi.fn<() => Promise<unknown>>();
 let isAuthenticated = false;
 
 vi.mock('../../api/identityClient', () => ({
   getIdentityClient: () => ({
     confirmEmailChange: (body: { token: string }) => confirmEmailChange(body),
-    refresh: () => refresh(),
+    refreshSession: () => refreshSession(),
   }),
 }));
 
@@ -45,7 +45,7 @@ const renderAt = (url: string) =>
 beforeEach(() => {
   confirmEmailChange.mockReset();
   checkAuthStatus.mockClear();
-  refresh.mockReset();
+  refreshSession.mockReset();
   isAuthenticated = false;
 });
 
@@ -92,11 +92,10 @@ describe('VerifyEmailChange', () => {
   it('rotates the token of a session open in this browser', async () => {
     isAuthenticated = true;
     confirmEmailChange.mockResolvedValue({ ok: true });
-    refresh.mockResolvedValue('token');
+    refreshSession.mockResolvedValue(null);
     renderAt('/verify-email-change?token=abc');
 
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(checkAuthStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
   });
 
   it('asks for a new link when the token is missing', () => {

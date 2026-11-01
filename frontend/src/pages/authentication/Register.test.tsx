@@ -13,8 +13,7 @@ import Register from './Register';
 
 const identity = vi.hoisted(() => ({
   client: null as null | {
-    register: (body: unknown) => Promise<unknown>;
-    initialize: () => Promise<unknown>;
+    signUp: (body: unknown) => Promise<unknown>;
   },
 }));
 
@@ -78,32 +77,28 @@ beforeEach(() => {
 });
 
 describe('Register', () => {
-  it('adopts the session a new account comes back with', async () => {
-    const register = vi.fn(() =>
-      Promise.resolve({ registered: true, access_token: 'token' })
+  it('signs up and stays out of the check email page when signed in', async () => {
+    const signUp = vi.fn(() =>
+      Promise.resolve({ signedIn: true, user: null, expiresIn: 900 })
     );
-    const initialize = vi.fn(() => Promise.resolve(null));
-    identity.client = { register, initialize };
+    identity.client = { signUp };
     renderRegister();
 
     await submit();
 
-    expect(register).toHaveBeenCalledWith({
+    expect(signUp).toHaveBeenCalledWith({
       email: 'new@example.com',
       password: 'a long password',
       attributes: { display_name: 'New' },
     });
-    expect(initialize).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByTestId('register-check-email')
     ).not.toBeInTheDocument();
   });
 
   it('answers a taken address with a neutral check your email page', async () => {
-    const initialize = vi.fn(() => Promise.resolve(null));
     identity.client = {
-      register: () => Promise.resolve({ registered: true }),
-      initialize,
+      signUp: () => Promise.resolve({ signedIn: false }),
     };
     renderRegister();
 
@@ -112,12 +107,11 @@ describe('Register', () => {
     expect(screen.getByTestId('register-check-email')).toHaveTextContent(
       'If new@example.com can be used for a new account'
     );
-    expect(initialize).not.toHaveBeenCalled();
   });
 
   it('shows the reason the server refused the account', async () => {
     identity.client = {
-      register: () =>
+      signUp: () =>
         Promise.reject(
           new ApiError({
             status: 400,
@@ -130,7 +124,6 @@ describe('Register', () => {
             method: 'POST',
           })
         ),
-      initialize: () => Promise.resolve(null),
     };
     renderRegister();
 
