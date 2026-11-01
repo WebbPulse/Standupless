@@ -62,7 +62,9 @@ export const ProjectInitiativeChips: React.FC<ProjectInitiativeChipsProps> = ({
           title={rest}
           className="pointer-events-auto shrink-0 text-2xs text-text-faint"
         >
-          <span aria-hidden="true">{`+${String(named.length - drawn.length)}`}</span>
+          <span aria-hidden="true">
+            {`+${String(named.length - drawn.length)}`}
+          </span>
           <span className="sr-only">{`Also in ${rest}`}</span>
         </span>
       )}
