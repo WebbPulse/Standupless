@@ -5,7 +5,8 @@
  * zoom levels, and groups lanes under foldable headers. Also covers linking
  * projects by dragging from a bar's dot or from a focused bar's menu, the
  * server's refusal of a self link or a loop, hovering and removing a
- * dependency line, and the diamonds dated milestones draw on their lanes.
+ * dependency line, the diamonds dated milestones draw on their lanes, and the
+ * stacking that keeps a lane's contents under everything pinned.
  */
 
 import {
@@ -736,5 +737,50 @@ describe('Roadmap', () => {
     );
     expect(lane('prj-1').querySelectorAll('[data-milestone]')).toHaveLength(2);
     expect(lane('prj-2').querySelectorAll('[data-milestone]')).toHaveLength(0);
+  });
+
+  it('stacks a lane and its diamonds under everything pinned', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        {
+          ...launch,
+          milestone_markers: [
+            {
+              milestone_id: 'ms-1',
+              name: 'Beta',
+              target_date: '2026-09-25',
+              completed: false,
+              counts: {
+                todo: 1,
+                in_progress: 0,
+                done: 0,
+                cancelled: 0,
+                total: 1,
+              },
+            },
+          ],
+        },
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+    const bar = await screen.findByRole('slider', { name: /^Launch/ });
+
+    expect(bar.parentElement).toHaveClass('isolate');
+    const name = lane('prj-1').firstElementChild;
+    expect(name).toHaveClass('sticky', 'z-10', '-mb-px', 'border-b');
+    expect(screen.getByTestId('timeline-today')).toHaveClass('z-5');
+    expect(
+      document.querySelector('.sticky.top-0.z-30')?.firstElementChild
+    ).toHaveClass('sticky', 'left-0', 'z-20');
+
+    const diamond = screen.getByRole('link', {
+      name: 'Beta, 0% of 1 issue complete',
+    });
+    expect(diamond).toHaveClass('top-8', 'pointer-events-auto');
+    expect(diamond).not.toHaveClass('bg-bg');
+    expect(
+      diamond.querySelector('path[fill="var(--bg)"]')
+    ).toBeInTheDocument();
   });
 });

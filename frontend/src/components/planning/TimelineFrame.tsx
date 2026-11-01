@@ -8,6 +8,10 @@
  * in view, so how long current work has run and what comes next both show.
  * A timeline with no names, such as the cycles band, passes a name width of
  * zero and its lanes take the whole view.
+ * The layers stack in one order on every timeline: a lane isolates its own
+ * contents at the bottom, the today line sits over the lanes, then the pinned
+ * names, the pinned group headers and the date header. Inside the date header
+ * the name cell sits over the Today chip, which scrolls beneath it.
  */
 
 import React, {
@@ -221,7 +225,7 @@ export const TimelineDateHeader: React.FC<TimelineDateHeaderProps> = ({
     <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
       {nameWidth > 0 && (
         <div
-          className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
+          className="sticky left-0 z-20 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
           style={{ width: nameWidth }}
         >
           {countLabel}
@@ -301,7 +305,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
       ))}
       <span
         data-testid="timeline-today"
-        className="absolute inset-y-0 z-10 w-px bg-accent"
+        className="absolute inset-y-0 z-5 w-px bg-accent"
         style={{ left: todayLeft }}
       />
       {children}
