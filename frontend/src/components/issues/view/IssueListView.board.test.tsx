@@ -349,7 +349,9 @@ describe('IssueListView board keys', () => {
   });
 
   it('sizes dates and time in status on a card to their text', () => {
-    renderView('board', { visible: ['created_at', 'updated_at', 'time_in_status'] });
+    renderView('board', {
+      visible: ['created_at', 'updated_at', 'time_in_status'],
+    });
     const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
 
     for (const title of ['Created', 'Updated']) {
