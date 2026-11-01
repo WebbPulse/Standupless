@@ -4,7 +4,8 @@
  * column keys are listed for the help overlay and the palette only on a board,
  * and Cmd or Ctrl+Alt and a digit set the status at that workflow position on
  * a focused card or a selection of rows. Cmd or Ctrl+click on a card toggles
- * it in the selection without opening it.
+ * it in the selection without opening it. A card draws no row for properties
+ * it does not show, and sizes its dates to their text.
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -19,7 +20,11 @@ import {
   type ShortcutRegistry,
 } from '../../../hooks/useShortcuts';
 import type { ViewLayout } from '../../../api/views';
-import { defaultViewState, type IssueContext } from '../../../lib/issueView';
+import {
+  defaultViewState,
+  type IssueContext,
+  type ViewState,
+} from '../../../lib/issueView';
 import IssueListView from './IssueListView';
 
 vi.mock(
@@ -104,13 +109,19 @@ let registry: ShortcutRegistry;
 let update: ReturnType<typeof vi.fn<IssueCollection['update']>>;
 
 /** Mounts the view in a layout, inside a shortcut registry. */
-const renderView = (layout: ViewLayout = 'board') => {
+const renderView = (
+  layout: ViewLayout = 'board',
+  visible?: ViewState['visible']
+) => {
   render(
     <MemoryRouter>
       <ShortcutRegistryContext.Provider value={registry}>
         <IssueListView
           slug="mine"
-          state={defaultViewState(layout)}
+          state={{
+            ...defaultViewState(layout),
+            ...(visible === undefined ? {} : { visible }),
+          }}
           onStateChange={vi.fn()}
           collection={{
             issues,
@@ -252,6 +263,45 @@ describe('IssueListView board keys', () => {
     fireEvent.click(title('a2'), { ctrlKey: true });
     expect(card('a2')).toHaveAttribute('aria-selected', 'false');
     expect(card('c1')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('draws no identity row on a card with its key and assignee hidden', () => {
+    renderView('board', ['priority']);
+    const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
+
+    expect(card.querySelector('[data-card-row="identity"]')).toBeNull();
+  });
+
+  it('keeps the identity row while either its key or assignee shows', () => {
+    renderView('board', ['id']);
+    const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
+
+    expect(card.querySelector('[data-card-row="identity"]')).toHaveTextContent(
+      'ENG-a1'
+    );
+  });
+
+  it('collapses the chip row on a card with nothing to show in it', () => {
+    renderView('board', ['id']);
+    const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
+    const chips = card.querySelector('[data-card-row="chips"]');
+
+    expect(chips).toBeEmptyDOMElement();
+    expect(chips).toHaveClass('empty:hidden');
+  });
+
+  it('sizes dates and time in status on a card to their text', () => {
+    renderView('board', ['created_at', 'updated_at', 'time_in_status']);
+    const card = screen.getByText('Issue a1').closest('li') as HTMLElement;
+
+    for (const title of ['Created', 'Updated']) {
+      const date = card.querySelector(`[title="${title}"]`);
+      expect(date).not.toHaveClass('w-14');
+      expect(date).not.toHaveClass('text-right');
+    }
+    const inStatus = card.querySelector('[title^="In status since"]');
+    expect(inStatus).not.toHaveClass('w-10');
+    expect(inStatus).not.toHaveClass('text-right');
   });
 
   it('sets every selected row to the status at a position in one write', () => {

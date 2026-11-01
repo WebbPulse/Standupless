@@ -168,15 +168,17 @@ const BoardCard: React.FC<BoardCardProps> = ({
         draggable && 'cursor-grab active:cursor-grabbing'
       )}
     >
-      <div className="flex items-center gap-2">
-        {shows('id') && (
-          <span className="min-w-0 flex-1 truncate font-mono text-2xs text-text-faint">
-            {issue.key}
-          </span>
-        )}
-        {!shows('id') && <span className="flex-1" />}
-        {shows('assignee') && <AssigneeCell issue={issue} />}
-      </div>
+      {(shows('id') || shows('assignee')) && (
+        <div data-card-row="identity" className="flex items-center gap-2">
+          {shows('id') && (
+            <span className="min-w-0 flex-1 truncate font-mono text-2xs text-text-faint">
+              {issue.key}
+            </span>
+          )}
+          {!shows('id') && <span className="flex-1" />}
+          {shows('assignee') && <AssigneeCell issue={issue} />}
+        </div>
+      )}
       {parent !== undefined && (
         <CardParentRef slug={env.slug} parent={parent} />
       )}
@@ -214,7 +216,10 @@ const BoardCard: React.FC<BoardCardProps> = ({
           <ArchivedMarker className="mt-0.5" />
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div
+        data-card-row="chips"
+        className="flex flex-wrap items-center gap-1.5 empty:hidden"
+      >
         {shows('priority') && env.state.groupBy !== 'priority' && (
           <PriorityCell issue={issue} className="-ml-1" />
         )}

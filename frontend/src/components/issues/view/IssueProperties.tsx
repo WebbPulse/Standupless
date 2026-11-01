@@ -864,7 +864,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
       {shows('created_at') && (
         <span
           title="Created"
-          className={cn('w-14 text-right text-2xs text-text-faint', hide)}
+          className={cn('text-2xs text-text-faint', !card && 'w-14 text-right', hide)}
         >
           {dayOf(issue.created_at)}
         </span>
@@ -872,7 +872,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
       {shows('updated_at') && (
         <span
           title="Updated"
-          className={cn('w-14 text-right text-2xs text-text-faint', hide)}
+          className={cn('text-2xs text-text-faint', !card && 'w-14 text-right', hide)}
         >
           {dayOf(issue.updated_at)}
         </span>
@@ -880,7 +880,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
       {shows('time_in_status') && (
         <span
           title={`In status since ${fullTimestamp(enteredStatusAt(issue))}`}
-          className={cn('w-10 text-right text-2xs text-text-faint', hide)}
+          className={cn('text-2xs text-text-faint', !card && 'w-10 text-right', hide)}
         >
           {compactDuration(enteredStatusAt(issue))}
         </span>
