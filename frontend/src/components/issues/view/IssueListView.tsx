@@ -20,8 +20,12 @@
  * bar under a selection, on a list or a board, offers them as buttons and a
  * More menu, subscribing and unsubscribing included. Opening an
  * issue remembers the view's order, so the issue page can step through it.
- * In a manually ordered view, Alt+Up and Alt+Down move the focused issue a
- * place within its group, or its board column, and save the order a drag would.
+ * In a manually ordered view, Alt+Up and Alt+Down move the selection, or the
+ * focused issue with nothing selected, a place within its group, or its board
+ * column, and save the order a drag would. Shift+X or Shift+click selects the
+ * range from the anchor, and the Shift arrows grow and shrink a range around
+ * where it started, leaving alone what was selected before it. A tap of Space
+ * toggles the peek, and holding it keeps the peek open only until release.
  * The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
@@ -79,7 +83,8 @@ import {
   hiddenColumnKey,
   splitHiddenSections,
   manualEdgeKeys,
-  manualMoveKeys,
+  type ManualPlacement,
+  manualStepKeys,
   narrowFilters,
   parentsIn,
   shownIssues,
@@ -256,6 +261,9 @@ export interface ListFoldControl {
   onSet?: ((keys: readonly string[], folded: boolean) => void) | undefined;
 }
 
+/** How long Space must be down for its release to close the peek it opened. */
+const PEEK_HOLD_MS = 300;
+
 /** The palette label of each property command. */
 const PROPERTIES: { property: CommandProperty; label: string }[] = [
   { property: 'status', label: 'Change status' },
@@ -373,7 +381,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const location = useLocation();
   const workspace = useContext(WorkspaceContext)?.workspace;
   const workspaceId = workspace?.id ?? '';
-  const { peekIssue, peekedKey } = usePeekIssue();
+  const { peekIssue, peekedKey, closePeek } = usePeekIssue();
   const creator = useCreateIssue();
   const { forTeam, createLabel } = lists;
   const listContext = useSharedValue(lists.context);
@@ -430,6 +438,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   } | null>(null);
   const [moving, setMoving] = useState<string[] | null>(null);
   const scrollOnFocus = useRef(false);
+  const rangeLive = useRef(false);
+  const rangeAdded = useRef<ReadonlySet<string>>(new Set());
+  const peekHold = useRef<number | null>(null);
 
   const { showSubIssues, completed } = state;
   const sorted = useMemo(
@@ -635,14 +646,29 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [peekIssue, rememberOrder]
   );
 
+  const endRange = useCallback((): void => {
+    rangeLive.current = false;
+    rangeAdded.current = new Set();
+  }, []);
+
+  const extendRange = (from: string, to: string): void => {
+    const start = order.indexOf(from);
+    const end = order.indexOf(to);
+    const span = order.slice(Math.min(start, end), Math.max(start, end) + 1);
+    const kept = new Set(
+      [...selected].filter((id) => !rangeAdded.current.has(id))
+    );
+    rangeAdded.current = new Set(span.filter((id) => !kept.has(id)));
+    rangeLive.current = true;
+    setSelected(new Set([...kept, ...span]));
+  };
+
   const toggleSelected = useLatestCallback(
     (id: string, range: boolean): void => {
       if (range && anchor !== null && order.includes(anchor)) {
-        const from = order.indexOf(anchor);
-        const to = order.indexOf(id);
-        const span = order.slice(Math.min(from, to), Math.max(from, to) + 1);
-        setSelected((held) => new Set([...held, ...span]));
+        extendRange(anchor, id);
       } else {
+        endRange();
         setSelected((held) => {
           const next = new Set(held);
           if (next.has(id)) next.delete(id);
@@ -655,22 +681,36 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     }
   );
 
-  const selectMany = useCallback((ids: readonly string[], on: boolean) => {
-    setSelected((held) => {
-      const next = new Set(held);
-      for (const id of ids) {
-        if (on) next.add(id);
-        else next.delete(id);
-      }
-      return next;
-    });
-  }, []);
+  const selectMany = useCallback(
+    (ids: readonly string[], on: boolean) => {
+      endRange();
+      setSelected((held) => {
+        const next = new Set(held);
+        for (const id of ids) {
+          if (on) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      });
+    },
+    [endRange]
+  );
 
   const focusOn = (next: string, extend: boolean): void => {
     if (extend) {
-      const start = focused ?? next;
-      setSelected((held) => new Set([...held, start, next]));
-      if (anchor === null) setAnchor(start);
+      const held =
+        rangeLive.current &&
+        anchor !== null &&
+        order.includes(anchor) &&
+        selected.has(anchor)
+          ? anchor
+          : null;
+      if (held === null) endRange();
+      const start = held ?? focused ?? next;
+      if (held === null) setAnchor(start);
+      extendRange(start, next);
+    } else {
+      endRange();
     }
     scrollOnFocus.current = true;
     setFocusedId(next);
@@ -734,23 +774,12 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     return [];
   };
 
-  const reorder = (step: 1 | -1): void => {
-    if (focused === null) return;
-    if (state.ordering !== 'manual') {
-      showToast('Switch ordering to Manual to move issues', 'info');
-      return;
-    }
-    const placements = manualMoveKeys(
-      siblingsOf(focused),
-      focused,
-      step,
-      state.reverse
-    );
-    if (placements === null) return;
-    for (const { id, sort_order } of placements) update([id], { sort_order });
-  };
-
-  const reorderToEdge = (edge: 'top' | 'bottom'): void => {
+  const placeMovers = (
+    place: (
+      siblings: readonly OrderedIssueRead[],
+      movers: readonly string[]
+    ) => ManualPlacement[] | null
+  ): void => {
     if (focused === null) return;
     if (state.ordering !== 'manual') {
       showToast('Switch ordering to Manual to move issues', 'info');
@@ -766,11 +795,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       const movers = siblings.filter((issue) => ids.includes(issue.id));
       for (const issue of movers) handled.add(issue.id);
       handled.add(id);
-      const placements = manualEdgeKeys(
+      const placements = place(
         siblings,
-        movers.map((issue) => issue.id),
-        edge,
-        state.reverse
+        movers.map((issue) => issue.id)
       );
       for (const { id: placed, sort_order } of placements ?? [])
         keys.set(placed, sort_order);
@@ -780,6 +807,18 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       const sort_order = keys.get(issue.id);
       return sort_order === undefined ? null : { sort_order };
     });
+  };
+
+  const reorder = (step: 1 | -1): void => {
+    placeMovers((siblings, movers) =>
+      manualStepKeys(siblings, movers, step, state.reverse)
+    );
+  };
+
+  const reorderToEdge = (edge: 'top' | 'bottom'): void => {
+    placeMovers((siblings, movers) =>
+      manualEdgeKeys(siblings, movers, edge, state.reverse)
+    );
   };
 
   const focusedNode = focused === null ? undefined : tree.get(focused);
@@ -932,11 +971,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   useShortcut({
+    keys: 'shift+x',
+    label: 'Select range',
+    scope: 'issue',
+    group: 'List',
+    enabled: focused !== null,
+    handler: () => {
+      if (focused !== null) toggleSelected(focused, true);
+    },
+  });
+  useShortcut({
     keys: 'mod+a',
     label: 'Select all',
     group: 'List',
     enabled: hasRows,
     handler: () => {
+      endRange();
       setSelected(new Set(order));
     },
   });
@@ -956,6 +1006,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     group: 'List',
     enabled: liveSelected.size > 0,
     handler: () => {
+      endRange();
       setSelected(new Set());
       setAnchor(null);
     },
@@ -1243,11 +1294,26 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     label: 'Peek issue',
     group: 'List',
     enabled: focused !== null,
-    handler: () => {
+    handler: (event) => {
+      if (event?.repeat === true) return;
       const issue = focused === null ? undefined : byId.get(focused);
-      if (issue !== undefined) peek(issue);
+      if (issue === undefined) return;
+      peekHold.current = issue.key === peekedKey ? null : Date.now();
+      peek(issue);
     },
   });
+
+  useEffect(() => {
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key !== ' ' || peekHold.current === null) return;
+      if (Date.now() - peekHold.current >= PEEK_HOLD_MS) closePeek();
+      peekHold.current = null;
+    };
+    document.addEventListener('keyup', onKeyUp);
+    return () => {
+      document.removeEventListener('keyup', onKeyUp);
+    };
+  }, [closePeek]);
 
   const presetFor = useCallback(
     (group: IssueGroup): Partial<CreateIssueOptions> => {
@@ -2096,6 +2162,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             : undefined
         }
         onClear={() => {
+          endRange();
           setSelected(new Set());
           setAnchor(null);
         }}

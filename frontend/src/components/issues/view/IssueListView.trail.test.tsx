@@ -20,9 +20,11 @@ import { defaultViewState, type IssueContext } from '../../../lib/issueView';
 import IssueListView from './IssueListView';
 
 const peekIssue = vi.fn();
+const closePeek = vi.fn();
+let peekedKey: string | null = null;
 
 vi.mock('../../../hooks/usePeekIssue', () => ({
-  usePeekIssue: () => ({ peekIssue, peekedKey: null }),
+  usePeekIssue: () => ({ peekIssue, peekedKey, closePeek }),
 }));
 
 /** An open issue in the one team. */
@@ -122,10 +124,15 @@ const shownKeys = (): string[] =>
     .map((row) => row.textContent?.match(/ENG-\d+/)?.[0] ?? '');
 
 /** Feeds one key press to the registry, as the provider's listener would. */
-const press = (key: string): void => {
+const press = (key: string, init: KeyboardEventInit = {}): void => {
   act(() => {
     registry.handleKey(
-      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      })
     );
   });
 };
@@ -133,6 +140,8 @@ const press = (key: string): void => {
 beforeEach(() => {
   registry = createShortcutRegistry();
   peekIssue.mockReset();
+  closePeek.mockReset();
+  peekedKey = null;
   clearTrail();
 });
 
@@ -171,6 +180,61 @@ describe('IssueListView trail', () => {
 
     expect(peekIssue).toHaveBeenCalled();
     expect(readTrail()?.keys).toHaveLength(3);
+  });
+
+  it('peeks once however long Space auto-repeats', () => {
+    renderView();
+    press('j');
+    peekIssue.mockClear();
+
+    press(' ');
+    press(' ', { repeat: true });
+    press(' ', { repeat: true });
+
+    expect(peekIssue).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the peek open after a tap of Space', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    renderView();
+    press('j');
+    closePeek.mockClear();
+
+    press(' ');
+    now.mockReturnValue(1100);
+    fireEvent.keyUp(document.body, { key: ' ' });
+
+    expect(closePeek).not.toHaveBeenCalled();
+    now.mockRestore();
+  });
+
+  it('closes the peek when a held Space is released', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    renderView();
+    press('j');
+    closePeek.mockClear();
+
+    press(' ');
+    now.mockReturnValue(1500);
+    fireEvent.keyUp(document.body, { key: ' ' });
+
+    expect(closePeek).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it('does not treat the Space that closes a peek as a hold', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    renderView();
+    peekedKey = shownKeys()[0] ?? null;
+    press('j');
+    closePeek.mockClear();
+
+    press(' ');
+    now.mockReturnValue(1500);
+    fireEvent.keyUp(document.body, { key: ' ' });
+
+    expect(closePeek).not.toHaveBeenCalled();
+    now.mockRestore();
   });
 
   it('records nothing for a Shift+click that selects', () => {

@@ -317,6 +317,26 @@ describe('peeking', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('peeks once while Space auto-repeats', () => {
+    const onPeek = vi.fn<(index: number) => void>();
+    renderHook(() => useListKeyboardNav({ count: 3, onActivate, onPeek }));
+
+    press('j');
+    press(' ');
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: ' ',
+          repeat: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+
+    expect(onPeek).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves Space to the page when the list cannot peek', () => {
     renderHook(() => useListKeyboardNav({ count: 3, onActivate }));
 

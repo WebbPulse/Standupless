@@ -134,7 +134,8 @@ export const useListKeyboardNav = ({
     if (current !== NONE) latest.current.onActivate(current);
   };
 
-  const peekCurrent = (): void => {
+  const peekCurrent = (event?: KeyboardEvent): void => {
+    if (event?.repeat === true) return;
     const { activeIndex: current, onPeek: peek } = latest.current;
     if (current !== NONE && peek !== undefined) peek(current);
   };
@@ -231,7 +232,7 @@ export const useListKeyboardNav = ({
         latest.current.onPeek !== undefined
       ) {
         event.preventDefault();
-        peekCurrent();
+        peekCurrent(event);
       }
     };
 

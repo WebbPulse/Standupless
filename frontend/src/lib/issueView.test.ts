@@ -19,6 +19,7 @@ import {
   groupIssues,
   manualEdgeKeys,
   manualMoveKeys,
+  manualStepKeys,
   matchesFilters,
   moveChange,
   MY_TEAMS,
@@ -848,6 +849,54 @@ describe('moving and ordering', () => {
     const bottom = manualEdgeKeys(rows, ['a'], 'bottom');
     expect(bottom?.map((each) => each.id)).toEqual(['a']);
     expect((bottom?.[0]?.sort_order ?? '') > 'a4').toBe(true);
+  });
+
+  it('steps a block of issues past its neighbour and keeps its order', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'c', sort_order: 'a4' }),
+      issue({ id: 'd', sort_order: 'a6' }),
+    ];
+
+    const down = manualStepKeys(rows, ['b', 'c'], 1);
+    expect(
+      sortIssues(applied(rows, down), 'manual').map((row) => row.id)
+    ).toEqual(['a', 'd', 'b', 'c']);
+
+    const up = manualStepKeys(rows, ['b', 'c'], -1);
+    expect(
+      sortIssues(applied(rows, up), 'manual').map((row) => row.id)
+    ).toEqual(['b', 'c', 'a', 'd']);
+  });
+
+  it('steps scattered issues and holds back those at the end', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'c', sort_order: 'a4' }),
+    ];
+
+    const up = manualStepKeys(rows, ['a', 'c'], -1);
+    expect(
+      sortIssues(applied(rows, up), 'manual').map((row) => row.id)
+    ).toEqual(['a', 'c', 'b']);
+
+    expect(manualStepKeys(rows, ['a', 'b'], -1)).toBeNull();
+    expect(manualStepKeys(rows, ['c'], 1)).toBeNull();
+  });
+
+  it('steps a block among unplaced rows', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: null }),
+      issue({ id: 'b', sort_order: null }),
+      issue({ id: 'c', sort_order: null }),
+    ];
+
+    const down = manualStepKeys(rows, ['a', 'b'], 1);
+    expect(
+      sortIssues(applied(rows, down), 'manual').map((row) => row.id)
+    ).toEqual(['c', 'a', 'b']);
   });
 
   it('keeps several moving issues in their relative order', () => {

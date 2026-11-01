@@ -3235,6 +3235,49 @@ export const manualMoveKeys = (
 };
 
 /**
+ * The manual positions that move several issues one step up or down together,
+ * given the rows they sit among in display order. The issue furthest in the
+ * direction moves first, so a block keeps its shape. An issue at that end of
+ * the rows stays, and so does one held back by another moving issue that could
+ * not move. `reverse` is a manual order read backwards. Null when nothing would
+ * move or no key fits.
+ */
+export const manualStepKeys = (
+  rows: readonly OrderedIssueRead[],
+  movingIds: readonly string[],
+  step: 1 | -1,
+  reverse = false
+): ManualPlacement[] | null => {
+  const ids = new Set(movingIds);
+  const working = [...rows];
+  const leading = step === -1 ? [...rows] : [...rows].reverse();
+  const keys = new Map<string, string>();
+  for (const { id } of leading) {
+    if (!ids.has(id)) continue;
+    const from = working.findIndex((issue) => issue.id === id);
+    const moving = working[from];
+    const neighbour = working[from + step];
+    if (moving === undefined || neighbour === undefined) continue;
+    if (ids.has(neighbour.id)) continue;
+    const placements = manualMoveKeys(working, id, step, reverse);
+    if (placements === null) return null;
+    for (const { id: placed, sort_order } of placements) {
+      keys.set(placed, sort_order);
+      const at = working.findIndex((issue) => issue.id === placed);
+      const issue = working[at];
+      if (issue !== undefined) working[at] = { ...issue, sort_order };
+    }
+    const shifted = working[from];
+    const passed = working[from + step];
+    if (shifted === undefined || passed === undefined) continue;
+    working[from] = passed;
+    working[from + step] = shifted;
+  }
+  if (keys.size === 0) return null;
+  return [...keys].map(([id, sort_order]) => ({ id, sort_order }));
+};
+
+/**
  * The manual positions that send issues to the top or bottom of the rows they
  * sit among, in display order, keeping their relative order. Moving to the top
  * keys only the moving issues, just ahead of the first other row. Moving to the

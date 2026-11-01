@@ -2,9 +2,11 @@
  * Bulk selection on the list: a section header selects or clears its whole
  * section, folded or not, and shows a partial selection as indeterminate;
  * Cmd or Ctrl+click on a row toggles it without opening it; shift-click
- * selects a range; x, shift+arrow, Cmd or Ctrl+A and Escape work
- * from the keyboard, including while a checkbox holds focus; and the bulk bar
- * counts and acts on every selected issue.
+ * selects a range; x, Shift+X, shift+arrow, Cmd or Ctrl+A and Escape work
+ * from the keyboard, including while a checkbox holds focus; a shift+arrow
+ * range shrinks on reversal without losing what was selected before it; Alt+Up
+ * and Alt+Down move the whole selection; and the bulk bar counts and acts on
+ * every selected issue.
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -97,9 +99,12 @@ let update: ReturnType<typeof vi.fn<IssueCollection['update']>>;
 let listener: (event: KeyboardEvent) => void;
 
 /** Mounts the list over the four issues, grouped by status. */
-const renderView = () => {
+const renderView = (
+  state: ViewState = defaultViewState('list'),
+  rows: OrderedIssueRead[] = issues
+) => {
   const collection: IssueCollection = {
-    issues,
+    issues: rows,
     isLoading: false,
     error: null,
     truncated: false,
@@ -111,7 +116,7 @@ const renderView = () => {
       <ShortcutRegistryContext.Provider value={registry}>
         <IssueListView
           slug="mine"
-          state={defaultViewState('list')}
+          state={state}
           onStateChange={vi.fn<(state: ViewState) => void>()}
           collection={collection}
           lists={lists}
@@ -263,7 +268,86 @@ describe('row selection', () => {
 
     press('ArrowUp', { shiftKey: true });
 
-    expect(count()).toContain('3 selected');
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2']);
+    expect(count()).toContain('2 selected');
+  });
+
+  it('swings a shift+arrow range across where it started', () => {
+    renderView();
+    press('j');
+    press('j');
+
+    press('ArrowDown', { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-2', 'ENG-3']);
+
+    press('ArrowUp', { shiftKey: true });
+    press('ArrowUp', { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2']);
+  });
+
+  it('keeps what was selected before a range as it shrinks', () => {
+    renderView();
+    press('j');
+    press('x');
+    press('j');
+
+    press('ArrowDown', { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2', 'ENG-3']);
+
+    press('ArrowUp', { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2']);
+  });
+
+  it('starts a new range after a plain move, keeping the first', () => {
+    renderView();
+    press('j');
+    press('ArrowDown', { shiftKey: true });
+    press('j');
+
+    press('ArrowDown', { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2', 'ENG-3', 'ENG-4']);
+
+    press('ArrowUp', { shiftKey: true });
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2', 'ENG-3']);
+  });
+
+  it('selects from the anchor to the focused issue on Shift+X', () => {
+    renderView();
+    press('j');
+    press('x');
+    press('j');
+    press('j');
+
+    press('X', { shiftKey: true });
+
+    expect(selectedKeys()).toEqual(['ENG-1', 'ENG-2', 'ENG-3']);
+  });
+
+  it('moves the whole selection a place on Alt+Down', () => {
+    const rows = issues.map((each, at) => ({
+      ...each,
+      sort_order: `a${String(at * 2)}`,
+    }));
+    renderView({ ...defaultViewState('list'), ordering: 'manual' }, rows);
+    press('j');
+    press('x');
+    press('j');
+    press('x');
+
+    press('ArrowDown', { altKey: true });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    const change = update.mock.calls[0]?.[1];
+    if (typeof change !== 'function')
+      throw new Error('Expected a per-issue change');
+    const keyOf = (row: OrderedIssueRead): string =>
+      change(row)?.sort_order ?? row.sort_order ?? '';
+    expect(
+      rows
+        .slice(0, 3)
+        .sort((a, b) => (keyOf(a) < keyOf(b) ? -1 : 1))
+        .map((each) => each.id)
+    ).toEqual(['iss-3', 'iss-1', 'iss-2']);
   });
 
   it('selects every visible issue on Cmd or Ctrl+A and clears on Escape', () => {
