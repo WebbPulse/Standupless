@@ -779,8 +779,6 @@ describe('Roadmap', () => {
     });
     expect(diamond).toHaveClass('top-8', 'pointer-events-auto');
     expect(diamond).not.toHaveClass('bg-bg');
-    expect(
-      diamond.querySelector('path[fill="var(--bg)"]')
-    ).toBeInTheDocument();
+    expect(diamond.querySelector('path[fill="var(--bg)"]')).toBeInTheDocument();
   });
 });
