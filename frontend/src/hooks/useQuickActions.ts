@@ -1,7 +1,8 @@
 /**
  * The one-key property actions that skip a picker: Cmd or Ctrl+Shift+C puts
  * the issues in focus into their team's active cycle, Cmd or Ctrl+Shift+D
- * clears their due date and Shift+L clears their labels. Each
+ * clears their due date, Shift+L clears their labels and Shift+0, 1, 2 or 4 set
+ * their priority to none, urgent, high or low. Each
  * writes through the surface's own update, so a list batches the issues into
  * bulk requests where the bulk route takes the field, and undo records them.
  */
@@ -11,9 +12,11 @@ import {
   ADD_TO_ACTIVE_CYCLE_KEYS,
   REMOVE_DUE_DATE_KEYS,
   REMOVE_LABELS_KEYS,
+  SET_PRIORITY_KEYS,
 } from '../components/issues/view/propertyKeys';
 import { findActiveCycle } from '../lib/currentCycle';
 import { errorMessage } from '../lib/errors';
+import { PRIORITY_LABELS } from '../lib/issueDisplay';
 import type { IssueChange } from '../lib/issueView';
 import { showErrorToast, showToast } from '../lib/toast';
 import type { CycleRead, IssueRead } from '../types/Api';
@@ -29,8 +32,11 @@ export const NO_ACTIVE_CYCLE_MESSAGE = 'No active cycle for this team';
 /** The fields of an issue the quick actions read. */
 export type QuickActionIssue = Pick<
   IssueRead,
-  'id' | 'team_id' | 'cycle_id' | 'due_date' | 'label_ids'
+  'id' | 'team_id' | 'cycle_id' | 'due_date' | 'label_ids' | 'priority'
 >;
+
+/** A priority with a key of its own. */
+export type KeyedPriority = keyof typeof SET_PRIORITY_KEYS;
 
 /** Writes one change to the issues named. */
 export type QuickActionWrite = (
@@ -138,6 +144,22 @@ export const removeLabels = (
   );
 };
 
+/** The palette and help label of one priority key. */
+export const setPriorityLabel = (priority: KeyedPriority): string =>
+  `Set priority: ${PRIORITY_LABELS[priority]}`;
+
+/** Sets the priority of the issues that hold a different one, in one change. */
+export const setPriority = (
+  issues: readonly QuickActionIssue[],
+  priority: KeyedPriority,
+  write: QuickActionWrite
+): void => {
+  const ids = issues
+    .filter((issue) => issue.priority !== priority)
+    .map((issue) => issue.id);
+  if (ids.length > 0) write(ids, { priority });
+};
+
 /** What {@link useQuickActions} binds against. */
 export interface QuickActionsOptions {
   workspaceId: string;
@@ -151,16 +173,35 @@ export interface QuickActionsOptions {
   group?: string;
 }
 
+/** Binds one priority key while an issue in focus holds another priority. */
+const usePriorityKey = (
+  priority: KeyedPriority,
+  { issues, enabled, write, scope = 'issue', group }: QuickActionsOptions
+): void => {
+  useShortcut({
+    keys: SET_PRIORITY_KEYS[priority],
+    label: setPriorityLabel(priority),
+    scope,
+    ...(group === undefined ? {} : { group }),
+    enabled: enabled && issues.some((issue) => issue.priority !== priority),
+    handler: (event) => {
+      event?.preventDefault();
+      setPriority(issues, priority, write);
+    },
+  });
+};
+
 /** Binds the quick actions to their keys and the palette. */
-export const useQuickActions = ({
-  workspaceId,
-  issues,
-  enabled,
-  write,
-  cyclesFor,
-  scope = 'issue',
-  group,
-}: QuickActionsOptions): void => {
+export const useQuickActions = (options: QuickActionsOptions): void => {
+  const {
+    workspaceId,
+    issues,
+    enabled,
+    write,
+    cyclesFor,
+    scope = 'issue',
+    group,
+  } = options;
   const live = enabled && issues.length > 0;
   const grouped = group === undefined ? {} : { group };
   useShortcut({
@@ -196,4 +237,8 @@ export const useQuickActions = ({
       removeLabels(issues, write);
     },
   });
+  usePriorityKey('none', options);
+  usePriorityKey('urgent', options);
+  usePriorityKey('high', options);
+  usePriorityKey('low', options);
 };
