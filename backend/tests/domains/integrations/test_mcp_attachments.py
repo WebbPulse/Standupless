@@ -349,7 +349,7 @@ def test_an_inline_upload_embeds_reads_back_and_shows_in_the_feed(
     client: TestClient, repositories: Any, issue: Issue, attachments_bucket: str
 ) -> None:
     """The bytes land, the answer's Markdown embeds on a comment, and the activity names the user and MCP."""
-    secret = mint_for(repositories, MEMBER, WRITE)
+    secret = mint_for(repositories, MEMBER, (*WRITE, "comments:write"))
 
     uploaded = answer(tool(client, secret, "upload_attachment", inline_upload()))
     attachment_id = uploaded["attachment_id"]
