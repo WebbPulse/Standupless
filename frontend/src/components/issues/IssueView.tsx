@@ -41,6 +41,7 @@
 
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -205,7 +206,11 @@ import DuplicateIssueDialog from './DuplicateIssueDialog';
 import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
 import IssueParentLine from './IssueParentLine';
 import SubIssues from './SubIssues';
-import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
+import {
+  ARCHIVE_ISSUE_KEYS,
+  DELETE_ISSUE_KEYS,
+  DeleteIssueKeyContext,
+} from './view/propertyKeys';
 
 /** How often the issue and its supporting lists are re-read. */
 const POLL_MS = 60000;
@@ -281,6 +286,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const { user } = useAuth();
   const auth = useQueryAuth();
   const createIssue = useCreateIssue();
+  const bindsDelete = useContext(DeleteIssueKeyContext);
   const navigate = useNavigate();
   const embedded = onClose !== undefined;
   const slug = params.slug ?? workspace?.slug ?? '';
@@ -856,7 +862,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
               >
                 <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
                 Delete
-                <MenuShortcut keys={DELETE_ISSUE_KEYS} />
+                {bindsDelete && <MenuShortcut keys={DELETE_ISSUE_KEYS} />}
               </MenuItem>
             </>
           )}
