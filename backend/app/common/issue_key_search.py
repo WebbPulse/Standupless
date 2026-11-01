@@ -263,6 +263,11 @@ def extract(
     word does holds on merge, even when the title or branch also carries it, because
     `Refs` is how a pull request says it is only part of the work.
 
+    The pull request's own title and body outrank its commits, since commits keep
+    what was written before the pull request was last edited: `Refs` there holds a
+    key even when a commit says `Fixes`. Among commits alone, a closing word beats a
+    `Refs`, so a promotion carrying both slices of a piece of work closes it.
+
     A key a related word such as `Relates to` names only links, even when the
     branch, the title or a commit's subject carries it, unless a closing or
     contributing word names it too. A related word in the title or body governs the
@@ -271,14 +276,16 @@ def extract(
     closing = {**find_closing(title, prefixes), **find_closing(body, prefixes)}
     referencing = {**find_referencing(title, prefixes), **find_referencing(body, prefixes)}
     closed_anywhere = set(closing)
+    commit_referencing: set[tuple[str, int]] = set()
     for message in commit_messages:
         closed_anywhere |= set(find_closing(message, prefixes))
-        referencing.update(find_referencing(message, prefixes))
-    held = set(referencing) - closed_anywhere
+        commit_referencing |= set(find_referencing(message, prefixes))
+    held = (set(referencing) - set(closing)) | (commit_referencing - closed_anywhere)
+    referencing_anywhere = set(referencing) | commit_referencing
     related = {*find_related(title, prefixes), *find_related(body, prefixes)}
 
     keys: dict[tuple[str, int], FoundKey] = {}
-    moving: set[tuple[str, int]] = closed_anywhere | set(referencing)
+    moving: set[tuple[str, int]] = closed_anywhere | referencing_anywhere
     sources: list[tuple[str, bool, set[tuple[str, int]]]] = [
         (branch, True, related),
         (title, True, related),
