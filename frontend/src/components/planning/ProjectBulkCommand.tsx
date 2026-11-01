@@ -2,8 +2,9 @@
  * The bulk edits the projects page offers for a selection: a searchable list
  * of one property's values that writes the picked one to every selected
  * project, and the question asked before several projects are deleted. A
- * label toggles, added to every project unless all of them carry it already,
- * and a target date skips a project that would end before it starts.
+ * label or initiative toggles, added to every project unless all of them
+ * carry it already, and a target date skips a project that would end before
+ * it starts.
  */
 
 import React, { useState } from 'react';
@@ -22,6 +23,7 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
+import { projectInitiativeIds } from '../../lib/planningModel';
 import type { ProjectMove } from '../../lib/projectList';
 import {
   listOrderedProjectStatuses,
@@ -189,6 +191,7 @@ export const ProjectBulkCommand: React.FC<ProjectBulkCommandProps> = ({
       break;
     }
     case 'initiative': {
+      multiple = true;
       options = [
         { value: CLEAR, label: 'No initiative', icon: <LuX /> },
         ...initiatives.map((initiative) => ({
@@ -198,10 +201,34 @@ export const ProjectBulkCommand: React.FC<ProjectBulkCommandProps> = ({
         })),
       ];
       selected = shared(
-        projects.map((project) => [project.initiative_id ?? CLEAR])
+        projects.map((project) => {
+          const own = projectInitiativeIds(project);
+          return own.length > 0 ? own : [CLEAR];
+        })
       );
       pick = (value) => {
-        every({ initiative_id: value === CLEAR ? null : value });
+        if (value === CLEAR) {
+          every({ initiative_ids: [] });
+          return;
+        }
+        const removing = selected.includes(value);
+        onWrite(
+          projects.flatMap((project) => {
+            const own = projectInitiativeIds(project);
+            if (removing)
+              return [
+                {
+                  project,
+                  change: {
+                    initiative_ids: own.filter((id) => id !== value),
+                  },
+                },
+              ];
+            return own.includes(value)
+              ? []
+              : [{ project, change: { initiative_ids: [...own, value] } }];
+          })
+        );
       };
       break;
     }

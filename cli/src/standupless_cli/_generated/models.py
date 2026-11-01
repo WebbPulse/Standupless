@@ -1980,6 +1980,7 @@ class ProjectCreate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    initiative_ids: NotRequired[list[str] | None]
     label_ids: NotRequired[list[str]]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
@@ -2171,6 +2172,7 @@ class ProjectUpdate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    initiative_ids: NotRequired[list[str] | None]
     label_ids: NotRequired[list[str] | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str] | None]
@@ -4991,6 +4993,7 @@ class ProjectRead(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]
     initiative_id: NotRequired[str | None]
+    initiative_ids: NotRequired[list[str]]
     label_ids: NotRequired[list[str]]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]

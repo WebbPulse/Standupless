@@ -91,6 +91,9 @@ MEMBERS_MAX = 50
 
 PROJECT_LABELS_MAX = 50
 
+PROJECT_INITIATIVES_MAX = 50
+"""The most initiatives one project may belong to."""
+
 NAME_MAX = 80
 
 GOAL_MAX = 2000
@@ -624,7 +627,14 @@ class ProjectCreate(BaseModel):
     member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
     label_ids: list[str] = Field(default_factory=list, max_length=PROJECT_LABELS_MAX)
     update_interval_days: Optional[int] = None
-    initiative_id: Optional[str] = Field(default=None, min_length=1)
+    initiative_id: Optional[str] = Field(
+        default=None, min_length=1, description="One initiative to put the project in, the older single spelling"
+    )
+    initiative_ids: Optional[list[str]] = Field(
+        default=None,
+        max_length=PROJECT_INITIATIVES_MAX,
+        description="Every initiative the project belongs to, the first its primary one; wins over `initiative_id`",
+    )
 
     @field_validator("update_interval_days")
     @classmethod
@@ -735,7 +745,10 @@ class ProjectUpdate(BaseModel):
     shown. `team_id` is the single-team spelling an older client sends; it moves
     nothing and must name one of the project's teams, or the patch is a 404.
     A null `update_interval_days` returns the project to the workspace's cadence,
-    and a null `initiative_id` takes the project out of its initiative.
+    and a null `initiative_id` takes the project out of every initiative.
+    `initiative_ids` replaces the whole set of initiatives, an empty list taking
+    the project out of all of them, and wins over `initiative_id`, which sets
+    the project to that one initiative alone.
     `open_issues` says what happens to the issues still open in a project the
     patch leaves completed or canceled; without it they stay where they are.
     `sort_order` is the project's manual position, a base 62 fractional key
@@ -779,7 +792,14 @@ class ProjectUpdate(BaseModel):
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
     label_ids: Optional[list[str]] = Field(default=None, max_length=PROJECT_LABELS_MAX)
     update_interval_days: Optional[int] = None
-    initiative_id: Optional[str] = Field(default=None, min_length=1)
+    initiative_id: Optional[str] = Field(
+        default=None, min_length=1, description="One initiative to leave the project in alone, or null for none"
+    )
+    initiative_ids: Optional[list[str]] = Field(
+        default=None,
+        max_length=PROJECT_INITIATIVES_MAX,
+        description="The whole new set of initiatives, the first its primary one; wins over `initiative_id`",
+    )
     sort_order: Optional[str] = None
     open_issues: Optional[ProjectOpenIssues] = None
 
@@ -1069,7 +1089,12 @@ class ProjectRead(BaseModel):
     update_interval_inherited: bool = True
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
-    initiative_id: Optional[str] = None
+    initiative_id: Optional[str] = Field(
+        default=None, description="The first of `initiative_ids`, kept for clients that read a single initiative"
+    )
+    initiative_ids: list[str] = Field(
+        default_factory=list, description="Every initiative the project belongs to, the primary one first"
+    )
     sort_order: Optional[str] = Field(
         default=None,
         description="The manual position, a base 62 fractional key; null on a project never placed, which sorts last",
@@ -1168,6 +1193,7 @@ class ProjectRead(BaseModel):
             next_update_due_at=next_update_due_at(project, default_interval_days),
             update_due_state=update_due_state(project, default_interval_days, now),
             initiative_id=project.initiative_id,
+            initiative_ids=list(project.initiative_ids),
             sort_order=project.sort_order,
             completed_at=project.completed_at,
             archived_at=project.archived_at,

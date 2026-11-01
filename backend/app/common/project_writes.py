@@ -89,6 +89,13 @@ CLOSED_STATUSES = frozenset({"completed", "canceled"})
 """The project statuses that close a project, after which its open issues are asked about."""
 
 
+def requested_initiatives(initiative_ids: Optional[list[str]], initiative_id: Optional[str]) -> list[str]:
+    """The initiative set a create or patch asks for: the list when sent, else the single value as a set of one."""
+    if initiative_ids is not None:
+        return list(dict.fromkeys(value for value in initiative_ids if value))
+    return [initiative_id] if initiative_id else []
+
+
 def merged_team_ids(project: Project, visible: list[str], requested: list[str]) -> tuple[list[str], list[str]]:
     """The project's team list after a patch, and the teams the patch changes.
 
@@ -231,7 +238,7 @@ def list_projects(
             continue
         if wanted_status is not None and not project_in_filter(statuses, row, wanted_status):
             continue
-        if initiative_id is not None and row.initiative_id != initiative_id:
+        if initiative_id is not None and initiative_id not in row.initiative_ids:
             continue
         if not label_match(wanted_labels, row.label_ids):
             continue
@@ -334,9 +341,11 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         require_workspace_member(repositories, context, payload.lead_id)
     for member_id in payload.member_ids:
         require_workspace_member(repositories, context, member_id)
-    if payload.initiative_id is not None:
+    initiative_ids = requested_initiatives(payload.initiative_ids, payload.initiative_id)
+    if initiative_ids:
         refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
-        require_initiative_target(repositories, context, payload.initiative_id)
+        for wanted in initiative_ids:
+            require_initiative_target(repositories, context, wanted)
     require_project_labels(repositories, context.workspace_id, payload.label_ids, teams)
     explicit = "status" in payload.model_fields_set or payload.status_id is None
     chosen = choose_project_status(
@@ -371,7 +380,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         member_ids=list(payload.member_ids),
         label_ids=list(payload.label_ids),
         update_interval_days=payload.update_interval_days,
-        initiative_id=payload.initiative_id,
+        initiative_ids=initiative_ids,
         completed_at=utc_now() if category in CLOSED_STATUSES else None,
         sort_order=first,
         created_by=context.user_id,
@@ -532,11 +541,15 @@ def update_project(
             [label_id for label_id in fields["label_ids"] if label_id not in existing.label_ids],
             fields.get("team_ids", existing.team_ids),
         )
-    if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
-        refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
-        require_initiative_access(context)
-        if fields["initiative_id"] is not None:
-            require_initiative_target(repositories, context, fields["initiative_id"])
+    new_initiatives: Optional[list[str]] = None
+    if "initiative_ids" in fields or "initiative_id" in fields:
+        new_initiatives = requested_initiatives(fields.pop("initiative_ids", None), fields.pop("initiative_id", None))
+        if new_initiatives != existing.initiative_ids:
+            refuse_if_disabled(repositories, context.workspace_id, WorkspaceFeature.INITIATIVES)
+            require_initiative_access(context)
+            for wanted in new_initiatives:
+                if wanted not in existing.initiative_ids:
+                    require_initiative_target(repositories, context, wanted)
     chosen = choose_project_status(
         repositories,
         context.workspace_id,
@@ -558,6 +571,8 @@ def update_project(
 
     now = utc_now()
     updated = existing.model_copy(update={**fields, "updated_at": now, "updated_by": context.user_id})
+    if new_initiatives is not None:
+        updated = updated.with_initiatives(new_initiatives)
     check_project_dates(updated.start_date, updated.target_date)
 
     closed = normalise_project_status(updated.status) in CLOSED_STATUSES

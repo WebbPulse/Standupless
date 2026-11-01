@@ -76,7 +76,7 @@ import {
   CadencePicker,
   DependencyPicker,
   HealthPicker,
-  InitiativePicker,
+  InitiativesPicker,
   LeadPicker,
   MembersPicker,
   ProjectLabelsPicker,
@@ -142,7 +142,7 @@ import {
   useRouteEntityId,
 } from '../../hooks/useReadableAddress';
 import { progressPercent, updateNudge } from '../../lib/planningDisplay';
-import { canEditProject } from '../../lib/planningModel';
+import { canEditProject, projectInitiativeIds } from '../../lib/planningModel';
 import {
   initiativesKey,
   milestonesKey,
@@ -811,13 +811,13 @@ export const ProjectDetail: React.FC = () => {
         }}
       />
       {workspace?.role !== 'guest' && isFeatureOn(workspace, 'initiatives') && (
-        <InitiativePicker
+        <InitiativesPicker
           variant="chip"
-          value={project.initiative_id ?? null}
+          value={projectInitiativeIds(project)}
           initiatives={initiatives}
           disabled={!canEdit}
-          onChange={(initiativeId) => {
-            void update({ initiative_id: initiativeId });
+          onChange={(initiativeIds) => {
+            void update({ initiative_ids: initiativeIds });
           }}
         />
       )}

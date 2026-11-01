@@ -281,7 +281,7 @@ def initiative_update_candidates(
         held = [
             team
             for project in projects
-            if project.initiative_id == initiative.initiative_id
+            if initiative.initiative_id in project.initiative_ids
             for team in project.team_ids
         ]
         teams = tuple(dict.fromkeys(team for team in (lead, *held) if team))

@@ -10,7 +10,7 @@ area's path is gated without being listed: a segment starting `initiative` is
 initiatives, `customer` is customers, `release` is releases, `documents` is
 documents and `pulse` or `follow` is Pulse. An MCP write tool needs the area of
 the module defining it, as the tool registry records, and a write tool naming a
-`document_id` or an `initiative_id` also needs that area.
+`document_id`, an `initiative_id` or `initiative_ids` also needs that area.
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ _SEGMENT_EXACT: Mapping[str, WorkspaceFeature] = {
 _ARGUMENT_FEATURES: Mapping[str, WorkspaceFeature] = {
     "document_id": WorkspaceFeature.DOCUMENTS,
     "initiative_id": WorkspaceFeature.INITIATIVES,
+    "initiative_ids": WorkspaceFeature.INITIATIVES,
 }
 
 

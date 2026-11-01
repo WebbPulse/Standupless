@@ -163,14 +163,14 @@ def follows_initiative(subjects: PulseSubjects, initiative: Initiative, user_id:
 
 
 def follows_project(subjects: PulseSubjects, project: Project, user_id: str) -> bool:
-    """Whether a person follows one project: their own choice, else their role on it or its initiative."""
+    """Whether a person follows one project: their own choice, else their role on it or one of its initiatives."""
     chosen = subjects.explicit.get(("project", project.project_id))
     if chosen is not None:
         return chosen
     if implicitly_follows_project(project, user_id):
         return True
-    parent = subjects.initiatives.get(project.initiative_id or "")
-    return parent is not None and follows_initiative(subjects, parent, user_id)
+    parents = (subjects.initiatives.get(initiative_id) for initiative_id in project.initiative_ids)
+    return any(parent is not None and follows_initiative(subjects, parent, user_id) for parent in parents)
 
 
 def viewer_sees_initiative(viewer: PulseViewer, initiative: Initiative) -> bool:
@@ -196,9 +196,8 @@ def _resolve(
         return None
     if scope == "for_me" and not follows_project(subjects, project, viewer.user_id):
         return None
-    initiative = subjects.initiatives.get(project.initiative_id or "")
-    if initiative is not None and not viewer_sees_initiative(viewer, initiative):
-        initiative = None
+    shown = (subjects.initiatives.get(initiative_id) for initiative_id in project.initiative_ids)
+    initiative = next((row for row in shown if row is not None and viewer_sees_initiative(viewer, row)), None)
     return project, initiative
 
 
@@ -395,12 +394,10 @@ def project_follow_state(repositories: Repositories, project: Project, user_id: 
         return FollowState(following=chosen, explicit=True)
     if implicitly_follows_project(project, user_id):
         return FollowState(following=True, explicit=False)
-    if project.initiative_id:
-        initiative = repositories.planning.get_initiative(project.workspace_id, project.initiative_id)
-        if initiative is not None:
-            return FollowState(
-                following=initiative_follow_state(repositories, initiative, user_id).following, explicit=False
-            )
+    for initiative_id in project.initiative_ids:
+        initiative = repositories.planning.get_initiative(project.workspace_id, initiative_id)
+        if initiative is not None and initiative_follow_state(repositories, initiative, user_id).following:
+            return FollowState(following=True, explicit=False)
     return FollowState(following=False, explicit=False)
 
 

@@ -15831,7 +15831,24 @@
                 "type": "null"
               }
             ],
+            "description": "One initiative to put the project in, the older single spelling",
             "title": "Initiative Id"
+          },
+          "initiative_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every initiative the project belongs to, the first its primary one; wins over `initiative_id`",
+            "title": "Initiative Ids"
           },
           "label_ids": {
             "items": {
@@ -16759,7 +16776,16 @@
                 "type": "null"
               }
             ],
+            "description": "The first of `initiative_ids`, kept for clients that read a single initiative",
             "title": "Initiative Id"
+          },
+          "initiative_ids": {
+            "description": "Every initiative the project belongs to, the primary one first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Initiative Ids",
+            "type": "array"
           },
           "label_ids": {
             "description": "The workspace project labels the project carries",
@@ -17566,7 +17592,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.\n`base_body_version` is the description's `body_version` the editor loaded.\nSent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the\ncurrent description and its version when someone else changed it since.\nLeft out, or sent with a patch that leaves the description alone, it holds\nnothing back.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of every initiative.\n`initiative_ids` replaces the whole set of initiatives, an empty list taking\nthe project out of all of them, and wins over `initiative_id`, which sets\nthe project to that one initiative alone.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.\n`base_body_version` is the description's `body_version` the editor loaded.\nSent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the\ncurrent description and its version when someone else changed it since.\nLeft out, or sent with a patch that leaves the description alone, it holds\nnothing back.",
         "properties": {
           "base_body_version": {
             "anyOf": [
@@ -17659,7 +17685,24 @@
                 "type": "null"
               }
             ],
+            "description": "One initiative to leave the project in alone, or null for none",
             "title": "Initiative Id"
+          },
+          "initiative_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The whole new set of initiatives, the first its primary one; wins over `initiative_id`",
+            "title": "Initiative Ids"
           },
           "label_ids": {
             "anyOf": [

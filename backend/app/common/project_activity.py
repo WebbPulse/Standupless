@@ -43,7 +43,7 @@ TRACKED_FIELDS: tuple[str, ...] = (
     "start_date",
     "target_date",
     "team_ids",
-    "initiative_id",
+    "initiative_ids",
 )
 """The project properties a change to is recorded, the ones Linear's project activity names.
 
