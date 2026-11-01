@@ -202,7 +202,7 @@ describe('InsightsPanel', () => {
   it('offers expanding only when the page can grow it', async () => {
     getInsights.mockResolvedValue(read());
     const onToggleExpanded = vi.fn();
-    render(
+    const { rerender } = render(
       <InsightsPanel
         workspaceId="ws-1"
         scopeKey="team-1"
@@ -215,8 +215,20 @@ describe('InsightsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand insights' }));
     expect(onToggleExpanded).toHaveBeenCalledOnce();
     await waitFor(() => {
-      expect(screen.getByText('Across all statuses')).toBeTruthy();
+      expect(screen.getByText('Across all assignees')).toBeTruthy();
     });
+
+    rerender(
+      <InsightsPanel
+        workspaceId="ws-1"
+        scopeKey="team-1"
+        filters={{ team_id: 'team-1' }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Expand insights' })
+    ).toBeNull();
   });
 });
 
