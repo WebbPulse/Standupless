@@ -25,7 +25,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from webbpulse.identity.api_keys import ACTOR_CLAIM as API_KEY_ACTOR_CLAIM
 from webbpulse.identity.api_keys import TENANT_CLAIM as API_KEY_TENANT_CLAIM
 from webbpulse.identity.api_keys import effective_scopes
-from webbpulse.identity.claims import identity_claims
+from webbpulse.identity.claims import EMAIL_NOT_VERIFIED_DETAIL, email_unverified, identity_claims
 
 from app.common.api.dependencies.repositories import (
     RepositoryBundle,
@@ -88,6 +88,14 @@ FORBIDDEN_DETAIL = {"error_code": "FORBIDDEN", "message": "Not allowed"}
 
 
 UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in first."}
+
+UNVERIFIED_ALLOWED_ROUTES = ("/api/auth", "/api/users/me")
+"""The route trees a session whose address is still unconfirmed may reach.
+
+The frontend boots from `GET /api/users/me` and the pending verification screen touches
+only the caller's own account and the identity routes, so both stay open. Every other
+route answers 403 `EMAIL_NOT_VERIFIED` until the link is opened and the session refreshed.
+"""
 
 AUTH_POLICY_REQUIRED_DETAIL = {
     "error_code": "AUTH_POLICY_REQUIRED",
@@ -344,13 +352,29 @@ def _claims(request: Request, repositories: RepositoryBundle | None = None) -> A
     """
     claims = identity_claims(request)
     if claims is not None:
-        return claims
+        return _verified_or_refused(request, claims)
 
     key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
+
+
+def _verified_or_refused(request: Request, claims: Any) -> Any:
+    """The claims unchanged, or a 403 `EMAIL_NOT_VERIFIED` for an unconfirmed session off the account routes.
+
+    Only a token saying `email_verified` false is refused, so an API key and a token minted
+    before the claim existed pass as before.
+    """
+    if email_unverified(claims) and not _unverified_may_reach(request.url.path):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=dict(EMAIL_NOT_VERIFIED_DETAIL))
+    return claims
+
+
+def _unverified_may_reach(path: str) -> bool:
+    """Whether a path is one of the allowed routes or under one, on a segment boundary."""
+    return any(path == route or path.startswith(f"{route}/") for route in UNVERIFIED_ALLOWED_ROUTES)
 
 
 def _api_key_claims(request: Request, repositories: RepositoryBundle | None = None) -> Any:
@@ -476,15 +500,17 @@ def _bearer_claims(request: Request, repositories: RepositoryBundle | None = Non
     Three credentials in the order that costs least: the authorizer's own claims when one
     ran, then a presented API key against the stored hash, then an MCP access token
     against the issuer's published keys. The token is last because it is the only one that
-    can reach the network, and the first two answer without one.
+    can reach the network, and the first two answer without one. An MCP token whose address
+    is unconfirmed resolves to `None`, because every caller here treats that as a refusal.
     """
     claims = identity_claims(request)
     if claims is not None:
-        return claims
+        return _verified_or_refused(request, claims)
     key_claims = _api_key_claims(request, repositories)
     if key_claims is not None:
         return key_claims
-    return _mcp_token_claims(request)
+    mcp_claims = _mcp_token_claims(request)
+    return None if mcp_claims is None or email_unverified(mcp_claims) else mcp_claims
 
 
 def _subject(claims: Any) -> str:
