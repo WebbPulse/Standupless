@@ -793,7 +793,10 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       const movers = siblings.filter((issue) => ids.includes(issue.id));
       for (const issue of movers) handled.add(issue.id);
       handled.add(id);
-      const placements = place(siblings, movers.map((issue) => issue.id));
+      const placements = place(
+        siblings,
+        movers.map((issue) => issue.id)
+      );
       for (const { id: placed, sort_order } of placements ?? [])
         keys.set(placed, sort_order);
     }
