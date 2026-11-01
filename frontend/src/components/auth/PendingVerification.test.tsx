@@ -109,9 +109,11 @@ describe('PendingVerification', () => {
       screen.getByText('We sent a new link to new@example.com.')
     ).toBeInTheDocument();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
-    });
+    for (let tick = 0; tick < 60; tick += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    }
 
     expect(
       screen.getByRole('button', { name: 'Resend verification email' })
