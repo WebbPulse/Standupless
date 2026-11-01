@@ -50,18 +50,27 @@ export const ENVIRONMENTS: Readonly<Record<EnvironmentName, Environment>> = {
 export const parseEnvironmentName = (value: unknown): EnvironmentName =>
   value === 'staging' ? 'staging' : 'production';
 
-/** Reads the environment baked into the app's package.json. */
-const packagedEnvironment = (appPath: string): unknown => {
+/** Reads the `standupless` fields baked into the app's package.json. */
+const packagedFields = (
+  appPath: string
+): { environment?: unknown; signed?: unknown } => {
   try {
     const raw = readFileSync(join(appPath, 'package.json'), 'utf8');
     const manifest = JSON.parse(raw) as {
-      standupless?: { environment?: unknown };
+      standupless?: { environment?: unknown; signed?: unknown };
     };
-    return manifest.standupless?.environment;
+    return manifest.standupless ?? {};
   } catch {
-    return undefined;
+    return {};
   }
 };
+
+/**
+ * Whether electron-builder signed this build with a Developer ID, which is what
+ * lets macOS install an update over it. Electron cannot ask the OS at runtime.
+ */
+export const isDeveloperIdSigned = (appPath: string): boolean =>
+  packagedFields(appPath).signed === true;
 
 /** Resolves the environment for this run. */
 export const resolveEnvironment = (
@@ -70,7 +79,7 @@ export const resolveEnvironment = (
 ): Environment => {
   const override = packaged ? undefined : process.env.STANDUPLESS_DESKTOP_ENV;
   return ENVIRONMENTS[
-    parseEnvironmentName(override ?? packagedEnvironment(appPath))
+    parseEnvironmentName(override ?? packagedFields(appPath).environment)
   ];
 };
 
