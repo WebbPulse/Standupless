@@ -196,7 +196,9 @@ describe('InsightsPanel', () => {
     const value = (label: string): string =>
       screen.getByLabelText<HTMLSelectElement>(label).value;
     const openSettings = (): void => {
-      fireEvent.click(screen.getByRole('button', { name: 'Insights settings' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Insights settings' })
+      );
     };
     const panel = (control: InsightsDefaultControl): ReactElement => (
       <InsightsPanel

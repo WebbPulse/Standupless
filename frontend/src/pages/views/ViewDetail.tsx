@@ -147,15 +147,12 @@ export const ViewDetail: React.FC = () => {
     data: view,
     error,
     refetch: refetchView,
-  } = usePolledQuery(
-    ({ signal }) => getView(workspaceId, viewId, signal),
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '' && viewId !== '',
-      queryKey: viewKey(workspaceId, viewId),
-      auth,
-    }
-  );
+  } = usePolledQuery(({ signal }) => getView(workspaceId, viewId, signal), {
+    intervalMs: POLL_MS,
+    enabled: workspaceId !== '' && viewId !== '',
+    queryKey: viewKey(workspaceId, viewId),
+    auth,
+  });
 
   const leading = (
     <Link

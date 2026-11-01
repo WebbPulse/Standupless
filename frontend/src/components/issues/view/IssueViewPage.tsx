@@ -865,7 +865,6 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     reset();
   };
 
-
   useShortcut({
     keys: INSIGHTS_PANEL_KEYS,
     label: 'Toggle view insights',
