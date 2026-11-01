@@ -9,7 +9,8 @@ import com.getcapacitor.BridgeActivity;
 /**
  * The Standupless activity. It hosts the Capacitor web view on the hosted app
  * and lets that web view use passkeys for the site, which Android allows only
- * for the origins the app's Digital Asset Links verify.
+ * for the origins the app's Digital Asset Links verify. Sign-in itself happens in
+ * a Custom Tab; this serves managing passkeys and step-up while signed in.
  */
 public class MainActivity extends BridgeActivity {
 
