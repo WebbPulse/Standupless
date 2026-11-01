@@ -173,7 +173,7 @@ describe('InsightsPanel', () => {
     unmount();
 
     render(panel);
-    expect((screen.getByLabelText('Slice') as HTMLSelectElement).value).toBe(
+    expect(screen.getByLabelText<HTMLSelectElement>('Slice').value).toBe(
       'assignee'
     );
   });
