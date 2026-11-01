@@ -1,19 +1,19 @@
 /**
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
- * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
+ * Space peeks, s, p, a, l, Shift+E, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
  * or removes their parent issue, Cmd or Ctrl+Shift+M moves them to another
- * team, r renames the focused issue, i assigns them to the
+ * team, r or e renames the focused issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
  * or convert it into a project, M then B, X, R or M marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
  * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
- * them, Cmd or Ctrl+Shift+C, D and L add them to the active cycle, clear
- * their due date and clear their labels without a picker, and Cmd or
+ * them, Cmd or Ctrl+Shift+C and D add them to the active cycle and clear
+ * their due date, Shift+L clears their labels without a picker, and Cmd or
  * Ctrl+Delete deletes them after a confirmation. On a
- * board j and k stay in the focused column, h and l or the side arrows cross to the next column
- * holding a card, and labels move to Shift+L. In a list that nests
+ * board j and k stay in the focused column and the side arrows cross to the next column
+ * holding a card. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
  * sub-issue and the left arrow folds it or steps back out to the parent. A right
  * click on a row or a card opens the same commands as a menu, and the bulk
@@ -179,8 +179,10 @@ import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
+  EDIT_ISSUE_KEYS,
+  EDIT_ISSUE_LABEL,
   RENAME_ISSUE_KEYS,
-  propertyKeysFor,
+  PROPERTY_KEYS,
   type CommandProperty,
 } from './propertyKeys';
 
@@ -900,26 +902,6 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   });
   const onBoard = board !== null && hasRows;
   useShortcut({
-    keys: 'h',
-    label: 'Previous column',
-    scope: 'page',
-    group: 'Board',
-    enabled: onBoard,
-    handler: () => {
-      moveAcross('left');
-    },
-  });
-  useShortcut({
-    keys: 'l',
-    label: 'Next column',
-    scope: 'page',
-    group: 'Board',
-    enabled: onBoard,
-    handler: () => {
-      moveAcross('right');
-    },
-  });
-  useShortcut({
     keys: 'arrowleft',
     label: onBoard ? 'Previous column' : 'Collapse sub-issues',
     group: onBoard ? 'Board' : 'List',
@@ -979,7 +961,6 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   const canCommand = canEdit && targets.length > 0;
-  const propertyKeys = propertyKeysFor(state.layout);
   const me = context.people.find(
     (person) => person.user_id === context.currentUserId
   );
@@ -1144,6 +1125,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   useShortcut({
     keys: RENAME_ISSUE_KEYS,
     label: 'Rename issue…',
+    scope: 'issue',
+    enabled: canEdit && single !== undefined,
+    handler: (event) => {
+      event?.preventDefault();
+      if (single !== undefined) setRenaming(single.id);
+    },
+  });
+  useShortcut({
+    keys: EDIT_ISSUE_KEYS,
+    label: EDIT_ISSUE_LABEL,
     scope: 'issue',
     enabled: canEdit && single !== undefined,
     handler: (event) => {
@@ -1536,7 +1527,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             id: 'cycle',
             label: 'Cycle',
             icon: <LuRefreshCw className={iconClass} />,
-            keys: propertyKeys.cycle,
+            keys: PROPERTY_KEYS.cycle,
             onSelect: () => {
               openCommand('cycle', targets);
             },
@@ -1545,7 +1536,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             id: 'project',
             label: 'Project',
             icon: <LuHexagon className={iconClass} />,
-            keys: propertyKeys.project,
+            keys: PROPERTY_KEYS.project,
             onSelect: () => {
               openCommand('project', targets);
             },
@@ -1554,7 +1545,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             id: 'dueDate',
             label: 'Due date',
             icon: <LuCalendar className={iconClass} />,
-            keys: propertyKeys.dueDate,
+            keys: PROPERTY_KEYS.dueDate,
             onSelect: () => {
               openCommand('dueDate', targets);
             },
@@ -1794,7 +1785,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       {PROPERTIES.map(({ property, label }) => (
         <PropertyShortcut
           key={property}
-          keys={propertyKeys[property]}
+          keys={PROPERTY_KEYS[property]}
           label={label}
           enabled={
             canCommand &&
@@ -2077,7 +2068,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
                 }
           }
           onClose={closeMenu}
-          keys={propertyKeys}
+          keys={PROPERTY_KEYS}
         />
       )}
       <BulkBar
@@ -2085,7 +2076,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         estimates={estimates}
         milestones={context.milestones !== undefined}
         archived={allArchived(targets)}
-        keys={propertyKeys}
+        keys={PROPERTY_KEYS}
         more={bulkMenu}
         onProperty={(property) => {
           openCommand(property, targets);

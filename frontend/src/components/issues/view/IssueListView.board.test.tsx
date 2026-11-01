@@ -1,6 +1,6 @@
 /**
- * The board's keys: h and l and the side arrows cross columns, skipping empty
- * ones, j and k stay in the focused column, labels move to Shift+L, and the
+ * The board's keys: the side arrows cross columns, skipping empty
+ * ones, j and k stay in the focused column, l opens labels as on a list, and the
  * column keys are listed for the help overlay and the palette only on a board,
  * and Cmd or Ctrl+Alt and a digit set the status at that workflow position on
  * a focused card or a selection of rows. Cmd or Ctrl+click on a card toggles
@@ -157,21 +157,9 @@ beforeEach(() => {
 });
 
 describe('IssueListView board keys', () => {
-  it('crosses to the next filled column on L and back on H', () => {
+  it('moves across on the side arrows, holding at the edges', () => {
     renderView();
     expect(screen.getByText('Issue a1')).toBeInTheDocument();
-
-    press('j');
-    press('j');
-    press('l');
-    expect(focusedId()).toBe('c1');
-
-    press('h');
-    expect(focusedId()).toBe('a1');
-  });
-
-  it('moves across on the side arrows too, holding at the edges', () => {
-    renderView();
 
     press('ArrowRight');
     expect(focusedId()).toBe('a1');
@@ -191,27 +179,28 @@ describe('IssueListView board keys', () => {
     press('j');
     expect(focusedId()).toBe('a2');
 
-    press('l');
+    press('ArrowRight');
     press('k');
     press('j');
     expect(focusedId()).toBe('c1');
   });
 
-  it('opens labels on Shift+L and not on L', () => {
+  it('opens labels on L and leaves H unbound', () => {
     renderView();
 
     press('j');
-    press('l');
-    expect(screen.queryByRole('dialog')).toBeNull();
-
-    press('L', { shiftKey: true });
     expect(
-      registry.list().find((shortcut) => shortcut.keys === 'shift+l')?.label
+      registry.list().find((shortcut) => shortcut.keys === 'l')?.label
     ).toBe('Change labels');
+    expect(registry.list().some((shortcut) => shortcut.keys === 'h')).toBe(
+      false
+    );
+
+    press('l');
     expect(screen.getByRole('dialog')).toHaveAccessibleName(/labels/i);
   });
 
-  it('lists the column keys under Board, H and L for the palette', () => {
+  it('lists the column keys under Board for the palette', () => {
     renderView();
 
     const board = registry
@@ -220,8 +209,6 @@ describe('IssueListView board keys', () => {
       .map((shortcut) => [shortcut.keys, shortcut.scope, shortcut.label]);
     expect(board).toEqual(
       expect.arrayContaining([
-        ['h', 'page', 'Previous column'],
-        ['l', 'page', 'Next column'],
         ['arrowleft', 'global', 'Previous column'],
         ['arrowright', 'global', 'Next column'],
       ])

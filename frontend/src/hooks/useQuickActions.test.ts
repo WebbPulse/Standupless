@@ -8,8 +8,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  propertyKeysFor,
   ADD_TO_ACTIVE_CYCLE_KEYS,
+  PROPERTY_KEYS,
   REMOVE_DUE_DATE_KEYS,
   REMOVE_LABELS_KEYS,
 } from '../components/issues/view/propertyKeys';
@@ -210,16 +210,18 @@ describe('removeLabels', () => {
 });
 
 describe('quick action keys', () => {
-  it('collide with no property key in a list or on the board', () => {
+  it('collide with no property key', () => {
     const quick = [
       ADD_TO_ACTIVE_CYCLE_KEYS,
       REMOVE_DUE_DATE_KEYS,
       REMOVE_LABELS_KEYS,
     ];
-    for (const layout of ['list', 'board'] as const) {
-      const taken = Object.values(propertyKeysFor(layout));
-      expect(quick.filter((keys) => taken.includes(keys))).toEqual([]);
-    }
-    expect(REMOVE_LABELS_KEYS).not.toBe('shift+l');
+    const taken = Object.values(PROPERTY_KEYS);
+    expect(quick.filter((keys) => taken.includes(keys))).toEqual([]);
+  });
+
+  it('leave estimate on Shift+E and labels on L', () => {
+    expect(PROPERTY_KEYS.estimate).toBe('shift+e');
+    expect(PROPERTY_KEYS.labels).toBe('l');
   });
 });

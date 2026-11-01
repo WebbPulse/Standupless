@@ -33,7 +33,7 @@ import { Popover } from '../ui/popover';
 import RailSection from './RailSection';
 
 /** The shortcut that opens the subscriber picker, also listed in the palette. */
-export const MANAGE_SUBSCRIBERS_KEYS = 'shift+s';
+export const MANAGE_SUBSCRIBERS_KEYS = 'mod+shift+s';
 
 /** How each reason reads beside a subscriber's name. */
 const REASON_LABELS: Record<SubscriptionReason, string> = {

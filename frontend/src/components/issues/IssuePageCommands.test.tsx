@@ -426,9 +426,9 @@ describe('IssuePageCommands quick actions', () => {
     expect(onUpdate).toHaveBeenCalledWith({ due_date: null });
   });
 
-  it('clears the labels on Cmd or Ctrl+Shift+L', () => {
+  it('clears the labels on Shift+L', () => {
     renderCommands();
-    press('L', modShift);
+    press('L', { shiftKey: true });
 
     expect(onUpdate).toHaveBeenCalledWith({ label_ids: [] });
   });
@@ -437,7 +437,7 @@ describe('IssuePageCommands quick actions', () => {
     renderCommands(false, { ...issue, due_date: '2026-11-01' });
     press('C', modShift);
     press('D', modShift);
-    press('L', modShift);
+    press('L', { shiftKey: true });
 
     expect(onUpdate).not.toHaveBeenCalled();
   });
