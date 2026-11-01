@@ -420,3 +420,23 @@ def test_the_customer_field_filters_round_trip(client: TestClient, workspace: st
         response = _create(client, workspace, filter=bad)
         assert response.status_code == 422, bad
         assert response.json()["error_code"] == "INVALID_FILTER"
+
+
+def test_order_completed_by_recency_defaults_off_and_round_trips(client: TestClient, workspace: str) -> None:
+    """A view orders closed issues by the main ordering unless it saves the switch, and a patch may turn it off."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace).json()["order_completed_by_recency"] is False
+
+    view = _create(client, workspace, order_completed_by_recency=True).json()
+    assert view["order_completed_by_recency"] is True
+    read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}").json()
+    assert read["order_completed_by_recency"] is True
+
+    url = f"/api/workspaces/{workspace}/views/{view['view_id']}"
+    patched = client.patch(url, json={"order_completed_by_recency": False})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["order_completed_by_recency"] is False
+
+    assert _create(client, workspace, order_completed_by_recency="true").status_code == 422
+    assert client.patch(url, json={"order_completed_by_recency": None}).status_code == 422
