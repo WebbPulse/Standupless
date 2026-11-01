@@ -15,7 +15,8 @@
  * and a focused bar opens the same links from its menu key or Shift+F10.
  * A page can hide the lines and the dots that draw them, leaving the links
  * themselves in the bar menu.
- * Each dated milestone draws as a diamond on its project's lane. A page can
+ * Each dated milestone draws as a diamond on the lower edge of its project's
+ * bar, so a label running along the bar is never covered. A page can
  * choose which of priority, status, health, teams and lead sit beside each
  * name and whether each bar names its progress, and the controls step the
  * view a screen earlier or later as well as back to today and through the
@@ -360,7 +361,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
       }}
     >
       <div
-        className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface max-sm:px-3"
+        className="sticky left-0 z-10 -mb-px flex shrink-0 items-center gap-2 border-r border-b border-line bg-bg px-4 text-sm group-hover/row:bg-surface max-sm:px-3"
         style={{ width: nameWidth }}
       >
         <ProjectIcon icon={project.icon} color={project.color} />
@@ -425,7 +426,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
       </div>
       <div
         className={cn(
-          'relative shrink-0',
+          'relative isolate shrink-0',
           bar === null && editable && 'cursor-copy',
           bar !== null && 'pointer-events-none'
         )}
@@ -619,13 +620,14 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
               onClick={(event) => {
                 event.stopPropagation();
               }}
-              className="pointer-events-auto absolute top-5 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-xs bg-bg transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="pointer-events-auto absolute top-8 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-xs transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               style={{ left: mark.x }}
             >
               <MilestoneGlyph
                 milestone={mark}
                 size={12}
                 decorative
+                opaque
                 title={`${label} · ${mark.date}`}
               />
             </Link>

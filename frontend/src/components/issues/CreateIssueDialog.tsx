@@ -105,7 +105,9 @@ import {
   pendingPath,
   pendingReference,
   resolvePending,
+  retryHeldRequest,
   stripPending,
+  withHeldReferences,
 } from '../../lib/draftUploads';
 import { errorMessage } from '../../lib/errors';
 import { contentPath, mediaKindOf } from '../../lib/media';
@@ -1163,10 +1165,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     await Promise.all(
       attached.map(async (item) => {
         try {
-          const attachment = await uploadAttachment(
-            workspaceId,
-            issue.id,
-            item.file
+          const attachment = await retryHeldRequest(() =>
+            uploadAttachment(workspaceId, issue.id, item.file)
           );
           rememberPreview(attachment.attachment_id, item.file);
           paths.set(
@@ -1180,20 +1180,28 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           );
         } catch (failure: unknown) {
           showErrorToast(
-            errorMessage(failure, `Could not upload ${item.file.name}.`)
+            errorMessage(
+              failure,
+              `Created ${issue.key}, but could not upload ${item.file.name}. Attach it from the issue.`
+            )
           );
         }
       })
     );
-    if (!attached.some((item) => namesPending(body, item.id))) return issue;
-    const description = resolvePending(body, (id) => paths.get(id) ?? null);
+    if (paths.size === 0) return issue;
+    const description = resolvePending(
+      withHeldReferences(body, workspaceId, attached),
+      (id) => paths.get(id) ?? null
+    );
     const resolved = isForm
       ? withResolvedDescription(issue.body ?? '', sentBody, description)
       : description;
     try {
-      return await updateIssue(workspaceId, issue.id, {
-        body: resolved === '' ? null : resolved,
-      });
+      return await retryHeldRequest(() =>
+        updateIssue(workspaceId, issue.id, {
+          body: resolved === '' ? null : resolved,
+        })
+      );
     } catch (failure: unknown) {
       showErrorToast(
         errorMessage(

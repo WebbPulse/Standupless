@@ -9,6 +9,7 @@
  * content path, written in the same Markdown the issue page writes.
  */
 
+import { ApiError } from '@webbpulse/api-client';
 import { contentPath, mediaKindOf, type MediaKind } from './media';
 
 /** The stand in issue id a placeholder path names. */
@@ -62,6 +63,50 @@ export const resolvePending = (
     })
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+/**
+ * The body with a placeholder added at the end for each held file it no longer
+ * names, so a file shown as attached always lands in the description.
+ */
+export const withHeldReferences = (
+  body: string,
+  workspaceId: string,
+  held: readonly { id: string; file: File }[]
+): string =>
+  held
+    .filter((item) => !namesPending(body, item.id))
+    .map((item) => pendingReference(workspaceId, item.id, item.file))
+    .reduce(
+      (text, reference) =>
+        text.trim() === '' ? reference : `${text}\n\n${reference}`,
+      body
+    );
+
+/** How long to wait before each further try at a held file's request. */
+const HELD_RETRY_DELAYS_MS = [1_000, 3_000];
+
+/**
+ * Runs one request of a held file's upload, trying again when the connection
+ * or the server failed rather than the request being refused, because the
+ * dialog is about to close and nothing can resend it after that.
+ */
+export const retryHeldRequest = async <T>(
+  request: () => Promise<T>,
+  delays: readonly number[] = HELD_RETRY_DELAYS_MS
+): Promise<T> => {
+  try {
+    return await request();
+  } catch (failure: unknown) {
+    const [delay, ...rest] = delays;
+    const refused =
+      failure instanceof ApiError &&
+      failure.status >= 400 &&
+      failure.status < 500;
+    if (refused || delay === undefined) throw failure;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    return retryHeldRequest(request, rest);
+  }
+};
 
 /** The Markdown placeholder for one held file, as the editor writes it. */
 export const pendingReference = (

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ZIP="$1"
+DMG="${2:-}"
 SMOKE_SECONDS="${SMOKE_SECONDS:-20}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -17,8 +18,26 @@ BIN="${APP}/Contents/MacOS/${NAME}"
 
 echo "Checking the signature of ${APP}"
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign --display --verbose=2 "$APP" 2>&1 | grep -E '^(Identifier|Format|Signature|TeamIdentifier)=' || true
+DETAILS="$(codesign --display --verbose=2 "$APP" 2>&1)"
+grep -E '^(Identifier|Format|CodeDirectory|Signature|Authority|TeamIdentifier|Notarization Ticket)' <<<"$DETAILS" || true
 lipo -info "$BIN"
+
+if grep -q '^Authority=Developer ID Application' <<<"$DETAILS"; then
+  echo "Checking the notarization of ${APP}"
+  xcrun stapler validate "$APP"
+  spctl --assess --type execute --verbose=4 "$APP"
+  if [ -n "$DMG" ]; then
+    MOUNT="${WORK}/dmg"
+    mkdir "$MOUNT"
+    hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null
+    echo "Checking the notarization of the app inside ${DMG}"
+    xcrun stapler validate "${MOUNT}/$(basename "$APP")"
+    hdiutil detach "$MOUNT" >/dev/null
+  fi
+elif [ "${EXPECT_SIGNED:-false}" = "true" ]; then
+  echo "::error::signing credentials were set but the app has no Developer ID signature"
+  exit 1
+fi
 
 REPORTS="${HOME}/Library/Logs/DiagnosticReports"
 
