@@ -15094,6 +15094,11 @@
           "in_app": {
             "title": "In App",
             "type": "boolean"
+          },
+          "push": {
+            "default": true,
+            "title": "Push",
+            "type": "boolean"
           }
         },
         "required": [

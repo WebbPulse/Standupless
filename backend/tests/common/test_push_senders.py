@@ -28,7 +28,9 @@ from app.common.push_senders import (
 
 TOKEN = "ab" * 32
 KEY = ec.generate_private_key(ec.SECP256R1())
-ALERT = PushAlert(title="ABC-1 An issue", body="Assigned", path="/w/acme/issues/ABC-1", collapse_id="n1", thread_id="i1")
+ALERT = PushAlert(
+    title="ABC-1 An issue", body="Assigned", path="/w/acme/issues/ABC-1", collapse_id="n1", thread_id="i1"
+)
 
 
 def _pem() -> str:
@@ -115,7 +117,9 @@ def test_a_refused_provider_token_is_minted_again() -> None:
     def answer(request: httpx.Request) -> httpx.Response:
         """Record the bearer and refuse it the first time."""
         bearers.append(request.headers["authorization"])
-        return httpx.Response(403, json={"reason": "ExpiredProviderToken"}) if len(bearers) == 1 else httpx.Response(200)
+        return (
+            httpx.Response(403, json={"reason": "ExpiredProviderToken"}) if len(bearers) == 1 else httpx.Response(200)
+        )
 
     sender = _sender(answer)
     assert sender.send(TOKEN, PushMessage(badge=1)) is PushOutcome.FAILED
@@ -174,7 +178,9 @@ def test_the_key_loads_however_it_was_stored(encode: Callable[[str], str]) -> No
     assert load_apns_private_key(encode(_pem())) is not None
 
 
-@pytest.mark.parametrize("raw", ["", "   ", "not a key", "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----"])
+@pytest.mark.parametrize(
+    "raw", ["", "   ", "not a key", "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----"]
+)
 def test_an_unusable_key_is_refused_quietly(raw: str) -> None:
     """A key that does not parse answers `None` rather than raising."""
     assert load_apns_private_key(raw) is None

@@ -2213,6 +2213,27 @@ class TestWorkspaceAdministration:
         response = api.delete(f"/api/workspaces/{workspace['id']}/inbox/{ABSENT_ID}")
         assert response.status_code in (200, 204, 404), response.text[:400]
 
+    @WRITES
+    def test_a_phone_registers_for_push_and_unregisters(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """Registering a device, again, then removing it all answer, and a bad token is refused.
+
+        No phone runs here, so the token is made up. Where APNs is configured it refuses
+        the badge sent on registering, which removes the row, and that must not reach the
+        caller: the app registers on every open and cannot act on a provider's answer.
+        """
+        base = f"/api/workspaces/{workspace['id']}/inbox/devices"
+        token = "ab" * 32
+
+        for _ in range(2):
+            registered = api.post(base, json={"platform": "ios", "token": token})
+            assert registered.status_code == 204, registered.text[:400]
+
+        malformed = api.post(base, json={"platform": "ios", "token": "not-a-token"})
+        assert malformed.status_code == 422, malformed.text[:400]
+
+        removed = api.post(f"{base}/unregister", json={"token": token})
+        assert removed.status_code == 204, removed.text[:400]
+
 
 class TestBoardPaging:
     """The board column route the board falls back to when a column is deep."""

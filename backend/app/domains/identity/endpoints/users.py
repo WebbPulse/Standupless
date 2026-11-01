@@ -98,6 +98,7 @@ class NotificationChannels(BaseModel):
     in_app: bool
     email: bool
     chat: bool = True
+    push: bool = True
 
 
 class UserRead(BaseModel):

@@ -727,7 +727,12 @@ def test_reactions_default_to_the_inbox_only(client: TestClient, repositories: A
     sign_in(client, OWNER)
 
     body = client.get("/api/users/me").json()
-    assert body["notification_preferences"]["reaction"] == {"in_app": True, "email": False, "chat": False, "push": False}
+    assert body["notification_preferences"]["reaction"] == {
+        "in_app": True,
+        "email": False,
+        "chat": False,
+        "push": False,
+    }
     assert repositories.users.get(OWNER).wants_notification("reaction", "email") is False
 
     client.patch("/api/users/me/preferences", json={"notification_preferences": {"reaction": {"email": True}}})
