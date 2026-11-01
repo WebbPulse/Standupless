@@ -12,6 +12,7 @@ import {
   projectStatusOf,
 } from './projectStatuses';
 import { personLabel, type Assignable } from './issuePeople';
+import { projectInitiativeIds } from './planningModel';
 import { PRIORITY_LABELS } from './issueDisplay';
 import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from './projectLook';
 import { TIMELINE_ZOOMS, type TimelineZoom } from './timeline';
@@ -749,8 +750,10 @@ const byValue = (
  * or once under the first filtered team it is on when a team filter is set.
  * Member groups run by name with "No members" last, and a project shows
  * under each of its members. Label groups run in the workspace's label order
- * with "No label" last, and a project shows under each of its labels. Start
- * and target dates group by calendar month,
+ * with "No label" last, and a project shows under each of its labels. A
+ * project shows under each initiative it is in that the list can name, and
+ * under "Unknown initiative" only when it can name none. Start and target
+ * dates group by calendar month,
  * a coarse date under its own quarter, half or year after the months it
  * covers, with "No date" last.
  * Empty groups are left out unless asked for, and "none" is one unlabelled
@@ -820,22 +823,45 @@ export const groupProjects = (
       const initiatives = [...(options.initiatives ?? [])].sort((left, right) =>
         left.name.localeCompare(right.name)
       );
-      return byValue(
-        projects,
-        grouping,
-        (project) => project.initiative_id ?? 'none',
-        keepEmpty
-          ? initiatives.map((item) => ({
-              value: item.initiative_id,
-              label: item.name,
-            }))
-          : [],
-        (value) =>
-          initiatives.find((item) => item.initiative_id === value)?.name ??
-          'Unknown initiative',
-        keepEmpty,
-        { value: 'none', label: 'No initiative' }
-      );
+      const named = new Set(initiatives.map((item) => item.initiative_id));
+      const homes = (project: ProjectRead): string[] => {
+        const own = projectInitiativeIds(project);
+        const known = own.filter((id) => named.has(id));
+        return known.length > 0 ? known : own;
+      };
+      const held = new Set(projects.flatMap(homes));
+      const rowsIn = (id: string): ProjectRead[] =>
+        projects.filter((project) => homes(project).includes(id));
+      const bare = projects.filter((project) => homes(project).length === 0);
+      const groups: ProjectGroup[] = [
+        ...initiatives
+          .filter((item) => keepEmpty || held.has(item.initiative_id))
+          .map((item) => ({
+            key: `initiative:${item.initiative_id}`,
+            label: item.name,
+            kind: grouping,
+            rows: rowsIn(item.initiative_id),
+          })),
+        ...[...held]
+          .filter((id) => !named.has(id))
+          .map((id) => ({
+            key: `initiative:${id}`,
+            label: 'Unknown initiative',
+            kind: grouping,
+            rows: rowsIn(id),
+          })),
+      ];
+      return keepEmpty || bare.length > 0
+        ? [
+            ...groups,
+            {
+              key: NO_INITIATIVE_KEY,
+              label: 'No initiative',
+              kind: grouping,
+              rows: bare,
+            },
+          ]
+        : groups;
     }
     case 'team': {
       const filter = options.teamIds ?? null;
@@ -1000,6 +1026,7 @@ export type ProjectMove = Partial<
     | 'health'
     | 'priority'
     | 'initiative_id'
+    | 'initiative_ids'
     | 'lead_id'
     | 'start_date'
     | 'start_date_resolution'
@@ -1014,6 +1041,9 @@ export type ProjectMove = Partial<
  * The change that moves a project into a group on the board, or null when
  * the group is not one value a project holds, such as a team. A move into a
  * category's default status from another category names only the category.
+ * Without a project the change is the preset a new project in the group
+ * starts from. A project in one initiative moves to the group's, and one in
+ * several joins it and keeps the rest.
  */
 export const groupPatch = (
   group: ProjectGroup,
@@ -1033,8 +1063,13 @@ export const groupPatch = (
       return { health: value === 'none' ? null : (value as ProjectHealth) };
     case 'priority':
       return { priority: value as IssuePriority };
-    case 'initiative':
-      return { initiative_id: value === 'none' ? null : value };
+    case 'initiative': {
+      if (project === undefined)
+        return { initiative_id: value === 'none' ? null : value };
+      if (value === 'none') return { initiative_ids: [] };
+      const own = projectInitiativeIds(project);
+      return { initiative_ids: own.length > 1 ? [...own, value] : [value] };
+    }
     case 'lead':
       return { lead_id: value === 'none' ? null : value };
     case 'member':
@@ -1058,7 +1093,9 @@ export const inGroup = (project: ProjectRead, group: ProjectGroup): boolean => {
     case 'priority':
       return project.priority === value;
     case 'initiative':
-      return (project.initiative_id ?? 'none') === value;
+      return value === 'none'
+        ? projectInitiativeIds(project).length === 0
+        : projectInitiativeIds(project).includes(value);
     case 'lead':
       return (project.lead_id ?? 'none') === value;
     case 'member':

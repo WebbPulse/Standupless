@@ -283,6 +283,65 @@ describe('health, priority and initiative groups', () => {
   });
 });
 
+describe('projects in several initiatives', () => {
+  const initiatives = [
+    { initiative_id: 'i1', name: 'Scale' },
+    { initiative_id: 'i2', name: 'Growth' },
+  ];
+  const grouped = (rows: ProjectRead[], keepEmpty = false) =>
+    groupProjects(rows, 'initiative', [], [], { initiatives, keepEmpty });
+
+  it('shows a project under every initiative it is in', () => {
+    const groups = grouped([
+      project({
+        project_id: 'a',
+        name: 'A',
+        initiative_id: 'i1',
+        initiative_ids: ['i1', 'i2'],
+      }),
+    ]);
+    expect(groups.map((group) => group.label)).toEqual(['Growth', 'Scale']);
+    expect(groups.map((group) => names(group.rows))).toEqual([['A'], ['A']]);
+  });
+
+  it('reads a project with only the single value as a set of one', () => {
+    const groups = grouped([project({ name: 'A', initiative_id: 'i2' })]);
+    expect(groups.map((group) => group.key)).toEqual(['initiative:i2']);
+  });
+
+  it('calls a membership unknown only when none can be named', () => {
+    const groups = grouped([
+      project({ name: 'A', initiative_id: 'i1', initiative_ids: ['i1', 'x'] }),
+      project({ name: 'B', initiative_id: 'x', initiative_ids: ['x'] }),
+      project({ name: 'C', initiative_id: null, initiative_ids: [] }),
+    ]);
+    expect(groups.map((group) => [group.label, names(group.rows)])).toEqual([
+      ['Scale', ['A']],
+      ['Unknown initiative', ['B']],
+      ['No initiative', ['C']],
+    ]);
+  });
+
+  it('moves a project in one initiative and adds one in several', () => {
+    const [growth, scale, none] = grouped([], true);
+    if (growth === undefined || scale === undefined || none === undefined)
+      throw new Error('no initiative columns');
+    const one = project({ initiative_id: 'i1', initiative_ids: ['i1'] });
+    const two = project({ initiative_id: 'i1', initiative_ids: ['i1', 'x'] });
+    expect(groupPatch(growth, one)).toEqual({ initiative_ids: ['i2'] });
+    expect(groupPatch(growth, two)).toEqual({
+      initiative_ids: ['i1', 'x', 'i2'],
+    });
+    expect(groupPatch(none, two)).toEqual({ initiative_ids: [] });
+    expect(groupPatch(growth)).toEqual({ initiative_id: 'i2' });
+    expect(groupPatch(none)).toEqual({ initiative_id: null });
+    expect(inGroup(two, scale)).toBe(true);
+    expect(inGroup(two, growth)).toBe(false);
+    expect(inGroup(two, none)).toBe(false);
+    expect(inGroup(project({ initiative_ids: [] }), none)).toBe(true);
+  });
+});
+
 describe('group direction and second grouping', () => {
   it('reverses the groups when descending', () => {
     const groups = groupProjects([], 'health', [], [], { keepEmpty: true });
