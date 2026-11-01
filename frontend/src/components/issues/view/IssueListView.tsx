@@ -548,14 +548,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         .filter(({ group }) => !collapsed.has(hiddenColumnKey(group.key)))
         .map(({ group }) => take(group.issues)),
     ];
-  }, [
-    sections,
-    swimlanes,
-    context,
-    collapsed,
-    state.layout,
-    state.groupBy,
-  ]);
+  }, [sections, swimlanes, context, collapsed, state.layout, state.groupBy]);
 
   const listSections = useMemo(
     () => splitHiddenSections(sections, collapsed).shown,
@@ -766,9 +759,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         : swimlanes.filter((lane) =>
             lane.issues.some((issue) => issue.id === focused)
           );
-    const openLane = holding.find(
-      (lane) => !collapsed.has(`lane/${lane.key}`)
-    );
+    const openLane = holding.find((lane) => !collapsed.has(`lane/${lane.key}`));
     if (openLane !== undefined && focused !== null) {
       const key = `lane/${openLane.key}`;
       onToggle(key);
