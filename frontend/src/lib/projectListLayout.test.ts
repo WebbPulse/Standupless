@@ -53,6 +53,12 @@ describe('tierTracks', () => {
     );
   });
 
+  it('adds the initiative column at lg, wide enough for its chips', () => {
+    const shown = columnList('status,initiative');
+    expect(tierTracks(shown, 'md')).toBe('minmax(16rem,1fr) 8.5rem');
+    expect(tierTracks(shown, 'lg')).toBe('minmax(16rem,1fr) 8.5rem 10rem');
+  });
+
   it('leaves out a column that is not shown', () => {
     expect(tierTracks(columnList('progress'), 'xl')).toBe(
       'minmax(16rem,1fr) 4.5rem'

@@ -46,6 +46,7 @@ PROJECTS_COLUMNS: tuple[str, ...] = (
     "start",
     "target",
     "teams",
+    "initiative",
     "issues",
     "important",
     "created",
